@@ -113,7 +113,8 @@ export function buildEvalOutline(
       const resultNode = nodeFor(result.resultTelemetry)
       const spanError =
         execution.spanError ||
-        !!(resultNode && isErrorSpan(resultNode.spanData))
+        !!(resultNode && isErrorSpan(resultNode.spanData)) ||
+        resultTraceNodes(result, index).some(node => isErrorSpan(node.spanData))
       return [
         result.id,
         {

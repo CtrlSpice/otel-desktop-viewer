@@ -185,6 +185,9 @@ The normalized presentation distinguishes:
 Promptfoo expands `testIdx` across repetitions. The adapter groups complete native
 test definitions and resolved variables within each provider/prompt group; equal
 question text alone is insufficient. Each result retains its native `id`.
+Grouping uses source-aware identity: object key order and equivalent decimal
+spellings do not create separate cases, while distinct exact numbers and signed
+zero remain distinct. Decimal identity does not pass through JavaScript `number`.
 Result rows have no displayed ordinal. Available start times determine their default
 order, with stable source order for ties or missing timing. A singleton without
 recorded repetition metadata displays its evidence directly on its test case.
@@ -319,7 +322,9 @@ the selected experiment with `assembleEvalExperimentSource(pages)` from `eval-ex
 This helper rejects mixed, incomplete, duplicate-ordinal or oversized page sets
 and replaces the source result-array syntax range without parsing/re-encoding
 received values. It returns the exact `EvalSourceDataset` input for the adapter.
-Check `summary.resultCount` before fetching when using the bounded adapter.
+The workspace uses `loadEvalExperimentSource(id, signal)` to enforce the row and
+text limits during pagination. It stops requesting pages when the retained source
+exceeds the display budget and retains one shared context string across pages.
 Alternatively, parent can assemble
 the selected experiment's rows into its source envelope, retain their exact strings,
 and pass those global ordinals with `id: summary.datasetID` and

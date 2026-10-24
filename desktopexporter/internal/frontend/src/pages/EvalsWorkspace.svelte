@@ -28,7 +28,6 @@
   import EvalRowDetail from '@/components/evals/EvalRowDetail.svelte'
   import {
     projectPromptfooDataset,
-    evalProjectionLimits,
     type EvalSourceDataset,
     type EvalSourceProjection,
   } from '@/components/evals/promptfoo-adapter'
@@ -48,9 +47,8 @@
     projectEvalTraceEvidence,
   } from '@/components/evals/eval-traces'
   import { exampleExperiments } from '@/components/evals/examples'
-  import { assembleEvalExperimentSource } from '@/services/eval-experiment-source'
+  import { loadEvalExperimentSource } from '@/services/eval-experiment-source'
   import type {
-    EvalExperimentSourcePage,
     EvalExperimentSearchPage,
     EvalStoredExperimentSummary,
   } from '@/services/eval-experiment-types'
@@ -365,35 +363,20 @@
     const controller = new AbortController()
     void (async () => {
       try {
-        const pages: EvalExperimentSourcePage[] = []
-        let after = -1
-        while (true) {
-          const page = await evalAPI.getEvalExperimentPage(
-            id,
-            after,
-            100,
-            controller.signal
-          )
-          if (controller.signal.aborted) return
-          if (page.summary.resultCount > evalProjectionLimits.rows)
-            throw new Error(
-              `This experiment has ${page.summary.resultCount.toLocaleString()} results and exceeds the current 5,000-row display limit.`
-            )
-          pages.push(page)
-          if (!page.hasMore) break
-          after = page.nextAfter
-        }
-        const source = assembleEvalExperimentSource(pages)
+        const { summary, source } = await loadEvalExperimentSource(
+          id,
+          controller.signal
+        )
+        if (controller.signal.aborted) return
         const projected = projectPromptfooDataset(source)
         if (projected.status !== 'supported') throw new Error(projected.reason)
         const projectedExperiment = projected.experiments.find(
-          item => item.id === pages[0].summary.adapterExperimentID
+          item => item.id === summary.adapterExperimentID
         )
         if (!projectedExperiment)
           throw new Error(
             'The selected experiment was not found in its source rows.'
           )
-        const summary = pages[0].summary
         storedExperimentSummary = summary
         storedExperimentSource = source
         storedExperimentProjection = projected

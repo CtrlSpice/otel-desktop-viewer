@@ -170,7 +170,7 @@
 {#snippet detailsSection()}
   <DetailBubble
     label={row.name}
-    layoutKey={row.kind === 'case' ? 'Question' : row.name}
+    layoutKey={row.kind === 'case' ? 'Question' : 'Result'}
   >
     {#snippet trailing()}
       {#if row.kind === 'case'}

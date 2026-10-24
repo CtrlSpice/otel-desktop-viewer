@@ -95,6 +95,59 @@ it('preserves selected-experiment identities with global source ordinals and loc
 })
 
 describe('persisted source dataset projections', () => {
+  it.each(['testCase', 'resolved vars'] as const)(
+    'groups %s using exact decimal source identity',
+    location => {
+      const values = ['0.10000000000000001', '0.1', '1e-400', '0', '10e-401']
+      const envelope = promptfoo(
+        values.map((_value, testIdx) =>
+          promptfooRow({
+            id: `row-${testIdx}`,
+            testIdx,
+            testCase:
+              location === 'testCase'
+                ? { vars: { x: `NUMBER_${testIdx}` } }
+                : { description: 'same test' },
+            vars:
+              location === 'resolved vars'
+                ? { x: `NUMBER_${testIdx}` }
+                : undefined,
+          })
+        )
+      )
+      let payload = JSON.stringify(envelope)
+      values.forEach((value, index) => {
+        payload = payload.replace(`"NUMBER_${index}"`, value)
+      })
+      const projection = supported(envelope, { payload })
+      const cases = projection.experiments[0].results.map(
+        result => result.caseID
+      )
+      expect(new Set(cases).size).toBe(4)
+      expect(cases[2]).toBe(cases[4])
+    }
+  )
+
+  it('keeps signed-zero test inputs in distinct cases', () => {
+    const envelope = promptfoo(
+      ['NEGATIVE_ZERO', 'POSITIVE_ZERO'].map((value, testIdx) =>
+        promptfooRow({
+          id: `row-${testIdx}`,
+          testIdx,
+          testCase: { vars: { x: value } },
+        })
+      )
+    )
+    const payload = JSON.stringify(envelope)
+      .replace('"NEGATIVE_ZERO"', '-0')
+      .replace('"POSITIVE_ZERO"', '0')
+    const projection = supported(envelope, { payload })
+    expect(
+      new Set(projection.experiments[0].results.map(result => result.caseID))
+        .size
+    ).toBe(2)
+  })
+
   it.each([
     ['-0', 'number'],
     ['[-0,0,{"value":-0}]', 'array'],

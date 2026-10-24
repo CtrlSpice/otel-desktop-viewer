@@ -5,6 +5,57 @@ import {
   type EvalSourceDataset,
 } from '@/components/evals/promptfoo-adapter'
 import type { EvalExperimentSourcePage } from './eval-experiment-types'
+import { evalAPI } from './eval-service'
+
+/** Stop pagination before retaining more than the display adapter can consume. */
+export async function loadEvalExperimentSource(
+  id: string,
+  signal: AbortSignal
+) {
+  const pages: EvalExperimentSourcePage[] = []
+  let after = -1
+  let characters = 0
+  let rows = 0
+  while (true) {
+    const page = await evalAPI.getEvalExperimentPage(id, after, 100, signal)
+    signal.throwIfAborted()
+    if (page.summary.resultCount > evalProjectionLimits.rows)
+      throw new Error(
+        `This experiment has ${page.summary.resultCount.toLocaleString()} results and exceeds the current 5,000-row display limit.`
+      )
+    const first = pages[0]
+    if (
+      first &&
+      (page.summary.id !== first.summary.id ||
+        page.contextJSON !== first.contextJSON)
+    )
+      throw new Error(
+        'Source pages belong to different experiments or contexts.'
+      )
+    const contextJSON = first?.contextJSON ?? page.contextJSON
+    if (!first) characters = contextJSON.length
+    for (const row of page.rows) characters += row.json.length + 1
+    if (characters > evalProjectionLimits.payloadCharacters)
+      throw new Error(
+        'Selected experiment exceeds the current display adapter text limit.'
+      )
+    rows += page.rows.length
+    if (rows > evalProjectionLimits.rows)
+      throw new Error(
+        'Selected experiment exceeds the current 5,000-row display adapter limit.'
+      )
+    // Retain one shared context string rather than a copy from every response.
+    pages.push({ ...page, contextJSON })
+    if (!page.hasMore) break
+    if (page.nextAfter <= after)
+      throw new Error('Selected-experiment source pagination did not advance.')
+    after = page.nextAfter
+  }
+  return {
+    summary: pages[0]!.summary,
+    source: assembleEvalExperimentSource(pages),
+  }
+}
 
 /** Assemble a complete selected experiment for the bounded existing adapter, preserving
  * every received numeric lexeme. Fetch only this experiment; never JSON.stringify its

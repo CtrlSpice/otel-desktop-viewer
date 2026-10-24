@@ -1,5 +1,5 @@
 import { jsonLanguage } from '@codemirror/lang-json'
-import type { SyntaxNode } from '@lezer/common'
+import { evalSourceNode } from './eval-source-node'
 import type {
   EvalSourceDataset,
   EvalSourceRowReference,
@@ -21,31 +21,11 @@ export type EvalSourceExperimentCopy = (
  * decoded prose; all other values retain their original JSON subtree/lexemes.
  * Duplicate object keys follow JSON.parse's last-key selection in the adapter. */
 export function evalSourceFieldText(payload: string, pointer: string): string {
-  let node: SyntaxNode | null =
+  const node = evalSourceNode(
+    payload,
+    pointer,
     jsonLanguage.parser.parse(payload).topNode.firstChild
-  for (const segment of pointer.split('/').slice(1)) {
-    const key = segment.replace(/~1/g, '/').replace(/~0/g, '~')
-    let next: SyntaxNode | null = null
-    if (node?.name === 'Object') {
-      for (const property of node.getChildren('Property')) {
-        const name = property.getChild('PropertyName')!
-        if (JSON.parse(payload.slice(name.from, name.to)) === key)
-          next = property.lastChild
-      }
-    } else if (node?.name === 'Array') {
-      let index = 0
-      for (let child = node.firstChild; child; child = child.nextSibling) {
-        if (['[', ']', ','].includes(child.name)) continue
-        if (String(index++) === key) {
-          next = child
-          break
-        }
-      }
-    }
-    node = next
-    if (!node) throw new Error('Source field is missing.')
-  }
-  if (!node) throw new Error('Source field is missing.')
+  )
   const raw = payload.slice(node.from, node.to)
   if (node.name !== 'String') return raw
   const decoded: unknown = JSON.parse(raw)

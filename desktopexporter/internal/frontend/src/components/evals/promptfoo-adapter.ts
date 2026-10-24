@@ -4,6 +4,7 @@ import type {
   EvalExperiment,
   TelemetryReference,
 } from './model'
+import { evalSourceIdentities } from './eval-source-identity'
 
 /** The caller retains payload verbatim, including for unsupported/error results.
  * These projections are disposable display data, never authoritative source. */
@@ -138,23 +139,6 @@ function timestamp(value: Json | undefined): string | undefined {
     Number.isFinite(Date.parse(result))
     ? result
     : undefined
-}
-
-/** Test definitions and resolved variables identify the logical input, not an
- * invocation. Object key order does not change that identity. */
-function canonical(value: Json): string {
-  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Recursive JSON identity must distinguish object members from scalar source values.
-  if (value !== null && typeof value === 'object')
-    return (
-      '{' +
-      Object.keys(value)
-        .sort()
-        .map(key => JSON.stringify(key) + ':' + canonical(value[key]))
-        .join(',') +
-      '}'
-    )
-  return JSON.stringify(value)
 }
 
 function hasGraderError(grading: JsonRecord | undefined): boolean {
@@ -313,6 +297,7 @@ export function projectPromptfooDataset(
     const rows: EvalSourceRowReference[] = []
     const experimentSources: Record<string, EvalExperimentTextSource> = {}
     const testDefinitions = new Map<string, number>()
+    const sourceIdentity = evalSourceIdentities(dataset.payload)
     const evaluationID = identity(root.evalId)
     const evaluation = display(text(config?.description) || dataset.name)
     const source = display(dataset.source)
@@ -444,9 +429,13 @@ export function projectPromptfooDataset(
       const definition = test
         ? experimentID +
           '\n' +
-          canonical(test) +
+          sourceIdentity(localPosition, '/testCase') +
           '\n' +
-          canonical(object(row.vars) ?? object(test.vars) ?? {})
+          (object(row.vars)
+            ? sourceIdentity(localPosition, '/vars')
+            : object(test.vars)
+              ? sourceIdentity(localPosition, '/testCase/vars')
+              : '{}')
         : undefined
       if (definition !== undefined && !testDefinitions.has(definition))
         testDefinitions.set(definition, position)

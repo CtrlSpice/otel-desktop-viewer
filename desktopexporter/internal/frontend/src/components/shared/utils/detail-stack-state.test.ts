@@ -2,9 +2,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createDetailStackState } from './detail-stack-state.svelte'
 
-function fixture(available = [true, true, true]) {
+function fixture(
+  available = [true, true, true],
+  labels = ['Span', 'Events', 'Links']
+) {
   const stack = createDetailStackState('test-detail-handoff')
-  const sections = ['Span', 'Events', 'Links'].map((label, index) => {
+  const sections = labels.map((label, index) => {
     let open = available[index]!
     const section = {
       id: label,
@@ -30,6 +33,22 @@ function fixture(available = [true, true, true]) {
 beforeEach(() => localStorage.clear())
 
 describe('detail heading collapse handoff', () => {
+  it('treats prototype-shaped section names as literal sizing keys', () => {
+    const names = ['constructor', 'toString', '__proto__']
+    const { stack } = fixture([true, true, true], names)
+    for (const name of names)
+      expect(parseFloat(stack.flex(name))).toBeCloseTo(100 / 3)
+    stack.setOpen('__proto__', false)
+    expect(parseFloat(stack.flex('toString'))).toBeCloseTo(200 / 3)
+    stack.setOpen('__proto__', true)
+    for (const name of names)
+      expect(Number.isFinite(parseFloat(stack.flex(name)))).toBe(true)
+    expect(
+      Object.keys(JSON.parse(localStorage.getItem('test-detail-handoff')!))
+    ).toEqual(names)
+    const restored = fixture([true, true, true], names).stack
+    for (const name of names) expect(restored.flex(name)).toBe(stack.flex(name))
+  })
   it('skips unavailable headers and restores their resize position when data arrives', () => {
     const available = [false, false, true]
     const { stack } = fixture(available)

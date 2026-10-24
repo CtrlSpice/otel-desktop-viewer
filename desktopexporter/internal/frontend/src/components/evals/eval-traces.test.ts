@@ -67,6 +67,46 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
+  it('retains errors from ordinary descendants when their repetition is filtered out', () => {
+    const root = node(1, null, 0)
+    const child = node(2, 1, 1, true)
+    const clean = node(1, null, 0)
+    clean.spanData.traceID = 'b'.repeat(32)
+    const index = indexEvalTraces([
+      { traceID, spans: [root, child], unplacedSpanCount: 0 },
+      { traceID: clean.spanData.traceID, spans: [clean], unplacedSpanCount: 0 },
+    ])
+    const hidden = {
+      ...exampleExperiments[0].results[0],
+      id: 'hidden',
+      repetition: 1,
+      resultTelemetry: undefined,
+      telemetry: { traceID },
+      tools: [],
+      assessments: [],
+    }
+    const visible = {
+      ...hidden,
+      id: 'visible',
+      repetition: 2,
+      telemetry: { traceID: clean.spanData.traceID },
+    }
+    const experiment = {
+      ...exampleExperiments[0],
+      results: [hidden, visible],
+      telemetry: undefined,
+    }
+    const rows = buildEvalOutline(
+      groupResults([visible], experiment.results),
+      experiment,
+      index
+    )
+    expect(rows.find(row => row.kind === 'experiment')?.spanError).toBe(true)
+    expect(rows.find(row => row.kind === 'case')?.spanError).toBe(true)
+    expect(rows.find(row => row.kind === 'result')?.spanError).toBe(false)
+    expect(rows.some(row => row.result?.id === hidden.id)).toBe(false)
+  })
+
   it.each(['native', 'explicit'] as const)(
     'keeps %s tool ownership separate from descendant errors',
     mode => {

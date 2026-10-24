@@ -90,6 +90,8 @@ HEAD and byte ranges describe the requested representation.
 The metric Details JSON tab loads this metadata-only representation automatically.
 Copy and Download still return the complete metric. The existing 2 MiB preview
 bound remains; larger metadata documents show a partial preview automatically.
+Raw-JSON indentation has separate depth and output-size limits. If formatting
+would exceed either limit, the preview retains its original source whitespace.
 
 The CLI writes the exact response bytes to stdout, without an added newline:
 

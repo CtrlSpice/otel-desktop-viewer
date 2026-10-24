@@ -28,15 +28,15 @@ function isPositiveWeight(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
-function loadWeights(key: string): Record<string, number> {
+function loadWeights(key: string): Map<string, number> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) ?? 'null')
-    if (!isStoredWeights(value)) return {}
-    return Object.fromEntries(
+    if (!isStoredWeights(value)) return new Map()
+    return new Map(
       Object.entries(value).filter(([, weight]) => isPositiveWeight(weight))
     )
   } catch {
-    return {}
+    return new Map()
   }
 }
 
@@ -48,7 +48,7 @@ export function createDetailStackState(storageKey: string) {
   let sections = $state<Section[]>([])
   let weights = $state(loadWeights(storageKey))
   let dragging = $state<string | null>(null)
-  let previewSizes = $state<Record<string, number> | null>(null)
+  let previewSizes = $state<Map<string, number> | null>(null)
   let drag: DragHandle | undefined
   let order: string[] = []
 
@@ -123,14 +123,15 @@ export function createDetailStackState(storageKey: string) {
           ? Math.min(1 / (current.length + 1), remToPx(3.5) / contentHeight)
           : 0
       const remembered =
-        weights[section.layoutKey ?? section.label] ?? 1 / (current.length + 1)
+        weights.get(section.layoutKey ?? section.label) ??
+        1 / (current.length + 1)
       const desired = Math.min(
         1 - minimum * current.length,
         remembered > 1 ? remembered / (total + remembered) : remembered
       )
-      const updated = { ...weights }
+      const updated = new Map(weights)
       for (const item of current)
-        updated[item.layoutKey ?? item.label] = weight(item) / total
+        updated.set(item.layoutKey ?? item.label, weight(item) / total)
       let remaining = desired
       const index = sections.indexOf(section)
       const donors = [
@@ -141,14 +142,15 @@ export function createDetailStackState(storageKey: string) {
         const key = donor.layoutKey ?? donor.label
         const transfer = Math.min(
           remaining,
-          Math.max(0, updated[key] - minimum)
+          Math.max(0, updated.get(key)! - minimum)
         )
-        updated[key] -= transfer
+        updated.set(key, updated.get(key)! - transfer)
         remaining -= transfer
       }
-      updated[section.layoutKey ?? section.label] = current.length
-        ? desired - remaining
-        : 1
+      updated.set(
+        section.layoutKey ?? section.label,
+        current.length ? desired - remaining : 1
+      )
       weights = updated
       section.setExpanded(true)
       save()
@@ -156,11 +158,15 @@ export function createDetailStackState(storageKey: string) {
     }
     const receiver = previous(id)!
     const total = opened().reduce((sum, item) => sum + weight(item), 0)
-    const updated = { ...weights }
+    const updated = new Map(weights)
     for (const item of opened())
-      updated[item.layoutKey ?? item.label] = weight(item) / total
-    updated[receiver.layoutKey ?? receiver.label] +=
-      updated[section.layoutKey ?? section.label]
+      updated.set(item.layoutKey ?? item.label, weight(item) / total)
+    const receiverKey = receiver.layoutKey ?? receiver.label
+    updated.set(
+      receiverKey,
+      updated.get(receiverKey)! +
+        updated.get(section.layoutKey ?? section.label)!
+    )
     weights = updated
     section.setExpanded(false)
     save()
@@ -168,14 +174,17 @@ export function createDetailStackState(storageKey: string) {
 
   function weight(section: Section) {
     return (
-      weights[section.layoutKey ?? section.label] ??
+      weights.get(section.layoutKey ?? section.label) ??
       1 / Math.max(1, opened().length)
     )
   }
 
   function save() {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(weights))
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(Object.fromEntries(weights))
+      )
     } catch {
       /* Keep session sizing when storage is unavailable. */
     }
@@ -221,17 +230,19 @@ export function createDetailStackState(storageKey: string) {
     )
     if (total <= 0) return
     let lastDelta = 0
-    const remembered = { ...weights }
+    const remembered = new Map(weights)
     for (const section of opened())
-      remembered[section.layoutKey ?? section.label] =
+      remembered.set(
+        section.layoutKey ?? section.label,
         initial.get(section.id)! / total
+      )
     const layoutKeys = new Map(
       sections.map(section => [section.id, section.layoutKey ?? section.label])
     )
 
     function preview(sizes: Map<string, number>) {
       // Fixed pixel previews keep unrelated sections still during resizing.
-      previewSizes = Object.fromEntries(
+      previewSizes = new Map(
         [...sizes].map(([sectionID, height]) => [
           sectionID,
           height + headers.get(sectionID)!,
@@ -240,12 +251,12 @@ export function createDetailStackState(storageKey: string) {
     }
 
     function commit(sizes: Map<string, number>, settle: boolean) {
-      const updated = { ...remembered }
+      const updated = new Map(remembered)
       for (const section of sections) {
         if (!section.available() || !section.expanded()) continue
         const height = sizes.get(section.id) ?? 0
         // Keep the last useful size for reopening with the heading.
-        if (height > 0) updated[layoutKeys.get(section.id)!] = height / total
+        if (height > 0) updated.set(layoutKeys.get(section.id)!, height / total)
         if (settle) section.setExpanded(height > 0)
       }
       if (settle) {
@@ -334,7 +345,8 @@ export function createDetailStackState(storageKey: string) {
     },
     enabled: (id: string) => Boolean(sides(id)),
     flex(id: string) {
-      if (previewSizes?.[id] !== undefined) return `0 0 ${previewSizes[id]}px`
+      const preview = previewSizes?.get(id)
+      if (preview !== undefined) return `0 0 ${preview}px`
       const section = sections.find(candidate => candidate.id === id)
       if (!section?.expanded()) return '0 0 var(--pane-header-h)'
       const total = sections
@@ -375,7 +387,7 @@ export function createDetailStackState(storageKey: string) {
       if (event.key === '0') {
         event.preventDefault()
         drag?.cancel()
-        weights = {}
+        weights = new Map()
         save()
         return
       }
