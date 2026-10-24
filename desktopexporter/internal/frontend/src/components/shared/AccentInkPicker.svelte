@@ -10,8 +10,8 @@
 </script>
 
 <InkPicker
-  label={`Accent ink: ${chosen.name} (${chosen.english})`}
-  triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-left"
+  label={`Accent ink: ${chosen.name}\n(${chosen.english})`}
+  triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-left before:whitespace-pre-line"
   options={ACCENT_INKS}
   value={accentInk.value}
   onchange={id => accentInk.set(restoreAccentInk(id))}

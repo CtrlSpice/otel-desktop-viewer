@@ -101,6 +101,7 @@
     children,
     initialOpen = true,
     disabled = false,
+    contained = false,
   }: {
     label: string
     /** Preserve stored section sizing when its visible heading changes. */
@@ -114,6 +115,8 @@
     children: Snippet
     initialOpen?: boolean
     disabled?: boolean
+    /** Let the content own scrolling within this section's allocated height. */
+    contained?: boolean
   } = $props()
   const unavailable = $derived(disabled || count === 0)
   let expanded = $state(untrack(() => initialOpen))
@@ -167,6 +170,7 @@
   {:else}
     <details
       class="collapse detail-bubble__disclosure min-h-0 overflow-y-auto bg-base-100"
+      class:detail-bubble__disclosure--contained={contained}
       bind:this={disclosure}
       style:scroll-padding-block-start={headingHeight
         ? `${headingHeight}px`
@@ -215,10 +219,12 @@
     class="detail-bubble"
     class:detail-bubble--resizable={Boolean(stack)}
     class:detail-bubble--unavailable={unavailable}
+    class:detail-bubble--contained={contained && expanded && !unavailable}
     data-detail-section={stackID}
     data-detail-group={unavailable ? 'inactive' : expanded ? 'open' : 'closed'}
     style:flex={stack?.flex(stackID)}
     style:--detail-action-width={actionWidth ? `${actionWidth}px` : undefined}
+    style:--detail-heading-height={headingHeight ? `${headingHeight}px` : undefined}
     use:register
   >
     {@render bubble()}
@@ -312,5 +318,26 @@
   }
   .detail-bubble__content {
     @apply px-0;
+  }
+
+  .detail-bubble__disclosure--contained {
+    overflow: hidden;
+  }
+  .detail-bubble--contained {
+    min-height: calc(
+      var(--detail-heading-height, var(--pane-header-h)) + var(--pane-header-h) +
+        var(--app-footer-height) + var(--table-row-h)
+    );
+  }
+  .detail-bubble__disclosure--contained[open] {
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+  .detail-bubble__disclosure--contained[open]::details-content {
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .detail-bubble__disclosure--contained > .detail-bubble__content {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-0;
   }
 </style>

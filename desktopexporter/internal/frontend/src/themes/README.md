@@ -106,7 +106,8 @@ official shades 1–7, matching the graph colour picker across seasons and modes
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
 The top-bar control shows a brush, the selected ink's original name, then three
-8px dots in its official shades 1, 4 and 7. Its tooltip includes the English name.
+8px dots in its official shades 1, 4 and 7. Its tooltip puts the parenthesised
+English name on a separate second line.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
 syntax accent slots below. Season supplies the softened paper, neutral text,

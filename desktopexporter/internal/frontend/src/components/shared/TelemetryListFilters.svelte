@@ -85,17 +85,16 @@
 <FilterPopover
   label="Filters"
   compact
+  showHeader={false}
   showCount
   {count}
   custom={applied.editable && kinds.some(kind => applied[kind].custom)}
-  clearable={kinds.some(kind => filters[kind].values.length > 0)}
   onOpenChange={open => {
     if (open) {
       draftQuery = query
       serviceSearch = ''
     }
   }}
-  onClear={clear}
 >
   {#snippet icon()}<HugeiconsIcon
       icon={FilterIcon}
@@ -106,6 +105,13 @@
   {#snippet footer(close)}
     <button
       type="button"
+      class="btn btn-ghost btn-sm text-sm font-normal"
+      aria-label="Clear filters"
+      disabled={!kinds.some(kind => filters[kind].values.length > 0)}
+      onclick={clear}>Clear</button
+    >
+    <button
+      type="button"
       class="btn btn-ghost btn-sm text-sm font-normal text-primary"
       disabled={!editor?.setQuery || draftQuery === query || !filters.editable}
       onclick={() => {
@@ -114,12 +120,8 @@
       }}>Apply</button
     >
   {/snippet}
-  {#if !filters.editable}<p class="filter-hint">
-      Complete the expression in search before changing filters.
-    </p>{/if}
-  {#if signal === 'traces'}<p class="filter-hint">
-      Matches spans, not just roots. Service and Has errors must match the same
-      span.
+  {#if !filters.editable}<p class="filter-hint" role="status">
+      Edit query in search
     </p>{/if}
   <FieldGroup label="Service">
     <FilterInput
@@ -127,13 +129,8 @@
       placeholder="Find services…"
       bind:value={serviceSearch}
     />
-    <p class="filter-hint">
-      {signal === 'traces'
-        ? 'Root services seen in loaded traces; other span services can be entered in search.'
-        : 'Services seen in loaded metrics.'}
-    </p>
     {#if filters.service.custom && filters.editable}<p class="filter-hint">
-        Edit this service condition in search.
+        Edit service in search
       </p>{/if}
     <div class="filter-options">
       {#each visibleServices as service (service)}
@@ -165,7 +162,7 @@
   {@const kind = signal === 'traces' ? 'errors' : 'metricType'}
   <FieldGroup label={signal === 'traces' ? 'Span status' : 'Type'}>
     {#if filters[kind].custom && filters.editable}<p class="filter-hint">
-        Edit this condition in search.
+        Edit {signal === 'traces' ? 'status' : 'type'} in search
       </p>{/if}
     <div class="filter-options">
       {#each signal === 'traces' ? ['Has errors'] : METRIC_TYPE_ENUM as value (value)}

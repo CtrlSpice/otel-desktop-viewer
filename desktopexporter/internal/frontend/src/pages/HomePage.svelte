@@ -278,6 +278,7 @@
     label={selectedAttribute?.key ?? 'Telemetry'}
     layoutKey="attribute-telemetry"
     disabled={!selected}
+    contained
   >
     {#snippet labelSuffix()}
       {#if selectedAttribute}

@@ -35,7 +35,8 @@
   the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
   The top-bar ink control shows a 16px brush, the selected ink's original name,
   then three 8px dots using official shades 1, 4 and 7. Keep the English name in
-  its tooltip and picker rows.
+  its tooltip and picker rows. Put the parenthesised English name on a separate
+  line in the top-bar tooltip, using the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
   Use additional rows on narrow screens so search and appearance do not overlap.
@@ -44,10 +45,13 @@
   Bars are 8px high with round ends and a minimum 8px dot, using stable
   typed-value hashes into official shades 3–5 across the 32 graph inks. Keep
   parent attribute rows plain and preserve Name, Count, %, exact Copy and disclosures.
-  Home Telemetry uses independent 25-card pages for Traces, Metrics and Logs,
-  with the shared first/previous/next/last page controls. Reset pages when the
-  service, attribute/value, search, time range or refreshed results change.
-  Keep each signal's disclosure independent of its current page.
+  Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
+  independent 25-card pages and scroll positions. Only the active card list
+  scrolls; keep tabs at the top and shared page controls in a stable bottom
+  footer. Tab changes are immediate and support arrow/Home/End navigation.
+  Disable confirmed-empty or inapplicable signals, retaining loading/error
+  access. Reset pages when service, attribute/value, search, time range or
+  refreshed results change. Keep other Home section disclosures independent.
   Categorical graph colours use the official first seven swatches of the same
   32 Madoromi inks: 224 fixed shades across Day/Night and seasons. UI shades are
   allowed. The palest, eighth swatch is omitted from automatic assignments and
@@ -243,6 +247,9 @@
   space permits and retain its full accessible label and tooltip.
   Column/service picker searches reuse FilterInput's
   shared 32px height rather than the taller query-entry field.
+  Signal filter popovers omit the redundant Filters heading and explanatory
+  paragraphs. Use labelled controls and a Clear / Apply footer; show only short
+  status text when a custom query must be edited in search.
   Do not restore persistent column guide lines or duplicate header grab handles.
   Keep row hover continuous across the full column resize hit strips. Pinned log
   cells inherit the row's animated background; do not overlay a separate state

@@ -66,28 +66,21 @@
   }
 </script>
 
-{#snippet queryHint()}
-  {#if !filters.editable}<p class="log-filters__hint mb-2">
-      Use a complete field expression in search to combine it with filters.
-    </p>{/if}
-{/snippet}
-
 <FilterPopover
   label="Filters"
   compact
+  showHeader={false}
   showCount
   count={appliedFilters.service.values.length +
     appliedFilters.severity.values.length}
   custom={appliedFilters.editable &&
     (appliedFilters.service.custom || appliedFilters.severity.custom)}
-  clearable={filters.service.values.length + filters.severity.values.length > 0}
   onOpenChange={open => {
     if (open) {
       draftQuery = query
       serviceSearch = ''
     }
   }}
-  onClear={clearFilters}
 >
   {#snippet icon()}<HugeiconsIcon
       icon={FilterIcon}
@@ -98,6 +91,13 @@
   {#snippet footer(close)}
     <button
       type="button"
+      class="btn btn-ghost btn-sm text-sm font-normal"
+      aria-label="Clear filters"
+      disabled={filters.service.values.length + filters.severity.values.length === 0}
+      onclick={clearFilters}>Clear</button
+    >
+    <button
+      type="button"
       class="btn btn-ghost btn-sm text-sm font-normal text-primary"
       disabled={!editor?.setQuery || draftQuery === query || !filters.editable}
       onclick={() => {
@@ -106,8 +106,10 @@
       }}>Apply</button
     >
   {/snippet}
+  {#if !filters.editable}<p class="log-filters__hint mb-2" role="status">
+      Edit query in search
+    </p>{/if}
   <FieldGroup label="Service">
-    {@render queryHint()}
     <div class="mb-2">
       <FilterInput
         label="Find services"
@@ -115,11 +117,10 @@
         bind:value={serviceSearch}
       />
     </div>
-    <p class="log-filters__hint mb-1">Services seen in loaded logs</p>
     {#if filters.service.custom && filters.editable}<p
         class="log-filters__hint"
       >
-        Edit this service condition in search.
+        Edit service in search
       </p>{/if}
     <div class="log-filters__chips">
       {#each visibleServices as service (service)}
@@ -157,11 +158,10 @@
     </div>
   </FieldGroup>
   <FieldGroup label="Severity">
-    {@render queryHint()}
     {#if filters.severity.custom && filters.editable}<p
         class="log-filters__hint"
       >
-        Edit this severity condition in search.
+        Edit severity in search
       </p>{/if}
     <div class="log-filters__chips">
       {#each LOG_SEVERITIES as level (level.label)}

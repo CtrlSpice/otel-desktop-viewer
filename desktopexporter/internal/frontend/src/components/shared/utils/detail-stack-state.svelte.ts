@@ -208,6 +208,16 @@ export function createDetailStackState(storageKey: string) {
       })
     )
     const total = [...initial.values()].reduce((sum, height) => sum + height, 0)
+    const minimums = new Map(
+      sections.map(section => [
+        section.id,
+        Math.max(
+          remToPx(3.5),
+          parseFloat(getComputedStyle(section.element).minHeight) -
+            headers.get(section.id)!
+        ),
+      ])
+    )
     if (total <= 0) return
     let lastDelta = 0
     const remembered = { ...weights }
@@ -253,7 +263,7 @@ export function createDetailStackState(storageKey: string) {
       const height = initial.get(donor.id)!
       const resized = resolvePanelResize(
         height - Math.abs(delta),
-        Math.min(remToPx(3.5), height),
+        Math.min(minimums.get(donor.id)!, height),
         total,
         remToPx(PANEL_CLOSE_OVERSHOOT_REM)
       )
