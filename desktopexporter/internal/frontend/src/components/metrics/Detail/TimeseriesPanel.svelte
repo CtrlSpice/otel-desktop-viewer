@@ -173,6 +173,25 @@
               strokeWidth={1.5}
             />
           </span>
+          <label
+            class="ts-row__check-label"
+            class:ts-row__check-label--disabled={checkboxDisabled}
+            title={tooltip}
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs rounded-full ts-row__checkbox"
+              class:ts-row__checkbox--histogram={ctx.isHistogramKind}
+              style:--input-color={color}
+              style:color={ctx.isHistogramKind
+                ? 'var(--color-base-content)'
+                : fg}
+              {checked}
+              disabled={checkboxDisabled}
+              aria-label={`Show ${headerLabel} in chart`}
+              onchange={e => toggle(ts.key, e.currentTarget.checked)}
+            />
+          </label>
           <span
             class="ts-row__attrs ts-row__attrs-text"
             class:ts-row__default-label={!hasAttrs}
@@ -187,7 +206,7 @@
               />
             </span>
           {/if}
-          <div class="flex shrink-0 items-center gap-2">
+          <div class="flex shrink-0 items-center">
             {#if !ctx.isHistogramKind && ctx.metric}
               <GraphColorPicker
                 scope={`metric:${ctx.metric.metricRef}`}
@@ -196,25 +215,6 @@
                 color={seriesColor}
               />
             {/if}
-            <label
-              class="ts-row__check-label"
-              class:ts-row__check-label--disabled={checkboxDisabled}
-              title={tooltip}
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs rounded-full ts-row__checkbox"
-                class:ts-row__checkbox--histogram={ctx.isHistogramKind}
-                style:--input-color={color}
-                style:color={ctx.isHistogramKind
-                  ? 'var(--color-base-content)'
-                  : fg}
-                {checked}
-                disabled={checkboxDisabled}
-                aria-label={`Show ${headerLabel} in chart`}
-                onchange={e => toggle(ts.key, e.currentTarget.checked)}
-              />
-            </label>
           </div>
         </div>
       {/snippet}
@@ -259,7 +259,7 @@
 
   .ts-row__title-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.5rem;
     min-height: var(--table-row-h);
@@ -272,7 +272,7 @@
   }
 
   .ts-row__title-row--preview {
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 96px) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 96px) auto;
   }
 
   .ts-row__sparkline {
@@ -285,7 +285,7 @@
   }
 
   .ts-row__check-label {
-    @apply flex shrink-0 cursor-pointer items-center py-1 pl-2;
+    @apply flex shrink-0 cursor-pointer items-center py-1;
   }
 
   .ts-row__check-label--disabled {

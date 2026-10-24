@@ -93,6 +93,7 @@
   under the brush button, with their labels aligned under the service name.
   Align Last seen beneath the left edge of the log icon. Gauge/Sum series
   overrides live in metric Details, independently of visibility and disclosure.
+  Series visibility checkboxes sit between the disclosure caret and series text.
   Persist overrides by service name or metric reference + native series identity;
   Put an icon-only reset to the right of the ink search field; it restores the
   saved automatic assignment and is disabled when no override is set. Keep only
