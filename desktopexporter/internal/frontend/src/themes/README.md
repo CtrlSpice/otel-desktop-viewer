@@ -61,7 +61,7 @@ variants. The shared surface hierarchy flips with the mode:
 | Panel / bg-200                  | Hyoshi          | Hyoshi          |
 | Chrome / bg-300                 | Chitsu, darkest | Kami, brightest |
 
-Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 55%
+Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
 nijimi 1. Hover takes precedence over selection while the pointer is present.
 

@@ -562,13 +562,13 @@ test.describe('home page accessibility', () => {
       'data-theme',
       'madoromi-fuyu-hiru'
     )
-    // Frozen 20% surfaces, native Subtle/Muted and mapped foregrounds.
+    // 20% surfaces, 45% selection, native Subtle/Muted and default Ajisai ink.
     const expected = {
       '--color-base-100': '#f1f2f3',
       '--color-base-200': '#e7e8ea',
       '--color-base-300': '#dddee0',
       '--color-highlight-low': '#d0d1d5',
-      '--color-highlight-med': '#c9cacd',
+      '--color-highlight-med': '#cecfd2',
       '--color-highlight-high': '#c0c1c5',
       '--color-base-content': '#4a4e63',
       '--color-on-light': '#4a4e63',
@@ -576,13 +576,13 @@ test.describe('home page accessibility', () => {
       '--color-muted': '#8d91a4',
       '--color-subtle': '#5e6277',
       '--color-sakura': '#aa6e89',
-      '--color-primary': '#5e21b0',
-      '--color-secondary': '#0f5894',
-      '--color-accent': '#006156',
+      '--color-primary': '#6a29bf',
+      '--color-secondary': '#1a4fb7',
+      '--color-accent': '#0053bd',
       '--color-neutral': '#8d91a4',
       '--color-neutral-content': '#4a4e63',
-      '--color-info': '#005a8d',
-      '--color-success': '#3a5f00',
+      '--color-info': '#005d92',
+      '--color-success': '#3d6300',
       '--color-warning': '#e3940b',
       '--color-error': '#bb355a',
     }

@@ -53,12 +53,12 @@
   Aligned bar tracks fill the remaining width and keep their percentage scale.
   Home Count and % columns stay fixed-width and right-aligned; the value/bar
   column fills the remaining table width. Retain sorting and far-right Copy.
-  Home's left pane contains Lulu and Getting Started, with setup instructions
-  scrolling below the welcome. Use the shared sidebar toggle and saved width.
-  Storage and Ingestion issues follow the setup steps in that scroll area, with
-  independent disclosures. Ingestion issue links reveal the left pane.
-  When Ingestion issues is empty, pin its disabled heading to the bottom of the
-  left pane, outside the setup scroll area.
+  Home's left pane contains Lulu above the shared section stack. Getting started
+  is the primary open section, with setup instructions scrolling inside it.
+  Storage and Ingestion issues are sibling sections using the standard disclosure,
+  grouping and header-resize rules. Closed and inactive sections dock at the
+  bottom; open sections share the available height. Use the shared sidebar toggle
+  and saved width. Ingestion issue links reveal the left pane and their section.
   The welcome app name uses 22px regular Atkinson Mono in Primary, with a 1.25
   line-height and natural wrapping, as a display-title exception to the 16px
   pane headings. Lulu uses 40% of the welcome width, capped at 160px, so the
@@ -138,7 +138,8 @@
   fading or borders. Error status code/message values use neutral Text with an
   8px Error dot before the value, only when the received status code is 2.
 - Shared item states use Highlight Low for hover and Highlight Medium for
-  persistent selection. Hover temporarily uses Low even on selected items;
+  persistent selection. Medium blends tinted Nijimi 2 at 45% over the panel in
+  sRGB. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
   Signal cards use the same precedence: activation changes selection, but the
   pointer keeps Low until it leaves, then selected cards show Medium. Cards share

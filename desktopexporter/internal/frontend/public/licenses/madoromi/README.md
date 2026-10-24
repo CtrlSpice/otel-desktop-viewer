@@ -38,7 +38,7 @@ node scripts/generate-madoromi.mjs
 All eight seasonal day/night variants use 20% of the upstream chroma for the
 three paper colours and nijimi 0–2, preserving their OKLCH lightness and hue.
 Day canvas/panel/chrome use kami/hyoshi/chitsu. Night reverses the outer two.
-Hover uses nijimi 0; selection uses nijimi 2 at 55% over the panel, blended in
+Hover uses nijimi 0; selection uses nijimi 2 at 45% over the panel, blended in
 sRGB; stronger highlights use nijimi 1.
 
 Body text uses sumi, labels use usuzumi 1, primary uses the fuji slot, metadata uses

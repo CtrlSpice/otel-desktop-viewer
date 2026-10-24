@@ -130,7 +130,7 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
       .getByRole('tab', { name: 'Traces', exact: true })
   ).toHaveCount(0)
   await expect(
-    page.getByRole('region', { name: 'Viewer status' })
+    page.getByRole('region', { name: 'Getting started sections' })
   ).toContainText('Storage')
   await expect(
     page.locator('#signal-drawer-panel')

@@ -4,6 +4,8 @@
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
+  import DetailStack from '@/components/shared/DetailStack.svelte'
+  import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import lulu from '@/assets/images/lulu.webp'
   import { QuestionMarkIcon } from '@/icons'
@@ -11,9 +13,11 @@
 
   let {
     importContent,
-    children,
-    footer,
-  }: { importContent?: Snippet; children?: Snippet; footer?: Snippet } = $props()
+    sections = [],
+  }: {
+    importContent?: Snippet
+    sections?: { id: string; content: Snippet }[]
+  } = $props()
   const taglines = [
     'OpenTelemetry made cozy',
     "I'm not changing the name, buddy.",
@@ -70,7 +74,7 @@
 </script>
 
 <div class="getting-started">
-  <div class="flex shrink-0 items-center gap-4 px-3 py-2">
+  <div class="flex shrink-0 items-center gap-4 py-2">
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
@@ -88,125 +92,133 @@
       <p class="text-balance text-subtle">{tagline}</p>
     </div>
   </div>
-  <div class="guide-scroll">
-    {@render importContent?.()}
-    <section class="guide-section">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-lg font-normal text-balance text-base-content">
-          Connect an exporter
-        </h2>
-        <p class="text-pretty text-subtle">
-          Run these commands, then start your app.
-        </p>
-      </div>
-      <div class="terminal">
-        <div class="flex items-center justify-between gap-2 px-3 py-2">
-          <PaneHeader
-            mode="tabs"
-            bare
-            {tabs}
-            activeID={protocol}
-            onSelect={id => (protocol = id)}
-            ariaLabel="OTLP endpoint protocol"
-            tabPanelID="home-otlp"
-          />
-          <div class="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              class="header-icon-button"
-              bind:this={helpButton}
-              popovertarget={helpID}
-              aria-label="Exporter connection help"
-              ><QuestionMarkIcon
-                width={16}
-                height={16}
-                aria-hidden="true"
-              /></button
-            >
-            <ValueCopyButton
-              text={code}
-              label="OTLP environment variables"
-              tooltip="Copy"
-            />
+  {#snippet guide()}
+    <DetailBubble label="Getting started" contained>
+      <div class="guide-scroll">
+        {@render importContent?.()}
+        <section class="guide-section">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-lg font-normal text-balance text-base-content">
+              Connect an exporter
+            </h2>
+            <p class="text-pretty text-subtle">
+              Run these commands, then start your app.
+            </p>
           </div>
-        </div>
-        <div
-          id={helpID}
-          bind:this={helpPopover}
-          popover="auto"
-          role="note"
-          class="anchor-popover anchor-popover--anchored connection-help p-3 text-sm"
-        >
-          <p>
-            These variables configure OTLP over {protocol === 'grpc'
-              ? 'gRPC'
-              : 'HTTP with protobuf'}. Set them in the same terminal that starts
-            your OpenTelemetry-instrumented app. If the viewer runs on another
-            machine, replace <code>localhost</code> with its hostname or IP address.
-            {#if protocol === 'grpc' || httpPort === null}
-              Port {protocol === 'grpc' ? 4317 : 4318} is the default {protocol ===
-              'grpc'
-                ? 'gRPC'
-                : 'HTTP'} port; use the viewer’s configured port if different.
-            {/if}
-          </p>
-        </div>
-        <div
-          id="home-otlp"
-          role="tabpanel"
-          aria-labelledby={paneTabID('home-otlp', protocol)}
-          tabindex="0"
-          class="px-3 pb-3"
-        >
-          <ReadonlyCodePanel
-            {code}
-            bare
-            ariaLabel="OTLP exporter environment variables"
-          />
-        </div>
+          <div class="terminal">
+            <div class="flex items-center justify-between gap-2 px-3 py-2">
+              <PaneHeader
+                mode="tabs"
+                bare
+                {tabs}
+                activeID={protocol}
+                onSelect={id => (protocol = id)}
+                ariaLabel="OTLP endpoint protocol"
+                tabPanelID="home-otlp"
+              />
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  class="header-icon-button"
+                  bind:this={helpButton}
+                  popovertarget={helpID}
+                  aria-label="Exporter connection help"
+                  ><QuestionMarkIcon
+                    width={16}
+                    height={16}
+                    aria-hidden="true"
+                  /></button
+                >
+                <ValueCopyButton
+                  text={code}
+                  label="OTLP environment variables"
+                  tooltip="Copy"
+                />
+              </div>
+            </div>
+            <div
+              id={helpID}
+              bind:this={helpPopover}
+              popover="auto"
+              role="note"
+              class="anchor-popover anchor-popover--anchored connection-help p-3 text-sm"
+            >
+              <p>
+                These variables configure OTLP over {protocol === 'grpc'
+                  ? 'gRPC'
+                  : 'HTTP with protobuf'}. Set them in the same terminal that
+                starts your OpenTelemetry-instrumented app. If the viewer runs
+                on another machine, replace <code>localhost</code> with its
+                hostname or IP address.
+                {#if protocol === 'grpc' || httpPort === null}
+                  Port {protocol === 'grpc' ? 4317 : 4318} is the default {protocol ===
+                  'grpc'
+                    ? 'gRPC'
+                    : 'HTTP'} port; use the viewer’s configured port if different.
+                {/if}
+              </p>
+            </div>
+            <div
+              id="home-otlp"
+              role="tabpanel"
+              aria-labelledby={paneTabID('home-otlp', protocol)}
+              tabindex="0"
+              class="px-3 pb-3"
+            >
+              <ReadonlyCodePanel
+                {code}
+                bare
+                ariaLabel="OTLP exporter environment variables"
+              />
+            </div>
+          </div>
+        </section>
+        <section class="guide-section">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-lg font-normal text-balance text-base-content">
+              Send a test trace
+            </h2>
+            <p class="text-pretty text-subtle">
+              Run this with <a
+                class="text-secondary underline"
+                href="https://github.com/equinix-labs/otel-cli#readme"
+                target="_blank"
+                rel="noreferrer">otel-cli</a
+              > installed.
+            </p>
+          </div>
+          <div class="terminal">
+            <div class="flex items-center justify-between gap-2 px-3 py-2">
+              <span class="text-subtle">Shell</span>
+              <ValueCopyButton
+                text={example}
+                label="otel-cli example"
+                tooltip="Copy"
+              />
+            </div>
+            <div class="px-3 pb-3">
+              <ReadonlyCodePanel
+                bare
+                ariaLabel="otel-cli example commands"
+                code={example}
+              />
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
-    <section class="guide-section">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-lg font-normal text-balance text-base-content">
-          Send a test trace
-        </h2>
-        <p class="text-pretty text-subtle">
-          Run this with <a
-            class="text-secondary underline"
-            href="https://github.com/equinix-labs/otel-cli#readme"
-            target="_blank"
-            rel="noreferrer">otel-cli</a
-          > installed.
-        </p>
-      </div>
-      <div class="terminal">
-        <div class="flex items-center justify-between gap-2 px-3 py-2">
-          <span class="text-subtle">Shell</span>
-          <ValueCopyButton
-            text={example}
-            label="otel-cli example"
-            tooltip="Copy"
-          />
-        </div>
-        <div class="px-3 pb-3">
-          <ReadonlyCodePanel
-            bare
-            ariaLabel="otel-cli example commands"
-            code={example}
-          />
-        </div>
-      </div>
-    </section>
-    {@render children?.()}
-  </div>
-  {@render footer?.()}
+    </DetailBubble>
+  {/snippet}
+  <DetailStack
+    label="Getting started sections"
+    storageKey="home-getting-started"
+    sections={[{ id: 'guide', content: guide }, ...sections]}
+  />
 </div>
 
 <style lang="postcss">
   @reference '../../app.css';
   .getting-started {
-    @apply flex h-full min-h-0 min-w-0 flex-col pt-3;
+    @apply flex h-full min-h-0 min-w-0 flex-col p-3;
   }
   .welcome-title {
     font-size: 1.375rem;

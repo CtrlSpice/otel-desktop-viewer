@@ -121,8 +121,8 @@ function selection(fg, bg) {
     [1, 3, 5]
       .map(i =>
         Math.round(
-          parseInt(fg.slice(i, i + 2), 16) * 0.55 +
-            parseInt(bg.slice(i, i + 2), 16) * 0.45
+          parseInt(fg.slice(i, i + 2), 16) * 0.45 +
+            parseInt(bg.slice(i, i + 2), 16) * 0.55
         )
           .toString(16)
           .padStart(2, '0')

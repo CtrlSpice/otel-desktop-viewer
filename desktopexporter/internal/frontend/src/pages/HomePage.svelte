@@ -395,25 +395,13 @@
     </form>
   {/snippet}
   {#snippet drawerContent()}
-    <GettingStarted {importContent}>
-      {#snippet children()}
-        <div
-          class="flex shrink-0 flex-col gap-1"
-          role="region"
-          aria-label="Viewer status"
-        >
-          {@render storage()}
-          {#if issueCount > 0}{@render issues()}{/if}
-        </div>
-      {/snippet}
-      {#snippet footer()}
-        {#if issueCount === 0}
-          <div class="shrink-0 px-3 pb-3">
-            {@render issues()}
-          </div>
-        {/if}
-      {/snippet}
-    </GettingStarted>
+    <GettingStarted
+      {importContent}
+      sections={[
+        { id: 'storage', content: storage },
+        { id: 'issues', content: issues },
+      ]}
+    />
   {/snippet}
   {#snippet main()}
     <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
