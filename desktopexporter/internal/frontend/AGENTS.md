@@ -70,6 +70,8 @@
   number and DOI beside each fact in the source. Keep full IEEE references and
   claim context in `src/components/home/README.md`; update both when changing a
   fact. Omit the "Axolotl fact:" prefix.
+  Keep welcome taglines and facts left-aligned with balanced wrapping
+  (`text-wrap: balance`) for more even line lengths.
   Exporter help sits beside Copy in the terminal header and describes the
   selected HTTP or gRPC protocol, including default-port guidance when needed.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with

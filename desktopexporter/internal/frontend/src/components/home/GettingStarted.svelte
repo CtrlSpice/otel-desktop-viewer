@@ -85,7 +85,7 @@
         >
         <span class="min-w-0 text-balance">otel-desktop-viewer</span>
       </h2>
-      <p class="text-pretty text-subtle">{tagline}</p>
+      <p class="text-balance text-subtle">{tagline}</p>
     </div>
   </div>
   <div class="guide-scroll">
