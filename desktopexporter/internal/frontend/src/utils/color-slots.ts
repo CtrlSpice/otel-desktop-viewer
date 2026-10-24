@@ -1,6 +1,7 @@
 import { SERIES_COLOR_COUNT, SERIES_PALETTE_VERSION } from '@/themes'
 import { LEGACY_GRAPH_PALETTE } from '@/themes/graph-inks'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+import { colorSlotChanges } from '@/state/color-slot-changes.svelte'
 
 export type ColorSlotReuse = { slot: number; identities: string[] }
 
@@ -162,6 +163,7 @@ export function identityColorSlot(
       ? graphColorOverrides.reservedSlots(scope)
       : undefined
   )
+  colorSlotChanges.notify()
   try {
     localStorage.setItem(key, JSON.stringify(allocator.snapshot()))
   } catch {
@@ -182,4 +184,25 @@ export function colorSlotReuses(
   size: number = SERIES_COLOR_COUNT
 ): ColorSlotReuse[] {
   return allocatorFor(scope, size).reuses()
+}
+
+/** All saved owners, including hidden services/series and their reset slots. */
+export function savedColorSlots(scope: string): [string, number][] {
+  void colorSlotChanges.version
+  const allocator = allocatorFor(scope, SERIES_COLOR_COUNT)
+  allocator.restore(
+    loadSlots(storageKey(scope, SERIES_COLOR_COUNT), SERIES_COLOR_COUNT)
+  )
+  return allocator.snapshot()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', event => {
+    if (
+      event.key === null ||
+      event.key.startsWith(`graph-colour-slots:${SERIES_PALETTE_VERSION}:`)
+    ) {
+      colorSlotChanges.notify()
+    }
+  })
 }

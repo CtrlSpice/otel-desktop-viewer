@@ -34,31 +34,28 @@
 >
   <PaneHeader mode="toolbar" rounded={false} ariaLabel="Workspace controls">
     {#snippet right()}
-      <div
-        class="workspace-toolbar"
-        class:workspace-toolbar--details={!!navigationTrailing}
-      >
-        <div class="workspace-toolbar__leading">
-          {@render navigationLeading?.()}
-        </div>
-        <div class="workspace-toolbar__centre">
+      <div class="workspace-toolbar">
+        <div class="workspace-toolbar__identity">
+          <div class="workspace-toolbar__leading">
+            {@render navigationLeading?.()}
+          </div>
           <div class="workspace-toolbar__navigation">
             <PrimaryNavigation counts={totals?.counts} />
           </div>
-          <div class="workspace-toolbar__search">
-            <SearchBar
-              {search}
-              {controls}
-              onRefresh={onRefresh
-                ? () => {
-                    onRefresh()
-                    void totals?.refresh()
-                  }
-                : undefined}
-              {refreshPulse}
-              {refreshAsideTip}
-            />
-          </div>
+        </div>
+        <div class="workspace-toolbar__search">
+          <SearchBar
+            {search}
+            {controls}
+            onRefresh={onRefresh
+              ? () => {
+                  onRefresh()
+                  void totals?.refresh()
+                }
+              : undefined}
+            {refreshPulse}
+            {refreshAsideTip}
+          />
         </div>
         <div class="workspace-toolbar__actions">
           <ThemeToggle
@@ -75,65 +72,52 @@
   @reference "../../../app.css";
 
   .workspace-toolbar {
-    --workspace-toolbar-edge-width: 9.5rem;
     @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
-    grid-template-columns:
-      var(--workspace-toolbar-edge-width) minmax(0, 1fr)
-      var(--workspace-toolbar-edge-width);
+    grid-template-columns: minmax(0, max-content) minmax(16rem, 1fr) max-content;
   }
 
-  .workspace-toolbar--details {
-    --workspace-toolbar-edge-width: 12rem;
+  .workspace-toolbar__identity {
+    @apply flex min-w-0 items-center gap-2;
   }
 
   .workspace-toolbar__leading,
   .workspace-toolbar__actions {
     @apply flex items-center;
-    grid-row: 1;
   }
 
   .workspace-toolbar__leading {
-    justify-content: flex-start;
-    grid-column: 1;
+    flex-shrink: 0;
+  }
+
+  .workspace-toolbar__leading:empty {
+    display: none;
   }
 
   .workspace-toolbar__actions {
     @apply justify-end gap-2;
-    grid-column: 3;
-  }
-
-  .workspace-toolbar__centre {
-    display: contents;
   }
 
   .workspace-toolbar__navigation {
-    @apply flex min-w-0 justify-center;
-    grid-column: 2;
-    grid-row: 1;
+    @apply flex min-w-0 justify-start;
   }
 
   .workspace-toolbar__search {
-    @apply flex min-w-0 w-full justify-self-end;
-    max-width: 28rem;
-    grid-column: 1 / -1;
-    grid-row: 2;
+    @apply flex min-w-0 w-full;
   }
 
-  @media (min-width: 96rem) {
+  @media (max-width: 79.999rem) {
     .workspace-toolbar {
-      grid-template-columns:
-        var(--workspace-toolbar-edge-width) minmax(0, 1fr)
-        max-content minmax(0, 1fr) var(--workspace-toolbar-edge-width);
+      grid-template-columns: minmax(0, 1fr) auto;
     }
-    .workspace-toolbar__navigation {
-      grid-column: 3;
+    .workspace-toolbar__identity {
+      grid-column: 1 / -1;
     }
-    .workspace-toolbar__search {
-      grid-column: 4;
-      grid-row: 1;
-    }
+  }
+
+  @media (max-width: 47.999rem) {
+    .workspace-toolbar__search,
     .workspace-toolbar__actions {
-      grid-column: 5;
+      grid-column: 1 / -1;
     }
   }
 </style>

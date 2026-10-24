@@ -8,7 +8,7 @@
 </script>
 
 <script lang="ts">
-  import { tick } from 'svelte'
+  import { tick, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     HeartIcon,
@@ -29,6 +29,11 @@
     onreset,
     automatic = false,
     triggerColor,
+    unavailable = new Set<string>(),
+    shadeControls,
+    onOpenChange,
+    triggerText,
+    triggerClass,
   }: {
     label: string
     options: readonly InkPickerOption[]
@@ -38,6 +43,11 @@
     onreset?: () => void
     automatic?: boolean
     triggerColor?: string
+    unavailable?: ReadonlySet<string>
+    shadeControls?: Snippet<[option: InkPickerOption, close: () => void]>
+    onOpenChange?: (open: boolean) => void
+    triggerText?: string
+    triggerClass?: string
   } = $props()
 
   let open = $state(false)
@@ -54,9 +64,15 @@
     )
   )
   const tabbableShade = $derived(
-    visible.some(ink => ink.swatches.some(swatch => swatch.id === activeShade))
+    visible.some(ink =>
+      ink.swatches.some(
+        swatch => swatch.id === activeShade && !unavailable.has(swatch.color)
+      )
+    )
       ? activeShade
-      : visible[0]?.swatches[0]?.id
+      : visible
+          .flatMap(ink => ink.swatches)
+          .find(swatch => !unavailable.has(swatch.color))?.id
   )
 
   function reveal(button: HTMLElement, centre = false) {
@@ -73,6 +89,7 @@
 
   async function handleOpenChange(next: boolean) {
     open = next
+    onOpenChange?.(next)
     if (!next) {
       search = ''
       return
@@ -81,9 +98,12 @@
     await tick()
     if (!open) return
     const button =
-      optionsList?.querySelector<HTMLButtonElement>(
-        '[data-ink-choice][aria-pressed="true"]'
-      ) ?? optionsList?.querySelector<HTMLButtonElement>('[data-ink-choice]')
+      optionsList?.querySelector<HTMLElement>(
+        '[data-ink-slider][data-selected="true"], [data-ink-choice][aria-pressed="true"]:not(:disabled)'
+      ) ??
+      optionsList?.querySelector<HTMLElement>(
+        '[data-ink-slider]:not(:disabled), [data-ink-choice]:not(:disabled)'
+      )
     if (button) {
       activeShade = button.dataset.inkChoice
       button.focus({ preventScroll: true })
@@ -93,7 +113,7 @@
 
   function focusShade(row: number, column: number) {
     const swatch = visible[row]?.swatches[column]
-    if (!swatch) return
+    if (!swatch || unavailable.has(swatch.color)) return
     activeShade = swatch.id
     const button = optionsList?.querySelector<HTMLButtonElement>(
       `[data-ink-choice="${CSS.escape(swatch.id)}"]`
@@ -106,41 +126,65 @@
 
   function navigate(event: KeyboardEvent, row: number, column: number) {
     const last = visible[row]!.swatches.length - 1
+    let rowStep = 0
+    let columnStep = 0
     switch (event.key) {
       case 'ArrowLeft':
-        column = Math.max(0, column - 1)
+        columnStep = -1
+        column--
         break
       case 'ArrowRight':
-        column = Math.min(last, column + 1)
+        columnStep = 1
+        column++
         break
       case 'ArrowUp':
-        row = Math.max(0, row - 1)
+        rowStep = -1
+        row--
         break
       case 'ArrowDown':
-        row = Math.min(visible.length - 1, row + 1)
+        rowStep = 1
+        row++
         break
       case 'Home':
         column = 0
+        columnStep = 1
         if (event.ctrlKey) row = 0
         break
       case 'End':
         column = last
+        columnStep = -1
         if (event.ctrlKey) row = visible.length - 1
         break
       default:
         return
     }
     event.preventDefault()
-    focusShade(row, column)
+    while (row >= 0 && row < visible.length && column >= 0 && column <= last) {
+      if (!unavailable.has(visible[row]!.swatches[column]!.color)) {
+        focusShade(row, column)
+        return
+      }
+      row += rowStep
+      column += columnStep
+      if (
+        event.ctrlKey &&
+        (event.key === 'Home' || event.key === 'End') &&
+        (column < 0 || column > last)
+      ) {
+        row += columnStep
+        column = columnStep === 1 ? 0 : last
+      }
+    }
   }
 </script>
 
 <FilterPopover
   {label}
   compact
-  triggerClass={triggerColor
-    ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
-    : 'header-icon-button tooltip tooltip-left'}
+  triggerClass={triggerClass ??
+    (triggerColor
+      ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
+      : 'header-icon-button tooltip tooltip-left')}
   triggerStyle={triggerColor
     ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor)}`
     : undefined}
@@ -155,6 +199,7 @@
       strokeWidth={1.5}
       aria-hidden="true"
     />
+    {#if triggerText}<span>{triggerText}</span>{/if}
   {/snippet}
   {#snippet children(close)}
     {#if open}
@@ -180,7 +225,13 @@
                 visible.length
               ) {
                 event.preventDefault()
-                focusShade(0, 0)
+                const first = optionsList?.querySelector<HTMLElement>(
+                  '[data-ink-slider]:not(:disabled), [data-ink-choice]:not(:disabled)'
+                )
+                if (first) {
+                  first.focus({ preventScroll: true })
+                  reveal(first)
+                }
               }
             }}
           />
@@ -251,33 +302,39 @@
                 >{option.name}
                 <span class="text-rp-subtle">({option.english})</span></span
               >
-              <div class="flex shrink-0 items-center">
-                {#each option.swatches as swatch, column (swatch.id)}
-                  <button
-                    type="button"
-                    class="ink-picker__shade item-state item-state--menu"
-                    data-ink-choice={swatch.id}
-                    aria-label={`${option.name} (${option.english}), shade ${column + 1}, ${swatch.color}`}
-                    title={`${option.name} · ${column + 1} · ${swatch.color}`}
-                    aria-pressed={swatch.id === value}
-                    tabindex={swatch.id === tabbableShade ? 0 : -1}
-                    onfocus={() => {
-                      activeShade = swatch.id
-                    }}
-                    onkeydown={event => navigate(event, row, column)}
-                    onclick={() => {
-                      onchange(swatch.id)
-                      close()
-                    }}
-                  >
-                    <span
-                      class="size-2 rounded-full"
-                      style:background-color={swatch.color}
-                      aria-hidden="true"
-                    ></span>
-                  </button>
-                {/each}
-              </div>
+              {#if shadeControls}
+                {@render shadeControls(option, close)}
+              {:else}
+                <div class="flex shrink-0 items-center">
+                  {#each option.swatches as swatch, column (swatch.id)}
+                    {@const taken = unavailable.has(swatch.color)}
+                    <button
+                      type="button"
+                      class="ink-picker__shade item-state item-state--menu"
+                      data-ink-choice={swatch.id}
+                      aria-label={`${option.name} (${option.english}), shade ${column + 1}, ${swatch.color}${taken ? ', already assigned' : ''}`}
+                      title={`${option.name} · ${column + 1} · ${swatch.color}${taken ? ' · Already assigned' : ''}`}
+                      disabled={taken}
+                      aria-pressed={swatch.id === value}
+                      tabindex={swatch.id === tabbableShade ? 0 : -1}
+                      onfocus={() => {
+                        activeShade = swatch.id
+                      }}
+                      onkeydown={event => navigate(event, row, column)}
+                      onclick={() => {
+                        onchange(swatch.id)
+                        close()
+                      }}
+                    >
+                      <span
+                        class="size-2 rounded-full"
+                        style:background-color={swatch.color}
+                        aria-hidden="true"
+                      ></span>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/if}
         {:else}
@@ -348,6 +405,10 @@
   }
   .ink-picker__shade {
     @apply flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full;
+  }
+  .ink-picker__shade:disabled {
+    cursor: not-allowed;
+    opacity: 0.25;
   }
   @container (max-width: 26rem) {
     .ink-picker__shade-row {

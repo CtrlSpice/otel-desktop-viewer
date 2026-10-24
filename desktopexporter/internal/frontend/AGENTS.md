@@ -22,6 +22,21 @@
   their original source shades without contrast adjustments. Text uses Sumi,
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
+  Group appearance controls as Ink, Season, Day/Night. Accent ink selects one of
+  the 32 named seed inks, with an analogous family from the pinned upstream
+  mixer; default to Ajisai. Persist it as `theme-accent-ink`. Use that family for
+  Primary/Secondary/Accent and syntax accent slots. Season owns paper, neutral
+  text and Nijimi highlights; retain semantic status colours and the Sakura
+  attribution heart. Generate readable strengths against all five UI surfaces.
+  Keep global accent choice independent of saved service/series colours and the
+  shared count palette. Keep ink-family names visible in every picker.
+  Left-align top navigation beside the leading pane control. Let search fill
+  the remaining desktop width, with appearance controls grouped at the right.
+  Use additional rows on narrow screens so search and appearance do not overlap.
+  Expanded Home attribute values use one row: value, bar, count, %, Copy.
+  Bars are 8px high with round ends and a minimum 8px dot, using stable
+  typed-value hashes into official shades 3–5 across the 32 graph inks. Keep
+  parent attribute rows plain and preserve Name, Count, %, Copy and disclosures.
   Categorical graph colours use the official first seven swatches of the same
   32 Madoromi inks: 224 fixed shades across Day/Night and seasons. UI shades are
   allowed. The palest, eighth swatch is omitted from automatic assignments and
@@ -48,6 +63,13 @@
   Both ink pickers share InkPicker. Graph overrides use seven individually
   clickable official shades, with 32px targets around 8px dots, arrow-key
   navigation and selected-shade focus. Preserve native Escape/light dismissal.
+  Disable shades reserved by other owners in the same scope, including hidden
+  owners, saved reset slots and overrides; skip them during keyboard navigation.
+  Keep the current choice available, including pre-existing saved collisions.
+  With fewer than 32 unreserved presets, open per-ink sliders along the pinned
+  curves between official shades 1 and 7. Skip occupied hex colours. Keep the
+  layout fixed while open and retain slider mode for a saved curve choice.
+  Preserve exact preset colours and persist curve positions in the same scope.
   Home service controls replace the name's colour dot with a DaisyUI
   `btn btn-circle btn-sm` customised to a 24px circle in its 32px alignment slot,
   filled with that service's colour and a readable 16px brush icon. Keep the
@@ -160,9 +182,9 @@
   Use the shared theme palette and generated foreground adjustments;
   do not add separate light-mode code colours. Keep UI field names Subtle.
   Use Madoromi's native code guide for syntax accents, with neutral values for
-  readability: string bodies and literals (numbers, booleans, null and bare query
-  values) use Sumi/Text in all eight variants. `--color-code-literal` resolves to
-  Sumi. JSON/query quote marks use Wakaba; keys use Ruri, keywords Fuji, operators
+  readability: strings including their quote marks and literals (numbers,
+  booleans, null and bare query values) use Sumi/Text in all eight variants.
+  `--color-code-literal` resolves to Sumi. Keys use Ruri, keywords Fuji, operators
   Sora, and escapes or regular expressions Botan, including compact JSON previews.
   Plain Markdown code uses Sumi too. Functions use Ai, built-ins Beni, types/attributes
   Yamabuki, namespaces Kikyo, annotations Nadeshiko, and labels/cursors Sakura.

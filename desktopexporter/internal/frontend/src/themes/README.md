@@ -97,18 +97,39 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 
 ## Editor roles
 
+The top-bar appearance group orders **Ink · Season · Day/Night**. Ink chooses
+one of the 32 named seed inks, defaulting to Ajisai (hydrangea). The pinned
+Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
+Ajisai's family is Ajisai, Ama-iro and Murasaki-shikibu. Original names and English
+names stay visible and searchable; seven preview dots show mixed syntax accents.
+
+The choice supplies interface Primary, Secondary and Accent, plus the fourteen
+syntax accent slots below. Season supplies the softened paper, neutral text,
+punctuation and Nijimi highlights. Semantic status colours and the Sakura
+attribution heart retain their existing roles. Each family has Day/Night
+strengths checked against the five actual seasonal UI surfaces. The theme
+generator writes these overrides to `accent-inks.json` with the source family.
+
+`theme-accent-ink` persists the seed independently of `theme`; invalid or absent
+values use Ajisai. Changes propagate across tabs, and blocked storage retains
+the selection in memory. Service/series assignments and histogram/count inks
+remain independently selected. Navigation stays left-aligned; search fills the
+available desktop space and appearance controls stay together at the right.
+Narrow screens place navigation above search and appearance controls; the
+smallest screens give search a full-width row.
+
 JSON, search, shell and read-only code views share
 `utils/editor-highlighting.ts` under `components/shared`. They follow Madoromi's
 [native code guide](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/palettes/style-guide.md#code-符),
-using the categories supplied by each language parser. The viewer keeps string
-bodies and literal values neutral for readability, with Wakaba on JSON/query
-quote marks instead of entire strings:
+using the categories supplied by each language parser. The viewer keeps strings,
+including JSON/query quote marks, and literal values in neutral Sumi for calmer,
+cohesive reading. Keys, punctuation and escapes retain their distinct roles:
 
-| Syntax category                       | Madoromi colour |
+| Syntax category                       | Madoromi role slot |
 | ------------------------------------- | --------------- |
 | Names and variables                   | Sumi            |
 | String bodies                         | Sumi            |
-| JSON/query quote marks                | Wakaba          |
+| JSON/query quote marks                | Sumi            |
 | Keywords                              | Fuji            |
 | Properties and keys                   | Ruri            |
 | Operators                             | Sora            |
@@ -125,7 +146,8 @@ quote marks instead of entire strings:
 | Comments                              | Kasure 2        |
 | Invalid syntax                        | Momiji / Error  |
 
-The generated `syntax` palette contains all fourteen named accents and readable
+The role names identify slots in the selected analogous mix, rather than fixed
+rainbow hues. The generated `syntax` palette also contains each season's readable
 Sumi, Kasure 2 and Usuzumi 0. Its foregrounds meet the same five-background 4.5:1
 target as interface text. Code uses `--color-code-*` tokens independently of
 interface Primary/Secondary aliases. `--color-code-literal` resolves to Sumi,
@@ -148,6 +170,14 @@ Code uses Atkinson Hyperlegible Mono; interface text uses Next. Both retain the
 shared 14px working size.
 
 ## Graph palettes
+
+Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
+The percentage bar is 8px high in a 96px slot after the value. Short bars stop at
+the canonical 8px dot. Colours use
+official middle-strength shades 3–5 across the 32 graph inks, chosen by a stable
+hash of attribute source, key and typed value identity. Sorting, paging and theme
+changes preserve each value's colour. Parent attribute rows remain plain; counts,
+percentages and Copy retain the received values and record denominator.
 
 Services and metric series use the first seven official swatches from the same
 32 colourful Madoromi inks: 224 distinct colours. The original eighth (palest)
@@ -195,12 +225,32 @@ while count-picker names wrap beside their seven aligned dots.
 Overrides are saved under `graph-colour-overrides:madoromi-inks-v1:<scope>` as
 identity/ink-shade pairs. Services share the `services` scope, while series use
 `metric:<native metric reference>`. Changes propagate to chart lines, sparklines,
-service dots and non-error waterfall bars, including across open tabs. Explicit
-overrides can reuse a chosen shade; new automatic assignments avoid overridden
-shades as well as occupied automatic slots. The reset icon to the right of Find
+service dots and non-error waterfall bars, including across open tabs. Shades
+owned by another identity in the same scope are visibly disabled, and keyboard
+navigation skips them. Reservations include hidden owners, their saved automatic
+reset slots and explicit overrides. The current choice remains available even
+when older saved assignments already share that colour. New automatic assignments
+avoid overridden shades as well as occupied automatic slots. The reset icon to the right of Find
 ink restores the owner's saved automatic slot and is disabled when no override
 is set. Resetting never reallocates another identity. Blocked storage keeps
 overrides in memory. Actual error bars retain the semantic Error colour.
+
+When fewer than 32 of the 224 preset colours remain unreserved in a scope, the
+picker opens with one shade slider per ink instead of seven dots. This leaves
+about one spare preset per ink before using the finer curve. The layout stays
+fixed while the picker is open. A saved curve choice also opens in slider mode,
+so it stays editable if reservations later fall below the threshold.
+
+Sliders follow each pinned Madoromi curve between official shades 1 and 7, using
+1,001 positions. The seven preset positions keep their exact official colours;
+the remaining positions sample equal OKLab lightness steps with upstream colour
+conversion. Positions that produce an occupied hex colour are skipped, including
+duplicate hex values at adjacent positions. Native arrow, Page Up/Down and
+Home/End controls adjust the shade live; the adjacent swatch selects it and
+closes the picker. Escape and light dismissal retain the chosen colour. Curve
+overrides persist as `ink:curve:position`, in the same owner scope as preset IDs.
+Reset restores the saved automatic slot. Histogram/count pickers use whole inks
+and do not use reservations or sliders.
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
 legends share one app-wide ink choice. The paintbrush in the selected metric

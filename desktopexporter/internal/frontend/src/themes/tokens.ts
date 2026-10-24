@@ -1,4 +1,24 @@
 import type { Theme } from './index'
+import {
+  accentInkColors,
+  DEFAULT_ACCENT_INK,
+  type AccentInkId,
+} from './accent-inks'
+
+export function accentInkTokens(theme: Theme, ink: AccentInkId) {
+  const accent = accentInkColors(ink, theme.id)
+  return {
+    '--color-primary': accent.colors.primary,
+    '--color-secondary': accent.colors.secondary,
+    '--color-accent': accent.colors.accent,
+    ...Object.fromEntries(
+      Object.entries(accent.syntax).map(([name, color]) => [
+        `--color-code-${name}`,
+        color,
+      ])
+    ),
+  }
+}
 
 /** One CSS adapter for DaisyUI, charts, and read-only code surfaces. */
 export function themeTokens(theme: Theme) {
@@ -25,11 +45,8 @@ export function themeTokens(theme: Theme) {
     '--color-highlight-low': c.highlightLow,
     '--color-highlight-med': c.highlightMedium,
     '--color-highlight-high': c.highlightHigh,
-    '--color-primary': c.primary,
     '--color-primary-content': inverseContent,
-    '--color-secondary': c.secondary,
     '--color-secondary-content': content,
-    '--color-accent': c.accent,
     '--color-accent-content': inverseContent,
     '--color-neutral': 'var(--color-muted)',
     '--color-neutral-content': 'var(--color-base-content)',
@@ -60,5 +77,6 @@ export function themeTokens(theme: Theme) {
     '--metric-series-line-opacity': light ? '0.6' : '1',
     '--waterfall-tick-mix-target': 'white',
     '--waterfall-tick-mix-strength': light ? '60%' : '45%',
+    ...accentInkTokens(theme, DEFAULT_ACCENT_INK),
   }
 }

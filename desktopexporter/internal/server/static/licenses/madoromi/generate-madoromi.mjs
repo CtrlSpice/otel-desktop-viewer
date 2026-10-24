@@ -16,16 +16,36 @@ const { english: inkNames } = JSON.parse(
 const { ramps: officialRamps } = JSON.parse(
   await readFile(new URL('ink-ramps.json', upstream), 'utf8')
 )
-const source = await readFile(new URL('color.ts', upstream), 'utf8')
-const javascript = ts.transpileModule(source, {
-  compilerOptions: {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ES2022,
-  },
-}).outputText
-const { oklabToHex, linearToOklab, srgb8ToLinear } = await import(
-  `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`
+async function upstreamModule(file, dependencies = {}) {
+  const source = await readFile(new URL(file, upstream), 'utf8')
+  let javascript = ts.transpileModule(source, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ES2022,
+    },
+  }).outputText
+  for (const [specifier, url] of Object.entries(dependencies)) {
+    javascript = javascript.replaceAll(
+      JSON.stringify(specifier),
+      JSON.stringify(url)
+    )
+  }
+  return `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`
+}
+const colorModule = await upstreamModule('color.ts')
+const { oklabToHex, oklabToOklch, linearToOklab, srgb8ToLinear } = await import(
+  colorModule
 )
+const paletteModule = await upstreamModule('palette.ts', {
+  './color': colorModule,
+})
+const { mixFamily, harmonyInks } = await import(
+  await upstreamModule('mix.ts', { './palette': paletteModule })
+)
+const views = new Map(
+  Object.entries(inks).map(([id, lab]) => [id, { curve: { lab } }])
+)
+const accentHarmony = 'analogous'
 
 const TINT = 0.2
 const TEXT_CONTRAST = 4.5
@@ -159,10 +179,9 @@ const definitions = Object.fromEntries(
           ),
         })
     }
-    // Native code colours have their own roles; literals need not share Primary.
     const syntax = Object.fromEntries(
       [
-        ...palette.accents.map(accent => accent.key),
+        ...palette.accents.map(({ key }) => key),
         'sumi',
         'kasure2',
         'usuzumi0',
@@ -196,6 +215,65 @@ const neutralInks = new Set([
   'tsukushi',
 ])
 const countInks = inkOrder.filter(id => !neutralInks.has(id))
+// The global accent choice is independent of paper/neutral season and graph
+// ownership. Run the pinned mixer for each seed, then check its accents against
+// the viewer's actual seasonal surfaces rather than the mix's own paper.
+const accentInks = Object.fromEntries(
+  countInks.map(id => {
+    const family = mixFamily(views, [id], accentHarmony)
+    const themes = Object.fromEntries(
+      Object.entries(definitions).map(([themeID, theme]) => {
+        const dark = themeID.endsWith('-yoru')
+        const mixed = family.find(
+          flavour => flavour.mode === (dark ? 'yoru' : 'hiru')
+        )
+        const backgrounds = [
+          'canvas',
+          'panel',
+          'chrome',
+          'highlightLow',
+          'highlightMedium',
+        ].map(key => theme.colors[key])
+        const syntax = Object.fromEntries(
+          palette.accents.map(({ key }) => {
+            const swatch = mixed.colours[key]
+            return [
+              key,
+              readable(
+                { ...swatch, oklch: oklabToOklch(swatch.lab) },
+                backgrounds,
+                dark
+              ),
+            ]
+          })
+        )
+        return [
+          themeID,
+          {
+            colors: {
+              primary: syntax.fuji,
+              secondary: syntax.ruri,
+              accent: syntax.tokiwa,
+            },
+            syntax,
+          },
+        ]
+      })
+    )
+    return [id, { family: harmonyInks(views, [id], accentHarmony), themes }]
+  })
+)
+const accentJson =
+  JSON.stringify(
+    {
+      harmony: accentHarmony,
+      default: 'ajisai',
+      inks: accentInks,
+    },
+    null,
+    2
+  ) + '\n'
+await writeFile(new URL('src/themes/accent-inks.json', frontend), accentJson)
 const countRamps = Object.fromEntries(
   countInks.map(id => {
     const lab = inks[id]
@@ -288,6 +366,43 @@ const graphJson =
     2
   ) + '\n'
 await writeFile(new URL('src/themes/graph-inks.json', frontend), graphJson)
+// Slider positions follow each ink's original curve between official shades
+// 1 and 7. Keep the palest eighth shade outside the categorical picker.
+const curveSteps = 1000
+const graphCurveJson =
+  JSON.stringify({
+    steps: curveSteps,
+    inks: Object.fromEntries(
+      countInks.map(id => {
+        const lo = officialRamps[id][0][0]
+        const hi = officialRamps[id][6][0]
+        const positions = officialRamps[id]
+          .slice(0, 7)
+          .map(lab => Math.round(((lab[0] - lo) / (hi - lo)) * curveSteps))
+        const colors = Array.from({ length: curveSteps + 1 }, (_, position) =>
+          inkAt(
+            id,
+            position === curveSteps
+              ? hi
+              : lo + ((hi - lo) * position) / curveSteps
+          )
+        )
+        // The seven existing choices retain their exact source values at their
+        // nearest slider positions; moving a thumb never quantizes a saved preset.
+        positions.forEach((position, shade) => {
+          colors[position] = graphInks[id][shade]
+        })
+        return [
+          id,
+          { positions, colors: colors.map(color => color.slice(1)).join('') },
+        ]
+      })
+    ),
+  }) + '\n'
+await writeFile(
+  new URL('src/themes/graph-ink-curves.json', frontend),
+  graphCurveJson
+)
 // Ship the adapted source, its generator inputs and the complete upstream licence.
 const publicSource = new URL('public/licenses/madoromi/', frontend)
 await mkdir(publicSource, { recursive: true })
@@ -298,6 +413,8 @@ await writeFile(
   countNamesJson
 )
 await writeFile(new URL('graph-inks.json', publicSource), graphJson)
+await writeFile(new URL('graph-ink-curves.json', publicSource), graphCurveJson)
+await writeFile(new URL('accent-inks.json', publicSource), accentJson)
 await writeFile(
   new URL('legacy-series-palette.json', publicSource),
   JSON.stringify(legacyPalette, null, 2) + '\n'
@@ -309,10 +426,12 @@ for (const file of [
   'ink-names.json',
   'ink-ramps.json',
   'color.ts',
+  'palette.ts',
+  'mix.ts',
   'README.md',
 ]) {
   await writeFile(
-    new URL(file === 'color.ts' ? 'color.ts.txt' : file, publicSource),
+    new URL(file.endsWith('.ts') ? `${file}.txt` : file, publicSource),
     await readFile(new URL(file, upstream))
   )
 }

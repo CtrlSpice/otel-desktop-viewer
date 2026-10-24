@@ -8,6 +8,8 @@ Madoromi is by [samhain / the-moonwitch](https://github.com/the-moonwitch).
 Its code and themes are licensed under the Mozilla Public License 2.0; the
 complete licence is in `LICENSE`. `palette.json` and `color.ts` are unmodified
 files from that revision (`palettes/madoromi.json` and `src/core/color.ts`).
+`mix.ts` and `palette.ts` are the unmodified `src/core/` mixer and palette builder
+from the same revision.
 `ink-curves.json` extracts all 40 unmodified 96-point OKLab ink curves from
 `public/precomputed/summary.json` at the same revision, together with its ink
 `order`. The picker preserves that full-ramp colour-similarity order after
@@ -25,7 +27,8 @@ Apache-2.0 licence is unchanged.
 
 `desktopexporter/internal/frontend/scripts/generate-madoromi.mjs` generates
 `src/themes/madoromi.json`, `src/themes/count-palettes.json`,
-`src/themes/count-palette-names.json` and `src/themes/graph-inks.json` from these files.
+`src/themes/count-palette-names.json`, `src/themes/graph-inks.json` and
+`src/themes/graph-ink-curves.json` and `src/themes/accent-inks.json` from these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
 ```sh
@@ -38,8 +41,8 @@ Day canvas/panel/chrome use kami/hyoshi/chitsu. Night reverses the outer two.
 Hover uses nijimi 0; selection uses nijimi 2 at 55% over the panel, blended in
 sRGB; stronger highlights use nijimi 1.
 
-Body text uses sumi, labels use usuzumi 1, primary uses fuji, metadata uses ruri,
-accent uses tokiwa, info uses sora and success uses wakaba. Text and accent
+Body text uses sumi, labels use usuzumi 1, primary uses the fuji slot, metadata uses
+ruri, accent uses tokiwa, info uses sora and success uses wakaba. Text and accent
 foregrounds move in 0.001 OKLCH lightness steps only as needed to reach 4.5:1
 against all three surfaces, hover and selection. Subtle usuzumi 1, Muted kasure 1,
 sakura and yamabuki warning fills retain their original colours without contrast
@@ -48,11 +51,20 @@ curve in all eight variants, sampled at each variant's original beni lightness.
 Interpolation between stored OKLab points follows upstream `colourAt` in
 `src/core/palette.ts`, with the pinned conversion code handling the sRGB gamut.
 
-The generated syntax palette follows the upstream code guide and contains all
-fourteen named accents plus Sumi, Kasure 2 and Usuzumi 0. Each syntax foreground
+The global Accent ink picker runs the unmodified upstream analogous mixer for
+each of the 32 seed inks. Ajisai is the default; its family adds Ama-iro and
+Murasaki-shikibu. The mixed slots supply Primary, Secondary, Accent and the
+fourteen syntax accents. Seasonal paper, text, highlights and semantic status
+colours retain their existing roles. Each mixed foreground receives the same
+readability adjustment against the viewer's five seasonal surfaces. The choice
+is independent of graph ownership and count palettes.
+
+The generated syntax palette follows the upstream code guide's role slots and
+contains all fourteen named slots plus Sumi, Kasure 2 and Usuzumi 0. Slot names
+refer to the selected analogous mix rather than fixed rainbow hues. Each syntax foreground
 uses the same shared readability correction. The upstream guide assigns Wakaba
 to strings and Kaki to literals; the viewer uses Sumi for their value text and
-reserves Wakaba for JSON/query quote marks. Keywords use Fuji, keys Ruri,
+JSON/query quote marks for calmer, cohesive reading. Keywords use Fuji, keys Ruri,
 operators Sora and escapes Botan. Syntax Beni is the
 native built-in colour; invalid syntax uses the viewer's Momiji Error colour.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
@@ -74,6 +86,13 @@ the original hex values across themes. The palest eighth swatch is omitted;
 shades also used by the UI are permitted. The searchable seven-dot picker keeps
 the ink's original name and English name, and visibly links to Madoromi.
 
+Taken shades are disabled within the owner scope, including hidden owners and
+their saved reset colours. With fewer than 32 unreserved presets, per-ink
+sliders sample 1,001 positions between official shades 1 and 7. The seven preset
+positions retain exact source colours; other positions interpolate the original
+curve at equally spaced OKLab lightness values. Sliders skip occupied hex colours
+and save the ink/position identity without changing automatic assignments.
+
 The generator also builds a fixed one-to-one migration from the legacy Bloom
 slots, using nearest OKLab colour distance to both their Day and Night values.
 `legacy-series-palette.json` is that MIT-licensed input with its original source
@@ -81,5 +100,6 @@ and copyright metadata; its full licence is at `/licenses/rose-pine-bloom.txt`.
 
 The frontend distributes the full licence, these inputs, the generator and the
 adapted JSON at `/licenses/madoromi/`. Those files are the source form of the
-theme adaptation. The unmodified conversion source is served as `color.ts.txt`
-for download; its repository filename is `color.ts`.
+theme adaptation. The unmodified conversion, palette builder and mixer sources
+are served as `color.ts.txt`, `palette.ts.txt` and `mix.ts.txt` for download; their
+repository filenames use the `.ts` extension.

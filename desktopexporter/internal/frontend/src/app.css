@@ -1419,7 +1419,8 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 .value-syntax .detail-code--punctuation {
   color: var(--color-code-usuzumi0);
 }
-.value-syntax .detail-code--string {
+.value-syntax .detail-code--string,
+.value-syntax .detail-code--quote {
   color: var(--color-code-sumi);
 }
 .value-syntax .detail-code--number,
@@ -1428,9 +1429,6 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 .value-syntax .detail-code--escape {
   color: var(--color-code-botan);
-}
-.value-syntax .detail-code--quote {
-  color: var(--color-code-wakaba);
 }
 
 .detail-cell__stacked-value {

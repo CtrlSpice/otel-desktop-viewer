@@ -48,6 +48,10 @@ export const graphColorOverrides = {
     void revision
     return graphSwatch(forScope(scope).get(identity))
   },
+  entries(scope: string): [string, GraphColorId][] {
+    void revision
+    return [...forScope(scope)]
+  },
   set(scope: string, identity: string, value: GraphColorId | null) {
     const values = forScope(scope)
     for (const [key, id] of readSaved(scope)) {
@@ -64,10 +68,12 @@ export const graphColorOverrides = {
   },
   reservedSlots(scope: string): ReadonlySet<number> {
     void revision
-    const selected = new Set(forScope(scope).values())
+    const selected = new Set(
+      [...forScope(scope).values()].map(id => graphSwatch(id)!.color)
+    )
     return new Set(
       GRAPH_SWATCHES.flatMap((swatch, slot) =>
-        selected.has(swatch.id) ? [slot] : []
+        selected.has(swatch.color) ? [slot] : []
       )
     )
   },

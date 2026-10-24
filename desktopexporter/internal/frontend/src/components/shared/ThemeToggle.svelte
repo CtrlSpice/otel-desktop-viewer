@@ -11,6 +11,7 @@
     Sun03Icon,
   } from '@hugeicons/core-free-icons'
   import { createPopoverID, setupAnchorPopover } from './utils/anchor-popover'
+  import AccentInkPicker from './AccentInkPicker.svelte'
   import {
     DEFAULT_THEME,
     SEASONS,
@@ -113,7 +114,8 @@
   the DaisyUI bubble in the same style as the rest of the drawer chrome. Both
   at once would stack a native tooltip under the styled one.
 -->
-<div class="theme-controls" role="group" aria-label="Theme">
+<div class="theme-controls" role="group" aria-label="Appearance">
+  <AccentInkPicker />
   <button
     bind:this={trigger}
     type="button"
@@ -204,7 +206,12 @@
   }
 
   .theme-season {
-    @apply gap-2 rounded-r-none;
+    @apply gap-2 rounded-none;
+    border-left: 1px solid var(--color-base-300);
+  }
+
+  .theme-controls :global(.theme-ink) {
+    @apply gap-2 rounded-l-lg rounded-r-none;
   }
 
   .theme-toggle {

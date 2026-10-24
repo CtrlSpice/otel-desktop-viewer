@@ -1,3 +1,11 @@
+<script module lang="ts">
+  import { GRAPH_INKS } from '@/themes/graph-inks'
+  import { colorIdentityHash } from '@/utils/color-slots'
+
+  // Middle-strength official shades stay clear as small marks in Day and Night.
+  const valueColors = GRAPH_INKS.flatMap(ink => ink.swatches.slice(2, 5))
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -157,6 +165,11 @@
 {:else}
   {#each page as item (item.identity)}
     {@const text = attributeValueCopy(item.value)}
+    {@const color =
+      valueColors[
+        colorIdentityHash(JSON.stringify([options.ownerType, name, item.identity])) %
+          valueColors.length
+      ]!.color}
     {@const tokens =
       item.value.kind === 'string'
         ? jsonContainerTokens(item.value.value, true)
@@ -196,6 +209,13 @@
           {#if item.value.kind !== kind}<span class="shrink-0 text-secondary"
               >{item.value.kind}</span
             >{/if}
+          <span class="flex h-2 w-24 shrink-0" aria-hidden="true">
+            <span
+              class="attribute-frequency-bar h-2 rounded-full"
+              style:width={`max(0.5rem, ${item.relativeFrequency * 100}%)`}
+              style:background-color={color}
+            ></span>
+          </span>
         </div>
       </td>
       <td class="table-cell text-right tabular-nums">

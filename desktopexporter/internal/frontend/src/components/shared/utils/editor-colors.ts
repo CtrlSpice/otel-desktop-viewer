@@ -8,7 +8,7 @@ export const editorColors = {
   keyword: 'var(--color-code-fuji)',
   property: 'var(--color-code-ruri)',
   string: 'var(--color-code-sumi)',
-  quote: 'var(--color-code-wakaba)',
+  quote: 'var(--color-code-sumi)',
   literal: 'var(--color-code-literal)',
   operator: 'var(--color-code-sora)',
   escape: 'var(--color-code-botan)',
