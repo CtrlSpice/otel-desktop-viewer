@@ -48,10 +48,7 @@
   <div class="signal-footer__actions">
     {@render trailing?.()}
     {#if onDelete}
-      <div
-        class="tooltip tooltip-left"
-        data-tip="Delete this {label}"
-      >
+      <div class="tooltip tooltip-left" data-tip="Delete this {label}">
         <button
           type="button"
           class="btn btn-ghost btn-sm btn-square text-error"

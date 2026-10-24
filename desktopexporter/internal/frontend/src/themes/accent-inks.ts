@@ -1,4 +1,4 @@
-import data from './accent-inks.json'
+import data from './accent-inks.json' with { type: 'json' }
 import type { CountPaletteId } from './count-palettes'
 import { GRAPH_INKS } from './graph-inks'
 import type { ThemeName } from './index'

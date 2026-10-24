@@ -167,8 +167,9 @@
     {@const text = attributeValueCopy(item.value)}
     {@const color =
       valueColors[
-        colorIdentityHash(JSON.stringify([options.ownerType, name, item.identity])) %
-          valueColors.length
+        colorIdentityHash(
+          JSON.stringify([options.ownerType, name, item.identity])
+        ) % valueColors.length
       ]!.color}
     {@const tokens =
       item.value.kind === 'string'

@@ -153,8 +153,7 @@
   {#if popoverOpen}
     <div bind:this={popoverEl} class="field-filter__popover">
       <div class="field-filter__popover-header header-surface">
-        <span
-          class="text-xs font-semibold uppercase tracking-wide text-subtle"
+        <span class="text-xs font-semibold uppercase tracking-wide text-subtle"
           >Columns</span
         >
       </div>

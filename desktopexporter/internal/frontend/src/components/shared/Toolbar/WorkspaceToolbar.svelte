@@ -73,7 +73,9 @@
 
   .workspace-toolbar {
     @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
-    grid-template-columns: minmax(0, max-content) minmax(16rem, 1fr) max-content;
+    grid-template-columns:
+      minmax(0, max-content) minmax(16rem, 1fr)
+      max-content;
   }
 
   .workspace-toolbar__identity {

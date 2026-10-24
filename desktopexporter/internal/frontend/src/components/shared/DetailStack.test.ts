@@ -25,6 +25,8 @@ it('resizes the visible boundary when a middle section mounts after its siblings
   expect(headers[2]!.dataset.resizeBefore).toBe(sections[1]!.id)
   expect(headers[2]!.closest('details')).toBe(telemetry)
   for (const [index, section] of sections.entries()) {
+    // JSDOM does not load the section's CSS minimum alongside mocked geometry.
+    section.style.minHeight = '40px'
     section.getBoundingClientRect = () =>
       ({ height: index === 3 ? 40 : 240 }) as DOMRect
     headers[index]!.getBoundingClientRect = () => ({ height: 40 }) as DOMRect
@@ -115,9 +117,10 @@ it('saves keyboard resizing under the current section layout key', async () => {
   })
   await view.rerender({ label: 'New heading', layoutKey: 'Stable heading' })
   const disclosures = [...view.container.querySelectorAll('details')]
-  for (const section of view.container.querySelectorAll(
+  for (const section of view.container.querySelectorAll<HTMLElement>(
     '.detail-bubble--resizable'
   )) {
+    section.style.minHeight = '40px'
     section.getBoundingClientRect = () =>
       ({ height: section.querySelector('details')!.open ? 240 : 40 }) as DOMRect
     section.querySelector('summary')!.getBoundingClientRect = () =>
@@ -149,6 +152,7 @@ it('resizes only open neighbours and never reopens a closed section during resiz
   expect(headers[1]!.closest('details')!.open).toBe(false)
   // A closed card must not become a resize donor.
   for (const [index, section] of sections.entries()) {
+    section.style.minHeight = '40px'
     section.getBoundingClientRect = () =>
       ({ height: [300, 180, 240, 40][index] }) as DOMRect
     headers[index]!.getBoundingClientRect = () => ({ height: 40 }) as DOMRect

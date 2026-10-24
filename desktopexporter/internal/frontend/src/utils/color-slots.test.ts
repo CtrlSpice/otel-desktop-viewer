@@ -146,7 +146,9 @@ describe('saved colour slots', () => {
     const one = traceServiceColor('claude-code-eval', 'madoromi-fuyu-yoru')
     const two = traceServiceColor('viewer-eval', 'madoromi-fuyu-yoru')
     expect(one).not.toBe(two)
-    expect(traceServiceColor('claude-code-eval', 'madoromi-fuyu-yoru')).toBe(one)
+    expect(traceServiceColor('claude-code-eval', 'madoromi-fuyu-yoru')).toBe(
+      one
+    )
     for (const theme of THEMES) {
       const slot = getSeriesPalette('madoromi-fuyu-yoru').indexOf(one)
       expect(traceServiceColor('claude-code-eval', theme.id)).toBe(

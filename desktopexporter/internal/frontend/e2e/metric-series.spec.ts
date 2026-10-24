@@ -1,5 +1,17 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
+import type { ThemeName } from '../src/themes'
+import { accentInkColors } from '../src/themes/accent-inks'
+import {
+  COUNT_PALETTES,
+  countPaletteRamps,
+  type CountPaletteId,
+} from '../src/themes/count-palettes'
+import {
+  GRAPH_INKS,
+  GRAPH_PALETTE_VERSION,
+  GRAPH_SWATCHES,
+} from '../src/themes/graph-inks'
 import type {
   JsonAggregateBucket,
   JsonDataPoint,
@@ -11,6 +23,43 @@ import type {
 const startMs = 1_700_000_000_000
 const startNs = String(BigInt(startMs) * 1_000_000n)
 const endNs = String(BigInt(startMs + 40_000) * 1_000_000n)
+
+function rgb(hex: string) {
+  return `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
+}
+
+function accentRgb(theme: ThemeName) {
+  return rgb(accentInkColors('to-ro', theme).colors.primary)
+}
+
+function countRamp(
+  theme: ThemeName,
+  steps: number,
+  ink: CountPaletteId = 'to-ro'
+) {
+  return countPaletteRamps[ink][steps]![
+    theme.endsWith('-hiru') ? 'day' : 'night'
+  ]
+}
+
+// Chromium serializes OKLab mixes differently from hex colours. Resolve the
+// exact approved ramp through CSS, including the neutral Text interaction mix.
+async function mixedInkColours(page: Page, colours: string[], weight = 100) {
+  return page.evaluate(
+    ({ colours, weight }) => {
+      const probe = document.createElement('span')
+      document.body.append(probe)
+      const resolved = colours.map(colour => {
+        probe.style.color = `color-mix(in oklab, ${colour} ${weight}%, var(--color-base-content))`
+        return getComputedStyle(probe).color
+      })
+      probe.remove()
+      return resolved
+    },
+    { colours, weight }
+  )
+}
+
 const resource = {
   attributes: [
     {
@@ -154,6 +203,124 @@ test('time-series axes use the shared rounded Muted border', async ({
   await expectRoundedAxes(page, themeRgb('madoromi-fuyu-yoru', 'muted'))
 })
 
+for (const { id: theme } of THEMES) {
+  test(`categorical series retain 224 exact official shades independently of accent ink in ${theme}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(
+      ({ theme, version }) => {
+        localStorage.setItem('theme', theme)
+        const key = `graph-colour-slots:${version}:224:metric:series-layout`
+        if (!localStorage.getItem(key))
+          localStorage.setItem(
+            key,
+            JSON.stringify([
+              ['first', 0],
+              ['second', 1],
+            ])
+          )
+      },
+      { theme, version: GRAPH_PALETTE_VERSION }
+    )
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+    const lines = page.locator('.metric-series-line')
+    await expect(lines).toHaveCount(2)
+    await expect(lines.first()).toBeVisible()
+    const drawing = () =>
+      lines.evaluateAll(elements =>
+        elements.map(element => ({
+          key: element.getAttribute('data-series-key'),
+          path: element.getAttribute('d'),
+          colour: getComputedStyle(element).stroke,
+        }))
+      )
+    const original = await drawing()
+    const official = GRAPH_INKS.flatMap(ink => ink.swatches)
+    expect(official).toHaveLength(224)
+    expect(original.map(line => line.colour)).toEqual(
+      GRAPH_SWATCHES.slice(0, 2).map(shade => rgb(shade.color))
+    )
+    expect(new Set(original.map(line => line.colour)).size).toBe(2)
+
+    const trigger = page.getByRole('button', {
+      name: 'Colour for route: /first',
+      exact: true,
+    })
+    await trigger.click()
+    const picker = page.getByRole('group', {
+      name: 'Colour for route: /first options',
+      exact: true,
+    })
+    const shades = picker.locator('[data-ink-choice]')
+    await expect(shades).toHaveCount(224)
+    await expect(picker.locator('[aria-pressed="true"]')).toBeFocused()
+    const rendered = await shades.evaluateAll(buttons =>
+      buttons.map(button => ({
+        id: button.getAttribute('data-ink-choice'),
+        colour: getComputedStyle(button.querySelector('span')!).backgroundColor,
+        disabled: (button as HTMLButtonElement).disabled,
+        label: button.getAttribute('aria-label'),
+        width: getComputedStyle(button).width,
+        dotWidth: getComputedStyle(button.querySelector('span')!).width,
+      }))
+    )
+    expect(rendered).toEqual(
+      GRAPH_INKS.flatMap(ink =>
+        ink.swatches.map(swatch => {
+          const disabled = swatch.id === GRAPH_SWATCHES[1]!.id
+          return {
+            id: swatch.id,
+            colour: disabled ? themeRgb(theme, 'panel') : rgb(swatch.color),
+            disabled,
+            label: `${ink.name} (${ink.english}), shade ${swatch.shade}, ${swatch.color}${disabled ? ', already assigned' : ''}`,
+            width: '32px',
+            dotWidth: '8px',
+          }
+        })
+      )
+    )
+    // The other owner reserves its shade even while hidden.
+    const reserved = rendered
+      .filter(shade => shade.disabled)
+      .map(shade => shade.id)
+    expect(reserved).toEqual([GRAPH_SWATCHES[1]!.id])
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+    const second = page.getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+    await second.uncheck()
+    await trigger.click()
+    expect(
+      await picker
+        .locator('[data-ink-choice]:disabled')
+        .evaluateAll(buttons =>
+          buttons.map(button => button.getAttribute('data-ink-choice'))
+        )
+    ).toEqual(reserved)
+    await page.keyboard.press('Escape')
+    await second.check()
+    await expect(lines).toHaveCount(2)
+
+    await page.getByRole('button', { name: /^Accent ink:/ }).click()
+    await page
+      .locator('.ink-picker-popover:popover-open [data-ink-choice="ajisai"]')
+      .click()
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-accent-ink',
+      'ajisai'
+    )
+    await expect.poll(drawing).toEqual(original)
+    await page.reload()
+    await expect(lines).toHaveCount(2)
+    await expect.poll(drawing).toEqual(original)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+  })
+}
+
 test.describe('independent histogram aggregate loading', () => {
   const bucket: JsonAggregateBucket = {
     timestamp: startNs,
@@ -280,6 +447,226 @@ test.describe('independent histogram aggregate loading', () => {
           ? { error: { code: -32603, message: 'Aggregate unavailable' } }
           : { result: { aggregate: [value], scalarAggregate: null } }),
       },
+    })
+  }
+
+  test('32 count inks share exact previews and global accent changes allow a saved chart override', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+    const pending = await holdAggregates(page)
+    for (const { route } of pending) await respond(route)
+    // Fulfil subsequent navigation/reload requests with the same distribution.
+    await page.route('**/rpc', route =>
+      route.request().postDataJSON().method === 'getMetricAggregateView'
+        ? respond(route)
+        : route.fallback()
+    )
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-theme',
+      'madoromi-aki-hiru'
+    )
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-accent-ink',
+      'to-ro'
+    )
+    const geometry = () =>
+      page
+        .locator('.heatmap-cell')
+        .evaluateAll(cells =>
+          cells.map(cell =>
+            ['x', 'y', 'width', 'height'].map(attr => cell.getAttribute(attr))
+          )
+        )
+    await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+    await expect(page.locator('.heatmap-cell').first()).toBeVisible()
+    const original = await geometry()
+    const assertCountInk = async (ink: CountPaletteId) => {
+      const ramp = countRamp('madoromi-aki-hiru', 4, ink)
+      await expect
+        .poll(() =>
+          page
+            .locator('.heatmap-legend__swatch')
+            .evaluateAll(dots =>
+              dots.map(dot => getComputedStyle(dot).backgroundColor)
+            )
+        )
+        .toEqual(ramp.map(rgb))
+      const fills = await mixedInkColours(page, ramp)
+      await expect
+        .poll(() =>
+          page
+            .locator('.heatmap-cell')
+            .evaluateAll(cells =>
+              cells.map(cell => getComputedStyle(cell).fill).sort()
+            )
+        )
+        .toEqual([fills[0], fills[1], fills[3]].sort())
+      expect(await geometry()).toEqual(original)
+    }
+    await assertCountInk('to-ro')
+    const trigger = page.getByRole('button', {
+      name: 'Histogram count palette',
+      exact: true,
+    })
+    await trigger.click()
+    const picker = page.getByRole('group', {
+      name: 'Histogram count palette options',
+      exact: true,
+    })
+    await expect(picker.locator('.filter-popover__header')).toHaveCount(0)
+    const choices = picker.locator('[data-ink-choice]')
+    await expect(choices).toHaveCount(32)
+    await expect(picker.locator('[data-ink-choice="to-ro"]')).toBeFocused()
+    expect(
+      await choices.evaluateAll(buttons =>
+        buttons.map(button => ({
+          id: button.getAttribute('data-ink-choice'),
+          label: button.textContent!.trim().replace(/\s+/g, ' '),
+          fontSize: getComputedStyle(button).fontSize,
+          dots: [...button.querySelectorAll('span[style]')].map(dot => ({
+            colour: getComputedStyle(dot).backgroundColor,
+            width: getComputedStyle(dot).width,
+            height: getComputedStyle(dot).height,
+            border: getComputedStyle(dot).borderTopWidth,
+            gap: getComputedStyle(dot.parentElement!).columnGap,
+          })),
+        }))
+      )
+    ).toEqual(
+      COUNT_PALETTES.map(ink => ({
+        id: ink.id,
+        label: `${ink.name} (${ink.english})`,
+        fontSize: '14px',
+        dots: countRamp('madoromi-aki-hiru', 7, ink.id).map(colour => ({
+          colour: rgb(colour),
+          width: '8px',
+          height: '8px',
+          border: '0px',
+          gap: '8px',
+        })),
+      }))
+    )
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+    await page.locator('.theme-toggle').click()
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-theme',
+      'madoromi-aki-yoru'
+    )
+    await trigger.click()
+    await expect(picker.locator('[data-ink-choice="to-ro"]')).toBeFocused()
+    expect(
+      await choices.evaluateAll(buttons =>
+        buttons.map(button =>
+          [...button.querySelectorAll('span[style]')].map(
+            dot => getComputedStyle(dot).backgroundColor
+          )
+        )
+      )
+    ).toEqual(
+      COUNT_PALETTES.map(ink =>
+        [...countRamp('madoromi-aki-hiru', 7, ink.id)].reverse().map(rgb)
+      )
+    )
+    await page.keyboard.press('Escape')
+    await page.locator('.theme-toggle').click()
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-theme',
+      'madoromi-aki-hiru'
+    )
+    await page.getByRole('button', { name: /^Accent ink:/ }).click()
+    await page
+      .locator('.ink-picker-popover:popover-open [data-ink-choice="ajisai"]')
+      .click()
+    await assertCountInk('ajisai')
+    await trigger.click()
+    await expect(picker.locator('[data-ink-choice="ajisai"]')).toBeFocused()
+    await picker
+      .getByRole('searchbox', { name: 'Find ink', exact: true })
+      .fill('deep cerulean blue')
+    await expect(choices).toHaveCount(1)
+    await picker.locator('[data-ink-choice="kon-peki"]').click()
+    await assertCountInk('kon-peki')
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-accent-ink',
+      'ajisai'
+    )
+    expect(
+      await page.evaluate(() => [
+        localStorage.getItem('theme-accent-ink'),
+        localStorage.getItem('graph-count-palette'),
+      ])
+    ).toEqual(['ajisai', 'kon-peki'])
+    await page.reload()
+    await assertCountInk('kon-peki')
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-accent-ink',
+      'ajisai'
+    )
+    await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+    await expect
+      .poll(() =>
+        page
+          .locator('.lc-bars-bar')
+          .evaluateAll(bars => bars.map(bar => getComputedStyle(bar).fill))
+      )
+      .toEqual(
+        [0, 3, 1].map(index =>
+          rgb(countRamp('madoromi-aki-hiru', 4, 'kon-peki')[index]!)
+        )
+      )
+  })
+
+  for (let steps = 1; steps <= 12; steps++) {
+    test(`count ink adapts to ${steps} distinct counts without changing bucket order`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() =>
+        localStorage.setItem('theme', 'madoromi-aki-hiru')
+      )
+      const pending = await holdAggregates(page)
+      for (const { route } of pending)
+        await respond(route, {
+          ...bucket,
+          count: (steps * (steps + 1)) / 2,
+          explicitBounds: Array.from(
+            { length: steps - 1 },
+            (_, index) => index + 1
+          ),
+          bucketCounts: Array.from({ length: steps }, (_, index) => index + 1),
+        })
+      for (const tab of ['Heatmap', 'Histogram']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click()
+        const legend = page.getByRole('list', {
+          name: `${tab} count scale`,
+          exact: true,
+        })
+        await expect(legend.getByRole('listitem')).toHaveText(
+          Array.from({ length: steps }, (_, index) => String(index + 1))
+        )
+        expect(
+          await legend
+            .locator('.heatmap-legend__swatch')
+            .evaluateAll(dots =>
+              dots.map(dot => getComputedStyle(dot).backgroundColor)
+            )
+        ).toEqual(countRamp('madoromi-aki-hiru', steps).map(rgb))
+        const marks = page.locator(
+          tab === 'Heatmap' ? '.heatmap-cell' : '.lc-bars-bar'
+        )
+        await expect(marks).toHaveCount(steps)
+        const expected =
+          tab === 'Heatmap'
+            ? await mixedInkColours(page, countRamp('madoromi-aki-hiru', steps))
+            : countRamp('madoromi-aki-hiru', steps).map(rgb)
+        expect(
+          await marks.evaluateAll(marks =>
+            marks.map(mark => getComputedStyle(mark).fill)
+          )
+        ).toEqual(expected)
+      }
     })
   }
 
@@ -492,7 +879,7 @@ test.describe('independent histogram aggregate loading', () => {
 
   for (const { id: theme } of THEMES) {
     const colour = themeRgb(theme, 'muted')
-    test(`rounded axes and header count legends stay legible in ${theme}`, async ({
+    test(`rounded axes and chart-surface count legends stay legible in ${theme}`, async ({
       page,
     }) => {
       await page.addInitScript(
@@ -509,7 +896,8 @@ test.describe('independent histogram aggregate loading', () => {
           name: 'Metric chart',
           exact: true,
         })
-        const legend = header.getByRole('list', {
+        const chart = page.locator('#metric-chart-tabpanel')
+        const legend = chart.getByRole('list', {
           name: `${tab} count scale`,
           exact: true,
         })
@@ -524,32 +912,52 @@ test.describe('independent histogram aggregate loading', () => {
           legend.locator('.heatmap-legend__swatch').first()
         ).toHaveCSS('border-top-width', '0px')
         await expect(legend).toHaveCSS('font-size', '14px')
+        await expect(legend).toHaveCSS('font-weight', '400')
+        await expect(legend.getByRole('listitem')).toHaveText([
+          '1\u2009–\u20092',
+          '3\u2009–\u20094',
+          '5\u2009–\u20096',
+          '7',
+        ])
+        expect(
+          await legend
+            .locator('.heatmap-legend__swatch')
+            .evaluateAll(dots =>
+              dots.map(dot => getComputedStyle(dot).backgroundColor)
+            )
+        ).toEqual(countRamp(theme, 4).map(rgb))
         await expect(
           header.locator('[aria-label="Chart time range"]')
         ).toHaveCount(0)
-        await expect(
-          page.locator('#metric-chart-tabpanel .heatmap-legend')
-        ).toHaveCount(0)
+        await expect(header.locator('.heatmap-legend')).toHaveCount(0)
+        const legendBox = (await legend.boundingBox())!
+        const headerBox = (await header.boundingBox())!
+        const plotBox = (await chart
+          .locator('.metric-chart-view__plot-host')
+          .boundingBox())!
+        expect(legendBox.y).toBeGreaterThan(headerBox.y + headerBox.height)
+        expect(legendBox.y + legendBox.height).toBeLessThan(plotBox.y)
+        const labels = chart.locator('.lc-axis text')
+        expect(await labels.count()).toBeGreaterThan(0)
+        for (const label of await labels.all())
+          await expect(label).toHaveCSS('font-size', '14px')
         await expectRoundedAxes(page, colour)
       }
       await page.setViewportSize({ width: 900, height: 1000 })
-      const header = page.getByRole('region', {
-        name: 'Metric chart',
-        exact: true,
-      })
-      const entries = header.locator('.legend-rows')
+      const chart = page.locator('#metric-chart-tabpanel')
+      const entries = chart.locator('.legend-rows')
       await expect(entries).toHaveCSS('flex-direction', 'column')
       await expect
         .poll(() =>
-          header.evaluate(e => {
-            const header = e.getBoundingClientRect()
+          chart.evaluate(e => {
+            const chart = e.getBoundingClientRect()
             return [...e.querySelectorAll('.legend-rows__entry')].every(
               entry => {
                 const box = entry.getBoundingClientRect()
                 return (
-                  box.left >= header.left &&
-                  box.right <= header.right &&
-                  box.bottom <= header.bottom
+                  box.left >= chart.left &&
+                  box.right <= chart.right &&
+                  box.bottom <= chart.bottom
                 )
               }
             )
@@ -604,7 +1012,11 @@ test.describe('independent histogram aggregate loading', () => {
       bucketCounts: Array.from({ length: 5 }, (_, row) =>
         column === 70 || (column === 40 && row === 2)
           ? 0
-          : 1 + ((column + row) % 12)
+          : column >= 10 && column <= 11 && row >= 1 && row <= 2
+            ? column === 11 && row === 2
+              ? 5
+              : 4
+            : 1 + ((column + row) % 12)
       ),
     }))
     for (const { route } of pending)
@@ -650,8 +1062,54 @@ test.describe('independent histogram aggregate loading', () => {
       if (joined) {
         await expect(page.locator('.heatmap-blob')).toHaveCount(2)
         await expect(
-          page.locator('.heatmap-blob-fill,.heatmap-blob-outline')
+          page.locator(
+            '.heatmap-blob > .heatmap-blob-fill,.heatmap-blob > .heatmap-blob-outline'
+          )
         ).toHaveCount(0)
+        const regions = page.locator(
+          '.heatmap-colour-outlines .heatmap-blob-outline'
+        )
+        await expect(regions).toHaveCount(12)
+        const liners = await regions.evaluateAll(elements =>
+          elements.map(element => {
+            const clipID = element.getAttribute('clip-path')!.slice(5, -1)
+            const path = element.getAttribute('d')!
+            const probe = document.createElementNS(
+              'http://www.w3.org/2000/svg',
+              'path'
+            )
+            const colour =
+              getComputedStyle(element).getPropertyValue('--blob-color')
+            probe.style.stroke = `color-mix(in oklab, ${colour} 85%, var(--color-base-content))`
+            element.parentElement!.append(probe)
+            const expectedStroke = getComputedStyle(probe).stroke
+            probe.remove()
+            return {
+              sameBoundary:
+                path ===
+                document
+                  .getElementById(clipID)!
+                  .querySelector('path')!
+                  .getAttribute('d'),
+              fill: getComputedStyle(element).fill,
+              stroke: getComputedStyle(element).stroke,
+              expectedStroke,
+              width: Number.parseFloat(getComputedStyle(element).strokeWidth),
+              pointerEvents: getComputedStyle(element).pointerEvents,
+            }
+          })
+        )
+        for (const liner of liners) {
+          expect(liner.sameBoundary).toBe(true)
+          expect(liner.fill).toBe('none')
+          expect(liner.stroke).toBe(liner.expectedStroke)
+          expect(liner.width).toBeGreaterThan(0)
+          expect(liner.pointerEvents).toBe('none')
+        }
+        const corners = page.locator('.heatmap-colour-corners path')
+        expect(await corners.count()).toBeGreaterThan(0)
+        for (const corner of await corners.all())
+          await expect(corner).toHaveAttribute('d', /Q/)
         await expect(page.locator('.heatmap-joined-outline')).toHaveCount(2)
         const outlines = await page
           .locator('.heatmap-blob')
@@ -705,12 +1163,15 @@ test.describe('independent histogram aggregate loading', () => {
         )
       } else {
         await expect(page.locator('.heatmap-joined-outline')).toHaveCount(0)
+        await expect(page.locator('.heatmap-colour-outlines')).toHaveCount(0)
       }
       await expect(page.locator('.metric-dot-grid')).toHaveCount(0)
     }
   })
 
-  test('count legends fill available width as it changes', async ({ page }) => {
+  test('count legends keep at most six aligned columns as available width changes', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
     for (const { route } of pending)
@@ -735,23 +1196,16 @@ test.describe('independent histogram aggregate loading', () => {
         gap: Number.parseFloat(getComputedStyle(element).columnGap),
       }))
       for (const [count, expected] of [
-        [12, [12]],
-        [9, [9, 3]],
+        [12, [6, 6]],
+        [9, [6, 6]],
         [6, [6, 6]],
         [5, [5, 5, 2]],
         [3, [3, 3, 3, 3]],
-        [12, [12]],
+        [12, [6, 6]],
       ] as const) {
-        const rowWidths = []
-        for (let start = 0; start < 12; start += count) {
-          rowWidths.push(
-            dimensions.widths
-              .slice(start, start + count)
-              .reduce((sum, width) => sum + width, 0) +
-              (count - 1) * dimensions.gap
-          )
-        }
-        const available = Math.ceil(Math.max(...rowWidths))
+        const available = Math.ceil(
+          count * Math.max(...dimensions.widths) + (count - 1) * dimensions.gap
+        )
         await legend.evaluate((element, width) => {
           element.style.maxWidth = `${width}px`
         }, available)
@@ -780,6 +1234,18 @@ test.describe('independent histogram aggregate loading', () => {
         expect(await legend.getByRole('listitem').allTextContents()).toEqual(
           labels
         )
+        const dotColumns = await legend
+          .locator('.legend-rows__row')
+          .evaluateAll(rows =>
+            rows.map(row =>
+              [...row.querySelectorAll('.heatmap-legend__swatch')].map(
+                dot => dot.getBoundingClientRect().left
+              )
+            )
+          )
+        for (const row of dotColumns.slice(1))
+          for (const [column, x] of row.entries())
+            expect(x).toBeCloseTo(dotColumns[0]![column]!, 1)
       }
       await legend.evaluate(element =>
         element.style.removeProperty('max-width')
@@ -940,7 +1406,7 @@ test.describe('independent histogram aggregate loading', () => {
 for (const { id: theme } of THEMES) {
   const hoverColour = themeRgb(theme, 'highlightLow')
   const selectedColour = themeRgb(theme, 'highlightMedium')
-  const focusColour = themeRgb(theme, 'primary')
+  const focusColour = accentRgb(theme)
   for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
     test(`${metricType} graph highlights use rounded neutral interaction roles in ${theme}`, async ({
       page,
@@ -1125,11 +1591,29 @@ for (const { id: theme } of THEMES) {
         const dataFill = await mark.evaluate(
           element => getComputedStyle(element).fill
         )
+        const ramp = countRamp(theme, 4)
+        const fills =
+          tab === 'heatmap' ? await mixedInkColours(page, ramp) : ramp.map(rgb)
+        expect(dataFill).toBe(fills[0])
+        const marks = page.locator(markSelector)
+        await expect(marks).toHaveCount(tab === 'heatmap' ? 6 : 3)
+        const expectedFills = [fills[0], fills[3], fills[1]]
+        expect(
+          await marks.evaluateAll(elements =>
+            elements.map(element => getComputedStyle(element).fill).sort()
+          )
+        ).toEqual(
+          (tab === 'heatmap'
+            ? [...expectedFills, ...expectedFills]
+            : expectedFills
+          ).sort()
+        )
         const box = (await mark.boundingBox())!
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
         const hover = page.locator(hoverSelector)
         await expect(hover).toBeVisible()
         await expect(hover).toHaveCSS('fill', hoverColour)
+        await expect(hover).toHaveCSS('fill-opacity', '0.22')
         await expect(hover).toHaveCSS('stroke', 'none')
         await expect(hover).toHaveCSS('rx', '8px')
         await expect(hover).toHaveCSS('pointer-events', 'none')
@@ -1151,6 +1635,9 @@ for (const { id: theme } of THEMES) {
             element => getComputedStyle(element).fill
           )
           expect(hoveredFill).not.toBe(dataFill)
+          expect(hoveredFill).toBe(
+            (await mixedInkColours(page, [ramp[0]!], 88))[0]
+          )
         }
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
         const selection = page.locator(selectionSelector)
@@ -1167,6 +1654,9 @@ for (const { id: theme } of THEMES) {
           )
           expect(selectedFill).not.toBe(dataFill)
           expect(selectedFill).not.toBe(hoveredFill)
+          expect(selectedFill).toBe(
+            (await mixedInkColours(page, [ramp[0]!], 84))[0]
+          )
           const card = page.locator('.metric-heatmap-chart .chart-sticky__card')
           await expect(card).toBeVisible()
           const cellDetails = card.locator('.heatmap-selected-cell')
@@ -1248,6 +1738,10 @@ for (const { id: theme } of THEMES) {
             .toBeLessThan(1)
         } else {
           await expect(mark).not.toHaveCSS('fill', dataFill)
+          await expect(mark).toHaveCSS(
+            'fill',
+            (await mixedInkColours(page, [ramp[0]!], 85))[0]!
+          )
         }
         const keyboard = page.getByRole('application', {
           name: chartLabel,
@@ -1285,7 +1779,7 @@ for (const { id: theme } of THEMES) {
           tab === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-line'
         )
         const quantileColours = [
-          themeRgb(theme, 'secondary'),
+          themeRgb(theme, 'success'),
           themeRgb(theme, 'warning'),
           themeRgb(theme, 'error'),
         ]
@@ -1467,6 +1961,9 @@ for (const { id: theme } of THEMES) {
 test('extrema use the series colour and the backed average stays behind the series without a data dot', async ({
   page,
 }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('theme', 'madoromi-aki-hiru')
+  )
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON() as {
       id: number
@@ -1569,7 +2066,7 @@ test('extrema use the series colour and the backed average stays behind the seri
     averageAboveSeries: false,
     averageHasOwnColour: true,
     averageLabelMatches: true,
-    averageColour: themeRgb('madoromi-fuyu-hiru', 'primary'),
+    averageColour: accentRgb('madoromi-aki-hiru'),
     averageLabelAtRight: true,
   })
   const emphasis = averageLabel.getByRole('button', {
@@ -1671,6 +2168,9 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
 test('Rate clicks pin the exact bucket and put slope at the right edge', async ({
   page,
 }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('theme', 'madoromi-aki-hiru')
+  )
   const counter = {
     ...metric,
     metricType: 'Sum',
@@ -1807,7 +2307,7 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
   expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
   expect(slopeDrawing.distanceFromEnd).toBeLessThan(0.01)
   expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
-  expect(slopeDrawing.colour).toBe(themeRgb('madoromi-fuyu-hiru', 'primary'))
+  expect(slopeDrawing.colour).toBe(accentRgb('madoromi-aki-hiru'))
   const slopeEmphasis = slopeLabel.getByRole('button', {
     name: 'Emphasize slope overlay',
   })

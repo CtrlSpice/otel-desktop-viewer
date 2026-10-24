@@ -38,8 +38,7 @@
   {#snippet badge()}<ExperimentStatusBadge
       state={experiment.state}
       pauseReason={experiment.pauseReason}
-    />{#if experiment.state === 'Planned'}<span
-        class="text-subtle tabular-nums"
+    />{#if experiment.state === 'Planned'}<span class="text-subtle tabular-nums"
         >{' '}[{experiment.resultCount}]</span
       >{/if}{/snippet}
 </SignalCard>

@@ -46,20 +46,20 @@ approximate developmental window, not a universal cutoff at exactly fourteen day
 
 ## References
 
-[1] S. Nowoshilow *et al.*, “The axolotl genome and the evolution of key tissue
-formation regulators,” *Nature*, vol. 554, no. 7690, pp. 50–55, 2018, doi:
+[1] S. Nowoshilow _et al._, “The axolotl genome and the evolution of key tissue
+formation regulators,” _Nature_, vol. 554, no. 7690, pp. 50–55, 2018, doi:
 [10.1038/nature25458](https://doi.org/10.1038/nature25458).
 
 [2] J. W. Godwin, A. R. Pinto, and N. A. Rosenthal, “Macrophages are required for
-adult salamander limb regeneration,” *Proc. Natl. Acad. Sci. U.S.A.*, vol. 110,
+adult salamander limb regeneration,” _Proc. Natl. Acad. Sci. U.S.A._, vol. 110,
 no. 23, pp. 9415–9420, 2013, doi:
 [10.1073/pnas.1300290110](https://doi.org/10.1073/pnas.1300290110).
 
-[3] K. Lust *et al.*, “Single-cell analyses of axolotl telencephalon organization,
-neurogenesis, and regeneration,” *Science*, vol. 377, no. 6610, 2022,
+[3] K. Lust _et al._, “Single-cell analyses of axolotl telencephalon organization,
+neurogenesis, and regeneration,” _Science_, vol. 377, no. 6610, 2022,
 Art. no. eabp9262, doi:
 [10.1126/science.abp9262](https://doi.org/10.1126/science.abp9262).
 
-[4] R. Suetsugu-Maki *et al.*, “Lens regeneration in axolotl: new evidence of
-developmental plasticity,” *BMC Biol.*, vol. 10, no. 1, 2012, Art. no. 103, doi:
+[4] R. Suetsugu-Maki _et al._, “Lens regeneration in axolotl: new evidence of
+developmental plasticity,” _BMC Biol._, vol. 10, no. 1, 2012, Art. no. 103, doi:
 [10.1186/1741-7007-10-103](https://doi.org/10.1186/1741-7007-10-103).

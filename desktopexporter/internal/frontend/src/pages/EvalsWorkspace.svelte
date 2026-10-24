@@ -680,9 +680,7 @@
           title={storedExperimentSummary?.name ?? 'Evals'}
           reserveMetaRow
         />
-        <p class="p-3 text-sm text-subtle" role="status">
-          Loading experiment…
-        </p>
+        <p class="p-3 text-sm text-subtle" role="status">Loading experiment…</p>
       {/if}
     {:else if databaseMode && storedExperimentError}
       <PaneHeader
@@ -694,9 +692,7 @@
       <p class="p-3 text-sm" role="alert">{storedExperimentError}</p>
     {:else if experimentListLoading}
       {#if loadingNoticeReady}
-        <div
-          class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle"
-        >
+        <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
           Loading evals…
         </div>
       {/if}

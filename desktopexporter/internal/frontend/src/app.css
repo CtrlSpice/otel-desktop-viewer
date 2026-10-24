@@ -833,6 +833,7 @@ svg {
   --btn-border: #0000;
   --btn-noise: none;
   --btn-bg: var(--item-selected-bg);
+  background-color: var(--btn-bg);
   box-shadow: none;
 }
 
@@ -841,6 +842,7 @@ svg {
     --btn-border: #0000;
     --btn-noise: none;
     --btn-bg: var(--item-hover-bg);
+    background-color: var(--btn-bg);
     box-shadow: none;
   }
 }
@@ -910,6 +912,10 @@ svg {
   margin: 0;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
   inset: unset;
+}
+
+.anchor-popover[role='tooltip'] {
+  @apply bg-base-200 font-normal;
 }
 
 .anchor-popover--anchored {

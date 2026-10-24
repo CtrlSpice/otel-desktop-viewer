@@ -151,8 +151,7 @@
                       ? `${signal.extraCount} error or fatal logs`
                       : undefined}>{signal.extraCount.toLocaleString()}</span
                 >
-                {#if signal.extra}<span class="text-subtle"
-                    >{signal.extra}</span
+                {#if signal.extra}<span class="text-subtle">{signal.extra}</span
                   >{/if}
               </span>
             {/if}

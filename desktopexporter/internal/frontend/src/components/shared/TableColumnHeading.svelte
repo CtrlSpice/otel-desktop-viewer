@@ -49,6 +49,7 @@
     color: var(--table-heading-color);
   }
   .table-column-heading--external {
+    @apply flex-1;
     grid-template-columns: minmax(0, max-content) max-content minmax(
         min-content,
         1fr

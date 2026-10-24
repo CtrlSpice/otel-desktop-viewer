@@ -129,7 +129,10 @@
 
   .legend-rows--columns .legend-rows__row {
     display: grid;
-    grid-template-columns: repeat(var(--legend-columns), var(--legend-column-width));
+    grid-template-columns: repeat(
+      var(--legend-columns),
+      var(--legend-column-width)
+    );
   }
 
   .legend-rows--columns .legend-rows__entry {

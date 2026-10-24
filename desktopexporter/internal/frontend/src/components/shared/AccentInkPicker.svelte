@@ -6,12 +6,14 @@
   import { accentInk } from '@/state/accent-ink.svelte'
 
   const chosen = $derived(ACCENT_INKS.find(ink => ink.id === accentInk.value)!)
-  const preview = $derived(chosen.swatches.filter((_, index) => index % 3 === 0))
+  const preview = $derived(
+    chosen.swatches.filter((_, index) => index % 3 === 0)
+  )
 </script>
 
 <InkPicker
   label={`Accent ink: ${chosen.name}\n(${chosen.english})`}
-  triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-left before:whitespace-pre-line"
+  triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-bottom md:tooltip-left before:whitespace-pre-line"
   options={ACCENT_INKS}
   value={accentInk.value}
   onchange={id => accentInk.set(restoreAccentInk(id))}

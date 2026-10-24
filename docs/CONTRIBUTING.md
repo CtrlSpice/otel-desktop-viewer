@@ -149,7 +149,7 @@ desktopexporter/
   internal/store/                     # DuckDB schema, ingestion, and queries
   internal/frontend/                  # Svelte 5 application
 scripts/                              # OTLP seed data for local development
-docs/                                 # Design notes and documentation assets
+docs/                                 # Current behavior, usage and documentation assets
 ```
 
 The root Go module builds the collector binary. The `desktop` exporter writes telemetry through the store owned by the `duckdb` extension. The frontend communicates with the server through JSON-RPC and builds into committed embedded assets.
@@ -179,11 +179,31 @@ JSON-RPC changes should preserve deliberate wire contracts, validate input at th
 
 Match nearby components, contexts, route helpers, and test fixtures before introducing new abstractions. Discuss changes to routing, persisted state, navigation behavior, or shared interaction patterns as product decisions before implementation.
 
+- Keep route content inside the persistent List/Main/Details workspace slots.
+  Reuse the app-wide pane preferences and shared `DetailStack`/`DetailBubble`
+  disclosure and header-resize behavior.
+- Preserve Home's typed service/attribute identities, record-based frequencies,
+  counted signal tabs, independent 25-card pages and scroll positions.
+- Use regular-weight Atkinson Hyperlegible Next for interface text and formatted
+  values, and Mono for JSON, search and code. Shared tokens provide 14px working
+  text and 16px headings at the default root size; adjust layout rather than
+  shrinking text. Keep field names exact, keys Subtle and data Text. Display
+  formatting must preserve received types, exact numbers and complete explicit
+  Copy/Download values.
+- Use the eight Madoromi seasonal themes and shared colour tokens. Backgrounds
+  retain 20% of source chroma. Preserve saved theme/ink preferences, service/series
+  colour ownership and independent count-ink overrides. See the
+  [theme reference](../desktopexporter/internal/frontend/src/themes/README.md)
+  for roles, defaults, picker behavior and generation.
+
 ### Dependencies and generated files
 
 The repository commits several generated outputs because release builds consume them directly:
 
 - Search parser files under `src/components/shared/Search/codemirror/` are generated from `query.grammar`. Run `npm run generate:grammar` from `desktopexporter/internal/frontend/` and commit the result.
+- Madoromi theme and graph JSON under `src/themes/` is generated from the pinned
+  source. Run `node scripts/generate-madoromi.mjs` from the frontend directory
+  rather than editing generated colours.
 - Production frontend assets live under `desktopexporter/internal/server/static/`. Frontend source, dependency, lockfile, and build-configuration changes require `make build-ts` and the resulting committed assets.
 - Resolve source and dependency conflicts first, then regenerate hashed frontend assets from the combined tree. Hand-merging generated bundles produces unreliable output.
 - Dependency updates should include the manifest, lockfile, generated bundle where applicable, focused regression coverage, and manual checks for affected product surfaces.

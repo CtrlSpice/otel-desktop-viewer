@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import HomePage, { rejectionLabel } from './HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -22,6 +22,14 @@ describe('Home service discovery', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('scopes discovery by namespace and service and refreshes only on request', async () => {
+    vi.spyOn(telemetryAPI, 'getTraceAttributeDefinitions').mockResolvedValue([])
+    vi.spyOn(telemetryAPI, 'getMetricAttributeDefinitions').mockResolvedValue(
+      []
+    )
+    vi.spyOn(telemetryAPI, 'getLogAttributeDefinitions').mockResolvedValue([])
+    vi.spyOn(telemetryAPI, 'searchTraceSummaries').mockResolvedValue([])
+    vi.spyOn(telemetryAPI, 'searchMetricSummaries').mockResolvedValue([])
+    vi.spyOn(telemetryAPI, 'searchLogSummaries').mockResolvedValue([])
     vi.spyOn(telemetryAPI, 'getStats').mockResolvedValue({
       traces: {
         traceCount: 0,
@@ -88,7 +96,9 @@ describe('Home service discovery', () => {
       truncated: false,
     })
     renderWithContexts(HomePage)
-    await screen.findByRole('button', { name: 'Inspect checkout · storefront' })
+    const card = await screen.findByRole('button', {
+      name: /^checkout\s*· storefront/,
+    })
     await waitFor(() =>
       expect(keys).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -108,17 +118,11 @@ describe('Home service discovery', () => {
     expect(
       screen.queryByRole('combobox', { name: 'Attribute owner' })
     ).not.toBeInTheDocument()
-    const link = screen.getAllByRole('link', {
-      name: 'Open checkout traces',
-    })[0]!
-    const target = new URL(link.getAttribute('href')!, window.location.origin)
-    expect(target.pathname).toBe('/traces')
-    expect(target.searchParams.get('q')).toBe(
-      'attr(resource, "service.name", string) = "checkout" AND attr(resource, "service.namespace", string) = "storefront"'
-    )
-    expect(link.closest('button')).toBeNull()
+    expect(card).toHaveAttribute('aria-pressed', 'true')
+    expect(within(card).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
     await fireEvent.click(
-      screen.getByRole('button', { name: 'Inspect checkout · internal' })
+      screen.getByRole('button', { name: /^checkout\s*· internal/ })
     )
     await waitFor(() =>
       expect(keys).toHaveBeenCalledWith(
@@ -126,7 +130,9 @@ describe('Home service discovery', () => {
         expect.any(AbortSignal)
       )
     )
-    expect(screen.queryByRole('tab', { name: 'Logs' })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /^Logs/ })).toBeDisabled()
+    )
     await waitFor(() =>
       expect(keys).toHaveBeenCalledWith(
         expect.objectContaining({ namespace: 'internal', signal: 'logs' }),

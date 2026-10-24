@@ -206,7 +206,7 @@
   }
 
   .theme-toggle {
-    @apply rounded-l-none rounded-r-full;
+    @apply rounded-l-none rounded-r-full font-normal;
     border-left: 1px solid var(--color-base-300);
   }
 

@@ -1,4 +1,9 @@
 // Generates the viewer's Madoromi adapter from the pinned MPL-2.0 sources.
+// Madoromi by samhain (the-moonwitch): https://github.com/the-moonwitch/madoromi
+// Pinned revision: f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import ts from 'typescript'
 
@@ -365,7 +370,7 @@ await writeFile(
   new URL('src/themes/graph-ink-curves.json', frontend),
   graphCurveJson
 )
-// Ship the adapted source, its generator inputs and the complete upstream licence.
+// Ship the adapted source, its inputs, attribution and complete upstream licence.
 const publicSource = new URL('public/licenses/madoromi/', frontend)
 await mkdir(publicSource, { recursive: true })
 await writeFile(new URL('themes.json', publicSource), json)
@@ -379,6 +384,7 @@ await writeFile(new URL('graph-ink-curves.json', publicSource), graphCurveJson)
 await writeFile(new URL('accent-inks.json', publicSource), accentJson)
 for (const file of [
   'LICENSE',
+  'NOTICE',
   'palette.json',
   'ink-curves.json',
   'ink-names.json',

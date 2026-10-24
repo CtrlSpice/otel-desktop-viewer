@@ -15,9 +15,10 @@ The Season dropdown and day/night button share one compact control group, with
 the season on the left. Hugeicons identify Spring (flower), Summer (sun), Autumn
 (leaf) and Winter (snowflake) in the trigger and the menu. Changing
 season retains the current mode; changing mode retains the season. The complete
-theme ID is saved in localStorage under `theme`. With no valid saved choice, Autumn uses
-the operating system's preferred mode. If storage is blocked, controls still work
-for the current page.
+theme ID is saved in localStorage under `theme`. A valid saved choice takes
+precedence over the operating system's mode. Otherwise, Autumn uses the system
+preference read on load. If storage is blocked, controls still work for the
+current page.
 
 `data-theme` selects the generated CSS; `data-color-scheme` identifies light/dark
 behaviour. Charts observe the same theme identity through `state/theme.svelte.ts`.
@@ -26,15 +27,18 @@ Font families, sizes, weights and layout use the existing shared tokens.
 ## Ownership and generation
 
 - `madoromi.json`: generated interface colours for all eight variants.
+- `accent-inks.json` / `accent-inks.ts`: generated analogous families and seed catalogue.
 - `count-palettes.json`: generated Madoromi histogram count ramps, sizes 1–12.
 - `count-palette-names.json`: generated English ink names from the pinned source.
 - `count-palettes.ts`: ordered count-palette catalogue and default To-ro ink.
 - `index.ts`: catalogue, seasonal selection and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
 - `graph-inks.json`: official ink swatches and 224 categorical slots.
+- `graph-ink-curves.json`: generated slider colours and exact preset positions.
 - `graph-inks.ts`: shared seven-shade catalogue and stable ink/shade identities.
-- `utils/color-slots.ts`: saved service/series identity allocation.
-- `state/graph-color-overrides.svelte.ts`: persisted, reactive per-identity overrides.
+- `../utils/color-slots.ts`: saved service/series identity allocation.
+- `../state/graph-color-overrides.svelte.ts`: persisted, reactive per-identity overrides.
+- `../state/accent-ink.svelte.ts` / `../state/count-palette.svelte.ts`: independent saved ink choices.
 
 The Madoromi source is pinned to
 [`f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695`](https://github.com/the-moonwitch/madoromi/tree/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695).
@@ -70,19 +74,19 @@ assigned ink or Error colour without brightening. Swatch glyphs choose the
 higher-contrast seasonal light/dark foreground using linear-sRGB luminance,
 recalculating when the theme changes.
 
-| Shared role                           | Madoromi source            |
-| ------------------------------------- | -------------------------- |
-| Text                                  | Sumi                       |
-| Subtle: keys, headers and helper text | Usuzumi 1                  |
-| Muted: unavailable and disabled       | Kasure 1                   |
-| Primary / focus                       | Fuji                       |
-| Secondary / metadata                  | Ruri                       |
-| Accent                                | Tokiwa                     |
-| Info                                  | Sora                       |
-| Success                               | Wakaba                     |
-| Attribution heart                     | Sakura                     |
-| Warning markers and fills             | Yamabuki                   |
-| Error markers                         | Beni                       |
+| Shared role                           | Madoromi source |
+| ------------------------------------- | --------------- |
+| Text                                  | Sumi            |
+| Subtle: keys, headers and helper text | Usuzumi 1       |
+| Muted: unavailable and disabled       | Kasure 1        |
+| Primary / focus                       | Fuji            |
+| Secondary / metadata                  | Ruri            |
+| Accent                                | Tokiwa          |
+| Info                                  | Sora            |
+| Success                               | Wakaba          |
+| Attribution heart                     | Sakura          |
+| Warning markers and fills             | Yamabuki        |
+| Error markers                         | Beni            |
 
 These role assignments apply to all eight variants. Each variant supplies its
 own source ink and shade. Info and Success have independent Sora and Wakaba
@@ -123,8 +127,9 @@ generator writes these overrides to `accent-inks.json` with the source family.
 values use To-ro. Changes propagate across tabs, and blocked storage retains
 the selection in memory. Selecting an accent ink also applies that ink to the
 histogram/heatmap count palette and its legend. The chart's count picker can then
-select a different ink; reloading restores both saved choices. Service/series
-assignments remain independent. Navigation stays left-aligned; search fills the
+select a different ink. Startup restores both choices independently: loading the
+saved accent does not overwrite the saved count ink. Service/series assignments
+remain independent. Navigation stays left-aligned; search fills the
 available desktop space and appearance controls stay together at the right.
 Narrow screens place navigation above search and appearance controls; the
 smallest screens give search a full-width row.
@@ -137,25 +142,25 @@ including JSON/query quote marks, and literal values in neutral Sumi for calmer,
 cohesive reading. Keys, punctuation and escapes retain their distinct roles:
 
 | Syntax category                       | Madoromi role slot |
-| ------------------------------------- | --------------- |
-| Names and variables                   | Sumi            |
-| String bodies                         | Sumi            |
-| JSON/query quote marks                | Sumi            |
-| Keywords                              | Fuji            |
-| Properties and keys                   | Ruri            |
-| Operators                             | Sora            |
-| Numbers, booleans, constants and null | Sumi            |
-| Escapes, regular expressions and tags | Botan           |
-| Characters, enum members and macros   | Tokiwa          |
-| Functions and methods                 | Ai              |
-| Built-ins and self/this               | Beni            |
-| Types, classes and attributes         | Yamabuki        |
-| Namespaces                            | Kikyo           |
-| Annotations                           | Nadeshiko       |
-| Labels and editor cursors             | Sakura          |
-| Punctuation                           | Usuzumi 0       |
-| Comments                              | Kasure 2        |
-| Invalid syntax                        | Beni / Error    |
+| ------------------------------------- | ------------------ |
+| Names and variables                   | Sumi               |
+| String bodies                         | Sumi               |
+| JSON/query quote marks                | Sumi               |
+| Keywords                              | Fuji               |
+| Properties and keys                   | Ruri               |
+| Operators                             | Sora               |
+| Numbers, booleans, constants and null | Sumi               |
+| Escapes, regular expressions and tags | Botan              |
+| Characters, enum members and macros   | Tokiwa             |
+| Functions and methods                 | Ai                 |
+| Built-ins and self/this               | Beni               |
+| Types, classes and attributes         | Yamabuki           |
+| Namespaces                            | Kikyo              |
+| Annotations                           | Nadeshiko          |
+| Labels and editor cursors             | Sakura             |
+| Punctuation                           | Usuzumi 0          |
+| Comments                              | Kasure 2           |
+| Invalid syntax                        | Beni / Error       |
 
 The role names identify slots in the selected analogous mix, rather than fixed
 rainbow hues. The generated `syntax` palette also contains each season's readable
@@ -176,9 +181,26 @@ Search cursors use Sakura. Editor search matches use Kaki at 18% opacity, with
 35% for the current match. Matching brackets use tinted Nijimi 2 at 30% with a
 Kasure 0 outline. Selection uses the shared selection token.
 
-UI field names use Subtle, data values use Text, and metadata uses Secondary.
-Code uses Atkinson Hyperlegible Mono; interface text uses Next. Both retain the
-shared 14px working size.
+## Typography and data fidelity
+
+Interface text, field names and formatted values use Atkinson Hyperlegible Next;
+JSON, search and code use Atkinson Hyperlegible Mono. Shared tokens in `../app.css`
+set 14px working text, 16px page/pane headings and 1.5 line-height at the default
+root size, with regular weight throughout. Home's welcome title is a 22px Mono
+display exception with 1.25 line-height. Field names keep their exact spelling.
+Keys, section/column headers and helper text use Subtle; data and main titles use
+Text; type/provenance metadata uses Secondary. Muted is for unavailable or
+disabled content.
+
+Properties shows ordinary strings decoded without outer JSON quotes, retaining
+meaningful quotes/backslashes and displaying empty strings as `""`. Shared
+`../components/shared/detail-value.ts` formatting can expand complete embedded
+JSON-like containers, including `undefined`, `NaN` and `Infinity`, for display.
+It preserves numeric lexemes and duplicate keys without evaluating code or
+changing received types. Copy uses the complete original value; raw JSON and
+Download retain source values. Wrapping, folding, syntax decorations and
+middle-truncated identifiers are display-only. Copy actions are explicit;
+ordinary values remain selectable text.
 
 ## Graph palettes
 
@@ -191,8 +213,8 @@ The 8px-high percentage bar uses an aligned track that fills the remaining width
 Short bars stop at the canonical 8px dot. Colours use
 official middle-strength shades 3–5 across the 32 graph inks, chosen by a stable
 hash of attribute source, key and typed value identity. Sorting, paging and theme
-changes preserve each value's colour. Parent attribute rows remain plain; counts,
-percentages and Copy retain the received values and record denominator.
+changes preserve each value's colour. Parent attribute rows remain plain; counts
+and percentages keep their record denominator, and Copy retains the full value.
 
 Services and metric series use the first seven official swatches from the same
 32 colourful Madoromi inks: 224 distinct colours. The original eighth (palest)
@@ -207,7 +229,7 @@ Assignments use the `madoromi-inks-v1` allocation namespace.
 
 Exact identities use FNV-1a with a 32-bit avalanche, then next-free-slot probing.
 Assignments are saved under the palette version, with one viewer-wide service
-scope and a separate scope per native metric reference. Filtering does not release
+scope and a separate scope per `metricRef`. Filtering does not release
 slots. Saved owners never move; fresh collision winners can depend on encounter
 order. Blocked/full storage falls back to in-memory stability.
 
@@ -232,8 +254,9 @@ viewport caps the width; on narrow screens shade buttons move below the name,
 while count-picker names wrap beside their seven aligned dots.
 
 Overrides are saved under `graph-colour-overrides:madoromi-inks-v1:<scope>` as
-identity/ink-shade pairs. Services share the `services` scope, while series use
-`metric:<native metric reference>`. Changes propagate to chart lines, sparklines,
+identity/ink-shade pairs. Services share the `services` scope, keyed by service-name
+text rather than Home's typed discovery identity. Series use `metric:<metricRef>`,
+keyed by `seriesRef`. Changes propagate to chart lines, sparklines,
 service dots and non-error waterfall bars, including across open tabs. Shades
 owned by another identity in the same scope are visibly disabled, and keyboard
 navigation skips them. Reservations include hidden owners, their saved automatic

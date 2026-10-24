@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
+import type { JsonTraceData } from '../src/types/wire-types'
+import { ACCENT_INKS } from '../src/themes/accent-inks'
 
 type RpcRequest = {
   id: number
@@ -21,11 +23,14 @@ const EMPTY_STATS = {
   rejections: [],
 }
 
-const EMPTY_ATTRIBUTE_METHODS = new Set([
+const EMPTY_LIST_METHODS = new Set([
   'getTraceAttributeDefinitions',
   'getTraceAttributeDefinitionsByTraceID',
   'getLogAttributeDefinitions',
   'getMetricAttributeDefinitions',
+  'searchTraceSummaries',
+  'searchMetricSummaries',
+  'getTraceLogSummaries',
 ])
 
 const HIGHLIGHT_THEMES = THEMES.map(theme => ({
@@ -34,6 +39,18 @@ const HIGHLIGHT_THEMES = THEMES.map(theme => ({
   selected: themeRgb(theme.id, 'highlightMedium'),
   high: theme.colors.highlightHigh,
 }))
+
+// Pinned upstream Usuzumi 1 / Kasure 1, deliberately not contrast-corrected.
+const NATIVE_NEUTRALS = {
+  'madoromi-haru-hiru': ['#6b5d70', '#998d9e'],
+  'madoromi-haru-yoru': ['#cdbed3', '#8a7e8f'],
+  'madoromi-natsu-hiru': ['#4e6872', '#80969f'],
+  'madoromi-natsu-yoru': ['#adcad4', '#728790'],
+  'madoromi-aki-hiru': ['#715f4f', '#9f8f81'],
+  'madoromi-aki-yoru': ['#d4c0ae', '#908072'],
+  'madoromi-fuyu-hiru': ['#5e6277', '#8d91a4'],
+  'madoromi-fuyu-yoru': ['#bec3db', '#7e8294'],
+} as const
 
 async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/api/features', route =>
@@ -54,7 +71,7 @@ async function interceptRpc(page: Page): Promise<void> {
             }
           : request.method === 'getImportConfig'
             ? { jsonrpc: '2.0', id: request.id, result: { otlpHttpPort: 4318 } }
-            : EMPTY_ATTRIBUTE_METHODS.has(request.method)
+            : EMPTY_LIST_METHODS.has(request.method)
               ? { jsonrpc: '2.0', id: request.id, result: [] }
               : {
                   jsonrpc: '2.0',
@@ -70,6 +87,99 @@ async function interceptRpc(page: Page): Promise<void> {
       contentType: 'application/json',
       body: JSON.stringify(response),
     })
+  })
+}
+
+const TRACE_IDS = ['a'.repeat(32), 'b'.repeat(32)]
+const SPAN_IDS = ['1'.repeat(16), '2'.repeat(16), '3'.repeat(16)]
+const TRACE_NAMES = ['Checkout trace', 'Inventory trace']
+const TRACE_SERVICES = ['checkout', 'payments', 'database']
+
+/** Exercise the shared cards, rows and Details with the Evals flag off. */
+async function interceptTraces(page: Page): Promise<void> {
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method === 'searchTraceSummaries') {
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: TRACE_IDS.map((traceID, index) => ({
+            traceID,
+            hasRootSpan: true,
+            rootSpan: { name: TRACE_NAMES[index], serviceName: 'checkout' },
+            startTime: '1700000000000000000',
+            durationNs: '1000000000',
+            spanCount: 3,
+            errorCount: 0,
+            serviceBreakdown: TRACE_SERVICES.map(label => ({
+              key: `service:${label}`,
+              label,
+              count: 1,
+            })),
+          })),
+        },
+      })
+    }
+    if (method !== 'getTraceView') return route.fallback()
+    const traceID: string = params.traceID
+    const trace: JsonTraceData = {
+      traceID,
+      traceStart: '1700000000000000000',
+      unplacedSpanCount: 0,
+      resources: Object.fromEntries(
+        TRACE_SERVICES.map((service, index) => [
+          index,
+          {
+            attributes: [
+              {
+                key: 'service.name',
+                value: { kind: 'string', value: service },
+              },
+            ],
+            droppedAttributesCount: 0,
+          },
+        ])
+      ),
+      scopes: {
+        0: {
+          name: 'a11y',
+          version: '',
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      },
+      spans: SPAN_IDS.map((spanID, index) => ({
+        depth: index === 0 ? 0 : 1,
+        matched: true,
+        spanData: {
+          spanID,
+          parentSpanID: index === 0 ? null : SPAN_IDS[0],
+          name:
+            index === 0
+              ? TRACE_NAMES[TRACE_IDS.indexOf(traceID)]
+              : TRACE_SERVICES[index],
+          traceState: '',
+          flags: 1,
+          kindCode: 2,
+          kind: 'Server',
+          start: '0',
+          dur: '1000000000',
+          r: index,
+          s: 0,
+          attributes: [],
+          links: [],
+          events: [],
+          droppedAttributesCount: 0,
+          droppedEventsCount: 0,
+          droppedLinksCount: 0,
+          statusCodeValue: 1,
+          statusCode: 'Ok',
+          statusMessage: '',
+        },
+      })),
+    }
+    return route.fulfill({ json: { jsonrpc: '2.0', id, result: trace } })
   })
 }
 
@@ -100,7 +210,10 @@ async function showMetadataExamples(page: Page, theme: string) {
       row.style.cssText = `display:flex;gap:16px;padding:8px;background:var(--color-${surface})`
       for (const [className, text] of [
         ['badge-count', '[42 spans]'],
+        ['text-muted', 'Unavailable'],
         ['metadata-origin', 'Resource'],
+        ['text-primary', 'Primary action'],
+        ['text-accent', 'Accent action'],
       ]) {
         const label = document.createElement('span')
         label.className = className
@@ -126,26 +239,49 @@ async function showMetadataExamples(page: Page, theme: string) {
   })
 }
 
-for (const { id: theme } of THEMES) {
+for (const { id: theme, colors, syntax } of THEMES) {
   test(`plain metadata preserves the approved styling in ${theme}`, async ({
     page,
   }) => {
     await showMetadataExamples(page, theme)
     const fixture = page.locator('#metadata-a11y-fixture')
+    const tokens = await page.locator('html').evaluate(element => {
+      const style = getComputedStyle(element)
+      return ['--color-subtle', '--color-muted', '--color-highlight-med'].map(
+        token => style.getPropertyValue(token).trim()
+      )
+    })
+    const medium = `#${[1, 3, 5]
+      .map(index =>
+        Math.round(
+          parseInt(syntax.nijimi2.slice(index, index + 2), 16) * 0.45 +
+            parseInt(colors.panel.slice(index, index + 2), 16) * 0.55
+        )
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('')}`
+    expect(tokens).toEqual([...NATIVE_NEUTRALS[theme], medium])
     const appearance = await fixture.evaluate(element => {
       const probe = document.createElement('span')
       element.append(probe)
       const results = [
         ...element.querySelectorAll<HTMLElement>(
-          '.badge-count, .metadata-origin, .text-base-content'
+          '.badge-count, .text-muted, .metadata-origin, .text-primary, .text-accent, .text-base-content'
         ),
       ].map(badge => {
         const style = getComputedStyle(badge)
         probe.style.color = badge.classList.contains('badge-count')
           ? 'var(--color-subtle)'
-          : badge.classList.contains('metadata-origin')
-            ? 'var(--color-secondary)'
-            : 'var(--color-base-content)'
+          : badge.classList.contains('text-muted')
+            ? 'var(--color-muted)'
+            : badge.classList.contains('metadata-origin')
+              ? 'var(--color-secondary)'
+              : badge.classList.contains('text-primary')
+                ? 'var(--color-primary)'
+                : badge.classList.contains('text-accent')
+                  ? 'var(--color-accent)'
+                  : 'var(--color-base-content)'
         const expected = getComputedStyle(probe)
         return {
           kind: badge.className,
@@ -160,7 +296,7 @@ for (const { id: theme } of THEMES) {
       probe.remove()
       return results
     })
-    expect(appearance).toHaveLength(25)
+    expect(appearance).toHaveLength(40)
     for (const badge of appearance) {
       expect(badge.background, badge.kind).toBe('rgba(0, 0, 0, 0)')
       expect(badge.border, badge.kind).toBe('0px')
@@ -171,17 +307,266 @@ for (const { id: theme } of THEMES) {
     }
   })
 
-  test(`plain metadata contrast on base, hover and selected surfaces in ${theme}`, async ({
+  test(`Text and accent contrast on all five surfaces, with native Subtle/Muted in ${theme}`, async ({
     page,
   }) => {
     await showMetadataExamples(page, theme)
+    const fixture = page.locator('#metadata-a11y-fixture')
+    // AGENTS.md deliberately retains Usuzumi 1 and Kasure 1, including on
+    // interaction surfaces. Check those exact roles, not a 4.5 adjustment.
+    for (const [selector, role] of [
+      ['.badge-count', 'subtle'],
+      ['.text-muted', 'muted'],
+    ] as const) {
+      const labels = fixture.locator(selector)
+      await expect(labels).toHaveCount(5)
+      for (const label of await labels.all()) {
+        await expect(label).toHaveCSS('color', themeRgb(theme, role))
+        await expect(label).toHaveCSS('opacity', '1')
+      }
+    }
     const scan = await new AxeBuilder({ page })
       .include('#metadata-a11y-fixture')
+      // Only these two documented native roles are outside the contrast target.
+      // Text, Primary, Secondary and Accent still pass axe on every surface;
+      // the full Home WCAG scan below retains all rules.
+      .exclude('#metadata-a11y-fixture .badge-count')
+      .exclude('#metadata-a11y-fixture .text-muted')
       .withRules(['color-contrast'])
       .analyze()
     expect(scan.violations).toEqual([])
   })
 }
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`defaults to To-ro and Autumn with the system ${colorScheme} preference`, async ({
+    page,
+  }) => {
+    await interceptRpc(page)
+    await page.emulateMedia({ colorScheme })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-theme',
+      `madoromi-aki-${colorScheme === 'light' ? 'hiru' : 'yoru'}`
+    )
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-accent-ink',
+      'to-ro'
+    )
+    await expect(
+      page.getByRole('button', { name: 'Season: Autumn' })
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Accent ink: To-ro (warm lantern)' })
+    ).toBeVisible()
+    await expect(page.getByRole('link', { name: /Evals/ })).toHaveCount(0)
+  })
+}
+
+for (const { id: theme, scheme, name } of THEMES) {
+  test(`appearance controls preserve saved ${theme}, keyboard focus and shared ghost states`, async ({
+    page,
+  }) => {
+    await interceptRpc(page)
+    await page.emulateMedia({
+      colorScheme: scheme === 'light' ? 'dark' : 'light',
+      reducedMotion: 'reduce',
+    })
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+    const appearance = page.getByRole('group', {
+      name: 'Appearance',
+      exact: true,
+    })
+    const ink = appearance.getByRole('button', { name: /^Accent ink:/ })
+    const season = appearance.getByRole('button', { name: /^Season:/ })
+    const mode = appearance.getByRole('button', {
+      name: `${name} theme active`,
+    })
+    await expect(season.locator('svg')).toHaveCount(1) // Season icon, no caret.
+    await expect(season).toHaveCSS('border-radius', '0px')
+    await expect(ink).toHaveCSS('border-top-right-radius', '0px')
+    await expect(mode).toHaveCSS('border-top-left-radius', '0px')
+    for (const control of [ink, season, mode]) {
+      await expect(control).toHaveCSS('font-size', '14px')
+      await expect(control).toHaveCSS('font-weight', '400')
+    }
+    const toRo = ACCENT_INKS.find(ink => ink.id === 'to-ro')!
+    const preview = ink.locator('span[aria-hidden="true"] > span')
+    await expect(preview).toHaveCount(3)
+    const dots = await preview.evaluateAll(elements =>
+      elements.map(element => {
+        const style = getComputedStyle(element)
+        return {
+          color: style.backgroundColor,
+          width: style.width,
+          height: style.height,
+        }
+      })
+    )
+    expect(dots).toEqual(
+      [0, 3, 6].map(index => ({
+        color: `rgb(${[1, 3, 5].map(offset => parseInt(toRo.swatches[index].color.slice(offset, offset + 2), 16)).join(', ')})`,
+        width: '8px',
+        height: '8px',
+      }))
+    )
+    await expect(ink.locator('svg')).toHaveCSS('width', '16px')
+    await expect(ink).toHaveAttribute(
+      'data-tip',
+      'Accent ink: To-ro\n(warm lantern)'
+    )
+    const geometry = await appearance.evaluate(element => {
+      const buttons = [...element.children].filter(
+        child => child.tagName === 'BUTTON'
+      )
+      return buttons.map(button => button.getBoundingClientRect().toJSON())
+    })
+    expect(geometry).toHaveLength(3)
+    expect(geometry[1].left).toBeCloseTo(geometry[0].right, 0)
+    expect(geometry[2].left).toBeCloseTo(geometry[1].right, 0)
+    await season.hover()
+    await expect(season).toHaveCSS(
+      'background-color',
+      themeRgb(theme, 'highlightLow')
+    )
+    const resting = await season.boundingBox()
+    await page.mouse.down()
+    await expect(season).toHaveCSS(
+      'background-color',
+      themeRgb(theme, 'highlightLow')
+    )
+    expect(await season.boundingBox()).toEqual(resting)
+    // Release outside the button, then activate without pointer hover.
+    await page.mouse.move(0, 0)
+    await page.mouse.up()
+    await season.focus()
+    await page.keyboard.down('Space')
+    await expect(season).toHaveCSS(
+      'background-color',
+      themeRgb(theme, 'highlightMedium')
+    )
+    expect(await season.boundingBox()).toEqual(resting)
+    await page.keyboard.up('Space')
+    const seasons = page.getByRole('group', { name: 'Seasons', exact: true })
+    await expect(seasons.getByRole('button', { pressed: true })).toBeFocused()
+    await expect(seasons.getByRole('button')).toHaveCount(4)
+    await page.keyboard.press('Escape')
+    await expect(season).toBeFocused()
+    await expect(season).toHaveAttribute('aria-expanded', 'false')
+    await ink.focus()
+    await page.keyboard.press('Enter')
+    const selectedInk = page.locator('[data-ink-choice="to-ro"]')
+    await expect(selectedInk).toBeFocused()
+    await expect(selectedInk).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Escape')
+    await expect(ink).toBeFocused()
+    for (const pane of ['sidebar', 'details']) {
+      const toggle = page.getByRole('button', {
+        name: `Collapse ${pane}`,
+        exact: true,
+      })
+      await expect(toggle).toHaveCSS('color', themeRgb(theme, 'text'))
+      await expect(toggle.locator('svg')).toHaveCSS(
+        'color',
+        themeRgb(theme, 'text')
+      )
+      await expect(toggle).toHaveCSS(
+        'background-color',
+        themeRgb(theme, 'highlightMedium')
+      )
+      const box = (await toggle.boundingBox())!
+      expect(box.width).toBe(box.height)
+      expect(
+        await toggle.evaluate(element =>
+          parseFloat(getComputedStyle(element).borderTopLeftRadius)
+        )
+      ).toBeGreaterThanOrEqual(box.width / 2)
+      await toggle.hover()
+      await expect(toggle).toHaveCSS(
+        'background-color',
+        themeRgb(theme, 'highlightLow')
+      )
+      await toggle.click()
+      const reopen = page.getByRole('button', {
+        name: `Open ${pane}`,
+        exact: true,
+      })
+      await expect(reopen).toHaveAttribute('aria-expanded', 'false')
+      await expect(reopen).toHaveCSS(
+        'background-color',
+        themeRgb(theme, 'highlightLow')
+      )
+      await page.mouse.move(0, 0)
+      await expect(reopen).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await expect(reopen.locator('svg')).toHaveCSS(
+        'color',
+        themeRgb(theme, 'text')
+      )
+      await reopen.focus()
+      await page.keyboard.press('Enter')
+      await expect(toggle).toBeFocused()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(toggle).toHaveCSS(
+        'background-color',
+        themeRgb(theme, 'highlightMedium')
+      )
+    }
+  })
+}
+
+test('persists the chosen ink independently of season and Day/Night', async ({
+  page,
+}) => {
+  await interceptRpc(page)
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+  await page.goto('/')
+  const ink = page.getByRole('button', { name: /^Accent ink:/ })
+  await ink.click()
+  const rikka = page.locator('[data-ink-choice="rikka"]')
+  await rikka.focus()
+  await page.keyboard.press('Enter')
+  await expect(ink).toBeFocused()
+  await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
+  const season = page.getByRole('button', { name: /^Season:/ })
+  await season.click()
+  await page
+    .getByRole('group', { name: 'Seasons', exact: true })
+    .getByRole('button', { name: 'Winter', exact: true })
+    .click()
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-theme',
+    'madoromi-fuyu-hiru'
+  )
+  const mode = page.getByRole('button', { name: 'Winter Day theme active' })
+  await mode.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-theme',
+    'madoromi-fuyu-yoru'
+  )
+  await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-theme',
+    'madoromi-fuyu-yoru'
+  )
+  await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
+  await expect(page.locator('.primary-navigation .tab-active svg')).toHaveCSS(
+    'color',
+    themeRgb('madoromi-fuyu-yoru', 'primary', 'rikka')
+  )
+  expect(
+    await page.evaluate(() => ({
+      theme: localStorage.getItem('theme'),
+      ink: localStorage.getItem('theme-accent-ink'),
+    }))
+  ).toEqual({ theme: 'madoromi-fuyu-yoru', ink: 'rikka' })
+})
 
 test('oversized service tooltips remain scrollable and selectable on a narrow viewport', async ({
   page,
@@ -304,33 +689,37 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
 })
 
 for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
-  test(`card outcome bars preserve native selection and readable tooltips in ${theme}`, async ({
+  test(`card service bars preserve native selection and readable tooltips in ${theme}`, async ({
     page,
   }) => {
     await interceptRpc(page)
-    await page.route('**/api/features', route =>
-      route.fulfill({ json: { evals: { enabled: true } } })
-    )
+    await interceptTraces(page)
     await page.addInitScript(
       theme => localStorage.setItem('theme', theme),
       theme
     )
     await page.setViewportSize({ width: 1440, height: 1000 })
-    await page.goto('/evals?preview=examples&experiment=direct-agent')
+    await page.goto(`/traces/${TRACE_IDS[0]}?span=${SPAN_IDS[0]}&time=all`)
     const card = page.getByRole('button', {
-      name: /^Guide-assisted agent Complete/,
+      name: /^Inventory trace/,
     })
     const bar = card.getByRole('group', {
-      name: /Task completion by result count/,
+      name: /Service breakdown by span count/,
     })
     await expect(card).toHaveAttribute('aria-pressed', 'false')
     const segment = bar.locator('.breakdown-segment').first()
     const beforeHover = page.url()
     await segment.hover()
     const tooltip = card.locator('.breakdown-tooltip:popover-open')
-    await expect(tooltip).toHaveText('Pass [11]')
+    await expect(tooltip).toHaveText('checkout [1]')
     await expect(tooltip).toHaveCSS('font-size', '14px')
     await expect(tooltip).toHaveCSS('line-height', '21px')
+    await expect(tooltip).toHaveCSS('font-weight', '400')
+    await expect(tooltip).toHaveCSS(
+      'background-color',
+      themeRgb(theme, 'panel')
+    )
+    await expect(tooltip).toHaveCSS('color', themeRgb(theme, 'text'))
     await expect(card).toHaveCSS('background-color', low)
     expect(page.url()).toBe(beforeHover)
     await page.mouse.down()
@@ -339,16 +728,21 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     await page.mouse.up()
     await expect(card).toHaveAttribute('aria-pressed', 'true')
     await expect(card).toHaveCSS('background-color', low)
-    expect(new URL(page.url()).searchParams.get('experiment')).toBe(
-      'guide-assisted'
-    )
+    expect(new URL(page.url()).pathname).toBe(`/traces/${TRACE_IDS[1]}`)
     await page.mouse.move(0, 0)
     await expect(card).toHaveCSS('background-color', selectedColor)
     await expect(tooltip).toHaveCount(0)
-    await expect(card.locator('.signal-row__header')).toHaveText(
-      'Guide-assisted agent Complete'
+    await expect(card.locator('.signal-row__title')).toHaveText(
+      'Inventory trace'
     )
-    await expect(card).not.toHaveText(/tool calls|Score:|Est\. cost:/)
+    await expect(card.locator('.signal-row__title')).toHaveCSS(
+      'font-size',
+      '16px'
+    )
+    await expect(card.locator('.signal-row__title')).toHaveCSS(
+      'font-weight',
+      '400'
+    )
     await expect(card.locator('.signal-date__label')).toHaveText('Started:')
     const dateSpacing = await card.locator('.signal-date').evaluate(element => {
       const label = element.querySelector('.signal-date__label')!
@@ -387,15 +781,15 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     expect(Math.abs(datePlacement.bottomOffset)).toBeLessThan(1)
     expect(datePlacement.followsBar).toBe(true)
     await expect(card).toHaveAccessibleName(
-      /Pass: 11 results.*Partial: 3 results.*Fail: 2 results/
+      /checkout: 1 span.*payments: 1 span.*database: 1 span/
     )
     await expect(
-      card.locator('button, a, [tabindex], .signal-row__meta-row, .legend-rows')
+      card.locator('button, a, [tabindex], .legend-rows')
     ).toHaveCount(0)
     await expect(card.locator('.breakdown-segment')).toHaveCount(3)
     const other = page
       .locator('button.signal-row')
-      .filter({ hasText: 'Direct agent' })
+      .filter({ hasText: 'Checkout trace' })
     await other.focus()
     await page.keyboard.press('Space')
     await expect(other).toHaveAttribute('aria-pressed', 'true')
@@ -551,6 +945,39 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
+  test('keeps Getting started headerless, labelled and regularly typeset', async ({
+    page,
+  }) => {
+    const guide = page.getByRole('region', {
+      name: 'Getting started',
+      exact: true,
+    })
+    await expect(guide).toBeVisible()
+    await expect(guide.locator('summary, .detail-bubble__heading')).toHaveCount(
+      0
+    )
+    await expect(
+      page.getByRole('heading', { name: 'Getting started', exact: true })
+    ).toHaveCount(0)
+    await expect(
+      guide.getByRole('heading', { name: 'Connect an exporter' })
+    ).toHaveCSS('font-size', '16px')
+    await expect(
+      guide.getByRole('heading', { name: 'Connect an exporter' })
+    ).toHaveCSS('font-weight', '400')
+    await expect(guide.locator('.guide-scroll')).toHaveCSS('overflow-y', 'auto')
+    const welcome = page.getByRole('heading', {
+      name: 'otel-desktop-viewer',
+      exact: true,
+    })
+    await expect(welcome).toHaveCSS('font-size', '22px')
+    await expect(welcome).toHaveCSS('font-weight', '400')
+    await expect(welcome.locator('.welcome-prompt')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+  })
+
   test('uses the approved 20% Winter Day surfaces and mapped foregrounds', async ({
     page,
   }) => {
@@ -614,17 +1041,13 @@ test.describe('home page accessibility', () => {
         'background-color',
         canvas
       )
-      await page.route('**/api/features', route =>
-        route.fulfill({ json: { evals: { enabled: true } } })
-      )
-      await page.goto(
-        '/evals?preview=examples&experiment=guide-assisted&result=request-latency'
-      )
+      await interceptTraces(page)
+      await page.goto(`/traces/${TRACE_IDS[0]}?span=${SPAN_IDS[0]}&time=all`)
       await expect(
         page.locator('.page-layout__main-chrome .pane-header').first()
       ).toHaveCSS('background-color', panel)
       const detailHeadings = page.locator(
-        '.detail-stack:visible > .detail-bubble > details > .detail-bubble__heading'
+        '.detail-stack:visible > .detail-bubble > :is(details, section) > .detail-bubble__heading'
       )
       await expect(detailHeadings).toHaveCount(3)
       for (const heading of await detailHeadings.all()) {
@@ -664,13 +1087,11 @@ test.describe('home page accessibility', () => {
       'rgb(241, 242, 243)'
     )
 
-    await page.route('**/api/features', route =>
-      route.fulfill({ json: { evals: { enabled: true } } })
-    )
-    await page.goto('/evals?preview=examples')
+    await interceptTraces(page)
+    await page.goto(`/traces/${TRACE_IDS[0]}?span=${SPAN_IDS[0]}&time=all`)
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(201, 202, 205)'
+      'rgb(206, 207, 210)'
     )
     await expect(
       page.locator('.signal-row:not(.signal-row--selected)').first()
@@ -691,7 +1112,7 @@ test.describe('home page accessibility', () => {
     await page.mouse.move(0, 0)
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(201, 202, 205)'
+      'rgb(206, 207, 210)'
     )
   })
 
@@ -706,11 +1127,9 @@ test.describe('home page accessibility', () => {
     }) => {
       await page.setViewportSize({ width: 1920, height: 1000 })
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await page.route('**/api/features', route =>
-        route.fulfill({ json: { evals: { enabled: true } } })
-      )
+      await interceptTraces(page)
       await page.evaluate(theme => localStorage.setItem('theme', theme), theme)
-      await page.goto('/evals?preview=examples')
+      await page.goto(`/traces/${TRACE_IDS[0]}?span=${SPAN_IDS[0]}&time=all`)
       expect(
         await page
           .locator('html')
@@ -736,10 +1155,7 @@ test.describe('home page accessibility', () => {
         page.locator('.detail-bubble__heading').first()
       ).not.toHaveCSS('background-color', selectedColor)
 
-      const row = page
-        .getByRole('table', { name: /^Results for/ })
-        .locator('tbody tr[data-outline-id]')
-        .first()
+      const row = page.locator(`.waterfall-row[data-span-id="${SPAN_IDS[1]}"]`)
       await row.hover()
       const rowCell = row.locator('th, td').first()
       await expect(rowCell).toHaveCSS('background-color', low)
@@ -748,7 +1164,9 @@ test.describe('home page accessibility', () => {
         'border-bottom-right-radius',
         '12px'
       )
-      await row.locator('button[aria-pressed]').click()
+      await row.getByRole('button', { name: /span field: name/ }).click()
+      await expect(row).toHaveAttribute('aria-selected', 'true')
+      await expect(rowCell).toHaveCSS('background-color', low)
       await page.mouse.move(0, 0)
       await expect(rowCell).toHaveCSS('background-color', selectedColor)
       await row.hover()
@@ -834,7 +1252,7 @@ test.describe('home page accessibility', () => {
     ).toBeFocused()
   })
 
-  test('mutes the sidebar toggle when the drawer is dragged closed', async ({
+  test('keeps the sidebar toggle neutral when the drawer is dragged closed', async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -842,6 +1260,12 @@ test.describe('home page accessibility', () => {
     const toggle = page.getByRole('button', { name: 'Collapse sidebar' })
     const activeColour = await toggle.evaluate(
       element => getComputedStyle(element).color
+    )
+    const theme = (await page.locator('html').getAttribute('data-theme'))!
+    expect(activeColour).toBe(themeRgb(theme, 'text'))
+    await expect(toggle).toHaveCSS(
+      'background-color',
+      themeRgb(theme, 'highlightMedium')
     )
     const handle = await page
       .getByRole('separator', { name: 'Resize the list' })
@@ -852,12 +1276,18 @@ test.describe('home page accessibility', () => {
     await page.mouse.up()
     const reopen = page.getByRole('button', { name: 'Open sidebar' })
     await expect(reopen).toHaveAttribute('aria-expanded', 'false')
-    await expect(reopen).not.toHaveCSS('color', activeColour)
+    await expect(reopen).toHaveCSS('color', activeColour)
+    await expect(reopen.locator('svg')).toHaveCSS('color', activeColour)
+    await expect(reopen).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await reopen.focus()
     await page.keyboard.press('Enter')
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await toggle.blur()
     await expect(toggle).toHaveCSS('color', activeColour)
+    await expect(toggle).toHaveCSS(
+      'background-color',
+      themeRgb(theme, 'highlightMedium')
+    )
   })
 
   test('collapses and reopens details without losing the split or keyboard focus', async ({
@@ -919,9 +1349,6 @@ test.describe('home page accessibility', () => {
   test('shares one set of panel widths across navigation and reloads', async ({
     page,
   }) => {
-    await page.route('**/api/features', route =>
-      route.fulfill({ json: { evals: { enabled: true } } })
-    )
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.setViewportSize({ width: 1920, height: 1000 })
     await page.goto('/traces')
@@ -962,11 +1389,11 @@ test.describe('home page accessibility', () => {
       }
     }
 
-    for (const name of ['Metrics', 'Evals', 'Home', 'Logs', 'Traces']) {
+    for (const name of ['Metrics', 'Home', 'Logs', 'Traces']) {
       await page
         .getByRole('navigation', { name: 'Primary' })
         .getByRole('link', {
-          name: name === 'Evals' ? 'Experimental Evals' : name,
+          name,
           exact: true,
         })
         .click()
@@ -1481,24 +1908,32 @@ test.describe('home page accessibility', () => {
       const editor = header.locator('.cm-content[contenteditable="true"]')
       const draft = `service.name = "${'long-service-name-'.repeat(30)}"`
       await editor.fill(draft)
+      await expect(editor).toHaveText(draft)
       const controls = [
         { name: /^(Open|Collapse) sidebar$/, direction: 'right' },
         { name: /^(Open|Collapse) details$/, direction: 'left' },
+        {
+          name: /^Accent ink:/,
+          direction: width < 768 ? 'bottom' : 'left',
+          multiline: true,
+        },
         { name: /theme active$/, direction: 'left' },
         { name: /^Refresh$/, direction: 'bottom' },
         { name: /^Clear search$/, direction: 'bottom' },
         { name: /^Search query help$/, direction: 'bottom' },
         { name: /^Change time range/, direction: 'bottom' },
       ]
-      for (const { name, direction } of controls) {
+      for (const { name, direction, multiline } of controls) {
         const button = header.getByRole('button', { name })
         await expect(button).toHaveAttribute('data-tip', /\S/)
         await button.hover()
         await expect
-          .poll(() =>
-            button.evaluate(
-              element => getComputedStyle(element, '::before').opacity
-            )
+          .poll(
+            () =>
+              button.evaluate(
+                element => getComputedStyle(element, '::before').opacity
+              ),
+            { message: `${name} tooltip at ${width}px` }
           )
           .toBe('1')
         const bounds = await button.evaluate(element => {
@@ -1543,12 +1978,44 @@ test.describe('home page accessibility', () => {
               clippedBy.push(parent.className)
             }
           }
-          return { bubble, trigger: trigger.toJSON(), clippedBy }
+          const probe = document.createElement('span')
+          probe.style.cssText =
+            'color:var(--color-base-content);background:var(--color-base-200)'
+          element.append(probe)
+          const reference = getComputedStyle(probe)
+          const palette = {
+            panel: style.backgroundColor === reference.backgroundColor,
+            text: style.color === reference.color,
+            weight: style.fontWeight,
+            size: style.fontSize,
+          }
+          probe.remove()
+          return {
+            bubble,
+            trigger: trigger.toJSON(),
+            clippedBy,
+            palette,
+            whiteSpace: style.whiteSpace,
+          }
+        })
+        expect(bounds.palette).toEqual({
+          panel: true,
+          text: true,
+          weight: '400',
+          size: '14px',
         })
         expect(bounds.clippedBy, `${name} at ${width}px`).toEqual([])
         expect(bounds.bubble.left).toBeGreaterThanOrEqual(0)
         expect(bounds.bubble.right).toBeLessThanOrEqual(width)
         expect(bounds.bubble.top).toBeGreaterThanOrEqual(0)
+        expect(bounds.bubble.bottom).toBeLessThanOrEqual(900)
+        if (multiline) {
+          await expect(button).toHaveAttribute(
+            'data-tip',
+            'Accent ink: To-ro\n(warm lantern)'
+          )
+          expect(bounds.whiteSpace).toBe('pre-line')
+        }
         if (direction === 'right')
           expect(bounds.bubble.left).toBeGreaterThan(bounds.trigger.right)
         else if (direction === 'left')
@@ -1684,6 +2151,16 @@ test.describe('home page accessibility', () => {
     expect(selectedStyle.outlineStyle).toBe('solid')
     expect(selectedStyle.background).toBe('rgba(0, 0, 0, 0)')
 
+    await page.keyboard.press('Tab')
+    const exporterHelp = page.getByRole('button', {
+      name: 'Exporter connection help',
+    })
+    await expect(exporterHelp).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('note')).toContainText('OTLP over gRPC')
+    await expect(page.getByRole('note')).toContainText('Port 4317')
+    await page.keyboard.press('Escape')
+    await expect(exporterHelp).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(
       page.getByRole('button', { name: 'Copy OTLP environment variables' })

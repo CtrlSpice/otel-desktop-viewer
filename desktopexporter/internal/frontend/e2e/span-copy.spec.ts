@@ -933,7 +933,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await expect(json).toHaveAttribute('contenteditable', 'false')
   await expect(json.getByText('example', { exact: true })).toHaveCSS(
     'color',
-    palette['code-wakaba']!
+    palette['base-content']!
   )
   await expect(json.getByText('42', { exact: true })).toHaveCSS(
     'color',

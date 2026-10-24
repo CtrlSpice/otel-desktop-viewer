@@ -118,8 +118,8 @@
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <div class="detail-property__heading">
       <span class="detail-property__key"
-        >{fieldName}{#if qualifier}<span class="text-subtle">{' · '}</span
-          ><span class="detail-property__qualifier">{qualifier}</span
+        >{fieldName}{#if qualifier}<span class="text-subtle">{' · '}</span><span
+            class="detail-property__qualifier">{qualifier}</span
           >{/if}{#if showType}<span class="text-subtle">{' · '}</span><span
             class="detail-property__type">{fieldType}</span
           >{/if}</span

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('collapsible attributes in Details open exact matching summary cards without bars or a Value section', async ({
+test('attribute value inspection scopes counted Telemetry tabs with independent 25-card pages', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
@@ -17,6 +17,7 @@ test('collapsible attributes in Details open exact matching summary cards withou
   const otherSpanID = '0000000000000002'
   const requests: { method: string; params: Record<string, unknown> }[] = []
   await page.addInitScript(() => {
+    localStorage.setItem('signal-drawer:open', 'true')
     localStorage.setItem('signal-detail:open', 'true')
     Object.defineProperty(navigator, 'clipboard', {
       value: {
@@ -181,11 +182,40 @@ test('collapsible attributes in Details open exact matching summary cards withou
   const table = details.getByRole('table', { name: 'Attributes', exact: true })
   const heading = table.locator('tr[data-attribute-heading="payload"]')
   await expect(heading).toHaveCount(1)
-  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
+  await expect(heading.locator('.attribute-frequency-bar')).toHaveCount(0)
   const rows = table.locator('tr[data-attribute-key="payload"]')
   await expect(rows.first()).toBeHidden()
   const foundOn = details.locator('[data-detail-section="found-on"]')
-  const storage = details.locator('[data-detail-section="storage"]')
+  const attributes = details.locator('[data-detail-section="attributes"]')
+  const guide = page.getByRole('region', { name: 'Getting started sections' })
+  await expect(
+    guide.locator('[data-detail-section="storage"]')
+  ).toHaveAttribute('data-detail-group', 'closed')
+  await expect(foundOn.locator('summary')).toHaveText('Telemetry')
+  const tabs = foundOn.getByRole('tablist', { name: 'Telemetry signals' })
+  const tracesTab = tabs.getByRole('tab', { name: /^Traces/ })
+  const metricsTab = tabs.getByRole('tab', { name: /^Metrics/ })
+  const logsTab = tabs.getByRole('tab', { name: /^Logs/ })
+  const traces = foundOn.getByRole('region', { name: 'Matching traces' })
+  const metrics = foundOn.getByRole('region', { name: 'Matching metrics' })
+  const logs = foundOn.getByRole('region', { name: 'Matching logs' })
+  const navigation = foundOn.getByRole('group', { name: 'page navigation' })
+  await expect(tabs.getByRole('tab').nth(0)).toHaveAccessibleName(
+    'Traces [1] traces'
+  )
+  await expect(tabs.getByRole('tab').nth(1)).toHaveAccessibleName(
+    'Metrics [1] metrics'
+  )
+  await expect(tabs.getByRole('tab').nth(2)).toHaveAccessibleName(
+    'Logs [30] logs'
+  )
+  const headerBox = (await foundOn.locator('summary').boundingBox())!
+  const tabBox = (await tabs.boundingBox())!
+  expect(tabBox.x).toBeGreaterThan(headerBox.x)
+  expect(tabBox.y).toBeGreaterThanOrEqual(headerBox.y)
+  expect(tabBox.y + tabBox.height).toBeLessThanOrEqual(
+    headerBox.y + headerBox.height + 1
+  )
   await heading
     .getByRole('button', {
       name: 'Show payload · string · resource in details',
@@ -195,23 +225,60 @@ test('collapsible attributes in Details open exact matching summary cards withou
   await expect(foundOn.locator('summary')).toContainText('string')
   await expect(foundOn.locator('summary')).toContainText('resource')
   await expect(foundOn.getByText('Found on', { exact: true })).toHaveCount(0)
+  await expect(traces.getByRole('link')).toHaveCount(1)
+  await expect(traces).toContainText('2 matching spans')
+  await expect(foundOn.getByText('25 per page', { exact: true })).toBeVisible()
+  await tracesTab.focus()
+  await tracesTab.press('ArrowRight')
+  await expect(metricsTab).toBeFocused()
+  await expect(metricsTab).toHaveAttribute('aria-selected', 'true')
+  await expect(metrics.getByRole('link')).toHaveCount(1)
+  await expect(metrics).toContainText('90 matching datapoints')
+  await expect(navigation).toContainText('1 / 1 page')
+  await metricsTab.press('End')
+  await expect(logsTab).toBeFocused()
+  await expect(logsTab).toHaveAttribute('aria-selected', 'true')
+  await expect(logs.getByRole('link')).toHaveCount(25)
+  await expect(logs.locator('.signal-row__description')).toHaveText(
+    Array.from({ length: 25 }, (_, index) => `Matching log ${index}`)
+  )
+  await expect(navigation).toContainText('1 / 2 pages')
   await expect(
-    foundOn.getByRole('region', { name: 'Matching traces' }).getByRole('link')
-  ).toHaveCount(1)
+    navigation.getByRole('button', { name: 'Previous page' })
+  ).toBeDisabled()
+  const footerBox = (await navigation.boundingBox())!
+  const tabsBeforeScroll = (await tabs.boundingBox())!
+  await logs.evaluate(element => {
+    element.scrollTop = 120
+  })
+  await expect.poll(() => logs.evaluate(element => element.scrollTop)).toBe(120)
+  expect((await tabs.boundingBox())!.y).toBeCloseTo(tabsBeforeScroll.y, 0)
+  expect((await navigation.boundingBox())!.y).toBeCloseTo(footerBox.y, 0)
+  await logsTab.press('ArrowLeft')
+  await expect(metricsTab).toBeFocused()
+  await expect(navigation).toContainText('1 / 1 page')
+  await metricsTab.press('ArrowRight')
+  await expect.poll(() => logs.evaluate(element => element.scrollTop)).toBe(120)
+  await navigation.getByRole('button', { name: 'Next page' }).click()
+  await expect(logs.getByRole('link')).toHaveCount(5)
+  await expect(logs.locator('.signal-row__description')).toHaveText(
+    Array.from({ length: 5 }, (_, index) => `Matching log ${index + 25}`)
+  )
+  await expect(navigation).toContainText('2 / 2 pages')
   await expect(
-    foundOn.getByRole('region', { name: 'Matching logs' }).getByRole('link')
-  ).toHaveCount(25)
-  await expect(
-    foundOn.getByRole('region', { name: 'Matching metrics' }).getByRole('link')
-  ).toHaveCount(1)
-  await expect(foundOn).toContainText('2 matching spans')
-  await expect(foundOn).toContainText('90 matching datapoints')
-  await foundOn.getByRole('button', { name: 'More logs' }).click()
-  await expect(
-    foundOn.getByRole('region', { name: 'Matching logs' }).getByRole('link')
-  ).toHaveCount(30)
+    navigation.getByRole('button', { name: 'Next page' })
+  ).toBeDisabled()
+  await expect.poll(() => logs.evaluate(element => element.scrollTop)).toBe(0)
+  await logsTab.focus()
+  await logsTab.press('Home')
+  await expect(tracesTab).toBeFocused()
+  await expect(tracesTab).toHaveAttribute('aria-selected', 'true')
+  await expect(navigation).toContainText('1 / 1 page')
+  await tracesTab.press('End')
+  await expect(navigation).toContainText('2 / 2 pages')
+  await expect(logs.getByRole('link')).toHaveCount(5)
   expect((await foundOn.boundingBox())!.y).toBeLessThan(
-    (await storage.boundingBox())!.y
+    (await attributes.boundingBox())!.y
   )
   const tableNode = await table.elementHandle()
   const discoveryReads = requests.filter(
@@ -220,41 +287,64 @@ test('collapsible attributes in Details open exact matching summary cards withou
   await heading
     .getByRole('button', { name: 'Expand payload · resource values' })
     .click()
+  await table.getByRole('button', { name: 'Sort by percentage' }).click()
   await expect(rows.first().locator('td:nth-child(2)')).toHaveText('100')
   await expect(rows.first().locator('td:nth-child(3)')).toHaveText('[50%]')
+  await expect(rows.locator('.attribute-frequency-bar')).toHaveCount(3)
+  await expect(rows.first().locator('.attribute-frequency-bar')).toBeVisible()
   await expect(rows.last()).toContainText('rare')
-  await rows
-    .first()
-    .getByRole('button', {
-      name: 'Show resource attribute: payload in details',
-    })
-    .click()
-  await expect(details.locator('[data-detail-section="value"]')).toHaveCount(0)
-  await expect(
-    foundOn.getByRole('region', { name: 'Matching logs' }).getByRole('link')
-  ).toHaveCount(1)
-  await expect(foundOn).toContainText('1 matching span')
-  await expect(foundOn).toContainText('9 matching datapoints')
-  expect((await foundOn.boundingBox())!.y).toBeLessThan(
-    (await storage.boundingBox())!.y
+  const inspect = rows.first().getByRole('button', {
+    name: 'Show resource attribute: payload in details',
+  })
+  await expect(inspect).toHaveAttribute('title', value)
+  await inspect.focus()
+  await inspect.press('Enter')
+  await expect(rows.first()).toHaveClass(/table-row--selected/)
+  await expect(logsTab).toHaveAccessibleName('Logs [1] logs')
+  await expect(logs.getByRole('link')).toHaveCount(1)
+  await expect(logs.locator('.signal-row__description')).toHaveText(
+    'Matching log 0'
   )
-  await expect(details.locator('[data-detail-section]')).toHaveCount(4)
+  await expect(navigation).toContainText('1 / 1 page')
+  await tracesTab.click()
+  await expect(traces).toContainText('1 matching span')
+  await metricsTab.click()
+  await expect(metrics).toContainText('9 matching datapoints')
+  expect((await foundOn.boundingBox())!.y).toBeLessThan(
+    (await attributes.boundingBox())!.y
+  )
+  await expect(details.locator('[data-detail-section]')).toHaveCount(2)
   expect(
     await details
       .locator('[data-detail-section]')
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['attributes', 'found-on', 'storage', 'issues'])
+  ).toEqual(['found-on', 'attributes'])
+  expect(
+    await guide
+      .locator('[data-detail-section]')
+      .evaluateAll(elements =>
+        elements.map(element => element.getAttribute('data-detail-section'))
+      )
+  ).toEqual(['guide', 'storage', 'issues'])
+  await expect(
+    guide.locator('[data-detail-section="storage"]')
+  ).toHaveAttribute('data-detail-group', 'closed')
+  const summaryReads = requests.filter(request =>
+    request.method.endsWith('Summaries')
+  ).length
   await rows.first().getByRole('button', { name: 'Copy payload value' }).click()
   expect(
     await page.evaluate(
       () => (window as Window & { copiedValue?: string }).copiedValue
     )
   ).toBe(value)
-  const link = foundOn
-    .getByRole('region', { name: 'Matching traces' })
-    .getByRole('link')
+  expect(
+    requests.filter(request => request.method.endsWith('Summaries'))
+  ).toHaveLength(summaryReads)
+  await tracesTab.click()
+  const link = traces.getByRole('link')
   const href = new URL((await link.getAttribute('href'))!, page.url())
   expect(href.pathname).toBe(`/traces/${traceID}`)
   expect(href.searchParams.get('span')).toBe(spanID)
@@ -285,5 +375,25 @@ test('collapsible attributes in Details open exact matching summary cards withou
     requests.filter(request => request.method === 'discoverTelemetry')
   ).toHaveLength(discoveryReads)
   expect(await tableNode!.evaluate(node => node.isConnected)).toBe(true)
+  // Returning to the key clears the exact-value filter and resets each page.
+  await heading
+    .getByRole('button', {
+      name: 'Show payload · string · resource in details',
+    })
+    .click()
+  await expect(logsTab).toHaveAccessibleName('Logs [30] logs')
+  await logsTab.click()
+  await expect(navigation).toContainText('1 / 2 pages')
+  await navigation.getByRole('button', { name: 'Last page' }).click()
+  await expect(logs.getByRole('link')).toHaveCount(5)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(navigation).toContainText('1 / 2 pages')
+  await expect(logs.getByRole('link')).toHaveCount(25)
+  await expect(logs.locator('.signal-row__description').first()).toHaveText(
+    'Matching log 0'
+  )
+  await expect(
+    guide.locator('[data-detail-section="storage"]')
+  ).toHaveAttribute('data-detail-group', 'closed')
   expect(errors).toEqual([])
 })

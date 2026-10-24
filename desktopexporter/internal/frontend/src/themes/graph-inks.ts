@@ -1,5 +1,5 @@
-import data from './graph-inks.json'
-import curves from './graph-ink-curves.json'
+import data from './graph-inks.json' with { type: 'json' }
+import curves from './graph-ink-curves.json' with { type: 'json' }
 import { COUNT_PALETTES, type CountPaletteId } from './count-palettes'
 
 export type GraphShade = 1 | 2 | 3 | 4 | 5 | 6 | 7

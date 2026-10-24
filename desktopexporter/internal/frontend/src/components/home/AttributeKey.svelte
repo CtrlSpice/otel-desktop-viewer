@@ -52,8 +52,7 @@
         <span
           class="min-w-0 truncate"
           title={`${entry.key} · ${entry.kind} · ${entry.ownerType}`}
-          >{entry.key}<span class="text-subtle" aria-hidden="true"
-            >{' · '}</span
+          >{entry.key}<span class="text-subtle" aria-hidden="true">{' · '}</span
           ><span class="text-secondary">{entry.kind}</span></span
         >
       </TableValueCell>

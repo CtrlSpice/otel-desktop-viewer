@@ -2,11 +2,21 @@
 
 Source: https://github.com/the-moonwitch/madoromi
 
-Pinned revision: `f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695`.
+Project: https://madoromi.moonwit.ch/
+
+Pinned revision:
+[`f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695`](https://github.com/the-moonwitch/madoromi/tree/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695).
 
 Madoromi is by [samhain / the-moonwitch](https://github.com/the-moonwitch).
 Its code and themes are licensed under the Mozilla Public License 2.0; the
-complete licence is in `LICENSE`. `palette.json` and `color.ts` are unmodified
+complete licence is in `LICENSE` and the attribution is in `NOTICE`.
+The pinned upstream [README](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/README.md#licence)
+records the author and licence. Iroshizuku is a trademark of Pilot Corporation;
+Madoromi is not affiliated with Pilot.
+
+## Pinned source inputs
+
+`palette.json` and `color.ts` are unmodified
 files from that revision (`palettes/madoromi.json` and `src/core/color.ts`).
 `mix.ts` and `palette.ts` are the unmodified `src/core/` mixer and palette builder
 from the same revision.
@@ -20,14 +30,15 @@ in parentheses after the original ink name.
 `ink-ramps.json` extracts each ink's eight official `ramp` swatches from the
 same pinned summary. These preserve the source's curve-specific sampling.
 
-The viewer's adapted theme data remains covered by MPL-2.0. The project's
-Apache-2.0 licence is unchanged.
+The source inputs, extracted names and measurements, adapted JSON and
+Madoromi-derived generator remain covered by MPL-2.0. The surrounding project's
+Apache-2.0 licence does not replace those terms.
 
 ## Viewer adaptation
 
 `desktopexporter/internal/frontend/scripts/generate-madoromi.mjs` generates
 `src/themes/madoromi.json`, `src/themes/count-palettes.json`,
-`src/themes/count-palette-names.json`, `src/themes/graph-inks.json` and
+`src/themes/count-palette-names.json`, `src/themes/graph-inks.json`,
 `src/themes/graph-ink-curves.json` and `src/themes/accent-inks.json` from these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
@@ -35,8 +46,9 @@ Run it with Node from the frontend directory after installing its existing depen
 node scripts/generate-madoromi.mjs
 ```
 
-All eight seasonal day/night variants use 20% of the upstream chroma for the
-three paper colours and nijimi 0–2, preserving their OKLCH lightness and hue.
+All eight variants (Spring, Summer, Autumn and Winter, each in Day and Night)
+use 20% of the upstream chroma for the three paper colours and nijimi 0–2,
+preserving their OKLCH lightness and hue.
 Day canvas/panel/chrome use kami/hyoshi/chitsu. Night reverses the outer two.
 Hover uses nijimi 0; selection uses nijimi 2 at 45% over the panel, blended in
 sRGB; stronger highlights use nijimi 1.
@@ -54,8 +66,10 @@ each of the 32 seed inks. To-ro is the default; its family adds Fuyu-gaki and
 Daikokuten. The mixed slots supply Primary, Secondary, Accent and the
 fourteen syntax accents. Seasonal paper, text, highlights and semantic status
 colours retain their existing roles. Each mixed foreground receives the same
-readability adjustment against the viewer's five seasonal surfaces. The choice
-is independent of graph ownership and count palettes.
+readability adjustment against the viewer's five seasonal surfaces. Changing
+the global accent ink also selects that ink for histogram and heatmap counts;
+the chart picker can then choose a different count ink. Saved choices are
+retained on load. Service and series colour ownership is independent.
 The Accent ink picker previews the named seed's seven official graph swatches,
 not colours from its neighbouring inks or mixed syntax roles.
 
@@ -69,12 +83,12 @@ operators Sora and escapes Botan. Syntax Beni is the
 native built-in colour; invalid syntax uses the semantic Beni Error colour.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
-Histogram count palettes offer 32 colourful inks. The picker excludes the four
-seasonal neutral sources (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
+Histogram and heatmap count palettes offer 32 colourful inks, defaulting to
+To-ro (warm lantern). The picker excludes the four seasonal neutral sources
+(Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
 plus Take-sumi, Hoteison, Syun-gyo and Tsukushi: the black, muted-green and
 brown-dominant ramps. All 40 curves remain in the source distribution.
-Each adaptive
-size from 2 to 12 samples the full measured lightness interval at equally spaced
+Each adaptive size from 2 to 12 samples the full measured lightness interval at equally spaced
 OKLab L values, including both endpoints, interpolating a/b at each L and using
 the pinned `oklabToHex` conversion. Night orders shades dark to light; Day uses
 the exact same shades reversed. A one-step ramp uses the high-count endpoint
@@ -84,7 +98,9 @@ Categorical graphs and their per-service/per-series override picker use the
 first seven official swatches from each of those 32 inks. Their 224 colours keep
 the original hex values across themes. The palest eighth swatch is omitted;
 shades also used by the UI are permitted. The searchable seven-dot picker keeps
-the ink's original name and English name, and visibly links to Madoromi.
+the ink's original name and pinned upstream English name, and visibly links to
+Madoromi. Home attribute-value bars also use official shades 3–5 of these inks,
+selected by a stable typed-value hash.
 
 Taken shades are disabled within the owner scope, including hidden owners and
 their saved reset colours. With fewer than 32 unreserved presets, per-ink
@@ -93,8 +109,38 @@ positions retain exact source colours; other positions interpolate the original
 curve at equally spaced OKLab lightness values. Sliders skip occupied hex colours
 and save the ink/position identity without changing automatic assignments.
 
-The frontend distributes the full licence, these inputs, the generator and the
-adapted JSON at `/licenses/madoromi/`. Those files are the source form of the
-theme adaptation. The unmodified conversion, palette builder and mixer sources
-are served as `color.ts.txt`, `palette.ts.txt` and `mix.ts.txt` for download; their
-repository filenames use the `.ts` extension.
+## Distributed licence and source
+
+The frontend distributes the following files under `/licenses/madoromi/`,
+alongside its executable assets. Start with `/licenses/madoromi/README.md`;
+the directory URL itself is not a file index.
+
+- `LICENSE`: complete, unmodified upstream MPL-2.0 licence.
+- `NOTICE`, `README.md`: author attribution, pinned provenance and adaptation
+  details.
+- `palette.json`: unmodified upstream palette with eight seasonal variants.
+- `ink-curves.json`, `ink-names.json`, `ink-ramps.json`: all 40 pinned ink curves,
+  original-name keys, English names and official swatches.
+- `color.ts.txt`, `palette.ts.txt`, `mix.ts.txt`: unmodified upstream conversion,
+  palette builder and mixer sources.
+- `generate-madoromi.mjs`: viewer adaptation generator.
+- `themes.json`: generated `src/themes/madoromi.json`.
+- `accent-inks.json`: generated analogous accent families for 32 seeds across
+  eight themes.
+- `count-palettes.json`, `count-palette-names.json`: generated adaptive count
+  ramps of sizes 1–12 and pinned English names.
+- `graph-inks.json`, `graph-ink-curves.json`: official graph swatches, 224
+  assignment slots and sampled slider curves.
+
+These files provide the source form of the theme adaptation. The generator
+copies the notices and source inputs from `third_party/madoromi/` into
+`desktopexporter/internal/frontend/public/licenses/madoromi/`, together with its
+own source and the adapted JSON. Vite copies those public files into the frontend
+build; `make build-ts` copies that build into `desktopexporter/internal/server/static/`
+for embedding and serving by the Go executable.
+
+To use the distributed sources in a checkout, restore the `.ts.txt` downloads
+to their original `.ts` names under `third_party/madoromi/`. Put the pinned input
+JSON, `LICENSE`, `NOTICE` and `README.md` there, and place `generate-madoromi.mjs`
+in the frontend's `scripts/` directory. Run the command above with the frontend
+dependencies installed.

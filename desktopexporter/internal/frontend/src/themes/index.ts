@@ -1,4 +1,4 @@
-import definitions from './madoromi.json'
+import definitions from './madoromi.json' with { type: 'json' }
 import { GRAPH_COLORS, GRAPH_PALETTE_VERSION } from './graph-inks'
 
 export type ThemeName = keyof typeof definitions

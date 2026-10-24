@@ -744,7 +744,8 @@ test('associated logs reuse summary cards and open the full log without losing t
   const eventsHeading = page
     .locator('summary.detail-bubble__heading')
     .filter({ has: page.getByText('Events', { exact: true }) })
-  await expect(eventsHeading).toContainText('2 events')
+  await expect(eventsHeading).toHaveText('Events [2]')
+  await expect(eventsHeading.getByLabel('2 events')).toHaveText('[2]')
   await expect(eventsHeading.locator('svg')).toHaveCount(1)
   await expect(eventCard.locator('.signal-row__title-cluster')).toHaveText(
     /^\s*target event\s*·\s*Span event\s*$/
@@ -916,7 +917,8 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(fields).toHaveAttribute('open')
     await expect(activity).toHaveAttribute('open')
     await expect(activity.locator('details')).toHaveCount(0)
-    await expect(links).toContainText('0 links')
+    await expect(links).toHaveText('Links [0]')
+    await expect(links.getByLabel('0 links')).toHaveText('[0]')
     await expect(
       links.locator('details, summary, .collapse-content')
     ).toHaveCount(0)

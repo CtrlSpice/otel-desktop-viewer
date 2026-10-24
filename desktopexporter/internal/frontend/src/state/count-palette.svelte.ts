@@ -32,6 +32,7 @@ export const countPalette = {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', event => {
-    if (event.key === null || event.key === STORAGE_KEY) value = readSavedPalette()
+    if (event.key === null || event.key === STORAGE_KEY)
+      value = readSavedPalette()
   })
 }

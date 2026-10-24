@@ -11,7 +11,9 @@ export function jsonEscapeRanges(text: string): { from: number; to: number }[] {
 }
 
 /** Only the delimiters of a quoted token, never an escaped closing quote. */
-export function stringQuoteRanges(text: string): { from: number; to: number }[] {
+export function stringQuoteRanges(
+  text: string
+): { from: number; to: number }[] {
   const quote = text[0]
   if (quote !== '"' && quote !== "'") return []
   const ranges = [{ from: 0, to: 1 }]
@@ -28,8 +30,14 @@ export function stringQuoteRanges(text: string): { from: number; to: number }[] 
 export function splitJsonString(text: string) {
   const parts: { text: string; kind: 'text' | 'escape' | 'quote' }[] = []
   const ranges = [
-    ...jsonEscapeRanges(text).map(range => ({ ...range, kind: 'escape' as const })),
-    ...stringQuoteRanges(text).map(range => ({ ...range, kind: 'quote' as const })),
+    ...jsonEscapeRanges(text).map(range => ({
+      ...range,
+      kind: 'escape' as const,
+    })),
+    ...stringQuoteRanges(text).map(range => ({
+      ...range,
+      kind: 'quote' as const,
+    })),
   ].sort((a, b) => a.from - b.from)
   let from = 0
   for (const range of ranges) {

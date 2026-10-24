@@ -6,6 +6,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   let serviceReads = 0
+  const attributeScopes: Record<string, unknown>[] = []
   const services = Array.from({ length: 8 }, (_, index) => ({
     serviceName: index === 0 ? 'checkout' : `worker-${index}`,
     serviceNamespace: 'storefront',
@@ -62,12 +63,13 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
             truncated: false,
             totals: { home: services.length, traces: 42, metrics: 8, logs: 36 },
           }
-        } else if (options.kind === 'keys')
+        } else if (options.kind === 'keys') {
+          attributeScopes.push(options)
           return {
             rows: [[{ key: 'exact.number', kind: 'int64', foundOn }]],
             truncated: false,
           }
-        else
+        } else
           return {
             rows: [
               [
@@ -105,26 +107,28 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   })
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/?time=all')
-  await expect(page.getByRole('article')).toHaveCount(8)
+  const serviceCards = page.locator('.service-grid .signal-row')
+  await expect(serviceCards).toHaveCount(8)
   const homeTab = page.getByRole('link', { name: 'Home', exact: true })
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
-  const card = page.getByRole('article').first()
-  await expect(
-    card.getByRole('link', { name: 'Open checkout traces' })
-  ).toContainText('42')
-  await expect(
-    card.getByRole('link', { name: 'Open checkout logs' })
-  ).toContainText('36')
-  await expect(
-    card.getByRole('link', { name: 'Open checkout metrics' })
-  ).toContainText('8')
+  const card = page
+    .locator('.service-grid')
+    .getByRole('button', { name: /^checkout/ })
+  await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await expect(card.getByRole('link')).toHaveCount(0)
+  await expect(card.getByRole('button')).toHaveCount(0)
+  await expect(card.locator('.service-summary__row')).toHaveText([
+    /^\s*Traces:\s*42\s*·\s*248\s*spans\s*3\s*err\s*$/,
+    /^\s*Metrics:\s*8\s*·\s*640\s*pts\s*·\s*12\s*exemplars\s*$/,
+    /^\s*Logs:\s*36\s*2\s*err\s*$/,
+  ])
   for (const text of ['248 spans', '640 pts', '12 exemplars']) {
     await expect(card).toContainText(text)
   }
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect(page.locator('.service-grid')).toHaveCSS('display', 'grid')
-    for (const service of await page.locator('.service-grid article').all()) {
+    for (const service of await serviceCards.all()) {
       expect((await service.boundingBox())!.width).toBeLessThanOrEqual(384)
     }
   }
@@ -139,25 +143,36 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     'tr[data-attribute-key="exact.number"][data-attribute-source="resource"]'
   )
   await expect(attribute).toHaveCount(1)
+  expect(attributeScopes.length).toBeGreaterThan(0)
+  for (const scope of attributeScopes) {
+    expect(scope.serviceName).toBe('checkout')
+    expect(scope.namespace).toBe('storefront')
+  }
   await expect(values.first()).toBeHidden()
-  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
+  await expect(attribute.locator('.attribute-frequency-bar')).toHaveCount(0)
   await attribute
     .getByRole('button', { name: 'Expand exact.number · resource values' })
     .click()
-  await expect(values.first()).toContainText('9007199254740993')
-  await expect(values.first()).toContainText('66.7%')
+  await expect(values.first()).toContainText('33.3%')
+  const exactValue = values.filter({ hasText: '9007199254740993' })
+  await expect(exactValue).toContainText('66.7%')
+  await expect(exactValue.locator('.attribute-frequency-bar')).toBeVisible()
   await expect(
-    values
-      .first()
-      .getByTitle(
-        '2 / 3 spans · 2 / 3 logs · 2 / 3 datapoints · Of records carrying this attribute'
-      )
+    exactValue.locator('.table-value-cell__inspect')
+  ).toHaveAttribute('title', '9007199254740993')
+  await expect(
+    exactValue.getByTitle(
+      '2 / 3 spans · 2 / 3 datapoints · 2 / 3 logs · Of records carrying this attribute'
+    )
   ).toBeVisible()
-  await table
-    .getByRole('button', { name: 'Sort by value', exact: true })
-    .click()
+  await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
   await expect(
-    table.getByRole('columnheader', { name: 'Sort by value' })
+    table.getByRole('columnheader', { name: 'Sort by name' })
+  ).toHaveAttribute('aria-sort', 'descending')
+  await expect(values.first()).toContainText('9007199254740993')
+  await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
+  await expect(
+    table.getByRole('columnheader', { name: 'Sort by name' })
   ).toHaveAttribute('aria-sort', 'ascending')
   await expect(values.first()).toContainText('33.3%')
   await table.getByRole('button', { name: 'Sort by percentage' }).click()
@@ -179,22 +194,28 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await expect(page).toHaveURL(/\/\?time=all$/)
   expect(serviceReads).toBe(2) // Home's page and the database-wide tab total.
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
-  await expect(page.getByRole('article')).toHaveCount(8)
+  await expect(serviceCards).toHaveCount(8)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect.poll(() => serviceReads).toBe(4)
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [9]')
-  await expect(page.getByRole('article')).toHaveCount(9)
-  const destination = new URL(
-    (await page
-      .getByRole('link', { name: 'Open checkout logs' })
-      .getAttribute('href')) ?? '',
-    page.url()
+  await expect(serviceCards).toHaveCount(9)
+  // Workspace navigation carries the submitted Home query. Service cards
+  // select Details; individual telemetry cards navigate to exact records.
+  const search = page.getByRole('searchbox', { name: 'Search all telemetry' })
+  await search.fill(
+    'attr(resource, "service.namespace", string) = "storefront"'
   )
+  await search.press('Enter')
+  const logs = page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Logs', exact: true })
+  await expect(logs).toHaveAttribute('href', /service.namespace/)
+  const destination = new URL((await logs.getAttribute('href'))!, page.url())
   expect(destination.pathname).toBe('/logs')
   expect(destination.searchParams.get('q')).toContain(
     '"service.namespace", string) = "storefront"'
   )
-  await page.getByRole('link', { name: 'Open checkout logs' }).click()
+  await logs.click()
   await expect(page.locator('.cm-content[contenteditable="true"]')).toHaveText(
     destination.searchParams.get('q')!
   )

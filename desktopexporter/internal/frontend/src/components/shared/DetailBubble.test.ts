@@ -15,7 +15,7 @@ describe('stacked detail bubbles', () => {
       children,
     })
     expect(screen.getByRole('region', { name: 'Links' })).toBeInTheDocument()
-    expect(screen.getByText('0 links')).toBeInTheDocument()
+    expect(screen.getByLabelText('0 links')).toHaveTextContent('[0]')
     expect(screen.queryByText('Empty body')).toBeNull()
     await fireEvent.click(screen.getByText('Links', { exact: true }))
     expect(

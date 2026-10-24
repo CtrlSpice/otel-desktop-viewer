@@ -1,0 +1,23 @@
+Madoromi 微睡
+Made by samhain (the-moonwitch): https://github.com/the-moonwitch
+Project: https://madoromi.moonwit.ch/
+Source: https://github.com/the-moonwitch/madoromi
+Pinned revision: f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695
+
+The Madoromi code, extracted ink data, viewer-adapted theme and palette data,
+and Madoromi-derived generator are distributed under MPL-2.0.
+
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+The complete licence is in LICENSE beside this notice. The viewer serves
+the licence, source inputs, generator and adapted JSON alongside its executable
+assets at /licenses/madoromi/. See /licenses/madoromi/README.md for the source
+inventory and the viewer's modifications.
+
+Original ink names and pinned upstream English names are retained.
+Iroshizuku is a trademark of Pilot Corporation. madoromi isn't affiliated with Pilot.
+
+The surrounding OpenTelemetry Desktop Viewer project is licensed under
+Apache-2.0. Its root LICENSE does not replace the MPL-2.0 terms for this material.

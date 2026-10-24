@@ -385,9 +385,10 @@ describe('TraceDetailView detail bubbles', () => {
     renderWithContexts(TraceDetailView, { span: makeSpan() })
     for (const label of ['Events', 'Links']) {
       const section = screen.getByRole('region', { name: label })
-      expect(section).toHaveTextContent(
-        label === 'Events' ? '0 events' : '0 links'
-      )
+      expect(section).toHaveTextContent(`${label} [0]`)
+      expect(
+        within(section).getByLabelText(`0 ${label.toLowerCase()}`)
+      ).toHaveTextContent('[0]')
       await userEvent.click(within(section).getByText(label, { exact: true }))
       expect(
         section.querySelector('details, summary, .collapse-content')
@@ -395,7 +396,7 @@ describe('TraceDetailView detail bubbles', () => {
     }
   })
 
-  it('combines span events and correlated logs under Events with provenance badges', () => {
+  it('combines span events and correlated logs under Events with provenance labels', () => {
     const logs: TraceLogSummary[] = [
       {
         logRef: 'log-1',
@@ -425,7 +426,7 @@ describe('TraceDetailView detail bubbles', () => {
 
     expect(
       screen.getByText('Events', { exact: true }).closest('summary')
-    ).toHaveTextContent('2 events')
+    ).toHaveTextContent('Events [2]')
     expect(
       screen.getByText('Events', { exact: true }).closest('details')
     ).toHaveAttribute('open')

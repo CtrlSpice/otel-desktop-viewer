@@ -7,14 +7,12 @@
 
 `otel-desktop-viewer` is a local OpenTelemetry viewer. It uses the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), DuckDB, and Svelte.
 
-~~Also, it has a dark mode~~  
-Y'all.  
-I added another dark mode.  
-It has **two** dark modes now.
+Choose from eight Madoromi seasonal Day/Night themes and 32 named inks.
 
 ## Table of Contents
 
 - [Screenshots](#screenshots)
+- [Explore Telemetry](#explore-telemetry)
 - [Getting Started](#getting-started)
   - [Via Homebrew Cask](#via-homebrew-cask)
   - [Via GitHub Releases](#via-github-releases)
@@ -49,6 +47,20 @@ It has **two** dark modes now.
 ### Logs
 
 ![Logs view](docs/screenshots/logs.png)
+
+## Explore Telemetry
+
+Home discovers services across traces, metrics and logs. Search and the selected
+time range scope the results; selecting a service reveals its typed attributes,
+value frequencies and matching telemetry. Traces, Metrics and Logs header tabs
+show matching card counts, with independent 25-card pages and scroll positions.
+Open a card to inspect it in its signal workspace. Shared List and Details pane
+widths and open preferences carry across routes.
+
+The appearance controls are **Ink · Season · Day/Night**. Defaults are To-ro
+(warm lantern), Autumn and the system's Day/Night preference; saved choices take
+priority. Service and metric-series colours stay fixed across themes and have
+individual overrides. See [Chart Palettes](docs/chart-palettes.md).
 
 ## Getting Started
 

@@ -2,13 +2,14 @@ import { expect, test } from '@playwright/test'
 
 const command = `# recorded command\nprintf "%s\\n" "$HOME" | head -1\n./bin/otel-desktop-viewer query --endpoint http://127.0.0.1:8000 --limit 200 "SELECT '${'long value '.repeat(12)}'"`
 
-test('Home keeps service cards in Main and collapsible attributes in Details without bars', async ({
+test('Home keeps whole-card service selection in Main and collapsible value bars in Details', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => {
+    localStorage.setItem('signal-drawer:open', 'true')
     localStorage.setItem('signal-detail:open', 'true')
     Object.assign(window, { copiedValue: '' })
     Object.defineProperty(navigator, 'clipboard', {
@@ -98,7 +99,9 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
   })
   await page.goto('/?time=all')
   await expect(
-    page.getByRole('button', { name: 'Inspect shell-service' })
+    page
+      .locator('.service-grid')
+      .getByRole('button', { name: /^shell-service/ })
   ).toBeVisible()
   await expect(
     page.getByRole('searchbox', { name: 'Filter attribute keys' })
@@ -117,7 +120,7 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
   expect(layout.details.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.x).toBeGreaterThan(layout.main.x)
   await expect(
-    page.locator('.page-layout__main-chrome').getByRole('article')
+    page.locator('.page-layout__main-chrome .service-grid .signal-row')
   ).toHaveCount(1)
   await expect(page.locator('#signal-drawer-panel')).toBeVisible()
   await expect(
@@ -132,9 +135,22 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
   await expect(
     page.getByRole('region', { name: 'Getting started sections' })
   ).toContainText('Storage')
+  const guide = page.getByRole('region', {
+    name: 'Getting started',
+    exact: true,
+  })
+  await expect(guide).toBeVisible()
+  await expect(guide.locator('summary')).toHaveCount(0)
   await expect(
-    page.locator('#signal-drawer-panel')
-  ).toContainText('Ingestion issues')
+    page.getByRole('heading', { name: 'Getting started', exact: true })
+  ).toHaveCount(0)
+  await expect(
+    guide.getByRole('heading', { name: 'Connect an exporter' })
+  ).toBeVisible()
+  await expect(guide.locator('.guide-scroll')).toHaveCSS('overflow-y', 'auto')
+  await expect(page.locator('#signal-drawer-panel')).toContainText(
+    'Ingestion issues'
+  )
   await expect(
     page
       .locator('.getting-started')
@@ -144,7 +160,7 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
   const table = details.getByRole('table', { name: 'Attributes', exact: true })
   await expect(table).toHaveCount(1)
   await expect(table.getByRole('columnheader')).toHaveCount(4)
-  await expect(table.getByRole('columnheader').nth(1)).toHaveText('Cnt')
+  await expect(table.getByRole('columnheader').nth(1)).toHaveText('Count')
   const tableHandle = await table.elementHandle()
   const rows = table.locator(
     'tr[data-attribute-key="bash_command"][data-attribute-source="event"]'
@@ -152,7 +168,10 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
   await expect(rows).toHaveCount(4)
   await expect(rows.first()).toBeHidden()
   await expect(rows.last()).toBeHidden()
-  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
+  await expect(
+    table.locator('tr[data-attribute-heading] .attribute-frequency-bar')
+  ).toHaveCount(0)
+  await table.getByRole('button', { name: 'Sort by percentage' }).click()
   await table
     .getByRole('button', {
       name: 'Expand bash_command · event values',
@@ -172,8 +191,25 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
     '[5%]',
     '[1%]',
   ])
+  const bars = rows.locator('.attribute-frequency-bar')
+  await expect(bars).toHaveCount(4)
+  const colors = await bars.evaluateAll(elements =>
+    elements.map(element => getComputedStyle(element).backgroundColor)
+  )
+  for (const [index, bar] of (await bars.all()).entries()) {
+    await expect(bar).toHaveCSS('height', '8px')
+    const sizes = await bar.evaluate(element => ({
+      width: element.getBoundingClientRect().width,
+      track: element.parentElement!.getBoundingClientRect().width,
+    }))
+    expect(sizes.width).toBeCloseTo(
+      Math.max(8, sizes.track * [0.75, 0.75, 0.05, 0.01][index]!),
+      0
+    )
+  }
   const value = rows.first().locator('.table-value-cell__inspect')
   expect(await value.textContent()).toContain(command)
+  await expect(value).toHaveAttribute('title', command)
   const clipping = await value.evaluate(element => ({
     width: element.clientWidth,
     contentWidth: element.scrollWidth,
@@ -183,6 +219,13 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
   expect(clipping.contentWidth).toBeGreaterThan(clipping.width)
   expect(clipping.whiteSpace).toBe('nowrap')
   expect(clipping.overflow).toBe('ellipsis')
+  expect(clipping.width).toBeLessThanOrEqual(192)
+  await expect(
+    rows
+      .first()
+      .locator('td:last-child')
+      .getByRole('button', { name: 'Copy bash_command value' })
+  ).toHaveClass(/tooltip-left/)
   const heading = table.locator(
     'tr[data-attribute-heading="bash_command"][data-attribute-source="event"]'
   )
@@ -235,6 +278,11 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
     )
   ).toBe(command)
   await page.setViewportSize({ width: 3200, height: 1100 })
-  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
+  await expect(bars.first()).toBeVisible()
+  expect(
+    await bars.evaluateAll(elements =>
+      elements.map(element => getComputedStyle(element).backgroundColor)
+    )
+  ).toEqual(colors)
   expect(errors).toEqual([])
 })

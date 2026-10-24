@@ -796,11 +796,11 @@
                     <path
                       d={corner.path}
                       fill={cellColorRange[corner.band]}
-                      class:heatmap-colour-corner--hovered={corner.datum.columnKey ===
-                        hoveredColumnKey &&
+                      class:heatmap-colour-corner--hovered={corner.datum
+                        .columnKey === hoveredColumnKey &&
                         corner.datum.bucketKey === hoveredBucketKey}
-                      class:heatmap-colour-corner--selected={corner.datum.columnKey ===
-                        selectedColumnKey &&
+                      class:heatmap-colour-corner--selected={corner.datum
+                        .columnKey === selectedColumnKey &&
                         (!selectedCell ||
                           corner.datum.bucketKey === selectedCell.bucketKey)}
                     />

@@ -145,8 +145,7 @@
             >{startParts.value}</span
           >{/if}
         {#if durationParts}
-          {#if startParts}<span class="text-subtle" aria-hidden="true"
-              >·</span
+          {#if startParts}<span class="text-subtle" aria-hidden="true">·</span
             >{/if}
           <span
             ><span class="text-subtle">Duration:</span>

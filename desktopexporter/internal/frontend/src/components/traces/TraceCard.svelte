@@ -87,9 +87,7 @@
 </SignalCard>
 
 {#snippet missingRootTitle()}
-  <span
-    class="inline-flex items-center gap-2 text-sm font-normal text-subtle"
-  >
+  <span class="inline-flex items-center gap-2 text-sm font-normal text-subtle">
     [<span class="size-2 shrink-0 rounded-full bg-info" aria-hidden="true"
     ></span>
     <span>No root span</span>]

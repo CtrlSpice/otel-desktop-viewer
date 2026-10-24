@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('Home counts, attributes and enabled links share the submitted cross-signal query', async ({
+test('Home selection, attributes, telemetry and workspace links share the submitted query', async ({
   page,
 }) => {
   const errors: string[] = []
@@ -27,12 +27,19 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   }
   const discovery: Record<string, unknown>[] = []
   const metricQueries: unknown[] = []
+  const logQueries: Record<string, unknown>[] = []
+  const logPageQueries: Record<string, unknown>[] = []
+  await page.addInitScript(() => {
+    localStorage.setItem('signal-detail:open', 'true')
+  })
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
   await page.route('**/rpc', async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries') metricQueries.push(params)
+    if (method === 'searchLogSummaries') logQueries.push(params)
+    if (method === 'searchLogPage') logPageQueries.push(params)
     const result = (() => {
       if (method === 'getStats')
         return {
@@ -49,6 +56,18 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
         }
       if (method === 'getImportConfig') return { otlpHttpPort: 4318 }
       if (method === 'searchLogPage') return { total: 0, logs: [] }
+      if (method === 'searchLogSummaries')
+        return Array.from(
+          { length: JSON.stringify(params.query).includes('declined') ? 1 : 4 },
+          (_, index) => ({
+            logRef: `checkout-log-${index}`,
+            serviceName: 'checkout',
+            bodyPreview: `Checkout log ${index}`,
+            severityNumber: 9,
+            severityText: 'INFO',
+            timestamp: '1792692000000000000',
+          })
+        )
       if (method === 'discoverTelemetry') {
         const options = params.options
         discovery.push(options)
@@ -104,17 +123,38 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto('/?time=all')
-  await expect(page.getByRole('article')).toHaveCount(3)
-  await expect(
-    page.getByRole('button', {
-      name: 'Inspect checkout · 7 · namespace int64',
-      exact: true,
-    })
-  ).toBeVisible()
+  const serviceCards = page.locator('.service-grid .signal-row')
+  await expect(serviceCards).toHaveCount(3)
+  const typedService = page
+    .locator('.service-grid')
+    .getByRole('button', { name: /^checkout.*int64/ })
+  await typedService.focus()
+  await typedService.press('Enter')
+  await expect(typedService).toHaveAttribute('aria-pressed', 'true')
+  const typedIdentity = JSON.stringify([
+    { kind: 'string', value: 'checkout' },
+    { kind: 'int64', value: '7' },
+  ])
+  await expect
+    .poll(() =>
+      discovery.some(
+        options =>
+          options.kind === 'keys' && options.serviceIdentity === typedIdentity
+      )
+    )
+    .toBe(true)
+  const stringService = page
+    .locator('.service-grid')
+    .getByRole('button', { name: /^checkout/ })
+    .filter({ hasNotText: 'int64' })
+  await stringService.focus()
+  await stringService.press('Space')
+  await expect(stringService).toHaveAttribute('aria-pressed', 'true')
+  await expect(typedService).toHaveAttribute('aria-pressed', 'false')
   const input = page.getByRole('searchbox', { name: 'Search all telemetry' })
   await input.fill('declined')
   await input.press('Enter')
-  await expect(page.getByRole('article')).toHaveCount(1)
+  await expect(serviceCards).toHaveCount(1)
   await expect(
     page.getByRole('link', { name: 'Logs', exact: true })
   ).toHaveAccessibleDescription('Matching logs: [1]')
@@ -123,9 +163,13 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
     .getByLabel('Traces', { exact: true })
   await expect(traces).toHaveAttribute('aria-disabled', 'true')
   await expect(traces).not.toHaveAttribute('href')
-  await expect(page.getByLabel('Open checkout traces')).not.toHaveAttribute(
-    'href'
-  )
+  const telemetry = page.getByRole('tablist', { name: 'Telemetry signals' })
+  await expect(telemetry.getByRole('tab', { name: /^Traces/ })).toBeDisabled()
+  await expect(telemetry.getByRole('tab', { name: /^Metrics/ })).toBeDisabled()
+  await expect(
+    telemetry.getByRole('tab', { name: /^Logs/ })
+  ).toHaveAccessibleName('Logs [1] logs')
+  await expect(serviceCards.getByRole('link')).toHaveCount(0)
   await input.fill('an unsubmitted draft')
   await page.getByRole('button', { name: /^Change time range,/ }).click()
   await page.getByRole('button', { name: 'Last 5 min', exact: true }).click()
@@ -138,32 +182,90 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
       discovery.some(
         options =>
           options.kind === 'keys' &&
+          options.serviceIdentity === service.serviceIdentity &&
           JSON.stringify(options.queries).includes('declined')
       )
     )
     .toBe(true)
-  const link = page.getByRole('link', { name: 'Open checkout logs' })
+  await expect
+    .poll(() =>
+      logQueries.some(params => {
+        const query = JSON.stringify(params.query)
+        return (
+          query.includes('declined') &&
+          query.includes(
+            JSON.stringify(service.serviceIdentity).slice(1, -1)
+          ) &&
+          !query.includes('an unsubmitted draft') &&
+          params.startTime != null &&
+          params.endTime != null
+        )
+      })
+    )
+    .toBe(true)
+  // Presets re-anchor when Home fetches; the picker URL is an earlier snapshot.
+  // Navigation must carry the exact received reading into the next workspace.
+  const reading = [...discovery]
+    .reverse()
+    .find(options => options.kind === 'services' && options.startTime != null)!
+  const receivedRange = {
+    startTime: reading.startTime,
+    endTime: reading.endTime,
+  }
+  expect(
+    BigInt(String(reading.endTime)) - BigInt(String(reading.startTime))
+  ).toBe(300_000_000_000n)
+  for (const options of discovery.filter(
+    options => options.startTime != null
+  )) {
+    expect(options).toMatchObject(receivedRange)
+  }
+  for (const params of logQueries.filter(params => params.startTime != null)) {
+    expect(params).toMatchObject(receivedRange)
+  }
+  const link = page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Logs', exact: true })
   const target = new URL((await link.getAttribute('href'))!, page.url())
-  expect(target.searchParams.get('q')).toContain('search("declined")')
-  expect(target.searchParams.get('q')).toContain(
-    `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
+  expect(target.searchParams.get('q')).toBe('search("declined")')
+  expect(target.searchParams.get('start')).toBe(
+    String(BigInt(String(reading.startTime)) / 1_000_000n)
+  )
+  expect(target.searchParams.get('end')).toBe(
+    String(BigInt(String(reading.endTime)) / 1_000_000n)
   )
   await link.click()
   await expect(page).toHaveURL(/\/logs\?q=/)
+  await expect.poll(() => logPageQueries.length).toBeGreaterThan(0)
+  for (const params of logPageQueries) {
+    expect(params).toMatchObject(receivedRange)
+  }
+  expect(new URL(page.url()).searchParams.get('start')).toBe(
+    target.searchParams.get('start')
+  )
+  expect(new URL(page.url()).searchParams.get('end')).toBe(
+    target.searchParams.get('end')
+  )
   await expect(
     page.getByRole('link', { name: 'Logs', exact: true })
   ).toHaveAccessibleDescription('Stored logs: [10]')
+  const pageReads = logPageQueries.length
   await page.reload()
+  await expect.poll(() => logPageQueries.length).toBeGreaterThan(pageReads)
+  for (const params of logPageQueries) {
+    expect(params).toMatchObject(receivedRange)
+  }
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(new URL(page.url()).searchParams.get('q')).toBe(
     target.searchParams.get('q')
   )
   await page.goBack()
   expect(new URL(page.url()).searchParams.get('q')).toBe('declined')
-  await expect(page.getByRole('article')).toHaveCount(1)
+  await expect(serviceCards).toHaveCount(1)
   await input.fill('body !~ "healthcheck"')
   await input.press('Enter')
-  await page.getByRole('link', { name: 'Open checkout logs' }).click()
+  await expect(link).toHaveAttribute('href', /healthcheck/)
+  await link.click()
   expect(new URL(page.url()).searchParams.get('q')).toContain(
     'body !~ "healthcheck"'
   )
@@ -180,12 +282,13 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   await page.goBack()
   await input.fill('missing')
   await input.press('Enter')
-  await expect(page.getByRole('article')).toHaveCount(0)
+  await expect(serviceCards).toHaveCount(0)
   await expect(
     page.getByRole('link', { name: 'Home', exact: true })
   ).toHaveAccessibleDescription('Matching services: [0]')
   await expect(page.getByText('No services match this search.')).toBeVisible()
   // A fresh metric URL submits before reactive parent notifications can run.
+  metricQueries.length = 0
   const metricQuery = `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
   await page.goto(`/metrics?time=all&q=${encodeURIComponent(metricQuery)}`)
   await expect

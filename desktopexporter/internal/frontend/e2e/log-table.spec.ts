@@ -722,9 +722,13 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
     probe.remove()
     return colour
   })
+  await expect(editor.getByText('Folding fixture', { exact: true })).toHaveCSS(
+    'color',
+    stringColour
+  )
   await expect(
-    editor.getByText('"Folding fixture"', { exact: true })
-  ).toHaveCSS('color', stringColour)
+    editor.locator('.cm-line').filter({ hasText: 'Folding fixture' })
+  ).toContainText('"Folding fixture"')
   const folding = inspector.getByRole('group', { name: 'JSON folding' })
   const collapse = folding.getByRole('button', {
     name: 'Collapse JSON',
@@ -773,7 +777,7 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   await expect(editor.locator('.cm-foldPlaceholder')).toHaveCount(1)
   await expect(editor.locator('.cm-line').first()).toHaveText('{')
   await expect(
-    editor.getByText('"Folding fixture"', { exact: true })
+    editor.getByText('Folding fixture', { exact: true })
   ).toHaveCount(0)
   await editor
     .locator('.cm-foldGutter [title="Unfold line"]:visible')
@@ -781,7 +785,7 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
     .locator('..')
     .click()
   await expect(
-    editor.getByText('"Folding fixture"', { exact: true })
+    editor.getByText('Folding fixture', { exact: true })
   ).toBeVisible()
   await collapse.click()
   await expect(editor.locator('.cm-foldPlaceholder').first()).toBeVisible()
@@ -830,9 +834,9 @@ test('external provenance shrinks inline without replacing its source name', asy
   await guide.focus()
   await page.keyboard.press('Shift+ArrowRight')
   await expect(provenance).toHaveText('resource')
-  expect((await provenance.boundingBox())!.width).toBeGreaterThan(
-    sourceBounds.width
-  )
+  await expect
+    .poll(async () => (await provenance.boundingBox())!.width)
+    .toBeGreaterThan(sourceBounds.width)
   await page.keyboard.press('Shift+ArrowLeft')
   await expect(provenance).toHaveText('resource')
   await expect(title).toHaveAttribute('title', 'service.name')
@@ -983,15 +987,15 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
           const line = [...element.querySelectorAll('.cm-line')].find(line =>
             line.textContent?.includes('"path"')
           )!
-          const key = [...line.children].find(
-            span => span.textContent === '"path"'
+          const key = [...line.querySelectorAll('span')].find(
+            span => span.textContent === 'path'
           )!
           const value = [...line.children].find(span =>
             span.textContent?.startsWith('/recorded')
           )!
           const range = document.createRange()
-          range.setStart(key.firstChild!, 1)
-          range.setEnd(key.firstChild!, 2)
+          range.setStart(key.firstChild!, 0)
+          range.setEnd(key.firstChild!, 1)
           const anchor = range.getBoundingClientRect()
           const rects = [...value.getClientRects()]
           return (
@@ -1769,9 +1773,7 @@ test('toolbar filters draft service and severity selections and search once on A
   expect(searches).toBe(1)
   await filtersToggle.click()
   await expect(service).toHaveAttribute('aria-pressed', 'true')
-  await page
-    .getByRole('button', { name: 'Clear filters filter', exact: true })
-    .click()
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
   await expect(service).toHaveAttribute('aria-pressed', 'false')
   await expect(error).toHaveAttribute('aria-pressed', 'false')
   await page.keyboard.press('Escape')

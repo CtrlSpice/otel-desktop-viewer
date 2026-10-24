@@ -93,7 +93,9 @@
       type="button"
       class="btn btn-ghost btn-sm text-sm font-normal"
       aria-label="Clear filters"
-      disabled={filters.service.values.length + filters.severity.values.length === 0}
+      disabled={filters.service.values.length +
+        filters.severity.values.length ===
+        0}
       onclick={clearFilters}>Clear</button
     >
     <button
