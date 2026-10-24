@@ -297,7 +297,7 @@
 <style lang="postcss">
   @reference '../../app.css';
   :global(.btn.ink-picker-trigger--filled) {
-    --size: 1.75rem;
+    --size: 1.5rem;
     min-height: var(--size);
   }
   .ink-picker-options {

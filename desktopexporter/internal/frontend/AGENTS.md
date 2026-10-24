@@ -49,7 +49,7 @@
   clickable official shades, with 32px targets around 8px dots, arrow-key
   navigation and selected-shade focus. Preserve native Escape/light dismissal.
   Home service controls replace the name's colour dot with a DaisyUI
-  `btn btn-circle btn-sm` customised to a 28px circle in its 32px alignment slot,
+  `btn btn-circle btn-sm` customised to a 24px circle in its 32px alignment slot,
   filled with that service's colour and a readable 16px brush icon. Keep the
   swatch flat, without borders or shadows, and retain its keyboard focus ring. Keep it before
   the name and outside the whole-card button. Centre the service summary icons

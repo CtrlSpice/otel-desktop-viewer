@@ -178,7 +178,7 @@ console warning is emitted per exhausted scope. The scalar chart's 22-visible-
 series cap is independent of the 224-colour capacity.
 
 Each Home service name has a DaisyUI `btn btn-circle btn-sm` customised to a
-28px circle, centred in its 32px alignment slot and filled with its assigned colour,
+24px circle, centred in its 32px alignment slot and filled with its assigned colour,
 with a readable 16px paintbrush icon. It replaces the small colour dot and opens
 the shared ink picker. It is a sibling of the card button, so changing colour does not select the card. Gauge
 and Sum series have the same control in their metric Details row; it does not
