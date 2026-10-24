@@ -331,7 +331,9 @@
                     >
                       <span
                         class="size-2 rounded-full"
-                        style:background-color={swatch.color}
+                        style:background-color={taken
+                          ? 'var(--color-base-200)'
+                          : swatch.color}
                         aria-hidden="true"
                       ></span>
                     </button>
@@ -411,7 +413,6 @@
   }
   .ink-picker__shade:disabled {
     cursor: not-allowed;
-    opacity: 0.25;
   }
   @container (max-width: 26rem) {
     .ink-picker__shade-row {

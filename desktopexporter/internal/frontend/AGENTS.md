@@ -80,6 +80,7 @@
   navigation and selected-shade focus. Preserve native Escape/light dismissal.
   Disable shades reserved by other owners in the same scope, including hidden
   owners, saved reset slots and overrides; skip them during keyboard navigation.
+  Disabled shade dots use solid base-200, rather than faded ink colours.
   Keep the current choice available, including pre-existing saved collisions.
   With fewer than 32 unreserved presets, open per-ink sliders along the pinned
   curves between official shades 1 and 7. Skip occupied hex colours. Keep the
