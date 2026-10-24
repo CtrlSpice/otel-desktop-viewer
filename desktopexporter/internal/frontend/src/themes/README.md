@@ -28,6 +28,7 @@ Font families, sizes, weights and layout use the existing shared tokens.
 
 - `madoromi.json`: generated interface colours for all eight variants.
 - `count-palettes.json`: generated Madoromi histogram count ramps, sizes 1–12.
+- `count-palette-names.json`: generated English ink names from the pinned source.
 - `count-palettes.ts`: ordered count-palette catalogue and default Rikka ink.
 - `index.ts`: catalogue, seasonal selection, legacy migration and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
@@ -171,11 +172,18 @@ identity allocation changes are introduced by the seasonal interface.
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
 legends share one app-wide ink choice. The paintbrush in the selected metric
-header opens the shared filter popover with six ramps: Edo-murasaki, Rikka,
-Ku-jaku, Shin-ryoku, Ina-ho and To-ro. Its footer links to Madoromi with visible
-ink attribution. Rikka is the default. The choice is saved
+header opens one searchable ink picker with 32 colourful ramps, in alphabetical
+ink-name order. It excludes the four seasonal neutral sources (Kiri-same,
+Fukagawa-nezu, Yama-guri and Fuyu-syogun), plus Take-sumi, Hoteison, Syun-gyo and
+Tsukushi. These are the grey, black, muted-green and brown-dominant families.
+Each original ink name is followed by Madoromi's English name in Subtle
+parentheses, such as `Ajisai (hydrangea)`. Search matches either name.
+The five-dot previews show each full ramp in the current mode. Its footer links
+to Madoromi with visible ink attribution. Rikka is the default. The choice is saved
 in localStorage under `graph-count-palette`; invalid saved values fall back
-to Rikka, and blocked storage retains the choice for the current page.
+to Rikka, and blocked storage retains the choice for the current page. Existing
+saved choices retain their ink and shades. Opening the picker focuses and reveals
+the saved choice inside its scrollable list; searching does not change the choice.
 
 The generator samples each full pinned measured curve at equally spaced OKLab
 lightness values, including its endpoints, interpolates a/b at that lightness,

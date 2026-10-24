@@ -10,6 +10,9 @@ const palette = JSON.parse(
 const { inks } = JSON.parse(
   await readFile(new URL('ink-curves.json', upstream), 'utf8')
 )
+const { english: inkNames } = JSON.parse(
+  await readFile(new URL('ink-names.json', upstream), 'utf8')
+)
 const source = await readFile(new URL('color.ts', upstream), 'utf8')
 const javascript = ts.transpileModule(source, {
   compilerOptions: {
@@ -180,14 +183,16 @@ await writeFile(new URL('src/themes/madoromi.json', frontend), json)
 
 // Full measured curves, equally spaced in OKLab lightness including endpoints.
 // Store each adaptive size independently; shorter ramps are never prefixes.
-const countInks = [
-  'edo-murasaki',
-  'rikka',
-  'ku-jaku',
-  'shin-ryoku',
-  'ina-ho',
-  'to-ro',
-]
+// Keep the graph picker colourful: omit the seasonal neutral families and
+// the remaining black, muted-green and brown-dominant ramps.
+const neutralInks = new Set([
+  ...palette.seasons.map(season => season.grey),
+  'take-sumi',
+  'hoteison',
+  'syun-gyo',
+  'tsukushi',
+])
+const countInks = Object.keys(inks).filter(id => !neutralInks.has(id)).sort()
 const countRamps = Object.fromEntries(
   countInks.map(id => {
     const lab = inks[id]
@@ -211,16 +216,22 @@ const countRamps = Object.fromEntries(
   })
 )
 const countJson = JSON.stringify(countRamps, null, 2) + '\n'
+const countNamesJson = JSON.stringify(
+  Object.fromEntries(countInks.map(id => [id, inkNames[id]])), null, 2
+) + '\n'
 await writeFile(new URL('src/themes/count-palettes.json', frontend), countJson)
+await writeFile(new URL('src/themes/count-palette-names.json', frontend), countNamesJson)
 // Ship the adapted source, its generator inputs and the complete upstream licence.
 const publicSource = new URL('public/licenses/madoromi/', frontend)
 await mkdir(publicSource, { recursive: true })
 await writeFile(new URL('themes.json', publicSource), json)
 await writeFile(new URL('count-palettes.json', publicSource), countJson)
+await writeFile(new URL('count-palette-names.json', publicSource), countNamesJson)
 for (const file of [
   'LICENSE',
   'palette.json',
   'ink-curves.json',
+  'ink-names.json',
   'color.ts',
   'README.md',
 ]) {

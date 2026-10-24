@@ -8,9 +8,11 @@ Madoromi is by [samhain / the-moonwitch](https://github.com/the-moonwitch).
 Its code and themes are licensed under the Mozilla Public License 2.0; the
 complete licence is in `LICENSE`. `palette.json` and `color.ts` are unmodified
 files from that revision (`palettes/madoromi.json` and `src/core/color.ts`).
-`ink-curves.json` extracts the unmodified 96-point OKLab curves for Momiji,
-Edo-murasaki, Rikka, Ku-jaku, Shin-ryoku, Ina-ho and To-ro from
+`ink-curves.json` extracts all 40 unmodified 96-point OKLab ink curves from
 `public/precomputed/summary.json` at the same revision.
+`ink-names.json` extracts the English names from `LINEUP` in `src/inks.ts` at
+that revision, preserving upstream wording. The picker places each English name
+in parentheses after the original ink name.
 
 The viewer's adapted theme data remains covered by MPL-2.0. The project's
 Apache-2.0 licence is unchanged.
@@ -50,7 +52,11 @@ operators Sora and escapes Botan. Syntax Beni is the
 native built-in colour; invalid syntax uses the viewer's Momiji Error colour.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
-Histogram count palettes use the six curves other than Momiji. Each adaptive
+Histogram count palettes offer 32 colourful inks. The picker excludes the four
+seasonal neutral sources (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
+plus Take-sumi, Hoteison, Syun-gyo and Tsukushi: the black, muted-green and
+brown-dominant ramps. All 40 curves remain in the source distribution.
+Each adaptive
 size from 2 to 12 samples the full measured lightness interval at equally spaced
 OKLab L values, including both endpoints, interpolating a/b at each L and using
 the pinned `oklabToHex` conversion. Night orders shades dark to light; Day uses

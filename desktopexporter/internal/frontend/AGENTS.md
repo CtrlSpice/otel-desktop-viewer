@@ -23,7 +23,7 @@
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   existing 32-slot Bloom graph palettes and saved assignments during this
   UI-only migration: seasonal Day uses Dawn, Night uses Moon. Histogram and
-  heatmap count ramps use the approved six Madoromi inks, default Rikka, with one
+  heatmap count ramps use 32 colourful Madoromi inks, default Rikka, with one
   app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
   curve; Day reverses Night's exact shades, and seasons do not change the ink.
   The count-palette picker omits its redundant visible heading; retain its
@@ -31,6 +31,13 @@
   link in the footer, with a decorative 16px Hugeicons heart in theme Sakura pink.
   Preview each ink with five aligned 8px dots, evenly sampled across its full
   ramp, with 8px gaps and no outlines. Retain exact Day/Night reversal.
+  The shared picker is searchable, alphabetically ordered and scrollable; focus
+  and reveal the saved choice on opening without moving the page. Exclude the
+  four seasonal neutral inks (Kiri-same, Fukagawa-nezu, Yama-guri, Fuyu-syogun),
+  plus Take-sumi, Hoteison, Syun-gyo and Tsukushi. Preserve existing saved choices.
+  Keep the original ink name first, followed by the pinned Madoromi English name
+  in Subtle parentheses. Search matches both names; allow the label to wrap at
+  the regular text size while keeping the five preview dots aligned.
   Error uses Momiji sampled at each variant's original Beni lightness; generate
   it from the pinned ink curve. Warning fills use original Yamabuki. Warning
   text uses neutral Text. Do not add separate darkened error text colours.
