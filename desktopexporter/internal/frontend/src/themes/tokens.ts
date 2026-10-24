@@ -21,7 +21,7 @@ export function themeTokens(theme: Theme) {
         color,
       ])
     ),
-    '--color-code-literal': 'var(--color-code-kaki)',
+    '--color-code-literal': 'var(--color-code-sumi)',
     '--color-highlight-low': c.highlightLow,
     '--color-highlight-med': c.highlightMedium,
     '--color-highlight-high': c.highlightHigh,

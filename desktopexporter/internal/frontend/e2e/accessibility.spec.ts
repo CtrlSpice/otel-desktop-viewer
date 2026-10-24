@@ -562,7 +562,7 @@ test.describe('home page accessibility', () => {
       'data-theme',
       'madoromi-fuyu-hiru'
     )
-    // Frozen 20% surfaces and readable shared foregrounds.
+    // Frozen 20% surfaces, native Subtle/Muted and mapped foregrounds.
     const expected = {
       '--color-base-100': '#f1f2f3',
       '--color-base-200': '#e7e8ea',
@@ -574,7 +574,7 @@ test.describe('home page accessibility', () => {
       '--color-on-light': '#4a4e63',
       '--color-on-dark': '#f1f2f3',
       '--color-muted': '#8d91a4',
-      '--color-subtle': '#505469',
+      '--color-subtle': '#5e6277',
       '--color-rose': '#aa6e89',
       '--color-primary': '#5e21b0',
       '--color-secondary': '#0f5894',

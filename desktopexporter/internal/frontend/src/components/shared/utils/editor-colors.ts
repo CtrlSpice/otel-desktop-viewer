@@ -1,4 +1,4 @@
-/** Madoromi's native syntax roles and shared editor surfaces. */
+/** Madoromi syntax accents with neutral value text and shared editor surfaces. */
 export const editorColors = {
   base: 'var(--color-base-100)',
   highlightLow: 'var(--color-highlight-low)',
@@ -7,7 +7,8 @@ export const editorColors = {
   text: 'var(--color-code-sumi)',
   keyword: 'var(--color-code-fuji)',
   property: 'var(--color-code-ruri)',
-  string: 'var(--color-code-wakaba)',
+  string: 'var(--color-code-sumi)',
+  quote: 'var(--color-code-wakaba)',
   literal: 'var(--color-code-literal)',
   operator: 'var(--color-code-sora)',
   escape: 'var(--color-code-botan)',

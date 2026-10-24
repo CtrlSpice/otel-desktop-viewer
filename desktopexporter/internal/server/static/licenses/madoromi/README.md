@@ -32,18 +32,21 @@ Hover uses nijimi 0; selection uses nijimi 2 at 55% over the panel, blended in
 sRGB; stronger highlights use nijimi 1.
 
 Body text uses sumi, labels use usuzumi 1, primary uses fuji, metadata uses ruri,
-accent uses tokiwa, info uses sora and success uses wakaba. Shared readable
+accent uses tokiwa, info uses sora and success uses wakaba. Text and accent
 foregrounds move in 0.001 OKLCH lightness steps only as needed to reach 4.5:1
-against all three surfaces, hover and selection. Muted kasure 1, sakura and
-yamabuki warning fills retain their original colours. Error uses the Momiji
+against all three surfaces, hover and selection. Subtle usuzumi 1, Muted kasure 1,
+sakura and yamabuki warning fills retain their original colours without contrast
+adjustments. Error uses the Momiji
 curve in all eight variants, sampled at each variant's original beni lightness.
 Interpolation between stored OKLab points follows upstream `colourAt` in
 `src/core/palette.ts`, with the pinned conversion code handling the sRGB gamut.
 
 The generated syntax palette follows the upstream code guide and contains all
 fourteen named accents plus Sumi, Kasure 2 and Usuzumi 0. Each syntax foreground
-uses the same shared readability correction. Strings use Wakaba, literals Kaki,
-keywords Fuji, keys Ruri, operators Sora and escapes Botan. Syntax Beni is the
+uses the same shared readability correction. The upstream guide assigns Wakaba
+to strings and Kaki to literals; the viewer uses Sumi for their value text and
+reserves Wakaba for JSON/query quote marks. Keywords use Fuji, keys Ruri,
+operators Sora and escapes Botan. Syntax Beni is the
 native built-in colour; invalid syntax uses the viewer's Momiji Error colour.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 

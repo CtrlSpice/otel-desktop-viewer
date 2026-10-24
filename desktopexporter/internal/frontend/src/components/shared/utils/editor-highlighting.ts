@@ -2,7 +2,7 @@ import { HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { editorColors as c } from './editor-colors'
 
-// Madoromi's native code guide, adapted to the categories exposed by Lezer.
+// Madoromi's code guide, with neutral string bodies and literal values.
 // Shared readable shades come from the theme generator. See src/themes/README.md.
 export const editorHighlightStyle = HighlightStyle.define([
   { tag: tags.name, color: c.text },

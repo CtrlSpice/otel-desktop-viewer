@@ -1,7 +1,7 @@
 import { EditorView } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { editorHighlightStyle } from '@/components/shared/utils/editor-highlighting'
-import { stringEscapeHighlighting } from '@/components/shared/utils/string-escape-highlighting'
+import { stringSyntaxHighlighting } from '@/components/shared/utils/string-syntax-highlighting'
 
 // Tooltip styles injected as a global <style> because:
 //   1. tooltips render in document.body (to escape backdrop-blur containment)
@@ -117,5 +117,5 @@ export { ensureTooltipStyles }
 export const queryTheme = [
   queryEditorTheme,
   syntaxHighlighting(editorHighlightStyle),
-  stringEscapeHighlighting,
+  stringSyntaxHighlighting,
 ]

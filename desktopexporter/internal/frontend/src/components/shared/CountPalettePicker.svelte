@@ -1,6 +1,6 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { PaintBrush01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+  import { HeartIcon, PaintBrush01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
   import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
   import { COUNT_PALETTES } from '@/themes/count-palettes'
   import { countSwatches } from '@/utils/chart-palette'
@@ -12,7 +12,7 @@
   const options = $derived(
     COUNT_PALETTES.map(palette => ({
       ...palette,
-      swatches: countSwatches(12, themeSignal.value, palette.id),
+      swatches: countSwatches(5, themeSignal.value, palette.id),
     }))
   )
 </script>
@@ -22,6 +22,7 @@
   compact
   triggerClass="header-icon-button tooltip tooltip-left"
   focusSelected
+  showHeader={false}
 >
   {#snippet icon()}
     <HugeiconsIcon
@@ -44,11 +45,14 @@
       >
         <span class="min-w-0 flex-1">{option.name}</span>
         <span
-          class="flex h-4 w-28 shrink-0 overflow-hidden rounded-sm"
+          class="flex shrink-0 items-center gap-2"
           aria-hidden="true"
         >
           {#each option.swatches as swatch}
-            <span class="h-full flex-1" style:background-color={swatch}></span>
+            <span
+              class="size-2 shrink-0 rounded-full"
+              style:background-color={swatch}
+            ></span>
           {/each}
         </span>
         <span class="size-4 shrink-0" aria-hidden="true">
@@ -61,10 +65,19 @@
   {/snippet}
   {#snippet footer()}
     <a
-      class="link text-sm text-rp-subtle"
+      class="link mx-auto inline-flex items-center gap-2 text-sm text-rp-subtle"
       href="https://madoromi.moonwit.ch/"
       target="_blank"
       rel="noreferrer"
-    >Inks by Madoromi</a>
+    >
+      <span>Inks by Madoromi</span>
+      <HugeiconsIcon
+        icon={HeartIcon}
+        size={16}
+        strokeWidth={1.5}
+        class="shrink-0 text-(--color-rose)"
+        aria-hidden="true"
+      />
+    </a>
   {/snippet}
 </FilterPopover>

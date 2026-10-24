@@ -14,6 +14,7 @@
     compact = false,
     triggerClass,
     focusSelected = false,
+    showHeader = true,
     showCount = false,
     icon,
     onClear,
@@ -28,6 +29,7 @@
     compact?: boolean
     triggerClass?: string
     focusSelected?: boolean
+    showHeader?: boolean
     showCount?: boolean
     icon?: Snippet
     onClear?: () => void
@@ -104,7 +106,7 @@
   aria-label={`${label} options`}
   class="anchor-popover anchor-popover--anchored anchor-popover--form filter-popover"
 >
-  <div class="filter-popover__header">
+  {#if showHeader || clearable}<div class="filter-popover__header">
     <span class="font-normal">{label}</span>
     {#if clearable}<button
         type="button"
@@ -119,7 +121,7 @@
           aria-hidden="true"
         /></button
       >{/if}
-  </div>
+  </div>{/if}
   {@render children(close)}
   {#if footer}<div class="filter-popover__footer">
       {@render footer(close)}

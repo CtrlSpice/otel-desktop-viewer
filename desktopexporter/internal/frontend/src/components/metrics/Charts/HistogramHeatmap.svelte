@@ -19,6 +19,7 @@
   import { scaleBand, scaleThreshold, type ScaleBand } from 'd3-scale'
   import { bisectRight } from 'd3-array'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
+  import { chartScrollDiscovery } from '@/components/metrics/utils/chart-scroll-discovery'
   import {
     QUANTILE_LABELS_DESCENDING,
     type HistogramSlicePoint,
@@ -45,6 +46,7 @@
     buildHeatmapBlobs,
     heatmapBlobDetail,
     heatmapBlobPath,
+    heatmapColourContours,
   } from '@/components/metrics/utils/heatmap-blobs'
   import {
     computeHeatmapLayout,
@@ -508,6 +510,14 @@
   let blobs = $derived(
     buildHeatmapBlobs(heatmapModel, cellColorThresholds, blobDetail.joinColours)
   )
+  let colourContours = $derived(
+    heatmapColourContours(
+      heatmapModel,
+      cellColorThresholds,
+      columnPitch,
+      keyboardRowHeight
+    )
+  )
   let contributionRegions = $derived(
     buildHeatmapBlobs(
       {
@@ -554,6 +564,7 @@
       }))
     )
   )
+  let occupiedBlobPath = $derived(renderedBlobs.map(blob => blob.path).join(''))
 
   function positionSelectionCard(size: ChartStickySize) {
     return heatmapCardPosition({
@@ -623,6 +634,11 @@
         class="heatmap-scroll"
         class:heatmap-scroll--active={heatmapScrolls}
         bind:this={heatmapScrollElement}
+        use:chartScrollDiscovery={{
+          visit: ctx.metric?.metricRef,
+          overflows:
+            plotContainerWidth > 0 && scrollChartWidth - plotContainerWidth > 1,
+        }}
         onscroll={event => (scrollLeft = event.currentTarget.scrollLeft)}
       >
         <!-- Pointer coordinates stay on the scroll-sized chart target; the
@@ -775,6 +791,56 @@
                       />{/if}
                   </g>
                 {/each}
+                <g class="heatmap-colour-corners" aria-hidden="true">
+                  {#each colourContours.corners as corner (corner.key)}
+                    <path
+                      d={corner.path}
+                      fill={cellColorRange[corner.band]}
+                      class:heatmap-colour-corner--hovered={corner.datum.columnKey ===
+                        hoveredColumnKey &&
+                        corner.datum.bucketKey === hoveredBucketKey}
+                      class:heatmap-colour-corner--selected={corner.datum.columnKey ===
+                        selectedColumnKey &&
+                        (!selectedCell ||
+                          corner.datum.bucketKey === selectedCell.bucketKey)}
+                    />
+                  {/each}
+                </g>
+                {#if blobDetail.joinColours}
+                  <!-- Keep each liner inside its colour region and the existing
+                       occupied silhouette, including its empty holes. -->
+                  <defs>
+                    <clipPath
+                      id={`${blobClipPrefix}-occupied`}
+                      clipPathUnits="userSpaceOnUse"
+                    >
+                      <path d={occupiedBlobPath} clip-rule="evenodd" />
+                    </clipPath>
+                    {#each colourContours.regions as region (region.band)}
+                      <clipPath
+                        id={`${blobClipPrefix}-colour-${region.band}`}
+                        clipPathUnits="userSpaceOnUse"
+                      >
+                        <path d={region.path} clip-rule="evenodd" />
+                      </clipPath>
+                    {/each}
+                  </defs>
+                  <g
+                    class="heatmap-colour-outlines"
+                    clip-path={`url(#${blobClipPrefix}-occupied)`}
+                    aria-hidden="true"
+                  >
+                    {#each colourContours.regions as region (region.band)}
+                      <path
+                        class="heatmap-blob-outline"
+                        d={region.path}
+                        clip-path={`url(#${blobClipPrefix}-colour-${region.band})`}
+                        style:--blob-color={cellColorRange[region.band]}
+                        style:--blob-outline-width={blobDetail.liner * 2}
+                      />
+                    {/each}
+                  </g>
+                {/if}
               </g>
               <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
               {#if selectedColumnX !== null}
@@ -1096,7 +1162,8 @@
     fill-opacity: 1;
   }
 
-  .heatmap-wrapper :global(.heatmap-blob-fill) {
+  .heatmap-wrapper :global(.heatmap-blob-fill),
+  .heatmap-wrapper :global(.heatmap-colour-corners) {
     stroke: none;
     pointer-events: none;
   }
@@ -1108,7 +1175,7 @@
       var(--blob-color) 85%,
       var(--color-base-content)
     );
-    /* The blob clip retains the inner half, keeping the gap clear. */
+    /* Each region's clip retains only the inner half of its outline. */
     stroke-width: var(--blob-outline-width);
     stroke-linejoin: round;
     pointer-events: none;
@@ -1121,12 +1188,14 @@
     shape-rendering: crispEdges;
   }
 
-  .heatmap-wrapper :global(.heatmap-cell--hovered) {
+  .heatmap-wrapper :global(.heatmap-cell--hovered),
+  .heatmap-wrapper :global(.heatmap-colour-corner--hovered) {
     --heatmap-cell-colour-weight: 88%;
     fill-opacity: 1;
   }
 
-  .heatmap-wrapper :global(.heatmap-cell--selected) {
+  .heatmap-wrapper :global(.heatmap-cell--selected),
+  .heatmap-wrapper :global(.heatmap-colour-corner--selected) {
     --heatmap-cell-colour-weight: 84%;
     fill-opacity: 1;
   }

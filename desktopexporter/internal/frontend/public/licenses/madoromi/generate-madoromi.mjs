@@ -133,7 +133,6 @@ const definitions = Object.fromEntries(
     ].map(key => colors[key])
     for (const role of [
       'text',
-      'subtle',
       'primary',
       'secondary',
       'accent',

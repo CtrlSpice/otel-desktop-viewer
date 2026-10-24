@@ -142,7 +142,7 @@
   transition-delay: 0s !important;
 }
 
-/* Rosé Pine secondary and de-emphasized text utilities. */
+/* Shared secondary and disabled text utilities; class names retain compatibility. */
 .text-rp-subtle {
   color: var(--color-subtle);
 }
@@ -639,6 +639,35 @@ body::-webkit-scrollbar-track,
 #app::-webkit-scrollbar-track,
 main::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Native chart scrollbars teach overflow once per visit. Standard-only engines
+   retain their platform visibility policy; explicit WebKit dimensions keep the
+   scrollbar visible even when the OS normally uses auto-hiding overlays. */
+.chart-scroll-discoverable {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-muted) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  .chart-scroll-discoverable {
+    /* Non-auto standard values would override the native pseudo-elements. */
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  .chart-scroll-discoverable::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .chart-scroll-discoverable::-webkit-scrollbar-thumb {
+    background: var(--color-muted);
+    border-radius: 9999px;
+  }
+
+  .chart-scroll-discoverable::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 /* Default SVG styles */
@@ -1383,7 +1412,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply text-base-content;
 }
 
-/* Compact JSON previews share Madoromi's native editor syntax roles. */
+/* Compact JSON shares the editors' neutral values and Madoromi syntax accents. */
 .value-syntax .detail-code--key {
   color: var(--color-code-ruri);
 }
@@ -1391,7 +1420,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   color: var(--color-code-usuzumi0);
 }
 .value-syntax .detail-code--string {
-  color: var(--color-code-wakaba);
+  color: var(--color-code-sumi);
 }
 .value-syntax .detail-code--number,
 .value-syntax .detail-code--literal {
@@ -1399,6 +1428,9 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 .value-syntax .detail-code--escape {
   color: var(--color-code-botan);
+}
+.value-syntax .detail-code--quote {
+  color: var(--color-code-wakaba);
 }
 
 .detail-cell__stacked-value {

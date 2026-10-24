@@ -21,6 +21,7 @@
     type ScaleBand,
   } from 'd3-scale'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
+  import { chartScrollDiscovery } from '@/components/metrics/utils/chart-scroll-discovery'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend, {
     type SelectionLegendRow,
@@ -656,6 +657,10 @@
       <div
         class="histogram-chart-scroll"
         bind:this={histogramScroll}
+        use:chartScrollDiscovery={{
+          visit: ctx.metric?.metricRef,
+          overflows: parentWidth > 0 && chartWidth - parentWidth > 1,
+        }}
         onscroll={event => (scrollLeft = event.currentTarget.scrollLeft)}
       >
         <!-- Pointer coordinates stay on the chart-sized hit target; the

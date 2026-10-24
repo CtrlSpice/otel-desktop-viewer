@@ -17,14 +17,20 @@
   and `text` for data values and main page/pane titles. Reserve muted or dimmed
   text for unavailable or disabled states.
   Keep regular weight; do not use bold or semibold to strengthen text.
-  Shared readable foreground corrections are generated theme-wide to meet
-  4.5:1 on canvas, panel, chrome, hover and selection. Text uses Sumi, Subtle
-  uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
+  Text and accent foreground corrections are generated theme-wide to meet
+  4.5:1 on canvas, panel, chrome, hover and selection. Subtle and Muted retain
+  their original source shades without contrast adjustments. Text uses Sumi,
+  Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   existing 32-slot Bloom graph palettes and saved assignments during this
   UI-only migration: seasonal Day uses Dawn, Night uses Moon. Histogram and
   heatmap count ramps use the approved six Madoromi inks, default Rikka, with one
   app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
   curve; Day reverses Night's exact shades, and seasons do not change the ink.
+  The count-palette picker omits its redundant visible heading; retain its
+  accessible name and selected-option focus. Centre the Madoromi attribution
+  link in the footer, with a decorative 16px Hugeicons heart in theme Sakura pink.
+  Preview each ink with five aligned 8px dots, evenly sampled across its full
+  ramp, with 8px gaps and no outlines. Retain exact Day/Night reversal.
   Error uses Momiji sampled at each variant's original Beni lightness; generate
   it from the pinned ink curve. Warning fills use original Yamabuki. Warning
   text uses neutral Text. Do not add separate darkened error text colours.
@@ -122,19 +128,19 @@
   JSON, search and code views share the semantic editor syntax mapping
   documented in `src/themes/README.md`, through `utils/editor-highlighting.ts`.
   Use the shared theme palette and generated foreground adjustments;
-  do not add separate light-mode code colours or
-  flatten JSON syntax to the plain-value colour rule. Keep UI field names Subtle.
-  Follow Madoromi's native code guide through generated syntax colours:
-  strings use Wakaba, keys Ruri, keywords Fuji, operators Sora, and escapes or
-  regular expressions Botan, including compact JSON previews. Literals (numbers,
-  booleans, null and bare query values) use Kaki in all eight variants through
-  `--color-code-literal`. Functions use Ai, built-ins Beni, types/attributes
+  do not add separate light-mode code colours. Keep UI field names Subtle.
+  Use Madoromi's native code guide for syntax accents, with neutral values for
+  readability: string bodies and literals (numbers, booleans, null and bare query
+  values) use Sumi/Text in all eight variants. `--color-code-literal` resolves to
+  Sumi. JSON/query quote marks use Wakaba; keys use Ruri, keywords Fuji, operators
+  Sora, and escapes or regular expressions Botan, including compact JSON previews.
+  Plain Markdown code uses Sumi too. Functions use Ai, built-ins Beni, types/attributes
   Yamabuki, namespaces Kikyo, annotations Nadeshiko, and labels/cursors Sakura.
   Invalid syntax uses the Momiji Error role. Comments use readable Kasure 2 in
   italic; punctuation uses readable Usuzumi 0. Generate syntax foreground
-  corrections theme-wide with the same shared readability target. JSON escapes
-  are display decorations over the intact document; decoded Properties values
-  retain their string colour. Code surfaces and all search inputs use
+  corrections theme-wide with the same shared readability target. JSON quote and
+  escape accents are display decorations over the intact document; decoded
+  Properties values use neutral Text. Code surfaces and all search inputs use
   bg-base-100: darkest at night, brightest by day. Apply this to JSON,
   shell examples, code snippets, compact JSON, query inputs and filter searches.
   JSON inside a Details field card uses a transparent editor background so the
@@ -497,10 +503,15 @@
   of a fixed seven-label limit. Select labels from existing time columns and
   bucket rows; preserve exponential-bucket identities, bounds, counts and layout.
   Heatmap labels remain centred. When either cell dimension is below 12px, join neighbouring occupied
-  cells across colour bands and round only their shared outer boundaries.
+  cells across colour bands and round their shared outer boundaries. Round internal
+  two-colour turns with a shared curve: three matching occupied quadrants fill the
+  corner of the fourth, with no background gap. Keep multi-colour junctions and
+  diagonal-only contacts intact. Use the same density-scaled corner radius.
   Keep each cell's count colour and preserve empty buckets and holes.
   Joined shapes retain the existing density-scaled border around their shared
-  perimeter and holes, following each cell's colour without internal borders.
+  perimeter and holes, following each cell's colour. Give internal colour regions
+  the same liner: 85% of their fill mixed with 15% Text in OKLab, clipped inside
+  each region's shared rounded boundary. Keep the fills touching without gaps.
   Do not add decorative grid styling.
   Histogram/heatmap count legends sit outside the header, directly above the
   graph on the chart surface, with breathing room above and below. Right-align a
@@ -515,6 +526,14 @@
   entries remain in the previous row. Keep count order and whole
   labels.
   Use plain 8px colour dots beside numeric count ranges, without borders or outlines.
+  Horizontally overflowing histograms and heatmaps expose their native scrollbar
+  until the first deliberate horizontal scroll, then resume normal platform
+  scrollbar behaviour for the rest of that chart visit. Chromium/WebKit use a
+  temporary 8px native scrollbar with a Muted thumb; standard-only engines retain
+  their platform visibility policy. Keep an active thumb drag intact until release.
+  Loading, resizing, focus and restored scroll positions do not mark scrolling as
+  discovered. Omit the former text/caret hint. Preserve chart geometry and native
+  wheel, touch, scrollbar and keyboard scrolling.
 
 - Display opaque identifiers with the shared `Identifier.svelte` component, which
   uses Atkinson Hyperlegible Next and truncates the middle while retaining both

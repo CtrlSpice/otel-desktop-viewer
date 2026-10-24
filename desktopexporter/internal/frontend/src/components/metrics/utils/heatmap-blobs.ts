@@ -37,12 +37,10 @@ export function heatmapBlobDetail(columnWidth: number, rowHeight: number) {
   return { ...detail, liner: Math.min(detail.liner, size / 8) }
 }
 
-/** Four-connected regions, optionally joined across colours. Retain original cells. */
-export function buildHeatmapBlobs(
+function heatmapGrid(
   model: HistogramHeatmapData,
-  thresholds: readonly number[],
-  joinColours = false
-): HeatmapBlob[] {
+  thresholds: readonly number[]
+): Map<string, GridCell> {
   const columns = new Map(
     model.columns.map((column, index) => [column.key, index])
   )
@@ -58,6 +56,16 @@ export function buildHeatmapBlobs(
     }
     grid.set(pointKey(cell), cell)
   }
+  return grid
+}
+
+/** Four-connected regions, optionally joined across colours. Retain original cells. */
+export function buildHeatmapBlobs(
+  model: HistogramHeatmapData,
+  thresholds: readonly number[],
+  joinColours = false
+): HeatmapBlob[] {
+  const grid = heatmapGrid(model, thresholds)
 
   const visited = new Set<string>()
   const blobs: HeatmapBlob[] = []
@@ -154,6 +162,85 @@ export function buildHeatmapBlobs(
     })
   }
   return blobs
+}
+
+type HeatmapColourContours = {
+  corners: { key: string; band: number; datum: HeatmapDatum; path: string }[]
+  regions: { band: number; path: string }[]
+}
+
+/** Round shared two-colour turns without cutting holes in the occupied grid.
+ * Three equal quadrants surround one different band: paint the small corner
+ * wedge in the surrounding colour, over the intact cells. Both colours then
+ * share one curve, also used to clip their inner outlines. Leave empty,
+ * diagonal-only and multi-colour junctions alone. */
+export function heatmapColourContours(
+  model: HistogramHeatmapData,
+  thresholds: readonly number[],
+  columnWidth: number,
+  rowHeight: number
+): HeatmapColourContours {
+  const contours: HeatmapColourContours = { corners: [], regions: [] }
+  if (columnWidth <= 0 || rowHeight <= 0) return contours
+  const detail = heatmapBlobDetail(columnWidth, rowHeight)
+  if (!detail.joinColours) return contours
+  const radius = Math.min(detail.radius, columnWidth / 2, rowHeight / 2)
+  const grid = heatmapGrid(model, thresholds)
+  for (const topLeft of grid.values()) {
+    const { x, y } = topLeft
+    const topRight = grid.get(pointKey({ x: x + 1, y }))
+    const bottomRight = grid.get(pointKey({ x: x + 1, y: y + 1 }))
+    const bottomLeft = grid.get(pointKey({ x, y: y + 1 }))
+    if (!topRight || !bottomRight || !bottomLeft) continue
+    const quadrants = [topLeft, topRight, bottomRight, bottomLeft]
+    const odd = quadrants.findIndex((cell, index) => {
+      const other = quadrants[(index + 1) % 4]!.band
+      return (
+        cell.band !== other &&
+        quadrants[(index + 2) % 4]!.band === other &&
+        quadrants[(index + 3) % 4]!.band === other
+      )
+    })
+    if (odd < 0) continue
+    const vertex = { x: (x + 1) * columnWidth, y: (y + 1) * rowHeight }
+    const dx = odd === 0 || odd === 3 ? -radius : radius
+    const dy = odd < 2 ? -radius : radius
+    contours.corners.push({
+      key: pointKey({ x: x + 1, y: y + 1 }),
+      band: quadrants[(odd + 1) % 4]!.band,
+      // Keep hover and selection on the original rectangular cell footprint.
+      datum: quadrants[odd]!.datum,
+      path: `M${vertex.x},${vertex.y}L${vertex.x + dx},${vertex.y}Q${vertex.x},${vertex.y} ${vertex.x},${vertex.y + dy}Z`,
+    })
+  }
+
+  const roundedVertices = new Set(contours.corners.map(corner => corner.key))
+  const pathsByBand = new Map<number, string>()
+  for (const blob of buildHeatmapBlobs(model, thresholds)) {
+    const path = blob.rings
+      .map(ring => {
+        let path = ''
+        for (let index = 0; index < ring.length; index++) {
+          const point = ring[index]!
+          const previous = ring[(index + ring.length - 1) % ring.length]!
+          const next = ring[(index + 1) % ring.length]!
+          const corner = roundedVertices.has(pointKey(point)) ? radius : 0
+          const x = point.x * columnWidth
+          const y = point.y * rowHeight
+          const startX = x - Math.sign(point.x - previous.x) * corner
+          const startY = y - Math.sign(point.y - previous.y) * corner
+          const endX = x + Math.sign(next.x - point.x) * corner
+          const endY = y + Math.sign(next.y - point.y) * corner
+          path += `${index === 0 ? 'M' : 'L'}${startX},${startY}`
+          if (corner > 0) path += `Q${x},${y} ${endX},${endY}`
+        }
+        return `${path}Z`
+      })
+      .join('')
+    pathsByBand.set(blob.band, (pathsByBand.get(blob.band) ?? '') + path)
+  }
+  contours.regions = Array.from(pathsByBand, ([band, path]) => ({ band, path }))
+  return contours
 }
 
 /** Round the inset perimeter, keeping inward curves within the visual gutter. */

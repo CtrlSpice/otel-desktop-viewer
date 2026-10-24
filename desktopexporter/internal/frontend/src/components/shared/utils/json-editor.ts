@@ -12,7 +12,7 @@ import { editorHighlightStyle } from './editor-highlighting'
 import { jsonWrapping } from './json-wrapping'
 import { jsonFoldGroups } from './json-fold-groups'
 import { editorColors as c } from './editor-colors'
-import { stringEscapeHighlighting } from './string-escape-highlighting'
+import { stringSyntaxHighlighting } from './string-syntax-highlighting'
 
 /** One read-only configuration shared by all JSON detail editors. */
 export const jsonEditorExtensions = [
@@ -21,7 +21,7 @@ export const jsonEditorExtensions = [
   json(),
   jsonWrapping,
   syntaxHighlighting(editorHighlightStyle),
-  stringEscapeHighlighting,
+  stringSyntaxHighlighting,
   codeFolding(),
   bracketMatching(),
   jsonFoldGroups,

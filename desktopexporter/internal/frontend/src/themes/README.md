@@ -82,11 +82,12 @@ These role assignments apply to all eight variants. Each variant supplies its
 own source ink and shade. Info and Success have independent Sora and Wakaba
 colours rather than sharing Accent and Secondary.
 
-The generator minimally adjusts shared readable foregrounds in 0.001 OKLCH
+The generator minimally adjusts Text and accent foregrounds in 0.001 OKLCH
 lightness steps until they reach 4.5:1 on canvas, panel, chrome, hover and
 selection. Gamut mapping reduces chroma only when needed for sRGB. Stronger
-reveal highlights are outside this five-background target. Muted and
-the original sakura/yamabuki colours retain their source values. Error uses the
+reveal highlights are outside this five-background target. Subtle, Muted and
+the original sakura/yamabuki colours retain their source values without contrast
+adjustments. Error uses the
 pinned Momiji curve at each variant's original Beni lightness. Warning
 and received error values use neutral Text with meaningful coloured markers.
 Papaya (`#ff8000`) continues to identify internal faults rather than span errors.
@@ -96,16 +97,19 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 JSON, search, shell and read-only code views share
 `utils/editor-highlighting.ts` under `components/shared`. They follow Madoromi's
 [native code guide](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/palettes/style-guide.md#code-符),
-using the categories supplied by each language parser:
+using the categories supplied by each language parser. The viewer keeps string
+bodies and literal values neutral for readability, with Wakaba on JSON/query
+quote marks instead of entire strings:
 
 | Syntax category                       | Madoromi colour |
 | ------------------------------------- | --------------- |
 | Names and variables                   | Sumi            |
-| Strings                               | Wakaba          |
+| String bodies                         | Sumi            |
+| JSON/query quote marks                | Wakaba          |
 | Keywords                              | Fuji            |
 | Properties and keys                   | Ruri            |
 | Operators                             | Sora            |
-| Numbers, booleans, constants and null | Kaki            |
+| Numbers, booleans, constants and null | Sumi            |
 | Escapes, regular expressions and tags | Botan           |
 | Characters, enum members and macros   | Tokiwa          |
 | Functions and methods                 | Ai              |
@@ -121,15 +125,15 @@ using the categories supplied by each language parser:
 The generated `syntax` palette contains all fourteen named accents and readable
 Sumi, Kasure 2 and Usuzumi 0. Its foregrounds meet the same five-background 4.5:1
 target as interface text. Code uses `--color-code-*` tokens independently of
-interface Primary/Secondary aliases. `--color-code-literal` resolves to Kaki,
+interface Primary/Secondary aliases. `--color-code-literal` resolves to Sumi,
 including runtime literals in formatted JSON and bare query values. Comments
-and self/this are italic; code keeps regular weight. Markdown code uses Wakaba.
+and self/this are italic; code keeps regular weight. Markdown code uses Sumi.
 The palette also exposes Akane, the guide's italic parameter colour. The current
 JSON, query and shell grammars do not emit a distinct parameter tag.
 
-Compact JSON shares these colours. JSON escape highlighting adds decorations
-over the existing syntax tree; it does not replace the document. Decoded string
-values in Properties use Wakaba, while raw escapes use Botan. Shell syntax uses
+Compact JSON shares these colours. JSON quote and escape highlighting adds
+decorations over the existing syntax tree; it does not replace the document.
+Decoded string values in Properties use Sumi, while raw escapes use Botan. Shell syntax uses
 the shared StreamLanguage parser; highlighting follows its supplied tags.
 
 Search cursors use Sakura. Editor search matches use Kaki at 18% opacity, with
@@ -178,7 +182,8 @@ lightness values, including its endpoints, interpolates a/b at that lightness,
 then uses upstream `oklabToHex`. Every adaptive ramp size from 1–12 is generated
 separately. Night uses dark-to-light count order; Day uses the exact same shades
 reversed. A singleton uses its mode's high-count endpoint. Season changes do
-not change the chosen ink. Dropdown ramps use the same 12-shade count order.
+not change the chosen ink. Dropdown previews use five evenly sampled shades from
+the full curve, with the same Day/Night reversal.
 
 These controls are independent of metric context: `themes/count-palettes.ts`
 owns the catalogue, `utils/chart-palette.ts` exposes the pure
