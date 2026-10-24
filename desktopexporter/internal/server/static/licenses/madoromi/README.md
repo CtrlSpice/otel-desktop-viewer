@@ -49,7 +49,8 @@ node scripts/generate-madoromi.mjs
 All eight variants (Spring, Summer, Autumn and Winter, each in Day and Night)
 use 20% of the upstream chroma for the three paper colours and nijimi 0–2,
 preserving their OKLCH lightness and hue.
-Day canvas/panel/chrome use kami/hyoshi/chitsu. Night reverses the outer two.
+Canvas/panel/chrome use kami/hyoshi/chitsu in both Day and Night, following the
+pinned upstream [paper guide](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/palettes/style-guide.md#paper-紙).
 Hover uses nijimi 0; selection uses nijimi 2 at 45% over the panel, blended in
 sRGB; stronger highlights use nijimi 1.
 

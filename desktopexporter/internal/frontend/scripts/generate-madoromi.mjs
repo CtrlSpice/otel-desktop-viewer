@@ -142,9 +142,9 @@ const definitions = Object.fromEntries(
     const c = f.colours
     const tint = key => at(c[key], c[key].oklch[0], TINT)
     const colors = {
-      canvas: tint(f.dark ? 'chitsu' : 'kami'),
+      canvas: tint('kami'),
       panel: tint('hyoshi'),
-      chrome: tint(f.dark ? 'kami' : 'chitsu'),
+      chrome: tint('chitsu'),
       ...Object.fromEntries(
         Object.entries(roles).map(([key, sourceKey]) => [key, c[sourceKey].hex])
       ),

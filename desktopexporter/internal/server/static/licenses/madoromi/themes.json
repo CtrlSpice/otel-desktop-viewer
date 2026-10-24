@@ -174,9 +174,9 @@
   "madoromi-haru-yoru": {
     "name": "Spring Night",
     "colors": {
-      "canvas": "#121113",
+      "canvas": "#201f21",
       "panel": "#19181a",
-      "chrome": "#201f21",
+      "chrome": "#121113",
       "text": "#e1d1e7",
       "subtle": "#cdbed3",
       "muted": "#8a7e8f",
@@ -217,9 +217,9 @@
   "madoromi-natsu-yoru": {
     "name": "Summer Night",
     "colors": {
-      "canvas": "#101213",
+      "canvas": "#1d2021",
       "panel": "#16191a",
-      "chrome": "#1d2021",
+      "chrome": "#101213",
       "text": "#c0dde8",
       "subtle": "#adcad4",
       "muted": "#728790",
@@ -260,9 +260,9 @@
   "madoromi-aki-yoru": {
     "name": "Autumn Night",
     "colors": {
-      "canvas": "#131110",
+      "canvas": "#211f1d",
       "panel": "#1a1816",
-      "chrome": "#211f1d",
+      "chrome": "#131110",
       "text": "#e8d3c1",
       "subtle": "#d4c0ae",
       "muted": "#908072",
@@ -303,9 +303,9 @@
   "madoromi-fuyu-yoru": {
     "name": "Winter Night",
     "colors": {
-      "canvas": "#111114",
+      "canvas": "#1f1f21",
       "panel": "#18181a",
-      "chrome": "#1f1f21",
+      "chrome": "#111114",
       "text": "#d2d6eb",
       "subtle": "#bec3db",
       "muted": "#7e8294",

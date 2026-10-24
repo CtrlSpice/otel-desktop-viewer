@@ -57,13 +57,15 @@ Apache-2.0 licence is unchanged.
 
 The approved background tint is **20% of the source OKLCH chroma**, retaining its
 lightness and hue. This applies to kami, hyoshi, chitsu and nijimi 0–2 in all
-variants. The shared surface hierarchy flips with the mode:
+variants. Surface roles follow Madoromi's pinned
+[paper guide](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/palettes/style-guide.md#paper-紙)
+in both Day and Night:
 
 | Viewer role                     | Day             | Night           |
 | ------------------------------- | --------------- | --------------- |
-| Canvas / bg-100 / code / search | Kami, brightest | Chitsu, darkest |
+| Canvas / bg-100 / code / search | Kami, brightest | Kami, brightest |
 | Panel / bg-200                  | Hyoshi          | Hyoshi          |
-| Chrome / bg-300                 | Chitsu, darkest | Kami, brightest |
+| Chrome / bg-300                 | Chitsu, darkest | Chitsu, darkest |
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted

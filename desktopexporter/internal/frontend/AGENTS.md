@@ -16,9 +16,9 @@
   The approved background tint is 20% of upstream chroma for all four seasons,
   day and night. Generate shared colours with `scripts/generate-madoromi.mjs`;
   retain the pinned source and full MPL-2.0 licence. Routine frontend work does
-  not require colour reviews or contrast reports. Day canvas/panel/chrome map
-  to kami/hyoshi/chitsu, brightest to darkest; Night maps to
-  chitsu/hyoshi/kami, darkest to brightest. Use `subtle` for
+  not require colour reviews or contrast reports. Canvas/panel/chrome map
+  to kami/hyoshi/chitsu in both Day and Night, following the pinned upstream
+  paper roles from brightest to darkest. Use `subtle` for
   keys, column/section headers, helper text and app-added bracketed annotations,
   and `text` for data values and main page/pane titles. Reserve muted or dimmed
   text for unavailable or disabled states.
@@ -265,7 +265,7 @@
   corrections theme-wide with the same shared readability target. JSON quote and
   escape accents are display decorations over the intact document; decoded
   Properties values use neutral Text. Code surfaces and all search inputs use
-  bg-base-100: darkest at night, brightest by day. Apply this to JSON,
+  bg-base-100: Madoromi's Kami background in both Day and Night. Apply this to JSON,
   shell examples, code snippets, compact JSON, query inputs and filter searches.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.
