@@ -50,6 +50,13 @@ export type JsonMatchedSpan = {
   spanID: string
 }
 
+export type JsonSummaryBreakdownPart = {
+  key: string
+  label: string
+  count: number
+  other?: boolean
+}
+
 export type JsonTraceSummary = {
   traceID: string
   hasRootSpan: boolean
@@ -59,6 +66,7 @@ export type JsonTraceSummary = {
   durationNs: string | null
   spanCount: number
   errorCount: number
+  serviceBreakdown?: JsonSummaryBreakdownPart[]
   /** Computed identities of matching spans; present only for filtered searches. */
   matchedSpans?: JsonMatchedSpan[]
 }
@@ -70,6 +78,11 @@ export type JsonEventData = {
   attributes: JsonAttribute[]
 }
 
+/** Derived locally at read time; not part of the received OTLP link. */
+export type JsonLinkSummary = {
+  target: { name: string; serviceName: string } | null
+}
+
 export type JsonLinkData = {
   traceID: string | null
   // The linked target span (OTLP link.spanID), 16-char hex when valid.
@@ -79,6 +92,7 @@ export type JsonLinkData = {
   /** W3C trace flags for the linked context. Same reasoning as on the span. */
   flags: number
   attributes: JsonAttribute[]
+  summary?: JsonLinkSummary
 }
 
 // Spans reference top-level resources and scopes, use baseline-relative times,
@@ -173,11 +187,23 @@ export type JsonLogSummary = {
   severityNumber: number
   serviceName: string
   bodyPreview: string
+  bodyType?: JsonAttributeValue['kind']
+  eventName?: string
 }
 
 export type JsonTraceLogSummary = JsonLogSummary & {
   spanID: string | null
   eventName: string
+}
+
+export type JsonLogColumn = {
+  source: 'log' | 'resource' | 'scope'
+  kind: 'field' | 'attribute'
+  key: string
+}
+
+export type JsonLogTableRow = JsonLogSummary & {
+  columnValues?: (JsonLogColumn & { values: JsonAttributeValue[] })[]
 }
 
 export type JsonLogData = {
@@ -195,6 +221,8 @@ export type JsonLogData = {
   flags: number
   eventName: string
   attributes: JsonAttribute[]
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
 }
 
 // Same closed set as MetricType, kept independent for the wire contract.
@@ -271,10 +299,10 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   bucketCounts: string[]
   explicitBounds: JsonDouble[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
-   *  the store from this datapoint's buckets; null when none were requested.
+   *  the store from this datapoint's buckets; omitted or null when not computed.
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
-  quantiles: Record<string, JsonDouble | null> | null
+  quantiles?: Record<string, JsonDouble | null> | null
   aggregationTemporalityCode: number
   aggregationTemporality: string
 }
@@ -293,10 +321,10 @@ export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   negativeBucketOffset: number
   negativeBucketCounts: string[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
-   *  the store from this datapoint's buckets; null when none were requested.
+   *  the store from this datapoint's buckets; omitted or null when not computed.
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
-  quantiles: Record<string, JsonDouble | null> | null
+  quantiles?: Record<string, JsonDouble | null> | null
   aggregationTemporalityCode: number
   aggregationTemporality: string
 }
@@ -448,6 +476,7 @@ export type JsonScalarAggregate = {
 export type JsonMetricAggregateViewData = {
   aggregate: JsonAggregateBucket[] | null
   scalarAggregate: JsonScalarAggregate | null
+  contribution?: JsonAggregateBucket[] | null
 }
 
 export type JsonExactMetricResource = {
@@ -541,15 +570,18 @@ export type JsonReceivedExponentialHistogramDataPoint =
     negative: { offset: number; bucketCounts: string[] }
   }
 
+/** get_metric_series.sql selects each datapoint document by its owning metric type. */
 export type JsonExactMetricSeries = JsonExactMetricIdentity & {
   seriesRef: string
   attributes: JsonAttribute[]
-  datapoints: (
-    | JsonReceivedNumberDataPoint
-    | JsonReceivedHistogramDataPoint
-    | JsonReceivedExponentialHistogramDataPoint
-  )[]
-}
+} & (
+    | { metricType: 'Gauge' | 'Sum'; datapoints: JsonReceivedNumberDataPoint[] }
+    | { metricType: 'Histogram'; datapoints: JsonReceivedHistogramDataPoint[] }
+    | {
+        metricType: 'ExponentialHistogram'
+        datapoints: JsonReceivedExponentialHistogramDataPoint[]
+      }
+  )
 
 /** @derived Cross-series histogram view computed by get_metric_view.sql. The store
  * differences cumulative inputs or adds delta inputs within each time bucket,
@@ -647,7 +679,6 @@ export type JsonRejection = {
 }
 
 export type JsonStats = {
-  // Served by the backend but not yet consumed by the UI.
   storage: {
     sizeBytes: number
     maxSizeBytes: number

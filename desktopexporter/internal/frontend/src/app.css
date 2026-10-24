@@ -5,8 +5,46 @@
   themes: false;
 }
 @config "../tailwind.config.js";
+@plugin "./themes/plugin.ts";
 
-/* Shared DaisyUI chrome — identical across all three Rosé Pine variants */
+/* Internal viewer, harness and execution errors use the same papaya in every theme. */
+@theme {
+  --color-papaya: #ff8000;
+  /* One working text size, including compact component utilities. */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1rem;
+  --text-xl--line-height: 1.5;
+}
+
+/* Component sizes control spacing, never smaller text. */
+.btn,
+.input,
+.select,
+.textarea,
+.tab,
+.table,
+.table :where(th, td),
+.menu,
+.kbd,
+.card-title {
+  font-size: var(--text-base);
+}
+
+.btn,
+.input,
+.select,
+.textarea {
+  min-height: 2rem;
+}
+
+/* Shared DaisyUI chrome across all seasonal day/night variants. */
 :root {
   --radius-selector: 0.5rem;
   --radius-field: 0.5rem;
@@ -19,175 +57,31 @@
   --focus-ring-width: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-color: var(--color-primary);
+  --item-hover-bg: var(--color-highlight-low);
+  --item-selected-bg: var(--color-highlight-med);
+  --resize-grip-length: 3rem;
+  --resize-grip-thickness: 0.1875rem;
+  /* Quick feedback, quiet fades, and a shared settle for moving surfaces. */
+  --motion-feedback-duration: 120ms;
+  --motion-fade-duration: 160ms;
+  --motion-compact-duration: 180ms;
+  --motion-panel-duration: 240ms;
+  --motion-settle-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --item-motion-duration: var(--motion-feedback-duration);
+  --panel-motion-duration: var(--motion-panel-duration);
+  --panel-motion-easing: var(--motion-settle-easing);
 }
 
-/*
- * Rosé Pine theme mapping
- *
- * RP base    → base-100      RP pine  → secondary, success
- * RP surface → base-200      RP foam  → accent, info
- * RP overlay → base-300      RP iris  → primary
- * RP text    → base-content  RP love  → error
- * RP muted   → neutral       RP gold  → warning
- *
- * -content colours use RP base (dark) or RP base (dawn).
- * Custom vars: --color-rose, --color-subtle, --color-muted.
- */
-
-/* ── Rosé Pine (OG) ── */
-html[data-theme='rose-pine'] {
-  color-scheme: dark;
-  --color-rose: #ebbcba;
-  --color-subtle: #908caa;
-  --color-muted: #6e6a86;
-  --color-base-100: #191724;
-  --color-base-200: #1f1d2e;
-  --color-base-300: #26233a;
-  --color-base-content: #e0def4;
-  /* Theme-aware glyph colours for sitting on top of chart swatches.
-     readableTextColor() in chart-palette.ts picks one based on swatch
-     luminance. Independent of base-content so they stay correct on
-     saturated palette colours regardless of dark/light theme. */
-  --color-on-light: #1f1d2e;
-  --color-on-dark: #e0def4;
-  --color-primary: #c4a7e7;
-  --color-primary-content: #191724;
-  --color-secondary: #31748f;
-  --color-secondary-content: #e0def4;
-  --color-accent: #9ccfd8;
-  --color-accent-content: #191724;
-  --color-neutral: #6e6a86;
-  --color-neutral-content: #e0def4;
-  --color-info: #9ccfd8;
-  --color-info-content: #191724;
-  --color-success: #31748f;
-  --color-success-content: #e0def4;
-  --color-warning: #f6c177;
-  --color-warning-content: #191724;
-  --color-error: #eb6f92;
-  --color-error-content: #e0def4;
-  --waterfall-bar-opacity: 1;
-  --waterfall-bar-label-color: var(--color-base-200);
-  --waterfall-marker-mix-target: var(--color-base-content);
-  --waterfall-marker-mix-strength: 40%;
-  --metric-series-line-opacity: var(--waterfall-bar-opacity);
-  /* Ticks are the bar hue lightened by mixing toward white. */
-  --waterfall-tick-mix-target: white;
-  --waterfall-tick-mix-strength: 45%;
-}
-
-/* ── Rosé Pine Moon ── */
-html[data-theme='rose-pine-moon'] {
-  color-scheme: dark;
-  --color-rose: #ea9a97;
-  --color-subtle: #908caa;
-  --color-muted: #6e6a86;
-  --color-base-100: #232136;
-  --color-base-200: #2a273f;
-  --color-base-300: #393552;
-  --color-base-content: #e0def4;
-  --color-on-light: #232136;
-  --color-on-dark: #e0def4;
-  --color-primary: #c4a7e7;
-  --color-primary-content: #232136;
-  --color-secondary: #3e8fb0;
-  --color-secondary-content: #e0def4;
-  --color-accent: #9ccfd8;
-  --color-accent-content: #232136;
-  --color-neutral: #6e6a86;
-  --color-neutral-content: #e0def4;
-  --color-info: #9ccfd8;
-  --color-info-content: #232136;
-  --color-success: #3e8fb0;
-  --color-success-content: #e0def4;
-  --color-warning: #f6c177;
-  --color-warning-content: #232136;
-  --color-error: #eb6f92;
-  --color-error-content: #e0def4;
-  --waterfall-bar-opacity: 1;
-  --waterfall-bar-label-color: var(--color-base-200);
-  --waterfall-marker-mix-target: var(--color-base-content);
-  --waterfall-marker-mix-strength: 40%;
-  --metric-series-line-opacity: var(--waterfall-bar-opacity);
-  --waterfall-tick-mix-target: white;
-  --waterfall-tick-mix-strength: 45%;
-}
-
-/* ── Rosé Pine Dawn ── */
-html[data-theme='rose-pine-dawn'] {
-  color-scheme: light;
-  --color-rose: #d7827e;
-  --color-subtle: #797593;
-  --color-muted: #9893a5;
-  --color-base-100: #f2e9e1;
-  --color-base-200: #f8f1ea;
-  --color-base-300: #fffff9;
-  --color-base-content: #575279;
-  --color-on-light: #575279;
-  --color-on-dark: #faf4ed;
-  --color-primary: #907aa9;
-  --color-primary-content: #faf4ed;
-  --color-secondary: #286983;
-  --color-secondary-content: #faf4ed;
-  --color-accent: #56949f;
-  --color-accent-content: #faf4ed;
-  --color-neutral: #9893a5;
-  --color-neutral-content: #575279;
-  --color-info: #56949f;
-  --color-info-content: #faf4ed;
-  --color-success: #286983;
-  --color-success-content: #faf4ed;
-  --color-warning: #ea9d34;
-  --color-warning-content: #faf4ed;
-  --color-error: #b4637a;
-  --color-error-content: #faf4ed;
-  --waterfall-bar-opacity: 0.6;
-  --waterfall-bar-label-color: var(--color-base-content);
-  --waterfall-marker-mix-target: var(--color-base-content);
-  --waterfall-marker-mix-strength: 0%;
-  --metric-series-line-opacity: var(--waterfall-bar-opacity);
-  /* Ticks lighten the bar hue toward white, matching the dark themes'
-     "punched-out highlight" feel rather than an inked dip. */
-  --waterfall-tick-mix-target: white;
-  --waterfall-tick-mix-strength: 60%;
-}
-
-/* Tooltips — inverted against the page.
-
-   daisyUI defaults the bubble to --color-neutral on --color-neutral-content,
-   which in Rosé Pine pairs Muted grey with Text and fails AA in every theme:
-   2.44:1 in dawn, 3.91:1 in moon and main (floor is 4.5:1). Dawn is simply
-   where it is most visible.
-
-   Inverting against the surface — Text as the background, Base as the
-   foreground — gives 6.07:1 dawn, 11.86:1 moon, 13.39:1 main, and reads as a
-   bubble floating above the UI rather than a panel inside it. That is the
-   conventional treatment and it holds its meaning in both light and dark.
-
-   --tt-bg is daisyUI's own hook, so the tail (::after) follows the bubble for
-   free. --tt-fg is ours: the colour variants below re-point it so
-   tooltip-error and tooltip-secondary keep their own contrasting text. */
+/* Tooltips use the seasonal panel and neutral Text; the tail shares the fill. */
 .tooltip {
-  --tt-bg: var(--color-base-content);
-  --tt-fg: var(--color-base-100);
-}
-
-.tooltip-error {
-  --tt-fg: var(--color-error-content);
-}
-
-.tooltip-secondary {
-  --tt-fg: var(--color-secondary-content);
+  --tt-bg: var(--color-base-200);
 }
 
 .tooltip[data-tip]::before {
-  color: var(--tt-fg);
-  /* Small lift so the bubble separates from busy chart and table content;
-     dawn especially needs it, where bubble and page are both low contrast
-     against the mid greys in between. */
+  color: var(--color-base-content);
   box-shadow: 0 2px 8px -2px
     color-mix(in oklab, var(--color-base-content) 35%, transparent);
-  font-weight: 500;
+  font-weight: 400;
   @apply text-xs;
 }
 
@@ -202,18 +96,8 @@ html[data-theme='rose-pine-dawn'] {
   transition-delay: 0s;
 }
 
-.tooltip[data-tip]:where(
-    :hover,
-    :focus-visible,
-    :has(:focus-visible),
-    .tooltip-open
-  )::before,
-.tooltip[data-tip]:where(
-    :hover,
-    :focus-visible,
-    :has(:focus-visible),
-    .tooltip-open
-  )::after {
+.tooltip[data-tip]:where(:hover, :focus-visible, :has(:focus-visible))::before,
+.tooltip[data-tip]:where(:hover, :focus-visible, :has(:focus-visible))::after {
   transition-delay: var(--tooltip-show-delay);
 }
 
@@ -239,47 +123,21 @@ html[data-theme='rose-pine-dawn'] {
   transition-delay: 0s !important;
 }
 
-/* Rosé Pine text hierarchy utilities.
-   text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
-   text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label
-   text-muted  = Muted  (6e6a86 moon / 9893a5 dawn) — de-emphasized */
-.text-rp-base {
-  color: var(--color-base-content);
-}
-.text-rp-subtle {
+/* Shared secondary and disabled text utilities. */
+.text-subtle {
   color: var(--color-subtle);
 }
-.text-rp-muted {
+.text-muted {
   color: var(--color-muted);
 }
 
 /* Metric charts: axis chrome text (not tooltips) — xs + subtle */
 .metric-chart-view :where(.lc-axis-tick-label, .lc-axis-label) {
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1rem;
   font-weight: 400;
   fill: var(--color-subtle);
   stroke: none;
-}
-
-.metric-chart-view .histogram-stats {
-  font-size: 0.75rem;
-  color: var(--color-subtle);
-}
-
-.metric-chart-view .histogram-stats strong {
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-subtle);
-}
-
-.metric-chart-view .metric-chart-view__subtitle {
-  font-size: 0.75rem;
-  color: var(--color-primary);
-}
-
-.metric-chart-view .metric-chart-view__subtitle .tabular-nums {
-  font-variant-numeric: tabular-nums;
 }
 
 /* One keyboard focus stop and readout shared by every interactive metric chart. */
@@ -312,7 +170,7 @@ html[data-theme='rose-pine-dawn'] {
   background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
   color: var(--color-base-content);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1.25;
   text-align: center;
   overflow-wrap: anywhere;
@@ -361,49 +219,24 @@ html[data-theme='rose-pine-dawn'] {
   fill: color-mix(in oklab, var(--color-primary) 12%, transparent);
   stroke: var(--color-primary);
   stroke-width: 2;
+  rx: var(--radius-selector);
+  ry: var(--radius-selector);
   pointer-events: none;
 }
 
-/* Histogram bar fill: softer on dawn, same as before on dark themes. */
-.metric-chart-view {
-  --metric-bar-fill-opacity: 0.85;
-}
-
-html[data-theme='rose-pine-dawn'] .metric-chart-view {
-  --metric-bar-fill-opacity: 0.6;
-}
-
-/* Metric detail charts: layerchart strokes use --stroke-color when unset. */
-.metric-chart-view
-  :where(
-    .lc-grid-x-rule,
-    .lc-grid-y-rule,
-    .lc-grid-x-end-rule,
-    .lc-grid-y-end-rule,
-    .lc-axis-grid
-  ) {
-  --stroke-color: color-mix(in oklab, var(--color-base-300) 50%, transparent);
-}
-
-.metric-chart-view
-  :where(.lc-axis-rule, .lc-axis-tick, .lc-rule-x-line, .lc-rule-y-line) {
+/* Metric detail chart overlays use --stroke-color when unset. */
+.metric-chart-view :where(.lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-base-300);
+}
+
+.metric-chart-view :where(.lc-axis-tick) {
+  --stroke-color: var(--color-muted);
+  stroke-width: 1;
 }
 
 /* Series splines only (`.lc-path`); overlays use `.lc-line` + custom classes. */
 .metric-chart-view :where(.lc-path) {
   stroke-opacity: var(--metric-series-line-opacity, 1);
-}
-
-.metric-chart-view :where(.highlight-rule) {
-  stroke: var(--color-primary);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  opacity: 0.85;
-  pointer-events: none;
-  transition:
-    opacity 0.12s ease,
-    stroke-width 0.12s ease;
 }
 
 /* Selection dot halo: surface-colored ring drawn underneath the
@@ -417,11 +250,6 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
   pointer-events: none;
 }
 
-.metric-chart-view :where(.selection-dot-halo--selected) {
-  stroke: var(--color-primary);
-  stroke-width: 1.5;
-}
-
 .metric-chart-view :where(.selection-dot) {
   pointer-events: none;
 }
@@ -433,52 +261,74 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
   stroke-width: 1.5;
 }
 
-.metric-chart-view :where(.quantile-line) {
-  stroke: var(--marker-color, currentColor);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  opacity: 0.75;
-}
-
-.metric-chart-view :where(.value-bucket-pin-highlight) {
-  fill: color-mix(in oklab, var(--color-primary) 14%, transparent);
-  stroke: var(--color-primary);
-  stroke-width: 1.5;
-  pointer-events: none;
-}
-
-.metric-chart-view :where(.series-stat-line) {
-  stroke: var(--marker-color, currentColor);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  opacity: 0.75;
-  pointer-events: none;
-  transition:
-    opacity 0.12s ease,
-    stroke-width 0.12s ease;
-}
-
-.metric-chart-view
-  :where(
-    .series-stat-overlay:has(.series-stat-hitbox:hover) .series-stat-line,
-    .series-stat-overlay:has(.series-stat-hitbox:hover) .highlight-rule
-  ) {
-  opacity: 1;
-  stroke-width: 1.5;
-}
-
-.metric-chart-view :where(.series-stat-hitbox) {
-  fill: transparent;
+/* Graph washes use the same interaction roles as lists. Translucency keeps
+   the underlying bar colours and heatmap count intensities readable. */
+.metric-chart-view :where(.histogram-hover-column, .heatmap-hover-column) {
+  fill: var(--item-hover-bg);
+  fill-opacity: 0.22;
   stroke: none;
-  stroke-width: 0;
-  pointer-events: all;
-  cursor: default;
+  rx: var(--radius-selector);
+  ry: var(--radius-selector);
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.value-bucket-pin-highlight, .heatmap-selection) {
+  fill: var(--item-selected-bg);
+  fill-opacity: 0.28;
+  stroke: var(--item-selected-bg);
+  stroke-width: 1;
+  rx: var(--radius-selector);
+  ry: var(--radius-selector);
+  pointer-events: none;
 }
 
 .metric-chart-view :where(.series-stat-dot) {
   pointer-events: none;
   stroke: var(--color-surface-100, white);
   stroke-width: 1.25;
+}
+
+.metric-chart-view
+  :where(
+    .series-average-line,
+    .series-slope-line,
+    .quantile-line,
+    .heatmap-quantile-line
+  ) {
+  fill: none;
+  stroke: var(--quantile-color, var(--color-subtle));
+  stroke-width: 1;
+  opacity: var(--overlay-line-opacity, 0.35);
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.series-average-line, .series-slope-line) {
+  stroke-dasharray: 6 4;
+  stroke-width: var(--overlay-line-width, 2);
+  stroke: var(--color-primary);
+}
+
+.metric-chart-view :where(.quantile-line, .heatmap-quantile-line) {
+  stroke-width: var(--overlay-line-width, 2);
+}
+
+.metric-chart-view
+  :where(.quantile-line-backing, .series-average-line-backing) {
+  fill: none;
+  stroke: var(--color-base-100);
+  stroke-width: var(--overlay-backing-width, 4);
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.chart-overlay--emphasized) {
+  --overlay-line-width: 4;
+  --overlay-line-opacity: 0.95;
+  --overlay-backing-width: 8;
+}
+
+.metric-chart-view :where(.heatmap-quantile-channel) {
+  stroke-width: var(--overlay-backing-width, 4);
 }
 
 .metric-chart-view :where(.series-stat-overlay) {
@@ -489,23 +339,13 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
   pointer-events: none;
 }
 
-.metric-chart-view :where(.series-stat-line-group) {
-  pointer-events: none;
-}
-
-.metric-chart-view :where(.series-stat-hitbox--line) {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 12;
-  pointer-events: all;
-}
-
-/* Pinned selection legend + stat point labels (ChartSelectionLegend). */
-.metric-chart-view :where(.chart-selection-legend) {
+/* Shared card shape for pinned labels and portaled cursor readouts. */
+.metric-chart-view :where(.chart-selection-legend),
+.chart-hover-card {
   pointer-events: none;
   @apply rounded-md border border-base-300 text-base-content;
   padding: 0.4rem 0.55rem;
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1.25;
   min-width: 10rem;
   max-width: 18rem;
@@ -515,8 +355,49 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
   background-color: var(--color-base-100);
 }
 
-.metric-chart-view
-  :where(.chart-selection-legend--stat:not(.chart-time-range-legend)) {
+/* The cursor carries a raised card; the pinned card rests on the plot. */
+.chart-hover-card {
+  backdrop-filter: none;
+  max-width: min(30rem, calc(100vw - 2rem));
+  box-shadow:
+    0 3px 8px rgb(0 0 0 / 0.18),
+    0 10px 28px rgb(0 0 0 / 0.28);
+}
+
+.chart-hover-card :where(.lc-tooltip-header) {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  color: var(--color-subtle);
+  text-align: left;
+}
+
+.chart-hover-card :where(.lc-tooltip-list) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+}
+
+.chart-hover-card :where(.lc-tooltip-item-label) {
+  min-width: 0;
+  color: var(--color-subtle);
+}
+
+.chart-hover-card :where(.lc-tooltip-item-color) {
+  flex-shrink: 0;
+}
+
+.chart-hover-card :where(.lc-tooltip-item-value) {
+  color: var(--color-base-content);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-align: right;
+}
+
+.metric-chart-view :where(.chart-selection-legend--stat) {
   width: max-content;
   min-width: max-content;
   max-width: none;
@@ -535,76 +416,28 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
 }
 
 .metric-chart-view
-  :where(.chart-selection-legend--stat .chart-selection-legend__label) {
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.metric-chart-view
   :where(.chart-selection-legend--stat .chart-selection-legend__value) {
   min-width: max-content;
 }
 
-.metric-chart-view :where(.chart-time-range-legend) {
-  @apply flex flex-col gap-y-0.5 border-0 bg-transparent text-xs leading-snug shadow-none;
-  min-width: max-content;
-  max-width: none;
-  width: max-content;
-}
-
-.metric-chart-view :where(.chart-time-range-legend__row) {
-  display: flex;
-  align-items: baseline;
-  column-gap: 0.375rem;
-  white-space: nowrap;
-}
-
-.metric-chart-view :where(.chart-time-range-legend__prefix) {
-  @apply shrink-0 font-medium;
-  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
-}
-
-.metric-chart-view :where(.chart-time-range-legend__value) {
-  @apply tabular-nums whitespace-nowrap;
-}
-
-html[data-theme='rose-pine-dawn']
+html[data-color-scheme='light']
   .metric-chart-view
-  :where(
-    .lc-grid-x-rule,
-    .lc-grid-y-rule,
-    .lc-grid-x-end-rule,
-    .lc-grid-y-end-rule,
-    .lc-axis-grid
-  ) {
-  --stroke-color: color-mix(in oklab, var(--color-neutral) 50%, transparent);
-}
-
-html[data-theme='rose-pine-dawn']
-  .metric-chart-view
-  :where(.lc-axis-rule, .lc-axis-tick, .lc-rule-x-line, .lc-rule-y-line) {
+  :where(.lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-neutral);
 }
 
-html[data-theme='rose-pine-dawn']
+html[data-color-scheme='light']
   .metric-chart-view
-  :where(
-    .chart-selection-legend,
-    .chart-selection-legend--stat:not(.chart-time-range-legend)
-  ) {
+  :where(.chart-selection-legend, .chart-selection-legend--stat),
+html[data-color-scheme='light'] .chart-hover-card {
   border-color: var(--color-neutral);
 }
 
-html[data-theme='rose-pine-dawn']
+html[data-color-scheme='light']
   .metric-chart-view
-  :where(.chart-selection-legend) {
+  :where(.chart-selection-legend),
+html[data-color-scheme='light'] .chart-hover-card {
   background-color: var(--color-base-300);
-}
-
-html[data-theme='rose-pine-dawn']
-  .metric-chart-view
-  :where(.chart-time-range-legend) {
-  background-color: transparent;
 }
 
 .metric-chart-view :where(.chart-selection-legend--columns) {
@@ -627,8 +460,8 @@ html[data-theme='rose-pine-dawn']
 
 .metric-chart-view :where(.chart-selection-legend__timestamp) {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+  font-weight: 400;
+  color: var(--color-subtle);
   margin-bottom: 0.3rem;
 }
 
@@ -637,7 +470,7 @@ html[data-theme='rose-pine-dawn']
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   column-gap: 0.4rem;
   row-gap: 0.18rem;
   align-items: baseline;
@@ -645,14 +478,6 @@ html[data-theme='rose-pine-dawn']
 
 .metric-chart-view :where(.chart-selection-legend__row) {
   display: contents;
-}
-
-.metric-chart-view
-  :where(
-    .chart-selection-legend__row--primary .chart-selection-legend__label,
-    .chart-selection-legend__row--primary .chart-selection-legend__value
-  ) {
-  font-weight: 600;
 }
 
 .metric-chart-view :where(.chart-selection-legend__dot) {
@@ -665,14 +490,18 @@ html[data-theme='rose-pine-dawn']
 }
 
 .metric-chart-view :where(.chart-selection-legend__glyph) {
-  font-size: 0.85em;
-  font-weight: 600;
-  line-height: 1;
+  font-size: var(--text-base);
+  font-weight: 400;
+  line-height: var(--text-base--line-height);
   opacity: 0.85;
   margin-right: 0.25rem;
 }
 
-.metric-chart-view :where(.chart-selection-legend__label) {
+.metric-chart-view :where(.chart-selection-legend__label),
+.chart-hover-card :where(.chart-series-label) {
+  display: block;
+  min-width: 0;
+  max-width: min(24rem, calc(100vw - 8rem));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -680,7 +509,7 @@ html[data-theme='rose-pine-dawn']
 
 .metric-chart-view :where(.chart-selection-legend__value) {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   text-align: right;
   white-space: nowrap;
 }
@@ -696,8 +525,8 @@ html[data-theme='rose-pine-dawn']
   column-gap: 0.4rem;
   row-gap: 0.18rem;
   align-items: baseline;
-  font-size: 0.75rem;
-  line-height: 1.35;
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
 }
 
 .metric-chart-view :where(.chart-aggregate-summary__row) {
@@ -714,12 +543,12 @@ html[data-theme='rose-pine-dawn']
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in oklab, var(--color-base-content) 80%, transparent);
+  color: var(--color-subtle);
 }
 
 .metric-chart-view :where(.chart-aggregate-summary__value) {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   text-align: right;
   white-space: nowrap;
 }
@@ -738,7 +567,7 @@ html[data-theme='rose-pine-dawn']
 
   body {
     /* Desktop app + half-screen: no hard min width; children use min-w-0 where needed */
-    @apply min-w-0 font-sans text-base-content antialiased;
+    @apply min-w-0 font-sans text-base text-base-content antialiased;
     text-rendering: optimizeLegibility;
     scrollbar-width: thin;
     scrollbar-color: color-mix(
@@ -785,6 +614,35 @@ main::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* Native chart scrollbars teach overflow once per visit. Standard-only engines
+   retain their platform visibility policy; explicit WebKit dimensions keep the
+   scrollbar visible even when the OS normally uses auto-hiding overlays. */
+.chart-scroll-discoverable {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-muted) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  .chart-scroll-discoverable {
+    /* Non-auto standard values would override the native pseudo-elements. */
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  .chart-scroll-discoverable::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .chart-scroll-discoverable::-webkit-scrollbar-thumb {
+    background: var(--color-muted);
+    border-radius: 9999px;
+  }
+
+  .chart-scroll-discoverable::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
 /* Default SVG styles */
 svg {
   fill: none;
@@ -802,34 +660,183 @@ svg {
 
 /* Global button styles */
 .btn {
-  @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
+  @apply transition-[color,background-color,border-color,box-shadow];
+  transition-duration: var(--motion-feedback-duration);
+  transition-timing-function: var(--motion-settle-easing);
 }
 
-/*
- * Ghost buttons: muted wash on hover/active instead of Daisy’s default fill + no hover border ring.
- */
+/* Daisy's active press offset also appears in components that apply btn. */
+.btn,
+.toolbar-filter-trigger,
+.drawer-header-btn,
+.calendar-nav,
+.home-summary__icon-link {
+  translate: none !important;
+}
+
+/* Keep the control mounted so a scroll reversal reverses the fade in place. */
+.btn.pointy-uppy {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--motion-fade-duration) linear,
+    visibility 0s linear var(--motion-fade-duration),
+    background-color var(--motion-feedback-duration) var(--motion-settle-easing),
+    border-color var(--motion-feedback-duration) var(--motion-settle-easing),
+    color var(--motion-feedback-duration) var(--motion-settle-easing),
+    box-shadow var(--motion-feedback-duration) var(--motion-settle-easing);
+}
+
+.btn.pointy-uppy--visible {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+/* Header controls share neutral highlights and Primary active icons. */
+.btn.chart-header-control,
+.btn.header-tab {
+  @apply rounded-lg border-0 text-sm font-normal;
+  height: var(--header-control-height, 2rem);
+  min-height: var(--header-control-height, 2rem);
+  padding-inline: var(--header-control-padding, 0.5rem);
+  line-height: 1.5;
+  --btn-noise: none;
+  background: transparent;
+  color: var(--color-base-content);
+  box-shadow: none;
+}
+
+.header-controls {
+  @apply inline-flex min-w-0 items-center;
+  gap: var(--header-gap);
+  line-height: 1.5;
+}
+
+.header-tabs {
+  @apply relative isolate inline-grid shrink-0;
+  grid-template-columns: repeat(var(--header-tab-count), minmax(0, 1fr));
+  column-gap: var(--header-gap);
+}
+
+.header-tabs:has(
+    > :is([aria-selected='true'], [aria-current='page'], [aria-pressed='true'])
+  )::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(
+    (100% - (var(--header-tab-count) - 1) * var(--header-gap)) /
+      var(--header-tab-count)
+  );
+  border-radius: 0.5rem;
+  background: var(--item-selected-bg);
+  transform: translateX(
+    calc(var(--header-active-index) * (100% + var(--header-gap)))
+  );
+  transition: transform var(--motion-compact-duration)
+    var(--motion-settle-easing);
+  pointer-events: none;
+}
+
+.btn.header-tab {
+  @apply relative z-[1] gap-2 whitespace-nowrap;
+}
+
+.btn.header-tab.header-toggle:is([aria-pressed='true'], [aria-checked='true']) {
+  background: var(--item-selected-bg);
+}
+
+.header-tab__icon {
+  display: flex;
+}
+
+.badge-count.header-tab__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: var(--header-counter-min-width);
+  height: var(--header-counter-min-width);
+  color: var(--color-base-content);
+  font-variant-numeric: tabular-nums;
+}
+
+:is(.header-tab, .primary-navigation .tab):is(
+    [aria-selected='true'],
+    [aria-current='page'],
+    [aria-checked='true'],
+    [aria-pressed='true']
+  )
+  .header-tab__count {
+  color: var(--color-primary);
+}
+
+.header-tab.tooltip::before,
+.header-tab.tooltip::after {
+  display: none;
+}
+
+@container header (width < 25rem) {
+  .header-tab:has(> .header-tab__icon) {
+    --header-control-padding: 0.5rem;
+  }
+
+  .header-tab:has(> .header-tab__icon) > .header-tab__label {
+    @apply sr-only;
+  }
+
+  .header-tab.tooltip::before,
+  .header-tab.tooltip::after {
+    display: block;
+  }
+}
+
+.header-tab:is(
+    [aria-selected='true'],
+    [aria-current='page'],
+    [aria-checked='true'],
+    [aria-pressed='true']
+  )
+  .header-tab__icon {
+  color: var(--color-primary);
+}
+
+.btn.header-tab:disabled {
+  color: var(--color-muted);
+  background: transparent;
+  opacity: 1;
+}
+
+.btn.header-tab:disabled :is(.header-tab__icon, .header-tab__count) {
+  color: inherit;
+}
+
+@media (hover: hover) {
+  .btn.chart-header-control:hover:not(:disabled, [aria-disabled='true']),
+  .btn.header-tab:hover:not(:disabled, [aria-disabled='true']) {
+    background: var(--item-hover-bg);
+  }
+}
+
+/* Ghost buttons share item selection and hover colours. */
+.btn.btn-ghost:active:not(:disabled, [disabled], .btn-disabled),
+.btn.btn-ghost.btn-active:not(:disabled, [disabled], .btn-disabled) {
+  --btn-border: #0000;
+  --btn-noise: none;
+  --btn-bg: var(--item-selected-bg);
+  background-color: var(--btn-bg);
+  box-shadow: none;
+}
+
 @media (hover: hover) {
   .btn.btn-ghost:hover:not(:disabled, [disabled], .btn-disabled) {
     --btn-border: #0000;
     --btn-noise: none;
-    --btn-bg: color-mix(
-      in oklab,
-      var(--color-base-content) 10%,
-      var(--color-base-100)
-    );
+    --btn-bg: var(--item-hover-bg);
+    background-color: var(--btn-bg);
     box-shadow: none;
   }
-}
-.btn.btn-ghost:active:not(:disabled, [disabled], .btn-disabled),
-.btn.btn-ghost.btn-active {
-  --btn-border: #0000;
-  --btn-noise: none;
-  --btn-bg: color-mix(
-    in oklab,
-    var(--color-base-content) 14%,
-    var(--color-base-100)
-  );
-  box-shadow: none;
 }
 
 /*
@@ -850,37 +857,13 @@ svg {
 
 /* DaisyUI cards — avoid generic "lift" hover; feels template-y */
 .card {
-  @apply transition-shadow duration-200;
+  transition: box-shadow var(--motion-feedback-duration)
+    var(--motion-settle-easing);
 }
 
 .card:hover {
   transform: none;
   @apply shadow-md;
-}
-
-/* Code block styling */
-.code-block {
-  @apply bg-base-200 p-4 rounded-lg;
-}
-
-.code-block pre {
-  @apply text-sm font-mono tracking-tight;
-  white-space: pre;
-  overflow-x: auto;
-}
-
-.code-block .prompt {
-  @apply text-primary;
-  user-select: none;
-}
-
-.code-block .comment {
-  @apply text-base-content/60;
-}
-
-/* Shared filter component styles */
-.list-button {
-  @apply w-full text-left px-4 py-1 text-sm hover:bg-base-200 focus:bg-base-200 transition-colors flex items-center;
 }
 
 /* Shared section rules — additive hairline (reads on same fill as the line color).
@@ -905,68 +888,26 @@ svg {
   );
 }
 
-/* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
-   Column width = col / resize (not this flex). */
-.table-header-sort {
-  @apply flex min-w-0 items-center gap-2;
-}
-
-.table-header-sort__label {
-  @apply min-w-0 truncate;
-}
-
-.table-header-sort--end {
-  @apply justify-end;
-}
-
-.table-header-sort__indicator {
-  @apply flex h-4 w-4 shrink-0 items-center justify-center;
-}
-
-/* Sort indicator styles (typically on ArrowDownIcon inside .table-header-sort__indicator) */
-.sort-indicator {
-  @apply w-4 h-4;
-  @apply transition-[transform,opacity] duration-200;
-}
-
-.sort-indicator--active {
-  @apply text-primary opacity-100;
-}
-
-.sort-indicator--inactive {
-  @apply text-base-content/40 opacity-0;
-}
-
-.group:hover .sort-indicator--inactive {
-  @apply opacity-100;
-}
-
-.sort-indicator--asc {
-  @apply rotate-180;
-}
-
 /* Popover indicator styles (curved chevron) */
 .popover-indicator {
-  @apply transition-transform duration-200;
+  transition: transform var(--motion-compact-duration)
+    var(--motion-settle-easing);
 }
 
 .popover-indicator--open {
   @apply rotate-180;
 }
 
-/* Anchor popovers — native popover, fixed to trigger, dimmed backdrop (datetime, sort, …). */
+/* Shared native popover surface for time ranges, sorting, and timeline activity. */
 .anchor-popover {
-  @apply overflow-hidden px-0 pb-0 pt-0;
+  @apply overflow-hidden rounded-xl border border-base-300 bg-base-100 text-sm text-base-content;
   margin: 0;
-  box-sizing: border-box;
-  @apply rounded-xl bg-base-200 text-sm text-base-content;
-  @apply border border-base-300 shadow-surface;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
   inset: unset;
 }
 
-.anchor-popover::backdrop {
-  background-color: rgb(0 0 0 / 0.15);
-  backdrop-filter: blur(1px);
+.anchor-popover[role='tooltip'] {
+  @apply bg-base-200 font-normal;
 }
 
 .anchor-popover--anchored {
@@ -985,50 +926,24 @@ svg {
 }
 
 .anchor-popover__body {
-  @apply min-h-0 flex-1 overflow-y-auto py-2;
+  @apply min-h-0 flex-1 overflow-y-auto;
   overscroll-behavior: contain;
 }
 
-.anchor-popover--wide {
-  width: 25rem;
+.anchor-popover--form {
+  @apply p-3;
+  width: 24rem;
   max-width: calc(100vw - 1.5rem);
   max-height: min(85vh, calc(100vh - 2rem));
 }
 
-.anchor-popover--menu {
-  width: 12rem;
-  max-width: calc(100vw - 1.5rem);
-}
-
-.anchor-popover-menu {
-  @apply flex min-h-0 flex-1 flex-col gap-0 p-1;
-}
-
-.anchor-popover-menu__option {
-  @apply flex w-full items-center justify-between gap-2 rounded-lg border-none bg-transparent px-3 py-2 text-left text-xs text-base-content transition-colors duration-150;
-  @apply cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
-}
-
-.anchor-popover-menu__option:hover,
-.anchor-popover-menu__option:focus-visible {
-  @apply bg-base-300/40;
-}
-
-.anchor-popover-menu__option--active {
-  @apply font-medium text-primary;
-}
-
-.anchor-popover-menu__option-icon {
-  @apply h-3.5 w-3.5 shrink-0 text-primary;
-}
-
 /* Toolbar filter triggers (time range, column filter): lg when labeled, full pill when icon-only (--compact) */
 .toolbar-filter-trigger {
-  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border border-base-300/60 bg-base-100/90 px-3 font-normal normal-case shadow-none;
+  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border border-base-300 bg-base-200 px-3 font-normal normal-case shadow-none;
 }
 
 .toolbar-filter-trigger:hover {
-  @apply border-base-300 bg-base-200/55;
+  @apply border-base-300 bg-base-300;
 }
 
 .toolbar-filter-trigger--active {
@@ -1041,7 +956,7 @@ svg {
 
 /* Field filter only: icon-only compact trigger = soft primary (not time range). */
 .toolbar-filter-trigger--field.toolbar-filter-trigger--compact {
-  @apply btn-soft btn-primary border-primary/25 bg-primary/10 text-primary shadow-none;
+  @apply btn-soft btn-primary border-base-300 bg-base-200 text-primary shadow-none;
 }
 
 .toolbar-filter-trigger--field.toolbar-filter-trigger--compact:hover {
@@ -1065,7 +980,7 @@ svg {
 }
 
 .toolbar-filter-trigger__label {
-  @apply min-w-0 flex-1 truncate text-left text-sm text-base-content/85;
+  @apply min-w-0 flex-1 truncate text-left text-sm text-(--color-subtle);
 }
 
 .toolbar-filter-trigger__icon {
@@ -1073,124 +988,65 @@ svg {
 }
 
 .toolbar-filter-trigger__badge {
-  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
+  @apply inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-base font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
-/* Trace detail panel — Fields | Events | Links (and metric histogram tabs). */
-.detail-tab {
-  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
+/* One underline-only tab treatment for navigation, panes and time presets. */
+.tabs-border > .tab {
+  @apply before:left-0 before:w-full before:text-primary;
+  background: transparent;
+  box-shadow: none;
 }
 
-.detail-tab--active {
-  @apply bg-primary/15 text-base-content shadow-sm shadow-primary/10;
-}
-
-.detail-tab--inactive {
-  @apply border border-transparent text-primary hover:bg-base-200/80;
-}
-
-/* Signal drawer — route tabs (Traces | Metrics | Logs) + collapsed icon rail. */
-.drawer-tab {
-  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
-}
-
-.drawer-tab--active {
-  @apply bg-primary/15 text-base-content shadow-sm shadow-primary/10;
-}
-
-.drawer-tab--inactive {
-  @apply border border-transparent text-primary hover:bg-base-200/80;
-}
-
-.drawer-tab--icon-only {
-  @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
-}
-
-.drawer-tab--icon-only.drawer-tab--inactive {
-  @apply text-primary hover:bg-base-200/80;
-}
-
-.drawer-tab--icon-only.drawer-tab--active {
-  @apply border-transparent bg-primary/15 text-base-content shadow-sm shadow-primary/10;
-}
-
-/* Pane tabs — inactive = primary, active = base text. */
-.pane-header :where(.tab:not(.tab-active)) {
-  color: var(--color-primary);
-}
-
-.pane-header :where(.tab.tab-active) {
+/* Inactive is not disabled: keep enabled tab labels and icons at full strength. */
+.tabs-border > .tab:not(:disabled, [aria-disabled='true']) {
   color: var(--color-base-content);
 }
 
-/* Pane chrome — small round controls shared by drawer header icons and
-   labeled header pills (time presets, nav rail, …). */
-.chrome-btn,
+.tabs-border > .tab.tab-active {
+  @apply before:h-px before:border-t;
+}
+
+/* Shared round controls for copy actions and chart overlays. */
+.header-icon-button {
+  @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
+  color: var(--color-subtle);
+}
+
+.header-icon-button:hover {
+  @apply bg-base-300 text-base-content;
+}
+
+.header-icon-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
 .drawer-header-btn {
   @apply btn btn-circle btn-ghost btn-neutral btn-sm shrink-0 gap-0 border-transparent px-0 py-0 text-xs font-medium tracking-tight shadow-none;
   color: var(--color-subtle);
-  transition-property: color, background-color, box-shadow, transform;
-  transition-duration: 200ms, 200ms, 200ms, 100ms;
+  transition-property: color, background-color, box-shadow;
+  transition-duration: var(--motion-feedback-duration);
 }
 
-.chrome-btn:hover,
 .drawer-header-btn:hover {
   @apply text-base-content;
 }
 
-.chrome-btn--active,
-.chrome-btn[aria-pressed='true'],
-.drawer-header-btn--active,
-.drawer-header-btn[aria-expanded='true'] {
-  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
-}
-
-.chrome-btn--active:hover,
-.chrome-btn[aria-pressed='true']:hover,
-.drawer-header-btn--active:hover,
-.drawer-header-btn[aria-expanded='true']:hover {
-  @apply border-transparent bg-primary/20 text-primary shadow-sm shadow-primary/10;
-}
-
-.chrome-btn:active,
-.drawer-header-btn:active {
-  @apply translate-y-px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chrome-btn:active,
-  .drawer-header-btn:active {
-    transform: none;
-  }
-}
-
-.chrome-btn:focus-visible,
 .drawer-header-btn:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
   border-radius: 9999px;
 }
 
-/* Signal drawer — circle controls in the search editor (header join + footer join). */
-.drawer-editor-btn {
-  @apply btn btn-circle btn-ghost btn-neutral btn-xs shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
-}
-
-.detail-tab:focus-visible,
-.drawer-tab:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
 .input {
   border-color: var(--color-base-300);
 }
 
-/* Monospace text-entry chrome — search, custom time range, future type-in surfaces.
-   Add `typed-field` to the control (or its wrapper). Use `typed-field--pill` for
-   rounded-full; wrap join rows in `typed-field-group`. */
+/* Monospace query-entry controls. Use typed-field--pill for rounded ends. */
 .typed-field {
-  @apply min-h-0 border border-base-300 bg-base-100 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  @apply min-h-0 border border-base-300 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  background-color: var(--typed-field-bg, var(--color-base-100));
   height: calc(var(--table-row-h) + 0.5rem);
   min-height: calc(var(--table-row-h) + 0.5rem);
 }
@@ -1214,68 +1070,6 @@ textarea.typed-field::placeholder,
   @apply rounded-full;
 }
 
-.typed-field-group {
-  @apply overflow-hidden rounded-full border border-base-300;
-}
-
-.typed-field-group > .typed-field {
-  @apply border-none;
-}
-
-/* Prefix/suffix cap in a join row (e.g. Start | input… | Apply). */
-.typed-field-label {
-  @apply join-item flex shrink-0 cursor-pointer items-center justify-start border-none bg-base-100 px-3 py-0 text-left text-xs font-normal font-sans tracking-tight shadow-none;
-  color: var(--color-subtle);
-  height: calc(var(--table-row-h) + 0.5rem);
-  min-height: calc(var(--table-row-h) + 0.5rem);
-}
-
-.typed-field-group > .typed-field-label {
-  @apply rounded-l-full rounded-r-none;
-}
-
-/* Input between label cap and optional action cap. */
-.typed-field-group
-  > .typed-field-label
-  + .typed-field.join-item:not(.typed-field--action) {
-  @apply min-w-0 flex-1 rounded-none pl-0;
-}
-
-/* Label + input only (no trailing action). */
-.typed-field-group
-  > .typed-field-label
-  + .typed-field.join-item:not(.typed-field--action):last-child {
-  @apply rounded-l-none rounded-r-full;
-}
-
-.typed-field-group > .typed-field--action.join-item {
-  @apply rounded-l-none rounded-r-full;
-}
-
-/* Join row: one focus ring around the whole group (label + input + action). */
-.typed-field-group:focus-within {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.typed-field-group:has(> .input-error):focus-within,
-.typed-field-group:has(> .typed-field.input-error):focus-within {
-  outline-color: var(--color-error);
-}
-
-.typed-field-group
-  > :where(.typed-field, input, textarea, select, button):focus,
-.typed-field-group
-  > :where(.typed-field, input, textarea, select, button):focus-visible,
-.typed-field-group:focus-within > .btn:focus-visible {
-  outline: none;
-}
-
-.typed-field-group > .typed-field--apply:focus,
-.typed-field-group > .typed-field--apply:focus-visible {
-  @apply bg-primary text-primary-content;
-}
-
 .typed-field:focus {
   outline: none;
 }
@@ -1285,25 +1079,8 @@ textarea.typed-field::placeholder,
   outline-offset: var(--focus-ring-offset);
 }
 
-.typed-field-group > .typed-field:focus-visible {
-  outline: none;
-}
-
 .typed-field.input-error:focus-visible {
   outline-color: var(--color-error);
-}
-
-/* Label/action in a group (e.g. Apply) — sans, not mono. */
-.typed-field--action {
-  @apply justify-center font-sans font-semibold;
-}
-
-.typed-field--action.typed-field--apply {
-  @apply bg-primary/10 text-primary;
-}
-
-.typed-field--action.typed-field--apply:hover {
-  @apply bg-primary/15;
 }
 
 /* CodeMirror inside a typed-field surface (search). */
@@ -1311,12 +1088,8 @@ textarea.typed-field::placeholder,
   @apply text-left font-mono text-sm tracking-tight;
 }
 
-.typed-field :where(.cm-content, .cm-line, .cm-scroller) {
-  line-height: var(--table-row-h);
-}
-
-.typed-field :where(.cm-placeholder) {
-  line-height: var(--table-row-h);
+.typed-field :where(.cm-content, .cm-line, .cm-scroller, .cm-placeholder) {
+  line-height: var(--text-base--line-height);
 }
 
 /* Unified keyboard focus rings (--focus-ring-* on theme roots). Outline follows border-radius on the same box in modern browsers. */
@@ -1391,24 +1164,15 @@ button:focus-visible:not(.btn) {
 :root {
   /* Primary data panels (trace list, waterfall, detail): caps scroll height, aligns column resize strips */
   --panel-body-max-height: min(85vh, calc(100vh - 9rem));
-  --table-row-h: 1.75rem;
-  --table-header-h: 2.25rem;
+  --table-row-h: 2.5rem;
+  --table-header-h: 2.75rem;
+  --table-heading-color: var(--color-subtle);
   /* SignalToolbar top row + SearchEditor (in-toolbar): same outer min-height (py-1 + row + search card borders) */
   --toolbar-search-chrome-min-height: calc(
     var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
   );
-  /* Trace list (and matching search chrome): min width before horizontal scroll */
-  --trace-list-table-min-width: 60rem;
-  --table-hover-bg: color-mix(in oklab, var(--color-base-200) 70%, transparent);
-  --table-selected-bg: color-mix(
-    in oklab,
-    var(--color-primary) 10%,
-    transparent
-  );
-  /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
-  --waterfall-gutter-col: 22px;
+  /* Shared tree gutter + nested detail rows (TreeGutter) */
   --waterfall-gutter-tail: 4px;
-  --waterfall-gutter-hub: 16px;
 
   /* ── App shell spacing (tune here) ── */
   --layout-gap: 0.75rem;
@@ -1427,19 +1191,106 @@ button:focus-visible:not(.btn) {
    * footers center their contents so smaller controls (btn-xs) don't
    * collapse the strip.
    */
-  --app-footer-height: 2.5rem;
+  --app-footer-height: 2.75rem;
 
   /*
-   * Pane content header height (for .pane-header). Used by the
-   * metric + trace detail tab strips and any other pane-level
-   * header band. Distinct from --table-header-h (2.25rem) which
-   * sizes table column header rows; pane headers are taller so
-   * they read as a real title bar rather than a table thead.
+   * Shared pane heading rhythm. Additional rows grow the header;
+   * the first row stays aligned with drawer and detail headings.
    */
-  --pane-header-h: 3rem;
+  --header-gap: 0.5rem;
+  --header-counter-min-width: 1rem;
+  --signal-card-row-h: 1.5rem;
+  --header-padding: 0.5rem;
+  --header-padding-inline: 0.75rem;
+  --pane-header-h: calc(var(--pane-header-row-h) + 2 * var(--header-padding));
+  --pane-inline-inset: 1rem;
+  --pane-header-row-h: 2rem;
 }
 
-/* Same frosted fill as panel chrome: paint this on tbody / field lists */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-feedback-duration: 0ms;
+    --motion-fade-duration: 0ms;
+    --motion-compact-duration: 0ms;
+    --motion-panel-duration: 0ms;
+  }
+}
+
+::selection {
+  background-color: var(--color-highlight-med);
+  color: var(--color-base-content);
+}
+
+/* Shared item states. Hover temporarily overrides selection; focus is a separate outline. */
+:is(.item-state, .table-row) {
+  border-radius: 0.75rem;
+  --item-state-bg: var(--item-idle-bg, transparent);
+  background-color: var(--item-state-bg);
+  transition: background-color var(--item-motion-duration)
+    var(--motion-settle-easing);
+}
+
+/* Real table rows paint their state on the cells so the outer corners round
+   without clipping menus, tooltips or focus outlines. Virtual waterfall rows
+   use display:table and share the same cell treatment. */
+table:has(> tbody > tr:is(.item-state, .table-row)) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+tr:is(.item-state, .table-row) {
+  background-color: transparent;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+tr:is(.item-state, .table-row) > :is(td, th) {
+  background-color: var(--item-state-bg);
+  transition: background-color var(--item-motion-duration)
+    var(--motion-settle-easing);
+}
+
+tr:is(.item-state, .table-row) > :is(td, th):first-child {
+  border-top-left-radius: 0.75rem;
+  border-bottom-left-radius: 0.75rem;
+}
+
+tr:is(.item-state, .table-row) > :is(td, th):last-child {
+  border-top-right-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+}
+
+:is(.item-state, .table-row):where(
+  [aria-selected='true'],
+  [aria-pressed='true'],
+  [aria-checked='true'],
+  [aria-current='page'],
+  [data-selected],
+  .table-row--selected
+) {
+  --item-state-bg: var(--item-selected-bg);
+}
+
+:is(.item-state, .table-row):where(
+  :is(:hover, .table-row--resize-hover):not(:disabled):not(
+      [aria-disabled='true']
+    ):not([data-disabled])
+) {
+  --item-state-bg: var(--item-hover-bg);
+}
+
+:is(.item-state, .table-row):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+  :is(.item-state, .table-row):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Shared table body fill. */
 .table-body-surface {
   @apply bg-base-100/80;
 }
@@ -1475,35 +1326,7 @@ button:focus-visible:not(.btn) {
   border-top: none;
 }
 
-/* Data Table Styles */
-.trace-list-table :where(th, td) {
-  @apply whitespace-nowrap;
-}
-
-/* Root presence column: center header (Daisy table th can default to start). */
-.trace-list-table thead th.table-header-cell--trace-root {
-  @apply text-center;
-}
-
-/*
- * Shared header band — every "header strip" surface in the app:
- * table theads (trace list, waterfall, log/metric/trace detail
- * tables), popover headers, time-range preset strips, and the
- * per-pane content headers in PageLayout panes.
- *
- * Tone: a "warm-neutral" — base-100 nudged ~6% toward primary
- * (iris). The band reads as a slightly warmer base, not as a
- * tinted bar, so existing primary-family states (active tabs at
- * bg-primary/15, focus rings, etc.) still pop with comfortable
- * contrast against it. The bottom border picks up the same primary
- * mix at low alpha so the band's edge belongs to the same color
- * family as its fill instead of dropping a foreign neutral line.
- * The 1px inset highlight at the top mimics the drawer header's
- * "lift" without committing to a real shadow.
- *
- * Renamed from the misleading `.table-header-surface` (it was never
- * table-only).
- */
+/* Shared header band for table and panel chrome. */
 .header-surface {
   box-sizing: border-box;
   height: var(--table-header-h);
@@ -1524,119 +1347,12 @@ button:focus-visible:not(.btn) {
   @apply flex items-center py-1;
 }
 
-/*
-.table-header-row {
-  height: var(--table-header-h);
-}
-
-.table-header-cell {
-  @apply align-middle px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
-}
-
-/* Same text treatment as .table-header-cell; use on form labels / section titles outside <table>. */
-.table-header-typography {
-  @apply text-xs font-semibold tracking-normal text-base-content/55;
-}
-
-.table-header-cell--sortable {
-  @apply cursor-pointer select-none;
-}
-
-.table-header-cell--left {
-  @apply text-left;
-}
-
-.table-header-cell--center {
-  @apply text-center;
-}
-
-.table-header-cell--right {
-  @apply text-right pl-2 pr-4;
-}
-
-.table-header-cell--checkbox {
-  @apply w-10 text-center;
-}
-
-.table-cell--checkbox {
-  @apply w-10 py-1 text-center align-middle;
-}
-
-/* Tight gutter between Trace ID and Root Span (presence) column */
-.table-header-cell--trace-id {
-  @apply pl-4 pr-1 py-4 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
-}
-
-.table-header-cell--after-trace-id {
-  @apply pl-1 pr-4 py-4 text-center text-xs font-semibold tracking-normal text-base-content/55;
-}
-
-.table-cell--trace-id {
-  @apply pl-4 pr-1 py-1 text-sm text-base-content font-mono align-middle whitespace-nowrap;
-}
-
-/*
- * Fixed-layout trace list: ellipsis on a single line (nowrap is on .trace-list-table).
- * max-width: 0 lets table-fixed + col widths shrink the cell below content min-width.
- * Ellipsis on td is flaky; inner .trace-list-cell-text is the reliable clip box.
- */
-.trace-list-table td.table-cell--trace-id,
-.trace-list-table td.trace-list-cell-truncate {
-  max-width: 0;
-}
-
-.trace-list-table .trace-list-cell-text {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.trace-list-table td.table-cell--count {
-  @apply pl-2 pr-4 text-right;
-}
-
-.table-cell--has-root {
-  @apply px-2 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
-}
-
 .table-row {
-  @apply transition-colors duration-150;
   height: var(--table-row-h);
-}
-
-.table-row:hover {
-  background-color: var(--table-hover-bg);
-}
-
-.table-row--selected {
-  background-color: var(--table-selected-bg);
-  outline: 1px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
-  outline-offset: -1px;
-  position: relative;
-  z-index: 1;
 }
 
 .table-cell {
   @apply pl-4 pr-4 py-1 text-sm text-base-content align-middle;
-}
-
-.table-cell--right {
-  @apply pl-2 pr-4 py-1 text-sm text-right text-base-content align-middle;
-}
-
-.table-cell--count {
-  @apply px-4 py-1 text-right text-sm tabular-nums align-middle;
-}
-
-.table-cell--center {
-  @apply px-4 py-1 text-center;
-}
-
-/* Detail fields: field + colon — same muted tone as waterfall service column. */
-.table-cell--field-name {
-  @apply pl-4 pr-4 py-1 text-left align-middle text-sm font-normal text-base-content/60;
 }
 
 /* Detail KV cell: [key: value] */
@@ -1647,7 +1363,7 @@ button:focus-visible:not(.btn) {
      than from its content, and it is still what keeps the value column from
      being sized by its longest string. align-top because a wrapped value makes
      the row taller than its key. */
-  @apply py-1 pl-4 pr-2 text-sm align-top;
+  @apply px-0 py-1 text-sm align-top;
   max-width: 0;
   overflow: hidden;
 }
@@ -1666,14 +1382,32 @@ button:focus-visible:not(.btn) {
   @apply text-base-content;
 }
 
-/* Detail Fields use a key/type header followed by a full-width value block. */
+/* Compact JSON shares the editors' neutral values and Madoromi syntax accents. */
+.value-syntax .detail-code--key {
+  color: var(--color-code-ruri);
+}
+.value-syntax .detail-code--punctuation {
+  color: var(--color-code-usuzumi0);
+}
+.value-syntax .detail-code--string,
+.value-syntax .detail-code--quote {
+  color: var(--color-code-sumi);
+}
+.value-syntax .detail-code--number,
+.value-syntax .detail-code--literal {
+  color: var(--color-code-literal);
+}
+.value-syntax .detail-code--escape {
+  color: var(--color-code-botan);
+}
+
 .detail-cell__stacked-value {
   @apply mt-0.5 min-w-0;
 }
 
 /* Badge cell: shrink-to-fit, right-aligned */
 .detail-cell--badges {
-  @apply py-1 pr-4 pl-0 text-xs align-middle whitespace-nowrap text-right;
+  @apply px-0 py-1 text-xs align-middle whitespace-nowrap text-right;
   width: 1px;
 }
 
@@ -1686,65 +1420,20 @@ button:focus-visible:not(.btn) {
   padding-left: calc(1rem + var(--waterfall-gutter-col, 0px));
 }
 
-/* ── In-header column resize handle ──
-   Place inside a position:relative <th>. Hit strip straddles the right cell border.
-   The ::after pseudo-element is the visible line; appears on hover / during drag. */
-
-.resize-handle {
-  @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
-  right: -3px;
-  width: 7px;
-  z-index: 2;
-}
-
-.resize-handle::after {
-  content: '';
-  width: 0.125rem;
-  min-height: 100%;
-  border-radius: 9999px;
-  background-color: var(--color-neutral);
-  opacity: 0;
-  transition:
-    opacity 0.15s,
-    background-color 0.15s;
-}
-
-.resize-handle:hover::after,
-.resize-handle--active::after {
-  opacity: 0.6;
-}
-
-.resize-handle--active::after {
-  background-color: var(--color-primary);
-  opacity: 0.9;
-}
-
 /* ── Shared column-resize system ──
    One interaction pattern everywhere:
    • Wrap the table in .col-resize-context (position: relative).
    • Place .col-resize-bar siblings after the table; set style:left to the column
      boundary in px from script. Use .col-resize-bar--below-header when the table
-     has a thead so the strip (and visible line) start under the header row.
+      has a thead so the hit strip starts under the header row.
    • Put .col-resize-marker inside each cell that borders a bar (th/td) so
      :has(.col-resize-marker) zeros right padding; the next cell gets 1rem inset-start.
    • Use .col-resize-bar--in-flow on a flex-row separator (ResizablePanels side-by-side)
-     or .col-resize-bar--row-in-flow for stacked column layout — same __line child. */
+      or .col-resize-bar--row-in-flow for stacked column layout — same __line child.
+   The visible grip is short and appears only on hover, focus, or drag. */
 
 .col-resize-context {
   @apply relative isolate w-full min-h-full;
-}
-
-/* Trace list table: no panel-body-max-height cap (it scrolls inside the page, not a fixed panel). */
-.trace-list-col-resize.col-resize-context {
-  min-height: 0;
-}
-
-/* Scroll region capped like detail / waterfall; use inside flex children with min-h-0 */
-.panel-body-scroll {
-  max-height: min(var(--panel-body-max-height), 100%);
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
 }
 
 /* Marker: kills right padding on its parent cell */
@@ -1763,7 +1452,7 @@ button:focus-visible:not(.btn) {
 
 /* z above .waterfall-row:hover (z-20) so the hit strip stays draggable */
 .col-resize-bar {
-  @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-stretch justify-center;
+  @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-center justify-center;
   right: auto;
   margin-left: -0.25rem;
   width: var(--resize-bar-hit-width);
@@ -1773,58 +1462,40 @@ button:focus-visible:not(.btn) {
   touch-action: none;
 }
 
-/* Strip + line start at first body row — keeps thead/tabs clear (matches --table-header-h) */
+/* Hit strip starts at the first body row, keeping thead/tabs clear. */
 .col-resize-bar.col-resize-bar--below-header {
   top: var(--table-header-h);
 }
 
 .col-resize-bar__line {
-  @apply self-stretch rounded-full;
-  width: 0.125rem;
-  min-height: 100%;
-  background-color: var(--color-neutral);
+  @apply shrink-0 rounded-full;
+  width: var(--resize-grip-thickness);
+  height: var(--resize-grip-length);
+  max-height: 100%;
+  background-color: var(--color-base-content);
   opacity: 0;
   transition:
-    width 0.15s,
-    background-color 0.15s,
-    opacity 0.15s;
+    background-color var(--motion-feedback-duration) var(--motion-settle-easing),
+    opacity var(--motion-fade-duration) linear;
 }
 
-.col-resize-bar--guide::before {
-  content: '';
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 1px;
-  height: calc(var(--table-header-h) - 12px);
-  border-radius: 9999px;
-  background-color: color-mix(in oklab, var(--color-base-300) 70%, transparent);
-  pointer-events: none;
-}
-
-.col-resize-bar--guide:hover::before,
-.col-resize-bar--guide.col-resize-bar--active::before {
-  visibility: hidden;
+/* Paint on the column boundary while retaining the existing drag hit strip. */
+.col-resize-bar--column > .col-resize-bar__line {
+  transform: translateX(calc(0.25rem - var(--resize-bar-hit-width) / 2));
 }
 
 .col-resize-bar:hover .col-resize-bar__line {
-  opacity: 0.25;
-}
-
-.col-resize-bar--active .col-resize-bar__line {
-  width: 0.125rem;
-  background-color: var(--color-primary);
-  opacity: 0.4;
+  opacity: 1;
 }
 
 .col-resize-bar:focus-visible {
   outline: none;
 }
 
-.col-resize-bar:focus-visible .col-resize-bar__line {
+.col-resize-bar:is(:focus-visible, .col-resize-bar--active)
+  .col-resize-bar__line {
   background-color: var(--color-primary);
-  opacity: 0.9;
+  opacity: 1;
 }
 
 /* In-flow flex sibling (not absolute over a table) */
@@ -1833,13 +1504,6 @@ button:focus-visible:not(.btn) {
   inset: auto;
   margin-left: 0;
   z-index: 10;
-}
-
-.col-resize-bar--in-flow .col-resize-bar__line {
-  align-self: auto;
-  width: 0.1875rem;
-  height: 3rem;
-  min-height: 0;
 }
 
 /* Stacked panels: full-width hit strip, drag adjusts height split (row-resize) */
@@ -1858,139 +1522,37 @@ button:focus-visible:not(.btn) {
 }
 
 .col-resize-bar--row-in-flow .col-resize-bar__line {
-  align-self: auto;
-  width: 3rem;
-  min-width: 0;
-  height: 0.1875rem;
-  min-height: 0.1875rem;
+  width: var(--resize-grip-length);
+  max-width: 100%;
+  height: var(--resize-grip-thickness);
 }
 
-.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):hover
-  .col-resize-bar__line {
-  background-color: var(--color-neutral);
-  opacity: 0.65;
+/* Detail / toolbar metadata origins. */
+.metadata-origin {
+  @apply font-sans text-xs font-normal;
+  color: var(--color-secondary);
 }
 
-.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):is(
-    :focus-visible,
-    .col-resize-bar--active
-  )
-  .col-resize-bar__line {
-  background-color: var(--color-primary);
-  opacity: 0.95;
+/* Item / field / tab counts. */
+.badge-count {
+  @apply text-base font-normal tabular-nums;
+  color: var(--color-subtle);
 }
 
-/* Pagination Styles — rows left, pager cluster centered, delete label + button trailing */
-.pagination-controls {
-  @apply flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 bg-base-100 border-t border-base-300;
-}
-
-.pagination-rows-selector {
-  @apply flex shrink-0 items-center gap-3;
-}
-
-.pagination-label {
-  @apply text-sm text-base-content/70;
-}
-
-.pagination-rows-button {
-  @apply btn btn-sm btn-ghost min-w-16 justify-between;
-  @apply bg-base-100 border border-base-300 hover:bg-base-200;
-}
-
-.pagination-controls__center {
-  @apply flex min-w-0 flex-1 items-center justify-center;
-}
-
-.pagination-controls__actions {
-  @apply flex shrink-0 items-center gap-2;
-}
-
-.pagination-popover-option {
-  @apply w-full text-left px-3 py-2 text-sm hover:bg-base-200 flex items-center gap-2;
-}
-
-.pagination-popover-option--selected {
-  @apply bg-base-200;
-}
-
-/* Badges — pills, no border. */
+/* Badges — pills, including the classes that apply DaisyUI badge styles. */
 .badge {
   @apply rounded-full font-medium tracking-tight;
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  height: auto;
+  min-height: 1.5rem;
 }
 
 .badge.badge-sm {
-  @apply min-h-[1.25rem] gap-1 px-2 py-0.5 leading-tight;
+  @apply min-h-[1.25rem] gap-1 px-2 py-0.5;
+  font-size: var(--text-base);
 }
 
 .badge.badge-xs {
-  @apply min-h-[1.125rem] gap-0.5 px-1.5 py-px text-[0.625rem] leading-none;
-}
-
-/* Soft badges: remove ring border. To restore: delete this rule. */
-.badge.badge-soft {
-  @apply ring-0;
-}
-
-/* Rosé Pine rose token — used for Gauge metric type (not a built-in Daisy semantic). */
-.badge.badge-soft.badge-rose {
-  --badge-color: var(--color-rose);
-  border-color: transparent;
-  background-color: color-mix(
-    in oklab,
-    var(--badge-color) 12%,
-    var(--color-base-100)
-  );
-  color: var(--color-rose);
-}
-
-/* Outline badges (e.g. metric type) — match chip density; Daisy draws the outline */
-.badge.badge-outline {
-  @apply leading-tight;
-}
-
-/*
- * Detail / toolbar metadata: type · origin · root · offset.
- * type → accent, origin → primary, root → secondary (Daisy semantic colors).
- */
-.badge-type {
-  @apply badge badge-sm text-xs badge-soft badge-accent leading-tight;
-}
-
-.badge-origin {
-  @apply badge badge-sm text-xs badge-soft badge-primary leading-tight;
-}
-
-/* Item / field / tab counts (xs soft primary). */
-.badge-count {
-  @apply badge badge-xs badge-soft badge-primary tabular-nums;
-}
-
-/* Conflict containers retain count semantics but use Daisy's warning palette. */
-.badge-count.badge-warning {
-  @apply badge-warning;
-}
-
-/* Series min / max / avg chips (detail rows + chart overlays). */
-.series-stat-badge {
-  @apply badge badge-xs inline-flex max-w-full items-baseline tabular-nums leading-tight ring-0;
-  color: var(--color-base-content);
-  background-color: var(--color-base-200);
-  border: none;
-}
-
-.series-stat-badge__label {
-  @apply mr-0.5 text-[0.625rem] font-semibold uppercase opacity-55;
-}
-
-.series-stat-badge__value {
-  @apply font-medium;
-}
-
-.badge-root {
-  @apply badge badge-sm text-xs badge-soft badge-secondary leading-tight;
-}
-
-.badge-offset {
-  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums leading-tight;
+  @apply min-h-6 gap-0.5 px-1.5 py-px text-base;
 }

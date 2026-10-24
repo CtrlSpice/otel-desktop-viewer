@@ -5,6 +5,14 @@
   } from '@/contexts/time-context.svelte'
 
   const ctx = getTimeContext()
+  const selectedIndex = $derived(
+    TIME_RANGE_PRESETS.findIndex(preset =>
+      preset.durationMs === undefined
+        ? ctx.selection.type === 'all'
+        : ctx.selection.type === 'preset' &&
+          ctx.selection.durationMs === preset.durationMs
+    )
+  )
 
   function applyPreset(preset: (typeof TIME_RANGE_PRESETS)[number]) {
     ctx.setSelection(
@@ -15,39 +23,21 @@
   }
 </script>
 
-<div class="preset-time-ranges">
-  {#each TIME_RANGE_PRESETS as preset (preset.label)}
-    {@const selected =
-      preset.durationMs === undefined
-        ? ctx.selection.type === 'all'
-        : ctx.selection.type === 'preset' &&
-          ctx.selection.durationMs === preset.durationMs}
+<div
+  class="preset-time-ranges header-tabs min-w-0 w-full"
+  style:--header-tab-count={TIME_RANGE_PRESETS.length}
+  style:--header-active-index={selectedIndex}
+  style:--header-control-padding="0.25rem"
+>
+  {#each TIME_RANGE_PRESETS as preset, index (preset.label)}
     <button
       type="button"
-      class="chrome-btn {selected
-        ? 'chrome-btn--active'
-        : 'chrome-btn--inactive'}"
-      aria-pressed={selected}
+      class="btn btn-xs header-tab min-w-0 w-full tabular-nums"
+      aria-pressed={selectedIndex === index}
       aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}
       onclick={() => applyPreset(preset)}
     >
-      {preset.label}
+      {preset.shortLabel}
     </button>
   {/each}
 </div>
-
-<style lang="postcss">
-  @reference "../../../app.css";
-
-  .preset-time-ranges {
-    @apply flex min-w-0 w-full flex-nowrap items-center justify-evenly gap-1;
-  }
-
-  .preset-time-ranges .chrome-btn--inactive {
-    color: var(--color-base-content);
-  }
-
-  .preset-time-ranges .chrome-btn--active {
-    color: var(--color-primary);
-  }
-</style>

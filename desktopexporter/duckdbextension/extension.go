@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.uber.org/zap"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/features"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -44,6 +45,7 @@ type DuckDBExtension struct {
 
 	store  *store.Store
 	server *server.Server
+	flags  *features.Flags
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
@@ -70,12 +72,22 @@ func (e *DuckDBExtension) Store() *store.Store {
 }
 
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
+	flags, err := features.New(ctx, e.cfg.FeatureFlagsFile)
+	if err != nil {
+		return err
+	}
+	started := false
+	defer func() {
+		if !started {
+			_ = flags.Shutdown(context.Background())
+		}
+	}()
 	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
 	if err != nil {
 		return err
 	}
 
-	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel)
+	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithFeatures(flags))
 	if err != nil {
 		str.Close()
 		return err
@@ -105,6 +117,11 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 
 	e.store = str
 	e.server = srv
+	e.flags = flags
+	started = true
+	if flags.EvalsEnabled(ctx) {
+		e.logger.Warn("Evals: " + features.ExperimentalLabel)
+	}
 
 	if e.store.RetentionCap() > 0 {
 		// The loop gets its own context rather than the startup ctx, which
@@ -132,6 +149,13 @@ func (e *DuckDBExtension) Shutdown(ctx context.Context) error {
 			return err
 		}
 		e.server = nil
+	}
+
+	if e.flags != nil {
+		if err := e.flags.Shutdown(ctx); err != nil {
+			return err
+		}
+		e.flags = nil
 	}
 
 	// Then close the store. The collector shuts extensions down after every

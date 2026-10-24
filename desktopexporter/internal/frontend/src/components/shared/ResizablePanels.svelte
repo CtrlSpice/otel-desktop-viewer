@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
-  import { remToFraction } from '@/state/panel-width'
+  import { onDestroy, untrack } from 'svelte'
+  import {
+    remToFraction,
+    remToPx,
+    PANEL_CLOSE_OVERSHOOT_REM,
+    resolvePanelResize,
+  } from '@/state/panel-width'
   import { startDrag, type DragHandle } from './utils/drag'
+  import PanelClip from './PanelClip.svelte'
 
   /** Default split when no prop / storage; keep in sync with prop default below */
   const DEFAULT_LEFT_WIDTH = 0.7
@@ -9,6 +15,10 @@
   type Props = {
     leftPanel: any
     rightPanel: any
+    /** Keep the detail mounted while the main pane fills the available space. */
+    rightCollapsed?: boolean
+    onRightCollapsedChange?: (collapsed: boolean) => void
+    rightPanelID?: string
     /** Stacked layout only: use the bottom panel header as the resize
      *  handle instead of a separate divider strip. */
     defaultLeftWidth?: number
@@ -20,6 +30,11 @@
      *  still beats both. Ignored while stacked (it is a width, and the
      *  stacked split divides height). */
     defaultRightRem?: number
+    /** Shared horizontal width. Stacked splits keep their own height fraction. */
+    rightWidthRem?: number
+    onRightWidthChange?: (rem: number) => void
+    /** Initialize saved sizing using measured usable space, before applying it. */
+    onLayoutMeasure?: (flexSpacePx: number, stacked: boolean) => void
     /** Minimum left fraction of the container (0..1). */
     minLeftWidth?: number
     /** Minimum right fraction of the container (0..1). */
@@ -37,13 +52,21 @@
     maxRightPx?: number
     storageKey?: string
     stackBreakpoint?: number
+    /** Re-measure destination slots before paint when the app route changes. */
+    layoutKey?: string
   }
 
   let {
     leftPanel,
     rightPanel,
+    rightCollapsed = false,
+    onRightCollapsedChange,
+    rightPanelID,
     defaultLeftWidth = DEFAULT_LEFT_WIDTH,
     defaultRightRem,
+    rightWidthRem,
+    onRightWidthChange,
+    onLayoutMeasure,
     minLeftWidth = 0.3,
     minRightWidth = 0.2,
     minLeftPx,
@@ -52,16 +75,32 @@
     maxRightPx,
     storageKey,
     stackBreakpoint = 800,
+    layoutKey,
   }: Props = $props()
 
   let leftWidth = $state(DEFAULT_LEFT_WIDTH)
   let appliedInitialDefault = $state(false)
   let isDragging = $state(false)
+  let dragLeftWidth = $state<number | null>(null)
+  const renderedLeftWidth = $derived(dragLeftWidth ?? leftWidth)
 
   let containerRef = $state<HTMLDivElement | null>(null)
   let dividerRef = $state<HTMLElement | null>(null)
   let containerWidth = $state(0)
   let containerHeight = $state(0)
+  let skipWidthTransition = $state(true)
+
+  // Route changes replace contents, not the layout. Apply the first measured
+  // size before enabling the transitions used by explicit collapse/reopen.
+  $effect(() => {
+    if (containerWidth <= 0 || !skipWidthTransition) return
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        skipWidthTransition = false
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  })
 
   /** Matches CSS `gap` on the flex container (`--panel-split-flex-gap`). */
   function panelSplitGapPx(): number {
@@ -83,6 +122,14 @@
   function flexSpacePx(): number {
     const raw = stacked ? containerHeight : containerWidth
     if (raw <= 0) return 0
+    // Reserve the full gutter while it animates closed. This app-shell token
+    // is in rem; measuring the shrinking divider would change the saved split.
+    const gutterRem = containerRef
+      ? parseFloat(
+          getComputedStyle(containerRef).getPropertyValue('--panel-split-total')
+        )
+      : NaN
+    if (Number.isFinite(gutterRem)) return Math.max(1, raw - remToPx(gutterRem))
     const divSize = dividerRef
       ? stacked
         ? dividerRef.offsetHeight
@@ -90,6 +137,8 @@
       : 0
     return Math.max(1, raw - divSize - 2 * panelSplitGapPx())
   }
+
+  const rightSize = $derived((1 - renderedLeftWidth) * flexSpacePx())
 
   /* The default this split starts at and resets to. The rem form wins
      once the container is measured, so the *rendered* right pane lands
@@ -103,6 +152,19 @@
   }
 
   $effect.pre(() => {
+    if (containerWidth > 0) onLayoutMeasure?.(flexSpacePx(), stacked)
+    if (rightCollapsed) return
+    if (rightWidthRem != null && !stacked) {
+      if (containerWidth <= 0) return
+      leftWidth = Math.max(
+        effectiveMinLeft,
+        Math.min(
+          effectiveMaxLeft,
+          1 - remToFraction(rightWidthRem, flexSpacePx())
+        )
+      )
+      return
+    }
     if (appliedInitialDefault) return
     // A rem default cannot be converted before the container reports a
     // width; hold the fraction fallback until the first measurement so
@@ -168,6 +230,8 @@
   let effectiveMaxLeft = $derived(splitBounds.maxLeft)
 
   $effect(() => {
+    if (rightCollapsed) return
+    if (rightWidthRem != null && !stacked) return
     if (storageKey) {
       let saved = localStorage.getItem(storageKey)
       if (saved) {
@@ -188,6 +252,7 @@
      window narrow enough that the current split would put one pane
      below its pixel floor, snap it back to the floor. */
   $effect(() => {
+    if (rightCollapsed) return
     const lo = effectiveMinLeft
     const hi = effectiveMaxLeft
     if (lo > hi) return
@@ -196,6 +261,10 @@
   })
 
   function saveWidth() {
+    if (rightWidthRem != null && !stacked) {
+      onRightWidthChange?.(((1 - leftWidth) * flexSpacePx()) / remToPx(1))
+      return
+    }
     if (storageKey) {
       localStorage.setItem(storageKey, leftWidth.toString())
     }
@@ -210,18 +279,46 @@
     // Pinned for the drag: a fraction moves per pixel of flex space,
     // and remeasuring mid-drag would make the mapping wobble.
     const flexSpace = flexSpacePx() || 1
+    let desired = startWidth
     drag = startDrag(e, {
       axis: stacked ? 'y' : 'x',
       onMove: delta => {
-        leftWidth = Math.max(
+        desired = startWidth + delta / flexSpace
+        const clamped = Math.max(
           effectiveMinLeft,
-          Math.min(effectiveMaxLeft, startWidth + delta / flexSpace)
+          Math.min(effectiveMaxLeft, desired)
         )
+        dragLeftWidth = onRightCollapsedChange
+          ? 1 -
+            resolvePanelResize(
+              1 - desired,
+              1 - effectiveMaxLeft,
+              1 - effectiveMinLeft,
+              remToPx(PANEL_CLOSE_OVERSHOOT_REM) / flexSpace
+            ).preview
+          : clamped
       },
       onEnd: () => {
         isDragging = false
         drag = null
-        saveWidth()
+        if (
+          onRightCollapsedChange &&
+          resolvePanelResize(
+            1 - desired,
+            1 - effectiveMaxLeft,
+            1 - effectiveMinLeft,
+            remToPx(PANEL_CLOSE_OVERSHOOT_REM) / flexSpace
+          ).collapsed
+        ) {
+          onRightCollapsedChange(true)
+        } else {
+          leftWidth = Math.max(
+            effectiveMinLeft,
+            Math.min(effectiveMaxLeft, desired)
+          )
+          saveWidth()
+        }
+        dragLeftWidth = null
       },
     })
   }
@@ -236,6 +333,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    skipWidthTransition = true
     const step = e.shiftKey ? 0.05 : 0.01
     const lo = effectiveMinLeft
     const hi = effectiveMaxLeft
@@ -262,102 +360,150 @@
     }
   }
 
+  function measure(bounds: DOMRectReadOnly) {
+    if (containerWidth !== bounds.width || containerHeight !== bounds.height)
+      skipWidthTransition = true
+    containerWidth = bounds.width
+    containerHeight = bounds.height
+  }
+
   $effect(() => {
-    if (!containerRef) return
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        containerWidth = entry.contentRect.width
-        containerHeight = entry.contentRect.height
-      }
+    void layoutKey
+    const element = containerRef
+    if (element) untrack(() => measure(element.getBoundingClientRect()))
+  })
+
+  $effect(() => {
+    const element = containerRef
+    if (!element) return
+    let frame: number | undefined
+    const ro = new ResizeObserver(() => {
+      // Responsive measurements can resize descendant observers. Coalesce
+      // outside delivery; route changes use the before-paint measurement above.
+      if (frame !== undefined) return
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        measure(element.getBoundingClientRect())
+      })
     })
-    ro.observe(containerRef)
-    return () => ro.disconnect()
+    ro.observe(element)
+    return () => {
+      ro.disconnect()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    }
   })
 </script>
 
-{#if stacked}
+<div
+  class="panel-split flex h-full w-full"
+  class:flex-col={stacked}
+  class:panel-split--collapsed={rightCollapsed}
+  class:panel-split--dragging={isDragging}
+  class:panel-split--initializing={skipWidthTransition}
+  bind:this={containerRef}
+>
   <div
-    class="flex h-full w-full flex-col gap-[var(--panel-split-flex-gap)]"
-    bind:this={containerRef}
+    class="panel-shell min-h-0 min-w-0 overflow-hidden {stacked &&
+    !rightCollapsed
+      ? 'rounded-t-xl rounded-b-none'
+      : 'rounded-xl'}"
+    style="flex: {stacked && !rightCollapsed ? renderedLeftWidth : 1} 1 0px"
   >
-    <div
-      class="panel-shell min-h-0 overflow-hidden rounded-t-xl rounded-b-none"
-      style="flex: {leftWidth} 1 0px"
-    >
-      {@render leftPanel()}
-    </div>
+    {@render leftPanel()}
+  </div>
 
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      bind:this={dividerRef}
-      class="col-resize-bar col-resize-bar--row-in-flow"
-      class:col-resize-bar--active={isDragging}
-      onpointerdown={handlePointerDown}
-      ondblclick={handleDoubleClick}
-      onkeydown={handleKeydown}
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize the panels"
-      aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(effectiveMinLeft * 100)}
-      aria-valuemax={Math.round(effectiveMaxLeft * 100)}
-      tabindex="0"
-    >
-      <div class="col-resize-bar__line"></div>
-    </div>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    bind:this={dividerRef}
+    class="col-resize-bar {stacked
+      ? 'col-resize-bar--row-in-flow'
+      : 'col-resize-bar--in-flow'}"
+    inert={rightCollapsed}
+    aria-hidden={rightCollapsed}
+    class:col-resize-bar--active={isDragging}
+    onpointerdown={handlePointerDown}
+    ondblclick={handleDoubleClick}
+    onkeydown={handleKeydown}
+    role="separator"
+    aria-orientation={stacked ? 'horizontal' : 'vertical'}
+    aria-label="Resize the panels"
+    aria-valuenow={Math.round(leftWidth * 100)}
+    aria-valuemin={Math.round(effectiveMinLeft * 100)}
+    aria-valuemax={Math.round(effectiveMaxLeft * 100)}
+    tabindex="0"
+  >
+    <div class="col-resize-bar__line"></div>
+  </div>
 
-    <div
-      class="panel-shell min-h-0 overflow-hidden rounded-t-none rounded-b-xl"
-      style="flex: {1 - leftWidth} 1 0px"
+  <div
+    class="panel-shell panel-detail min-h-0 min-w-0 overflow-hidden {stacked
+      ? 'rounded-t-none rounded-b-xl'
+      : 'rounded-xl'}"
+    id={rightPanelID}
+    inert={rightCollapsed}
+    aria-hidden={rightCollapsed}
+    style:flex={stacked
+      ? `${rightCollapsed ? 0 : 1 - renderedLeftWidth} 1 0px`
+      : `0 0 ${rightCollapsed ? 0 : rightSize}px`}
+  >
+    <PanelClip
+      axis={stacked ? 'height' : 'width'}
+      minimumSize={stacked
+        ? flexSpacePx() * (1 - effectiveMaxLeft)
+        : Math.max(rightSize, flexSpacePx() * (1 - effectiveMaxLeft))}
     >
       {@render rightPanel()}
-    </div>
+    </PanelClip>
   </div>
-{:else}
-  <div
-    class="flex h-full w-full gap-[var(--panel-split-flex-gap)]"
-    bind:this={containerRef}
-  >
-    <div
-      class="panel-shell h-full min-w-0 overflow-hidden rounded-xl"
-      style="flex: {leftWidth} 1 0px"
-    >
-      {@render leftPanel()}
-    </div>
-
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      bind:this={dividerRef}
-      class="col-resize-bar col-resize-bar--in-flow"
-      class:col-resize-bar--active={isDragging}
-      onpointerdown={handlePointerDown}
-      ondblclick={handleDoubleClick}
-      onkeydown={handleKeydown}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the panels"
-      aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(effectiveMinLeft * 100)}
-      aria-valuemax={Math.round(effectiveMaxLeft * 100)}
-      tabindex="0"
-    >
-      <div class="col-resize-bar__line"></div>
-    </div>
-
-    <div
-      class="panel-shell h-full min-w-0 overflow-hidden rounded-xl"
-      style="flex: {1 - leftWidth} 1 0px"
-    >
-      {@render rightPanel()}
-    </div>
-  </div>
-{/if}
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
   .panel-shell {
     @apply flex min-h-0 flex-col;
+    transition:
+      flex-basis var(--panel-motion-duration) var(--panel-motion-easing),
+      flex-grow var(--panel-motion-duration) var(--panel-motion-easing),
+      visibility 0s;
+  }
+
+  .panel-split {
+    gap: var(--panel-split-flex-gap);
+    transition: gap var(--panel-motion-duration) var(--panel-motion-easing);
+  }
+
+  .col-resize-bar {
+    flex-basis: var(--resize-bar-hit-width);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    transition:
+      flex-basis var(--panel-motion-duration) var(--panel-motion-easing),
+      visibility 0s;
+  }
+
+  .panel-split--collapsed {
+    gap: 0;
+  }
+
+  .panel-split--collapsed .col-resize-bar {
+    flex-basis: 0;
+    visibility: hidden;
+    transition-delay: 0s, var(--panel-motion-duration);
+  }
+
+  .panel-split--collapsed .panel-detail {
+    visibility: hidden;
+    transition-delay: 0s, 0s, var(--panel-motion-duration);
+  }
+
+  .panel-split--initializing,
+  .panel-split--initializing .panel-shell,
+  .panel-split--initializing .col-resize-bar,
+  .panel-split--dragging,
+  .panel-split--dragging .panel-shell,
+  .panel-split--dragging .col-resize-bar {
+    transition: none;
   }
 </style>

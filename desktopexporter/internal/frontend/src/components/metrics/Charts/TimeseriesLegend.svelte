@@ -3,6 +3,7 @@
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
+  import { themeSignal } from '@/state/theme.svelte'
   import type { LegendTimeseries as Timeseries } from '@/types/metric-chart-types'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
@@ -53,7 +54,7 @@
       {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
       {@const fg =
         checked && seriesColor
-          ? readableTextColor(seriesColor)
+          ? readableTextColor(seriesColor, themeSignal.value)
           : chartNeutral()}
       {@const rowAttrs = dedupeAttributes(ts.attributes)}
       {@const tooltip =
@@ -66,7 +67,11 @@
         class="timeseries-legend__row"
         class:timeseries-legend__row--disabled={disabled}
       >
-        <label class="timeseries-legend__label" title={tooltip}>
+        <label
+          class="timeseries-legend__label item-state"
+          title={tooltip}
+          data-disabled={disabled ? '' : undefined}
+        >
           <input
             type="checkbox"
             class="checkbox checkbox-xs timeseries-legend__checkbox"
@@ -119,23 +124,19 @@
   }
 
   .timeseries-legend__title {
-    @apply text-xs font-semibold uppercase tracking-wide text-base-content/60;
+    @apply text-xs font-semibold uppercase tracking-wide text-(--color-subtle);
   }
 
   .timeseries-legend__count {
-    @apply text-xs tabular-nums text-base-content/60;
+    @apply text-xs tabular-nums text-base-content;
   }
 
   .timeseries-legend__count--cap {
-    @apply text-warning font-semibold;
+    @apply text-base-content font-normal;
   }
 
   .timeseries-legend__list {
     @apply flex flex-col gap-1 m-0 p-0 list-none;
-  }
-
-  .timeseries-legend__row {
-    @apply rounded;
   }
 
   .timeseries-legend__row--disabled {
@@ -143,12 +144,12 @@
   }
 
   .timeseries-legend__label {
-    @apply flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-base-200/60;
+    @apply flex items-center gap-2 px-2 py-1 cursor-pointer;
     min-height: 1.75rem;
   }
 
   .timeseries-legend__row--disabled .timeseries-legend__label {
-    @apply cursor-not-allowed hover:bg-transparent;
+    @apply cursor-not-allowed;
   }
 
   /* daisyUI .checkbox handles the box, the size (.checkbox-xs), and
@@ -170,7 +171,7 @@
      `service.namespace=production-us-east-1` becomes
      `service.namespace=produ…` and there's no way to recover it. */
   .timeseries-legend__attrs {
-    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-mono min-w-0 overflow-hidden;
+    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-sans min-w-0 overflow-hidden;
   }
 
   .timeseries-legend__attrs-empty {
@@ -182,11 +183,11 @@
   }
 
   .timeseries-legend__attr-key {
-    @apply text-base-content/70 shrink-0;
+    @apply text-(--color-subtle) shrink-0;
   }
 
   .timeseries-legend__attr-eq {
-    @apply text-base-content/40 mx-0.5 shrink-0;
+    @apply text-(--color-subtle) mx-0.5 shrink-0;
   }
 
   .timeseries-legend__attr-value {
@@ -194,10 +195,10 @@
   }
 
   .timeseries-legend__badge {
-    @apply ml-auto text-[0.65rem] tabular-nums text-base-content/50 shrink-0;
+    @apply ml-auto text-base tabular-nums text-base-content shrink-0;
   }
 
   .timeseries-legend__cap-note {
-    @apply text-xs text-warning/80 m-0;
+    @apply text-xs text-base-content m-0;
   }
 </style>

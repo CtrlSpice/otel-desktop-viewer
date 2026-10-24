@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { render, screen } from '@testing-library/svelte'
 import ExpandableValueHarness from '@/test/ExpandableValueHarness.svelte'
@@ -12,8 +12,9 @@ import ExpandableValueHarness from '@/test/ExpandableValueHarness.svelte'
  * not survive a change of value.
  */
 function setClipped(clipped: boolean) {
-  // The component compares scrollHeight to clientHeight; jsdom leaves both at
-  // 0, so the element is never clipped unless we say so.
+  const style = document.createElement('div').style
+  style.lineHeight = '21px'
+  vi.spyOn(window, 'getComputedStyle').mockReturnValue(style)
   Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
     configurable: true,
     get() {

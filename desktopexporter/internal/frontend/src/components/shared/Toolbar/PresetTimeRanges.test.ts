@@ -2,9 +2,19 @@
 import { describe, expect, it, afterEach, vi } from 'vitest'
 import { screen, fireEvent } from '@testing-library/svelte'
 import PresetTimeRanges from './PresetTimeRanges.svelte'
+import { TIME_RANGE_PRESETS } from '@/contexts/time-context.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-const PRESET_LABELS = ['All', '5m', '15m', '30m', '1h', '6h', '24h', '7d']
+const PRESET_LABELS = [
+  'All',
+  '5 min',
+  '15 min',
+  '30 min',
+  '1 hr',
+  '6 hr',
+  '24 hr',
+  '7 days',
+]
 
 function renderComponent() {
   setTestUrl('/traces')
@@ -32,17 +42,24 @@ describe('PresetTimeRanges', () => {
   it('selects the All preset by default', () => {
     renderComponent()
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'true')
+    expect(getPresetButton('All')).toHaveClass('header-tab')
+    expect(
+      document
+        .querySelector<HTMLElement>('.preset-time-ranges')!
+        .style.getPropertyValue('--header-active-index')
+    ).toBe('0')
     for (const label of PRESET_LABELS.slice(1)) {
       expect(getPresetButton(label)).toHaveAttribute('aria-pressed', 'false')
+      expect(getPresetButton(label)).toHaveClass('header-tab')
     }
   })
 
-  it('applies a duration preset and updates the time context', () => {
+  it('applies a duration preset and updates the time context', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
     renderComponent()
 
-    fireEvent.click(getPresetButton('5m'))
+    await fireEvent.click(getPresetButton('5 min'))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toEqual({
@@ -51,16 +68,25 @@ describe('PresetTimeRanges', () => {
     })
     expect(window.location.search).toContain(`start=${Date.now() - 300_000}`)
     expect(window.location.search).toContain(`end=${Date.now()}`)
-    expect(getPresetButton('5m')).toHaveAttribute('aria-pressed', 'true')
+    expect(getPresetButton('5 min')).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      document
+        .querySelector<HTMLElement>('.preset-time-ranges')!
+        .style.getPropertyValue('--header-active-index')
+    ).toBe(
+      String(
+        TIME_RANGE_PRESETS.findIndex(preset => preset.durationMs === 300_000)
+      )
+    )
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('applies All as an explicit unbounded selection', () => {
+  it('applies All as an explicit unbounded selection', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
     renderComponent()
 
-    fireEvent.click(getPresetButton('All'))
+    await fireEvent.click(getPresetButton('All'))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toEqual({ type: 'all' })

@@ -24,14 +24,18 @@ const {
   searchMetricSummaries,
   getStats,
   getMetricView,
+  getMetric,
   getMetricAggregateView,
   getMetricAttributeDefinitions,
+  clearMetrics,
 } = vi.hoisted(() => ({
   searchMetricSummaries: vi.fn(),
   getStats: vi.fn(),
   getMetricView: vi.fn(),
+  getMetric: vi.fn(),
   getMetricAggregateView: vi.fn(),
   getMetricAttributeDefinitions: vi.fn(),
+  clearMetrics: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -44,8 +48,10 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       searchMetricSummaries,
       getStats,
       getMetricView,
+      getMetric,
       getMetricAggregateView,
       getMetricAttributeDefinitions,
+      clearMetrics,
     },
   }
 })
@@ -173,11 +179,15 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
+  clearMetrics.mockReset()
+  clearMetrics.mockResolvedValue(undefined)
   vi.mocked(downloadOTLP).mockReset()
   vi.mocked(downloadOTLP).mockResolvedValue()
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetricView.mockReset()
+  getMetric.mockReset()
+  getMetric.mockResolvedValue(null)
   getMetricAggregateView.mockReset()
   getMetricAttributeDefinitions.mockReset()
   getMetricAttributeDefinitions.mockResolvedValue([])
@@ -206,6 +216,98 @@ async function renderSelected(metricType: MetricType) {
   })
 }
 
+describe('Metric main-header range', () => {
+  it('opens an exact route-selected metric outside the filtered list on a fresh mount', async () => {
+    searchMetricSummaries.mockResolvedValue([])
+    getStats.mockResolvedValue(makeStats())
+    getMetric.mockResolvedValue({
+      metricRef: 'metric-1',
+      name: 'demo.metric',
+      description: '',
+      unit: 'ms',
+      metricType: 'Gauge',
+      metadata: [],
+      series: [],
+      resource: {
+        ...EMPTY_RESOURCE,
+        schemaUrl: '',
+        attributes: [
+          {
+            key: 'service.name',
+            value: { kind: 'string', value: 'checkout-api' },
+          },
+        ],
+      },
+      scope: { ...EMPTY_SCOPE, schemaUrl: '' },
+    })
+    getMetricView.mockResolvedValue(makeMetric('Gauge'))
+    getMetricAggregateView.mockResolvedValue({
+      aggregate: null,
+      scalarAggregate: null,
+    })
+    setTestUrl('/metrics/metric-1?q=name%20%3D%20%22excluded%22')
+    renderWithContexts(MetricsPage)
+    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('metric-1'))
+    await waitFor(() => expect(getMetricView).toHaveBeenCalled())
+    expect(
+      await screen.findByRole('region', { name: 'Metric chart' })
+    ).toHaveTextContent('demo.metric')
+    expect(window.location.pathname).toBe('/metrics/metric-1')
+    expect(screen.queryByText('No metrics in this time range')).toBeNull()
+    expect(document.querySelector('.metrics-page__chart')).not.toBeNull()
+    expect(new URLSearchParams(window.location.search).get('q')).toBe(
+      'name = "excluded"'
+    )
+  })
+  it('requires confirmation before deleting all stored metrics', async () => {
+    await renderSelected('Gauge')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const button = screen.getByRole('button', { name: 'Delete all metrics' })
+    await fireEvent.click(button)
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('including those outside the current filters')
+    )
+    expect(clearMetrics).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/metrics/metric-1')
+    confirm.mockReturnValue(true)
+    await fireEvent.click(button)
+    await waitFor(() => expect(clearMetrics).toHaveBeenCalledTimes(1))
+    confirm.mockRestore()
+  })
+  it.each(['Gauge', 'Sum'] as const)(
+    'keeps the %s effective range in the header rather than the plot',
+    async metricType => {
+      await renderSelected(metricType)
+      const header = screen.getByRole('region', {
+        name: 'Metric chart',
+      })
+      const range = header.querySelector('[aria-label="Chart time range"]')!
+      expect(range).toHaveTextContent('Start')
+      expect(range).toHaveTextContent('End')
+      expect(
+        document.querySelectorAll('[aria-label="Chart time range"]')
+      ).toHaveLength(1)
+      expect(
+        document.querySelector(
+          '.metric-chart-view [aria-label="Chart time range"]'
+        )
+      ).toBeNull()
+    }
+  )
+
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'removes the redundant %s time range from the count-legend header',
+    async metricType => {
+      await renderSelected(metricType)
+      const header = await screen.findByRole('region', { name: 'Metric chart' })
+      expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
+      expect(
+        document.querySelector('.metric-chart-view .heatmap-legend')
+      ).toBeNull()
+    }
+  )
+})
+
 describe('Metric main-header export', () => {
   it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
     'exports the whole %s Metric from its chart title header',
@@ -219,16 +321,21 @@ describe('Metric main-header export', () => {
       })
       setTestUrl('/metrics/metric-1')
       renderWithContexts(MetricsPage)
-      await screen.findByRole('tablist', { name: 'Metric detail tabs' })
+      await screen.findByRole('region', { name: 'Metric details' })
 
-      const header = screen.getByRole('region', { name: 'Metric chart' })
+      const header = await screen.findByRole('region', { name: 'Metric chart' })
       const button = within(header).getByRole('button', {
-        name: 'Export metric',
+        name: 'Download metric',
       })
       const title = within(header).getByText('demo.metric', { exact: true })
       expect(
-        button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+        title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
+      expect(
+        within(button.closest<HTMLElement>('.pane-header__right')!)
+          .getAllByRole('button')
+          .at(-1)
+      ).toBe(button)
       const chartTabs = within(header).queryByRole('tablist')
       if (chartTabs) {
         expect(
@@ -237,7 +344,7 @@ describe('Metric main-header export', () => {
         ).not.toBe(0)
       }
       expect(
-        screen.getAllByRole('button', { name: 'Export metric' })
+        screen.getAllByRole('button', { name: 'Download metric' })
       ).toHaveLength(1)
       await userEvent.click(button)
       expect(downloadOTLP).toHaveBeenCalledWith(
@@ -340,14 +447,14 @@ describe('MetricsPage chart control keyboard navigation', () => {
       aggregate: null,
       scalarAggregate: null,
     })
-    setTestUrl('/metrics/metric-1')
+    setTestUrl('/metrics/metric-1?agg=rate')
     renderWithContexts(MetricsPage)
 
     const rate = await screen.findByRole('checkbox', {
       name: 'Show rate across all series',
     })
     const overlays = screen.getByRole('checkbox', {
-      name: 'Show chart stat overlays',
+      name: 'Show Statistics',
     })
 
     rate.focus()
@@ -357,8 +464,9 @@ describe('MetricsPage chart control keyboard navigation', () => {
     expect(rate).toBeChecked()
     expect(rate).toHaveFocus()
 
-    await user.tab()
+    overlays.focus()
     expect(overlays).toHaveFocus()
+    expect(overlays.closest('.pane-header')).not.toBeNull()
     expect(overlays).toBeChecked()
     await user.keyboard(' ')
     expect(overlays).not.toBeChecked()
@@ -402,15 +510,17 @@ describe('MetricsPage raw series fetching', () => {
     renderWithContexts(MetricsPage)
     await vi.waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Expand default series' })
+        screen.getByText('default series', { exact: true }).closest('summary')
       ).toBeInTheDocument()
     )
     expect(rawSeriesCalls()).toHaveLength(0)
 
     vi.setSystemTime(requestNow)
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Expand default series' })
-    )
+    const summary = screen
+      .getByText('default series', { exact: true })
+      .closest('summary')!
+    await fireEvent.click(summary)
+    await fireEvent(summary.parentElement!, new Event('toggle'))
     await tick()
 
     expect(rawSeriesCalls()).toHaveLength(1)
@@ -507,12 +617,13 @@ describe('MetricsPage raw series fetching', () => {
       )
 
       const user = userEvent.setup()
-      await user.click(
-        screen.getByRole('button', { name: 'Collapse default series' })
-      )
-      await user.click(
-        screen.getByRole('button', { name: 'Expand default series' })
-      )
+      const summary = screen
+        .getByText('default series', { exact: true })
+        .closest('summary')!
+      await user.click(summary)
+      await fireEvent(summary.parentElement!, new Event('toggle'))
+      await user.click(summary)
+      await fireEvent(summary.parentElement!, new Event('toggle'))
       await tick()
       expect(rawSeriesCalls()).toHaveLength(1)
     }

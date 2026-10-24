@@ -1,9 +1,16 @@
 <script module lang="ts">
   import { formatChartAxisTime } from '@/components/metrics/utils/chart-time-axis'
-  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+  import {
+    formatMetricValue,
+    formatMetricCount,
+  } from '@/components/metrics/utils/format-metric-value'
   import type { Timezone } from '@/utils/time'
 
   const rotatedX = { rotate: 315, textAnchor: 'end' } as const
+  const aboveYAxis = {
+    labelPlacement: 'start' as const,
+    labelProps: { x: 0, dy: 8, textAnchor: 'start' as const },
+  }
 
   const rotatedXBand = {
     ...rotatedX,
@@ -20,20 +27,23 @@
   /** Shared plot inset for line, bar, and heatmap charts. */
   export const chartPadding = {
     top: 24,
-    bottom: 72,
-    left: 72,
+    bottom: 96,
+    left: 136,
     right: 72,
+  } as const
+
+  /** A horizontal unit above the value axis needs no side-label gutter. */
+  export const timeSeriesChartPadding = {
+    ...chartPadding,
+    left: 96,
+    right: 80,
   } as const
 
   function valueYAxis(label: string) {
     return {
       label: label.trim() || 'value',
-      rule: true as const,
-      // Custom formatter: SI prefixes at BOTH ends of the range (k/M
-      // for big numbers, m/µ/n for small). LayerChart's built-in
-      // 'metric' style only handles the big end and renders sub-unit
-      // values as '0' or scientific notation, which is unhelpful for
-      // a debugging tool that surfaces things like 0.0004 errors/sec.
+      ...aboveYAxis,
+      rule: false as const,
       format: (value: number) => formatMetricValue(value),
     }
   }
@@ -41,7 +51,7 @@
   /** Time on the x-axis (line charts, heatmap). */
   export function axisTime(timezone: Timezone) {
     return {
-      rule: true as const,
+      rule: false as const,
       format: (tick: Date | number) => formatChartAxisTime(tick, timezone),
       tickLabelProps: rotatedX,
     }
@@ -49,8 +59,10 @@
 
   /** Bucket bounds on the bottom x-axis (histogram bar chart). */
   export function axisBuckets(unit: string) {
+    const { label, rule } = axisBucketBounds(unit)
     return {
-      ...axisBucketBounds(unit),
+      label,
+      rule,
       tickLabelProps: rotatedXBand,
     }
   }
@@ -60,7 +72,8 @@
     const trimmed = unit.trim()
     return {
       label: trimmed ? `value (${trimmed})` : 'value',
-      rule: true as const,
+      ...aboveYAxis,
+      rule: false as const,
     }
   }
 
@@ -70,23 +83,31 @@
   }
 
   export function axisCount() {
-    return valueYAxis('count')
+    return { ...valueYAxis('count'), format: formatMetricCount }
   }
 </script>
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import MetricAxes from './MetricAxes.svelte'
 
   type Props = {
     /** Plot height in px. Omit when the parent already sizes the box. */
     height?: number
     /** Plot width in px (e.g. scrollable histogram). */
     width?: number
+    padding?: { top: number; right: number; bottom: number; left: number }
     class?: string
     children: Snippet
   }
 
-  let { height, width, class: className = '', children }: Props = $props()
+  let {
+    height,
+    width,
+    padding = chartPadding,
+    class: className = '',
+    children,
+  }: Props = $props()
 </script>
 
 <div
@@ -95,6 +116,7 @@
   style:width={width != null ? `${width}px` : undefined}
 >
   {@render children()}
+  <MetricAxes {padding} />
 </div>
 
 <style lang="postcss">

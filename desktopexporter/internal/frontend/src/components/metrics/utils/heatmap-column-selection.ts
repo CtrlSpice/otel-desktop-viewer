@@ -1,8 +1,14 @@
-import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
+import {
+  QUANTILE_LABELS,
+  QUANTILE_LABELS_DESCENDING,
+} from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramTotals } from '@/components/metrics/utils/histogram-aggregation'
 import type { SelectionLegendRow } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
-import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+import {
+  formatMetricValue,
+  formatMetricCount,
+} from '@/components/metrics/utils/format-metric-value'
 
 export type HeatmapColumnSelection = {
   timestampMs: number
@@ -11,7 +17,7 @@ export type HeatmapColumnSelection = {
 }
 
 /** Column groups for histogram distribution stats (heatmap + bar chart).
- *  Layout: count/sum | min/max | scale/zeros (exp only) | p50/p95 | p99 */
+ *  Layout: count/sum | min/max | scale/zeros (exp only) | p99 | p95/p50 */
 export function histogramDistributionLegendColumns(opts: {
   totals: HistogramTotals
   quantiles: Record<string, number | null>
@@ -28,7 +34,7 @@ export function histogramDistributionLegendColumns(opts: {
       key: 'count',
       color: neutral,
       label: 'count',
-      valueText: String(opts.totals.count),
+      valueText: formatMetricCount(opts.totals.count),
     },
     {
       key: 'sum',
@@ -67,14 +73,14 @@ export function histogramDistributionLegendColumns(opts: {
         key: 'zeros',
         color: neutral,
         label: 'zeros',
-        valueText: String(opts.expHistogram.zeroCount),
+        valueText: formatMetricCount(opts.expHistogram.zeroCount),
       },
     ])
   }
 
   const midQuantiles: SelectionLegendRow[] = []
   let p99: SelectionLegendRow | null = null
-  for (const { key, label } of QUANTILE_LABELS) {
+  for (const { key, label } of QUANTILE_LABELS_DESCENDING) {
     const value = opts.quantiles[key]
     const row: SelectionLegendRow = {
       key,
@@ -90,8 +96,8 @@ export function histogramDistributionLegendColumns(opts: {
     }
   }
 
-  columns.push(midQuantiles)
   if (p99) columns.push([p99])
+  columns.push(midQuantiles)
 
   return columns
 }
@@ -122,7 +128,7 @@ export function quantileMergedSelectionLegendRows(
       key: 'totals-inline',
       color: 'var(--color-base-content)',
       label: '',
-      valueText: `count: ${sel.totals.count} | min: ${formatValue(sel.totals.min)} | max: ${formatValue(sel.totals.max)}`,
+      valueText: `count: ${formatMetricCount(sel.totals.count)} | min: ${formatValue(sel.totals.min)} | max: ${formatValue(sel.totals.max)}`,
     },
   ]
 }

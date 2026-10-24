@@ -46,8 +46,9 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
+  import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
     getTimeContext,
     selectionToQueryRangeNs,
@@ -72,27 +73,30 @@
     TraceStats,
     TraceLogSummary,
   } from '@/types/api-types'
-  import type { QueryNode } from '@/search/model'
+  import type {
+    FieldDefinition,
+    ParsedSearchRequest,
+    QueryNode,
+  } from '@/search/model'
+  import { parseSearchRequest } from '@/components/shared/Search/queryParser'
   import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
-  import {
-    createSignalListPage,
-    type SortOption,
-  } from '@/contexts/signal-list-page.svelte'
+  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
 
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
+  import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
+  import TelemetryListFilters from '@/components/shared/TelemetryListFilters.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
   import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
+  import type { WaterfallColumn } from '@/components/traces/Waterfall/waterfall-columns'
+  import type { DetailFieldTarget } from '@/components/shared/utils/reveal-detail-field'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import {
-    PANEL_DEFAULT_REM,
-    PANEL_MIN_REM,
-    remToPx,
-  } from '@/state/panel-width'
+  import { detailPanel } from '@/state/detail-panel.svelte'
 
   let {
     importFailure = null,
@@ -102,24 +106,19 @@
     onViewIssue?: (event: MouseEvent) => void
   } = $props()
 
-  const SORT_OPTIONS: SortOption<TraceSummarySortColumn>[] = [
-    { value: 'startTime', label: 'Start Time', defaultDirection: 'desc' },
-    { value: 'duration', label: 'Duration', defaultDirection: 'desc' },
-    { value: 'rootSpanName', label: 'Root Span Name' },
-    { value: 'serviceName', label: 'Service Name' },
-    { value: 'spanCount', label: 'Span Count', defaultDirection: 'desc' },
-    { value: 'errorCount', label: 'Error Count', defaultDirection: 'desc' },
-  ]
-
   let timeContext = getTimeContext()
   const routeContext = getRouteContext()
 
   let baselineStats = $state<TraceStats | null>(null)
   let polledStats = $state<TraceStats | null>(null)
   let actionError = $state<string | null>(null)
-
+  let query = $state('')
+  let submittedText = $state('')
+  let fields = $state<FieldDefinition[]>([])
+  let submittedRequest: ParsedSearchRequest | null = null
   const page = createSignalListPage<TraceSummary, TraceSummarySortColumn>({
     signal: 'traces',
+    preserveMissingSelection: true,
     getItemID: trace => trace.traceID,
     initialSort: { column: 'startTime', direction: 'desc' },
     compare: compareTraceSummaries,
@@ -130,7 +129,13 @@
       )
       const results = await telemetryAPI.searchTraceSummaries(
         startTime,
-        endTime
+        endTime,
+        submittedRequest?.predicate ?? undefined,
+        submittedRequest?.limit ?? undefined,
+        untrack(() => ({
+          field: page.sortColumn,
+          direction: page.sortDirection,
+        }))
       )
       const s = await telemetryAPI.getStats()
       baselineStats = s.traces
@@ -161,6 +166,13 @@
       return { pulse: parts.length > 0, tip: parts.join(', ') }
     },
   })
+  let services = $derived([
+    ...new Set(
+      page.items.flatMap(trace =>
+        trace.rootSpan?.serviceName ? [trace.rootSpan.serviceName] : []
+      )
+    ),
+  ])
 
   // `/traces/<traceID>?span=<spanID>&event=<index>` — span/event in query string.
   let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
@@ -232,6 +244,10 @@
       // Don't tear down the detail view while the list is still loading -- a
       // shared link's trace id may simply not be in the list yet.
       if (!page.mounted || page.loading) return
+      if (page.selectedID) {
+        fetchTraceDetail(page.selectedID, activeQueryTree)
+        return
+      }
       clearTraceDetail()
       setSpanInQuery(null)
       return
@@ -244,16 +260,48 @@
   }
 
   function handleSelectSpan(spanID: string) {
+    fieldRequest = undefined
+    detailPanel.reveal()
     setSpanInQuery(spanID, 'push')
   }
 
   function handleSelectTimelineRecord(spanID: string, record: TimelineRecord) {
+    fieldRequest = undefined
+    detailPanel.reveal()
     if (record.kind === 'event') {
       selectSpanEvent(spanID, record.eventIndex, 'push')
-    } else {
+    } else if (record.kind === 'log') {
       selectSpanLog(spanID, record.log.logRef, 'push')
     }
   }
+
+  let fieldRequest = $state<{
+    traceID: string | null
+    spanID: string
+    target: DetailFieldTarget
+  }>()
+
+  function handleInspectColumn(spanID: string, column: WaterfallColumn) {
+    handleSelectSpan(spanID)
+    fieldRequest = {
+      traceID: page.selectedID,
+      spanID,
+      target: {
+        source: column.source,
+        key: column.key,
+        kind: column.field ? 'field' : 'attribute',
+      },
+    }
+  }
+
+  $effect(() => {
+    if (
+      fieldRequest &&
+      (fieldRequest.spanID !== selectedSpanID ||
+        fieldRequest.traceID !== page.selectedID)
+    )
+      fieldRequest = undefined
+  })
 
   function handleSearchResults(event: SearchResultEvent) {
     page.handleSearchResults(event)
@@ -277,6 +325,7 @@
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
+    const retainedSpanID = untrack(() => getSpanFromQuery())
     detailFetch?.abort()
     const fetchCtl = new AbortController()
     detailFetch = fetchCtl
@@ -293,7 +342,13 @@
       const spanIDs = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
       let desired: string | null
-      if (queryTree) {
+      if (
+        retainedSpanID &&
+        retainedSpanID === urlSpan &&
+        spanIDs.includes(retainedSpanID)
+      ) {
+        desired = retainedSpanID
+      } else if (queryTree) {
         const firstMatch = result.spans.find(n => n.matched)
         desired = firstMatch?.spanData.spanID ?? spanIDs[0] ?? null
       } else if (urlSpan && spanIDs.includes(urlSpan)) {
@@ -323,6 +378,7 @@
   }
 
   async function handleDeleteAllTraces() {
+    if (!confirmDeleteAll('trace')) return
     actionError = null
     try {
       await telemetryAPI.clearTraces()
@@ -357,145 +413,162 @@
   }
 </script>
 
-<div class="traces-page">
-  <PageLayout
-    items={page.sortedItems}
-    selectedID={page.selectedID}
-    drawerID="signal-drawer"
-    drawerLabel="Traces"
-    onRefresh={page.handleRefresh}
-    refreshPulse={page.refreshPulse}
-    refreshAsideTip={page.refreshAsideTip}
-    loading={page.loading}
-    itemKey={t => t.traceID}
-    resizableStorageKey="trace-detail-panels"
-    defaultDetailRem={PANEL_DEFAULT_REM}
-    minMainPx={remToPx(PANEL_DEFAULT_REM)}
-    minDetailPx={remToPx(PANEL_MIN_REM)}
-  >
-    {#snippet drawerChromeToolbar()}
-      <DrawerSearchPanel
-        segment="toolbar"
-        signal="traces"
-        sortOptions={SORT_OPTIONS}
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
-      />
-    {/snippet}
+<PageLayout
+  mainHeaderRows={2}
+  mainSurface="base"
+  items={page.sortedItems}
+  selectedID={page.selectedID}
+  drawerID="signal-drawer"
+  drawerLabel="Traces"
+  onRefresh={page.handleRefresh}
+  refreshPulse={page.refreshPulse}
+  refreshAsideTip={page.refreshAsideTip}
+  loading={page.loading}
+  itemKey={t => t.traceID}
+>
+  {#snippet drawerSearch()}
+    <DrawerSearchPanel
+      segment="search"
+      signal="traces"
+      sortValue={page.sortColumn}
+      sortDirection={page.sortDirection}
+      onSearchResults={handleSearchResults}
+      onSearchReady={api => (page.searchEditorApi = api)}
+      onQueryChange={(text, availableFields) => {
+        query = text
+        fields = availableFields
+      }}
+      onQuerySubmit={text => {
+        submittedText = text
+        submittedRequest = parseSearchRequest(text, fields, 'traces')
+      }}
+    />
+  {/snippet}
 
-    {#snippet drawerSearch()}
-      <DrawerSearchPanel
-        segment="search"
-        signal="traces"
-        sortOptions={SORT_OPTIONS}
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
-        onSearchResults={handleSearchResults}
-        onSearchReady={api => (page.searchEditorApi = api)}
-      />
-    {/snippet}
-
-    {#snippet itemSnippet(trace, selected)}
-      <TraceCard {trace} {selected} onclick={selectTrace} />
-    {/snippet}
-
-    {#snippet drawerFooter()}
-      <SignalDrawerFooter
-        count={page.sortedItems.length}
-        label="trace"
-        onDeleteAll={handleDeleteAllTraces}
-      />
-    {/snippet}
-
-    {#snippet main()}
-      {#if displayError || importFailure}
-        <div class="traces-page__placeholder alert alert-error">
-          {#if displayError}
-            <span>Error: {displayError}</span>
-          {:else if importFailure}
-            <span>Import issue in {importFailure.fileName}.</span>
-            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
-              >View issue</a
-            >
-          {/if}
-        </div>
-      {:else if page.loading && !hasTraceRows}
-        <div class="traces-page__placeholder traces-empty">Loading traces…</div>
-      {:else if !page.loading && !hasTraceRows}
-        <div class="traces-page__placeholder traces-empty">
-          <p class="text-rp-subtle">No traces in this time range</p>
-          <p class="mt-2 text-sm text-rp-muted">
-            Send telemetry to the exporter or adjust the time range
-          </p>
-        </div>
-      {:else if currentTraceData}
-        {#if currentTraceData.unplacedSpanCount > 0}
-          <div class="traces-page__unplaced alert alert-warning" role="alert">
-            <span>
-              {currentTraceData.unplacedSpanCount}
-              {currentTraceData.unplacedSpanCount === 1
-                ? 'span is'
-                : 'spans are'} missing from this trace. Their parent links form a
-              loop, so they have no place in the tree — usually an instrumentation
-              bug in the service that emitted them.
-            </span>
-          </div>
-        {/if}
-        <WaterfallView
-          traceID={currentTraceData.traceID}
-          spans={currentTraceData.spans}
-          logs={traceLogs}
-          {selectedSpanID}
-          searchActive={activeQueryTree !== undefined}
-          onSelectSpan={handleSelectSpan}
-          onSelectTimelineRecord={handleSelectTimelineRecord}
-          loading={detailLoading}
+  {#snippet drawerControls()}
+    <ListHeaderControls label="Trace list controls">
+      {#snippet sort()}
+        <DrawerSortControl
+          options={[
+            { value: 'startTime', label: 'Start Time' },
+            { value: 'duration', label: 'Duration' },
+            { value: 'rootSpanName', label: 'Root Span Name' },
+            { value: 'serviceName', label: 'Service Name' },
+            { value: 'spanCount', label: 'Span Count' },
+            { value: 'errorCount', label: 'Error Count' },
+          ]}
+          value={page.sortColumn}
+          direction={page.sortDirection}
+          onchange={page.handleSortChange}
         />
-      {:else if detailLoading}
-        <div class="traces-page__placeholder traces-empty">
-          Loading trace detail…
-        </div>
-      {:else}
-        <div class="traces-page__placeholder traces-empty">
-          <p class="text-rp-subtle">Select a trace to view details</p>
+      {/snippet}
+      {#snippet filters()}<TelemetryListFilters
+          signal="traces"
+          {query}
+          appliedQuery={submittedText}
+          {fields}
+          {services}
+          editor={page.searchEditorApi}
+        />{/snippet}
+    </ListHeaderControls>
+  {/snippet}
+
+  {#snippet itemSnippet(trace, selected)}
+    <TraceCard {trace} {selected} onclick={selectTrace} />
+  {/snippet}
+
+  {#snippet drawerFooter()}
+    <SignalDrawerFooter label="trace" onDeleteAll={handleDeleteAllTraces} />
+  {/snippet}
+
+  {#snippet main()}
+    {#if displayError || importFailure}
+      <div class="traces-page__placeholder alert alert-error">
+        {#if displayError}
+          <span>Error: {displayError}</span>
+        {:else if importFailure}
+          <span>Import issue in {importFailure.fileName}.</span>
+          <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+            >View issue</a
+          >
+        {/if}
+      </div>
+    {:else if page.loading && !hasTraceRows}
+      <div class="traces-page__placeholder traces-empty">Loading traces…</div>
+    {:else if !page.loading && !hasTraceRows && !currentTraceData}
+      <div class="traces-page__placeholder traces-empty">
+        <p class="text-subtle">No traces in this time range</p>
+        <p class="mt-2 text-sm text-subtle">
+          Send telemetry to the exporter or adjust the time range
+        </p>
+      </div>
+    {:else if currentTraceData}
+      {#if currentTraceData.unplacedSpanCount > 0}
+        <div class="traces-page__unplaced alert alert-warning" role="alert">
+          <span>
+            {currentTraceData.unplacedSpanCount}
+            {currentTraceData.unplacedSpanCount === 1 ? 'span is' : 'spans are'} missing
+            from this trace. Their parent links form a loop, so they have no place
+            in the tree — usually an instrumentation bug in the service that emitted
+            them.
+          </span>
         </div>
       {/if}
-    {/snippet}
-
-    {#snippet detail()}
-      <DetailView
-        span={selectedSpan}
-        salvaged={selectedNode?.salvaged ?? false}
-        cyclePoint={selectedNode?.cyclePoint ?? false}
-        selectedEventIndex={resolvedEventIndex}
-        selectedLogRef={resolvedLogRef}
-        logs={selectedSpanLogs}
+      <WaterfallView
+        traceID={currentTraceData?.traceID ?? ''}
+        spans={currentTraceData?.spans ?? []}
+        logs={traceLogs}
+        {selectedSpanID}
+        searchActive={activeQueryTree !== undefined}
+        onSelectSpan={handleSelectSpan}
+        onInspectColumn={handleInspectColumn}
+        onSelectTimelineRecord={handleSelectTimelineRecord}
+        loading={detailLoading}
       />
-    {/snippet}
+    {:else if detailLoading}
+      <div class="traces-page__placeholder traces-empty">
+        Loading trace detail…
+      </div>
+    {:else}
+      <div class="traces-page__placeholder traces-empty">
+        <p class="text-subtle">Select a trace to view details</p>
+      </div>
+    {/if}
+  {/snippet}
 
-    {#snippet pageFooter()}
-      <SignalFooter
-        index={page.selectedIndex}
-        total={page.sortedItems.length}
-        label="trace"
-        onFirst={page.selectFirst}
-        onPrev={() => page.selectByOffset(-1)}
-        onNext={() => page.selectByOffset(1)}
-        onLast={page.selectLast}
-        onDelete={currentTraceData ? deleteSelectedTrace : undefined}
-      />
-    {/snippet}
-  </PageLayout>
-</div>
+  {#snippet detail()}
+    <DetailView
+      span={selectedSpan}
+      rootSpanID={currentTraceData?.spans.find(
+        node => !node.spanData.parentSpanID
+      )?.spanData.spanID}
+      fieldTarget={fieldRequest?.spanID === selectedSpanID
+        ? fieldRequest.target
+        : undefined}
+      salvaged={selectedNode?.salvaged ?? false}
+      cyclePoint={selectedNode?.cyclePoint ?? false}
+      selectedEventIndex={resolvedEventIndex}
+      selectedLogRef={resolvedLogRef}
+      logs={selectedSpanLogs}
+    />
+  {/snippet}
+
+  {#snippet pageFooter()}
+    <SignalFooter
+      index={page.selectedIndex}
+      total={page.sortedItems.length}
+      label="trace"
+      onFirst={page.selectFirst}
+      onPrev={() => page.selectByOffset(-1)}
+      onNext={() => page.selectByOffset(1)}
+      onLast={page.selectLast}
+      onDelete={currentTraceData ? deleteSelectedTrace : undefined}
+    />
+  {/snippet}
+</PageLayout>
 
 <style lang="postcss">
   @reference "../app.css";
-
-  .traces-page {
-    @apply flex min-h-0 min-w-0 w-full flex-1;
-  }
 
   .traces-page__placeholder {
     @apply m-[var(--layout-gap)];

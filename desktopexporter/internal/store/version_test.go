@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -108,23 +109,27 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 	assert.Equal(t, int64(schema.Version), fields["expected_version"])
 }
 
-func TestVersionTwentyOneDatabaseIsRefusedWithoutModification(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "v21.db")
-	s := newFileStore(t, path)
-	require.NoError(t, s.Close())
-	db, err := sql.Open("duckdb", path)
-	require.NoError(t, err)
-	_, err = db.Exec(`update schema_meta set version = 21`)
-	require.NoError(t, err)
-	require.NoError(t, db.Close())
-	before, err := os.ReadFile(path)
-	require.NoError(t, err)
-	_, err = NewStore(context.Background(), path, zap.NewNop())
-	require.ErrorIs(t, err, ErrSchemaIncompatible)
-	after, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Equal(t, before, after)
-	assert.Equal(t, 22, schema.Version)
+func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
+	for _, version := range []int{21, 22, 23} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
+			s := newFileStore(t, path)
+			require.NoError(t, s.Close())
+			db, err := sql.Open("duckdb", path)
+			require.NoError(t, err)
+			_, err = db.Exec(`update schema_meta set version = ?`, version)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			_, err = NewStore(context.Background(), path, zap.NewNop())
+			require.ErrorIs(t, err, ErrSchemaIncompatible)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+			assert.Equal(t, 24, schema.Version)
+		})
+	}
 }
 
 // Version 15 wrote zero for both absent and supplied-zero histogram statistics.

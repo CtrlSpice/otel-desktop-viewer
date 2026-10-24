@@ -3,9 +3,10 @@
 // import severity helpers without reaching into a page module.
 
 export type SeverityBand =
-  'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
+  'unspecified' | 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
 export function severityBand(severityNumber: number): SeverityBand {
+  if (severityNumber === 0) return 'unspecified'
   if (severityNumber <= 4) return 'trace'
   if (severityNumber <= 8) return 'debug'
   if (severityNumber <= 12) return 'info'
@@ -15,21 +16,37 @@ export function severityBand(severityNumber: number): SeverityBand {
 }
 
 const BADGE_CLASS: Record<SeverityBand, string> = {
-  trace: 'badge badge-xs badge-soft badge-neutral',
-  debug: 'badge badge-xs badge-soft badge-success',
-  info: 'badge badge-xs badge-soft badge-info',
-  warn: 'badge badge-xs badge-soft badge-warning',
-  error: 'badge badge-xs badge-soft badge-error',
-  fatal: 'badge badge-xs badge-soft badge-error border border-error/50',
+  unspecified: 'badge badge-xs badge-neutral',
+  trace: 'badge badge-xs badge-neutral',
+  debug: 'badge badge-xs badge-success',
+  info: 'badge badge-xs badge-info',
+  warn: 'badge badge-xs badge-warning',
+  error: 'badge badge-xs badge-error',
+  fatal: 'badge badge-xs badge-error',
 }
 
 const BORDER_CLASS: Record<SeverityBand, string> = {
+  unspecified: 'border-l-neutral/40',
   trace: 'border-l-neutral/40',
   debug: 'border-l-success/40',
   info: 'border-l-info/40',
   warn: 'border-l-warning/40',
   error: 'border-l-error/40',
   fatal: 'border-l-error',
+}
+
+const SEVERITY_COLOR: Record<SeverityBand, string> = {
+  unspecified: 'var(--color-neutral)',
+  trace: 'var(--color-neutral)',
+  debug: 'var(--color-success)',
+  info: 'var(--color-info)',
+  warn: 'var(--color-warning)',
+  error: 'var(--color-error)',
+  fatal: 'var(--color-error)',
+}
+
+export function severityColor(severityNumber: number): string {
+  return SEVERITY_COLOR[severityBand(severityNumber)]
 }
 
 export function severityBadgeClass(severityNumber: number): string {
@@ -44,5 +61,10 @@ export function severityLabel(
   severityText: string,
   severityNumber: number
 ): string {
-  return severityText || severityBand(severityNumber).toUpperCase()
+  return (
+    severityText ||
+    (severityNumber === 0
+      ? 'Unspecified'
+      : severityBand(severityNumber).toUpperCase())
+  )
 }

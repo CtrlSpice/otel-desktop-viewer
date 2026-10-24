@@ -11,7 +11,11 @@
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
-  import type { FieldDefinition, SearchSignal } from '@/search/model'
+  import type {
+    FieldDefinition,
+    SearchSignal,
+    ParsedSearchRequest,
+  } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -35,8 +39,10 @@
   import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon, HelpCircleIcon } from '@hugeicons/core-free-icons'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchEditorAPI } from './search-editor-api'
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
@@ -54,6 +60,10 @@
     onReady?: (api: SearchEditorAPI) => void
     /** Called whenever the search error state changes. */
     onSearchError?: (error: string | null) => void
+    onQueryChange?: (text: string, fields: FieldDefinition[]) => void
+    onQuerySubmit?: (text: string) => void
+    /** A paged caller owns fetching after the editor validates the query. */
+    onSearchRequest?: (request: ParsedSearchRequest | null) => void
     /** Actions pinned top-right inside the editor container (drawer variant only). */
     headerActions?: Snippet
   }
@@ -69,6 +79,9 @@
     variant = 'default',
     onReady,
     onSearchError,
+    onQueryChange,
+    onQuerySubmit,
+    onSearchRequest,
     headerActions,
     filters = [],
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
@@ -100,6 +113,9 @@
   const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
 
   let availableFields = $state<FieldDefinition[]>([])
+  let queryText = $state('')
+
+  $effect(() => onQueryChange?.(queryText, availableFields))
 
   let signalLabel = $derived(capitalize(signal))
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
@@ -214,11 +230,28 @@
       })
   }
 
+  let routeQuery = ''
+  function rememberQuery(text: string) {
+    const route = readRoute()
+    const next = text.trim() ? text : ''
+    routeQuery = next
+    if ((route.query.q ?? '') !== next)
+      navigateCurrentRoute({ ...route.query, q: next || undefined }, 'replace')
+  }
+
   function onSubmit() {
     const text = editorView?.state.doc.toString() ?? ''
+    // Initial URL submission can precede the reactive change notification.
+    onQueryChange?.(text, availableFields)
 
     if (!text.trim()) {
       searchError = null
+      rememberQuery(text)
+      onQuerySubmit?.(text)
+      if (onSearchRequest) {
+        onSearchRequest(null)
+        return
+      }
       fetchClean(beginListUpdate(signal))
       return
     }
@@ -226,6 +259,12 @@
     try {
       const request = parseSearchRequest(text, availableFields, signal)
       searchError = null
+      rememberQuery(text)
+      onQuerySubmit?.(text)
+      if (onSearchRequest) {
+        onSearchRequest(request)
+        return
+      }
       if (!request) {
         fetchClean(beginListUpdate(signal))
         return
@@ -312,8 +351,11 @@
       signal
     )
 
+    const initialQuery = readRoute().query.q ?? ''
+    routeQuery = initialQuery
+    queryText = initialQuery
     const state = EditorState.create({
-      doc: '',
+      doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
         autocompletion({
@@ -340,6 +382,9 @@
         tooltips({ position: 'fixed' }),
         closeBrackets(),
         history(),
+        EditorView.updateListener.of(update => {
+          if (update.docChanged) queryText = update.state.doc.toString()
+        }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
         // Single-line input: no soft-wrap, swallow Enter (we map it to submit
@@ -360,6 +405,26 @@
     onReady?.({
       submit: onSubmit,
       clear: clearSearch,
+      setQuery: text => {
+        if (!editorView) return
+        editorView.dispatch({
+          changes: { from: 0, to: editorView.state.doc.length, insert: text },
+        })
+        onSubmit()
+      },
+    })
+    if (initialQuery) onSubmit()
+    return subscribeToRoute(() => {
+      const route = readRoute()
+      if (route.path !== `/${signal}` && !route.path.startsWith(`/${signal}/`))
+        return
+      const next = route.query.q ?? ''
+      if (next === routeQuery || !editorView) return
+      routeQuery = next
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: next },
+      })
+      onSubmit()
     })
   })
 
@@ -381,20 +446,6 @@
           {@render headerActions()}
         </div>
       {/if}
-      <span class="search-editor__leading-icon" aria-hidden="true">
-        <svg
-          class="h-3.5 w-3.5 shrink-0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-        </svg>
-      </span>
       <div class="editor-mount" bind:this={editorContainer}></div>
       <div
         class="search-editor__footer-actions"
@@ -405,34 +456,31 @@
             <FieldErrorMessage message={searchError} />
           </div>
         {/if}
-        <div class="join join-horizontal shrink-0 rounded-full">
+        <div class="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
-            onclick={openHelp}
-            aria-label="Search query help"
-            data-tip="Query help"
-          >
-            <HugeiconsIcon
-              icon={HelpCircleIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
-              aria-hidden="true"
-            />
-          </button>
-          <button
-            type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
             onclick={clearSearch}
             aria-label="Clear search"
             data-tip="Clear search"
           >
             <HugeiconsIcon
               icon={Cancel01Icon}
-              size="1em"
+              size={17}
               strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
+              class="shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+            onclick={openHelp}
+            aria-label="Search query help"
+            data-tip="Query help"
+          >
+            <QuestionMarkIcon
+              class="h-[17px] w-[17px] shrink-0"
               aria-hidden="true"
             />
           </button>
@@ -459,13 +507,7 @@
           aria-label="Search query help"
           data-tip="Query help"
         >
-          <HugeiconsIcon
-            icon={HelpCircleIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
+          <QuestionMarkIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -525,7 +567,7 @@
     <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
     <button
       type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content tooltip tooltip-left"
+      class="btn btn-ghost btn-sm btn-square shrink-0 text-subtle hover:text-base-content tooltip tooltip-left"
       onclick={() => helpDialogElement?.close()}
       aria-label="Close"
       data-tip="Close"
@@ -560,6 +602,10 @@
         Combine filters with <code class="q-logic">AND</code> or
         <code class="q-logic">OR</code> — <code class="q-logic">AND</code> binds
         tighter, parentheses <code class="q-paren">( )</code> override
+      </p>
+      <p>
+        Combine plain-text search with filters using
+        <code class="q-field">search("checkout")</code>.
       </p>
       <p>
         Quote values containing spaces:
@@ -710,7 +756,7 @@
   .search-editor-wrapper {
     @apply relative w-full;
     min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
   }
 
   .search-editor-wrapper--drawer {
@@ -725,22 +771,8 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply items-center gap-1.5 py-1 pl-4 pr-2;
+    @apply items-center gap-1.5 py-1 pl-4 pr-0;
     height: auto;
-  }
-
-  .search-editor-wrapper--drawer .search-editor__leading-icon {
-    @apply flex shrink-0 items-center;
-    color: var(--color-subtle);
-  }
-
-  .search-editor-wrapper--drawer
-    .search-editor-container:hover:not(:focus-within) {
-    background-color: var(--color-base-100);
-  }
-
-  .search-editor-wrapper--drawer .search-editor-container:focus-within {
-    background-color: var(--color-base-100);
   }
 
   .search-editor__header-actions {
@@ -758,27 +790,21 @@
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
     overflow-x: auto;
     overflow-y: hidden;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
-    padding-top: 0;
-    padding-bottom: 0;
+    padding-block: calc(
+      (var(--table-row-h) - var(--text-base) * var(--text-base--line-height)) /
+        2
+    );
     padding-left: 0;
     padding-right: 0.5rem;
     min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
     white-space: nowrap;
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-line) {
-    line-height: var(--table-row-h);
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-placeholder) {
-    line-height: var(--table-row-h);
   }
 
   .search-editor-wrapper--drawer .search-editor__footer-actions {
@@ -889,7 +915,7 @@
   }
 
   .help-dialog-title {
-    @apply min-w-0 flex-1 text-lg font-semibold leading-snug tracking-tight;
+    @apply min-w-0 flex-1 text-lg font-normal leading-snug tracking-tight;
   }
 
   .help-dialog-body {
@@ -899,23 +925,23 @@
   }
 
   .help-section-heading {
-    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-base-content/70;
+    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-(--color-subtle);
   }
 
   .help-query-lines {
-    @apply mt-1 space-y-1 text-sm text-base-content/80;
+    @apply mt-1 space-y-1 text-sm text-base-content;
   }
 
   .help-op-table {
-    @apply mt-2 w-full border-collapse text-left text-sm text-base-content/80;
+    @apply mt-2 w-full border-collapse text-left text-sm text-base-content;
   }
 
   .help-op-table thead th {
-    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-base-content/70;
+    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-(--color-subtle);
   }
 
   .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-base-content/80;
+    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-(--color-subtle);
   }
 
   .help-op-table tbody td {
@@ -923,11 +949,11 @@
   }
 
   .help-op-code {
-    @apply rounded bg-base-200/80 px-1 py-0.5 font-mono text-xs text-base-content;
+    @apply rounded bg-base-100 px-1 py-0.5 font-mono text-xs text-base-content;
   }
 
   .help-op-note {
-    @apply mt-1 block text-xs text-base-content/75;
+    @apply mt-1 block text-xs text-(--color-subtle);
   }
 
   .help-op-note .help-op-code {
@@ -935,7 +961,7 @@
   }
 
   .help-shortcut-list {
-    @apply mt-2 space-y-2 text-sm text-base-content/80;
+    @apply mt-2 space-y-2 text-sm text-base-content;
   }
 
   .help-shortcut-list li {
@@ -943,11 +969,11 @@
   }
 
   .help-shortcut-sep {
-    @apply mx-0.5 text-base-content/50;
+    @apply mx-0.5 text-(--color-subtle);
   }
 
   .help-example {
-    @apply mt-2 overflow-x-auto rounded-md bg-base-200 p-3 font-mono text-xs leading-relaxed text-base-content;
+    @apply mt-2 overflow-x-auto rounded-md bg-base-100 p-3 font-mono text-xs leading-relaxed text-base-content;
   }
 
   .help-example :global(code) {
@@ -969,7 +995,7 @@
   }
 
   .q-value {
-    color: var(--color-warning);
+    color: var(--color-base-content);
   }
 
   .q-paren {

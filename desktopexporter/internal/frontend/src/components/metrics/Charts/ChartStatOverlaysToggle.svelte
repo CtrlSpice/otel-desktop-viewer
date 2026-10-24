@@ -1,28 +1,33 @@
 <script lang="ts">
   /*
-   * Master toggle for selection stat overlays (min / max / avg lines
-   * and labels on the selected series). Lives in the chart control bar.
+   * Master toggle for selection stat annotations.
+   * Lives in the metric header.
    */
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
 
   const ctx = getMetricViewContext()
+  const overlayLabel = $derived(
+    ctx.isHistogramKind ? 'Percentiles' : 'Statistics'
+  )
 </script>
 
 {#if ctx.showChartStatOverlaysToggleVisible}
   <label
-    class="chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
-    data-tip={ctx.rateSlopeOverlayAvailable
-      ? 'Min/max + rate slope'
-      : 'Min/max + avg'}
+    class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
+    data-tip={ctx.isHistogramKind
+      ? 'p50, p95 and p99 of the combined checked series'
+      : ctx.rateSlopeOverlayAvailable
+        ? 'Min/max and selected rate slope'
+        : 'Min/max and average'}
   >
     <input
       type="checkbox"
-      class="checkbox checkbox-xs checkbox-soft chart-stat-overlays-toggle__checkbox"
+      class="checkbox checkbox-xs chart-stat-overlays-toggle__checkbox"
       checked={ctx.showSelectionStatOverlays}
-      aria-label="Show chart stat overlays"
+      aria-label="Show {overlayLabel}"
       onchange={e => ctx.setShowSelectionStatOverlays(e.currentTarget.checked)}
     />
-    <span class="chart-stat-overlays-toggle__label">Overlays</span>
+    <span class="chart-stat-overlays-toggle__label">{overlayLabel}</span>
   </label>
 {/if}
 
@@ -30,17 +35,25 @@
   @reference "../../../app.css";
 
   .chart-stat-overlays-toggle {
-    @apply inline-flex shrink-0 cursor-pointer items-center gap-1.5
-           rounded-full px-2 py-1 text-xs font-medium;
-    color: var(--color-base-content);
+    @apply relative shrink-0 gap-2;
   }
 
   .chart-stat-overlays-toggle__checkbox {
-    @apply shrink-0;
+    @apply rounded-full;
+    border-color: currentColor;
+    background: var(--color-base-200);
+    box-shadow: none;
+  }
+
+  .chart-stat-overlays-toggle__checkbox:checked {
+    color: var(--color-primary);
+  }
+
+  .chart-stat-overlays-toggle__checkbox::before {
+    transition: none;
   }
 
   .chart-stat-overlays-toggle__label {
     @apply whitespace-nowrap;
-    color: var(--color-muted);
   }
 </style>

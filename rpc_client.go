@@ -9,10 +9,23 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func requestViewerRPC(ctx context.Context, client *http.Client, endpoint, method string, params map[string]any) (json.RawMessage, error) {
+	// A tool runner can pass its active context to this short-lived CLI process.
+	// An explicit Go context takes precedence over inherited environment values.
+	propagator := propagation.TraceContext{}
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		ctx = propagator.Extract(ctx, propagation.MapCarrier{
+			"traceparent": os.Getenv("TRACEPARENT"),
+			"tracestate":  os.Getenv("TRACESTATE"),
+		})
+	}
 	base, err := url.Parse(endpoint)
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return nil, fmt.Errorf("invalid viewer endpoint %q", endpoint)
@@ -29,6 +42,7 @@ func requestViewerRPC(ctx context.Context, client *http.Client, endpoint, method
 		return nil, fmt.Errorf("create viewer request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	propagator.Inject(ctx, propagation.HeaderCarrier(request.Header))
 
 	response, err := client.Do(request)
 	if err != nil {

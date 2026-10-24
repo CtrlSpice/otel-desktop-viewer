@@ -1,13 +1,36 @@
-import type { JsonAggregateBucket } from '@/types/wire-types'
+import type {
+  JsonAggregateBucket,
+  JsonLinkSummary,
+  JsonLogColumn,
+} from '@/types/wire-types'
 
 export type RootSpan = {
   serviceName: string
   name: string
 }
 
+/** Lightweight timing projection for an exact stored trace/span pair. */
+export type SpanTiming = {
+  traceID: string
+  spanID: string
+  name: string
+  serviceName: string
+  startTime: bigint
+  endTime: bigint
+  statusCodeValue: number
+}
+
 export type MatchedSpan = {
   traceID: string
   spanID: string
+}
+
+/** Bounded display composition. `key` retains identity; `label` is a display preview. */
+export type SummaryBreakdownPart = {
+  key: string
+  label: string
+  count: number
+  other?: boolean
 }
 
 export type TraceSummary = {
@@ -22,6 +45,8 @@ export type TraceSummary = {
   durationNs: bigint | null
   spanCount: number
   errorCount: number
+  /** All retained spans in the trace, by service; not elapsed-time shares. */
+  serviceBreakdown?: SummaryBreakdownPart[]
   /** Computed identities of matching spans; present only for filtered searches. */
   matchedSpans?: MatchedSpan[]
 }
@@ -130,6 +155,8 @@ export type LinkData = {
   droppedAttributesCount: number
   /** W3C trace flags for the linked context. */
   flags: number
+  /** Read-time names for presentation only; never exported as OTLP fields. */
+  summary?: JsonLinkSummary
 }
 
 export type LogData = {
@@ -147,6 +174,8 @@ export type LogData = {
   droppedAttributesCount: number
   flags: number
   eventName: string
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
 }
 
 // LogSummary is the lightweight card-shaped projection returned by
@@ -161,7 +190,7 @@ export type LogData = {
 // otherwise ObservedTimestamp. The summary doesn't carry observed
 // separately; consumers that need both fall back to the detail row.
 //
-// `bodyPreview` is server-truncated to the first N characters.
+// `bodyPreview` is bounded display text: abbreviated strings or a typed summary.
 // Full body, traceID, and spanID are available on LogData
 // (fetched on demand for the detail pane).
 export type LogSummary = {
@@ -171,6 +200,21 @@ export type LogSummary = {
   severityNumber: number
   serviceName: string
   bodyPreview: string
+  bodyType?: AttributeValue['kind']
+  eventName?: string
+}
+
+export type LogColumn = JsonLogColumn
+export type LogTableRow = LogSummary & {
+  columnValues?: (LogColumn & { values: AttributeValue[] })[]
+}
+
+export type LogErrorTarget = { logRef: string; offset: number }
+export type LogErrorNavigation = {
+  count: number
+  index: number | null
+  previous: LogErrorTarget | null
+  next: LogErrorTarget | null
 }
 
 /** Complete trace-scoped log projection used for span correlation. */
@@ -389,6 +433,8 @@ export type AggregateBucket = Omit<
 export type MetricAggregateViewData = {
   aggregate: AggregateBucket[] | null
   scalarAggregate: ScalarAggregate | null
+  /** Selected source's activity, on the aggregate's bucket schema. */
+  contribution?: AggregateBucket[] | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */
@@ -615,6 +661,7 @@ export type Rejection = {
 }
 
 export type Stats = {
+  storage?: { sizeBytes: number; maxSizeBytes: number }
   traces: TraceStats
   logs: LogStats
   metrics: MetricStats

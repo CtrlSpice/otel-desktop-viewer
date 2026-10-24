@@ -14,14 +14,14 @@ import {
 } from '@/route'
 
 export const TIME_RANGE_PRESETS = [
-  { label: 'All', durationMs: undefined },
-  { label: '5m', durationMs: 300_000 },
-  { label: '15m', durationMs: 900_000 },
-  { label: '30m', durationMs: 1_800_000 },
-  { label: '1h', durationMs: 3_600_000 },
-  { label: '6h', durationMs: 21_600_000 },
-  { label: '24h', durationMs: 86_400_000 },
-  { label: '7d', durationMs: 604_800_000 },
+  { label: 'All', shortLabel: 'All', durationMs: undefined },
+  { label: '5 min', shortLabel: '5m', durationMs: 300_000 },
+  { label: '15 min', shortLabel: '15m', durationMs: 900_000 },
+  { label: '30 min', shortLabel: '30m', durationMs: 1_800_000 },
+  { label: '1 hr', shortLabel: '1h', durationMs: 3_600_000 },
+  { label: '6 hr', shortLabel: '6h', durationMs: 21_600_000 },
+  { label: '24 hr', shortLabel: '24h', durationMs: 86_400_000 },
+  { label: '7 days', shortLabel: '7d', durationMs: 604_800_000 },
 ] as const
 
 const [getTimeContext, setTimeContext] = createContext<TimeContext>()

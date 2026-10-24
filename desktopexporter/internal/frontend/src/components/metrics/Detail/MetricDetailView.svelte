@@ -1,37 +1,37 @@
 <script lang="ts">
   /*
-   * MetricDetailView is the "detail" pane on the metrics page. A
-   * PaneHeader tab strip switches between two views:
-   *   - Fields: per-metric metadata (Metric / Resource / Scope)
+   * MetricDetailView is the "detail" pane on the metrics page.
+   * Stacked collapsible sections contain:
+   *   - Metric: metric, resource and instrumentation scope fields
    *   - Series: per-timeseries rows with nested datapoints
    *
    * Reads everything through MetricViewContext: this is a near-pure
-   * renderer. The only locally-owned state is the active tab and
-   * the flattened resource/scope attribute lists for Fields.
+   * renderer. Disclosure state stays local to the panel.
    */
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
-  import PaneHeader, {
-    paneTabID,
-    type PaneTab,
-  } from '@/components/shared/PaneHeader.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import DetailStack from '@/components/shared/DetailStack.svelte'
+  import DetailViews from '@/components/shared/DetailViews.svelte'
+  import DetailViewTabs, {
+    type DetailViewMode,
+  } from '@/components/shared/DetailViewTabs.svelte'
+  import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
-    BarChartHorizontalIcon,
-    LeftToRightListBulletIcon,
+    ChartLineData02Icon,
+    ChartHistogramIcon,
   } from '@hugeicons/core-free-icons'
-  import MetricField from './MetricField.svelte'
+  import MetricField from '@/components/shared/DetailProperty.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
-
-  const METRIC_DETAIL_PANEL_ID = 'metric-detail-tabpanel'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
+  import { readOTLPText } from '@/services/export-service'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
-
-  let activeTab = $state<'fields' | 'series'>('series')
+  const detailViewID = $props.id()
+  let detailView = $state<DetailViewMode>('fields')
 
   let seriesCount = $derived.by(() => {
     if (!ctx.metric) return 0
@@ -39,239 +39,190 @@
       ? ctx.histogramTimeseriesCount
       : ctx.gaugeSumLegendTimeseries.length
   })
-
-  let metricOpen = $state(true)
-  let resourceOpen = $state(true)
-  let scopeOpen = $state(true)
-
-  let metricFieldCount = $derived.by(() => {
-    const m = ctx.metric
-    if (!m) return 0
-    let n = 2 // name + type are always present
-    if (m.description) n++
-    // OTLP Metric.metadata: one row per entry, like span attributes.
-    n += m.metadata.length
-    if (m.unit) n++
-    if (ctx.temporality) n++
-    if (ctx.isMonotonic !== null) n++
-    if (m.lastSeenNs !== null) n++ // last seen
-    n++ // datapoint count
-    return n
-  })
+  let metricURL = $derived(
+    ctx.metric ? `/export/metrics/${ctx.metric.metricRef}` : ''
+  )
+  let rawScopes = $derived([
+    {
+      id: 'metric',
+      label: 'Metric',
+      url: metricURL,
+      previewURL: metricURL ? `${metricURL}?includeDatapoints=false` : '',
+    },
+  ])
 </script>
 
-{#if !ctx.metric}
-  <div class="detail-view detail-view--empty">
-    <p class="text-rp-muted text-sm">Select a metric to view details</p>
-  </div>
-{:else}
-  {@const metric = ctx.metric}
+{#snippet metricIcon()}<HugeiconsIcon
+    icon={ChartHistogramIcon}
+    size={16}
+    class="shrink-0 text-subtle"
+    strokeWidth={1.5}
+  />{/snippet}
+{#snippet seriesIcon()}<HugeiconsIcon
+    icon={ChartLineData02Icon}
+    size={16}
+    class="shrink-0 text-subtle"
+    strokeWidth={1.5}
+  />{/snippet}
 
-  {#snippet fieldsIcon()}<HugeiconsIcon
-      icon={LeftToRightListBulletIcon}
-      size="1em"
-      strokeWidth={1.5}
-    />{/snippet}
-  {#snippet seriesIcon()}<HugeiconsIcon
-      icon={BarChartHorizontalIcon}
-      size="1em"
-      strokeWidth={1.5}
-    />{/snippet}
-
-  {@const tabs: PaneTab[] = [
-    { id: 'fields', label: 'Fields', icon: fieldsIcon },
-    { id: 'series', label: 'Series', icon: seriesIcon, count: seriesCount },
-  ]}
-
-  <div class="detail-view">
-    <PaneHeader
-      mode="tabs"
-      {tabs}
-      activeID={activeTab}
-      onSelect={id => (activeTab = id as 'fields' | 'series')}
-      ariaLabel="Metric detail tabs"
-      tabLayout="equal"
-      tabPanelID={METRIC_DETAIL_PANEL_ID}
-    />
-
-    <div
-      class="detail-view__scroll"
-      id={METRIC_DETAIL_PANEL_ID}
-      role="tabpanel"
-      aria-labelledby={paneTabID(METRIC_DETAIL_PANEL_ID, activeTab)}
-    >
-      {#if activeTab === 'fields'}
-        <FieldGroup
-          label="Metric"
-          count={metricFieldCount}
-          detail
-          bind:open={metricOpen}
-        >
-          <table class="detail-fields w-full" aria-label="Metric fields">
-            <tbody>
+{#snippet seriesSection()}
+  <DetailBubble
+    label="Series"
+    icon={seriesIcon}
+    count={ctx.metric ? seriesCount : undefined}
+  >
+    {#if ctx.metric}<TimeseriesPanel />{:else}<p class="p-3 text-subtle">
+        Select a metric to view details
+      </p>{/if}
+  </DetailBubble>
+{/snippet}
+{#snippet metricSection()}
+  <DetailBubble label="Metric" icon={metricIcon}>
+    {#snippet action()}
+      <DetailViewTabs id={detailViewID} bind:view={detailView}>
+        {#snippet action()}
+          {#if ctx.metric}{@const metric = ctx.metric}{#key metric.metricRef}
+              <ValueCopyButton
+                grouped
+                loadText={signal =>
+                  readOTLPText('metric', metric.metricRef, signal)}
+                label="metric"
+                tooltip="Copy metric as OTLP JSON"
+              />
+            {/key}{/if}
+        {/snippet}
+      </DetailViewTabs>
+    {/snippet}
+    {#if ctx.metric}{@const metric = ctx.metric}<DetailViews
+        id={detailViewID}
+        showTabs={false}
+        bind:view={detailView}
+        scopes={rawScopes}
+        wholeURL={metricURL}
+      >
+        <table class="detail-fields w-full" aria-label="Metric fields">
+          <tbody>
+            <MetricField
+              fieldName="name"
+              fieldValue={metric.name}
+              fieldType="string"
+            />
+            {#if metric.description}
               <MetricField
-                fieldName="name"
-                fieldValue={metric.name}
+                fieldName="description"
+                fieldValue={metric.description}
                 fieldType="string"
               />
-              {#if metric.description}
-                <MetricField
-                  fieldName="description"
-                  fieldValue={metric.description}
-                  fieldType="string"
-                />
-              {/if}
-              <!--
-                Metric.metadata describes the instrument, so it sits with
-                description rather than with the resource and scope panels
-                below -- those group attributes of the *emitter*. Rendered one
-                row per entry, the way span attributes are.
-              -->
-              <AttributeRows
-                attributes={metric.metadata}
-                owner="metric metadata"
-              />
+            {/if}
+            <AttributeRows
+              attributes={metric.metadata}
+              owner="metric metadata"
+              source="metadata"
+            />
+            <MetricField
+              fieldName="type"
+              fieldValue={ctx.metricType}
+              fieldType="string"
+            />
+            {#if metric.unit}
               <MetricField
-                fieldName="type"
-                fieldValue={ctx.metricType}
+                fieldName="unit"
+                fieldValue={metric.unit}
                 fieldType="string"
               />
-              {#if metric.unit}
-                <MetricField
-                  fieldName="unit"
-                  fieldValue={metric.unit}
-                  fieldType="string"
-                />
-              {/if}
-              {#if ctx.temporality}
-                <MetricField
-                  fieldName="aggregation temporality"
-                  fieldValue={ctx.temporality}
-                  fieldType="string"
-                />
-              {/if}
-              {#if ctx.isMonotonic !== null}
-                <MetricField
-                  fieldName="is monotonic"
-                  fieldValue={String(ctx.isMonotonic)}
-                  fieldType="bool"
-                />
-              {/if}
-              {#if metric.lastSeenNs !== null}
-                <!-- Metric-wide value; narrowed responses may omit its source series. -->
-                <MetricField
-                  fieldName="last seen"
-                  fieldValue={formatTimestamp(
-                    metric.lastSeenNs,
-                    timeContext.tz,
-                    'milliseconds'
-                  )}
-                  fieldType="timestamp"
-                />
-              {/if}
+            {/if}
+            {#if ctx.temporality}
               <MetricField
-                fieldName="datapoint count"
-                fieldValue={ctx.totalDatapointCount.toString()}
+                fieldName="aggregationTemporality"
+                fieldValue={ctx.temporality}
+                fieldType="string"
+              />
+            {/if}
+            {#if ctx.isMonotonic !== null}
+              <MetricField
+                fieldName="isMonotonic"
+                fieldValue={String(ctx.isMonotonic)}
+                fieldType="bool"
+              />
+            {/if}
+            {#if metric.lastSeenNs !== null}
+              <!-- Metric-wide value; narrowed responses may omit its source series. -->
+              <MetricField
+                fieldName="lastSeen"
+                fieldValue={metric.lastSeenNs.toString()}
+                timestampLabel={formatTimestamp(
+                  metric.lastSeenNs,
+                  timeContext.tz,
+                  'milliseconds'
+                )}
+                fieldType="timestamp"
+              />
+            {/if}
+            <MetricField
+              fieldName="dataPointCount"
+              fieldValue={ctx.totalDatapointCount.toString()}
+              fieldType="uint32"
+            />
+            {#if metric.resourceSchemaUrl}<MetricField
+                fieldName="schemaUrl"
+                origin="resource"
+                fieldValue={metric.resourceSchemaUrl}
+                fieldType="string"
+              />{/if}
+            {#if metric.resourceDroppedAttributesCount > 0}
+              <MetricField
+                fieldName="droppedAttributesCount"
+                origin="resource"
+                fieldValue={metric.resourceDroppedAttributesCount.toString()}
                 fieldType="uint32"
               />
-            </tbody>
-          </table>
-        </FieldGroup>
-
-        <FieldGroup
-          label="Resource"
-          count={metric.resource.attributes.length +
-            (metric.resourceSchemaUrl ? 1 : 0) +
-            (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
-          detail
-          bind:open={resourceOpen}
-        >
-          <table class="detail-fields w-full" aria-label="Resource attributes">
-            <tbody>
-              {#if metric.resourceSchemaUrl}<MetricField
-                  fieldName="schema URL"
-                  fieldValue={metric.resourceSchemaUrl}
-                  fieldType="string"
-                />{/if}
-              {#if metric.resourceDroppedAttributesCount > 0}
-                <MetricField
-                  fieldName="dropped attributes"
-                  fieldValue={metric.resourceDroppedAttributesCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-              <AttributeRows
-                attributes={metric.resource.attributes}
-                owner="resource"
+            {/if}
+            <AttributeRows
+              attributes={metric.resource.attributes}
+              owner="resource"
+              origin="resource"
+            />
+            {#if metric.scope.name}<MetricField
+                fieldName="name"
+                origin="scope"
+                fieldValue={metric.scope.name}
+                fieldType="string"
+              />{/if}
+            {#if metric.scope.version}<MetricField
+                fieldName="version"
+                origin="scope"
+                fieldValue={metric.scope.version}
+                fieldType="string"
+              />{/if}
+            {#if metric.scopeSchemaUrl}<MetricField
+                fieldName="schemaUrl"
+                origin="scope"
+                fieldValue={metric.scopeSchemaUrl}
+                fieldType="string"
+              />{/if}
+            {#if metric.scopeDroppedAttributesCount > 0}
+              <MetricField
+                fieldName="droppedAttributesCount"
+                origin="scope"
+                fieldValue={metric.scopeDroppedAttributesCount.toString()}
+                fieldType="uint32"
               />
-            </tbody>
-          </table>
-        </FieldGroup>
-
-        <FieldGroup
-          label="Scope"
-          count={metric.scope.attributes.length +
-            (metric.scope.name ? 1 : 0) +
-            (metric.scope.version ? 1 : 0) +
-            (metric.scopeSchemaUrl ? 1 : 0) +
-            (metric.scopeDroppedAttributesCount > 0 ? 1 : 0)}
-          detail
-          bind:open={scopeOpen}
-        >
-          <table class="detail-fields w-full" aria-label="Scope attributes">
-            <tbody>
-              {#if metric.scope.name}<MetricField
-                  fieldName="name"
-                  fieldValue={metric.scope.name}
-                  fieldType="string"
-                />{/if}
-              {#if metric.scope.version}<MetricField
-                  fieldName="version"
-                  fieldValue={metric.scope.version}
-                  fieldType="string"
-                />{/if}
-              {#if metric.scopeSchemaUrl}<MetricField
-                  fieldName="schema URL"
-                  fieldValue={metric.scopeSchemaUrl}
-                  fieldType="string"
-                />{/if}
-              {#if metric.scopeDroppedAttributesCount > 0}
-                <MetricField
-                  fieldName="dropped attributes"
-                  fieldValue={metric.scopeDroppedAttributesCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-              <AttributeRows
-                attributes={metric.scope.attributes}
-                owner="scope"
-              />
-            </tbody>
-          </table>
-        </FieldGroup>
-      {:else}
-        <TimeseriesPanel />
-      {/if}
-    </div>
-  </div>
-{/if}
-
-<style lang="postcss">
-  @reference "../../../app.css";
-
-  .detail-view {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
-  }
-
-  .detail-view--empty {
-    @apply items-center justify-center;
-  }
-
-  /* Single vertical scroll viewport for both sections. min-h-0 lets
-     the flex parent shrink past content size so overflow-y-auto
-     actually engages instead of pushing the page footer down. */
-  .detail-view__scroll {
-    @apply flex-1 min-h-0 overflow-y-auto;
-    scrollbar-width: thin;
-  }
-</style>
+            {/if}
+            <AttributeRows
+              attributes={metric.scope.attributes}
+              owner="scope"
+              origin="scope"
+            />
+          </tbody>
+        </table>
+      </DetailViews>{/if}
+  </DetailBubble>
+{/snippet}
+<DetailStack
+  label="Metric details"
+  storageKey="metric-detail-section-sizes"
+  sections={[
+    { id: 'series', content: seriesSection },
+    { id: 'metric', content: metricSection },
+  ]}
+/>

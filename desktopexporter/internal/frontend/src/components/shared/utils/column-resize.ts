@@ -63,18 +63,32 @@ export function initialWidths(
  * flex columns in proportion to their current widths, so the layout
  * keeps its shape; shrinkage is spread in proportion to each column's
  * slack above its min, which respects every floor and lands exactly on
- * the target whenever the target is reachable at all.
+ * the target whenever the target is reachable at all. An optional preferred
+ * flex column absorbs the change first, down to its minimum.
  */
 export function fitWidths(
   specs: ColumnSpec[],
   current: ColumnWidths,
-  containerPx: number
+  containerPx: number,
+  preferredID?: string
 ): ColumnWidths {
   const next: ColumnWidths = {}
   for (const d of specs) next[d.id] = current[d.id] ?? d.min
 
-  const delta = containerPx - totalOf(specs, next)
+  let delta = containerPx - totalOf(specs, next)
   if (Math.abs(delta) < 0.5) return next
+
+  // A fill column absorbs container changes first. Once it reaches its floor,
+  // the proportional fit handles any remaining shortage.
+  const preferred = specs.find(
+    column => column.id === preferredID && column.flex > 0
+  )
+  if (preferred) {
+    const before = next[preferred.id]
+    next[preferred.id] = Math.max(preferred.min, before + delta)
+    delta -= next[preferred.id] - before
+    if (Math.abs(delta) < 0.5) return next
+  }
 
   const flexSpecs = specs.filter(d => d.flex > 0)
   if (flexSpecs.length === 0) return next
@@ -111,7 +125,8 @@ export function fitWidths(
 export function reconcileWidths(
   specs: ColumnSpec[],
   stored: ColumnWidths,
-  containerPx: number
+  containerPx: number,
+  preferredID?: string
 ): ColumnWidths {
   const base = initialWidths(specs, containerPx)
   const merged: ColumnWidths = {}
@@ -124,7 +139,7 @@ export function reconcileWidths(
           ? Math.max(d.min, kept)
           : base[d.id]
   }
-  return fitWidths(specs, merged, containerPx)
+  return fitWidths(specs, merged, containerPx, preferredID)
 }
 
 /**
@@ -143,7 +158,8 @@ export function resizeBar(
   specs: ColumnSpec[],
   start: ColumnWidths,
   barId: string,
-  deltaPx: number
+  deltaPx: number,
+  overflowAllowance = 0
 ): ColumnWidths {
   const i = specs.findIndex(d => d.id === barId)
   if (i < 0 || specs[i].flex === 0 || deltaPx === 0) return start
@@ -162,12 +178,15 @@ export function resizeBar(
     (s, d) => s + Math.max(0, (start[d.id] ?? d.min) - d.min),
     0
   )
-  const take = Math.min(Math.abs(deltaPx), available)
+  const take = Math.min(
+    Math.abs(deltaPx),
+    available + (deltaPx > 0 ? overflowAllowance : 0)
+  )
   if (take <= 0) return start
 
   const next: ColumnWidths = { ...start }
   next[growId] += take
-  let remaining = take
+  let remaining = Math.min(take, available)
   for (const d of shrinkSide) {
     const give = Math.min(remaining, next[d.id] - d.min)
     next[d.id] -= give
@@ -195,7 +214,8 @@ export type ColumnBarPosition = {
  */
 export function barPositions(
   specs: ColumnSpec[],
-  widths: ColumnWidths
+  widths: ColumnWidths,
+  overflowAllowance = 0
 ): ColumnBarPosition[] {
   const out: ColumnBarPosition[] = []
   let cumulative = 0
@@ -222,7 +242,7 @@ export function barPositions(
         id: specs[i].id,
         left: cumulative,
         min: cumulative - beforeSlack,
-        max: cumulative + beyondSlack,
+        max: cumulative + beyondSlack + overflowAllowance,
       })
     }
   }
@@ -242,11 +262,13 @@ export function startColumnResize(
   barId: string,
   e: PointerEvent,
   onResize: (widths: ColumnWidths) => void,
-  onEnd: () => void
+  onEnd: () => void,
+  overflowAllowance = 0
 ): DragHandle {
   return startDrag(e, {
     axis: 'x',
-    onMove: delta => onResize(resizeBar(specs, startWidths, barId, delta)),
+    onMove: delta =>
+      onResize(resizeBar(specs, startWidths, barId, delta, overflowAllowance)),
     onEnd,
   })
 }

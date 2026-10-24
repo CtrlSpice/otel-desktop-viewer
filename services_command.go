@@ -7,19 +7,35 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
 type serviceSummary struct {
-	ServiceNamespace string `json:"serviceNamespace"`
-	ServiceName      string `json:"serviceName"`
-	SpanCount        uint64 `json:"spanCount"`
-	ErrorSpanCount   uint64 `json:"errorSpanCount"`
-	LogCount         uint64 `json:"logCount"`
-	ErrorLogCount    uint64 `json:"errorLogCount"`
-	MetricCount      uint64 `json:"metricCount"`
-	DataPointCount   uint64 `json:"dataPointCount"`
-	LastSeen         string `json:"lastSeen"`
+	ServiceNamespace     string            `json:"serviceNamespace"`
+	ServiceName          string            `json:"serviceName"`
+	ServiceNameKind      string            `json:"serviceNameKind,omitempty"`
+	ServiceNamespaceKind string            `json:"serviceNamespaceKind,omitempty"`
+	TraceCount           uint64            `json:"traceCount"`
+	SpanCount            uint64            `json:"spanCount"`
+	ErrorSpanCount       uint64            `json:"errorSpanCount"`
+	LogCount             uint64            `json:"logCount"`
+	ErrorLogCount        uint64            `json:"errorLogCount"`
+	LogSeverityCounts    logSeverityCounts `json:"logSeverityCounts"`
+	MetricCount          uint64            `json:"metricCount"`
+	DataPointCount       uint64            `json:"dataPointCount"`
+	ExemplarCount        uint64            `json:"exemplarCount"`
+	LastSeen             string            `json:"lastSeen"`
+}
+
+type logSeverityCounts struct {
+	Trace uint64 `json:"trace"`
+	Debug uint64 `json:"debug"`
+	Info  uint64 `json:"info"`
+	Warn  uint64 `json:"warn"`
+	Error uint64 `json:"error"`
+	Fatal uint64 `json:"fatal"`
+	Other uint64 `json:"other"`
 }
 
 type servicesResult struct {
@@ -36,8 +52,9 @@ func newServicesCommand(client *http.Client, now func() time.Time) *cobra.Comman
 		Use:   "services",
 		Short: "Discover services and their telemetry counts",
 		Long: "Discover services with spans, logs or Metric datapoints in a running viewer. " +
-			"Group by service.namespace and service.name, ordered by namespace then name. " +
-			"Show span/error-span, log/error-log and Metric/datapoint counts, plus lastSeen in Unix nanoseconds. " +
+			"Group by exact typed service.namespace and service.name values, ordered by namespace then name and typed identity. " +
+			"Show distinct trace, span/error-span, log/error-log and Metric/datapoint/exemplar counts, plus lastSeen in Unix nanoseconds. " +
+			"JSON includes log severity bands; errorLogCount includes Error and Fatal. Exemplars belong to datapoints in the selected window. " +
 			"Counts describe stored telemetry, not requests or service health. Defaults to the last hour and 25 services. " +
 			"--service matches an exact name across namespaces. --json includes window bounds and truncation.",
 		Example: "  otel-desktop-viewer services\n" +
@@ -88,60 +105,27 @@ func writeServicesResult(writer io.Writer, result servicesResult, jsonOutput boo
 	}
 	rows := make([][]any, 0, len(result.Services))
 	for _, service := range result.Services {
-		rows = append(rows, []any{service.ServiceNamespace, service.ServiceName,
-			service.SpanCount, service.ErrorSpanCount, service.LogCount, service.ErrorLogCount,
-			service.MetricCount, service.DataPointCount, service.LastSeen})
+		rows = append(rows, []any{service.ServiceNamespace, service.ServiceNamespaceKind, service.ServiceName, service.ServiceNameKind,
+			service.TraceCount, service.SpanCount, service.ErrorSpanCount, service.LogCount, service.ErrorLogCount,
+			service.MetricCount, service.DataPointCount, service.ExemplarCount, service.LastSeen})
 	}
 	_, err := io.WriteString(writer, formatQueryColumns(queryResult{
 		Columns: []queryColumn{
-			{Name: "serviceNamespace"}, {Name: "serviceName"},
-			{Name: "spanCount"}, {Name: "errorSpanCount"}, {Name: "logCount"}, {Name: "errorLogCount"},
-			{Name: "metricCount"}, {Name: "dataPointCount"}, {Name: "lastSeen"},
+			{Name: "serviceNamespace"}, {Name: "namespaceKind"}, {Name: "serviceName"}, {Name: "nameKind"},
+			{Name: "traceCount"}, {Name: "spanCount"}, {Name: "errorSpanCount"}, {Name: "logCount"}, {Name: "errorLogCount"},
+			{Name: "metricCount"}, {Name: "dataPointCount"}, {Name: "exemplarCount"}, {Name: "lastSeen"},
 		},
 		Rows: rows, Truncated: result.Truncated,
 	}))
 	return err
 }
 
-// Aggregate each signal independently before joining Resource attributes. This
+// Aggregate each signal independently by service identity. This
 // prevents cross-signal joins from multiplying counts and counts a histogram
 // datapoint once, irrespective of its received observation count. Original
-// Resource attributes retain their received types. Discovery groups the existing
-// service_name text projection and the equivalent namespace text projection.
+// Resource attributes retain their received types. Discovery groups exact typed
+// values, treating absent and empty-string namespaces as equivalent.
 // Only resources with matching records participate in discovery.
 func servicesSQL(query telemetrySearchQuery) string {
-	predicate := attributeRecordPredicate(query)
-	return `WITH resource_counts AS (
-    SELECT resource_id, service_name, count(*) AS span_count,
-        count(*) FILTER (WHERE status_code = 2) AS error_span_count,
-        0 AS log_count, 0 AS error_log_count, 0 AS metric_count, 0 AS data_point_count,
-        max(time_ns) AS last_seen
-    FROM (SELECT resource_id, service_name, start_time AS time_ns, status_code FROM spans) s
-    WHERE ` + predicate + ` GROUP BY resource_id, service_name
-    UNION ALL
-    SELECT resource_id, service_name, 0, 0, count(*),
-        count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24), 0, 0, max(time_ns)
-    FROM (SELECT resource_id, service_name,
-        coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM logs) s
-    WHERE ` + predicate + ` GROUP BY resource_id, service_name
-    UNION ALL
-    SELECT resource_id, service_name, 0, 0, 0, 0, count(DISTINCT metric_id), count(*), max(time_ns)
-    FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.timestamp AS time_ns
-        FROM metric_datapoints d JOIN metrics m ON m.id = d.metric_id) s
-    WHERE ` + predicate + ` GROUP BY resource_id, service_name
-), identities AS (
-    SELECT r.id,
-        coalesce((SELECT attribute_text(a.value)
-            FROM attributes a WHERE a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') AS service_namespace
-    FROM resources r JOIN (SELECT DISTINCT resource_id FROM resource_counts) used ON used.resource_id = r.id
-)
-SELECT json_object(
-    'serviceNamespace', i.service_namespace, 'serviceName', c.service_name,
-    'spanCount', sum(c.span_count), 'errorSpanCount', sum(c.error_span_count),
-    'logCount', sum(c.log_count), 'errorLogCount', sum(c.error_log_count),
-    'metricCount', sum(c.metric_count), 'dataPointCount', sum(c.data_point_count),
-    'lastSeen', max(c.last_seen)::VARCHAR) AS entry
-FROM resource_counts c JOIN identities i ON i.id = c.resource_id
-GROUP BY i.service_namespace, c.service_name
-ORDER BY i.service_namespace, c.service_name`
+	return discovery.Services(discoveryQuery(query))
 }

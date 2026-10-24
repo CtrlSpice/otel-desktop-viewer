@@ -1,52 +1,103 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatDateTime } from '@/utils/time'
+  import { formatDateTimeParts } from '@/utils/time'
 
   type Props = {
     startMs: number
     endMs: number
     class?: string
-    /** Card styled like the chart selection overlay. */
-    variant?: 'inline' | 'legend'
   }
 
-  let {
-    startMs,
-    endMs,
-    class: className = '',
-    variant = 'inline',
-  }: Props = $props()
+  let { startMs, endMs, class: className = '' }: Props = $props()
 
   const timeContext = getTimeContext()
 
-  let startLabel = $derived(
-    formatDateTime(startMs, timeContext.tz, 'milliseconds')
-  )
-  let endLabel = $derived(formatDateTime(endMs, timeContext.tz, 'milliseconds'))
+  let start = $derived(formatDateTimeParts(startMs, timeContext.tz))
+  let end = $derived(formatDateTimeParts(endMs, timeContext.tz))
+  let sharedDate = $derived(start.date === end.date)
+  let sharedTimezone = $derived(start.timezone === end.timezone)
 </script>
 
-{#if variant === 'legend'}
-  <div
-    class="chart-selection-legend chart-selection-legend--stat chart-time-range-legend {className}"
-    aria-label="Chart time range"
-  >
-    <div class="chart-time-range-legend__row">
-      <span class="chart-time-range-legend__prefix">start:</span>
-      <span class="chart-time-range-legend__value">{startLabel}</span>
-    </div>
-    <div class="chart-time-range-legend__row">
-      <span class="chart-time-range-legend__prefix">end:</span>
-      <span class="chart-time-range-legend__value">{endLabel}</span>
-    </div>
+{#snippet endpoint(
+  label: string,
+  ms: number,
+  parts: ReturnType<typeof formatDateTimeParts>
+)}
+  <span class="time-range__endpoint">
+    <span class="time-range__label" aria-hidden="true">{label}</span>
+    <time
+      datetime={new Date(ms).toISOString()}
+      title={`${parts.date} ${parts.time} ${parts.timezone}`}
+      aria-label={`${label}: ${parts.date} ${parts.time} ${parts.timezone}`}
+    >
+      {#if !sharedDate}<span class="time-range__date">{parts.date}</span>{/if}
+      <span class="time-range__clock"
+        >{parts.time.slice(0, -4)}<span class="time-range__fraction"
+          >{parts.time.slice(-4)}</span
+        ></span
+      >
+      {#if !sharedTimezone}<span class="time-range__zone">{parts.timezone}</span
+        >{/if}
+    </time>
+  </span>
+{/snippet}
+
+<div class="time-range {className}" aria-label="Chart time range">
+  <div class="time-range__bounds">
+    {@render endpoint('Start', startMs, start)}
+    <span class="time-range__arrow" aria-hidden="true">→</span>
+    {@render endpoint('End', endMs, end)}
   </div>
-{:else}
-  <div
-    class="flex items-baseline gap-1.5 py-1.5 text-xs text-rp-subtle {className}"
-    aria-label="Chart time range"
-  >
-    <span class="text-xs text-rp-subtle">start:</span>
-    <span class="tabular-nums text-base-content">{startLabel}</span>
-    <span class="text-xs text-rp-subtle">end:</span>
-    <span class="tabular-nums text-base-content">{endLabel}</span>
-  </div>
-{/if}
+  {#if sharedDate || sharedTimezone}
+    <span class="time-range__context">
+      {#if sharedDate}<span>{start.date}</span>{/if}
+      {#if sharedDate && sharedTimezone}<span aria-hidden="true">·</span>{/if}
+      {#if sharedTimezone}<span>{start.timezone}</span>{/if}
+    </span>
+  {/if}
+</div>
+
+<style lang="postcss">
+  @reference "../../../app.css";
+
+  .time-range {
+    @apply flex min-w-0 flex-wrap items-center gap-2 text-xs leading-normal;
+  }
+
+  .time-range__bounds {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
+  }
+
+  .time-range__endpoint {
+    @apply inline-flex items-center gap-2;
+  }
+
+  .time-range__label {
+    color: var(--color-subtle);
+    font-size: var(--text-base);
+  }
+
+  time {
+    @apply inline-flex flex-wrap items-center gap-2 tabular-nums;
+  }
+
+  .time-range__clock {
+    @apply whitespace-nowrap font-medium text-base-content;
+  }
+
+  .time-range__fraction {
+    @apply font-normal;
+    color: var(--color-subtle);
+  }
+
+  .time-range__context {
+    @apply inline-flex items-center gap-2 whitespace-nowrap tabular-nums;
+    color: var(--color-subtle);
+  }
+
+  .time-range__date,
+  .time-range__zone,
+  .time-range__arrow {
+    color: var(--color-subtle);
+  }
+</style>

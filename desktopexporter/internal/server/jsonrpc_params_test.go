@@ -44,6 +44,8 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 		// Order in the object must not matter.
 		{"searchLogSummaries",
 			`{"endTime":"2","startTime":"1"}`, `["1","2"]`},
+		{"searchLogPage",
+			`{"offset":100,"pageSize":50,"endTime":"2","startTime":"1"}`, `["1","2",null,null,null,50,100]`},
 		// The wide one, fully populated, in a deliberately shuffled order.
 		{"getMetricView",
 			`{"tzName":"UTC","metricRef":"s","startTime":"1","endTime":"2",
@@ -82,7 +84,7 @@ func TestMetricNamedParamContracts(t *testing.T) {
 	}, methodParamNames["getMetricView"])
 	require.Equal(t, []string{
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
-		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesRefs", "tzName",
+		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesRefs", "tzName", "datapointRef",
 	}, methodParamNames["getMetricAggregateView"])
 }
 
@@ -152,7 +154,8 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 	// at all, or they are variadic: parseIDParams reads the whole params array
 	// as the id list, so there is no position that means one thing.
 	unnamed := map[string]bool{
-		"clearTraces": true, "clearLogs": true, "clearMetrics": true,
+		"rpc.discover": true,
+		"clearTraces":  true, "clearLogs": true, "clearMetrics": true,
 		"getStats":                      true,
 		"getImportConfig":               true,
 		"getTraceAttributeDefinitions":  true,
@@ -179,7 +182,7 @@ func dispatchedMethods() []string {
 		panic(err)
 	}
 	var out []string
-	for _, m := range regexp.MustCompile(`case "([a-zA-Z]+)":`).FindAllSubmatch(src, -1) {
+	for _, m := range regexp.MustCompile(`case "([a-zA-Z.]+)":`).FindAllSubmatch(src, -1) {
 		out = append(out, string(m[1]))
 	}
 	return out

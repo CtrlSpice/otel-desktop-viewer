@@ -1,12 +1,17 @@
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
+  import TableValueCell from '@/components/shared/TableValueCell.svelte'
+  import { columnLabel, type WaterfallColumn } from './waterfall-columns'
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
-  import { getServiceName } from '@/utils/resource'
-  import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+  import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
+  import SpanBar from '@/components/shared/SpanBar.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
   import TimelineMarkers from './TimelineMarkers.svelte'
+  import WaterfallTimeGuides from './WaterfallTimeGuides.svelte'
+  import type { WaterfallAxis } from './WaterfallTimeAxisHeader.svelte'
   import {
     BAR_LABEL_GAP_REM,
     DURATION_GUTTER_REM,
@@ -17,22 +22,26 @@
     clusterTimelineRecords,
   } from './timeline-markers'
   import { remToPx } from '@/state/panel-width'
+  import { columnCell, type SizedWaterfallColumn } from './waterfall-columns'
 
   type Props = {
     row: WaterfallRowData
-    barGridPercents: readonly number[]
     selected: boolean
     tabbable: boolean
     visible: boolean
     subtreeCollapsed: boolean
     rowIndex: number
     spanColWidth: number
-    serviceColWidth: number
+    optionalColumns?: SizedWaterfallColumn[]
     timelineWidth: number
+    timeAxis: WaterfallAxis
     traceStart: bigint
     traceEnd: bigint
     matched?: boolean
+    matchBefore?: boolean
+    matchAfter?: boolean
     onRowClick: () => void
+    onInspectColumn?: (column: WaterfallColumn) => void
     onToggleExpand: () => void
     onSelectTimelineRecord: (
       record: import('./timeline-markers').TimelineRecord
@@ -41,19 +50,22 @@
 
   let {
     row,
-    barGridPercents,
     selected,
     tabbable,
     visible,
     subtreeCollapsed,
     rowIndex,
     spanColWidth,
-    serviceColWidth,
+    optionalColumns = [],
     timelineWidth,
+    timeAxis,
     traceStart,
     traceEnd,
     matched = false,
+    matchBefore = false,
+    matchAfter = false,
     onRowClick,
+    onInspectColumn,
     onToggleExpand,
     onSelectTimelineRecord,
   }: Props = $props()
@@ -79,7 +91,6 @@
       : ''
   )
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
-  let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
 
   let hasChildren = $derived(row.tree.childrenCount > 0)
   let ariaLevel = $derived(row.spanNode.depth + 1)
@@ -99,14 +110,17 @@
 <!-- svelte-ignore a11y_no_redundant_roles -->
 <tr
   role="row"
-  class="waterfall-row"
+  class="waterfall-row item-state"
   class:table-row--selected={selected}
-  class:waterfall-row--error={row.isError}
   class:waterfall-row--matched={matched}
+  class:waterfall-row--joined-before={matched && matchBefore}
+  class:waterfall-row--joined-after={matched && matchAfter}
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
   tabindex={tabbable && visible ? 0 : -1}
-  onclick={onRowClick}
+  onclick={() => {
+    if (window.getSelection()?.isCollapsed !== false) onRowClick()
+  }}
   aria-hidden={!visible ? true : undefined}
   aria-level={ariaLevel}
   aria-rowindex={rowIndex}
@@ -115,61 +129,82 @@
 >
   <td
     role="rowheader"
-    class="waterfall-row__td-name p-0 pl-2 align-middle"
+    class="waterfall-row__td-name px-2 py-0 align-middle"
     style:width="{spanColWidth}px"
   >
-    <div class="flex min-w-0 items-center gap-1">
-      <WaterfallTreeGutter
-        depth={row.spanNode.depth}
-        tree={row.tree}
-        color={row.color}
-        {subtreeCollapsed}
-        {onToggleExpand}
+    <TreeRowIdentity
+      name={span.name}
+      depth={row.spanNode.depth}
+      tree={row.tree}
+      color={row.color}
+      {subtreeCollapsed}
+      onToggle={onToggleExpand}
+      toggleClass="waterfall-row__tree-toggle"
+      titleClass="waterfall-row__title text-base-content"
+    >
+      <TableValueCell
+        label="span field: name"
+        text={span.name}
+        inset={false}
+        onInspect={() =>
+          onInspectColumn
+            ? onInspectColumn({ source: 'span', key: 'name', field: true })
+            : onRowClick()}
       />
-      <span
-        class="waterfall-row__title truncate text-sm text-base-content"
-        title={span.name}
-      >
-        {span.name}
-      </span>
-      {#if matched}
-        <span
-          class="badge badge-xs badge-soft badge-primary waterfall-row__match flex-none"
-          >Match</span
+      {#snippet trailing()}
+        {#if cycleLabel}
+          <span
+            class="waterfall-row__cycle"
+            class:waterfall-row__cycle--cycle-point={row.spanNode.cyclePoint}
+            title={cycleLabel}
+            aria-label={cycleLabel}
+            role="img"
+          >
+            {#if row.spanNode.cyclePoint}
+              <HugeiconsIcon
+                icon={BiohazardIcon}
+                size="1em"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            {:else}
+              <span aria-hidden="true">{'\u26A0'}</span>
+            {/if}
+          </span>
+        {/if}
+        <span class="col-resize-marker" aria-hidden="true"></span>
+      {/snippet}
+    </TreeRowIdentity>
+  </td>
+  {#each optionalColumns as column (column.id)}
+    {@const cell = columnCell(span, column)}
+    <td
+      role="gridcell"
+      class="p-0 align-middle text-sm"
+      style:width="{column.width}px"
+      data-column-id={column.id}
+      title={cell.title}
+    >
+      {#if cell.missing}
+        <span class="waterfall-row__missing block truncate text-base-content/50"
+          >{cell.text}</span
         >
-      {/if}
-      {#if cycleLabel}
-        <span
-          class="waterfall-row__cycle"
-          class:waterfall-row__cycle--cycle-point={row.spanNode.cyclePoint}
-          title={cycleLabel}
-          aria-label={cycleLabel}
-          role="img"
+      {:else}
+        <TableValueCell
+          label={columnLabel(column)}
+          text={cell.text}
+          numeric={cell.numeric}
+          onInspect={() =>
+            onInspectColumn ? onInspectColumn(column) : onRowClick()}
         >
-          {#if row.spanNode.cyclePoint}
-            <HugeiconsIcon
-              icon={BiohazardIcon}
-              size="1em"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          {:else}
-            <span aria-hidden="true">{'\u26A0'}</span>
-          {/if}
-        </span>
+          {#if column.field && column.source === 'span' && ['traceId', 'spanId', 'parentSpanId'].includes(column.key)}<Identifier
+              value={cell.text}
+            />{:else}{cell.text}{/if}
+        </TableValueCell>
       {/if}
       <span class="col-resize-marker" aria-hidden="true"></span>
-    </div>
-  </td>
-  <td
-    role="gridcell"
-    class="waterfall-row__td-service p-0 align-middle text-sm"
-    title={serviceName}
-    style:width="{serviceColWidth}px"
-  >
-    <span class="block truncate pl-2 pr-1">{serviceName}</span>
-    <span class="col-resize-marker" aria-hidden="true"></span>
-  </td>
+    </td>
+  {/each}
   <td role="gridcell" class="waterfall-row__td-bar p-0 align-middle">
     <div
       class="waterfall-row__bar-area"
@@ -181,16 +216,12 @@
       style:--waterfall-bar-height="{WATERFALL_BAR_HEIGHT_REM}rem"
     >
       <div class="waterfall-row__timeline-frame">
-        <div
+        <WaterfallTimeGuides axis={timeAxis} />
+        <SpanBar
           class="waterfall-row__bar"
-          style:left="{row.offsetPercent}%"
-          style:width="{row.widthPercent}%"
-        ></div>
-        <div class="waterfall-row__bar-grid" aria-hidden="true">
-          {#each barGridPercents as p}
-            <div class="waterfall-row__grid-line" style:left="{p}%"></div>
-          {/each}
-        </div>
+          offsetPercent={row.offsetPercent}
+          widthPercent={row.widthPercent}
+        />
         <span
           class="waterfall-row__bar-label"
           style:left="calc({row.offsetPercent + row.widthPercent}% +
@@ -216,16 +247,12 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .waterfall-row {
-    @apply cursor-pointer border-none bg-transparent;
+    @apply cursor-pointer border-none;
     height: var(--table-row-h);
   }
 
-  .waterfall-row:hover {
-    background-color: var(--table-hover-bg);
-  }
-
-  .waterfall-row__title {
-    @apply min-w-0 flex-1;
+  .waterfall-row__missing {
+    padding-inline: var(--table-cell-inline-padding, 0.5rem);
   }
 
   /* Marks a span the cycle-aware walk recovered. flex-none so it survives the
@@ -241,10 +268,6 @@
     @apply text-error text-sm font-bold;
   }
 
-  .waterfall-row__td-service {
-    color: var(--color-base-content);
-  }
-
   .waterfall-row__bar-area {
     @apply relative flex items-center;
     height: var(--table-row-h);
@@ -256,61 +279,32 @@
     right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
 
-  /* `--bar-color` on the bar area tints the span pill. */
-  .waterfall-row__bar {
-    @apply absolute z-[1] rounded-full top-1/2 -translate-y-1/2 border-0 overflow-hidden;
-    height: var(--waterfall-bar-height);
-    min-width: 2px;
-    background-color: var(--bar-color);
-    opacity: var(--waterfall-bar-opacity, 0.7);
-    transition: opacity 0.12s ease;
-  }
-
-  .waterfall-row:hover .waterfall-row__bar {
-    opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.1));
-  }
-
-  .waterfall-row:global(.table-row--selected) .waterfall-row__bar {
-    opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.15));
-  }
-
-  .waterfall-row__bar-grid {
-    @apply pointer-events-none absolute inset-0 z-[2];
-  }
-
-  .waterfall-row__grid-line {
-    @apply absolute top-0 bottom-0 w-px -translate-x-1/2 bg-base-content/10;
-  }
-
   .waterfall-row__markers {
     @apply pointer-events-none absolute inset-0 z-20 overflow-visible;
   }
 
   .waterfall-row__bar-label {
-    @apply absolute z-[4] text-[9px] tabular-nums whitespace-nowrap leading-none;
+    @apply absolute z-[4] text-base tabular-nums whitespace-nowrap leading-none;
     top: 50%;
     transform: translateY(-50%);
     color: var(--color-base-content);
   }
 
-  .waterfall-row--error .waterfall-row__title {
-    @apply text-error;
-  }
-
   .waterfall-row--matched {
-    background-color: color-mix(
-      in oklab,
-      var(--color-primary) 12%,
-      transparent
-    );
+    --item-idle-bg: var(--color-highlight-high);
   }
 
-  .waterfall-row--matched:hover,
-  .waterfall-row--matched:global(.table-row--selected) {
-    background-color: color-mix(
-      in oklab,
-      var(--color-primary) 22%,
-      transparent
-    );
+  .waterfall-row--joined-before,
+  .waterfall-row--joined-before > td:first-child,
+  .waterfall-row--joined-before > td:last-child {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  .waterfall-row--joined-after,
+  .waterfall-row--joined-after > td:first-child,
+  .waterfall-row--joined-after > td:last-child {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 </style>

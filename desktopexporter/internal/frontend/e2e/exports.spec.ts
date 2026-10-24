@@ -12,7 +12,12 @@ const log: JsonLogData = {
   severityText: 'INFO',
   severityNumber: 9,
   body: { kind: 'double', value: '0x8000000000000000' },
-  resource: { attributes: [], droppedAttributesCount: 0 },
+  resource: {
+    attributes: [
+      { key: 'service.name', value: { kind: 'string', value: 'checkout-api' } },
+    ],
+    droppedAttributesCount: 0,
+  },
   scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
   attributes: [],
   droppedAttributesCount: 0,
@@ -22,17 +27,20 @@ const log: JsonLogData = {
 
 function rpcFixture(method: string) {
   if (method === 'getLog') return log
-  if (method === 'searchLogSummaries') {
-    return [
+  if (method === 'getLogErrorNavigation')
+    return { count: 0, index: null, previous: null, next: null }
+  if (method === 'searchLogSummaries' || method === 'searchLogPage') {
+    const logs = [
       {
         logRef,
         timestamp: log.timestamp,
-        serviceName: null,
+        serviceName: 'checkout-api',
         severityText: 'INFO',
         severityNumber: 9,
         bodyPreview: '-0',
       },
     ]
+    return method === 'searchLogPage' ? { total: logs.length, logs } : logs
   }
   if (method === 'getStats') {
     return {
@@ -68,7 +76,43 @@ test.beforeEach(async ({ page }) => {
     })
   })
   await page.goto(`/logs/${logRef}`)
-  await expect(page.getByRole('button', { name: 'Export log' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download log' })).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: 'Log record', exact: true })
+  ).toHaveCSS('border-radius', '12px')
+  const downloadInset = await page
+    .getByRole('region', { name: 'Log record', exact: true })
+    .evaluate(header => {
+      const top = header
+        .querySelector('.pane-header__top')!
+        .getBoundingClientRect()
+      const download = header
+        .querySelector('[aria-label="Download log"]')!
+        .getBoundingClientRect()
+      return top.right - download.right
+    })
+  expect(Math.abs(downloadInset)).toBeLessThan(1)
+  await expect(
+    page
+      .getByRole('region', { name: 'Log record', exact: true })
+      .getByRole('tab', { name: 'Properties', exact: true })
+  ).toHaveAttribute('aria-selected', 'true')
+  const darkest = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = 'var(--color-base-100)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'background-color',
+    darkest
+  )
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'border-width',
+    '0px'
+  )
 })
 
 test('downloads exact JSON bytes with one activation from the signal header', async ({
@@ -90,7 +134,7 @@ test('downloads exact JSON bytes with one activation from the signal header', as
       body,
     })
   })
-  const trigger = page.getByRole('button', { name: 'Export log' })
+  const trigger = page.getByRole('button', { name: 'Download log' })
   const style = await trigger.evaluate(element => ({
     radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
     width: element.getBoundingClientRect().width,
@@ -120,17 +164,17 @@ test('downloads exact JSON bytes with one activation from the signal header', as
 test('uses the shared tooltip style on hover and keyboard focus without clipping', async ({
   page,
 }) => {
-  const trigger = page.getByRole('button', { name: 'Export log', exact: true })
-  const placement = await trigger.evaluate(button => {
-    const rect = button.getBoundingClientRect()
-    const title = button
-      .closest('.pane-header')!
-      .querySelector('.pane-header__title')!
-      .getBoundingClientRect()
-    return { buttonRight: rect.right, titleLeft: title.left }
+  const trigger = page.getByRole('button', {
+    name: 'Download log',
+    exact: true,
   })
-  expect(placement.buttonRight).toBeLessThan(placement.titleLeft)
-  await expect(trigger).toHaveAttribute('data-tip', 'Export log')
+  const buttonBox = (await trigger.boundingBox())!
+  const titleBox = (await page
+    .getByRole('region', { name: 'Log record', exact: true })
+    .getByText('checkout-api', { exact: true })
+    .boundingBox())!
+  expect(buttonBox.x).toBeGreaterThan(titleBox.x + titleBox.width)
+  await expect(trigger).toHaveAttribute('data-tip', 'Download log')
   await expect(trigger).not.toHaveAttribute('title')
   await expect(trigger.locator('svg')).toHaveAttribute('aria-hidden', 'true')
   await trigger.hover()
@@ -175,7 +219,7 @@ test('shows an export failure instead of downloading an error document', async (
   )
   const downloads: string[] = []
   page.on('download', download => downloads.push(download.suggestedFilename()))
-  const trigger = page.getByRole('button', { name: 'Export log' })
+  const trigger = page.getByRole('button', { name: 'Download log' })
   await trigger.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('alert')).toContainText('export record not found')
@@ -196,7 +240,7 @@ test('export completion does not take focus back after the user moves it', async
     await responseReady
     await route.fulfill({ contentType: 'application/json', body: '{}' })
   })
-  const trigger = page.getByRole('button', { name: 'Export log' })
+  const trigger = page.getByRole('button', { name: 'Download log' })
   await trigger.focus()
   const downloaded = page.waitForEvent('download')
   await page.keyboard.press('Enter')

@@ -22,7 +22,8 @@
 				?::varchar[] as datapoint_series_ids,
 				-- Datapoint-series limit in response order; 0 means unlimited and
 				-- datapoint_series_ids takes precedence.
-				?::bigint as datapoint_series_limit
+				?::bigint as datapoint_series_limit,
+				?::varchar as contribution_id
 		),
 		selected_metric as (
 			select s.*, r.schema_url as resource_schema_url,
@@ -1029,6 +1030,48 @@
 			left join agg_q_picked p on p.bucket_start = t.bucket_start and p.q = t.q and p.rn = 1
 			group by t.bucket_start
 		),
+		-- Project one source's activity through the SAME two zero folds and scale
+		-- alignment as its containing aggregate. Filtering before hist_activity
+		-- would lose the cumulative predecessor and falsely show a raw snapshot.
+		contribution_series_fold as (
+			select p.*, m.zero_threshold as series_zero_threshold,
+				zero_fold(p.pos_p, coalesce(p.pos_target_offset, 0),
+					m.zero_threshold, p.target_scale) as pos_fold,
+				zero_fold(p.neg_p, coalesce(p.neg_target_offset, 0),
+					m.zero_threshold, p.target_scale) as neg_fold
+			from hist_activity p
+			join hist_merged m using (series_id, bucket_start)
+			where p.id::varchar = (select contribution_id from input)
+			  and m.distinct_bounds <= 1
+		),
+		contribution_scaled as (
+			select p.*, a.scale as aggregate_scale,
+				a.zero_threshold as aggregate_zero_threshold,
+				downscale_exp_buckets(p.pos_fold.counts, p.pos_fold.offset,
+					p.target_scale - a.scale) as contribution_pos,
+				downscale_exp_buckets(p.neg_fold.counts, p.neg_fold.offset,
+					p.target_scale - a.scale) as contribution_neg
+			from contribution_series_fold p
+			join agg_folds a using (bucket_start)
+			where a.distinct_bounds <= 1
+		),
+		contribution_folded as (
+			select p.*,
+				zero_fold(p.contribution_pos.counts, p.contribution_pos.offset,
+					p.aggregate_zero_threshold, p.aggregate_scale) as final_pos,
+				zero_fold(p.contribution_neg.counts, p.contribution_neg.offset,
+					p.aggregate_zero_threshold, p.aggregate_scale) as final_neg
+			from contribution_scaled p
+		),
+		contribution_agg as (
+			select to_json(list(metric_aggregate_bucket_view_json(
+				p.bucket_start, p.start_time, p.count, p.sum, p.aggregate_scale,
+				p.aggregate_zero_threshold,
+				p.zero_count + p.pos_fold.folded + p.neg_fold.folded,
+				p.final_pos, p.final_neg, p.explicit_bounds, p.bucket_counts, null
+			))) as contribution
+			from contribution_folded p
+		),
 		aggregate_agg as (
 			select to_json(list(metric_aggregate_bucket_view_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
@@ -1072,6 +1115,9 @@
 {{- end}}
 			-- NULL means no histogram merge; [] means a merge with no output buckets.
 			'aggregate', {{if .NoHistogramMerge}}null{{else}}(select aggregate from aggregate_agg){{end}},
+{{- if .ContributionID}}
+			'contribution', coalesce((select contribution from contribution_agg), json('[]')),
+{{- end}}
 			-- Scalar pools use the per-series bucket shape. Histograms emit empty pools.
 			'scalarAggregate', {{if .NoScalarPools}}json_object(
 				'selected', json('[]'),

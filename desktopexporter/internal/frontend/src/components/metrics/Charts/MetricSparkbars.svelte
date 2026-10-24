@@ -7,7 +7,7 @@
     buckets: number[]
     height?: number
     width?: number
-    /** Bar fill — use `metricTypeSeriesColor()` to match type badge */
+    /** Bar fill matches its plotted series. */
     seriesColor?: string
   }
 
@@ -48,7 +48,7 @@
   />
 {:else}
   <div
-    class="flex items-center justify-center text-base-content/30 text-[0.6rem]"
+    class="flex items-center justify-center text-base-content/30 text-base"
     style:height="{height}px"
   >
     —

@@ -21,6 +21,7 @@ import (
 // reach the production store and be discoverable through its existing query API.
 func TestFileImportThroughOTLPHTTP(t *testing.T) {
 	viewer, traces, logs, metrics := startAttributeIntegration(t)
+	redactedTraces, redactedLogs, redactedMetrics := startRedaction(t, traces, logs, metrics)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	address := listener.Addr().String()
@@ -30,11 +31,11 @@ func TestFileImportThroughOTLPHTTP(t *testing.T) {
 	cfg.Protocols.GRPC = configoptional.None[configgrpc.ServerConfig]()
 	cfg.Protocols.HTTP.GetOrInsertDefault().ServerConfig.NetAddr.Endpoint = address
 	set := receivertest.NewNopSettings(factory.Type())
-	tr, err := factory.CreateTraces(t.Context(), set, cfg, traces)
+	tr, err := factory.CreateTraces(t.Context(), set, cfg, redactedTraces)
 	require.NoError(t, err)
-	lr, err := factory.CreateLogs(t.Context(), set, cfg, logs)
+	lr, err := factory.CreateLogs(t.Context(), set, cfg, redactedLogs)
 	require.NoError(t, err)
-	mr, err := factory.CreateMetrics(t.Context(), set, cfg, metrics)
+	mr, err := factory.CreateMetrics(t.Context(), set, cfg, redactedMetrics)
 	require.NoError(t, err)
 	for _, receiver := range []component.Component{tr, lr, mr} {
 		require.NoError(t, receiver.Start(t.Context(), componenttest.NewNopHost()))

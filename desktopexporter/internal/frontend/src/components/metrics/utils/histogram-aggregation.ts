@@ -135,12 +135,11 @@ export const QUANTILE_LABELS: { key: string; label: string }[] = [
   { key: '0.99', label: 'p99' },
 ]
 
+export const QUANTILE_LABELS_DESCENDING = [...QUANTILE_LABELS].reverse()
+
 export function quantileKeyFromValue(q: number): string {
   return String(q)
 }
-
-/** Default quantile overlay when opening the Quantiles tab (p50). */
-export const DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY = quantileKeyFromValue(0.5)
 
 export function quantileSeriesKey(
   seriesKey: string,
@@ -353,6 +352,7 @@ export function histogramSliceToChartDatapoint(
     sum: normalized.totals.sum,
     min: normalized.totals.min,
     max: normalized.totals.max,
+    quantiles: normalized.quantiles ?? null,
     aggregationTemporalityCode: temporalityCode,
     aggregationTemporality: temporality,
   }

@@ -15,7 +15,9 @@ expression { condition | AndExpression | OrExpression }
 AndExpression { expression !and And expression }
 OrExpression { expression !or Or expression }
 
-condition { Group | Comparison | FreeText }
+condition { Group | Comparison | GlobalText | FreeText }
+
+GlobalText { Word "(" QuotedString ")" }
 
 FreeText { Word | Null }
 

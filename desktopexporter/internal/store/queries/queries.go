@@ -100,6 +100,9 @@ const (
 	SearchMetricSummaries Name = "metrics/search_summaries.sql"
 	// SearchLogSummaries lists log summaries for the logs list view.
 	SearchLogSummaries Name = "logs/search_log_summaries.sql"
+	// SearchLogPage returns one bounded page and its matching result count.
+	SearchLogPage         Name = "logs/search_log_page.sql"
+	GetLogErrorNavigation Name = "logs/get_error_navigation.sql"
 )
 
 // queryNames is every read-path query. Kept beside the constants so adding one
@@ -108,7 +111,7 @@ var queryNames = []Name{
 	GetTraceView, SalvageSpans, SearchTraceSummaries, GetTraceOverview, GetSpanSummaries, GetSpan, GetTraceOTLP,
 	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributeDefinitions,
 	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs, GetLogAttributeDefinitions,
-	SearchMetricSummaries, SearchLogSummaries,
+	SearchMetricSummaries, SearchLogSummaries, SearchLogPage, GetLogErrorNavigation,
 }
 
 // Names returns every registered read-path query, so callers that need to

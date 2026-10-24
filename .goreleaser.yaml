@@ -5,6 +5,7 @@ partial:
 
 env:
   - CGO_ENABLED=1
+  - EVALS=0
 
 before:
   hooks:
@@ -147,11 +148,13 @@ release:
     delete it, or pass a different `--db`. Nothing is migrated and nothing is
     silently reinterpreted.
 
-    **This release crosses that line from 0.4.x.** Databases written by 0.4.x
-    will not open. If you run with `--db` and want to keep looking at what is
-    in there, keep a 0.4.x binary around; otherwise delete the file and let
-    0.5.0 make a new one. Running without `--db` is unaffected, since that is
-    in-memory and starts empty every time.
+    **0.6.0 uses schema 24.** Databases from 0.5.x and earlier will not open.
+    To keep viewing an older database, use its original binary. Start 0.6.0
+    with a new `--db` path, or delete the old file if you no longer need it.
+    Running without `--db` is unaffected: it starts with an empty in-memory store.
+
+    Public releases exclude Evals. Source builds can include it with
+    `make build EVALS=1`; both variants use the same schema.
 
   footer: >-
     ---

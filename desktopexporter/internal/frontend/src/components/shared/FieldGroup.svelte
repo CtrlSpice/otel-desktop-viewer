@@ -1,21 +1,29 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { ChevronDownIcon } from '@hugeicons/core-free-icons'
+  import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 
   type Props = {
     label: string
+    /** Shared names make native details mutually exclusive. */
+    name?: string
     /** Optional icon rendered before the heading. */
     icon?: Snippet
     /** Optional snippet replacing the default label text with rich content. */
     heading?: Snippet
-    /** Header row action (e.g. nav link). Uses a separate expand control — not nested in summary. */
+    /** Custom header content, including existing links or controls. */
     headerAction?: Snippet
     /** Optional badge before the count (e.g. event offset). */
     badge?: string
     count?: number
-    /** Detail panels align headings and field rows to a shared 16px inset. */
+    /** Visible unit inside the count badge; defaults to the group label. */
+    countLabel?: string
+    /** Detail headings use the same inset as the field cards. */
     detail?: boolean
+    /** Keep disclosure headings on the surrounding surface. */
+    bare?: boolean
+    /** Use the same rounded, interactive surface as signal summary cards. */
+    card?: boolean
     open?: boolean
     /** When set, parent owns `open` (e.g. a Set membership). */
     onOpenChange?: (open: boolean) => void
@@ -24,12 +32,16 @@
 
   let {
     label,
+    name,
     icon,
     heading,
     headerAction,
     badge,
     count,
+    countLabel,
     detail = false,
+    bare = false,
+    card = false,
     open = $bindable(true),
     onOpenChange,
     children,
@@ -47,74 +59,48 @@
   {:else}
     <span>{label}</span>
   {/if}
-  {#if badge}
-    <span class="badge-count">{badge}</span>
-  {/if}
-  {#if count !== undefined}
-    <span class="badge-count">{count}</span>
+  {#if badge || count !== undefined}
+    <span class="field-group__badges">
+      {#if badge}<span class="badge-count">{badge}</span>{/if}
+      {#if count !== undefined}
+        <span class="badge-count shrink-0"
+          >{count} {countLabel ?? label.toLowerCase()}</span
+        >
+      {/if}
+    </span>
   {/if}
 {/snippet}
 
-{#if headerAction}
-  <div
-    class="field-group"
-    class:field-group--detail={detail}
-    class:field-group--open={open}
-  >
-    <div class="field-group__header-row">
-      {@render headerAction()}
-      <button
-        type="button"
-        class="field-group__caret-btn tooltip tooltip-left"
-        aria-expanded={open}
-        aria-label="{open ? 'Collapse' : 'Expand'} {label}"
-        data-tip="{open ? 'Collapse' : 'Expand'} {label}"
-        onclick={() => setOpen(!open)}
-      >
-        <HugeiconsIcon
-          icon={ChevronDownIcon}
-          size="1em"
-          strokeWidth={1.5}
-          class="field-group__caret"
-          aria-hidden="true"
-        />
-      </button>
-    </div>
-    {#if open}
-      <div class="field-group__content">
-        {@render children()}
-      </div>
+<details
+  class="field-group"
+  {name}
+  class:field-group--detail={detail}
+  class:field-group--bare={bare}
+  class:field-group--card={card}
+  {open}
+  ontoggle={e => setOpen(e.currentTarget.open)}
+>
+  <summary class="field-group__heading" class:item-state={card || detail}>
+    {#if detail}
+      <span class="field-group__caret" aria-hidden="true">
+        <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={1.5} />
+      </span>
     {/if}
-  </div>
-{:else}
-  <details
-    class="field-group"
-    class:field-group--detail={detail}
-    {open}
-    ontoggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-  >
-    <summary class="field-group__heading">
-      {#if icon}
-        {@render icon()}
-        <span class="field-group__heading-content">
-          {@render headingBody()}
-        </span>
-      {:else}
+    {#if headerAction}
+      {@render headerAction()}
+    {:else if icon}
+      {@render icon()}
+      <span class="field-group__heading-content">
         {@render headingBody()}
-      {/if}
-      <HugeiconsIcon
-        icon={ChevronDownIcon}
-        size="1em"
-        strokeWidth={1.5}
-        class="field-group__caret"
-        aria-hidden="true"
-      />
-    </summary>
-    <div class="field-group__content">
-      {@render children()}
-    </div>
-  </details>
-{/if}
+      </span>
+    {:else}
+      {@render headingBody()}
+    {/if}
+  </summary>
+  <div class="field-group__content">
+    {@render children()}
+  </div>
+</details>
 
 <style lang="postcss">
   @reference "../../app.css";
@@ -122,21 +108,19 @@
   .field-group {
     @apply border-b-0;
     --fg-inline: var(--field-group-inline, 0.75rem);
-    --fg-caret-size: 0.875rem;
   }
 
   .field-group--detail {
-    --field-group-inline: 1rem;
+    --field-group-inline: var(--pane-inline-inset);
   }
-
-  /* The FieldGroup inset is the single horizontal boundary for detail rows. */
-  .field-group--detail
-    .field-group__content
-    :global(.detail-fields .detail-cell),
-  .field-group--detail
-    .field-group__content
-    :global(.detail-fields .detail-cell--badges) {
-    padding-inline: 0;
+  .field-group--bare {
+    --field-group-inline: 0;
+  }
+  .field-group--detail > .field-group__heading {
+    @apply my-1 rounded-xl font-normal;
+  }
+  .field-group--detail:not(.field-group--bare) > .field-group__heading {
+    --item-idle-bg: var(--color-base-200);
   }
 
   /* Content aligns with heading inset (icon or label). */
@@ -144,31 +128,8 @@
     padding-inline: var(--fg-inline);
     @apply pb-2 pt-0;
   }
-
-  .field-group__header-row {
-    padding-inline: var(--fg-inline);
-    @apply flex items-center gap-1.5 py-1.5;
-  }
-
-  .field-group__header-row :global(.field-group__caret) {
-    width: var(--fg-caret-size);
-    height: var(--fg-caret-size);
-    @apply shrink-0 transition-transform duration-150;
-    color: var(--color-muted);
-    transform: rotate(-90deg);
-  }
-
-  .field-group--open .field-group__header-row :global(.field-group__caret) {
-    transform: rotate(0deg);
-  }
-
-  .field-group__caret-btn {
-    @apply btn btn-ghost btn-square btn-xs shrink-0 border-transparent shadow-none;
-    color: var(--color-muted);
-  }
-
-  .field-group__caret-btn:hover {
-    @apply bg-base-200/80 text-base-content;
+  .field-group--detail > .field-group__content {
+    padding-inline: 0;
   }
 
   .field-group__heading {
@@ -180,21 +141,25 @@
   .field-group__heading-content {
     @apply flex min-w-0 flex-1 items-center gap-2;
   }
+  .field-group__caret {
+    @apply flex shrink-0 self-start items-center text-base-content;
+    min-height: 1.5em;
+  }
+  .field-group[open] > .field-group__heading > .field-group__caret {
+    transform: rotate(90deg);
+  }
+
+  .field-group__badges {
+    @apply ml-auto flex shrink-0 items-center justify-end gap-2;
+  }
+
+  .field-group--card > .field-group__heading {
+    --item-idle-bg: var(--color-base-100);
+    @apply rounded-xl px-3 py-2.5 font-normal text-base-content;
+  }
 
   .field-group__heading::marker,
   .field-group__heading::-webkit-details-marker {
     display: none;
-  }
-
-  .field-group__heading :global(.field-group__caret) {
-    width: var(--fg-caret-size);
-    height: var(--fg-caret-size);
-    @apply ml-auto transition-transform duration-150;
-    color: var(--color-muted);
-    transform: rotate(-90deg);
-  }
-
-  .field-group[open] > .field-group__heading :global(.field-group__caret) {
-    transform: rotate(0deg);
   }
 </style>

@@ -5,13 +5,19 @@ import LogsPage from './LogsPage.svelte'
 import type { LogSummary, LogData, Stats } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-const { searchLogSummaries, getLog, getStats, getLogAttributeDefinitions } =
-  vi.hoisted(() => ({
-    searchLogSummaries: vi.fn(),
-    getLog: vi.fn(),
-    getStats: vi.fn(),
-    getLogAttributeDefinitions: vi.fn(),
-  }))
+const {
+  searchLogPage,
+  getLog,
+  getStats,
+  getLogAttributeDefinitions,
+  getLogErrorNavigation,
+} = vi.hoisted(() => ({
+  searchLogPage: vi.fn(),
+  getLog: vi.fn(),
+  getStats: vi.fn(),
+  getLogAttributeDefinitions: vi.fn(),
+  getLogErrorNavigation: vi.fn(),
+}))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
   const actual =
@@ -20,10 +26,11 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
-      searchLogSummaries,
+      searchLogPage,
       getLog,
       getStats,
       getLogAttributeDefinitions,
+      getLogErrorNavigation,
     },
   }
 })
@@ -74,15 +81,22 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
-  searchLogSummaries.mockReset()
+  searchLogPage.mockReset()
   getLog.mockReset()
   getStats.mockReset()
   getLogAttributeDefinitions.mockReset()
   getLogAttributeDefinitions.mockResolvedValue([])
+  getLogErrorNavigation.mockReset()
+  getLogErrorNavigation.mockResolvedValue({
+    count: 0,
+    index: null,
+    previous: null,
+    next: null,
+  })
 })
 
 async function renderSelectedLog() {
-  searchLogSummaries.mockResolvedValue([makeLogSummary()])
+  searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
   getStats.mockResolvedValue(makeStats())
   getLog.mockResolvedValue(makeLogData('payment declined'))
   setTestUrl('/logs/log-1')
@@ -91,9 +105,19 @@ async function renderSelectedLog() {
 }
 
 describe('LogsPage refresh', () => {
-  it('queries the list with null bounds for the default All selection', async () => {
+  it('queries all logs with numeric severity descending by default', async () => {
     await renderSelectedLog()
-    expect(searchLogSummaries).toHaveBeenCalledWith(null, null, undefined)
+    expect(searchLogPage).toHaveBeenCalledWith(
+      null,
+      null,
+      100,
+      0,
+      undefined,
+      undefined,
+      { field: 'severity', direction: 'desc' },
+      [],
+      expect.any(AbortSignal)
+    )
   })
 
   it('refetches the open record, not just the list', async () => {
@@ -103,24 +127,24 @@ describe('LogsPage refresh', () => {
     refresh.click()
 
     await waitFor(() =>
-      expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1)
+      expect(searchLogPage.mock.calls.length).toBeGreaterThan(1)
     )
     await waitFor(() => expect(getLog).toHaveBeenCalledTimes(2))
   })
 
   it('does not refetch a record nobody has selected', async () => {
-    searchLogSummaries.mockResolvedValue([makeLogSummary()])
+    searchLogPage.mockResolvedValue({ logs: [], total: 0 })
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(makeLogData('payment declined'))
     setTestUrl('/logs')
     renderWithContexts(LogsPage)
-    await waitFor(() => expect(searchLogSummaries).toHaveBeenCalled())
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalled())
 
     const refresh = screen.getByRole('button', { name: /refresh/i })
     refresh.click()
 
     await waitFor(() =>
-      expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1)
+      expect(searchLogPage.mock.calls.length).toBeGreaterThan(1)
     )
     // A detail fetch with no selection would race the pane's empty state.
     expect(getLog).not.toHaveBeenCalled()
@@ -128,8 +152,45 @@ describe('LogsPage refresh', () => {
 })
 
 describe('LogsPage direct selection outside the list range', () => {
+  it('keeps original resource and scope keys inline with separate provenance badges', async () => {
+    const log = makeLogData('flat record')
+    log.resource.attributes = [
+      { key: 'service.name', value: { kind: 'string', value: 'checkout-api' } },
+    ]
+    log.scope.name = 'test-scope'
+    log.scope.version = '1.2'
+    searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
+    getStats.mockResolvedValue(makeStats())
+    getLog.mockResolvedValue(log)
+    setTestUrl('/logs/log-1')
+    renderWithContexts(LogsPage)
+    const table = await screen.findByRole('table', { name: 'Log fields' })
+    for (const [key, origin, value] of [
+      ['service.name', 'resource', 'checkout-api'],
+      ['name', 'scope', 'test-scope'],
+      ['version', 'scope', '1.2'],
+    ]) {
+      const row = table.querySelector(`[data-field="${key}"]`)!
+      expect(row.querySelector('.detail-property__key')).toHaveTextContent(key!)
+      expect(row.querySelector('.detail-property__origin')).toHaveTextContent(
+        origin!
+      )
+      expect(row.querySelector('.detail-property__type')).toHaveTextContent(
+        'string'
+      )
+      expect(row.querySelector('.detail-property__body')).toHaveTextContent(
+        value!
+      )
+    }
+    expect(table).not.toHaveTextContent('resource.service.name')
+    expect(log.resource.attributes[0]!.key).toBe('service.name')
+    expect(table.closest('details')).toBeNull()
+    expect(screen.queryByText('Resource', { selector: 'summary' })).toBeNull()
+    expect(screen.queryByText('Scope', { selector: 'summary' })).toBeNull()
+  })
+
   it('keeps the requested ID and renders its fetched detail', async () => {
-    searchLogSummaries.mockResolvedValue([])
+    searchLogPage.mockResolvedValue({ logs: [], total: 0 })
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(makeLogData('outside current range'))
     setTestUrl('/logs/log-1?start=1&end=2')

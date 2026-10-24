@@ -11,7 +11,7 @@ function renderComponent() {
 }
 
 async function openTimezoneOptions() {
-  const heading = screen.getByText('Timezone').closest('summary')
+  const heading = screen.getByText('Timezone:').closest('summary')
   if (!heading) throw new Error('Timezone heading not found')
   const details = heading.closest('details')
   if (!details) throw new Error('Timezone details not found')
@@ -33,11 +33,16 @@ describe('TimeRangeFilterBody', () => {
     vi.useRealTimers()
   })
 
-  it('renders the custom range, timezone, and recents sections', () => {
+  it('keeps the custom range visible without a section heading or collapse control', () => {
     renderComponent()
-    expect(screen.getByText('Custom Range')).toBeInTheDocument()
-    expect(screen.getByText('Timezone')).toBeInTheDocument()
-    expect(screen.getByText('Recent')).toBeInTheDocument()
+    expect(screen.queryByText('Custom Range')).not.toBeInTheDocument()
+    const start = screen.getByLabelText('Start')
+    expect(start).toBeVisible()
+    expect(start.closest('details')).toBeNull()
+    expect(screen.getByLabelText('End')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Apply range' })).toBeVisible()
+    expect(screen.getByText('Timezone:')).toBeInTheDocument()
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument()
   })
 
   it('switches the timezone from local to UTC', async () => {
@@ -51,6 +56,25 @@ describe('TimeRangeFilterBody', () => {
     expect(localStorage.getItem('time-tz')).toBe('UTC')
   })
 
+  it('orders the timezone header as label, current timezone, and globe', () => {
+    renderComponent()
+    const heading = screen.getByText('Timezone:').closest('summary')!
+    const [label, timezone, globe] = heading.children
+    expect(globe).toHaveClass('timezone-icon')
+    expect(label).toHaveTextContent('Timezone:')
+    expect(timezone).toHaveClass('timezone-summary')
+    expect(timezone.textContent).not.toBe('')
+  })
+
+  it('places Timezone before Apply', () => {
+    renderComponent()
+    const timezone = screen.getByText('Timezone:').closest('details')!
+    const apply = screen.getByRole('button', { name: 'Apply range' })
+    expect(
+      timezone.compareDocumentPosition(apply) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   it('marks the machine timezone option as local', async () => {
     renderComponent()
     await openTimezoneOptions()
@@ -59,15 +83,63 @@ describe('TimeRangeFilterBody', () => {
     ).toBeInTheDocument()
   })
 
-  it('places local and UTC before a separator and named timezones', async () => {
+  it('sorts local and UTC with the other timezone choices', async () => {
     renderComponent()
     await openTimezoneOptions()
     const list = screen.getByLabelText('Timezone options')
-    const options = list.querySelectorAll('button')
-    expect(options[0]).toHaveAccessibleName(/\(Local\)/)
-    expect(options[1]).toHaveAccessibleName('Coordinated Universal Time UTC')
-    expect(options[2]).toHaveTextContent('/')
-    expect(list.children[2]).toHaveAttribute('role', 'separator')
+    const labels = [...list.querySelectorAll('.tz-name')].map(
+      element => element.textContent!
+    )
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)))
+    expect(
+      labels.findIndex(label => label.includes('(Local)'))
+    ).toBeGreaterThan(0)
+    expect(labels.indexOf('Coordinated Universal Time')).toBeGreaterThan(0)
+    expect(list.querySelector('[role="separator"]')).toBeNull()
+  })
+
+  it('filters local and UTC by keyword, zone name, and long name', async () => {
+    localStorage.setItem('time-tz', 'UTC')
+    renderComponent()
+    await openTimezoneOptions()
+    const filter = screen.getByRole('searchbox', { name: 'Filter timezones' })
+    const list = screen.getByLabelText('Timezone options')
+
+    await fireEvent.input(filter, { target: { value: 'local' } })
+    expect(list.querySelectorAll('button')).toHaveLength(1)
+    await fireEvent.click(screen.getByRole('button', { name: /\(Local\)/ }))
+    expect(localStorage.getItem('time-tz')).toBe('local')
+
+    await fireEvent.input(filter, { target: { value: 'new york' } })
+    expect(
+      screen.getByRole('button', { name: /\(Local\)/ })
+    ).toBeInTheDocument()
+
+    await fireEvent.input(filter, { target: { value: 'EST' } })
+    expect(
+      await screen.findByRole('button', { name: /\(Local\)/ })
+    ).toBeInTheDocument()
+
+    await fireEvent.input(filter, { target: { value: 'UTC' } })
+    expect(
+      screen.getByRole('button', { name: 'Coordinated Universal Time UTC' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /\(Local\)/ })
+    ).not.toBeInTheDocument()
+
+    await fireEvent.input(filter, {
+      target: { value: 'coordinated universal' },
+    })
+    expect(list.querySelectorAll('button')).toHaveLength(1)
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Coordinated Universal Time UTC' })
+    )
+    expect(localStorage.getItem('time-tz')).toBe('UTC')
+
+    await fireEvent.input(filter, { target: { value: 'no-such-timezone' } })
+    expect(list.querySelectorAll('button')).toHaveLength(0)
+    expect(screen.getByText('No matching timezones')).toBeInTheDocument()
   })
 
   it('selects and persists a named IANA timezone from the list', async () => {
@@ -115,6 +187,12 @@ describe('TimeRangeFilterBody', () => {
     expect(
       screen.queryByRole('button', { name: /^America\/Chicago/ })
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /\(Local\)/ })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Coordinated Universal Time UTC' })
+    ).not.toBeInTheDocument()
 
     await fireEvent.input(filter, { target: { value: 'PWT' } })
     expect(
@@ -158,6 +236,16 @@ describe('TimeRangeFilterBody', () => {
     expect(
       screen.getByRole('button', { name: 'America/Los_Angeles PST' })
     ).toBeInTheDocument()
+    await fireEvent.input(
+      screen.getByRole('searchbox', { name: 'Filter timezones' }),
+      { target: { value: 'pacific standard time' } }
+    )
+    expect(
+      screen.getByRole('button', { name: 'America/Los_Angeles PST' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /\(Local\)/ })
+    ).not.toBeInTheDocument()
   })
 
   it('scrolls the selected timezone into view when opened', async () => {

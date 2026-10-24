@@ -1,10 +1,10 @@
 export type ExportSignal = 'trace' | 'log' | 'metric'
 
-export async function downloadOTLP(
+async function fetchOTLP(
   signal: ExportSignal,
   id: string,
   abortSignal: AbortSignal
-): Promise<void> {
+): Promise<Response> {
   const contentType = 'application/json'
   const response = await fetch(`/export/${signal}s/${encodeURIComponent(id)}`, {
     signal: abortSignal,
@@ -20,6 +20,27 @@ export async function downloadOTLP(
   ) {
     throw new Error('The viewer returned an unexpected export format')
   }
+  return response
+}
+
+/** Preserve the exact JSON text, including 64-bit values and signed zero. */
+export async function readOTLPText(
+  signal: ExportSignal,
+  id: string,
+  abortSignal: AbortSignal
+): Promise<string> {
+  const response = await fetchOTLP(signal, id, abortSignal)
+  const text = await response.text()
+  abortSignal.throwIfAborted()
+  return text
+}
+
+export async function downloadOTLP(
+  signal: ExportSignal,
+  id: string,
+  abortSignal: AbortSignal
+): Promise<void> {
+  const response = await fetchOTLP(signal, id, abortSignal)
   // Keep response bytes intact: JSON.parse/stringify would turn -0 into 0.
   const blob = await response.blob()
   abortSignal.throwIfAborted()

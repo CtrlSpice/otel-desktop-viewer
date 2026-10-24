@@ -1,0 +1,10 @@
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "evals.enabled": {
+      "state": "ENABLED",
+      "variants": { "off": false, "on": true },
+      "defaultVariant": "off"
+    }
+  }
+}

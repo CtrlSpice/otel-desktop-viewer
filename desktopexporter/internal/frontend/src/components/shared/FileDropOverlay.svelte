@@ -69,7 +69,7 @@
           />
         </div>
         <p class="grow-0 text-base font-semibold text-base-content">
-          Drop OTLP JSON files to import
+          Drop telemetry or evaluation JSON / JSONL files to import
         </p>
       </div>
     </div>

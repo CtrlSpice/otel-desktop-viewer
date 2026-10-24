@@ -1,39 +1,50 @@
 import { describe, expect, it } from 'vitest'
 import {
   acquireColor,
+  releaseColor,
   remapColorAssignments,
   seedColorAssignments,
   syncColorAssignments,
 } from './metric-timeseries-colors'
 
 describe('metric timeseries colours', () => {
-  it('seeds in legend order and preserves existing assignments while reconciling', () => {
+  it('retains slots while hiding, reconciling and restoring native series keys', () => {
     const assigned = seedColorAssignments(
       ['a', 'b', 'c'],
       new Set(['two', 'three']),
-      ['one', 'two', 'three']
+      ['one', 'two', 'three'],
+      'metric:seed-test'
     )
-    expect([...assigned]).toEqual([
-      ['two', 'a'],
-      ['three', 'b'],
-    ])
+    const two = assigned.get('two')
+    const three = assigned.get('three')
+    expect(two).not.toBe(three)
 
-    syncColorAssignments(['a', 'b', 'c'], assigned, new Set(['one', 'three']), [
-      'one',
-      'two',
-      'three',
-    ])
-    expect([...assigned]).toEqual([
-      ['three', 'b'],
-      ['one', 'a'],
-    ])
+    syncColorAssignments(
+      ['a', 'b', 'c'],
+      assigned,
+      new Set(['one', 'three']),
+      ['one', 'two', 'three'],
+      'metric:seed-test'
+    )
+    expect(assigned.has('two')).toBe(false)
+    expect(assigned.get('three')).toBe(three)
+    expect(assigned.get('one')).not.toBe(two)
+    releaseColor(assigned, 'one')
+    expect(
+      acquireColor(['a', 'b', 'c'], assigned, 'two', 'metric:seed-test')
+    ).toBe(two)
   })
 
   it('reuses the approved pool deterministically after exhaustion', () => {
     const assigned = new Map<string, string>()
-    expect(acquireColor(['a', 'b'], assigned, 'one')).toBe('a')
-    expect(acquireColor(['a', 'b'], assigned, 'two')).toBe('b')
-    expect(acquireColor(['a', 'b'], assigned, 'three')).toBe('a')
+    const one = acquireColor(['a', 'b'], assigned, 'one', 'metric:reuse-test')
+    const two = acquireColor(['a', 'b'], assigned, 'two', 'metric:reuse-test')
+    expect(one).not.toBe(two)
+    expect(['a', 'b']).toContain(
+      acquireColor(['a', 'b'], assigned, 'three', 'metric:reuse-test')
+    )
+    expect(assigned.get('one')).toBe(one)
+    expect(assigned.get('two')).toBe(two)
     expect(acquireColor([], assigned, 'four')).toBeNull()
   })
 

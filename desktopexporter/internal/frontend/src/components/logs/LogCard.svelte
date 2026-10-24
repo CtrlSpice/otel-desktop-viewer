@@ -2,22 +2,26 @@
   import type { LogSummary } from '@/types/api-types'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import { formatTimestampParts } from '@/utils/time'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import SignalDate from '@/components/shared/SignalDate.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
 
   type Props = {
     log: LogSummary
     selected?: boolean
+    showLogBadge?: boolean
+    offset?: string
     onclick?: (id: string) => void
+    href?: string
   }
 
-  let { log, selected = false, onclick }: Props = $props()
-
-  const timeContext = getTimeContext()
-
-  let timestampParts = $derived(
-    formatTimestampParts(log.timestamp, timeContext.tz, 'milliseconds')
-  )
+  let {
+    log,
+    selected = false,
+    showLogBadge = false,
+    offset,
+    onclick,
+    href,
+  }: Props = $props()
 
   let serviceTitle = $derived(log.serviceName?.trim() || '(unknown service)')
   let bodyPreview = $derived((log.bodyPreview ?? '').trim())
@@ -28,11 +32,20 @@
   {selected}
   title={serviceTitle}
   description={bodyPreview || undefined}
-  timeLayout="labeled"
-  timestamp={timestampParts.value}
-  timestampUnit={timestampParts.unit || undefined}
   {onclick}
+  {href}
 >
+  {#snippet date()}<SignalDate
+      label="Recorded"
+      timestamp={log.timestamp}
+      suffix={offset ? `(${offset})` : undefined}
+    />{/snippet}
+  {#snippet titleContent()}
+    <ServiceDot service={log.serviceName ?? ''} />
+    {serviceTitle}{#if showLogBadge}<span class="text-xs text-subtle"
+        >{` · Log`}</span
+      >{/if}
+  {/snippet}
   {#snippet badge()}
     <SignalBadges
       signal="log"

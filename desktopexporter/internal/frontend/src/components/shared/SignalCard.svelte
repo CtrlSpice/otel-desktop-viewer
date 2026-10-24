@@ -1,15 +1,24 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import Identifier from './Identifier.svelte'
 
   type Props = {
     id: string
     selected?: boolean
+    /** Disclosure cards use expanded state instead of selection semantics. */
+    expanded?: boolean
+    controls?: string
     /** Optional monospace id line at the bottom of the card (e.g. trace id). */
     idLine?: string
     title: string
-    /** Italic muted title (e.g. placeholder while data is still arriving). */
-    titleMuted?: boolean
+    /** Provenance or type information immediately above the title. */
+    beforeTitle?: Snippet
+    titleContent?: Snippet
+    wrapTitle?: boolean
     subtitle?: string
+    subtitleContent?: Snippet
+    /** Full-width date between identity and description. */
+    date?: Snippet
     /** `plain`: value grid. `interval`: Start + Duration (traces). `labeled`: one labeled timestamp (logs/metrics). */
     timeLayout?: 'plain' | 'interval' | 'labeled'
     /** Label for `labeled` layout (e.g. "Timestamp:", "Last seen:"). */
@@ -17,203 +26,259 @@
     timestamp?: string
     /** Timezone suffix when timeLayout is `interval` (e.g. UTC, PST). */
     timestampUnit?: string
+    /** Optional muted suffix after the timestamp in the labeled layout. */
+    timestampSuffix?: string
     duration?: string
     /** Duration unit when timeLayout is `interval` (e.g. ms, s). */
     durationUnit?: string
     /** Badges beside the title, right-aligned. */
     badge?: Snippet
+    /** Place badges directly after the title or at the row's trailing edge. */
+    badgePlacement?: 'inline' | 'end'
     /** Subtle line under the title (e.g. metric description). */
     description?: string
+    descriptionIsID?: boolean
     /** Secondary line under header (custom content; prefer description). */
     lead?: Snippet
     meta?: Snippet
+    /** Independent control before the card's first heading, outside its button/link. */
+    action?: Snippet
     onclick?: (id: string) => void
+    /** Navigation cards retain native link and open-in-new-tab behaviour. */
+    href?: string
+    disabled?: boolean
   }
 
   let {
     id,
     selected = false,
+    expanded,
+    controls,
     idLine,
     title,
-    titleMuted = false,
+    beforeTitle,
+    titleContent,
+    wrapTitle = false,
     subtitle,
+    subtitleContent,
+    date,
     timeLayout = 'plain',
     timestampLabel,
     timestamp,
     timestampUnit,
+    timestampSuffix,
     duration,
     durationUnit,
     badge,
+    badgePlacement = 'end',
     description,
+    descriptionIsID = false,
     lead,
     meta,
+    action,
     onclick,
+    href,
+    disabled = false,
   }: Props = $props()
 </script>
 
-<button
-  type="button"
-  class="signal-row {selected ? 'signal-row--selected' : ''}"
-  onclick={() => onclick?.(id)}
-  aria-pressed={selected}
->
-  <div class="signal-row__header">
-    <span class="signal-row__title-cluster" {title}>
-      <span
-        class="signal-row__title"
-        class:signal-row__title--muted={titleMuted}>{title}</span
-      >
-      {#if subtitle}
-        <span class="signal-row__subtitle"> ({subtitle})</span>
-      {/if}
-    </span>
-    {#if badge}
-      <span class="signal-row__badge">
-        {@render badge()}
+{#snippet cardContent()}
+  <div class="signal-row__identity">
+    {@render beforeTitle?.()}
+    <div
+      class="signal-row__header"
+      class:signal-row__header--wrap={wrapTitle}
+      class:signal-row__header--action={Boolean(action)}
+    >
+      {#if action}<span class="size-8 shrink-0" aria-hidden="true"></span>{/if}
+      <span class="signal-row__title-cluster" {title}>
+        <span class="signal-row__title"
+          >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
+        >
+        {#if badge && badgePlacement === 'inline'}
+          <span class="flex shrink-0 items-center gap-2">{@render badge()}</span
+          >
+        {/if}
       </span>
+      {#if badge && badgePlacement === 'end'}
+        <span class="signal-row__badge">
+          {@render badge()}
+        </span>
+      {/if}
+    </div>
+
+    {#if subtitleContent}
+      {@render subtitleContent()}
+    {:else if subtitle}
+      <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
     {/if}
   </div>
 
-  {#if description}
-    <div class="signal-row__lead">
-      <p class="signal-row__description" title={description}>
-        {description}
-      </p>
-    </div>
-  {:else if lead}
-    <div class="signal-row__lead">
-      {@render lead()}
-    </div>
-  {/if}
-
-  {#if timestamp || duration}
-    {#if timeLayout === 'interval'}
-      {#if timestamp}
-        <div class="signal-row__time signal-row__time--interval">
-          <span class="signal-row__time-group">
-            <span class="signal-row__time-label">Start:</span>
-            <span class="signal-row__time-value signal-row__timestamp"
-              >{timestamp}</span
-            >
-            {#if timestampUnit}
-              <span class="signal-row__time-unit">{timestampUnit}</span>
-            {/if}
-          </span>
-        </div>
-      {/if}
-      {#if duration}
-        <div class="signal-row__time signal-row__time--interval">
-          <span class="signal-row__time-group">
-            <span class="signal-row__time-label">Duration:</span>
-            <span class="signal-row__time-value signal-row__duration"
-              >{duration}</span
-            >
-            {#if durationUnit}
-              <span class="signal-row__time-unit">{durationUnit}</span>
-            {/if}
-          </span>
-        </div>
-      {/if}
-    {:else if timeLayout === 'labeled'}
-      <div class="signal-row__time signal-row__time--interval">
-        {#if timestamp}
-          <span class="signal-row__time-group">
-            {#if timestampLabel}
-              <span class="signal-row__time-label">{timestampLabel}</span>
-            {/if}
-            <span class="signal-row__time-value signal-row__timestamp"
-              >{timestamp}</span
-            >
-            {#if timestampUnit}
-              <span class="signal-row__time-unit">{timestampUnit}</span>
-            {/if}
-          </span>
-        {/if}
+  <div class="signal-row__body">
+    {#if description}
+      <div class="signal-row__lead">
+        <p class="signal-row__description" title={description}>
+          {#if descriptionIsID}<Identifier
+              value={description}
+            />{:else}{description}{/if}
+        </p>
       </div>
-    {:else}
-      <div class="signal-row__time">
-        <span class="signal-row__timestamp">{timestamp ?? ''}</span>
-        <span class="signal-row__duration">{duration ?? ''}</span>
+    {:else if lead}
+      <div class="signal-row__lead">
+        {@render lead()}
       </div>
     {/if}
-  {/if}
 
-  {#if meta}
-    <div class="signal-row__meta-row">
-      {@render meta()}
-    </div>
-  {/if}
+    {#if timestamp || duration}
+      {#if timeLayout === 'interval'}
+        {#if timestamp}
+          <div class="signal-row__time signal-row__time--interval">
+            <span class="signal-row__time-group">
+              <span class="signal-row__time-label">Start:</span>
+              <span class="signal-row__time-value signal-row__timestamp"
+                >{timestamp}</span
+              >
+              {#if timestampUnit}
+                <span class="signal-row__time-unit">{timestampUnit}</span>
+              {/if}
+            </span>
+          </div>
+        {/if}
+        {#if duration}
+          <div class="signal-row__time signal-row__time--interval">
+            <span class="signal-row__time-group">
+              <span class="signal-row__time-label">Duration:</span>
+              <span class="signal-row__time-value signal-row__duration"
+                >{duration}</span
+              >
+              {#if durationUnit}
+                <span class="signal-row__time-unit">{durationUnit}</span>
+              {/if}
+            </span>
+          </div>
+        {/if}
+      {:else if timeLayout === 'labeled'}
+        <div class="signal-row__time signal-row__time--interval">
+          {#if timestamp}
+            <span class="signal-row__time-group">
+              {#if timestampLabel}
+                <span class="signal-row__time-label">{timestampLabel}</span>
+              {/if}
+              <span class="signal-row__time-value signal-row__timestamp"
+                >{timestamp}</span
+              >
+              {#if timestampUnit}
+                <span class="signal-row__time-unit">{timestampUnit}</span>
+              {/if}
+              {#if timestampSuffix}
+                <span class="text-subtle">{timestampSuffix}</span>
+              {/if}
+            </span>
+          {/if}
+        </div>
+      {:else}
+        <div class="signal-row__time">
+          <span class="signal-row__timestamp">{timestamp ?? ''}</span>
+          <span class="signal-row__duration">{duration ?? ''}</span>
+        </div>
+      {/if}
+    {/if}
 
-  {#if idLine}
-    <div class="signal-row__id-line" title={idLine}>
-      {idLine}
-    </div>
+    {#if meta}
+      <div class="signal-row__meta-row">
+        {@render meta()}
+      </div>
+    {/if}
+
+    {#if idLine}
+      <div class="signal-row__id-line" title={idLine}>
+        <Identifier value={idLine} />
+      </div>
+    {/if}
+    {#if date}
+      <div class="signal-row__date">{@render date()}</div>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet selectableCard()}
+  {#if href}
+    <a
+      href={disabled ? undefined : href}
+      role={disabled ? 'link' : undefined}
+      aria-disabled={disabled || undefined}
+      tabindex={disabled ? -1 : undefined}
+      class="signal-row {selected ? 'signal-row--selected' : ''}"
+      data-selected={selected || undefined}
+      class:item-state={!disabled}>{@render cardContent()}</a
+    >
+  {:else}
+    <button
+      type="button"
+      {disabled}
+      class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+      data-selected={selected || undefined}
+      onclick={() => onclick?.(id)}
+      aria-pressed={expanded === undefined ? selected : undefined}
+      aria-expanded={expanded}
+      aria-controls={controls}>{@render cardContent()}</button
+    >
   {/if}
-</button>
+{/snippet}
+
+{#if action}
+  <div class="signal-card-with-action">
+    {@render selectableCard()}
+    <div class="signal-card__action">{@render action()}</div>
+  </div>
+{:else}
+  {@render selectableCard()}
+{/if}
 
 <style lang="postcss">
   @reference "../../app.css";
 
+  .signal-card-with-action {
+    display: grid;
+    min-width: 0;
+  }
+  .signal-card-with-action > .signal-row {
+    grid-area: 1 / 1;
+  }
+  .signal-card__action {
+    @apply flex size-8 items-center justify-center;
+    grid-area: 1 / 1;
+    justify-self: start;
+    align-self: start;
+    margin: 0.625rem 0 0 0.75rem;
+  }
+  .signal-card-with-action:hover > .signal-row:not(:disabled) {
+    background-color: var(--color-highlight-low);
+  }
+
+  .signal-row[aria-disabled='true'] {
+    cursor: default;
+  }
+
+  .signal-row__body {
+    @apply flex min-w-0 flex-col;
+  }
+
+  .signal-row :global(.identifier) {
+    color: var(--color-subtle);
+  }
+
   .signal-row {
-    /*
-     * Drawer card typography: text-sm default (title, subtitle, description,
-     * timestamps, values, meta). Labels → text-xs (.signal-row__label,
-     * .signal-row__time-label). Badges → badge-xs on the snippet markup.
-     */
-    --signal-card-row-h: 1.5rem;
-    /* The composited surface of this row, per state. The badge zone and
-       its fade must paint exactly what the row shows behind the title,
-       and the state backgrounds are translucent tints over the panel's
-       base-200 -- so each state declares its composite here (srgb mix,
-       matching alpha compositing). Hover is base-200/50 over base-200,
-       which composites back to base-200. */
-    --row-surface: var(--color-base-200);
-    @apply flex w-full flex-col gap-0 px-3 py-1.5 text-left text-sm leading-snug transition-colors duration-100;
-    @apply hover:bg-base-200/50;
+    /* Titles use the heading size; details use the working size. */
+    --item-idle-bg: transparent;
+    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm;
     cursor: pointer;
-  }
-
-  .signal-row--selected {
-    @apply bg-primary/[0.07];
-    box-shadow: inset 2px 0 0 0 var(--color-primary);
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-primary) 7%,
-      var(--color-base-200)
-    );
-  }
-
-  .signal-row--selected:hover {
-    @apply bg-primary/10;
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-primary) 10%,
-      var(--color-base-200)
-    );
-  }
-
-  .signal-row:focus-visible {
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-primary) 12%,
-      var(--color-base-200)
-    );
-    outline: none;
-    background: var(--row-surface);
-    box-shadow: inset 3px 0 0 0 var(--color-primary);
-  }
-
-  @media (forced-colors: active) {
-    .signal-row:focus-visible {
-      outline: 2px solid Highlight;
-      outline-offset: -2px;
-    }
   }
 
   /* Single-line rows: fixed height + flex centering matches detail-cell
      align-middle. Meta keeps min-height so wrapped log bodies can grow. */
   .signal-row__id-line {
-    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center truncate font-mono text-sm;
+    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center truncate font-sans text-sm;
     color: var(--color-subtle);
   }
 
@@ -221,53 +286,62 @@
     @apply flex min-h-[var(--signal-card-row-h)] min-w-0 items-center;
   }
 
+  .signal-row__date {
+    @apply min-h-[var(--signal-card-row-h)] min-w-0 w-full text-xs tabular-nums;
+    align-content: center;
+    color: var(--color-subtle);
+  }
+
   .signal-row__description {
-    @apply min-w-0 line-clamp-2 text-sm leading-tight;
+    @apply min-w-0 line-clamp-2 text-sm;
     color: var(--color-subtle);
   }
 
   .signal-row__header {
-    @apply relative flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
+    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center;
+    gap: var(--header-gap);
+  }
+
+  .signal-row__identity {
+    @apply min-w-0;
+  }
+
+  .signal-row__header--wrap {
+    height: auto;
+    min-height: var(--signal-card-row-h);
+    align-items: flex-start;
+  }
+
+  .signal-row__header--action {
+    align-items: center;
+  }
+
+  .signal-row__header--wrap .signal-row__title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
   }
 
   .signal-row__title-cluster {
-    @apply flex min-w-0 flex-1 items-center gap-1;
+    @apply flex min-w-0 flex-1 items-center;
+    gap: var(--header-gap);
   }
 
   .signal-row__title {
-    @apply min-w-0 shrink truncate text-sm font-medium leading-none text-base-content;
+    @apply min-w-0 shrink truncate text-lg font-normal text-base-content;
     flex: 0 1 auto;
   }
 
-  .signal-row__title--muted {
-    @apply font-normal italic;
-    color: var(--color-muted);
-  }
-
   .signal-row__subtitle {
-    @apply min-w-0 flex-1 truncate text-sm font-normal leading-none;
+    @apply min-w-0 truncate text-sm font-normal;
+    min-height: var(--signal-card-row-h);
+    align-content: center;
     color: var(--color-subtle);
   }
 
-  /* The badges are pinned; a long title slides BENEATH them and is
-     occluded -- the same collapse language as the drawer header's tab
-     strip under its chrome. Out of flow so the title owns the full row
-     width; opaque against the row's composited surface; a short fade on
-     the leading edge says the title continues underneath. */
   .signal-row__badge {
-    @apply absolute inset-y-0 right-0 flex max-w-[55%] items-center justify-end gap-1;
-    background: var(--row-surface);
-  }
-
-  .signal-row__badge::before {
-    content: '';
-    position: absolute;
-    right: 100%;
-    top: 0;
-    bottom: 0;
-    width: 1.25rem;
-    pointer-events: none;
-    background: linear-gradient(to right, transparent, var(--row-surface));
+    @apply flex max-w-[55%] shrink-0 items-center justify-end;
+    gap: var(--header-gap);
   }
 
   .signal-row__time {
@@ -298,24 +372,24 @@
   /* Shared label style for time rows and meta snippets (e.g. Last value:). */
   :global(.signal-row__label),
   .signal-row__time-label {
-    @apply shrink-0 text-xs leading-none;
+    @apply shrink-0 text-xs;
     color: var(--color-subtle);
   }
 
   .signal-row__time-value {
-    @apply truncate leading-none text-base-content;
+    @apply truncate text-base-content;
   }
 
   .signal-row__time-unit {
-    @apply shrink-0 leading-none text-base-content;
+    @apply shrink-0 text-base-content;
   }
 
   .signal-row__timestamp {
-    @apply min-w-0 truncate text-left leading-none;
+    @apply min-w-0 truncate text-left;
   }
 
   .signal-row__duration {
-    @apply shrink-0 tabular-nums leading-none;
+    @apply shrink-0 tabular-nums;
   }
 
   .signal-row__time:not(.signal-row__time--interval) .signal-row__timestamp {
@@ -329,7 +403,7 @@
 
   /* Secondary facts: trace id, scope + unit, etc. — parents own separators/content. */
   .signal-row__meta-row {
-    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 flex-wrap items-center gap-x-2 gap-y-0 leading-snug;
+    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 flex-wrap items-center gap-x-2 gap-y-0;
     color: var(--color-subtle);
   }
 </style>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest'
-import { screen } from '@testing-library/svelte'
+import { screen, within, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import TraceDetailView from './TraceDetailView.svelte'
 import type { SpanData, TraceLogSummary } from '@/types/api-types'
@@ -43,6 +43,79 @@ function spanField(name: string) {
   return SPAN_FIELDS.find(field => 'name' in field && field.name === name)!
 }
 
+describe('TraceDetailView table field inspection', () => {
+  it.each([
+    ['span', 'field'],
+    ['span', 'attribute'],
+    ['resource', 'attribute'],
+    ['scope', 'field'],
+    ['scope', 'attribute'],
+  ] as const)(
+    'reveals only the %s %s when keys collide',
+    async (source, kind) => {
+      const attributes = [
+        {
+          key: 'name',
+          value: { kind: 'string' as const, value: 'attribute name' },
+        },
+      ]
+      const span = makeSpan({
+        attributes,
+        resource: { attributes, droppedAttributesCount: 0 },
+        scope: {
+          name: 'scope field name',
+          version: '',
+          attributes,
+          droppedAttributesCount: 0,
+        },
+      })
+      const view = renderWithContexts(TraceDetailView, { span })
+      const table = screen.getByRole('table', { name: 'Span fields' })
+      const disclosure = table.closest('details')!
+      disclosure.open = false
+      await view.rerender({
+        component: TraceDetailView,
+        componentProps: { span, fieldTarget: { source, key: 'name', kind } },
+      })
+      await waitFor(() =>
+        expect(
+          table.querySelectorAll('.detail-property--revealed')
+        ).toHaveLength(1)
+      )
+      const target = table.querySelector<HTMLElement>(
+        '.detail-property--revealed'
+      )!
+      expect(target.dataset.fieldSource ?? table.dataset.fieldSource).toBe(
+        source
+      )
+      expect(target.dataset.fieldKind).toBe(kind)
+      expect(disclosure.open).toBe(true)
+    }
+  )
+
+  it.each([
+    ['span', 'flags'],
+    ['span', 'droppedEventsCount'],
+    ['span', 'traceState'],
+    ['scope', 'version'],
+    ['resource', 'droppedAttributesCount'],
+  ])(
+    'reveals omitted zero or empty %s.%s fields on request',
+    async (source, key) => {
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan(),
+        fieldTarget: { source, key, kind: 'field' },
+      })
+      const table = screen.getByRole('table', { name: 'Span fields' })
+      await waitFor(() =>
+        expect(
+          table.querySelector('.detail-property--revealed')
+        ).toHaveAttribute('data-field', key)
+      )
+    }
+  )
+})
+
 describe('TraceDetailView numeric enum fields', () => {
   beforeEach(() => {
     setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
@@ -55,13 +128,18 @@ describe('TraceDetailView numeric enum fields', () => {
     })
 
     const table = screen.getByRole('table', { name: 'Span fields' })
-    expect(table).toHaveTextContent('kind code (int64):')
-    expect(table).toHaveTextContent('-1')
-    expect(table).not.toHaveTextContent('kind (string):')
+    const field = table.querySelector('[data-field="kind"]')!
+    expect(field.querySelector('.detail-property__type')).toHaveTextContent(
+      'enum'
+    )
+    expect(field.querySelector('.detail-property__value')).toHaveTextContent(
+      /^-1$/
+    )
+    expect(table.querySelectorAll('[data-field]')).toHaveLength(1)
     expect(table).not.toHaveTextContent('Unknown (-1)')
     expect(
       table.closest('details')?.querySelector('summary')
-    ).toHaveTextContent(/Span\s*1 field/)
+    ).toHaveTextContent(/^Span$/)
   })
 
   it('shows only the authoritative unknown status code when filtered by statusCodeValue', () => {
@@ -71,16 +149,21 @@ describe('TraceDetailView numeric enum fields', () => {
     })
 
     const table = screen.getByRole('table', { name: 'Span fields' })
-    expect(table).toHaveTextContent('status code value (int64):')
-    expect(table).toHaveTextContent('99')
-    expect(table).not.toHaveTextContent('status code (string):')
+    const field = table.querySelector('[data-field="status.code"]')!
+    expect(field.querySelector('.detail-property__type')).toHaveTextContent(
+      'enum'
+    )
+    expect(field.querySelector('.detail-property__value')).toHaveTextContent(
+      /^99$/
+    )
+    expect(table.querySelectorAll('[data-field]')).toHaveLength(1)
     expect(table).not.toHaveTextContent('Unknown (99)')
     expect(
       screen.getByRole('img', { name: 'Unrecognised status code' })
     ).toBeInTheDocument()
     expect(
       table.closest('details')?.querySelector('summary')
-    ).toHaveTextContent(/Span\s*1 field/)
+    ).toHaveTextContent(/^Span$/)
   })
 
   it.each([
@@ -118,6 +201,40 @@ describe('TraceDetailView numeric enum fields', () => {
       ).not.toBeInTheDocument()
     }
   )
+
+  it.each([0, 1, 2, 99, -1])(
+    'uses the error value tone only for numeric status code 2, not %s labels or messages',
+    statusCodeValue => {
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan({
+          statusCodeValue,
+          statusCode: 'Error',
+          statusMessage: 'original message',
+        }),
+      })
+      const code = document.querySelector('[data-field="status.code"]')!
+      expect(code.classList.contains('detail-property--error-value')).toBe(
+        statusCodeValue === 2
+      )
+      expect(code.querySelector('.detail-property__value')).toHaveTextContent(
+        `${statusCodeValue} (Error)`
+      )
+      const message = document.querySelector('[data-field="status.message"]')
+      if (statusCodeValue === 0 || statusCodeValue === 1) {
+        expect(message).toBeNull()
+      } else {
+        expect(
+          message?.classList.contains('detail-property--error-value')
+        ).toBe(statusCodeValue === 2)
+        expect(message?.querySelector('.attribute-value')).toHaveTextContent(
+          'original message'
+        )
+      }
+      expect(document.querySelector('[data-field="kind"]')).not.toHaveClass(
+        'detail-property--error-value'
+      )
+    }
+  )
 })
 
 describe('TraceDetailView parent span link', () => {
@@ -142,27 +259,144 @@ describe('TraceDetailView parent span link', () => {
     })
     expect(screen.queryByRole('button', { name: 'parent-span' })).toBeNull()
 
-    const rootLabel = screen.getByText('(root)')
-    const heading = rootLabel.closest('summary')
-    expect(heading).toHaveTextContent(/^Span\s*\(root\)\s*\d+ fields/)
-    const nameKey = document.querySelector('.detail-fields .detail-cell__key')
-    expect(nameKey).toHaveTextContent(/^name\s*\(string\):$/)
+    const nameKey = document.querySelector(
+      '[data-field="name"] .detail-property__key'
+    )
+    expect(nameKey).toHaveTextContent(/^name · string$/)
     expect(nameKey).not.toHaveTextContent('(root)')
   })
 })
 
-describe('TraceDetailView tabs', () => {
-  it('associates the selected tab with the visible detail panel', () => {
-    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
-    renderWithContexts(TraceDetailView, { span: makeSpan() })
-    const fields = screen.getByRole('tab', { name: 'Fields' })
-    const panel = screen.getByRole('tabpanel')
-
-    expect(fields).toHaveAttribute('aria-controls', panel.id)
-    expect(panel).toHaveAttribute('aria-labelledby', fields.id)
+describe('TraceDetailView detail bubbles', () => {
+  it('renders span, resource and scope fields in one flat table without changing stored keys', () => {
+    const span = makeSpan({
+      attributes: [
+        {
+          key: 'service.name',
+          value: { kind: 'string', value: 'span-service' },
+        },
+      ],
+      resource: {
+        attributes: [
+          {
+            key: 'service.name',
+            value: { kind: 'string', value: 'resource-service' },
+          },
+        ],
+        droppedAttributesCount: 1,
+      },
+      scope: {
+        name: 'test-scope',
+        version: '1.2',
+        attributes: [{ key: 'build', value: { kind: 'int64', value: 42n } }],
+        droppedAttributesCount: 2,
+      },
+    })
+    renderWithContexts(TraceDetailView, { span })
+    const table = screen.getByRole('table', { name: 'Span fields' })
+    for (const [key, origin, type, value] of [
+      ['service.name', '', 'string', 'span-service'],
+      ['service.name', 'resource', 'string', 'resource-service'],
+      ['name', 'scope', 'string', 'test-scope'],
+      ['version', 'scope', 'string', '1.2'],
+      ['build', 'scope', 'int64', '42'],
+      ['droppedAttributesCount', 'resource', 'uint32', '1'],
+      ['droppedAttributesCount', 'scope', 'uint32', '2'],
+    ]) {
+      const label = origin ? `Copy ${key} (${origin})` : `Copy ${key}`
+      const row = within(table)
+        .getByRole('button', { name: label })
+        .closest('tr')!
+      expect(row.querySelector('.detail-property__key')).toHaveTextContent(key!)
+      expect(row.querySelector('.detail-property__type')).toHaveTextContent(
+        type!
+      )
+      expect(row.querySelector('.detail-property__body')).toHaveTextContent(
+        value!
+      )
+      if (origin)
+        expect(row.querySelector('.detail-property__origin')).toHaveTextContent(
+          origin
+        )
+      else expect(row.querySelector('.detail-property__origin')).toBeNull()
+    }
+    expect(table).not.toHaveTextContent('resource.service.name')
+    expect(table.closest('details')!.querySelectorAll('details')).toHaveLength(
+      0
+    )
+    expect(span.resource.attributes[0]!.key).toBe('service.name')
+    expect(span.scope.attributes[0]!.value).toEqual({
+      kind: 'int64',
+      value: 42n,
+    })
   })
 
-  it('uses one Activity count and opens separate event and log groups', () => {
+  it('stacks the former tabs as independently collapsible sections', async () => {
+    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
+    renderWithContexts(TraceDetailView, {
+      span: makeSpan({
+        events: [
+          {
+            name: 'ready',
+            timestamp: 1n,
+            attributes: [],
+            droppedAttributesCount: 0,
+          },
+        ],
+        links: [
+          {
+            traceID: 'linked-trace',
+            spanID: 'linked-span',
+            traceState: '',
+            attributes: [],
+            droppedAttributesCount: 0,
+            flags: 0,
+          },
+        ],
+      }),
+    })
+    expect(
+      screen.getByRole('tablist', { name: 'Detail view' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Properties' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    const fields = screen
+      .getByText('Span', { exact: true, selector: '.collapse-title > span' })
+      .closest('details')!
+    const activity = screen
+      .getByText('Events', { exact: true })
+      .closest('details')!
+    const links = screen.getByText('Links', { exact: true }).closest('details')!
+    expect(fields.open).toBe(true)
+    expect(activity.open).toBe(true)
+    expect(links.open).toBe(true)
+    await userEvent.click(fields.querySelector('summary')!)
+    expect(fields.open).toBe(true)
+    await userEvent.click(activity.querySelector('summary')!)
+    expect(activity.open).toBe(false)
+    await userEvent.click(activity.querySelector('summary')!)
+    expect(activity.open).toBe(true)
+    expect(links.open).toBe(true)
+  })
+
+  it('keeps zero-count Events and Links headers visible without expandable bodies', async () => {
+    renderWithContexts(TraceDetailView, { span: makeSpan() })
+    for (const label of ['Events', 'Links']) {
+      const section = screen.getByRole('region', { name: label })
+      expect(section).toHaveTextContent(`${label} [0]`)
+      expect(
+        within(section).getByLabelText(`0 ${label.toLowerCase()}`)
+      ).toHaveTextContent('[0]')
+      await userEvent.click(within(section).getByText(label, { exact: true }))
+      expect(
+        section.querySelector('details, summary, .collapse-content')
+      ).toBeNull()
+    }
+  })
+
+  it('combines span events and correlated logs under Events with provenance labels', () => {
     const logs: TraceLogSummary[] = [
       {
         logRef: 'log-1',
@@ -190,13 +424,24 @@ describe('TraceDetailView tabs', () => {
       selectedLogRef: 'log-1',
     })
 
-    expect(screen.queryByRole('tab', { name: /Events/ })).toBeNull()
-    expect(screen.getByRole('tab', { name: /Activity.*2/ })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
-    expect(screen.getByText('Events')).toBeVisible()
-    expect(screen.getByText('Logs')).toBeVisible()
+    expect(
+      screen.getByText('Events', { exact: true }).closest('summary')
+    ).toHaveTextContent('Events [2]')
+    expect(
+      screen.getByText('Events', { exact: true }).closest('details')
+    ).toHaveAttribute('open')
+    expect(screen.getByText('Span event', { exact: true })).toBeVisible()
+    expect(
+      screen
+        .getByRole('region', { name: 'Log summary' })
+        .querySelector('.signal-row__title')
+    ).toHaveTextContent(/^checkout · Log$/)
+    expect(
+      screen
+        .getByText('Events', { exact: true })
+        .closest('details')!
+        .querySelectorAll('details')
+    ).toHaveLength(0)
   })
 })
 

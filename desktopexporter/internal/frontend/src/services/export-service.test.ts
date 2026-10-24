@@ -1,10 +1,67 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { downloadOTLP } from './export-service'
+import { downloadOTLP, readOTLPText } from './export-service'
 
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+describe('OTLP clipboard source', () => {
+  it('reads only the requested metric and preserves the exact JSON text', async () => {
+    const text =
+      '{"value":-0.0,"count":18446744073709551615,"timeUnixNano":"18446744073709551615"}\n'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(text, {
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const signal = new AbortController().signal
+    await expect(
+      readOTLPText('metric', 'metric/identity', signal)
+    ).resolves.toBe(text)
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      '/export/metrics/metric%2Fidentity',
+      { signal, headers: { Accept: 'application/json' } }
+    )
+  })
+
+  it.each([
+    [404, 'text/plain', 'export record not found'],
+    [200, 'text/html', '<html>old viewer</html>'],
+  ])(
+    'rejects an HTTP %s %s response instead of copying it',
+    async (status, type, body) => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(body, { status, headers: { 'Content-Type': type } })
+          )
+      )
+      await expect(
+        readOTLPText('metric', 'record', new AbortController().signal)
+      ).rejects.toThrow()
+    }
+  )
+
+  it('rejects a completed response when its selection was cancelled', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        controller.abort()
+        return new Response('{}', {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      })
+    )
+    await expect(
+      readOTLPText('metric', 'record', controller.signal)
+    ).rejects.toThrow()
+  })
 })
 
 describe('OTLP downloads', () => {

@@ -15,6 +15,9 @@ const stats = {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/features', route =>
+    route.fulfill({ json: { evals: { enabled: false } } })
+  )
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON() as {
       id: number
@@ -25,7 +28,11 @@ test.beforeEach(async ({ page }) => {
         ? stats
         : request.method === 'getImportConfig'
           ? { otlpHttpPort: 54318 }
-          : []
+          : request.method === 'discoverTelemetry'
+            ? { rows: [], truncated: false }
+            : request.method === 'searchLogPage'
+              ? { total: 0, logs: [] }
+              : []
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: request.id, result }),
@@ -51,7 +58,7 @@ test('picker sends supported signal groups and lists profiles/invalid files with
   await page.goto('/')
   const resource =
     '{"scopeLogs":[{"logRecords":[{"body":{"doubleValue":-0},"timeUnixNano":"18446744073709551615"}]}]}'
-  await page.getByLabel('Choose OTLP JSON files').setInputFiles([
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles([
     {
       name: 'mixed.json',
       mimeType: 'application/json',
@@ -78,6 +85,10 @@ test('picker sends supported signal groups and lists profiles/invalid files with
     '/v1/logs',
   ])
   expect(requests[1].body).toBe(`{"resourceLogs":[${resource}]}`)
+  await page
+    .locator('#signal-drawer-panel summary')
+    .filter({ hasText: 'Ingestion issues' })
+    .click()
   const issues = page.getByRole('region', { name: 'Ingestion issues' })
   await expect(issues).toContainText('Profiles support coming soon')
   await expect(issues).toContainText('broken.json')
@@ -88,6 +99,9 @@ test('picker sends supported signal groups and lists profiles/invalid files with
 test('a dropped file uses the current signal page error display and links to Home issues', async ({
   page,
 }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-drawer:open', 'false')
+  )
   await page.route('http://127.0.0.1:54318/v1/logs', route =>
     route.fulfill({
       status: 400,
@@ -111,6 +125,11 @@ test('a dropped file uses the current signal page error display and links to Hom
   await main.getByRole('link', { name: 'View issue' }).click()
   const issues = page.getByRole('region', { name: 'Ingestion issues' })
   await expect(issues).toBeFocused()
+  await expect(issues).toBeVisible()
+  await expect(page.locator('#signal-drawer-panel')).not.toHaveAttribute(
+    'inert',
+    ''
+  )
   await expect(issues).toContainText('Invalid OTLP log body')
   await expect(page).toHaveURL(/\/#ingestion-issues$/)
 })

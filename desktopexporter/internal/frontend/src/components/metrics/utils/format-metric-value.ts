@@ -1,19 +1,12 @@
-/** Compact SI formatting for axes, tooltips, and legends, including sub-unit values. */
-
-const BIG_PREFIXES: ReadonlyArray<{ divisor: number; suffix: string }> = [
-  { divisor: 1e12, suffix: 'T' },
-  { divisor: 1e9, suffix: 'G' },
-  { divisor: 1e6, suffix: 'M' },
-  { divisor: 1e3, suffix: 'k' },
-]
-
-// Use Greek mu (U+03BC), Unicode's preferred micro prefix character.
-const SMALL_PREFIXES: ReadonlyArray<{ divisor: number; suffix: string }> = [
-  { divisor: 1e-3, suffix: 'm' },
-  { divisor: 1e-6, suffix: 'µ' },
-  { divisor: 1e-9, suffix: 'n' },
-  { divisor: 1e-12, suffix: 'p' },
-]
+/** Display formatting only: received values and units are not converted. */
+const graphNumberFormat = new Intl.NumberFormat('en-US', {
+  maximumSignificantDigits: 3,
+})
+const hoverNumberFormat = new Intl.NumberFormat('en-US', {
+  maximumSignificantDigits: 6,
+})
+const countFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
+const superscripts = '⁰¹²³⁴⁵⁶⁷⁸⁹'
 
 export type FormatMetricValueOptions = {
   /** Maximum significant digits in the mantissa; defaults to 3. */
@@ -28,12 +21,16 @@ export type FormatMetricValuePlainOptions = FormatMetricValueOptions & {
 }
 
 function trimTrailingZeros(s: string): string {
-  if (!s.includes('.')) return s
+  if (!s.includes('.') || s.includes('e')) return s
   return s.replace(/\.?0+$/, '')
 }
 
-function formatMantissa(value: number, sigDigits: number): string {
-  return trimTrailingZeros(value.toPrecision(sigDigits))
+function decimalFormat(significantDigits: number): Intl.NumberFormat {
+  if (significantDigits === 3) return graphNumberFormat
+  if (significantDigits === 6) return hoverNumberFormat
+  return new Intl.NumberFormat('en-US', {
+    maximumSignificantDigits: significantDigits,
+  })
 }
 
 export function formatMetricValue(
@@ -45,26 +42,38 @@ export function formatMetricValue(
   if (value === 0) return Object.is(value, -0) ? '-0' : '0'
 
   const sigDigits = options.maxSignificantDigits ?? 3
-  const sign = value < 0 ? '-' : ''
-  const abs = Math.abs(value)
+  const rounded = Number(value.toPrecision(sigDigits))
+  const abs = Math.abs(rounded)
+  if (abs >= 1e-6 && abs < 1e6) return decimalFormat(sigDigits).format(value)
+  const [mantissa, exponent] = value.toExponential(sigDigits - 1).split('e')
+  const power = String(Number(exponent)).replace(/[-\d]/g, digit =>
+    digit === '-' ? '⁻' : superscripts[Number(digit)]!
+  )
+  return `${Number(mantissa)} × 10${power}`
+}
 
-  if (abs >= 1) {
-    for (const { divisor, suffix } of BIG_PREFIXES) {
-      if (abs >= divisor) {
-        return sign + formatMantissa(abs / divisor, sigDigits) + suffix
-      }
-    }
-    return sign + formatMantissa(abs, sigDigits)
+export function formatMetricHoverValue(
+  value: number | null | undefined
+): string {
+  return formatMetricValue(value, { maxSignificantDigits: 6 })
+}
+
+export function formatMetricCount(value: number | bigint): string {
+  return countFormat.format(value)
+}
+
+/** Raise display precision only when distinct finite bounds would share a label. */
+export function metricNumberPrecision(
+  values: readonly number[],
+  minimum = 3
+): number {
+  const distinct = [...new Set(values.filter(Number.isFinite))]
+  for (let digits = minimum; digits < 17; digits++) {
+    const labels = new Set(distinct.map(value => value.toPrecision(digits)))
+    if (labels.size === distinct.length) return digits
   }
-
-  for (const { divisor, suffix } of SMALL_PREFIXES) {
-    if (abs >= divisor) {
-      return sign + formatMantissa(abs / divisor, sigDigits) + suffix
-    }
-  }
-
-  // Preserve values below 1p with exponential notation rather than rounding to zero.
-  return sign + formatMantissa(abs, sigDigits)
+  // Seventeen significant decimal digits distinguish finite IEEE-754 doubles.
+  return 17
 }
 
 /** Rate slope (Δrate/Δt) with optional OTLP unit suffix. */

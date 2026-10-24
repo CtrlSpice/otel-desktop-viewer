@@ -10,6 +10,7 @@
     ScalarAggregate,
   } from '@/types/api-types'
   import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
+  import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
 
   // createMetricViewContext() registers $effects, so it only works inside a
   // component. This probe renders the sub-view state the URL sync owns so
@@ -21,6 +22,7 @@
     scalarAggregate?: ScalarAggregate | null
     oncontext?: (ctx: MetricViewContext) => void
     showTimeseries?: boolean
+    showDetail?: boolean
   }
   let {
     metric,
@@ -28,6 +30,7 @@
     scalarAggregate,
     oncontext,
     showTimeseries,
+    showDetail,
   }: Props = $props()
 
   const metricCtx = createMetricViewContext(
@@ -47,6 +50,9 @@
 
 {#if showTimeseries}
   <TimeseriesPanel />
+{/if}
+{#if showDetail}
+  <MetricDetailView />
 {/if}
 
 <output data-testid="aggregation-view">{metricCtx.aggregationView}</output>

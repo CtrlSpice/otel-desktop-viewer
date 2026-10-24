@@ -182,6 +182,31 @@ function normalizedText(el: HTMLElement): string {
 }
 
 describe('TracesPage unplaced spans banner', () => {
+  it('opens a route-selected trace and span outside the filtered list on a fresh mount', async () => {
+    searchTraceSummaries.mockResolvedValue([])
+    getStats.mockResolvedValue(makeStats())
+    const other = makeSpanNode('other')
+    const selected = makeSpanNode('selected')
+    selected.matched = false
+    getTraceView.mockResolvedValue({
+      traceID: 'trace-1',
+      unplacedSpanCount: 0,
+      spans: [other, selected],
+    })
+    setTestUrl('/traces/trace-1?span=selected&q=name%20%3D%20%22excluded%22')
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(
+        document.querySelector('tr[data-span-id="selected"]')
+      ).not.toBeNull()
+    )
+    expect(new URLSearchParams(window.location.search).get('span')).toBe(
+      'selected'
+    )
+    expect(new URLSearchParams(window.location.search).get('q')).toBe(
+      'name = "excluded"'
+    )
+  })
   it('allows exporting the selected trace when all its spans are unplaced', async () => {
     searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
@@ -195,14 +220,21 @@ describe('TracesPage unplaced spans banner', () => {
     const header = await screen.findByRole('region', {
       name: 'Trace waterfall',
     })
-    const button = within(header).getByRole('button', { name: 'Export trace' })
+    const button = within(header).getByRole('button', {
+      name: 'Download trace',
+    })
     expect(button).toBeEnabled()
     const title = header.querySelector('.pane-header__title')!
     expect(
-      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+      within(button.closest<HTMLElement>('.pane-header__right')!)
+        .getAllByRole('button')
+        .at(-1)
+    ).toBe(button)
+    expect(
+      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(
-      screen.getAllByRole('button', { name: 'Export trace' })
+      screen.getAllByRole('button', { name: 'Download trace' })
     ).toHaveLength(1)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '2 spans are missing'
@@ -211,7 +243,13 @@ describe('TracesPage unplaced spans banner', () => {
 
   it('queries the list with null bounds for the default All selection', async () => {
     await renderSelectedTrace(0)
-    expect(searchTraceSummaries).toHaveBeenCalledWith(null, null)
+    expect(searchTraceSummaries).toHaveBeenCalledWith(
+      null,
+      null,
+      undefined,
+      undefined,
+      { field: 'startTime', direction: 'desc' }
+    )
     expect(getTraceLogSummaries).toHaveBeenCalledWith(
       'trace-1',
       expect.any(AbortSignal)
@@ -272,10 +310,9 @@ describe('TracesPage trace detail lifecycle', () => {
     renderWithContexts(TracesPage)
 
     await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /Activity.*2/ })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(
+        screen.getByText('Events', { exact: true }).closest('summary')
+      ).toHaveTextContent('Events [2]')
     )
     expect(window.location.search).toBe('?span=root&log=log-1')
   })
@@ -403,7 +440,7 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
     )
 
-    await fireEvent.click(screen.getByText('trace-2').closest('button')!)
+    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
 
     await waitFor(() =>
       expect(screen.getByText('Loading trace detail…')).toBeVisible()
@@ -426,7 +463,10 @@ describe('TracesPage trace detail lifecycle', () => {
     const nextDetail = deferred<TraceData>()
     searchTraceSummaries.mockResolvedValue([
       makeTraceSummary(),
-      makeTraceSummary({ traceID: 'trace-2' }),
+      makeTraceSummary({
+        traceID: 'trace-2',
+        rootSpan: { name: 'Trace two', serviceName: 'orders-service' },
+      }),
     ])
     getStats.mockResolvedValue(makeStats())
     getTraceView.mockImplementation((traceID: string) =>
@@ -436,7 +476,7 @@ describe('TracesPage trace detail lifecycle', () => {
     renderWithContexts(TracesPage)
     await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
 
-    await fireEvent.click(screen.getByText('trace-2').closest('button')!)
+    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
     await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
     firstDetail.resolve(makeTraceData(0, 'trace-1', 'old-span'))
 
@@ -454,6 +494,7 @@ describe('TracesPage trace detail lifecycle', () => {
   it.each(['success', 'failure'] as const)(
     'ignores pending detail %s after all traces are deleted',
     async outcome => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
       const pendingDetail = deferred<TraceData>()
       let detailSignal: AbortSignal | undefined
       searchTraceSummaries
@@ -494,6 +535,7 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(document.querySelector('tr[data-span-id="old-span"]')).toBeNull()
       expect(consoleError).not.toHaveBeenCalled()
       consoleError.mockRestore()
+      confirm.mockRestore()
     }
   )
 
@@ -600,7 +642,9 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(window.location.search).toBe('')
       expect(screen.getByText('Select a trace to view details')).toBeVisible()
 
-      await fireEvent.click(screen.getByText('trace-2').closest('button')!)
+      await fireEvent.click(
+        screen.getByRole('button', { name: /^Trace two\b/ })
+      )
       await waitFor(() =>
         expect(screen.getByText('Loading trace detail…')).toBeVisible()
       )

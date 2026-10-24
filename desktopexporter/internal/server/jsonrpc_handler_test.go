@@ -461,6 +461,21 @@ func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 
 func TestGetTraceView(t *testing.T) {
 	handler := setupHandlerWithData(t)
+	t.Run("Selected spans", func(t *testing.T) {
+		result, err := handler.Handle(context.Background(), createRequest("getTraceView", map[string]any{
+			"traceID": testTraceIDHex, "spanIDs": []string{"ffffffffffffffff"},
+		}))
+		require.NoError(t, err)
+		var trace map[string]any
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &trace))
+		require.Empty(t, trace["spans"])
+	})
+	t.Run("Reject invalid selections", func(t *testing.T) {
+		for _, ids := range []any{[]string{}, []string{"bad"}, "0000000000000001", make([]string, 257)} {
+			_, err := handler.Handle(context.Background(), createRequest("getTraceView", map[string]any{"traceID": testTraceIDHex, "spanIDs": ids}))
+			require.Error(t, err)
+		}
+	})
 
 	t.Run("Found", func(t *testing.T) {
 		req := createRequest("getTraceView", []string{testTraceIDHex})

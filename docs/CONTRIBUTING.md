@@ -12,6 +12,14 @@ Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
 - Preserve the repository's architecture, interaction patterns, accessibility, and generated-file conventions.
 - Keep pull requests small enough to review and verify with confidence.
 
+### Documentation and private notes
+
+`docs/` is live documentation for functionality on `main`, not proposals or
+roadmaps. Keep plans, research, drafts, and handoffs in `notes/`, which is private
+local material excluded from Git. Do not commit or publish those notes, or link
+to them from public documentation. When functionality lands on `main`, document
+its implemented behavior in `docs/`.
+
 ### AI tools and coding agents
 
 AI tools and coding agents are allowed. Contributors must review and understand their output, keep it within the agreed scope, and test every behavioral change.
@@ -64,24 +72,27 @@ The app is a custom OpenTelemetry Collector binary with a Svelte 5 UI. See [ARCH
 ### Quick start with sample data
 
 ```bash
-make dev-go
+make run-go
 ```
 
-This starts the Go server on `:8000`, seeds traces, logs, and metrics, and opens the embedded UI.
+This runs the Go server on `:8000` in the foreground. In another terminal,
+use the seed commands below to load sample telemetry.
 
 ### Frontend development (recommended for UI work)
 
 Use two terminals:
 
 ```bash
-# Terminal 1 — backend + sample telemetry
-make dev-go
+# Terminal 1 — backend, if one is not already running
+make run-go
 
 # Terminal 2 — Vite with hot reload
 make dev-ts
 ```
 
 Open **http://localhost:3001**. Vite proxies `/rpc` to the Go server on `:8000`.
+For an existing backend on another address, use
+`VIEWER_PROXY_TARGET=http://localhost:8001 make dev-ts`.
 
 ### Production-like run
 
@@ -91,6 +102,21 @@ make build
 ```
 
 `make build-ts` copies the frontend into `desktopexporter/internal/server/static/` for embedding. Run it before testing frontend changes through the standalone binary.
+
+Builds default to `EVALS=0`, which excludes the Evals UI and backend handlers.
+Use `make build EVALS=1` to include Evals; its frontend goes to `dist-evals` and
+its embedded assets to the ignored `internal/server/static-evals` directory.
+Both variants retain the same database schema. See
+[Experimental features](experimental-features.md) for activation within that build.
+
+The same `EVALS` selection applies to development and tests:
+`make dev-ts EVALS=1`, `make test EVALS=1`. Use matching frontend and backend
+builds. `make build-go` prepares the selected frontend before compiling Go;
+plain `go build` uses the committed public assets without requiring Node.
+`make build-ts-check` checks public asset freshness; with `EVALS=1` it checks
+frontend compilation because enabled assets are generated rather than committed.
+Playwright starts its own server on `:3002` (`EVALS=0`) or `:3003` (`EVALS=1`),
+using a separate Vite cache from the development preview.
 
 ### Seed scripts
 
@@ -102,7 +128,7 @@ make populate-logs
 make populate-metrics
 ```
 
-Seeding posts fixed OTLP JSON from `testdata/otlp/demo/` using curl. Trace/log
+Seeding posts fixed OTLP JSON from `testdata/otlp/small/` using curl. Trace/log
 correlations are stored in the files; no generator or temporary handoff is needed.
 Choose **All** or the dataset's recorded time window in the viewer. Replaying
 logs or datapoints appends more records, so use a fresh store for repeatable counts.
@@ -114,13 +140,18 @@ checkout-failure scenario:
 make populate-traces populate-logs populate-metrics OTLP_DATASET=testdata/otlp/checkout
 ```
 
+For the busy histogram and exponential-histogram heatmap playground:
+
+```bash
+make populate-metrics OTLP_DATASET=testdata/otlp/heatmap-playground
+```
+
 Dataset contents and counts are documented in [`testdata/otlp/README.md`](../testdata/otlp/README.md).
 
 ### Stop dev servers
 
-```bash
-make stop
-```
+Press Ctrl-C in the terminal that owns each foreground server. Stop only the
+processes you started; the Makefile does not terminate processes by port number.
 
 ## Architecture and project layout
 
@@ -135,7 +166,7 @@ desktopexporter/
   internal/store/                     # DuckDB schema, ingestion, and queries
   internal/frontend/                  # Svelte 5 application
 scripts/                              # OTLP seed data for local development
-docs/                                 # Design notes and documentation assets
+docs/                                 # Current behavior, usage and documentation assets
 ```
 
 The root Go module builds the collector binary. The `desktop` exporter writes telemetry through the store owned by the `duckdb` extension. The frontend communicates with the server through JSON-RPC and builds into committed embedded assets.
@@ -165,11 +196,31 @@ JSON-RPC changes should preserve deliberate wire contracts, validate input at th
 
 Match nearby components, contexts, route helpers, and test fixtures before introducing new abstractions. Discuss changes to routing, persisted state, navigation behavior, or shared interaction patterns as product decisions before implementation.
 
+- Keep route content inside the persistent List/Main/Details workspace slots.
+  Reuse the app-wide pane preferences and shared `DetailStack`/`DetailBubble`
+  disclosure and header-resize behavior.
+- Preserve Home's typed service/attribute identities, record-based frequencies,
+  counted signal tabs, independent 25-card pages and scroll positions.
+- Use regular-weight Atkinson Hyperlegible Next for interface text and formatted
+  values, and Mono for JSON, search and code. Shared tokens provide 14px working
+  text and 16px headings at the default root size; adjust layout rather than
+  shrinking text. Keep field names exact, keys Subtle and data Text. Display
+  formatting must preserve received types, exact numbers and complete explicit
+  Copy/Download values.
+- Use the eight Madoromi seasonal themes and shared colour tokens. Backgrounds
+  retain 20% of source chroma. Preserve saved theme/ink preferences, service/series
+  colour ownership and independent count-ink overrides. See the
+  [theme reference](../desktopexporter/internal/frontend/src/themes/README.md)
+  for roles, defaults, picker behavior and generation.
+
 ### Dependencies and generated files
 
 The repository commits several generated outputs because release builds consume them directly:
 
 - Search parser files under `src/components/shared/Search/codemirror/` are generated from `query.grammar`. Run `npm run generate:grammar` from `desktopexporter/internal/frontend/` and commit the result.
+- Madoromi theme and graph JSON under `src/themes/` is generated from the pinned
+  source. Run `node scripts/generate-madoromi.mjs` from the frontend directory
+  rather than editing generated colours.
 - Production frontend assets live under `desktopexporter/internal/server/static/`. Frontend source, dependency, lockfile, and build-configuration changes require `make build-ts` and the resulting committed assets.
 - Resolve source and dependency conflicts first, then regenerate hashed frontend assets from the combined tree. Hand-merging generated bundles produces unreliable output.
 - Dependency updates should include the manifest, lockfile, generated bundle where applicable, focused regression coverage, and manual checks for affected product surfaces.

@@ -1,19 +1,24 @@
 package main
 
 import (
+	_ "embed"
 	"net"
 	"strconv"
 
 	"go.opentelemetry.io/collector/otelcol"
 )
 
+//go:embed collector_redaction.yaml
+var collectorRedaction string
+
 type configOptions struct {
-	host        string
-	httpPort    int
-	grpcPort    int
-	browserPort int
-	db          string
-	dbMaxSize   string
+	host             string
+	httpPort         int
+	grpcPort         int
+	browserPort      int
+	db               string
+	dbMaxSize        string
+	featureFlagsFile string
 
 	// selfTelemetryEndpoint turns on the viewer's own instrumentation and sends
 	// its traces and metrics to an external OTLP gRPC endpoint. An empty value
@@ -38,6 +43,7 @@ func collectorURIs(o configOptions) []string {
 		`yaml:extensions::duckdb::otlp_http_port: ` + strconv.Itoa(o.httpPort),
 		`yaml:extensions::duckdb::db: ` + o.db,
 		`yaml:extensions::duckdb::db_max_size: "` + o.dbMaxSize + `"`,
+		`yaml:extensions::duckdb::feature_flags_file: ` + strconv.Quote(o.featureFlagsFile),
 		`yaml:service::extensions: [duckdb]`,
 		// Batching happens here rather than in the exporter's sending queue.
 		// send_batch_max_size bounds each write; timeout limits display latency
@@ -49,15 +55,16 @@ func collectorURIs(o configOptions) []string {
 		// its defaults.
 		`yaml:exporters::desktop: {}`,
 		`yaml:service::pipelines::traces::receivers: [otlp]`,
-		`yaml:service::pipelines::traces::processors: [batch]`,
+		`yaml:service::pipelines::traces::processors: [redaction, batch]`,
 		`yaml:service::pipelines::traces::exporters: [desktop]`,
 		`yaml:service::pipelines::metrics::receivers: [otlp]`,
-		`yaml:service::pipelines::metrics::processors: [batch]`,
+		`yaml:service::pipelines::metrics::processors: [redaction, batch]`,
 		`yaml:service::pipelines::metrics::exporters: [desktop]`,
 		`yaml:service::pipelines::logs::receivers: [otlp]`,
-		`yaml:service::pipelines::logs::processors: [batch]`,
+		`yaml:service::pipelines::logs::processors: [redaction, batch]`,
 		`yaml:service::pipelines::logs::exporters: [desktop]`,
 	}
+	URIs = append(URIs, "yaml:"+collectorRedaction)
 	return append(URIs, telemetryURIs(o)...)
 }
 

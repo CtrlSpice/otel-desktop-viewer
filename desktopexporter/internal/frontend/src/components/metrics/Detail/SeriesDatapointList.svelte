@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ExemplarTraceReference from './ExemplarTraceReference.svelte'
   /*
    * Paginated datapoint rows for a single timeseries. Nested under an expanded
    * series row in TimeseriesPanel. Selection, flags/exemplar expansion, and
@@ -12,12 +13,13 @@
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
-  import { itemHref, navigateToItem } from '@/route'
-  import { SPAN_PARAM } from '@/route/query-params'
-  import type { DataPoint, Exemplar } from '@/types/api-types'
+  import DetailProperty from '@/components/shared/DetailProperty.svelte'
+  import type { Attributes, DataPoint, Exemplar } from '@/types/api-types'
 
   type Props = {
     datapoints: DataPoint[]
+    attributes?: Attributes
+    attributeOwner?: string
     /** Show a color swatch column (flat cross-series lists). */
     showSwatch?: boolean
     seriesColor?: string
@@ -27,6 +29,8 @@
 
   let {
     datapoints,
+    attributes = [],
+    attributeOwner = 'series',
     showSwatch = false,
     seriesColor,
     flush = false,
@@ -39,6 +43,9 @@
   let valueUnit = $derived(displayUnit(metricUnit))
   let hasDetails = $derived(
     datapoints.some(dp => dp.flags > 0 || dp.exemplars.length > 0)
+  )
+  let columnCount = $derived(
+    (ctx.isHistogramKind ? 3 : 2) + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)
   )
 
   const PAGE_SIZES = [25, 50, 100] as const
@@ -248,16 +255,6 @@
     )
   }
 
-  function exemplarSpanPatch(ex: Exemplar) {
-    return ex.spanID ? { [SPAN_PARAM]: ex.spanID } : undefined
-  }
-
-  function goToExemplarTrace(e: MouseEvent, ex: Exemplar) {
-    if (!ex.traceID) return
-    e.preventDefault()
-    navigateToItem('traces', ex.traceID, 'push', exemplarSpanPatch(ex))
-  }
-
   function exemplarValue(ex: Exemplar): number | bigint | string {
     switch (ex.valueType) {
       case 'Double':
@@ -273,33 +270,42 @@
     const unit = displayUnit(metricUnit)
     if (dp.metricType === 'Gauge' || dp.metricType === 'Sum') {
       if (dp.doubleValue !== null) {
-        return { number: formatMetricValuePlain(dp.doubleValue), unit }
+        return {
+          number: formatMetricValuePlain(dp.doubleValue),
+          unit,
+          count: null,
+        }
       }
       if (dp.intValue !== null) {
-        return { number: dp.intValue.toString(), unit }
+        return { number: dp.intValue.toString(), unit, count: null }
       }
-      return { number: '—', unit: null }
+      return { number: '—', unit: null, count: null }
     }
     if (
       dp.metricType === 'Histogram' ||
       dp.metricType === 'ExponentialHistogram'
     ) {
       return {
-        number: `count ${dp.count}, sum ${dp.sum === null ? '—' : formatMetricValuePlain(dp.sum)}`,
+        number: dp.sum === null ? '—' : formatMetricValuePlain(dp.sum),
         unit,
+        count: dp.count.toString(),
       }
     }
-    return { number: '—', unit: null }
+    return { number: '—', unit: null, count: null }
   }
 
   function datapointRowLabel(
     datapointID: string,
     formattedTime: string,
-    valueParts: { number: string; unit: string | null }
+    valueParts: { number: string; unit: string | null; count: string | null }
   ): string {
-    const value = valueParts.unit
+    const number = valueParts.unit
       ? `${valueParts.number} ${valueParts.unit}`
       : valueParts.number
+    const value =
+      valueParts.count === null
+        ? number
+        : `count ${valueParts.count}, sum ${number}`
     return `Datapoint at ${formattedTime}, value ${value}, ID ${datapointID}`
   }
 </script>
@@ -311,8 +317,7 @@
   {@const valueParts = datapointValueParts(dp)}
   {@const formattedTime = formatDatapointTime(dp.timestamp)}
   <tr
-    class="dp-list__row"
-    class:dp-list__row--selected={selected}
+    class="dp-list__row item-state"
     data-dp-id={dp.id}
     data-dp-index={datapointIndex}
     tabindex="0"
@@ -334,11 +339,10 @@
     <td class="dp-list__td dp-list__td--time tabular-nums">
       {formattedTime}
     </td>
-    <td class="dp-list__td dp-list__td--value">
-      <span class="dp-list__value-group">
-        <span class="dp-list__value tabular-nums">{valueParts.number}</span>
-      </span>
-    </td>
+    {#if ctx.isHistogramKind}
+      <td class="dp-list__td dp-list__td--value">{valueParts.count}</td>
+    {/if}
+    <td class="dp-list__td dp-list__td--value">{valueParts.number}</td>
     {#if hasDetails}
       <td class="dp-list__td dp-list__td--details">
         {#if dp.exemplars.length > 0}
@@ -351,17 +355,14 @@
           </span>
         {/if}
         {#if dp.flags > 0}
-          <span class="badge badge-xs badge-soft badge-warning">flags</span>
+          <span class="text-base-content">flags</span>
         {/if}
       </td>
     {/if}
   </tr>
   {#if expanded}
     <tr class="dp-list__expansion-row">
-      <td
-        colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
-        class="dp-list__expansion-cell"
-      >
+      <td colspan={columnCount} class="dp-list__expansion-cell">
         <div class="dp-list__expansion">
           {#if dp.flags > 0}
             <div class="dp-list__detail">
@@ -389,24 +390,7 @@
                 <span class="dp-list__detail-value tabular-nums">
                   time: {formatDatapointTime(ex.timestamp)}
                 </span>
-                {#if ex.traceID}
-                  {@const patch = exemplarSpanPatch(ex)}
-                  <a
-                    class="dp-list__detail-value link link-primary font-mono"
-                    href={itemHref('traces', ex.traceID, patch)}
-                    onclick={e => goToExemplarTrace(e, ex)}
-                    >trace: {ex.traceID}</a
-                  >
-                {/if}
-                {#if ex.spanID && ex.traceID}
-                  <a
-                    class="dp-list__detail-value link link-primary font-mono"
-                    href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
-                    onclick={e => goToExemplarTrace(e, ex)}>span: {ex.spanID}</a
-                  >
-                {:else if ex.spanID}
-                  <span class="dp-list__detail-value">span: {ex.spanID}</span>
-                {/if}
+                <ExemplarTraceReference exemplar={ex} />
                 {#each dedupeAttributes(ex.filteredAttributes) as attr, attributeIndex (`exemplar:${i}:${attr.id ?? 'unidentified'}:${attributeIndex}`)}
                   <span class="dp-list__detail-value"
                     >{attr.key}: {attributeValueLabel(attr.value)}</span
@@ -421,84 +405,105 @@
   {/if}
 {/snippet}
 
-{#if datapoints.length === 0}
+{#if datapoints.length === 0 && attributes.length === 0}
   <p class="dp-list__empty" class:dp-list__empty--flush={flush}>
     No datapoints
   </p>
 {:else}
-  <div
-    bind:this={listRoot}
-    class="dp-list__container"
-    class:dp-list__container--flush={flush}
-  >
+  <div bind:this={listRoot} class="dp-list__container">
     <div class="dp-list__table-wrap">
       <table
         class="dp-list"
         class:dp-list--flush={flush}
         aria-label="Datapoints"
       >
-        <thead>
-          <tr class="dp-list__header-row">
-            {#if showSwatch}
-              <th scope="col" class="dp-list__th dp-list__th--swatch">
-                <span class="sr-only">Series</span>
-              </th>
-            {/if}
-            <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
-            <th scope="col" class="dp-list__th dp-list__th--value">
-              Value{#if valueUnit}
-                <span class="dp-list__header-unit">{' '}({valueUnit})</span>
-              {/if}
-            </th>
-            {#if hasDetails}
-              <th scope="col" class="dp-list__th dp-list__th--details">
-                Details
-              </th>
-            {/if}
-          </tr>
-        </thead>
+        {#if attributes.length > 0}
+          <tbody aria-label="Series attributes">
+            {#each attributes as attribute, index (`${attributeOwner}:${attribute.id ?? 'unidentified'}:${index}`)}
+              <DetailProperty
+                fieldName={attribute.key}
+                fieldType={attribute.value.kind}
+                typedValue={attribute.value}
+                colspan={columnCount}
+                defectLabel={attribute.hasConflict
+                  ? `Conflicting typed values retained for ${attribute.key} in ${attributeOwner}.`
+                  : undefined}
+              />
+            {/each}
+          </tbody>
+        {/if}
         <tbody>
-          {#each visible as dp, offset (dp.id)}
-            {@render datapointRows(dp, rangeStart + offset)}
-          {/each}
+          {#if datapoints.length > 0}
+            <tr class="dp-list__header-row">
+              {#if showSwatch}
+                <th scope="col" class="dp-list__th dp-list__th--swatch">
+                  <span class="sr-only">Series</span>
+                </th>
+              {/if}
+              <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
+              {#if ctx.isHistogramKind}
+                <th scope="col" class="dp-list__th dp-list__th--value">Count</th
+                >
+              {/if}
+              <th scope="col" class="dp-list__th dp-list__th--value">
+                {ctx.isHistogramKind ? 'Sum' : 'Value'}{#if valueUnit}
+                  <span class="dp-list__header-unit">{' '}({valueUnit})</span>
+                {/if}
+              </th>
+              {#if hasDetails}
+                <th scope="col" class="dp-list__th dp-list__th--details">
+                  Details
+                </th>
+              {/if}
+            </tr>
+            {#each visible as dp, offset (dp.id)}
+              {@render datapointRows(dp, rangeStart + offset)}
+            {/each}
+          {:else}
+            <tr
+              ><td colspan={columnCount} class="dp-list__empty"
+                >No datapoints</td
+              ></tr
+            >
+          {/if}
         </tbody>
       </table>
     </div>
 
-    <div class="dp-list__pagination">
-      <span
-        class="dp-list__range tabular-nums"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {rangeStart + 1}-{rangeEnd} of {datapoints.length}
-        {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
-      </span>
-      <div class="dp-list__page-nav">
-        <DetailNav
-          index={pageIndex}
-          total={pageCount}
-          label="page"
-          onFirst={() => setPage(0)}
-          onPrev={() => setPage(pageIndex - 1)}
-          onNext={() => setPage(pageIndex + 1)}
-          onLast={() => setPage(pageCount - 1)}
-        />
-      </div>
-      <label class="dp-list__page-size">
-        <span>Rows per page</span>
-        <select
-          class="select select-xs"
-          aria-label="Rows per page"
-          value={pageSize}
-          onchange={changePageSize}
+    {#if datapoints.length > 0}<div class="dp-list__pagination">
+        <span
+          class="dp-list__range tabular-nums"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          {#each PAGE_SIZES as size}
-            <option value={size}>{size}</option>
-          {/each}
-        </select>
-      </label>
-    </div>
+          {rangeStart + 1}-{rangeEnd} of {datapoints.length}
+          {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
+        </span>
+        <div class="dp-list__page-nav">
+          <DetailNav
+            index={pageIndex}
+            total={pageCount}
+            label="page"
+            onFirst={() => setPage(0)}
+            onPrev={() => setPage(pageIndex - 1)}
+            onNext={() => setPage(pageIndex + 1)}
+            onLast={() => setPage(pageCount - 1)}
+          />
+        </div>
+        <label class="dp-list__page-size">
+          <span>Rows per page</span>
+          <select
+            class="select select-xs"
+            aria-label="Rows per page"
+            value={pageSize}
+            onchange={changePageSize}
+          >
+            {#each PAGE_SIZES as size}
+              <option value={size}>{size}</option>
+            {/each}
+          </select>
+        </label>
+      </div>{/if}
   </div>
 {/if}
 
@@ -516,7 +521,7 @@
 
   .dp-list--flush .dp-list__td--time,
   .dp-list--flush .dp-list__th--time {
-    @apply pl-0;
+    @apply pl-3;
   }
 
   .dp-list__empty {
@@ -534,10 +539,9 @@
 
   .dp-list {
     @apply w-full text-xs;
-    border-collapse: collapse;
   }
 
-  .dp-list__header-row {
+  .dp-list__header-row > .dp-list__th {
     border-bottom: 1px solid
       color-mix(in oklab, var(--color-base-300) 50%, transparent);
   }
@@ -552,26 +556,16 @@
   }
 
   .dp-list__row {
-    @apply cursor-pointer transition-colors hover:bg-base-300/30;
-  }
-
-  .dp-list__row:focus-visible {
-    position: relative;
-    z-index: 1;
-    outline: none;
-    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
-  }
-
-  .dp-list__row--selected {
-    background-color: color-mix(
-      in oklab,
-      var(--color-primary) 18%,
-      transparent
-    );
+    @apply cursor-pointer;
   }
 
   .dp-list__td {
     @apply px-2 py-1 align-middle;
+  }
+
+  .dp-list__th:last-child,
+  .dp-list__td:last-child {
+    padding-inline-end: calc(var(--pane-inline-inset) + var(--header-gap));
   }
 
   .dp-list__td--swatch,
@@ -591,21 +585,13 @@
     color: var(--color-subtle);
   }
 
-  .dp-list__value-group {
-    @apply inline-flex min-w-0 items-baseline justify-end gap-1;
-  }
-
   .dp-list__td--value {
-    @apply text-right;
+    @apply whitespace-nowrap text-right font-sans tabular-nums;
+    color: var(--color-base-content);
   }
 
   .dp-list__td--details {
     @apply whitespace-nowrap;
-  }
-
-  .dp-list__value {
-    @apply font-mono;
-    color: var(--color-base-content);
   }
 
   .dp-list__header-unit {
@@ -622,14 +608,10 @@
   }
 
   .dp-list__pagination {
-    @apply grid items-center gap-2 px-3 py-2;
+    @apply sticky bottom-0 z-10 grid items-center gap-2 bg-base-100 px-3 py-2;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     border-top: 1px solid
       color-mix(in oklab, var(--color-base-300) 30%, transparent);
-  }
-
-  .dp-list__container--flush .dp-list__pagination {
-    @apply px-0;
   }
 
   .dp-list__page-size {
@@ -723,7 +705,7 @@
   }
 
   .dp-list__detail-value {
-    @apply font-mono text-xs;
+    @apply font-sans text-xs;
     color: var(--color-base-content);
   }
 

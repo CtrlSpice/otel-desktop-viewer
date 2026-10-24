@@ -2,259 +2,300 @@
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
-  import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import LogField from './LogField.svelte'
-  import AttributeValueView from '@/components/shared/AttributeValue.svelte'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
+  import { readOTLPText } from '@/services/export-service'
+  import DetailViews from '@/components/shared/DetailViews.svelte'
+  import DetailViewTabs, {
+    type DetailViewMode,
+  } from '@/components/shared/DetailViewTabs.svelte'
+  import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
+  import LogField from '@/components/shared/DetailProperty.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
+  import AssociatedTrace from './AssociatedTrace.svelte'
   import { severityLabel as buildSeverityLabel } from '@/components/logs/log-severity'
+  import LogSeverity from './LogSeverity.svelte'
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { itemHref, navigateToItem } from '@/route'
-  import { SPAN_PARAM } from '@/route/query-params'
+  import {
+    revealDetailField,
+    type DetailFieldTarget,
+  } from '@/components/shared/utils/reveal-detail-field'
 
   type Props = {
     log: LogData | undefined
     footer?: Snippet
+    fieldTarget?: DetailFieldTarget
+    detailView?: DetailViewMode
+    loading?: boolean
+    error?: string
   }
 
-  let { log, footer }: Props = $props()
+  let {
+    log,
+    footer,
+    fieldTarget,
+    detailView = $bindable<DetailViewMode>('fields'),
+    loading = false,
+    error = '',
+  }: Props = $props()
+  const detailViewID = $props.id()
+  const exportURL = $derived(
+    log ? `/export/logs/${encodeURIComponent(log.logRef)}` : ''
+  )
+  const loadLogJSON = $derived.by(() => {
+    const id = log?.logRef
+    return id
+      ? (signal: AbortSignal) => readOTLPText('log', id, signal)
+      : undefined
+  })
+  let resolvedTarget = $derived(
+    fieldTarget?.source === 'log' &&
+      fieldTarget.kind === 'field' &&
+      fieldTarget.key === 'timestamp' &&
+      log
+      ? {
+          ...fieldTarget,
+          key: log.timestamp === 0n ? 'observedTimeUnixNano' : 'timeUnixNano',
+        }
+      : fieldTarget
+  )
 
   let timeContext = getTimeContext()
+  let scrollEl = $state<HTMLDivElement | null>(null)
+  let scrolled = $state(false)
+
+  function scrollToTop() {
+    scrollEl?.scrollTo({
+      top: 0,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    })
+  }
+
+  $effect(() => {
+    const scroll = scrollEl
+    if (!scroll) {
+      scrolled = false
+      return
+    }
+    const update = () => {
+      scrolled = scroll.scrollTop > 1
+    }
+    update()
+    scroll.addEventListener('scroll', update)
+    return () => scroll.removeEventListener('scroll', update)
+  })
 
   let service = $derived(log ? (getServiceName(log.resource) ?? '') : '')
 
   let severityLabel = $derived(
-    log
-      ? `${buildSeverityLabel(log.severityText, log.severityNumber)} (${log.severityNumber})`
-      : ''
+    log ? buildSeverityLabel(log.severityText, log.severityNumber) : ''
   )
-
-  let logOpen = $state(true)
-  let resourceOpen = $state(true)
-  let scopeOpen = $state(true)
-
-  let logFieldCount = $derived.by(() => {
-    if (!log) return 0
-    let n = 4
-    if (log.traceID) n++
-    if (log.spanID) n++
-    if (log.body) n++
-    if (log.eventName) n++
-    if (log.droppedAttributesCount > 0) n++
-    n += log.attributes.length
-    return n
-  })
-
-  let resourceFieldCount = $derived.by(() => {
-    if (!log) return 0
-    let n = log.resource.attributes.length
-    if (log.resource.droppedAttributesCount > 0) n++
-    return n
-  })
-
-  let scopeFieldCount = $derived.by(() => {
-    if (!log) return 0
-    let n = 0
-    if (log.scope.name) n++
-    if (log.scope.version) n++
-    n += log.scope.attributes.length
-    if (log.scope.droppedAttributesCount > 0) n++
-    return n
-  })
-
-  let traceSpanPatch = $derived(
-    log?.traceID && log?.spanID
-      ? ({ [SPAN_PARAM]: log.spanID } as const)
-      : undefined
-  )
-
-  function goToTrace(e: MouseEvent) {
-    if (!log?.traceID) return
-    e.preventDefault()
-    navigateToItem('traces', log.traceID, 'push', traceSpanPatch)
-  }
 </script>
 
-{#if log}
-  <div class="log-detail-panel">
-    <PaneHeader
-      mode="title"
-      title={service || '—'}
-      timestampMs={Number(log.timestamp / 1_000_000n)}
-      ariaLabel="Log record"
-    >
-      {#snippet badge()}
-        <SignalBadges
-          signal="log"
-          severityNumber={log.severityNumber}
-          severityText={log.severityText}
-        />
-      {/snippet}
-      {#snippet leading()}
-        {#key log.logRef}
+<div
+  class="log-detail-panel"
+  data-field-source="log"
+  use:revealDetailField={resolvedTarget}
+>
+  <PaneHeader
+    pill
+    mode="title"
+    title={service || 'Log record'}
+    ariaLabel="Log record"
+  >
+    {#snippet leading()}{#if log}<ServiceDot {service} />{/if}{/snippet}
+    {#snippet right()}
+      <DetailViewTabs id={detailViewID} bind:view={detailView} />
+      {#if log}{#key log.logRef}
+          <ValueCopyButton
+            label="log"
+            tooltip="Copy log"
+            loadText={loadLogJSON}
+          />
           <ExportButton signal="log" id={log.logRef} />
-        {/key}
-      {/snippet}
-    </PaneHeader>
+        {/key}{/if}
+    {/snippet}
+  </PaneHeader>
 
-    <div class="log-detail-panel__scroll">
-      <FieldGroup label="Log" count={logFieldCount} detail bind:open={logOpen}>
-        <table class="detail-fields w-full" aria-label="Log fields">
-          <tbody>
-            <LogField
-              fieldName="timestamp"
-              fieldType="timestamp"
-              fieldValue={formatTimestamp(
-                log.timestamp,
-                timeContext.tz,
-                'nanoseconds'
-              )}
-            />
-            <LogField
-              fieldName="observed timestamp"
-              fieldType="timestamp"
-              fieldValue={formatTimestamp(
-                log.observedTimestamp,
-                timeContext.tz,
-                'nanoseconds'
-              )}
-            />
-            <LogField
-              fieldName="severity"
-              fieldType="enum"
-              fieldValue={severityLabel}
-            />
-            {#if log.traceID}
-              {@const traceID = log.traceID}
-              <LogField fieldName="trace id" fieldType="string">
-                {#snippet value()}
-                  <a
-                    class="detail-cell__value link link-primary font-mono"
-                    href={itemHref('traces', traceID, traceSpanPatch)}
-                    onclick={goToTrace}>{traceID}</a
-                  >
-                {/snippet}
-              </LogField>
-            {/if}
-            {#if log.spanID && log.traceID}
-              {@const traceID = log.traceID}
-              <LogField fieldName="span id" fieldType="string">
-                {#snippet value()}
-                  <a
-                    class="detail-cell__value link link-primary font-mono"
-                    href={itemHref('traces', traceID, traceSpanPatch)}
-                    onclick={goToTrace}>{log.spanID}</a
-                  >
-                {/snippet}
-              </LogField>
-            {:else if log.spanID}
+  {#if log}
+    {#if log.traceID}
+      <div class="log-detail-panel__trace">
+        <AssociatedTrace traceID={log.traceID} spanID={log.spanID} />
+      </div>
+    {/if}
+
+    <div class="log-detail-panel__body">
+      <div class="log-detail-panel__scroll" bind:this={scrollEl}>
+        <DetailViews
+          id={detailViewID}
+          showTabs={false}
+          bind:view={detailView}
+          wholeURL={exportURL}
+          scopes={[
+            {
+              id: 'log',
+              label: 'Log',
+              url: exportURL,
+            },
+          ]}
+          reveal={resolvedTarget}
+        >
+          <table
+            class="detail-fields w-full"
+            aria-label="Log fields"
+            data-field-source="log"
+          >
+            <tbody>
               <LogField
-                fieldName="span id"
-                fieldType="string"
-                fieldValue={log.spanID}
+                fieldName="timeUnixNano"
+                fieldType="fixed64"
+                fieldValue={log.timestamp.toString()}
+                timestampLabel={formatTimestamp(
+                  log.timestamp,
+                  timeContext.tz,
+                  'milliseconds'
+                )}
               />
-            {/if}
-            {#if log.body}
-              <LogField fieldName="body" fieldType={log.body.kind} multiline>
-                {#snippet value()}
-                  <AttributeValueView value={log.body} path="body" />
-                {/snippet}
-              </LogField>
-            {/if}
-            {#if log.eventName}
               <LogField
-                fieldName="event name"
+                fieldName="observedTimeUnixNano"
+                fieldType="fixed64"
+                fieldValue={log.observedTimestamp.toString()}
+                timestampLabel={formatTimestamp(
+                  log.observedTimestamp,
+                  timeContext.tz,
+                  'milliseconds'
+                )}
+              />
+              <LogField
+                fieldName="severityText"
+                fieldType="string"
+                fieldValue={log.severityText}
+              >
+                {#snippet value()}<LogSeverity
+                    number={log.severityNumber}
+                    text={log.severityText}
+                    >{log.severityText === ''
+                      ? '""'
+                      : log.severityText}</LogSeverity
+                  >{/snippet}
+              </LogField>
+              <LogField
+                fieldName="severityNumber"
+                fieldType="enum"
+                fieldValue={String(log.severityNumber)}
+              >
+                {#snippet value()}<LogSeverity
+                    number={log.severityNumber}
+                    text={log.severityText}
+                    >{log.severityNumber} ({severityLabel})</LogSeverity
+                  >{/snippet}
+              </LogField>
+              {#if log.spanID && !log.traceID}
+                <LogField
+                  identifier
+                  fieldName="spanId"
+                  fieldType="bytes"
+                  fieldValue={log.spanID}
+                />
+              {/if}
+              {#if log.body}
+                <LogField
+                  fieldName="body"
+                  fieldSource="log"
+                  fieldType={log.body.kind}
+                  typedValue={log.body}
+                />
+              {/if}
+              <LogField
+                fieldName="eventName"
                 fieldType="string"
                 fieldValue={log.eventName}
               />
-            {/if}
-            <LogField
-              fieldName="flags"
-              fieldType="uint32"
-              fieldValue={String(log.flags)}
-            />
-            {#if log.droppedAttributesCount > 0}
               <LogField
-                fieldName="dropped attributes count"
+                fieldName="flags"
+                fieldType="uint32"
+                fieldValue={String(log.flags)}
+              />
+              <LogField
+                fieldName="droppedAttributesCount"
                 fieldType="uint32"
                 fieldValue={String(log.droppedAttributesCount)}
               />
-            {/if}
-            <AttributeRows attributes={log.attributes} owner="log" />
-          </tbody>
-        </table>
-      </FieldGroup>
-
-      <FieldGroup
-        label="Resource"
-        count={resourceFieldCount}
-        detail
-        bind:open={resourceOpen}
-      >
-        <table class="detail-fields w-full" aria-label="Resource attributes">
-          <tbody>
-            <AttributeRows
-              attributes={log.resource.attributes}
-              owner="resource"
-            />
-            {#if log.resource.droppedAttributesCount > 0}
+              <AttributeRows attributes={log.attributes} owner="log" />
+              <AttributeRows
+                attributes={log.resource.attributes}
+                owner="resource"
+                origin="resource"
+              />
               <LogField
-                fieldName="dropped attributes count"
+                fieldName="droppedAttributesCount"
+                origin="resource"
                 fieldType="uint32"
                 fieldValue={String(log.resource.droppedAttributesCount)}
               />
-            {/if}
-          </tbody>
-        </table>
-      </FieldGroup>
-
-      <FieldGroup
-        label="Scope"
-        count={scopeFieldCount}
-        detail
-        bind:open={scopeOpen}
-      >
-        <table class="detail-fields w-full" aria-label="Scope attributes">
-          <tbody>
-            {#if log.scope.name}
+              {#if log.resourceSchemaURL !== undefined}
+                <LogField
+                  fieldName="schemaUrl"
+                  origin="resource"
+                  fieldType="string"
+                  fieldValue={log.resourceSchemaURL}
+                />
+              {/if}
               <LogField
-                fieldName="scope name"
+                fieldName="name"
+                origin="scope"
                 fieldType="string"
                 fieldValue={log.scope.name}
               />
-            {/if}
-            {#if log.scope.version}
               <LogField
-                fieldName="scope version"
+                fieldName="version"
+                origin="scope"
                 fieldType="string"
                 fieldValue={log.scope.version}
               />
-            {/if}
-            <AttributeRows attributes={log.scope.attributes} owner="scope" />
-            {#if log.scope.droppedAttributesCount > 0}
+              {#if log.scopeSchemaURL !== undefined}
+                <LogField
+                  fieldName="schemaUrl"
+                  origin="scope"
+                  fieldType="string"
+                  fieldValue={log.scopeSchemaURL}
+                />
+              {/if}
+              <AttributeRows
+                attributes={log.scope.attributes}
+                owner="scope"
+                origin="scope"
+              />
               <LogField
-                fieldName="dropped attributes count"
+                fieldName="droppedAttributesCount"
+                origin="scope"
                 fieldType="uint32"
                 fieldValue={String(log.scope.droppedAttributesCount)}
               />
-            {/if}
-          </tbody>
-        </table>
-      </FieldGroup>
+            </tbody>
+          </table>
+        </DetailViews>
+      </div>
+      <ScrollToTopButton
+        visible={scrolled}
+        label="Scroll log to top"
+        onclick={scrollToTop}
+      />
     </div>
 
     {#if footer}
       {@render footer()}
     {/if}
-  </div>
-{:else}
-  <div class="log-detail-panel log-detail-panel--empty">
-    <p class="text-rp-muted text-sm">Select a log to view details</p>
-  </div>
-{/if}
+  {:else if error}<p class="p-3" role="alert">Error: {error}</p>
+  {:else}<p class="p-3 text-subtle" role={loading ? 'status' : undefined}>
+      {loading ? 'Loading log details…' : 'Select a log to view details'}
+    </p>{/if}
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
@@ -263,12 +304,16 @@
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
   }
 
-  .log-detail-panel--empty {
-    @apply items-center justify-center;
-  }
-
   .log-detail-panel__scroll {
     @apply flex-1 min-h-0 overflow-y-auto;
     scrollbar-width: thin;
+  }
+
+  .log-detail-panel__trace {
+    @apply shrink-0;
+  }
+
+  .log-detail-panel__body {
+    @apply relative flex min-h-0 flex-1 flex-col;
   }
 </style>

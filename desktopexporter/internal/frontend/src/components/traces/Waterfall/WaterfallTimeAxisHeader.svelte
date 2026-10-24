@@ -106,13 +106,17 @@
     return `${wholePart}.${fracStr}${suffix}`
   }
 
+  function offsetPercent(pos: bigint, durationNs: bigint): number {
+    return Number((pos * 10000n) / durationNs) / 100
+  }
+
   function tickAt(
     pos: bigint,
     durationNs: bigint,
     unit: UnitDef
   ): TimeAxisTick {
     return {
-      offsetPercent: Number((pos * 10000n) / durationNs) / 100,
+      offsetPercent: offsetPercent(pos, durationNs),
       label: formatTickValue(pos, unit),
     }
   }
@@ -205,6 +209,9 @@
 </script>
 
 <script lang="ts">
+  import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
+  import WaterfallTimeRuler from './WaterfallTimeRuler.svelte'
+  import { columnLabel, type SizedWaterfallColumn } from './waterfall-columns'
   import {
     DURATION_GUTTER_REM,
     OUTSIDE_RECORD_SLOT_REM,
@@ -216,12 +223,7 @@
     targetTickCount?: number
     tickLabelWidth?: number
     spanColWidth: number
-    serviceColWidth: number
-    /** The header's separators are alternative grab handles for the
-     *  view's column bars -- the drag itself (mechanics, cascade,
-     *  persistence) lives in one place, with the view. This component
-     *  only says which bar was grabbed. */
-    onStartResize: (barId: 'span' | 'service', e: PointerEvent) => void
+    optionalColumns?: SizedWaterfallColumn[]
   }
 
   let {
@@ -229,8 +231,7 @@
     targetTickCount = 6,
     tickLabelWidth = 80,
     spanColWidth,
-    serviceColWidth,
-    onStartResize,
+    optionalColumns = [],
   }: Props = $props()
 
   let axis = $derived(waterfallTimeAxis(traceDurationNs, targetTickCount))
@@ -247,40 +248,31 @@
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"
     style:width="{spanColWidth}px"
+    aria-label="Span name"
   >
-    Span
-    <div
-      class="resize-handle"
-      aria-hidden="true"
-      onpointerdown={e => onStartResize('span', e)}
-    ></div>
+    <span class="flex min-w-0 items-center gap-2">
+      <TableColumnHeading label="name" source="Span" signal="Span" />
+    </span>
   </th>
-  <th
-    scope="col"
-    class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-service"
-    style:width="{serviceColWidth}px"
-  >
-    Service
-    <div
-      class="resize-handle"
-      aria-hidden="true"
-      onpointerdown={e => onStartResize('service', e)}
-    ></div>
-  </th>
+  {#each optionalColumns as column (column.id)}
+    <th
+      scope="col"
+      class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-attribute"
+      style:width="{column.width}px"
+      title={columnLabel(column)}
+      aria-label={columnLabel(column)}
+      data-column-id={column.id}
+    >
+      <TableColumnHeading
+        label={column.key || '(empty key)'}
+        source={column.source}
+        signal="Span"
+      />
+    </th>
+  {/each}
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
     <div class="waterfall-time-axis-header__ruler">
-      {#each axis.ticks as tick}
-        <div
-          class="waterfall-time-axis-header__tick"
-          style:left="{tick.offsetPercent}%"
-        >
-          <span class="waterfall-time-axis-header__tick-label"
-            >{tick.label}</span
-          >
-          <span class="waterfall-time-axis-header__tick-line" aria-hidden="true"
-          ></span>
-        </div>
-      {/each}
+      <WaterfallTimeRuler {axis} />
     </div>
   </th>
 </tr>
@@ -288,26 +280,29 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .waterfall-time-axis-header {
+    --primary-label-center: 50%;
     height: var(--table-header-h);
   }
 
   .waterfall-time-axis-header__th-label {
-    @apply relative align-middle text-left text-xs font-semibold tracking-normal;
-    color: var(--color-subtle);
+    @apply relative py-2 align-middle text-left text-sm font-semibold tracking-normal;
+    color: var(--table-heading-color);
   }
 
   .waterfall-time-axis-header__th-span {
-    /* Row inset (8px) + gutter(26px) + gap-1(4px) = 38px */
-    padding-left: 38px;
+    padding-left: calc(
+      0.5rem + var(--tree-count-width) + var(--waterfall-gutter-col) +
+        var(--waterfall-gutter-tail) + 0.25rem
+    );
   }
 
-  .waterfall-time-axis-header__th-service {
-    @apply pl-2 pr-1;
+  .waterfall-time-axis-header__th-attribute {
+    padding-inline: var(--table-cell-inline-padding, 0.5rem);
   }
 
   .waterfall-time-axis-header__th-ruler {
     @apply relative min-w-[12rem] align-middle text-xs tracking-normal;
-    color: var(--color-subtle);
+    color: var(--table-heading-color);
     padding-left: var(--timeline-left-inset);
     padding-right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
@@ -316,35 +311,5 @@
     @apply absolute bottom-0 top-0 min-w-0 overflow-visible;
     left: var(--timeline-left-inset);
     right: calc(var(--duration-gutter) + var(--outside-record-slot));
-  }
-
-  .waterfall-time-axis-header__tick {
-    @apply absolute bottom-0 h-full;
-  }
-
-  .waterfall-time-axis-header__tick-label {
-    @apply absolute top-1/2 text-xs tracking-normal text-center;
-    color: var(--color-subtle);
-    width: var(--tick-label-w);
-    margin-left: calc(var(--tick-label-w) / -2);
-    transform: translateY(-50%);
-  }
-
-  .waterfall-time-axis-header__tick-line {
-    @apply absolute bottom-0 w-px bg-base-content/20;
-    left: 0;
-    top: calc(50% + 10px);
-    transform: translateX(-50%);
-  }
-
-  .resize-handle {
-    @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
-    /* Without this the browser can claim the gesture for scrolling on
-       touch or a precision trackpad, cancelling the drag mid-gesture.
-       Same rule as .col-resize-bar. */
-    touch-action: none;
-    right: -3px;
-    width: 7px;
-    z-index: 2;
   }
 </style>

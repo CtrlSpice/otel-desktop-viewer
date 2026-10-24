@@ -5,6 +5,7 @@
   import {
     createMetricViewContext,
     type MetricViewContext,
+    type HistogramContributionSelection,
   } from '@/contexts/metric-view-context.svelte'
   import type { DataPoint, MetricViewData } from '@/types/api-types'
 
@@ -13,6 +14,7 @@
     componentProps?: Record<string, unknown>
     metric: MetricViewData
     seriesDatapoints?: Readonly<Record<string, DataPoint[]>>
+    contribution?: HistogramContributionSelection | null
     oncontext?: (context: MetricViewContext) => void
   }
 
@@ -21,6 +23,7 @@
     componentProps = {},
     metric,
     seriesDatapoints,
+    contribution,
     oncontext,
   }: Props = $props()
 
@@ -31,7 +34,9 @@
     () => null,
     () => null,
     () => null,
-    seriesKey => seriesDatapoints?.[seriesKey]
+    seriesKey => seriesDatapoints?.[seriesKey],
+    () => undefined,
+    () => contribution ?? null
   )
   untrack(() => metricContext.seedForMetric(metric))
   untrack(() => oncontext?.(metricContext))

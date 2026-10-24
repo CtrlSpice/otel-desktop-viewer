@@ -112,6 +112,39 @@ describe('container refit', () => {
     const w = fitWidths(specs, { gutter: 40, a: 200 }, 640)
     expect(w.gutter).toBe(40)
   })
+
+  it('gives a preferred fill column all growth without changing its neighbours', () => {
+    const specs = [...abc, fixed('severity', 96)]
+    expect(
+      fitWidths(specs, { a: 200, b: 180, c: 220, severity: 96 }, 896, 'c')
+    ).toEqual({ a: 200, b: 180, c: 420, severity: 96 })
+  })
+
+  it('shrinks the fill column first while it has room', () => {
+    expect(fitWidths(abc, { a: 200, b: 180, c: 420 }, 600, 'c')).toEqual({
+      a: 200,
+      b: 180,
+      c: 220,
+    })
+  })
+
+  it('only shrinks neighbours after the fill column reaches its minimum', () => {
+    const w = fitWidths(abc, { a: 200, b: 200, c: 150 }, 400, 'c')
+    expect(w).toEqual({ a: 150, b: 150, c: 100 })
+    expect(fitWidths(abc, w, 200, 'c')).toEqual({ a: 100, b: 100, c: 100 })
+  })
+
+  it('uses the existing fit when the preferred column is hidden or fixed', () => {
+    const start = { a: 300, b: 200, c: 100 }
+    expect(fitWidths(abc, start, 900, 'hidden')).toEqual(
+      fitWidths(abc, start, 900)
+    )
+    const specs = [fixed('severity', 96), ...abc]
+    const withSeverity = { severity: 96, ...start }
+    expect(fitWidths(specs, withSeverity, 996, 'severity')).toEqual(
+      fitWidths(specs, withSeverity, 996)
+    )
+  })
 })
 
 describe('reconcile against a stored layout', () => {
@@ -141,6 +174,14 @@ describe('reconcile against a stored layout', () => {
 
   it('is a fresh layout when nothing was stored', () => {
     expect(reconcileWidths(abc, {}, 600)).toEqual(initialWidths(abc, 600))
+  })
+
+  it('preserves stored neighbour widths when refitting with a fill column', () => {
+    expect(reconcileWidths(abc, { a: 300, b: 150, c: 150 }, 800, 'c')).toEqual({
+      a: 300,
+      b: 150,
+      c: 350,
+    })
   })
 })
 

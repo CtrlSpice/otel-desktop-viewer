@@ -1,0 +1,43 @@
+[
+  { "id": "checkout-failure", "goal": "Why did checkout-017 fail?" },
+  {
+    "id": "checkout-latency",
+    "goal": "Why was checkout-019 slower than checkout-018?"
+  },
+  {
+    "id": "failure-rate",
+    "goal": "How did the checkout failure rate change during this period?"
+  },
+  {
+    "id": "trace-logs",
+    "goal": "Show me all the logs for checkout-017."
+  },
+  {
+    "id": "customer-count",
+    "goal": "How many different customers appear in the checkout traffic during this period?"
+  },
+  {
+    "id": "sequence-types",
+    "goal": "What data types are used for order sequence numbers across checkouts?"
+  },
+  {
+    "id": "trace-export",
+    "goal": "Export checkout-017 so another engineer can load it into their viewer."
+  },
+  {
+    "id": "request-latency",
+    "goal": "How did request latency change during this period?"
+  },
+  {
+    "id": "request-count",
+    "goal": "How many requests does the request counter report during this period?"
+  },
+  {
+    "id": "cpu-evidence",
+    "goal": "What CPU readings are available around checkout-019?"
+  },
+  {
+    "id": "cpu-comparison",
+    "goal": "How do the recorded CPU readings around checkout-019 compare with the rest of the time window?"
+  }
+]

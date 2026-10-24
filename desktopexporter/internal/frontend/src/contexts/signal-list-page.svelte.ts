@@ -26,14 +26,6 @@ import {
 
 export type SortDirection = 'asc' | 'desc'
 
-export type SortOption<TSortColumn extends string> = {
-  value: TSortColumn
-  label: string
-  /** Direction a first click on this column lands on. Magnitude and time
-   * columns want the largest/newest first; text columns read A–Z. */
-  defaultDirection?: SortDirection
-}
-
 export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   signal: SignalName
   getItemID: (item: TItem) => string
@@ -47,6 +39,8 @@ export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   initialSort: { column: TSortColumn; direction: SortDirection }
   /** Keep a route-selected ID that is absent from the current filtered list. */
   preserveMissingSelection?: boolean
+  /** Paged results already have a stable server order. */
+  serverSorted?: boolean
   /** Called after each poll interval; update polled stat counters here. */
   pollStats?: () => Promise<void>
   /** Derive refresh pulse + aside tip from baseline vs polled counters. */
@@ -133,6 +127,7 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   )
 
   let sortedItems = $derived.by(() => {
+    if (opts.serverSorted) return items
     const col = sortColumn
     const dir = sortDirection
     const rows = [...items]
@@ -242,8 +237,8 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   }
 
   function handleRefresh() {
-    searchEditorApi?.clear()
-    void runListFetch()
+    if (searchEditorApi) searchEditorApi.submit()
+    else void runListFetch()
   }
 
   function handleSearchResults(event: SearchResultEvent) {

@@ -1,11 +1,29 @@
 import { batchOTLPFile, scanOTLPFile, type ImportSignal } from './otlp-file'
 import { telemetryAPI } from './telemetry-service'
 import type { ImportFailure } from '@/types/import-types'
+import { detectImportFile } from './import-file'
+import { evalAPI } from './eval-service'
 
 const signals: readonly ImportSignal[] = ['traces', 'logs', 'metrics']
+const evalRunListeners = new Set<() => void>()
 
-function isReply(value: unknown): value is Record<string, unknown> {
+export function onEvalExperimentsChanged(listener: () => void): () => void {
+  evalRunListeners.add(listener)
+  return () => evalRunListeners.delete(listener)
+}
+
+function notifyEvalExperimentsChanged() {
+  for (const listener of evalRunListeners) listener()
+}
+
+function isReply(value: unknown): value is object {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isErrorReply(value: unknown): value is { message: string } {
+  return (
+    isReply(value) && 'message' in value && typeof value.message === 'string'
+  )
 }
 
 async function responseIssue(response: Response): Promise<string | undefined> {
@@ -13,7 +31,7 @@ async function responseIssue(response: Response): Promise<string | undefined> {
   if (!response.ok) {
     try {
       const reply: unknown = JSON.parse(text)
-      if (isReply(reply) && typeof reply.message === 'string')
+      if (isErrorReply(reply))
         return reply.message.trim() || `HTTP ${response.status}`
     } catch {
       /* Non-JSON proxy errors are still useful to the user. */
@@ -22,30 +40,36 @@ async function responseIssue(response: Response): Promise<string | undefined> {
   }
   const reply: unknown = JSON.parse(text)
   if (!isReply(reply)) throw new Error('Invalid OTLP response')
-  const partial = reply.partialSuccess
+  const partial = 'partialSuccess' in reply ? reply.partialSuccess : undefined
   if (partial === undefined) return
   if (!isReply(partial))
     throw new Error('Invalid OTLP partial-success response')
   const count =
-    partial.rejectedSpans ??
-    partial.rejectedLogRecords ??
-    partial.rejectedDataPoints ??
+    ('rejectedSpans' in partial ? partial.rejectedSpans : undefined) ??
+    ('rejectedLogRecords' in partial
+      ? partial.rejectedLogRecords
+      : undefined) ??
+    ('rejectedDataPoints' in partial
+      ? partial.rejectedDataPoints
+      : undefined) ??
     '0'
   if (!(
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- OTLP uint64 counts may be decimal strings; validate without converting through Number.
     (typeof count === 'string' && /^\d+$/.test(count)) ||
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Numeric OTLP counts must be safe nonnegative integers before conversion to bigint.
     (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0)
   )) {
     throw new Error('Invalid OTLP rejected-record count')
   }
-  if (
-    partial.errorMessage !== undefined &&
-    typeof partial.errorMessage !== 'string'
-  ) {
+  const errorMessage =
+    'errorMessage' in partial ? partial.errorMessage : undefined
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Reject malformed optional OTLP error messages instead of coercing received values.
+  if (errorMessage !== undefined && typeof errorMessage !== 'string') {
     throw new Error('Invalid OTLP error message')
   }
   const rejected = BigInt(count)
-  if (rejected > 0n || partial.errorMessage) {
-    return partial.errorMessage || `The receiver rejected ${rejected} records.`
+  if (rejected > 0n || errorMessage) {
+    return errorMessage || `The receiver rejected ${rejected} records.`
   }
 }
 
@@ -124,7 +148,14 @@ export function createFileImporter(
           if (controller.signal.aborted) return
           let issues: string[]
           try {
-            issues = await importOTLPFile(file, pageURL, controller.signal)
+            if (
+              __EVALS_BUILT__ &&
+              (await detectImportFile(file, controller.signal)) === 'eval'
+            ) {
+              issues = await evalAPI.ingestEvalFile(file, controller.signal)
+              notifyEvalExperimentsChanged()
+            } else
+              issues = await importOTLPFile(file, pageURL, controller.signal)
           } catch (error) {
             if (controller.signal.aborted) return
             issues = [

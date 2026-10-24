@@ -127,7 +127,9 @@
       <span class="toolbar-filter-trigger__label">{label}</span>
     {/if}
     {#if activeCount > 0}
-      <span class="toolbar-filter-trigger__badge">{activeCount}</span>
+      <span class="toolbar-filter-trigger__badge"
+        >{activeCount} {activeCount === 1 ? 'field' : 'fields'}</span
+      >
     {/if}
     {#if label}
       <span class="toolbar-filter-trigger__dropdown-circle" aria-hidden="true">
@@ -151,8 +153,7 @@
   {#if popoverOpen}
     <div bind:this={popoverEl} class="field-filter__popover">
       <div class="field-filter__popover-header header-surface">
-        <span
-          class="text-xs font-semibold uppercase tracking-wide text-base-content/55"
+        <span class="text-xs font-semibold uppercase tracking-wide text-subtle"
           >Columns</span
         >
       </div>
@@ -163,8 +164,8 @@
           {@const pinned = category === 'pinned'}
           <button
             type="button"
-            class="field-filter__option"
-            class:field-filter__option--selected={checked}
+            class="field-filter__option item-state item-state--menu"
+            aria-pressed={checked}
             class:field-filter__option--pinned={pinned}
             disabled={pinned}
             onclick={() => onToggleField(field)}
@@ -206,7 +207,8 @@
             {/if}
             <span class="field-filter__field-name">{field.name}</span>
             {#if field.searchScope === 'attribute' && 'attributeScope' in field}
-              <span class="badge-origin">{field.attributeScope}</span>
+              <span class="text-subtle" aria-hidden="true">·</span>
+              <span class="text-secondary">{field.attributeScope}</span>
             {/if}
           </button>
         {/each}
@@ -240,12 +242,6 @@
 
   .field-filter__option {
     @apply flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm;
-    @apply transition-colors duration-150;
-    @apply hover:bg-base-200/60;
-  }
-
-  .field-filter__option--selected {
-    @apply bg-primary/5;
   }
 
   .field-filter__option--pinned {
@@ -267,6 +263,6 @@
   }
 
   .field-filter__field-name {
-    @apply min-w-0 truncate font-mono text-xs text-base-content/80;
+    @apply min-w-0 truncate font-sans text-sm text-(--color-subtle);
   }
 </style>

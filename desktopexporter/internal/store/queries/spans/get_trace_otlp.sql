@@ -4,6 +4,7 @@ with recursive selected as (
 	select s.*
 	from spans s
 	where s.trace_id = try_cast(? as uuid)
+	  and (? = '' or s.span_id = try_cast(? as ubigint))
 ),
 used_attribute_ids as materialized (
 	select unnest(attribute_ids) as id from selected

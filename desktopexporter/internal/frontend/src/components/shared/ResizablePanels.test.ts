@@ -2,11 +2,51 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { createRawSnippet } from 'svelte'
-import { render } from '@testing-library/svelte'
+import { fireEvent, render } from '@testing-library/svelte'
 import ResizablePanels from './ResizablePanels.svelte'
 
 const leftPanel = createRawSnippet(() => ({ render: () => '<p>main</p>' }))
 const rightPanel = createRawSnippet(() => ({ render: () => '<p>detail</p>' }))
+
+describe('ResizablePanels collapse', () => {
+  it.each([1000, 600])(
+    'preserves mounted content and the split at width %i',
+    async width => {
+      const editableDetail = createRawSnippet(() => ({
+        render: () => '<input aria-label="Detail draft" />',
+      }))
+      const { container, rerender } = render(ResizablePanels, {
+        leftPanel,
+        rightPanel: editableDetail,
+        rightPanelID: 'detail',
+        storageKey: 'split',
+        defaultLeftWidth: 0.6,
+      })
+      await measure(width)
+      const main = container.querySelector('.panel-shell')!
+      const detail = container.querySelector('#detail')!
+      const input = detail.querySelector('input')!
+      input.value = 'unfinished draft'
+      const fraction = leftFraction()
+
+      await rerender({ rightCollapsed: true })
+      expect((main as HTMLElement).style.flexGrow).toBe('1')
+      expect(detail).toHaveProperty('inert', true)
+      expect(container.querySelector('[role="separator"]')).toHaveProperty(
+        'inert',
+        true
+      )
+      expect(container.querySelector('.panel-shell')).toBe(main)
+      expect(leftFraction()).toBe(fraction)
+
+      await rerender({ rightCollapsed: false })
+      expect(container.querySelector('#detail')).toBe(detail)
+      expect(detail).toHaveProperty('inert', false)
+      expect(input).toHaveValue('unfinished draft')
+      expect(leftFraction()).toBe(fraction)
+    }
+  )
+})
 
 // jsdom has no layout, so the component's ResizeObserver never fires on its
 // own. This stub records instances so a test can hand the component a
@@ -29,9 +69,12 @@ beforeEach(() => {
 
 async function measure(width: number, height = 600) {
   await tick()
+  const target = document.querySelector('.panel-split')!
+  const bounds = new DOMRect(0, 0, width, height)
+  vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(bounds)
   const entry = {
-    target: document.body,
-    contentRect: new DOMRect(0, 0, width, height),
+    target,
+    contentRect: bounds,
     borderBoxSize: [],
     contentBoxSize: [],
     devicePixelContentBoxSize: [],
@@ -39,13 +82,20 @@ async function measure(width: number, height = 600) {
   for (const o of observers) {
     o.cb([entry], o)
   }
+  await new Promise(requestAnimationFrame)
   await tick()
 }
 
 function leftFraction(): number {
-  const shell = document.querySelector<HTMLElement>('.panel-shell')
-  if (!shell) throw new Error('no panel shell rendered')
-  return Number.parseFloat(shell.style.flex)
+  const divider = document.querySelector('[role="separator"]')
+  if (!divider) throw new Error('no divider rendered')
+  return Number(divider.getAttribute('aria-valuenow')) / 100
+}
+
+function rightWidthPx(): number {
+  const detail = document.querySelector<HTMLElement>('.panel-detail')
+  if (!detail) throw new Error('no detail panel rendered')
+  return Number.parseFloat(detail.style.flexBasis)
 }
 
 /* The fractions are flex-grow shares of the flex space: the container
@@ -59,7 +109,7 @@ describe('ResizablePanels rem default', () => {
     render(ResizablePanels, { leftPanel, rightPanel, defaultRightRem: 28 })
     await measure(1000)
     // 28rem = 448px of 984px flex space.
-    expect(leftFraction()).toBeCloseTo(1 - 448 / FLEX_SPACE, 5)
+    expect(rightWidthPx()).toBeCloseTo(448, 5)
   })
 
   it('lets a stored split beat the rem default', async () => {
@@ -71,7 +121,7 @@ describe('ResizablePanels rem default', () => {
       storageKey: 'split',
     })
     await measure(1000)
-    expect(leftFraction()).toBeCloseTo(0.6, 5)
+    expect(rightWidthPx()).toBeCloseTo(0.4 * FLEX_SPACE, 5)
   })
 
   it('falls back to the fraction default without a measurement', async () => {
@@ -95,7 +145,7 @@ describe('ResizablePanels stored splits', () => {
       minRightWidth: 0.2,
     })
     await measure(1000)
-    expect(leftFraction()).toBeCloseTo(0.8, 5)
+    expect(rightWidthPx()).toBeCloseTo(0.2 * FLEX_SPACE, 5)
   })
 
   it('ignores a stored value that is not a number', async () => {
@@ -107,7 +157,108 @@ describe('ResizablePanels stored splits', () => {
       defaultLeftWidth: 0.7,
     })
     await measure(1000)
-    expect(leftFraction()).toBeCloseTo(0.7, 5)
+    expect(rightWidthPx()).toBeCloseTo(0.3 * FLEX_SPACE, 5)
+  })
+})
+
+describe('ResizablePanels shared width', () => {
+  it('reports usable space before applying the initial saved split, even while collapsed', async () => {
+    const onLayoutMeasure = vi.fn((space: number, stacked: boolean) => {
+      if (stacked) localStorage.setItem('split', '0.6')
+    })
+    const { rerender } = render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightCollapsed: true,
+      onLayoutMeasure,
+      storageKey: 'split',
+    })
+    await tick()
+    expect(onLayoutMeasure).not.toHaveBeenCalled()
+    await measure(1000)
+    expect(onLayoutMeasure).toHaveBeenLastCalledWith(FLEX_SPACE, false)
+    await measure(600, 1000)
+    expect(onLayoutMeasure).toHaveBeenLastCalledWith(FLEX_SPACE, true)
+    await rerender({ rightCollapsed: false })
+    expect(leftFraction()).toBe(0.6)
+  })
+
+  it('allows wide Details and restores its requested width after the main-pane minimum limits it', async () => {
+    const { rerender } = render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightWidthRem: 60,
+      minLeftPx: 448,
+      minRightPx: 352,
+    })
+    await measure(2000)
+    expect(rightWidthPx()).toBeCloseTo(960, 5)
+    await measure(1200)
+    expect(rightWidthPx()).toBeCloseTo(1200 - 16 - 448, 5)
+    await measure(1000)
+    expect(rightWidthPx()).toBeCloseTo(FLEX_SPACE - 448, 5)
+    await measure(2000)
+    expect(rightWidthPx()).toBeCloseTo(960, 5)
+    await rerender({ rightWidthRem: 100 })
+    expect(rightWidthPx()).toBeCloseTo((2000 - 16) * 0.7, 5)
+  })
+
+  it('keeps the same detail width when the available main space changes', async () => {
+    render(ResizablePanels, { leftPanel, rightPanel, rightWidthRem: 30 })
+    await measure(1200)
+    expect(rightWidthPx()).toBeCloseTo(480, 5)
+    await measure(1000)
+    expect(rightWidthPx()).toBeCloseTo(480, 5)
+  })
+
+  it('uses the shared width instead of a stored fractional split', async () => {
+    localStorage.setItem('split', '0.8')
+    render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightWidthRem: 30,
+      storageKey: 'split',
+    })
+    await measure(1000)
+    expect(rightWidthPx()).toBeCloseTo(480, 5)
+  })
+
+  it('saves horizontal changes in rem and resets to the shared default', async () => {
+    const onRightWidthChange = vi.fn()
+    const { getByRole } = render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightWidthRem: 30,
+      onRightWidthChange,
+      defaultRightRem: 28,
+      storageKey: 'split',
+    })
+    await measure(1000)
+    const separator = getByRole('separator')
+    await fireEvent.keyDown(separator, { key: 'ArrowLeft' })
+    expect(onRightWidthChange).toHaveBeenLastCalledWith(
+      (480 + FLEX_SPACE * 0.01) / 16
+    )
+    expect(localStorage.getItem('split')).toBeNull()
+    await fireEvent.dblClick(separator)
+    expect(onRightWidthChange.mock.lastCall![0]).toBeCloseTo(28, 5)
+  })
+
+  it('does not overwrite the shared width while resizing a stacked layout', async () => {
+    const onRightWidthChange = vi.fn()
+    const { getByRole } = render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightWidthRem: 30,
+      onRightWidthChange,
+      storageKey: 'split',
+    })
+    await measure(600)
+    await fireEvent.keyDown(getByRole('separator'), { key: 'ArrowUp' })
+    expect(onRightWidthChange).not.toHaveBeenCalled()
+    expect(localStorage.getItem('split')).not.toBeNull()
+    await measure(1200)
+    expect(rightWidthPx()).toBeCloseTo(480, 5)
   })
 })
 
@@ -123,7 +274,7 @@ describe('ResizablePanels pixel floors', () => {
     await measure(1000)
     // 500px of 984px flex space -- against the raw container this would
     // be 0.5 and the rendered pane would come out 8px short.
-    expect(leftFraction()).toBeCloseTo(500 / FLEX_SPACE, 5)
+    expect(rightWidthPx()).toBeCloseTo(FLEX_SPACE - 500, 5)
   })
 
   it('lets the main-pane floor win over the rem default when they conflict', async () => {
@@ -136,6 +287,6 @@ describe('ResizablePanels pixel floors', () => {
     await measure(1000)
     // The rem default would put the left pane at 536px of flex space;
     // the 600px floor overrides it.
-    expect(leftFraction()).toBeCloseTo(600 / FLEX_SPACE, 5)
+    expect(rightWidthPx()).toBeCloseTo(FLEX_SPACE - 600, 5)
   })
 })

@@ -77,6 +77,30 @@ function log(
 }
 
 describe('timeline marker projection', () => {
+  it('positions logs by recorded trace time even outside their owning span duration', () => {
+    const owner = span()
+    owner.spanData.startTime = 100n
+    owner.spanData.endTime = 200n
+    const records = recordsForSpan(owner, [
+      log('before', 'span-1', 99n),
+      log('start', 'span-1', 100n),
+      log('end', 'span-1', 200n),
+      log('after', 'span-1', 201n),
+    ])
+    const markers = clusterTimelineRecords(records, 0n, 1000n, 1000, 0)
+    expect(
+      markers
+        .filter(marker => marker.position.placement === 'inside')
+        .flatMap(marker => marker.members.map(record => record.id))
+    ).toEqual(['log:before', 'log:start', 'log:end', 'log:after'])
+    expect(markers.at(-1)).toMatchObject({
+      position: { placement: 'inside', pixel: 201, percent: 20.1 },
+      members: [{ id: 'log:after', timestamp: 201n }],
+    })
+    expect(markers.flatMap(marker => marker.members)).toHaveLength(
+      records.length
+    )
+  })
   it('pins the shared row/header gutter and uniform marker geometry', () => {
     expect({
       barHeight: WATERFALL_BAR_HEIGHT_REM,
@@ -91,7 +115,7 @@ describe('timeline marker projection', () => {
       barHeight: 0.875,
       durationGutter: 5,
       outsideSlot: 2,
-      barLabelGap: 0.625,
+      barLabelGap: 1,
       timelineInset: 1.25,
       glyph: 0.875,
       hitArea: 1.5,
@@ -239,7 +263,7 @@ describe('timeline marker ownership and colour', () => {
     ])
   })
 
-  it('uses highest received log severity and event-only fallbacks', () => {
+  it('uses span colour for logs regardless of severity and highlights exception events', () => {
     const owner = span()
     owner.spanData.events = [event('exception', 10n)]
     const exceptionMarker = clusterTimelineRecords(
@@ -272,6 +296,6 @@ describe('timeline marker ownership and colour', () => {
         clusterTimelineRecords(logs, 0n, 100n, 100, CLUSTER_DISTANCE_PX)[0]!,
         '#abc'
       )
-    ).toBe('var(--color-error)')
+    ).toBe('#abc')
   })
 })

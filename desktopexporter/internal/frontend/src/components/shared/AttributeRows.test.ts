@@ -1,20 +1,21 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/svelte'
-import userEvent from '@testing-library/user-event'
+import { screen, within } from '@testing-library/svelte'
 import AttributeRows from './AttributeRows.svelte'
 import { renderWithContexts } from '@/test/render-helpers'
 import type { Attributes } from '@/types/api-types'
+import { jsonEditorView } from '@/test/json-editor-helpers'
 
-function renderAttributes(attributes: Attributes) {
+function renderAttributes(attributes: Attributes, origin?: string) {
   return renderWithContexts(AttributeRows, {
     attributes,
     owner: 'span attributes',
+    origin,
   })
 }
 
 describe('AttributeRows', () => {
-  it('renders recursive values and preserves duplicate attribute entries', async () => {
+  it('shows formatted JSON immediately and preserves duplicate attribute entries', () => {
     const { container } = renderAttributes([
       {
         id: 'one',
@@ -38,32 +39,51 @@ describe('AttributeRows', () => {
         value: { kind: 'string', value: 'raw' },
       },
     ])
-
-    expect(screen.queryByText('attempts')).toBeNull()
-    expect(screen.getByText('{…}')).toBeInTheDocument()
-    expect(screen.getByLabelText('2 entries')).toBeInTheDocument()
-    const markers = screen.getAllByRole('img', {
-      name: 'Conflicting typed values retained for payload in span attributes.',
+    expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual({
+      attempts: 2,
+      flags: [true],
     })
-    expect(markers).toHaveLength(2)
-    for (const marker of markers) {
-      expect(
-        marker.nextElementSibling?.classList.contains('detail-cell__key')
-      ).toBe(true)
-    }
-
-    await userEvent.click(screen.getByText('{…}'))
-
-    expect(screen.getByText('"attempts":')).toBeInTheDocument()
-    expect(screen.getByText('2 entries')).toBeInTheDocument()
-    expect(screen.getByText('[…]')).toBeInTheDocument()
-    expect(screen.getByText(',')).toBeInTheDocument()
+    expect(screen.getByText('raw')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-field="payload"]')).toHaveLength(2)
     expect(
-      container.querySelector(
-        '.attribute-value__children > .attribute-value__child > .attribute-value__container'
-      )
+      screen.getAllByRole('img', {
+        name: 'Conflicting typed values retained for payload in span attributes.',
+      })
+    ).toHaveLength(2)
+    expect(container.querySelector('details')).toBeNull()
+  })
+
+  it('keeps the unchanged key, type and provenance on the heading line', () => {
+    const attributes: Attributes = [
+      { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
+    ]
+    const { container } = renderAttributes(attributes, 'resource')
+    const header = container.querySelector('.detail-property__header')!
+    expect(
+      within(header as HTMLElement).getByText('service.name')
     ).toBeInTheDocument()
-    expect(container.querySelectorAll('.detail-cell__key')).toHaveLength(2)
+    const origin = container.querySelector<HTMLElement>(
+      '.detail-property__origin'
+    )!
+    expect(origin).toHaveTextContent(/^resource$/)
+    expect(header.querySelector('.detail-property__heading')).toContainElement(
+      origin
+    )
+    expect(header.querySelector('.detail-property__heading')).toHaveTextContent(
+      'service.name · string · resource'
+    )
+    expect(origin).not.toHaveClass('badge-soft')
+    const type = within(header as HTMLElement).getByText('string')
+    expect(header.querySelector('.detail-property__key')).toContainElement(type)
+    expect(type).not.toHaveClass('badge-soft')
+    expect(type.style.color).toBe('')
+    expect(
+      screen
+        .getByRole('button', { name: 'Copy service.name (resource)' })
+        .closest('.detail-property__header')
+    ).not.toBeNull()
+    expect(container).not.toHaveTextContent('resource.service.name')
+    expect(attributes[0]!.key).toBe('service.name')
   })
 
   it('does not warn for exact repeated canonical values', () => {
@@ -71,12 +91,11 @@ describe('AttributeRows', () => {
       { id: 'one', key: 'retry', value: { kind: 'int64', value: 1n } },
       { id: 'two', key: 'retry', value: { kind: 'int64', value: 1n } },
     ])
-
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('img')).toBeNull()
   })
 
-  it('formats structured values without losing punctuation or scalar fidelity', async () => {
-    renderAttributes([
+  it('preserves punctuation, escaping, int64 precision and negative zero', () => {
+    const { container } = renderAttributes([
       {
         key: 'payload',
         value: {
@@ -89,19 +108,14 @@ describe('AttributeRows', () => {
         },
       },
     ])
-
-    await userEvent.click(screen.getByText('[…]'))
-
-    expect(screen.getByText('[')).toBeInTheDocument()
-    expect(screen.getByText(']')).toBeInTheDocument()
-    expect(screen.getAllByText(',')).toHaveLength(2)
-    expect(screen.getByText('"line\\n\\"quoted\\""')).toBeInTheDocument()
-    expect(screen.getByText('9223372036854775807')).toBeInTheDocument()
-    expect(screen.getByText('-0')).toBeInTheDocument()
+    expect(jsonEditorView(container).state.doc.toString()).toBe(
+      '[\n  "line\\n\\"quoted\\"",\n  9223372036854775807,\n  -0\n]'
+    )
+    expect(screen.getByLabelText('JSON value of payload')).toBeInTheDocument()
   })
 
-  it('renders array indices structurally while retaining quoted map keys', async () => {
-    renderAttributes([
+  it('uses JSON array syntax rather than injecting indices into the copied value', () => {
+    const { container } = renderAttributes([
       {
         key: 'payload',
         value: {
@@ -116,31 +130,16 @@ describe('AttributeRows', () => {
         },
       },
     ])
-
-    await userEvent.click(screen.getByText('[…]'))
-    expect(screen.getByText('[0]:')).toBeInTheDocument()
-    expect(screen.queryByText('"[0]":')).toBeNull()
-
-    await userEvent.click(screen.getByText('{…}'))
-    expect(screen.getByText('"[0]":')).toBeInTheDocument()
+    expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual([
+      'first',
+      { '[0]': 'key' },
+    ])
   })
 
-  it('marks affected top-level rows without rendering nested markers', async () => {
-    renderAttributes([
+  it('warns once on a conflicted structured value while preserving every duplicate key', () => {
+    const { container } = renderAttributes([
       {
-        id: 'one',
-        key: 'demo.conflict',
-        hasConflict: true,
-        value: { kind: 'int64', value: 1n },
-      },
-      {
-        id: 'two',
-        key: 'demo.conflict',
-        hasConflict: true,
-        value: { kind: 'string', value: '1' },
-      },
-      {
-        key: 'demo.nested_conflict',
+        key: 'payload',
         value: {
           kind: 'map',
           conflictingKeys: ['same'],
@@ -152,45 +151,12 @@ describe('AttributeRows', () => {
         },
       },
     ])
-
-    expect(
-      screen.getAllByRole('img', {
-        name: 'Conflicting typed values retained for demo.conflict in span attributes.',
-      })
-    ).toHaveLength(2)
-    expect(screen.getAllByRole('img')).toHaveLength(2)
-
-    await userEvent.click(screen.getByText('{…}'))
-
-    expect(screen.getAllByRole('img')).toHaveLength(2)
-    expect(screen.queryByRole('img', { name: /clear/ })).toBeNull()
-  })
-
-  it('keeps warning badges and gold guides on affected containers without nested markers', async () => {
-    const { container } = renderAttributes([
-      {
-        key: 'payload',
-        value: {
-          kind: 'map',
-          conflictingKeys: ['same'],
-          value: [
-            { key: 'same', value: { kind: 'int64', value: 1n } },
-            { key: 'clear', value: { kind: 'bool', value: true } },
-          ],
-        },
-      },
-    ])
-
-    const badge = screen.getByLabelText(
-      '2 entries; contains conflicting typed values'
+    expect(screen.getAllByRole('img')).toHaveLength(1)
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      /Conflicting typed values retained in payload/
     )
-    expect(badge).toHaveClass('badge-warning')
-
-    await userEvent.click(screen.getByText('{…}'))
-
-    expect(screen.queryByRole('img')).toBeNull()
-    expect(
-      container.querySelectorAll('.attribute-value__child--conflicted')
-    ).toHaveLength(1)
+    expect(jsonEditorView(container).state.doc.toString()).toBe(
+      '{\n  "same": 1,\n  "same": "1",\n  "clear": true\n}'
+    )
   })
 })

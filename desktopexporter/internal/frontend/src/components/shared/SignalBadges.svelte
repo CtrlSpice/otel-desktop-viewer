@@ -1,22 +1,21 @@
 <script module lang="ts">
   /* Shared drawer-card and detail-header badges from primitive signal facts. */
   import type { MetricType } from '@/types/api-types'
-  import { metricTypeCardBadge } from '@/components/metrics/utils/metric-type'
-  import {
-    severityBadgeClass,
-    severityLabel,
-  } from '@/components/logs/log-severity'
+  import { metricTypeSummary } from '@/components/metrics/utils/metric-type'
+  import LogSeverity from '@/components/logs/LogSeverity.svelte'
 
   type MetricProps = {
     signal: 'metric'
     metricType: MetricType | string
     aggregationTemporality: string | null | undefined
     isMonotonic: boolean | null
+    showType?: boolean
     /** Series count is glanceable on the drawer card. The detail
      *  pane lists timeseries directly below the header, so most
      *  callers there omit it. */
     seriesCount?: number
     seriesCardinality?: number
+    dataPointCount?: number
   }
 
   type TraceProps = {
@@ -37,9 +36,9 @@
 <script lang="ts">
   let props: SignalBadgesProps = $props()
 
-  let metricTypeBadge = $derived.by(() => {
+  let metricType = $derived.by(() => {
     if (props.signal !== 'metric') return null
-    return metricTypeCardBadge(
+    return metricTypeSummary(
       props.metricType,
       props.aggregationTemporality,
       props.isMonotonic
@@ -47,53 +46,51 @@
   })
 </script>
 
-{#if props.signal === 'metric' && metricTypeBadge}
-  <span class={metricTypeBadge.className} title={metricTypeBadge.title}>
-    {metricTypeBadge.label}
-  </span>
+{#if props.signal === 'metric' && metricType}
+  {#if props.showType !== false}
+    <span class="text-sm text-secondary" title={metricType.title}>
+      {metricType.label}
+    </span>
+  {/if}
   {#if props.seriesCount !== undefined}
     {@const total = props.seriesCardinality}
-    {#if total !== undefined && total > props.seriesCount}
-      <!-- Both, because they answer different questions and the difference is
-           the interesting part: series go quiet, and a count that silently
-           drops looks like data loss rather than a narrower window. Shown as
-           one badge rather than two so the relationship is legible at a
-           glance. -->
+    {@const partial = total !== undefined && total > props.seriesCount}
+    {@const seriesTitle = partial
+      ? `${props.seriesCount} of ${total} series reported in this range; the stream has ${total} in all`
+      : `${props.seriesCount} time series in range`}
+    <span
+      class="badge-count"
+      title={seriesTitle +
+        (props.dataPointCount !== undefined
+          ? `; ${props.dataPointCount} datapoints in range`
+          : '')}
+    >
       <span
-        class="badge-count"
-        title="{props.seriesCount} of {total} series reported in this range; the stream has {total} in all"
+        >[{partial
+          ? `${props.seriesCount} of ${total} series`
+          : `${props.seriesCount} series`}{#if props.dataPointCount !== undefined}
+          <span aria-hidden="true">{' | '}</span><span
+            aria-label={`${props.dataPointCount} datapoints`}
+            >{props.dataPointCount.toLocaleString()} pts</span
+          >{/if}]</span
       >
-        {props.seriesCount} of {total} series
-      </span>
-    {:else}
-      <!-- Equal, which is the unbounded-window case: one number, because
-           "12 of 12" is noise. -->
-      <span
-        class="badge-count"
-        title="{props.seriesCount} time series in range"
-      >
-        {props.seriesCount} series
-      </span>
-    {/if}
+    </span>
   {/if}
 {:else if props.signal === 'trace'}
   <span
-    class="badge-count"
+    class="badge-count inline-flex items-center gap-2"
     title="{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}"
   >
-    {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
+    {#if props.errorCount > 0}<span
+        class="size-2 shrink-0 rounded-full bg-error"
+        aria-hidden="true"
+      ></span>{/if}
+    <span
+      >[{props.errorCount > 0
+        ? `${props.errorCount} err | `
+        : ''}{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}]</span
+    >
   </span>
-  {#if props.errorCount > 0}
-    <span class="badge badge-xs badge-soft badge-error tabular-nums">
-      {props.errorCount} err
-    </span>
-  {/if}
 {:else if props.signal === 'log'}
-  {@const label = severityLabel(props.severityText, props.severityNumber)}
-  <span
-    class="{severityBadgeClass(props.severityNumber)} tabular-nums"
-    title={label}
-  >
-    {label} ({props.severityNumber})
-  </span>
+  <LogSeverity number={props.severityNumber} text={props.severityText} />
 {/if}

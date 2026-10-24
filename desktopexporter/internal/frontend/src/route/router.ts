@@ -214,6 +214,15 @@ export function mergeItemQuery(
   return next
 }
 
+/** Item links keep a search only within its owning signal workspace. */
+function itemDestinationQuery(signal: SignalName): RouteQuery {
+  const route = readRoute()
+  const base = signalPath(signal)
+  return route.path === base || route.path.startsWith(`${base}/`)
+    ? route.query
+    : withoutParams(route.query, ['q'])
+}
+
 /**
  * Builds an href for a signal item path with optional item-scoped query params.
  *
@@ -226,16 +235,15 @@ export function itemHref(
   id: string,
   itemQuery?: ItemQueryPatch
 ): string {
-  const route = readRoute()
-  const query = mergeItemQuery(route.query, itemQuery)
+  const query = mergeItemQuery(itemDestinationQuery(signal), itemQuery)
   const path = `${signalPath(signal)}/${encodeURIComponent(id)}`
   return path + buildSearch(query)
 }
 
-/** Builds the bare list href for a signal while preserving route-wide query state. */
+/** Builds a list href. Explicit query state belongs to the destination signal. */
 export function signalHref(
   signal: SignalName,
-  query: RouteQuery = readRoute().query
+  query: RouteQuery = itemDestinationQuery(signal)
 ): string {
   return signalPath(signal) + buildSearch(mergeItemQuery(query))
 }
@@ -268,8 +276,7 @@ export function navigateToItem(
   mode: HistoryMode = 'push',
   itemQuery?: ItemQueryPatch
 ): void {
-  const route = readRoute()
-  const query = mergeItemQuery(route.query, itemQuery)
+  const query = mergeItemQuery(itemDestinationQuery(signal), itemQuery)
   const base = signalPath(signal)
   const path = id ? `${base}/${encodeURIComponent(id)}` : base
   navigate(path + buildSearch(query), mode)

@@ -1,222 +1,74 @@
 <script lang="ts" generics="T">
-  /*
-   * PageLayout: the single top-level layout used by every route.
-   *
-   * Owns:
-   *   1. The SignalListDrawer (the left rail with nav/theme + optional
-   *      item list/search/footer). Always rendered. `railOnly` pages
-   *      (Home) force-collapse it into a thin nav rail; list pages with
-   *      zero results keep it open and show an empty state so search and
-   *      time filters stay reachable.
-   *   2. The content area: a `main` snippet (required) with an
-   *      optional `detail` snippet that, when present, splits the
-   *      content area into a horizontally resizable main+detail pair
-   *      with the detail wrapped in standard inspector chrome.
-   *
-   * The page-level footer (delete + prev/next nav) lives INSIDE the
-   * `main` snippet -- it acts on the main view's selection, not on
-   * the detail pane. Drawer-level controls (search, sort, refresh)
-   * still live in the drawer slots.
-   */
-  import type { Snippet } from 'svelte'
-  import ResizablePanels from './ResizablePanels.svelte'
-  import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
+  import { getAllContexts, onDestroy } from 'svelte'
+  import WorkspaceShell, { type LayoutOptions } from './WorkspaceShell.svelte'
+  import WorkspaceContent from './WorkspaceContent.svelte'
+  import { getWorkspaceContext } from '@/contexts/workspace-context.svelte'
+  import { createWorkspaceHeader } from '@/contexts/workspace-header.svelte'
 
-  type Props<T> = {
-    // ── Drawer (forwarded to SignalListDrawer) ─────────────────────
-    /** Items rendered in the drawer list. Pass `[]` together with
-     * `railOnly` for pages with no list (Home). On list pages an
-     * empty array renders the drawer's empty state instead. */
-    items: T[]
-    /** Force-collapse the drawer into a thin nav rail (Home). */
-    railOnly?: boolean
-    selectedID: string | null
-    drawerID: string
-    /** Tooltip label on the collapsed open-drawer button. */
-    drawerLabel: string
-    itemKey?: (item: T) => string
-    /** How each row in the list renders. Optional only because
-     * empty-list pages (Home) never call it. */
-    itemSnippet?: Snippet<[item: T, selected: boolean]>
-    onRefresh?: () => void
-    refreshPulse?: boolean
-    refreshAsideTip?: string
-    loading?: boolean
-    drawerChromeToolbar?: Snippet
-    drawerSearch?: Snippet
-    drawerFooter?: Snippet
+  const props: LayoutOptions<T> = $props()
+  const workspace = getWorkspaceContext()
+  const header = createWorkspaceHeader(() => ({
+    mode: 'title',
+    pill: true,
+    title: props.mainTitle ?? props.drawerLabel,
+    reserveMetaRow: props.mainHeaderRows === 2,
+  }))
+  const contexts = getAllContexts<Map<unknown, unknown>>()
 
-    // ── Content slots ──────────────────────────────────────────────
-    /** Primary view (waterfall, chart, logs table, home content). */
-    main: Snippet
-    /** Optional inspector pane. When present, content area becomes
-     * a resizable horizontal split. */
-    detail?: Snippet
-    /** Optional page-level footer rendered below the main+detail
-     * split, spanning the full content width (everything that
-     * isn't the drawer). Use for page-scoped controls that act on
-     * the page selection (delete, prev/next, etc.). */
-    pageFooter?: Snippet
-
-    // ── ResizablePanels config (only used when `detail` is set) ───
-    defaultMainWidth?: number
-    /** Absolute default for the detail pane, in rem (see
-     * ResizablePanels.defaultRightRem). Signal pages pass
-     * PANEL_DEFAULT_REM so the detail pane and the drawer start at the
-     * same width; Home keeps its fraction default -- its detail pane
-     * is stats, not an inspector. */
-    defaultDetailRem?: number
-    minMainWidth?: number
-    minDetailWidth?: number
-    /** Absolute pixel floor for the main pane. Use when fixed-size
-     * chrome (e.g. a tab strip) needs guaranteed room regardless of
-     * viewport width. The drag clamps to whichever min is larger. */
-    minMainPx?: number
-    /** Absolute pixel floor for the detail pane. */
-    minDetailPx?: number
-    /** Separate localStorage key for the resizable split position
-     * (distinct from drawer open/closed). */
-    resizableStorageKey?: string
-  }
-
-  let {
-    items,
-    railOnly,
-    selectedID,
-    drawerID,
-    drawerLabel,
-    itemKey,
-    itemSnippet,
-    onRefresh,
-    refreshPulse,
-    refreshAsideTip,
-    loading,
-    drawerChromeToolbar,
-    drawerSearch,
-    drawerFooter,
-    main,
-    detail,
-    pageFooter,
-    defaultMainWidth = 0.7,
-    defaultDetailRem,
-    minMainWidth = 0.3,
-    minDetailWidth = 0.2,
-    minMainPx,
-    minDetailPx,
-    resizableStorageKey,
-  }: Props<T> = $props()
-
-  // No-op snippet for railOnly pages (Home) that render no list -- the
-  // drawer's effectivelyOpen=false guarantees this never renders,
-  // but the prop is required so we satisfy the type.
-  const noopItem: Snippet<[item: T, selected: boolean]> = $derived(
-    itemSnippet ?? noopFallback
-  )
+  // Routes own their content and data requests. App owns the persistent shell.
+  // Register synchronously so destination slots resolve before the next paint.
+  if (workspace)
+    onDestroy(
+      workspace.register(() => ({
+        ...props,
+        header,
+        main: mainSlot,
+        pageBanner: props.pageBanner ? bannerSlot : undefined,
+        detail: props.detail ? detailSlot : undefined,
+        itemSnippet: props.itemSnippet ? itemSlot : undefined,
+        drawerContent: props.drawerContent ? drawerSlot : undefined,
+        drawerSearch: props.drawerSearch ? searchSlot : undefined,
+        drawerControls: props.drawerControls ? controlsSlot : undefined,
+        drawerChromeToolbar: props.drawerChromeToolbar
+          ? toolbarSlot
+          : undefined,
+        drawerFooter: props.drawerFooter ? drawerFooterSlot : undefined,
+        pageFooter: props.pageFooter ? footerSlot : undefined,
+      }))
+    )
 </script>
 
-{#snippet noopFallback(_item: T, _selected: boolean)}{/snippet}
+{#snippet mainSlot()}<WorkspaceContent {contexts}
+    >{@render props.main()}</WorkspaceContent
+  >{/snippet}
+{#snippet bannerSlot()}<WorkspaceContent {contexts}
+    >{@render props.pageBanner?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet detailSlot()}<WorkspaceContent {contexts}
+    >{@render props.detail?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet itemSlot(item: T, selected: boolean)}<WorkspaceContent {contexts}
+    >{@render props.itemSnippet?.(item, selected)}</WorkspaceContent
+  >{/snippet}
+{#snippet drawerSlot()}<WorkspaceContent {contexts}
+    >{@render props.drawerContent?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet searchSlot()}<WorkspaceContent {contexts}
+    >{@render props.drawerSearch?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet controlsSlot()}<WorkspaceContent {contexts}
+    >{@render props.drawerControls?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet toolbarSlot()}<WorkspaceContent {contexts}
+    >{@render props.drawerChromeToolbar?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet drawerFooterSlot()}<WorkspaceContent {contexts}
+    >{@render props.drawerFooter?.()}</WorkspaceContent
+  >{/snippet}
+{#snippet footerSlot()}<WorkspaceContent {contexts}
+    >{@render props.pageFooter?.()}</WorkspaceContent
+  >{/snippet}
 
-<div class="page-layout">
-  <SignalListDrawer
-    {items}
-    {railOnly}
-    {selectedID}
-    {drawerID}
-    label={drawerLabel}
-    itemSnippet={noopItem}
-    {itemKey}
-    {onRefresh}
-    {refreshPulse}
-    {refreshAsideTip}
-    {loading}
-    {drawerChromeToolbar}
-    {drawerSearch}
-    footer={drawerFooter}
-  >
-    <div class="page-layout__content">
-      <div class="page-layout__region">
-        {#if detail}
-          <ResizablePanels
-            defaultLeftWidth={defaultMainWidth}
-            defaultRightRem={defaultDetailRem}
-            minLeftWidth={minMainWidth}
-            minRightWidth={minDetailWidth}
-            minLeftPx={minMainPx}
-            minRightPx={minDetailPx}
-            storageKey={resizableStorageKey}
-          >
-            {#snippet leftPanel()}
-              <div class="page-layout__main-chrome">
-                {@render main()}
-              </div>
-            {/snippet}
-            {#snippet rightPanel()}
-              <div class="page-layout__detail-chrome">
-                {@render detail()}
-              </div>
-            {/snippet}
-          </ResizablePanels>
-        {:else}
-          <div class="page-layout__main-chrome">
-            {@render main()}
-          </div>
-        {/if}
-      </div>
-
-      {#if pageFooter}
-        <div class="page-layout__footer">
-          {@render pageFooter()}
-        </div>
-      {/if}
-    </div>
-  </SignalListDrawer>
-</div>
-
-<style lang="postcss">
-  @reference "../../app.css";
-
-  /* Outer wrapper -- fills the route's flex slot in App.svelte. */
-  .page-layout {
-    @apply flex min-h-0 min-w-0 w-full flex-1;
-  }
-
-  /* Everything to the right of the drawer: a vertical column that
-     stacks the content region on top and the page footer on the
-     bottom. The footer (when present) spans the full content width
-     -- main + detail + the resizer between them. */
-  .page-layout__content {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
-  }
-
-  /* The region that hosts main (solo) or main+detail (split). Same
-     shrink/min-size discipline either way so ResizablePanels can
-     collapse past its children's intrinsic widths.
-
-     Horizontal + top inset gives main+detail breathing room from the
-     drawer's right edge and the top of the page. No bottom pad — panels
-     sit flush against the page footer. */
-  .page-layout__region {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
-    padding-inline: var(--layout-gap);
-    padding-top: var(--layout-gap);
-  }
-
-  /* Page-level footer strip. Stays anchored at the bottom; never
-     contributes to the resizable region's height budget. The
-     SignalFooter (or whatever the page slots in) brings its own
-     border-top, which is now the seam between content and footer. */
-  .page-layout__footer {
-    @apply shrink-0 min-w-0;
-  }
-
-  /* Inspector chrome for the detail pane. Elevated card surface with
-     rounded corners so it reads as a distinct panel against the
-     base-100 page background. */
-  .page-layout__detail-chrome {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-base-200 border border-base-300;
-  }
-
-  .page-layout__main-chrome {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-base-200 border border-base-300;
-  }
-</style>
+{#if !workspace}
+  <WorkspaceShell {...props} {header} />
+{/if}

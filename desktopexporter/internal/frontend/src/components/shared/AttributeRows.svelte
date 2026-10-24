@@ -1,46 +1,27 @@
 <script lang="ts">
   import type { Attributes } from '@/types/api-types'
-  import ConflictMarker from './ConflictMarker.svelte'
-  import AttributeValueView from './AttributeValue.svelte'
+  import DetailProperty from './DetailProperty.svelte'
 
-  type Props = { attributes: Attributes; owner: string }
-  let { attributes, owner }: Props = $props()
+  type Props = {
+    attributes: Attributes
+    owner: string
+    /** Display context only; the received key is unchanged. */
+    origin?: string
+    source?: string
+  }
+  let { attributes, owner, origin, source }: Props = $props()
 </script>
 
 {#each attributes as attribute, index (`${owner}:${attribute.id ?? 'unidentified'}:${index}`)}
-  <tr class="table-row">
-    <td class="detail-cell">
-      <span class="detail-cell__attribute-header">
-        {#if attribute.hasConflict}
-          <ConflictMarker
-            label={`Conflicting typed values retained for ${attribute.key} in ${owner}.`}
-          />
-        {/if}
-        <span class="detail-cell__key"
-          >{attribute.key}
-          <span class="detail-cell__type">({attribute.value.kind})</span>:</span
-        >
-      </span>
-      <div class="detail-cell__attribute-value">
-        <AttributeValueView
-          value={attribute.value}
-          path={`${owner}.${attribute.key}`}
-        />
-      </div>
-    </td>
-  </tr>
+  <DetailProperty
+    fieldName={attribute.key}
+    fieldType={attribute.value.kind}
+    typedValue={attribute.value}
+    fieldKind="attribute"
+    fieldSource={source ?? origin ?? owner}
+    {origin}
+    defectLabel={attribute.hasConflict
+      ? `Conflicting typed values retained for ${attribute.key} in ${owner}.`
+      : undefined}
+  />
 {/each}
-
-<style lang="postcss">
-  @reference "../../app.css";
-  .detail-cell__type {
-    color: var(--color-subtle);
-    @apply font-normal;
-  }
-  .detail-cell__attribute-header {
-    @apply flex max-w-full flex-wrap items-center gap-1;
-  }
-  .detail-cell__attribute-value {
-    @apply mt-0.5 min-w-0;
-  }
-</style>

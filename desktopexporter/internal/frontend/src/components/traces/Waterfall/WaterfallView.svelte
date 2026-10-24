@@ -1,9 +1,9 @@
 <script module lang="ts">
   import type { SpanNode, SpanData, TraceLogSummary } from '@/types/api-types'
-  import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
+  import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
-  import { categoricalPalette } from '@/utils/chart-palette'
+  import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
 
@@ -12,19 +12,6 @@
     end: bigint
     duration: bigint
   }
-
-  //
-  // Categorical key per span: span.name in single-service traces, service
-  // name in multi-service traces. Error spans are coloured by a separate
-  // semantic token (`--color-error`) and never participate in the rotation.
-  //
-  // Colours come from the same approved static palette as metric charts. We
-  // start at iris so the root begins in that family, then interleave all six
-  // families before returning for another lightness level. The finite table
-  // repeats deterministically for traces with more than thirty keys.
-
-  /** Keep the short-trace palette shape consistent with existing callers. */
-  const MIN_TRACE_PALETTE = 5
 
   export type WaterfallRowData = {
     spanNode: SpanNode
@@ -77,7 +64,7 @@
     return Math.max(0.3, Number((spanDuration * 10000n) / traceDuration) / 100)
   }
 
-  function isErrorSpan(span: SpanData): boolean {
+  export function isErrorSpan(span: SpanData): boolean {
     return (
       span.statusCodeValue === 2 ||
       span.events.some(e => e.name === 'exception')
@@ -122,73 +109,42 @@
     })
   }
 
-  function computeTreeMeta(spans: SpanNode[]): TreeConnectorMeta[] {
+  export function computeTreeMeta(
+    spans: readonly {
+      depth: number
+      spanData: Pick<SpanData, 'spanID' | 'parentSpanID'>
+    }[]
+  ): TreeConnectorMeta[] {
     const counts = childrenCounts(spans)
-    return spans.map((_, i) => ({
-      childrenCount: counts[i],
-      isLastChild: spans[i].depth === 0 ? false : isLastChild(spans, i),
-      ancestorHasNextSibling:
-        spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
-    }))
+    const parents: string[] = []
+    return spans.map((span, i) => {
+      const parent = span.depth > 0 ? parents[span.depth - 1] : null
+      parents[span.depth] = span.spanData.spanID
+      parents.length = span.depth + 1
+      return {
+        childrenCount: counts[i],
+        brokenParent: (span.spanData.parentSpanID ?? null) !== (parent ?? null),
+        isLastChild: spans[i].depth === 0 ? false : isLastChild(spans, i),
+        ancestorHasNextSibling:
+          spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
+      }
+    })
   }
 
-  function categoricalKeyFor(
-    span: SpanData,
-    multiService: boolean
-  ): string | null {
-    if (isErrorSpan(span)) return null
-    return multiService ? (getServiceName(span.resource) ?? '') : span.name
-  }
-
-  function isMultiService(spans: SpanNode[]): boolean {
-    const services = spans.reduce((acc, n) => {
-      const s = getServiceName(n.spanData.resource)
-      return s !== undefined ? acc.add(s) : acc
-    }, new Set<string>())
-    return services.size > 1
-  }
-
-  /** Build a Map<key, color> by folding spans in order. The palette uses
-   *  finite reviewed colours with deterministic reuse for additional keys.
-   *  Iris is the start stem for the first key seen. */
-  function buildColorMap(
-    spans: SpanNode[],
-    keyFn: (s: SpanData) => string | null,
-    theme: string
-  ): Map<string, string> {
-    const orderedKeys = spans.reduce<string[]>((acc, node) => {
-      const k = keyFn(node.spanData)
-      if (k !== null && !acc.includes(k)) acc.push(k)
-      return acc
-    }, [])
-    const palette = categoricalPalette(
-      Math.max(orderedKeys.length, MIN_TRACE_PALETTE),
-      'iris',
-      theme
-    )
-    return new Map(orderedKeys.map((k, i) => [k, palette[i]!]))
-  }
-
-  /** Palette is assigned in first-seen order of categorical keys; error
-   *  spans short-circuit to `--color-error` so the semantic colour wins
-   *  over the rotation. */
+  /** Every service uses its Home colour. Errors retain their semantic colour. */
   export function buildWaterfallRows(
     spans: SpanNode[],
     bounds: TraceBounds,
     theme: string,
     logsBySpanID: ReadonlyMap<string, TraceLogSummary[]> = new Map()
   ): WaterfallRowData[] {
-    const multi = isMultiService(spans)
-    const keyFn = (s: SpanData) => categoricalKeyFor(s, multi)
-    const colorMap = buildColorMap(spans, keyFn, theme)
     const treeMeta = computeTreeMeta(spans)
 
     return spans.map((node, i) => {
-      const key = keyFn(node.spanData)
-      const isError = key === null
+      const isError = isErrorSpan(node.spanData)
       const color = isError
         ? 'var(--color-error)'
-        : (colorMap.get(key) ?? 'var(--color-primary)')
+        : traceServiceColor(getServiceName(node.spanData.resource) ?? '', theme)
       return {
         spanNode: node,
         color,
@@ -216,19 +172,27 @@
   import { onDestroy, tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
+  import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    ChevronLeftIcon,
-    ChevronRightIcon,
-    UnfoldMoreIcon,
-    UnfoldLessIcon,
-  } from '@hugeicons/core-free-icons'
+  import { UnfoldMoreIcon, UnfoldLessIcon } from '@hugeicons/core-free-icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
+  import WaterfallColumnsPicker from './WaterfallColumnsPicker.svelte'
+  import {
+    columnID,
+    columnLabel,
+    columnOptions,
+    loadColumns,
+    columnMinimumWidth,
+    saveColumns,
+    type WaterfallColumn,
+  } from './waterfall-columns'
   import {
     escapeForSelector,
     keyDeltaFor,
@@ -251,7 +215,7 @@
   } from './timeline-markers'
   import { remToPx } from '@/state/panel-width'
 
-  const WATERFALL_ROW_HEIGHT_PX = 28
+  const WATERFALL_ROW_HEIGHT_PX = 40
   const GRID_PAGE_STEP = 8
 
   /** Walk ancestors via the parent map; true if any ancestor is in the collapsed set. */
@@ -300,6 +264,7 @@
     selectedSpanID: string | null
     searchActive?: boolean
     onSelectSpan: (spanID: string) => void
+    onInspectColumn?: (spanID: string, column: WaterfallColumn) => void
     onSelectTimelineRecord: (spanID: string, record: TimelineRecord) => void
     loading?: boolean
     footer?: Snippet
@@ -312,6 +277,7 @@
     selectedSpanID,
     searchActive = false,
     onSelectSpan,
+    onInspectColumn,
     onSelectTimelineRecord,
     loading = false,
     footer,
@@ -325,15 +291,13 @@
   let rowIndexBySpanID = $derived(
     new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
   )
-
-  let traceTimeRange = $derived.by(
-    (): { startMs: number; endMs: number } | undefined => {
-      if (spans.length === 0) return undefined
-      return {
-        startMs: Number(bounds.start / 1_000_000n),
-        endMs: Number(bounds.end / 1_000_000n),
-      }
-    }
+  const countDigits = $derived(
+    String(
+      rows.reduce(
+        (maximum, row) => Math.max(maximum, row.tree.childrenCount),
+        1
+      )
+    ).length
   )
 
   let headerName = $derived.by(() => {
@@ -345,13 +309,16 @@
   let headerService = $derived.by(() => {
     if (spans.length === 0) return ''
     const root = spans.find(n => n.depth === 0) ?? spans[0]
-    return root ? (getServiceName(root.spanData.resource)?.trim() ?? '') : ''
+    return root ? (getServiceName(root.spanData.resource) ?? '') : ''
   })
 
   let errorSpans = $derived(
     spans.filter(node => node.spanData.statusCodeValue === 2)
   )
   let headerErrorCount = $derived(errorSpans.length)
+  let selectedErrorIndex = $derived(
+    errorSpans.findIndex(node => node.spanData.spanID === selectedSpanID)
+  )
 
   let selectedSpanIndex = $derived(
     selectedSpanID === null
@@ -387,7 +354,6 @@
 
   import {
     flex,
-    initialWidths,
     fitWidths,
     reconcileWidths,
     resizeBar,
@@ -396,20 +362,50 @@
     type ColumnWidths,
   } from '@/components/shared/utils/column-resize'
   import type { DragHandle } from '@/components/shared/utils/drag'
+  import { resizeRowHover } from '@/components/shared/utils/resize-row-hover'
 
-  const wfCols = [
+  let selectedColumns = $state(loadColumns())
+  let availableColumns = $derived(columnOptions(spans, selectedColumns))
+  let wfCols = $derived([
     flex('span', 140, 2),
-    flex('service', 100, 1),
+    ...selectedColumns.map(column =>
+      flex(columnID(column), columnMinimumWidth(column), 1)
+    ),
     flex('timeline', 240, 4),
-  ]
+  ])
 
-  /* Widths key by column id, never position: the column set is about to
-   * become user-configurable, and a stored or derived width must land on
+  /* Widths key by column id, never position: the column set
+   * is user-configurable, and a stored or derived width must land on
    * the column it belongs to no matter what was added or removed around
    * it. Stored widths from a different column set reconcile on load. */
   const COLUMN_WIDTHS_KEY = 'waterfall-column-widths'
   const COLUMN_RESIZE_STEP_PX = 16
   const COLUMN_RESIZE_LARGE_STEP_PX = 64
+
+  function reconcileColumnWidths(
+    containerPx: number,
+    stored: ColumnWidths,
+    specs = wfCols
+  ): ColumnWidths {
+    const width = Math.max(576, containerPx)
+    const widths = {
+      ...Object.fromEntries(specs.map(column => [column.id, column.min])),
+      ...stored,
+    }
+    if (!Number.isFinite(stored.timeline)) {
+      widths.timeline = Math.max(
+        240,
+        width -
+          specs
+            .filter(column => column.id !== 'timeline')
+            .reduce(
+              (sum, column) => sum + Math.max(column.min, widths[column.id]),
+              0
+            )
+      )
+    }
+    return reconcileWidths(specs, widths, width)
+  }
 
   function isStoredWidthsObject(value: unknown): value is object {
     return value !== null && typeof value === 'object'
@@ -434,6 +430,12 @@
       for (const [id, w] of Object.entries(parsed)) {
         if (isFiniteWidth(w)) out[id] = w
       }
+      // The fixed service column used this key before configurable columns.
+      const serviceID = columnID({ source: 'resource', key: 'service.name' })
+      if (out[serviceID] === undefined && out.service !== undefined) {
+        out[serviceID] = out.service
+      }
+      delete out.service
       return out
     } catch {
       return {}
@@ -443,24 +445,53 @@
   function saveColumnWidths() {
     if (typeof localStorage === 'undefined') return
     try {
-      localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(colWidths))
+      localStorage.setItem(
+        COLUMN_WIDTHS_KEY,
+        JSON.stringify({ ...loadStoredWidths(), ...colWidths })
+      )
     } catch {
       // A full or blocked store costs the preference, not the drag.
     }
   }
 
   let activeResizeCol = $state<string | null>(null)
-  let colWidths = $state<ColumnWidths>(initialWidths(wfCols, 800))
+  let colWidths = $state<ColumnWidths>(
+    untrack(() => reconcileColumnWidths(800, loadStoredWidths()))
+  )
   let colDrag: DragHandle | null = null
 
   let spanColWidth = $derived(colWidths['span'] ?? 0)
-  let serviceColWidth = $derived(colWidths['service'] ?? 0)
+  let optionalColumns = $derived(
+    selectedColumns.map(column => ({
+      ...column,
+      id: columnID(column),
+      width: colWidths[columnID(column)] ?? 100,
+    }))
+  )
+  let gridWidth = $derived(
+    wfCols.reduce(
+      (width, column) => width + (colWidths[column.id] ?? column.min),
+      0
+    )
+  )
 
   let barPositions = $derived(computeBarPositions(wfCols, colWidths))
 
+  function resizeColumnLabel(id: string): string {
+    const selected = selectedColumns.find(column => columnID(column) === id)
+    return selected ? columnLabel(selected) : id
+  }
+
+  function setColumns(next: WaterfallColumn[]) {
+    colDrag?.cancel()
+    saveColumnWidths()
+    selectedColumns = next
+    saveColumns(next)
+  }
+
   function resizeBarPercent(positionPx: number): number {
-    if (scrollContainerW <= 0) return 0
-    return Math.round((positionPx / scrollContainerW) * 100)
+    if (gridWidth <= 0) return 0
+    return Math.round((positionPx / gridWidth) * 100)
   }
 
   function handleStartResize(barId: string, e: PointerEvent) {
@@ -486,7 +517,7 @@
     if (e.key === 'Home') {
       e.preventDefault()
       const containerPx = scrollContainerEl?.clientWidth || scrollContainerW
-      colWidths = reconcileWidths(wfCols, {}, containerPx)
+      colWidths = reconcileColumnWidths(containerPx, {})
       saveColumnWidths()
       return
     }
@@ -517,30 +548,39 @@
     const container = scrollContainerEl
     if (!container) return
     untrack(() => {
-      colWidths = reconcileWidths(
-        wfCols,
-        loadStoredWidths(),
-        container.clientWidth
+      colWidths = reconcileColumnWidths(
+        container.clientWidth,
+        loadStoredWidths()
       )
     })
     const ro = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect.width ?? 800
       scrollContainerW = w
       if (activeResizeCol === null) {
-        colWidths = fitWidths(wfCols, colWidths, w)
+        colWidths = fitWidths(wfCols, colWidths, Math.max(576, w))
       }
     })
     ro.observe(container)
     return () => ro.disconnect()
   })
 
-  const TICK_LABEL_SLOT_PX = 80
-  const RULER_PADDING_PX = 48
-  const TICK_COUNT_STEPS = [2, 4, 6]
+  // A changed column set keeps surviving widths attached to their identities.
+  $effect(() => {
+    const specs = wfCols
+    untrack(() => {
+      colDrag?.cancel()
+      colWidths = reconcileColumnWidths(
+        scrollContainerEl?.clientWidth || scrollContainerW,
+        { ...loadStoredWidths(), ...colWidths },
+        specs
+      )
+    })
+  })
 
-  let timelineColPx = $derived(
-    scrollContainerW - spanColWidth - serviceColWidth
-  )
+  const TICK_LABEL_SLOT_PX = 96
+  const TICK_COUNT_STEPS = [1, 2, 4, 6]
+
+  let timelineColPx = $derived(colWidths['timeline'] ?? 0)
   let timelinePlotPx = $derived(
     Math.max(
       0,
@@ -551,17 +591,22 @@
     )
   )
   let targetTickCount = $derived.by(() => {
-    const fits = Math.floor(
-      (timelineColPx - RULER_PADDING_PX) / TICK_LABEL_SLOT_PX
+    // Nice intervals can produce more ticks than requested. Check their actual
+    // spacing inside the bar area, excluding label and activity-marker gutters.
+    return (
+      TICK_COUNT_STEPS.findLast(count => {
+        const { ticks } = waterfallTimeAxis(bounds.duration, count)
+        return (
+          ticks.length < 2 ||
+          ((ticks[1].offsetPercent - ticks[0].offsetPercent) * timelinePlotPx) /
+            100 >=
+            TICK_LABEL_SLOT_PX
+        )
+      }) ?? TICK_COUNT_STEPS[0]
     )
-    return TICK_COUNT_STEPS.findLast(n => n <= fits) ?? TICK_COUNT_STEPS[0]
   })
 
-  let barGridPercents = $derived(
-    waterfallTimeAxis(bounds.duration, targetTickCount).ticks.map(
-      t => t.offsetPercent
-    )
-  )
+  const timeAxis = $derived(waterfallTimeAxis(bounds.duration, targetTickCount))
 
   let matchedIDs = $derived(
     new Set(spans.filter(n => n.matched).map(n => n.spanData.spanID))
@@ -631,7 +676,10 @@
     rowVisibilityMap(spans, parentBySpanID, effectiveCollapsed)
   )
 
-  function toggleCollapse(spanID: string) {
+  async function toggleCollapse(spanID: string) {
+    cancelExpansionScroll()
+    const expanding = effectiveCollapsed.has(spanID)
+    const toggledTraceID = traceID
     if (searchCollapsedParents) {
       const next = new Map(searchOverrides)
       next.set(spanID, !effectiveCollapsed.has(spanID))
@@ -641,7 +689,15 @@
       if (!next.delete(spanID)) next.add(spanID)
       setCollapsedForTrace(traceID, next)
     }
-    void clampScroll()
+    await clampScroll()
+    if (
+      expanding &&
+      traceID === toggledTraceID &&
+      !effectiveCollapsed.has(spanID)
+    ) {
+      activeScroll = centerExpandedBranch(spanID)
+      await activeScroll
+    }
   }
 
   /** Every parent that has children, for collapse-all. */
@@ -656,6 +712,7 @@
 
   // Separate idempotent verbs support mixed collapse states.
   function setAll(collapsed: boolean) {
+    cancelExpansionScroll()
     if (searchCollapsedParents) {
       const next = new Map<string, boolean>()
       for (const id of collapsibleSpanIDs) next.set(id, collapsed)
@@ -701,6 +758,88 @@
   let vlistRef = $state<VirtualListRef | null>(null)
   let lastScrolledSelection: string | null = null
   let activeScroll: Promise<void> = Promise.resolve()
+  let cancelExpansionScroll = () => {}
+  onDestroy(() => cancelExpansionScroll())
+  let treeScrolled = $state(false)
+
+  function centerExpandedBranch(spanID: string): Promise<void> {
+    const viewport = scrollContainerEl?.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )
+    const row = viewport?.querySelector<HTMLTableRowElement>(
+      `tr[data-span-id="${escapeForSelector(spanID)}"]`
+    )
+    if (!viewport || !row) return Promise.resolve()
+
+    const rowBounds = row.getBoundingClientRect()
+    const viewportBounds = viewport.getBoundingClientRect()
+    const start = viewport.scrollTop
+    const target = Math.max(
+      0,
+      Math.min(
+        viewport.scrollHeight - viewport.clientHeight,
+        start +
+          rowBounds.top +
+          rowBounds.height / 2 -
+          viewportBounds.top -
+          viewport.clientHeight / 2
+      )
+    )
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      viewport.scrollTop = target
+      return Promise.resolve()
+    }
+
+    // Scroll the measured row directly: the virtual-list index API can snap
+    // to its estimated destination while a native smooth scroll is in flight.
+    return new Promise(resolve => {
+      const listeners = new AbortController()
+      let frame = 0
+      const finish = () => {
+        cancelAnimationFrame(frame)
+        listeners.abort()
+        cancelExpansionScroll = () => {}
+        resolve()
+      }
+      cancelExpansionScroll = finish
+      for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+        viewport.addEventListener(event, finish, {
+          passive: true,
+          signal: listeners.signal,
+        })
+      }
+      const started = performance.now()
+      const step = (now: number) => {
+        const progress = Math.min(1, (now - started) / 180)
+        const eased = progress * progress * (3 - 2 * progress)
+        viewport.scrollTop = start + (target - start) * eased
+        if (progress < 1) frame = requestAnimationFrame(step)
+        else finish()
+      }
+      frame = requestAnimationFrame(step)
+    })
+  }
+
+  function handleTreeScroll(event: Event) {
+    const viewport = event.target
+    if (
+      viewport instanceof HTMLElement &&
+      viewport.classList.contains('waterfall-vlist-viewport')
+    ) {
+      treeScrolled = viewport.scrollTop > 1
+    }
+  }
+
+  function scrollTreeToTop() {
+    cancelExpansionScroll()
+    void vlistRef?.scroll({
+      index: 0,
+      align: 'top',
+      smoothScroll: !window.matchMedia('(prefers-reduced-motion: reduce)')
+        .matches,
+      shouldThrowOnBounds: false,
+    })
+  }
 
   function visibleRowIndex(spanID: string): number {
     return visibleRows.findIndex(row => row.spanNode.spanData.spanID === spanID)
@@ -711,6 +850,7 @@
     spanID: string,
     smoothScroll = true
   ): Promise<void> {
+    cancelExpansionScroll()
     let idx = visibleRowIndex(spanID)
     if (idx < 0) {
       for (const aid of ancestorIdsOf(spanID, parentBySpanID)) {
@@ -721,7 +861,7 @@
     if (idx < 0 || !vlistRef) return
     activeScroll = vlistRef.scroll({
       index: idx,
-      align: 'center',
+      align: 'nearest',
       smoothScroll,
       shouldThrowOnBounds: false,
     })
@@ -745,6 +885,7 @@
   $effect(() => {
     const grid = gridHostEl
     const rowCount = rows.length
+    const columnCount = 2 + optionalColumns.length
     if (!grid) return
 
     // The package owns the scroll viewport, so apply the treegrid semantics to
@@ -756,10 +897,11 @@
         '.waterfall-vlist-viewport'
       )
       if (!viewport) return
+      treeScrolled = viewport.scrollTop > 1
       viewport.role = 'treegrid'
       viewport.setAttribute('aria-label', 'Span waterfall')
       viewport.setAttribute('aria-rowcount', String(rowCount))
-      viewport.setAttribute('aria-colcount', '3')
+      viewport.setAttribute('aria-colcount', String(columnCount))
       // Rows own keyboard entry; the viewport would otherwise add a redundant
       // Tab stop immediately before the roving row.
       viewport.tabIndex = -1
@@ -902,184 +1044,187 @@
 <div
   class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}"
   data-unmatched-log-count={logPartition.unmatched.length}
+  style:--tree-count-width={`max(var(--waterfall-gutter-col), calc(${countDigits + 2}ch + 0.5rem))`}
 >
-  <PaneHeader
-    mode="title"
-    title={headerName}
-    subtitle={headerService || undefined}
-    timeRange={traceTimeRange}
-    ariaLabel="Trace waterfall"
-  >
-    {#snippet badge()}
-      <!-- errorCount={0} suppresses the plain err badge: in this header
-           the badge IS the navigation (below), while drawer cards keep
-           the plain one. -->
-      <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
-      {#if errorSpans.length > 0}
-        <span
-          class="badge badge-xs badge-soft badge-error waterfall-view__error-nav shrink-0 tabular-nums"
-          role="group"
-          aria-label="Error navigation"
-        >
-          <button
-            type="button"
-            class="waterfall-view__error-nav-btn"
-            onclick={selectPreviousError}
-            disabled={previousErrorSpanID === null}
-            aria-label="Previous error"
-            title="Previous error"
-          >
-            <HugeiconsIcon
-              icon={ChevronLeftIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3 w-3"
-              aria-hidden="true"
-            />
-          </button>
-          <span>{headerErrorCount} err</span>
-          <button
-            type="button"
-            class="waterfall-view__error-nav-btn"
-            onclick={selectNextError}
-            disabled={nextErrorSpanID === null}
-            aria-label="Next error"
-            title="Next error"
-          >
-            <HugeiconsIcon
-              icon={ChevronRightIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3 w-3"
-              aria-hidden="true"
-            />
-          </button>
-        </span>
-      {/if}
+  <PaneHeader pill mode="title" title={headerName} ariaLabel="Trace waterfall">
+    {#snippet metaLeft()}
+      <div class="flex min-w-0 items-center gap-2 text-subtle">
+        {#if headerService.trim()}
+          <ServiceDot service={headerService} />
+          <span class="truncate">({headerService.trim()})</span>
+          <span aria-hidden="true">·</span>
+        {/if}
+        <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
+      </div>
     {/snippet}
-    {#snippet leading()}
+    {#snippet right()}
       {#key traceID}
         <ExportButton signal="trace" id={traceID} />
       {/key}
     {/snippet}
-    {#snippet right()}
-      {#if collapsibleSpanIDs.length > 0}
-        <button
-          type="button"
-          class="btn btn-circle btn-ghost btn-xs tooltip tooltip-left"
-          onclick={() => setAll(false)}
-          aria-label="Expand all spans"
-          data-tip="Expand all spans"
-        >
-          <HugeiconsIcon
-            icon={UnfoldMoreIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4"
-            aria-hidden="true"
-          />
-        </button>
-        <button
-          type="button"
-          class="btn btn-circle btn-ghost btn-xs tooltip tooltip-left"
-          onclick={() => setAll(true)}
-          aria-label="Collapse all spans"
-          data-tip="Collapse all spans"
-        >
-          <HugeiconsIcon
-            icon={UnfoldLessIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4"
-            aria-hidden="true"
-          />
-        </button>
+    {#snippet metaCenter()}
+      {#if errorSpans.length > 0}
+        <ErrorNavigationBadge
+          count={headerErrorCount}
+          index={selectedErrorIndex >= 0 ? selectedErrorIndex + 1 : null}
+          previous={previousErrorSpanID !== null}
+          next={nextErrorSpanID !== null}
+          onPrevious={selectPreviousError}
+          onNext={selectNextError}
+        />
       {/if}
     {/snippet}
+    {#snippet metaRight()}
+      <button
+        type="button"
+        class="btn btn-xs chart-header-control tooltip tooltip-left"
+        onclick={() => setAll(true)}
+        disabled={collapsibleSpanIDs.length === 0}
+        aria-label="Collapse all spans"
+        data-tip="Collapse all spans"
+      >
+        <HugeiconsIcon
+          icon={UnfoldLessIcon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-4 w-4"
+          aria-hidden="true"
+        />
+      </button>
+      <button
+        type="button"
+        class="btn btn-xs chart-header-control tooltip tooltip-left"
+        onclick={() => setAll(false)}
+        disabled={collapsibleSpanIDs.length === 0}
+        aria-label="Expand all spans"
+        data-tip="Expand all spans"
+      >
+        <HugeiconsIcon
+          icon={UnfoldMoreIcon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-4 w-4"
+          aria-hidden="true"
+        />
+      </button>
+      <WaterfallColumnsPicker
+        options={availableColumns}
+        selected={selectedColumns}
+        onchange={setColumns}
+      />
+    {/snippet}
   </PaneHeader>
-  <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
-    <div class="col-resize-context waterfall-view__grid-host">
-      {#each barPositions as bar (bar.id)}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <div
-          class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={activeResizeCol === bar.id}
-          style:left="{bar.left}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize {bar.id} column"
-          aria-valuenow={resizeBarPercent(bar.left)}
-          aria-valuemin={resizeBarPercent(bar.min)}
-          aria-valuemax={resizeBarPercent(bar.max)}
-          aria-valuetext="{resizeBarPercent(bar.left)} percent from left"
-          tabindex="0"
-          onpointerdown={e => handleStartResize(bar.id, e)}
-          onkeydown={e => handleResizeKeydown(bar.id, e)}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-      {/each}
-      <table
-        class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
-      >
-        <thead class="header-surface waterfall-view__thead">
-          <WaterfallTimeAxisHeader
-            traceDurationNs={bounds.duration}
-            {targetTickCount}
-            tickLabelWidth={TICK_LABEL_SLOT_PX}
-            {spanColWidth}
-            {serviceColWidth}
-            onStartResize={handleStartResize}
-          />
-        </thead>
-      </table>
-      <!-- Keyboard events bubble from the runtime treegrid; this host stays semantic. -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="waterfall-view__tree">
+    <div
+      class="waterfall-view__scroll"
+      bind:this={scrollContainerEl}
+      onscrollcapture={handleTreeScroll}
+    >
       <div
-        bind:this={gridHostEl}
-        class="waterfall-view__vlist-host"
-        onkeydown={handleGridKeydown}
+        class="col-resize-context waterfall-view__grid-host"
+        style:width="{gridWidth}px"
       >
-        <VirtualList
-          bind:this={vlistRef}
-          items={visibleRows}
-          defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
-          bufferSize={12}
-          itemKey={row => row.spanNode.spanData.spanID}
-          containerClass="waterfall-vlist"
-          viewportClass="waterfall-vlist-viewport"
-          viewportLabel="Span waterfall rows"
-          itemsClass="waterfall-vlist-items"
+        {#each barPositions as bar (bar.id)}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="col-resize-bar col-resize-bar--column"
+            use:resizeRowHover
+            class:col-resize-bar--active={activeResizeCol === bar.id}
+            style:left="{bar.left}px"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize {resizeColumnLabel(bar.id)} column"
+            aria-valuenow={resizeBarPercent(bar.left)}
+            aria-valuemin={resizeBarPercent(bar.min)}
+            aria-valuemax={resizeBarPercent(bar.max)}
+            aria-valuetext="{resizeBarPercent(bar.left)} percent from left"
+            tabindex="0"
+            onpointerdown={e => handleStartResize(bar.id, e)}
+            onkeydown={e => handleResizeKeydown(bar.id, e)}
+          >
+            <div class="col-resize-bar__line"></div>
+          </div>
+        {/each}
+        <table
+          class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
         >
-          {#snippet renderItem(row, index)}
-            {@const sid = row.spanNode.spanData.spanID}
-            <WaterfallRow
-              {row}
-              {barGridPercents}
-              selected={sid === selectedSpanID}
-              tabbable={sid === keyboardAnchorID}
-              visible={true}
-              subtreeCollapsed={effectiveCollapsed.has(sid)}
-              rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
-              matched={searchActive && matchedIDs.has(sid)}
+          <thead class="header-surface waterfall-view__thead">
+            <WaterfallTimeAxisHeader
+              traceDurationNs={bounds.duration}
+              {targetTickCount}
+              tickLabelWidth={TICK_LABEL_SLOT_PX}
               {spanColWidth}
-              {serviceColWidth}
-              timelineWidth={timelinePlotPx}
-              traceStart={bounds.start}
-              traceEnd={bounds.end}
-              onRowClick={() => {
-                onSelectSpan(sid)
-                void focusRowTr(sid)
-              }}
-              onToggleExpand={() => toggleCollapse(sid)}
-              onSelectTimelineRecord={record =>
-                onSelectTimelineRecord(sid, record)}
+              {optionalColumns}
             />
-          {/snippet}
-        </VirtualList>
+          </thead>
+        </table>
+        <!-- Keyboard events bubble from the runtime treegrid; this host stays semantic. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          bind:this={gridHostEl}
+          class="waterfall-view__vlist-host"
+          onkeydown={handleGridKeydown}
+        >
+          <VirtualList
+            bind:this={vlistRef}
+            items={visibleRows}
+            defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
+            bufferSize={12}
+            itemKey={row => row.spanNode.spanData.spanID}
+            containerClass="waterfall-vlist"
+            viewportClass="waterfall-vlist-viewport"
+            viewportLabel="Span waterfall rows"
+            itemsClass="waterfall-vlist-items"
+          >
+            {#snippet renderItem(row, index)}
+              {@const sid = row.spanNode.spanData.spanID}
+              <WaterfallRow
+                {row}
+                selected={sid === selectedSpanID}
+                tabbable={sid === keyboardAnchorID}
+                visible={true}
+                subtreeCollapsed={effectiveCollapsed.has(sid)}
+                rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
+                matched={searchActive && matchedIDs.has(sid)}
+                matchBefore={searchActive &&
+                  !!visibleRows[index - 1] &&
+                  matchedIDs.has(
+                    visibleRows[index - 1]!.spanNode.spanData.spanID
+                  )}
+                matchAfter={searchActive &&
+                  !!visibleRows[index + 1] &&
+                  matchedIDs.has(
+                    visibleRows[index + 1]!.spanNode.spanData.spanID
+                  )}
+                {spanColWidth}
+                {optionalColumns}
+                timelineWidth={timelinePlotPx}
+                {timeAxis}
+                traceStart={bounds.start}
+                traceEnd={bounds.end}
+                onRowClick={() => {
+                  onSelectSpan(sid)
+                  void focusRowTr(sid)
+                }}
+                onToggleExpand={() => toggleCollapse(sid)}
+                onInspectColumn={column => {
+                  if (onInspectColumn) onInspectColumn(sid, column)
+                  else onSelectSpan(sid)
+                }}
+                onSelectTimelineRecord={record =>
+                  onSelectTimelineRecord(sid, record)}
+              />
+            {/snippet}
+          </VirtualList>
+        </div>
       </div>
     </div>
+    <ScrollToTopButton
+      visible={treeScrolled}
+      label="Scroll span tree to top"
+      onclick={scrollTreeToTop}
+    />
   </div>
   {#if footer}
     {@render footer()}
@@ -1090,53 +1235,28 @@
   @reference "../../../app.css";
 
   .waterfall-view {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;
-  }
-
-  /* The error badge is the navigation: chevrons flank the count inside
-     one pill. Tight side padding so the chevrons read as part of the
-     badge rather than buttons that happen to be near it. */
-  .waterfall-view__error-nav {
-    @apply gap-0.5 pr-0.5 pl-0.5;
-  }
-
-  /* The visible target is small, so the hit target is quietly larger:
-     vertical padding cancelled by negative margin extends the clickable
-     area past the badge without changing its look.
-
-     Hover is a colour change, not a background: the chevrons rest a
-     step quieter than the count and come up to the badge's full colour
-     under the pointer. Derived from currentColor, so it follows the
-     badge through both themes. */
-  .waterfall-view__error-nav-btn {
-    @apply -my-1 inline-flex cursor-pointer items-center justify-center px-0.5 py-1 transition-colors duration-100;
-    color: color-mix(in oklab, currentColor 60%, transparent);
-  }
-
-  .waterfall-view__error-nav-btn:hover:not(:disabled),
-  .waterfall-view__error-nav-btn:focus-visible {
-    color: inherit;
-  }
-
-  .waterfall-view__error-nav-btn:disabled {
-    @apply cursor-default;
-    color: color-mix(in oklab, currentColor 30%, transparent);
+    --table-cell-inline-padding: 1rem;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-100 transition-opacity duration-200;
   }
 
   .waterfall-view__scroll {
-    @apply flex min-h-0 flex-1 flex-col;
+    @apply flex min-h-0 flex-1 flex-col overflow-x-auto;
+  }
+
+  .waterfall-view__tree {
+    @apply relative flex min-h-0 flex-1 flex-col;
   }
 
   /* Local override on top of `.header-surface`: drop the warm
      primary-tinted fill so the thead inherits the panel's
-     bg-base-200, and remove the inset top highlight + primary-mix
-     bottom border that were tuned for a brighter body. The thead
-     keeps its `.header-surface` height + sizing rules but visually
-     merges into the panel surface. */
+     bg-base-100, and remove the inset top highlight + primary-mix
+     bottom border that were tuned for a brighter body. Let the header
+     grow with its labels so provenance never overlaps the first span. */
   .waterfall-view__thead {
+    height: auto;
     background-color: transparent;
     box-shadow: none;
-    border-bottom-color: transparent;
+    border-bottom: 0;
     border-radius: 0;
   }
 

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/svelte'
+import userEvent from '@testing-library/user-event'
 import type { WaterfallRowData } from './WaterfallView.svelte'
 import type { SpanData, SpanNode } from '@/types/api-types'
 import WaterfallRowHarness from '@/test/WaterfallRowHarness.svelte'
+import { waterfallTimeAxis } from './WaterfallTimeAxisHeader.svelte'
 
 // The cycle badge is the only UI that reads `salvaged` / `cyclePoint`
 // directly: it must stay silent on every healthy span, appear once a span
@@ -65,26 +67,26 @@ function renderRow(
   matched = false,
   callbacks: {
     onRowClick?: () => void
+    onToggleExpand?: () => void
     onSelectTimelineRecord?: () => void
   } = {}
 ) {
   return render(WaterfallRowHarness, {
     props: {
       row,
-      barGridPercents: [],
       selected: false,
       tabbable: false,
       visible: true,
       subtreeCollapsed: false,
       rowIndex: 1,
       spanColWidth: 200,
-      serviceColWidth: 100,
       timelineWidth: 400,
+      timeAxis: waterfallTimeAxis(1_000_000n, 4),
       traceStart: 0n,
       traceEnd: 1_000_000n,
       matched,
       onRowClick: callbacks.onRowClick ?? (() => {}),
-      onToggleExpand: () => {},
+      onToggleExpand: callbacks.onToggleExpand ?? (() => {}),
       onSelectTimelineRecord: callbacks.onSelectTimelineRecord ?? (() => {}),
     },
   })
@@ -94,13 +96,14 @@ function cycleBadge(container: HTMLElement): HTMLElement | null {
   return container.querySelector('.waterfall-row__cycle')
 }
 
-describe('WaterfallRow direct match badge', () => {
-  it('shows a visible badge only for a direct search match', () => {
+describe('WaterfallRow direct match highlight', () => {
+  it('highlights a direct search match without a redundant badge', () => {
     const { queryByText: queryWithoutMatch } = renderRow(makeRow())
     expect(queryWithoutMatch('Match')).toBeNull()
 
-    const { getByText } = renderRow(makeRow(), true)
-    expect(getByText('Match')).toBeVisible()
+    const { container, queryByText } = renderRow(makeRow(), true)
+    expect(queryByText('Match')).toBeNull()
+    expect(container.querySelector('tr')).toHaveClass('waterfall-row--matched')
   })
 })
 
@@ -114,6 +117,117 @@ describe('WaterfallRow timeline layout', () => {
     )
     expect(label).not.toHaveClass('waterfall-row__bar-label--inside')
     expect(bar).toHaveClass('waterfall-row__bar')
+  })
+})
+
+describe('WaterfallRow child counts', () => {
+  it('groups the node dot with its following bracketed child count', () => {
+    const row = makeRow()
+    row.tree.childrenCount = 4
+    const { container, getByRole } = renderRow(row)
+    const toggle = getByRole('button', {
+      name: 'Collapse span-1, 4 child spans',
+    })
+    const count = toggle.querySelector('.tree-child-count')!
+    expect(count.textContent).toBe('[4]')
+    expect(count).toHaveClass('text-sm')
+    expect(count).not.toHaveClass('badge')
+    expect(count).not.toHaveClass('font-mono')
+    expect(
+      count.compareDocumentPosition(toggle.querySelector('.gutter__dot')!) &
+        Node.DOCUMENT_POSITION_PRECEDING
+    ).toBeTruthy()
+    expect(container.querySelector('.gutter__dot')).toBeEmptyDOMElement()
+  })
+
+  it('omits the count for leaves', () => {
+    const { container } = renderRow(makeRow())
+    expect(container.querySelector('.tree-child-count')).toBeNull()
+  })
+
+  it('keeps the count when collapsed and uses singular text for one child', async () => {
+    const row = makeRow()
+    row.tree.childrenCount = 1
+    const view = renderRow(row)
+    await view.rerender({ subtreeCollapsed: true })
+    expect(view.container.querySelector('.tree-child-count')?.textContent).toBe(
+      '[1]'
+    )
+    expect(
+      view.getByRole('button', { name: 'Expand span-1, 1 child span' })
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+
+describe('WaterfallRow gutter activation', () => {
+  it.each(['.gutter__col', '.gutter__dot', '.tree-child-count'])(
+    'toggles only its own row when clicking %s',
+    async selector => {
+      const row = makeRow({ depth: 2 })
+      row.tree = {
+        childrenCount: 4,
+        isLastChild: false,
+        ancestorHasNextSibling: [true, true],
+      }
+      const onToggleExpand = vi.fn()
+      const onRowClick = vi.fn()
+      const view = renderRow(row, false, { onToggleExpand, onRowClick })
+      const button = view.getByRole('button', {
+        name: 'Collapse span-1, 4 child spans',
+      })
+      expect(button).toHaveAttribute('aria-expanded', 'true')
+      expect(button.querySelectorAll('button')).toHaveLength(0)
+      const target = button.querySelector(selector)!
+      await fireEvent.click(target)
+      expect(onToggleExpand).toHaveBeenCalledOnce()
+      expect(onRowClick).not.toHaveBeenCalled()
+    }
+  )
+
+  it('supports native Enter and Space activation without selecting the row', async () => {
+    const user = userEvent.setup()
+    const row = makeRow()
+    row.tree.childrenCount = 1
+    const onToggleExpand = vi.fn()
+    const onRowClick = vi.fn()
+    const view = renderRow(row, false, { onToggleExpand, onRowClick })
+    const button = view.getByRole('button', {
+      name: 'Collapse span-1, 1 child span',
+    })
+    button.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onToggleExpand).toHaveBeenCalledTimes(2)
+    expect(onRowClick).not.toHaveBeenCalled()
+    await user.tab()
+    expect(
+      view.getByRole('button', { name: 'Show span field: name in details' })
+    ).toHaveFocus()
+  })
+
+  it('keeps name selection separate from collapse', async () => {
+    const row = makeRow()
+    row.tree.childrenCount = 1
+    const onToggleExpand = vi.fn()
+    const onRowClick = vi.fn()
+    const view = renderRow(row, false, { onToggleExpand, onRowClick })
+    await fireEvent.click(
+      view.getByRole('button', { name: 'Show span field: name in details' })
+    )
+    expect(onRowClick).toHaveBeenCalledOnce()
+    expect(onToggleExpand).not.toHaveBeenCalled()
+  })
+
+  it('leaves leaf gutters decorative and outside the tab order', () => {
+    const view = renderRow(makeRow())
+    expect(
+      view.queryByRole('button', { name: /^(Expand|Collapse)/ })
+    ).toBeNull()
+    expect(view.container.querySelector('.gutter button')).toBeNull()
+    expect(view.container.querySelector('.gutter')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
   })
 })
 
@@ -142,7 +256,9 @@ describe('WaterfallRow activity selection', () => {
     })
 
     await fireEvent.focus(view.getByRole('button', { name: 'Select 1 event' }))
-    await fireEvent.click(view.getByRole('button', { name: /Event.*ready/ }))
+    await fireEvent.click(
+      view.getByRole('button', { name: /ready.*Span event/ })
+    )
 
     expect(onSelectTimelineRecord).toHaveBeenCalledTimes(1)
     expect(onRowClick).not.toHaveBeenCalled()
