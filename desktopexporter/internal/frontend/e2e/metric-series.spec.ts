@@ -579,11 +579,15 @@ test.describe('independent histogram aggregate loading', () => {
       'data-theme',
       'madoromi-aki-hiru'
     )
-    await page.getByRole('button', { name: /^Theme:/ }).click()
-    await page
-      .locator('.theme-picker-popover:popover-open [data-ink-choice="ajisai"]')
-      .click()
+    const themeTrigger = page.getByRole('button', { name: /^Theme:/ })
+    await themeTrigger.click()
+    const themePicker = page.locator('.theme-picker-popover:popover-open')
+    await themePicker.locator('[data-ink-choice="ajisai"]').click()
     await assertCountInk('ajisai')
+    await expect(themePicker).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(themeTrigger).toBeFocused()
+    await expect(themePicker).not.toBeVisible()
     await trigger.click()
     await expect(picker.locator('[data-ink-choice="ajisai"]')).toBeFocused()
     await picker

@@ -445,16 +445,12 @@
 
   /* Shared theme surface; the workspace toolbar can override the fill. */
   .pane-header {
-    @apply flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden;
+    @apply flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden border-0;
     gap: var(--header-gap);
     padding: var(--header-padding) var(--header-padding-inline);
     line-height: 1.5;
     container: header / inline-size;
     background-color: var(--pane-header-bg, var(--color-base-200));
-  }
-
-  .pane-header:not(.pane-header--toolbar) {
-    border: 1px solid var(--color-base-300);
   }
 
   .pane-header--rounded {
@@ -470,7 +466,7 @@
     border-radius: 0;
   }
 
-  /* Match the first row of detail and drawer headers, including the border. */
+  /* Match the first row of detail and drawer headers. */
   .pane-header--title {
     @apply items-center;
   }

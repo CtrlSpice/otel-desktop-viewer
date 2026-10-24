@@ -234,7 +234,7 @@
     @apply flex shrink-0 flex-col gap-3;
   }
   .terminal {
-    @apply min-w-0 rounded-xl border border-base-300 bg-base-100;
+    @apply min-w-0 rounded-xl border-0 bg-base-100;
   }
   .connection-help {
     max-width: min(28rem, calc(100vw - 1rem));

@@ -28,6 +28,7 @@
     onreset,
     automatic = false,
     triggerColor,
+    compactTrigger = false,
     unavailable = new Set<string>(),
     shadeControls,
     onOpenChange,
@@ -40,6 +41,7 @@
     onreset?: () => void
     automatic?: boolean
     triggerColor?: string
+    compactTrigger?: boolean
     unavailable?: ReadonlySet<string>
     shadeControls?: Snippet<[option: InkPickerOption, close: () => void]>
     onOpenChange?: (open: boolean) => void
@@ -177,7 +179,7 @@
   {label}
   compact
   triggerClass={triggerColor
-    ? 'ink-picker-trigger--dot item-state tooltip tooltip-right'
+    ? `ink-picker-trigger--dot ${compactTrigger ? 'ink-picker-trigger--compact' : ''} item-state tooltip tooltip-right`
     : 'header-icon-button tooltip tooltip-left'}
   popoverClass={`ink-picker-popover ${mode === 'shade' ? 'ink-picker--shades' : ''}`}
   showHeader={false}
@@ -365,6 +367,9 @@
   @reference '../../app.css';
   :global(.ink-picker-trigger--dot) {
     @apply inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 p-0;
+  }
+  :global(.ink-picker-trigger--compact) {
+    @apply size-6;
   }
   :global(.ink-picker-trigger--dot[aria-expanded='true']) {
     --item-idle-bg: var(--item-selected-bg);

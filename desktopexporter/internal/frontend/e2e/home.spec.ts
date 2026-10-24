@@ -118,6 +118,18 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     .locator('.service-grid')
     .getByRole('button', { name: /^checkout/ })
   await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await expect(card.locator('.signal-row__title')).toHaveCSS(
+    'font-size',
+    '17px'
+  )
+  await expect(card.locator('.signal-row__title')).toHaveCSS(
+    'font-weight',
+    '400'
+  )
+  await expect(card.locator('.signal-row__title')).toHaveCSS(
+    'font-family',
+    /Atkinson Hyperlegible Next/
+  )
   await expect(card.getByRole('link')).toHaveCount(0)
   await expect(card.getByRole('button')).toHaveCount(0)
   const colour = page.getByRole('button', {
@@ -126,10 +138,28 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   })
   const colourDot = colour.locator('span[aria-hidden="true"]')
   const theme = (await page.locator('html').getAttribute('data-theme'))!
-  await expect(colour).toHaveCSS('width', '32px')
-  await expect(colour).toHaveCSS('height', '32px')
+  await expect(colour).toHaveCSS('width', '24px')
+  await expect(colour).toHaveCSS('height', '24px')
   await expect(colourDot).toHaveCSS('width', '8px')
   await expect(colourDot).toHaveCSS('height', '8px')
+  const dotBox = (await colourDot.boundingBox())!
+  const titleBox = (await card.locator('.signal-row__title').boundingBox())!
+  const colourBox = (await colour.boundingBox())!
+  expect(titleBox.x - dotBox.x - dotBox.width).toBeCloseTo(8, 0)
+  expect(colourBox.x + colourBox.width).toBeLessThanOrEqual(titleBox.x)
+  const labelBox = (await card
+    .locator('.service-summary__label > span:last-child')
+    .first()
+    .boundingBox())!
+  const iconBox = (await card
+    .locator('.service-summary__icon svg')
+    .first()
+    .boundingBox())!
+  expect(labelBox.x).toBeCloseTo(titleBox.x, 0)
+  expect(iconBox.x + iconBox.width / 2).toBeCloseTo(
+    dotBox.x + dotBox.width / 2,
+    0
+  )
   await expect(colour.locator('svg')).toHaveCount(0)
   await expect(colour).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   const automaticColour = await colourDot.evaluate(
@@ -175,13 +205,67 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     await page.setViewportSize({ width, height: 1000 })
     await expect(page.locator('.service-grid')).toHaveCSS('display', 'grid')
     for (const service of await serviceCards.all()) {
-      expect((await service.boundingBox())!.width).toBeLessThanOrEqual(384)
+      expect((await service.boundingBox())!.width).toBeLessThanOrEqual(352)
     }
   }
   for (const row of await page.locator('.service-summary__row').all())
     await expect(row).toHaveCSS('border-width', '0px')
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  const discovery = page.getByRole('region', { name: 'Home discovery' })
+  const table = discovery.getByRole('table', {
+    name: 'Attributes',
+    exact: true,
+  })
+  const tableNode = await table.elementHandle()
+  const attributesSection = discovery.locator(
+    '[data-detail-section="attributes"]'
+  )
+  const attributeHeader = attributesSection.locator('summary')
+  await expect(attributesSection.locator('summary')).toContainText('checkout')
+  await expect(attributesSection.locator('summary')).toContainText('storefront')
   const details = page.getByRole('region', { name: 'Home details' })
-  const table = details.getByRole('table', { name: 'Attributes', exact: true })
+  await expect(
+    details.getByRole('table', { name: 'Attributes', exact: true })
+  ).toHaveCount(0)
+  const serviceSection = discovery.locator('[data-detail-section="services"]')
+  const serviceScroll = serviceSection.locator('.service-scroll')
+  const servicesBox = (await serviceSection.boundingBox())!
+  const attributesBox = (await attributesSection.boundingBox())!
+  const detailsBox = await details.boundingBox()
+  expect(servicesBox.y + servicesBox.height).toBeLessThanOrEqual(
+    attributesBox.y
+  )
+  await expect(serviceScroll).toHaveCSS('overflow-y', 'auto')
+  const headerY = (await attributeHeader.boundingBox())!.y
+  await serviceScroll.evaluate(element => {
+    element.scrollTop = element.scrollHeight
+  })
+  await expect
+    .poll(() => serviceScroll.evaluate(element => element.scrollTop))
+    .toBeGreaterThan(0)
+  expect((await attributeHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
+  await serviceScroll.evaluate(element => {
+    element.scrollTop = 0
+  })
+  await attributeHeader.focus()
+  await attributeHeader.press('ArrowUp')
+  await expect
+    .poll(async () => (await serviceSection.boundingBox())!.height)
+    .toBeLessThan(servicesBox.height)
+  expect((await attributesSection.boundingBox())!.height).toBeGreaterThan(
+    attributesBox.height
+  )
+  expect(await details.boundingBox()).toEqual(detailsBox)
+  await attributeHeader.press('0')
+  expect(await tableNode!.evaluate(node => node.isConnected)).toBe(true)
+  const filter = discovery.getByRole('searchbox', {
+    name: 'Filter attribute keys',
+  })
+  await expect(filter).toHaveCSS('border-width', '0px')
+  await expect(attributeHeader).toHaveCSS('border-width', '0px')
+  await filter.focus()
+  await expect(filter).toHaveCSS('outline-style', 'solid')
+  await expect(filter).toHaveCSS('outline-color', themeRgb(theme, 'primary'))
   const attribute = table.locator(
     'tr[data-attribute-heading="exact.number"][data-attribute-source="resource"]'
   )
@@ -229,6 +313,16 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await expect(
     table.getByRole('columnheader', { name: 'Sort by percentage' })
   ).toHaveAttribute('aria-sort', 'ascending')
+  await page
+    .locator('.service-grid')
+    .getByRole('button', { name: /^worker-1(?:\s|·)/ })
+    .click()
+  await expect(attributeHeader).toContainText('worker-1')
+  await expect
+    .poll(() => attributeScopes.some(scope => scope.serviceName === 'worker-1'))
+    .toBe(true)
+  await card.click()
+  await expect(attributeHeader).toContainText('checkout')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
   services.push({ ...services[0]!, serviceName: 'new-worker' })
   await page.getByLabel('Choose telemetry JSON files').setInputFiles({

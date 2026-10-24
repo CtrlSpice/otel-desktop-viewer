@@ -15,11 +15,13 @@
     identity,
     label,
     color,
+    compactTrigger = false,
   }: {
     scope: string
     identity: string
     label: string
     color?: string
+    compactTrigger?: boolean
   } = $props()
   const override = $derived(graphColorOverrides.get(scope, identity))
   const availability = $derived(graphColorAvailability(scope, identity))
@@ -58,6 +60,7 @@
   options={GRAPH_INKS}
   {value}
   triggerColor={color}
+  {compactTrigger}
   mode="shade"
   automatic={!override}
   unavailable={availability.unavailable}

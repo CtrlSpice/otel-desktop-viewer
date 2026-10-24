@@ -30,18 +30,23 @@
   service/series ownership and saved assignments when changing graph palettes.
   Group appearance controls as the theme picker and Day/Night, with
   pill-rounded exterior corners and flat internal joins. The theme picker opens
-  in the centre of the screen with a full-width app-style sample preview above
-  the compact swatches. The preview is the main visual element.
+  below its button, end-aligned and viewport-clamped, with compact ink and season
+  controls above the full-width app-style sample preview. The preview remains
+  the main visual element.
+  Use the season controls as the top row instead of a Theme/Preview heading.
+  Put the ink strip below them, then the sample summary card and its JSON.
+  Omit the extra Trace preview header and separate attributes.
   The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
   Each ink choice has three vertically stacked 8px colour dots in a 32px-wide,
   48px-high target, brightest at the top (official shades 7, 4, 1). Use one
-  horizontal row below the preview, scrolling when
+  horizontal row above the preview, scrolling when
   necessary, with the selected original ink name shown once.
-  Keep the chooser 52rem wide at most. Use native side-to-side scrolling for
-  overflow, without carousel controls, snapping or auto-advance.
+  Keep the chooser 34rem wide at most. Use native side-to-side scrolling for
+  overflow, with optional left/right caret buttons that scroll without changing
+  the selected ink. Disable each caret at its end. Do not snap or auto-advance.
   Keep every ink's name in its tooltip and accessible label. Use radio-group
   semantics, arrow/Home/End selection and one Tab stop for the swatch group.
-  Keep four icon-only season choices below the swatches. Keep section names accessible but visually hidden.
+  Keep four icon-only season choices above the swatches. Keep section names accessible but visually hidden.
   Omit its filter field and checkmark column.
   Use the original names for ink and season labels, including tooltips and
   accessible names. Ink controls interface and syntax accents;
@@ -49,9 +54,10 @@
   Ink and season changes keep the picker open for live comparison. Season changes
   update its inherited seasonal paper,
   hover and selection surfaces without changing the selected ink or its swatches.
-  Preserve Escape, light dismissal, explicit Close and trigger-focus restoration.
-  The sample preview uses shared trace-summary, attribute field and JSON components.
-  Keep its sample and JSON surfaces flat, without extra enclosing borders.
+  Preserve Escape, light dismissal, trigger-toggle dismissal and trigger-focus restoration.
+  Omit a separate close button in this anchored dropdown.
+  The sample preview uses shared trace-summary and JSON components.
+  Keep its surfaces flat, with shared rounded corners and no extra enclosing borders.
   It must not allocate sample service colours or modify saved service/series assignments.
   Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
@@ -93,6 +99,12 @@
   grouping and header-resize rules. Closed and inactive sections dock at the
   bottom; open sections share the available height. Use the shared sidebar toggle
   and saved width. Ingestion issue links reveal the left pane and their section.
+  Home's main pane stacks the service list above Attributes in the shared
+  resizable section stack. Each section scrolls independently. Keep Services
+  open, and identify the selected service in the Attributes heading. Preserve
+  attribute scope, exact-value inspection, Copy, sorting and filtering.
+  Matching Telemetry remains alone in the right-hand Details pane with its
+  signal tabs, independent pages and scroll positions.
   The welcome app name uses 22px regular Atkinson Mono in Primary, with a 1.25
   line-height and natural wrapping, as a display-title exception to the 16px
   pane headings. Lulu uses 40% of the welcome width, capped at 160px, so the
@@ -152,12 +164,15 @@
   curves between official shades 1 and 7. Skip occupied hex colours. Keep the
   layout fixed while open and retain slider mode for a saved curve choice.
   Preserve exact preset colours and persist curve positions in the same scope.
-  Home service and metric-series colour controls use their normal 8px colour dot
-  inside a 32px circular target. Keep the idle background transparent; use shared
+  Home service colour controls use an 8px dot inside a 24px circular target,
+  with an 8px visible dot-to-title gap and no overlapping title hit area.
+  Centre summary icons under the dot and align their labels with the title.
+  Home service cards are at most 22rem wide. Metric-series colour controls retain
+  their 8px dot inside a 32px circular target. Keep idle backgrounds transparent; use shared
   Low hover, Medium open-state highlights and a visible keyboard focus ring.
   Do not fill the target with the colour or add a brush icon. Keep it before
   the name and outside the whole-card button. Centre the service summary icons
-  under the brush button, with their labels aligned under the service name.
+  under the colour dot, with their labels aligned under the service name.
   Align Last seen beneath the left edge of the log icon.
   Service summary counts omit the middle-dot separator immediately before a
   coloured status dot; retain separators between unmarked counts.
@@ -258,11 +273,12 @@
   background, border, circle or reduced numeral size. Keep full counts and
   unavailable-count semantics. Local pane-tab counters retain their existing
   active-colour styling; only Home Telemetry uses square brackets.
-  Pane titles share the cards' 16px regular-weight heading style and normal letter
+  Pane titles use the 16px regular-weight heading style and normal letter
   spacing. The title row uses the same 2rem height as its controls.
 - Typography is an accessibility requirement across the entire UI: use 0.875rem
   (14px at the default root size) for all working text and 1rem (16px) for
-  main page/pane headings. This includes tables, Details, controls, badges,
+  main page/pane headings. Summary card titles use the shared 17px size.
+  The working size includes tables, Details, controls, badges,
   charts, tooltips, editors and dialogs. Use the shared text-size tokens;
   never shrink text to fit. Adjust layout instead. Keep Atkinson Hyperlegible
   Next for interface text and Details field names. Field names retain their
@@ -291,10 +307,13 @@
   Properties values use neutral Text. Code surfaces use bg-base-100: Madoromi's
   Kami background in both Day and Night. Apply this to JSON, shell examples,
   code snippets and compact JSON. Search and filter inputs, including editor
-  Find fields, use the shared input tokens: the darker Chitsu fill and Nijimi 1
-  border. Use Atkinson Hyperlegible Next for search/filter text and placeholders,
+  Find fields, use the darker Chitsu fill without decorative borders.
+  Use Atkinson Hyperlegible Next for search/filter text and placeholders,
   including query entry and editor Find fields. Preserve transparent query
   editors inside the shared search bar.
+  Inputs, pane and section headers, code panels, popovers and outer pane surfaces
+  have no decorative borders. Preserve keyboard focus rings, chart axes, tree
+  connectors, meaningful dividers, checkbox outlines and the file-drop affordance.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.
   Properties presents ordinary string values as decoded text without their outer
@@ -384,13 +403,14 @@
   Show units beside actual readings, without a separate Units row. Place counts
   at the right of the name and the type group directly below them, right-aligned
   opposite the service. Keep full meanings on hover, counts in Subtle, and no pill
-  background or border. Names remain 16px regular; metadata stays 14px/21px.
+  background or border. Names use the shared 17px regular card-title size;
+  metadata stays 14px/21px.
   Use continuous 24px rows and the shared 8px horizontal gap.
 - Signal card text uses the theme's 1.5 line-height; do not override it with
   `leading-none`, `leading-tight` or `leading-snug` on card text.
   Resting cards have transparent surfaces, without background fills. Colour
   belongs in meaningful dots and bars; retain shared hover/selection feedback.
-  Card titles use the shared 16px heading size and regular weight; details
+  Card titles use the shared 17px card-title size and regular weight; details
   remain 14px. Use continuous rows without an extra gap separating details
   into a visual group.
   Card text rows share the 1.5rem `--signal-card-row-h` minimum. Only a present
@@ -523,7 +543,7 @@
   original input copyable. Collapsible Detail field-group headings have carets.
   These subsection headings use borderless rounded bg-base-200 surfaces,
   regular Subtle labels and Text carets, with shared hover feedback. Unavailable
-  top-level headers keep the normal base background and border, with a Highlight
+  top-level headers keep the normal base background, with a Highlight
   Low overlay and Muted text.
   Each scoring level (such as Fail, Partial and Pass) has its own field card.
   When the source supplies Overall, put its judgment at the far right of the
@@ -742,7 +762,7 @@
 - Disabled and zero-count Details headers use Muted for their labels, icons and counts.
   Pin these closed, unavailable sections to the bottom, including when every
   section is unavailable. Keep the normal top-level
-  background and border with a Highlight Low overlay and Muted text. Keep canonical
+  background with a Highlight Low overlay and Muted text. Keep canonical
   order within each group: open, closed available, then inactive. The primary
   (first) section stays open at the top and cannot collapse by click, keyboard or
   drag. Use the existing sticky heading and scroll container, without extra

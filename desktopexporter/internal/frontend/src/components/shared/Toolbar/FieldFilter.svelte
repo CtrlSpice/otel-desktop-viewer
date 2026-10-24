@@ -227,7 +227,7 @@
   .field-filter__popover {
     @apply absolute right-0 top-full z-50 mt-1;
     @apply min-w-[14rem] max-w-[20rem];
-    @apply rounded-lg border border-base-300/70 bg-base-100 shadow-lg;
+    @apply rounded-lg border-0 bg-base-100 shadow-lg;
     @apply overflow-hidden;
   }
 

@@ -2,7 +2,8 @@
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
-    Cancel01Icon,
+    ArrowLeft01Icon,
+    ArrowRight01Icon,
     FlowerIcon,
     HeartIcon,
     Leaf02Icon,
@@ -39,6 +40,33 @@
   const chosen = $derived(inks.find(ink => ink.id === accentInk.value)!)
   let optionsList = $state<HTMLDivElement>()
   let open = $state(false)
+  let canScrollLeft = $state(false)
+  let canScrollRight = $state(false)
+
+  function updateInkScroll() {
+    if (!optionsList) return
+    canScrollLeft = optionsList.scrollLeft > 1
+    canScrollRight =
+      optionsList.scrollLeft + optionsList.clientWidth <
+      optionsList.scrollWidth - 1
+  }
+
+  $effect(() => {
+    if (!open || !optionsList) return
+    const observer = new ResizeObserver(updateInkScroll)
+    observer.observe(optionsList)
+    updateInkScroll()
+    return () => observer.disconnect()
+  })
+
+  function scrollInks(direction: -1 | 1) {
+    if (!optionsList || (direction === -1 ? !canScrollLeft : !canScrollRight))
+      return
+    optionsList.scrollBy({
+      left: direction * Math.round(optionsList.clientWidth * 0.75),
+      behavior: 'instant',
+    })
+  }
 
   async function focusInk(nextOpen: boolean) {
     open = nextOpen
@@ -51,6 +79,7 @@
     if (!button) return
     button.focus({ preventScroll: true })
     button.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    updateInkScroll()
   }
 
   function selectInk(event: KeyboardEvent, index: number) {
@@ -91,7 +120,7 @@
 <FilterPopover
   label={`Theme: ${chosen.name}`}
   tooltip={chosen.name}
-  anchor="center"
+  anchor="below-end"
   role="dialog"
   compact
   triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-bottom md:tooltip-left"
@@ -109,55 +138,9 @@
       aria-hidden="true"
     />
   {/snippet}
-  {#snippet children(close)}
-    <div class="mb-4 flex shrink-0 items-center justify-between gap-3">
-      <h2 class="text-lg font-normal">Theme</h2>
-      <button
-        type="button"
-        class="header-icon-button"
-        aria-label="Close theme picker"
-        onclick={close}
-      >
-        <HugeiconsIcon
-          icon={Cancel01Icon}
-          size={18}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      </button>
-    </div>
+  {#snippet children()}
     <div class="theme-picker__layout">
-      {#if open}<ThemePreview />{/if}
       <div class="theme-picker__controls">
-        <p class="theme-picker__current text-center text-sm">
-          {chosen.name}
-        </p>
-        <fieldset class="m-0 min-w-0 border-0 p-0">
-          <legend class="sr-only">Ink</legend>
-          <div
-            class="theme-picker__inks"
-            role="radiogroup"
-            aria-label="Theme inks"
-            bind:this={optionsList}
-          >
-            {#each inks as ink, index (ink.id)}
-              <button
-                type="button"
-                role="radio"
-                class="theme-picker__choice item-state"
-                data-ink-choice={ink.id}
-                aria-label={ink.name}
-                title={ink.name}
-                aria-checked={ink.id === accentInk.value}
-                tabindex={ink.id === accentInk.value ? 0 : -1}
-                onkeydown={event => selectInk(event, index)}
-                onclick={() => accentInk.set(ink.id)}
-              >
-                {@render swatches(ink.preview, true)}
-              </button>
-            {/each}
-          </div>
-        </fieldset>
         <fieldset class="theme-picker__seasons">
           <legend class="sr-only">Background</legend>
           <div class="grid grid-cols-4 gap-1">
@@ -180,13 +163,81 @@
             {/each}
           </div>
         </fieldset>
+        <p class="theme-picker__current text-center text-sm">
+          {chosen.name}
+        </p>
+        <fieldset class="m-0 min-w-0 border-0 p-0">
+          <legend class="sr-only">Ink</legend>
+          <div class="theme-picker__ink-strip">
+            <button
+              type="button"
+              class="btn btn-ghost btn-circle btn-sm"
+              class:btn-disabled={!canScrollLeft}
+              aria-label="Scroll inks left"
+              title="Scroll inks left"
+              aria-disabled={!canScrollLeft}
+              onclick={() => scrollInks(-1)}
+            >
+              <HugeiconsIcon
+                icon={ArrowLeft01Icon}
+                size={18}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </button>
+            <div
+              class="theme-picker__inks"
+              role="radiogroup"
+              aria-label="Theme inks"
+              bind:this={optionsList}
+              onscroll={updateInkScroll}
+            >
+              {#each inks as ink, index (ink.id)}
+                <button
+                  type="button"
+                  role="radio"
+                  class="theme-picker__choice item-state"
+                  data-ink-choice={ink.id}
+                  aria-label={ink.name}
+                  title={ink.name}
+                  aria-checked={ink.id === accentInk.value}
+                  tabindex={ink.id === accentInk.value ? 0 : -1}
+                  onkeydown={event => selectInk(event, index)}
+                  onclick={() => accentInk.set(ink.id)}
+                >
+                  {@render swatches(ink.preview, true)}
+                </button>
+              {/each}
+            </div>
+            <button
+              type="button"
+              class="btn btn-ghost btn-circle btn-sm"
+              class:btn-disabled={!canScrollRight}
+              aria-label="Scroll inks right"
+              title="Scroll inks right"
+              aria-disabled={!canScrollRight}
+              onclick={() => scrollInks(1)}
+            >
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                size={18}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </fieldset>
       </div>
+      {#if open}<ThemePreview />{/if}
     </div>
   {/snippet}
   {#snippet footer()}
-    <div class="flex w-full justify-center">
+    <div
+      class="flex w-full items-center justify-center gap-1 text-sm text-subtle"
+    >
+      <span>Colours:</span>
       <a
-        class="link mx-auto inline-flex items-center gap-2 text-sm text-subtle"
+        class="link inline-flex items-center gap-2"
         href="https://madoromi.moonwit.ch/"
         target="_blank"
         rel="noreferrer"
@@ -208,13 +259,9 @@
   @reference '../../app.css';
 
   :global(.filter-popover.theme-picker-popover) {
-    width: 52rem;
+    width: 34rem;
     padding: 1.25rem;
     max-height: calc(100dvh - 2rem);
-  }
-
-  :global(.theme-picker-popover::backdrop) {
-    background-color: rgb(0 0 0 / 0.2);
   }
 
   .theme-picker__layout {
@@ -241,5 +288,10 @@
     @apply mx-auto grid max-w-full grid-flow-col gap-0.5 overflow-x-auto py-1;
     width: max-content;
     grid-auto-columns: 2rem;
+  }
+
+  .theme-picker__ink-strip {
+    @apply grid min-w-0 items-center gap-1;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 </style>

@@ -896,7 +896,7 @@
     max-height: min(85vh, calc(100vh - 2rem));
     overflow: hidden;
 
-    @apply rounded-lg border border-base-300 bg-base-100 p-0 text-base-content shadow-xl;
+    @apply rounded-lg border-0 bg-base-100 p-0 text-base-content shadow-xl;
     overscroll-behavior: contain;
   }
 

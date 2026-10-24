@@ -112,7 +112,7 @@
    * panels.
    */
   .callout-ascii {
-    @apply inline-block max-w-full overflow-x-auto rounded-lg border border-base-300/60 bg-base-100 px-4 py-3 text-left font-mono text-base leading-tight text-base-content;
+    @apply inline-block max-w-full overflow-x-auto rounded-lg border-0 bg-base-100 px-4 py-3 text-left font-mono text-base leading-tight text-base-content;
     white-space: pre;
     tab-size: 4;
     -moz-tab-size: 4;

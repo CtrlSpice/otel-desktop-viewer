@@ -12,19 +12,27 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
 The theme picker and day/night button share one compact control group.
-The picker opens in the centre of the screen, with a full-width live app-style
-sample preview above a compact swatch strip. A sample trace summary, service
-breakdown, attribute fields and JSON inspector use the same components as the
-viewer, with flat surfaces rather than nested borders. Sample service colours
-are fixed and do not allocate saved assignments.
+The picker opens below its button, end-aligned and clamped to the viewport, with
+a compact swatch strip and season controls above the full-width live app-style
+sample preview.
+Four season controls replace the redundant Theme/Preview heading at the top,
+followed by the ink strip. The shared sample trace summary and service breakdown sit above the JSON
+inspector in one narrow column, without a separate preview header or attributes
+section. Surfaces use shared rounded corners without nested borders. Sample
+service colours are fixed and do not allocate saved assignments.
 Ink and season changes apply immediately and keep the
-picker open; Escape, clicking outside or Close dismisses it.
+picker open; Escape, clicking outside or the trigger dismisses it. There is no
+separate close button in the anchored dropdown.
+Its centred footer reads “Colours: Madoromi” with the attribution heart;
+only Madoromi is the link.
 Ink choices show three vertically stacked colour dots, brightest at the top
 (official shades 7, 4, 1), in one horizontal row,
 with the selected original ink name shown once above them. All choices retain
 original-name tooltips and accessible labels, without English translations.
-The chooser is at most 52rem wide. The ink row uses ordinary horizontal scrolling,
-without carousel controls or snapping. Four icon-only season choices sit below
+The chooser is at most 34rem wide. The ink row uses ordinary horizontal scrolling,
+with left/right caret buttons as a secondary way to scroll. Each caret is disabled
+at its end; scrolling does not change the ink selection. There is no snapping or
+auto-advance. Four icon-only season choices sit above
 the swatches. Section names
 remain accessible but visually hidden; there is no filter field. Flower, sun,
 leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
@@ -39,6 +47,8 @@ current page.
 `data-theme` selects the generated CSS; `data-color-scheme` identifies light/dark
 behaviour. Charts observe the same theme identity through `state/theme.svelte.ts`.
 Font families, sizes, weights and layout use the existing shared tokens.
+Summary card titles use the shared 17px regular Atkinson Hyperlegible Next size,
+with 14px metadata and unchanged Text colour. Pane headings remain 16px.
 
 ## Ownership and generation
 
@@ -83,10 +93,13 @@ in both Day and Night:
 | Panel / bg-200         | Hyoshi          | Hyoshi          |
 | Chrome / bg-300        | Chitsu, darkest | Chitsu, darkest |
 
-Search and filter inputs use the darker Chitsu for their fill and Nijimi 1 for
-their border through `--color-input` and `--color-input-border`. This includes
+Search and filter inputs use the darker Chitsu for their fill through
+`--color-input`, without decorative borders. This includes
 query entry, picker filters and editor Find fields. Query editors inside the
 shared search bar remain transparent so the input surface stays continuous.
+Pane and section headers, code panels, popovers and outer pane surfaces are
+borderless too. Keyboard focus rings, chart axes, tree connectors, meaningful
+dividers, checkbox outlines and the file-drop affordance remain intact.
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted

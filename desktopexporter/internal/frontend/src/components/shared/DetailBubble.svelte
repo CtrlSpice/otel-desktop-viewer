@@ -271,7 +271,7 @@
   }
 
   .detail-bubble__heading {
-    @apply sticky top-0 z-10 flex items-center gap-2 rounded-xl border border-base-300 bg-base-200 text-sm font-normal text-(--color-subtle);
+    @apply sticky top-0 z-10 flex items-center gap-2 rounded-xl border-0 bg-base-200 text-sm font-normal text-(--color-subtle);
     min-height: var(--pane-header-h);
     padding: var(--header-padding) var(--header-padding-inline);
     line-height: 1.5;

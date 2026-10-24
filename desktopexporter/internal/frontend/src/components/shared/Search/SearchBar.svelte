@@ -25,7 +25,7 @@
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'border border-(--color-input-border) bg-(--color-input)'
+    ? 'border-0 bg-(--color-input)'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}

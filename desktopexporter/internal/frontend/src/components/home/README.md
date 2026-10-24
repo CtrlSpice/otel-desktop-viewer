@@ -63,3 +63,17 @@ Art. no. eabp9262, doi:
 [4] R. Suetsugu-Maki _et al._, “Lens regeneration in axolotl: new evidence of
 developmental plasticity,” _BMC Biol._, vol. 10, no. 1, 2012, Art. no. 103, doi:
 [10.1186/1741-7007-10-103](https://doi.org/10.1186/1741-7007-10-103).
+
+## Discovery layout
+
+Home's main pane contains the service list above the selected service's
+Attributes section. Both use the shared resizable section stack and scroll
+independently, so a long service list does not push Attributes off-screen.
+The Attributes heading includes the selected service and namespace when present.
+Attribute queries, typed values, sorting, filtering and exact Copy retain their
+existing scope and behaviour.
+
+The right-hand Details pane contains matching Telemetry, with counted signal
+tabs, independent 25-card pages and retained per-signal scroll positions.
+Selecting a service, attribute key or exact value updates the matching records;
+record cards still navigate to their native signal workspace.

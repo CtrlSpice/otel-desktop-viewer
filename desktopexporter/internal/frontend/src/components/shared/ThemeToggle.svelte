@@ -111,7 +111,7 @@
   @reference "../../app.css";
 
   .theme-controls {
-    @apply inline-flex shrink-0 items-center rounded-full border border-base-300 bg-base-200;
+    @apply inline-flex shrink-0 items-center rounded-full border-0 bg-base-200;
   }
 
   .theme-controls :global(.theme-ink) {
@@ -120,7 +120,6 @@
 
   .theme-toggle {
     @apply rounded-l-none rounded-r-full font-normal;
-    border-left: 1px solid var(--color-base-300);
   }
 
   .theme-toggle__icon {

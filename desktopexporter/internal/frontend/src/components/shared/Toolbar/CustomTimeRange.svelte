@@ -644,6 +644,6 @@
   }
 
   .ambiguity-choice {
-    @apply min-w-0 truncate rounded-full border border-base-300 px-2 py-1 font-mono text-base text-base-content;
+    @apply min-w-0 truncate rounded-full border-0 px-2 py-1 font-mono text-base text-base-content;
   }
 </style>

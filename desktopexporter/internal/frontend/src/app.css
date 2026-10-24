@@ -21,6 +21,8 @@
   --text-lg--line-height: 1.5;
   --text-xl: 1rem;
   --text-xl--line-height: 1.5;
+  --text-card-title: 1.0625rem;
+  --text-card-title--line-height: 1.5;
 }
 
 /* Component sizes control spacing, never smaller text. */
@@ -165,7 +167,7 @@
   max-width: min(90%, 42rem);
   transform: translateX(-50%);
   padding: 0.25rem 0.5rem;
-  border: 1px solid var(--color-base-300);
+  border: 0;
   border-radius: var(--radius-field);
   background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
   color: var(--color-base-content);
@@ -343,7 +345,7 @@
 .metric-chart-view :where(.chart-selection-legend),
 .chart-hover-card {
   pointer-events: none;
-  @apply rounded-md border border-base-300 text-base-content;
+  @apply rounded-md border-0 text-base-content;
   padding: 0.4rem 0.55rem;
   font-size: var(--text-base);
   line-height: 1.25;
@@ -402,7 +404,6 @@
   min-width: max-content;
   max-width: none;
   padding: 0.25rem 0.4rem;
-  @apply border border-base-300;
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.04),
     0 2px 6px rgb(0 0 0 / 0.06);
@@ -424,13 +425,6 @@ html[data-color-scheme='light']
   .metric-chart-view
   :where(.lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-neutral);
-}
-
-html[data-color-scheme='light']
-  .metric-chart-view
-  :where(.chart-selection-legend, .chart-selection-legend--stat),
-html[data-color-scheme='light'] .chart-hover-card {
-  border-color: var(--color-neutral);
 }
 
 html[data-color-scheme='light']
@@ -900,7 +894,7 @@ svg {
 
 /* Shared native popover surface for time ranges, sorting, and timeline activity. */
 .anchor-popover {
-  @apply overflow-hidden rounded-xl border border-base-300 bg-base-100 text-sm text-base-content;
+  @apply overflow-hidden rounded-xl border-0 bg-base-100 text-sm text-base-content;
   margin: 0;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
   inset: unset;
@@ -939,15 +933,15 @@ svg {
 
 /* Toolbar filter triggers (time range, column filter): lg when labeled, full pill when icon-only (--compact) */
 .toolbar-filter-trigger {
-  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border border-base-300 bg-base-200 px-3 font-normal normal-case shadow-none;
+  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border-0 bg-base-200 px-3 font-normal normal-case shadow-none;
 }
 
 .toolbar-filter-trigger:hover {
-  @apply border-base-300 bg-base-300;
+  @apply bg-base-300;
 }
 
 .toolbar-filter-trigger--active {
-  @apply border-primary/30 bg-primary/10 text-primary;
+  @apply bg-primary/10 text-primary;
 }
 
 .toolbar-filter-trigger--compact {
@@ -956,11 +950,11 @@ svg {
 
 /* Field filter only: icon-only compact trigger = soft primary (not time range). */
 .toolbar-filter-trigger--field.toolbar-filter-trigger--compact {
-  @apply btn-soft btn-primary border-base-300 bg-base-200 text-primary shadow-none;
+  @apply btn-soft btn-primary bg-base-200 text-primary shadow-none;
 }
 
 .toolbar-filter-trigger--field.toolbar-filter-trigger--compact:hover {
-  @apply border-primary/35 bg-primary/15;
+  @apply bg-primary/15;
 }
 
 .toolbar-filter-trigger--field.toolbar-filter-trigger--compact
@@ -971,7 +965,7 @@ svg {
 /* Field filter labeled row: dropdown chevron in a soft-primary circle */
 .toolbar-filter-trigger__dropdown-circle {
   @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full;
-  @apply border border-primary/25 bg-primary/10 text-primary;
+  @apply bg-primary/10 text-primary;
 }
 
 /* Field filter (labeled): cap width (time range is DateTimeFilter, not this class). */
@@ -988,7 +982,7 @@ svg {
 }
 
 .toolbar-filter-trigger__badge {
-  @apply inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-base font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
+  @apply inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-base font-normal tabular-nums text-primary;
 }
 
 /* One underline-only tab treatment for navigation, panes and time presets. */
@@ -1039,14 +1033,15 @@ svg {
   border-radius: 9999px;
 }
 
-.input {
-  border-color: var(--color-input-border);
+.input,
+.select,
+.textarea {
+  border: 0;
 }
 
 /* Query-entry controls. Use typed-field--pill for rounded ends. */
 .typed-field {
-  @apply min-h-0 border px-4 py-0 text-left text-sm font-sans shadow-none;
-  border-color: var(--color-input-border);
+  @apply min-h-0 border-0 px-4 py-0 text-left text-sm font-sans shadow-none;
   background-color: var(--typed-field-bg, var(--color-input));
   height: calc(var(--table-row-h) + 0.5rem);
   min-height: calc(var(--table-row-h) + 0.5rem);

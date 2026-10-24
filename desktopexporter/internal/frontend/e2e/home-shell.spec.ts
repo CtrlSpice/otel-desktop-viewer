@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const command = `# recorded command\nprintf "%s\\n" "$HOME" | head -1\n./bin/otel-desktop-viewer query --endpoint http://127.0.0.1:8000 --limit 200 "SELECT '${'long value '.repeat(12)}'"`
 
-test('Home keeps whole-card service selection in Main and collapsible value bars in Details', async ({
+test('Home keeps services and attribute discovery in Main with matching Telemetry in Details', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
@@ -125,7 +125,13 @@ test('Home keeps whole-card service selection in Main and collapsible value bars
   ).toHaveCount(1)
   await expect(page.locator('#signal-drawer-panel')).toBeVisible()
   await expect(
-    page.locator('.page-layout__main-chrome').getByRole('table')
+    page.locator('.page-layout__main-chrome').getByRole('table', {
+      name: 'Attributes',
+      exact: true,
+    })
+  ).toHaveCount(1)
+  await expect(
+    page.locator('#signal-drawer-detail').getByRole('table')
   ).toHaveCount(0)
   await expect(page.locator('.page-layout__footer')).toHaveCount(0)
   await expect(
@@ -157,8 +163,11 @@ test('Home keeps whole-card service selection in Main and collapsible value bars
       .locator('.getting-started')
       .getByRole('button', { name: 'Import files', includeHidden: true })
   ).toBeAttached()
-  const details = page.getByRole('region', { name: 'Home details' })
-  const table = details.getByRole('table', { name: 'Attributes', exact: true })
+  const discovery = page.getByRole('region', { name: 'Home discovery' })
+  const table = discovery.getByRole('table', {
+    name: 'Attributes',
+    exact: true,
+  })
   await expect(table).toHaveCount(1)
   await expect(table.getByRole('columnheader')).toHaveCount(4)
   await expect(table.getByRole('columnheader').nth(1)).toHaveText('Count')

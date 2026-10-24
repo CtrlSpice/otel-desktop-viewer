@@ -187,10 +187,7 @@
           storageKey={DETAIL_SPLIT_STORAGE_KEY}
         >
           {#snippet leftPanel()}
-            <div
-              class="page-layout__main-chrome"
-              class:page-layout__main-chrome--base={mainSurface === 'base'}
-            >
+            <div class="page-layout__main-chrome">
               <PaneHeader
                 {...header?.props ?? { mode: 'title', title: '', pill: true }}
                 inert={mainHeaderInert}
@@ -256,11 +253,7 @@
   }
 
   .page-layout__main-chrome {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-base-300;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border-0;
     background-color: var(--main-surface);
-  }
-
-  .page-layout__main-chrome--base {
-    @apply border-0;
   }
 </style>

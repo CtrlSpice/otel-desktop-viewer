@@ -78,6 +78,7 @@
       identity={service.serviceName}
       label={`Colour for ${service.serviceName || 'Unnamed service'}`}
       color={serviceColor}
+      compactTrigger
     />
   {/snippet}
   {#snippet titleContent()}
@@ -105,7 +106,7 @@
       {#each signals as signal (signal.id)}
         <div class="service-summary__row">
           <span
-            class="service-summary__label inline-flex items-center gap-2 text-subtle"
+            class="service-summary__label inline-flex items-center text-subtle"
           >
             <span class="service-summary__icon">
               {#if signal.id === 'logs'}
@@ -160,7 +161,7 @@
     </div>
   {/snippet}
   {#snippet date()}
-    <div class="pl-2">
+    <div class="pl-1">
       <SignalDate
         label="Last seen"
         timestamp={service.lastSeen && service.lastSeen !== '0'
@@ -186,6 +187,6 @@
     @apply flex items-center gap-2 whitespace-nowrap;
   }
   .service-summary__icon {
-    @apply inline-flex w-8 shrink-0 items-center justify-center;
+    @apply inline-flex w-6 shrink-0 items-center justify-center;
   }
 </style>

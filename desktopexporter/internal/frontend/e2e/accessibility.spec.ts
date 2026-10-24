@@ -382,6 +382,7 @@ for (const { id: theme, scheme, name } of THEMES) {
       exact: true,
     })
     const ink = appearance.getByRole('button', { name: /^Theme:/ })
+    await expect(appearance).toHaveCSS('border-width', '0px')
     const mode = appearance.getByRole('button', {
       name: `${name} theme active`,
     })
@@ -462,6 +463,7 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(choice).toHaveText('')
     }
     const themePicker = page.locator('.theme-picker-popover:popover-open')
+    await expect(themePicker).toHaveCSS('border-width', '0px')
     await expect(themePicker).toHaveRole('dialog')
     await expect(
       themePicker.getByRole('region', {
@@ -580,6 +582,16 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     )
     await trigger.click()
     const picker = page.locator('.theme-picker-popover:popover-open')
+    await expect(
+      picker.getByRole('heading', { name: /^(Theme|Preview)$/ })
+    ).toHaveCount(0)
+    await expect(
+      picker.getByText('Trace preview', { exact: true })
+    ).toHaveCount(0)
+    await expect(picker.getByRole('table')).toHaveCount(0)
+    await expect(
+      picker.getByRole('button', { name: 'Close theme picker' })
+    ).toHaveCount(0)
     await expect(picker.getByRole('searchbox')).toHaveCount(0)
     const seasons = picker.getByRole('group', {
       name: 'Background',
@@ -634,19 +646,36 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     }
     const listBox = (await list.boundingBox())!
     const seasonBox = (await seasons.boundingBox())!
-    const previewBox = (await picker
-      .getByRole('region', { name: 'Theme preview (sample trace)' })
-      .boundingBox())!
-    await expect(picker.locator('.theme-preview')).toHaveCSS(
-      'border-width',
-      '0px'
+    const preview = picker.getByRole('region', {
+      name: 'Theme preview (sample trace)',
+    })
+    const previewBox = (await preview.boundingBox())!
+    const summary = preview.locator('.signal-row')
+    const code = preview.locator('.theme-preview__code')
+    const summaryBox = (await summary.boundingBox())!
+    const codeBox = (await code.boundingBox())!
+    expect(codeBox.y).toBeGreaterThanOrEqual(summaryBox.y + summaryBox.height)
+    expect(codeBox.x).toBe(summaryBox.x)
+    expect(codeBox.width).toBe(summaryBox.width)
+    await expect(preview).toHaveCSS('border-width', '0px')
+    await expect(code).toHaveCSS('border-width', '0px')
+    const radius = await summary.evaluate(
+      element => getComputedStyle(element).borderTopLeftRadius
     )
-    await expect(picker.locator('.theme-preview__code')).toHaveCSS(
-      'border-width',
-      '0px'
+    expect(parseFloat(radius)).toBeGreaterThan(0)
+    for (const corner of [
+      'top-left',
+      'top-right',
+      'bottom-left',
+      'bottom-right',
+    ]) {
+      await expect(preview).toHaveCSS(`border-${corner}-radius`, radius)
+    }
+    await expect(code.locator('.cm-content')).toContainText(
+      '"http.request.method": "GET"'
     )
-    expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(listBox.y)
-    expect(seasonBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
+    expect(seasonBox.y + seasonBox.height).toBeLessThanOrEqual(listBox.y)
+    expect(previewBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
     expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       listBox.y + listBox.height
@@ -663,25 +692,53 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       )
     ).toEqual(savedAssignments)
     const box = (await picker.boundingBox())!
+    const triggerBox = (await trigger.boundingBox())!
     expect(box.x).toBeGreaterThanOrEqual(8)
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 8)
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 8)
-    expect(box.x + box.width / 2).toBeCloseTo(viewport.width / 2, 0)
-    expect(box.y + box.height / 2).toBeCloseTo(viewport.height / 2, 0)
+    await expect(picker).toHaveCSS('transform', 'none')
+    if (viewport.width >= 1024) {
+      expect(box.y).toBeCloseTo(triggerBox.y + triggerBox.height + 8, 0)
+      expect(box.x + box.width).toBeCloseTo(triggerBox.x + triggerBox.width, 0)
+    }
     expect(selectedBox.y).toBeGreaterThanOrEqual(box.y)
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       box.y + box.height
     )
-    expect(box.width).toBeLessThanOrEqual(832)
+    expect(box.width).toBeLessThanOrEqual(544)
     await list.hover()
     await page.mouse.wheel(-2000, 0)
     await expect
       .poll(() => list.evaluate(element => element.scrollLeft))
       .toBe(0)
+    const left = picker.getByRole('button', {
+      name: 'Scroll inks left',
+      exact: true,
+    })
+    const right = picker.getByRole('button', {
+      name: 'Scroll inks right',
+      exact: true,
+    })
+    await expect(left).toBeDisabled()
+    await expect(right).toBeEnabled()
+    await right.focus()
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(() => list.evaluate(element => element.scrollLeft))
+      .toBeGreaterThan(0)
+    await expect(left).toBeEnabled()
+    await left.click()
+    await expect
+      .poll(() => list.evaluate(element => element.scrollLeft))
+      .toBe(0)
+    await list.hover()
     await page.mouse.wheel(200, 0)
     await expect
       .poll(() => list.evaluate(element => element.scrollLeft))
       .toBeGreaterThan(0)
+    await page.mouse.wheel(2000, 0)
+    await expect(right).toBeDisabled()
+    await expect(left).toBeEnabled()
     await expect(selected).toHaveAttribute('aria-checked', 'true')
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
@@ -733,9 +790,9 @@ test('persists the chosen ink independently of season and Day/Night', async ({
     'background-color',
     themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
   )
-  await expect(preview.locator('.theme-preview__accent')).toHaveCSS(
+  await expect(preview.getByText('name', { exact: true })).toHaveCSS(
     'color',
-    themeRgb('madoromi-fuyu-hiru', 'primary', 'rikka')
+    themeRgb('madoromi-fuyu-hiru', 'secondary', 'rikka')
   )
   await selectedInk.hover()
   await expect(selectedInk).toHaveCSS(
@@ -770,9 +827,7 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   ).toEqual({ theme: 'madoromi-fuyu-yoru', ink: 'rikka' })
   await ink.click()
   await expect(rikka).toBeFocused()
-  await page
-    .getByRole('button', { name: 'Close theme picker', exact: true })
-    .click()
+  await ink.click()
   await expect(ink).toBeFocused()
   await expect(picker).not.toBeVisible()
   await ink.click()
@@ -950,11 +1005,19 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     )
     await expect(card.locator('.signal-row__title')).toHaveCSS(
       'font-size',
-      '16px'
+      '17px'
     )
     await expect(card.locator('.signal-row__title')).toHaveCSS(
       'font-weight',
       '400'
+    )
+    await expect(card.locator('.signal-row__title')).toHaveCSS(
+      'font-family',
+      /Atkinson Hyperlegible Next/
+    )
+    await expect(card.locator('.signal-row__title')).toHaveCSS(
+      'line-height',
+      '25.5px'
     )
     await expect(card.locator('.signal-date__label')).toHaveText('Started:')
     const dateSpacing = await card.locator('.signal-date').evaluate(element => {

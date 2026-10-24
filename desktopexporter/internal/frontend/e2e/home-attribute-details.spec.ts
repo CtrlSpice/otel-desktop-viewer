@@ -180,14 +180,18 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   })
   await page.goto('/?time=all&q=needle')
   const details = page.getByRole('region', { name: 'Home details' })
-  const table = details.getByRole('table', { name: 'Attributes', exact: true })
+  const discovery = page.getByRole('region', { name: 'Home discovery' })
+  const table = discovery.getByRole('table', {
+    name: 'Attributes',
+    exact: true,
+  })
   const heading = table.locator('tr[data-attribute-heading="payload"]')
   await expect(heading).toHaveCount(1)
   await expect(heading.locator('.attribute-frequency-bar')).toHaveCount(0)
   const rows = table.locator('tr[data-attribute-key="payload"]')
   await expect(rows.first()).toBeHidden()
   const foundOn = details.locator('[data-detail-section="found-on"]')
-  const attributes = details.locator('[data-detail-section="attributes"]')
+  const attributes = discovery.locator('[data-detail-section="attributes"]')
   const guide = page.getByRole('region', { name: 'Getting started sections' })
   await expect(
     guide.locator('[data-detail-section="storage"]')
@@ -278,8 +282,9 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   await tracesTab.press('End')
   await expect(navigation).toContainText('2 / 2 pages')
   await expect(logs.getByRole('link')).toHaveCount(5)
-  expect((await foundOn.boundingBox())!.y).toBeLessThan(
-    (await attributes.boundingBox())!.y
+  expect((await foundOn.boundingBox())!.x).toBeGreaterThanOrEqual(
+    (await attributes.boundingBox())!.x +
+      (await attributes.boundingBox())!.width
   )
   const tableNode = await table.elementHandle()
   const discoveryReads = requests.filter(
@@ -311,17 +316,25 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   await expect(traces).toContainText('1 matching span')
   await metricsTab.click()
   await expect(metrics).toContainText('9 matching datapoints')
-  expect((await foundOn.boundingBox())!.y).toBeLessThan(
-    (await attributes.boundingBox())!.y
+  expect((await foundOn.boundingBox())!.x).toBeGreaterThanOrEqual(
+    (await attributes.boundingBox())!.x +
+      (await attributes.boundingBox())!.width
   )
-  await expect(details.locator('[data-detail-section]')).toHaveCount(2)
+  await expect(details.locator('[data-detail-section]')).toHaveCount(1)
   expect(
     await details
       .locator('[data-detail-section]')
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['found-on', 'attributes'])
+  ).toEqual(['found-on'])
+  expect(
+    await discovery
+      .locator('[data-detail-section]')
+      .evaluateAll(elements =>
+        elements.map(element => element.getAttribute('data-detail-section'))
+      )
+  ).toEqual(['services', 'attributes'])
   expect(
     await guide
       .locator('[data-detail-section]')

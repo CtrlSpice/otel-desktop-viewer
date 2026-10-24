@@ -259,7 +259,24 @@
 </script>
 
 {#snippet attributes()}
-  <DetailBubble label="Attributes" disabled={!selected}>
+  <DetailBubble label="Attributes" layoutKey="attributes" disabled={!selected}>
+    {#snippet labelSuffix()}
+      {#if selected}
+        <span class="text-subtle" aria-hidden="true">·</span>
+        <span
+          class="min-w-0 truncate text-base-content"
+          title={selected.serviceName || 'Unnamed service'}
+        >
+          {selected.serviceName || 'Unnamed service'}
+        </span>
+        {#if selected.serviceNamespace}
+          <span class="text-subtle" aria-hidden="true">·</span>
+          <span class="min-w-0 truncate" title={selected.serviceNamespace}>
+            {selected.serviceNamespace}
+          </span>
+        {/if}
+      {/if}
+    {/snippet}
     <AttributeDiscovery
       service={selected}
       {range}
@@ -333,6 +350,52 @@
   </DetailBubble>
 {/snippet}
 
+{#snippet serviceList()}
+  <DetailBubble label="Service list" layoutKey="services" headerless>
+    <div class="service-scroll" aria-busy={loading}>
+      {#if error}<p role="alert" class="p-3">
+          {error}{loaded ? ' · Showing the last successful reading.' : ''}
+        </p>{/if}
+      {#if loading && !loaded}<p role="status" class="p-3 text-subtle">
+          Loading services…
+        </p>
+      {:else if loaded && services.length === 0}<p class="p-3 text-subtle">
+          {term
+            ? 'No services match this search.'
+            : 'No services in this time range. Import a file or connect an exporter to get started.'}
+        </p>{/if}
+      <div class="service-grid">
+        {#each services as service (serviceIdentity(service))}
+          <ServiceCard
+            {service}
+            selected={selected !== null &&
+              serviceIdentity(selected) === serviceIdentity(service)}
+            onSelect={() => {
+              selected = service
+              selectedAttribute = null
+              selectedValue = undefined
+              detailPanel.setOpen(true)
+            }}
+          />
+        {/each}
+      </div>
+      {#if offset > 0 || more}
+        <div class="flex gap-2 py-2">
+          <button
+            class="btn btn-ghost btn-sm"
+            disabled={loading || offset === 0}
+            onclick={() => load(offset - 100)}>Previous</button
+          ><button
+            class="btn btn-ghost btn-sm"
+            disabled={loading || !more}
+            onclick={() => load(offset + 100)}>Next</button
+          >
+        </div>
+      {/if}
+    </div>
+  </DetailBubble>
+{/snippet}
+
 <PageLayout
   mainTitle="Services"
   items={[]}
@@ -394,56 +457,20 @@
             : '[—]'}</span
         >{/snippet}
     </WorkspaceHeader>
-    <div class="service-scroll" aria-busy={loading}>
-      {#if error}<p role="alert" class="p-3">
-          {error}{loaded ? ' · Showing the last successful reading.' : ''}
-        </p>{/if}
-      {#if loading && !loaded}<p role="status" class="p-3 text-subtle">
-          Loading services…
-        </p>
-      {:else if loaded && services.length === 0}<p class="p-3 text-subtle">
-          {term
-            ? 'No services match this search.'
-            : 'No services in this time range. Import a file or connect an exporter to get started.'}
-        </p>{/if}
-      <div class="service-grid">
-        {#each services as service (serviceIdentity(service))}
-          <ServiceCard
-            {service}
-            selected={selected !== null &&
-              serviceIdentity(selected) === serviceIdentity(service)}
-            onSelect={() => {
-              selected = service
-              selectedAttribute = null
-              selectedValue = undefined
-              detailPanel.setOpen(true)
-            }}
-          />
-        {/each}
-      </div>
-      {#if offset > 0 || more}
-        <div class="flex gap-2 py-2">
-          <button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || offset === 0}
-            onclick={() => load(offset - 100)}>Previous</button
-          ><button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || !more}
-            onclick={() => load(offset + 100)}>Next</button
-          >
-        </div>
-      {/if}
-    </div>
+    <DetailStack
+      label="Home discovery"
+      storageKey="home-main"
+      sections={[
+        { id: 'services', content: serviceList },
+        { id: 'attributes', content: attributes },
+      ]}
+    />
   {/snippet}
   {#snippet detail()}
     <DetailStack
       label="Home details"
       storageKey="home-details"
-      sections={[
-        { id: 'found-on', content: foundOn },
-        { id: 'attributes', content: attributes },
-      ]}
+      sections={[{ id: 'found-on', content: foundOn }]}
     />
   {/snippet}
 </PageLayout>
@@ -455,7 +482,7 @@
   }
   .service-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, min(100%, 24rem));
+    grid-template-columns: repeat(auto-fill, min(100%, 22rem));
     gap: var(--header-gap);
     align-items: start;
   }

@@ -90,7 +90,7 @@
       class:signal-row__header--wrap={wrapTitle}
       class:signal-row__header--action={Boolean(action)}
     >
-      {#if action}<span class="size-8 shrink-0" aria-hidden="true"></span>{/if}
+      {#if action}<span class="h-8 w-6 shrink-0" aria-hidden="true"></span>{/if}
       <span class="signal-row__title-cluster" {title}>
         <span class="signal-row__title"
           >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
@@ -246,11 +246,11 @@
     grid-area: 1 / 1;
   }
   .signal-card__action {
-    @apply flex size-8 items-center justify-center;
+    @apply flex size-6 items-center justify-center;
     grid-area: 1 / 1;
     justify-self: start;
     align-self: start;
-    margin: 0.625rem 0 0 0.75rem;
+    margin: 0.875rem 0 0 0.75rem;
   }
   .signal-card-with-action:hover > .signal-row:not(:disabled) {
     background-color: var(--color-highlight-low);
@@ -269,7 +269,7 @@
   }
 
   .signal-row {
-    /* Titles use the heading size; details use the working size. */
+    /* Titles share the card-title size; details use the working size. */
     --item-idle-bg: transparent;
     @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm;
     cursor: pointer;
@@ -314,6 +314,7 @@
 
   .signal-row__header--action {
     align-items: center;
+    gap: 0;
   }
 
   .signal-row__header--wrap .signal-row__title {
@@ -328,7 +329,7 @@
   }
 
   .signal-row__title {
-    @apply min-w-0 shrink truncate text-lg font-normal text-base-content;
+    @apply min-w-0 shrink truncate text-card-title font-normal text-base-content;
     flex: 0 1 auto;
   }
 

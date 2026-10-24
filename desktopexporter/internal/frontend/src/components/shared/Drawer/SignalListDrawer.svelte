@@ -706,7 +706,7 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 flex min-w-0 shrink-0 items-center rounded-xl border border-base-300 bg-base-200;
+    @apply mx-3 flex min-w-0 shrink-0 items-center rounded-xl border-0 bg-base-200;
     min-height: var(--pane-header-h);
     padding: var(--header-padding) var(--header-padding-inline);
   }
