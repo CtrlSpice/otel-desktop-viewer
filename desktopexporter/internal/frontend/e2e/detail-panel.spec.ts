@@ -342,10 +342,14 @@ test('detail headers regroup and resize only open neighbours while retaining mou
   await json.locator('.cm-foldPlaceholder').first().click()
   const editor = await json.locator('.cm-editor').elementHandle()
   const folds = await json.locator('.cm-foldPlaceholder').count()
-  await open(events).evaluate(element => {
+  // Native focus can scroll the sticky summary into view. Establish the reading
+  // position after focusing, before testing keyboard collapse/reopen retention.
+  await heading(events).focus()
+  const scrollTop = await open(events).evaluate(async element => {
     element.scrollTop = 240
+    await new Promise(requestAnimationFrame)
+    return element.scrollTop
   })
-  const scrollTop = await open(events).evaluate(element => element.scrollTop)
   expect(scrollTop).toBeGreaterThan(0)
   await heading(events).press('Enter')
   await expect(open(events)).not.toHaveAttribute('open')
