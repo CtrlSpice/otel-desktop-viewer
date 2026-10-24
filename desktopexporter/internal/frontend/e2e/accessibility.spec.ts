@@ -467,6 +467,12 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(choice).toHaveText('')
     }
     const themePicker = page.locator('.theme-picker-popover:popover-open')
+    await expect(themePicker).toHaveRole('dialog')
+    await expect(
+      themePicker.getByRole('region', {
+        name: 'Theme preview (sample telemetry)',
+      })
+    ).toBeVisible()
     await expect(themePicker.getByRole('searchbox')).toHaveCount(0)
     await expect(themePicker.locator('[data-ink-choice]')).toHaveCount(32)
     const toRoChoice = themePicker.locator('[data-ink-choice="to-ro"]')
@@ -553,11 +559,17 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       .map(hex => parseInt(hex, 16))
       .join(', ')})`
   for (const viewport of [
-    { width: 320, height: 568 },
-    { width: 390, height: 800 },
-    { width: 1440, height: 900 },
+    { width: 320, height: 720, columns: 1 },
+    { width: 390, height: 720, columns: 2 },
+    { width: 520, height: 720, columns: 2 },
+    { width: 1024, height: 768, columns: 3 },
+    { width: 1440, height: 900, columns: 3 },
+    { width: 1920, height: 1080, columns: 3 },
   ]) {
-    await page.setViewportSize(viewport)
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    })
     await page.goto('/')
     const trigger = page.getByRole('button', { name: /^Theme:/ })
     const dots = (await trigger
@@ -597,7 +609,16 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     const selected = picker.locator('[data-ink-choice="to-ro"]')
     await expect(selected).toBeFocused()
     const selectedBox = (await selected.boundingBox())!
-    const listBox = (await picker.locator('.theme-picker__inks').boundingBox())!
+    const list = picker.locator('.theme-picker__inks')
+    expect(
+      await list.evaluate(
+        element =>
+          getComputedStyle(element).gridTemplateColumns.split(' ').length
+      )
+    ).toBe(viewport.columns)
+    const listBox = (await list.boundingBox())!
+    const seasonBox = (await seasons.boundingBox())!
+    expect(seasonBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
     expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       listBox.y + listBox.height
@@ -606,6 +627,12 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     expect(box.x).toBeGreaterThanOrEqual(8)
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 8)
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 8)
+    expect(box.x + box.width / 2).toBeCloseTo(viewport.width / 2, 0)
+    expect(box.y + box.height / 2).toBeCloseTo(viewport.height / 2, 0)
+    expect(selectedBox.y).toBeGreaterThanOrEqual(box.y)
+    expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
+      box.y + box.height
+    )
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
   }
@@ -615,28 +642,58 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   page,
 }) => {
   await interceptRpc(page)
-  await page.setViewportSize({ width: 390, height: 800 })
+  await page.setViewportSize({ width: 1280, height: 900 })
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
   await page.goto('/')
   const ink = page.getByRole('button', { name: /^Theme:/ })
   await ink.click()
+  await expect(page.locator('[data-ink-choice="to-ro"]')).toBeFocused()
   const rikka = page.locator('[data-ink-choice="rikka"]')
   await rikka.focus()
   await page.keyboard.press('Enter')
-  await expect(ink).toBeFocused()
+  await expect(rikka).toBeFocused()
   await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
-  await ink.click()
+  await expect(ink).toHaveAttribute('aria-expanded', 'true')
   const winter = page
     .getByRole('group', { name: 'Background', exact: true })
     .getByRole('button', { name: 'Fuyu (Winter) background', exact: true })
   await winter.focus()
   await page.keyboard.press('Enter')
-  await expect(ink).toBeFocused()
-  await expect(ink).toHaveAttribute('aria-expanded', 'false')
+  await expect(winter).toBeFocused()
+  await expect(ink).toHaveAttribute('aria-expanded', 'true')
   await expect(page.locator('html')).toHaveAttribute(
     'data-theme',
     'madoromi-fuyu-hiru'
   )
+  const picker = page.locator('.theme-picker-popover:popover-open')
+  await expect(picker).toHaveCSS(
+    'background-color',
+    themeRgb('madoromi-fuyu-hiru', 'canvas')
+  )
+  const selectedInk = picker.locator('[data-ink-choice="rikka"]')
+  await expect(selectedInk).toHaveAttribute('aria-pressed', 'true')
+  await expect(selectedInk).toHaveCSS(
+    'background-color',
+    themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
+  )
+  const preview = picker.getByRole('region', {
+    name: 'Theme preview (sample telemetry)',
+  })
+  await expect(preview.locator('.theme-preview__record')).toHaveCSS(
+    'background-color',
+    themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
+  )
+  await expect(preview.locator('.bg-primary')).toHaveCSS(
+    'background-color',
+    themeRgb('madoromi-fuyu-hiru', 'primary', 'rikka')
+  )
+  await selectedInk.hover()
+  await expect(selectedInk).toHaveCSS(
+    'background-color',
+    themeRgb('madoromi-fuyu-hiru', 'highlightLow')
+  )
+  await page.keyboard.press('Escape')
+  await expect(ink).toBeFocused()
   const mode = page.getByRole('button', { name: 'Winter Day theme active' })
   await mode.focus()
   await page.keyboard.press('Enter')
@@ -661,6 +718,17 @@ test('persists the chosen ink independently of season and Day/Night', async ({
       ink: localStorage.getItem('theme-accent-ink'),
     }))
   ).toEqual({ theme: 'madoromi-fuyu-yoru', ink: 'rikka' })
+  await ink.click()
+  await expect(rikka).toBeFocused()
+  await page
+    .getByRole('button', { name: 'Close theme picker', exact: true })
+    .click()
+  await expect(ink).toBeFocused()
+  await expect(picker).not.toBeVisible()
+  await ink.click()
+  await expect(rikka).toBeFocused()
+  await page.mouse.click(8, 8)
+  await expect(picker).not.toBeVisible()
 })
 
 test('oversized service tooltips remain scrollable and selectable on a narrow viewport', async ({

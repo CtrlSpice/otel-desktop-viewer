@@ -5,10 +5,13 @@
   import {
     createPopoverID,
     setupAnchorPopover,
+    type PopoverAnchor,
   } from '@/components/shared/utils/anchor-popover'
 
   let {
     label,
+    anchor = 'below-end',
+    role = 'group',
     count = 0,
     custom = false,
     compact = false,
@@ -26,6 +29,8 @@
     children,
   }: {
     label: string
+    anchor?: PopoverAnchor
+    role?: 'group' | 'dialog'
     count?: number
     custom?: boolean
     compact?: boolean
@@ -52,7 +57,7 @@
     return setupAnchorPopover({
       trigger,
       popover,
-      anchor: 'below-end',
+      anchor,
       onOpenChange: value => {
         open = value
         if (value && focusSelected) {
@@ -83,6 +88,7 @@
   aria-label={compact ? label : `${label} filter`}
   data-tip={compact ? label : undefined}
   aria-expanded={open}
+  aria-haspopup={role === 'dialog' ? 'dialog' : undefined}
   aria-controls={id}
   popovertarget={id}
 >
@@ -107,7 +113,7 @@
   bind:this={popover}
   {id}
   popover="auto"
-  role="group"
+  {role}
   aria-label={`${label} options`}
   class="anchor-popover anchor-popover--anchored anchor-popover--form filter-popover {popoverClass}"
 >

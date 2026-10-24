@@ -20,6 +20,21 @@ function rect(values: Partial<DOMRect>): DOMRect {
 describe('positionAnchorPopover', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('centers a popover independently of its trigger position', () => {
+    const trigger = document.createElement('button')
+    const popover = document.createElement('div')
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(
+      rect({ top: 20, right: 1200, bottom: 52 })
+    )
+
+    positionAnchorPopover(trigger, popover, 'center')
+
+    expect(popover.style.top).toBe('50%')
+    expect(popover.style.left).toBe('50%')
+    expect(popover.style.right).toBe('auto')
+    expect(popover.style.transform).toBe('translate(-50%, -50%)')
+  })
+
   it('clamps a below-end popover inside the right viewport edge', () => {
     vi.stubGlobal('innerWidth', 390)
     const trigger = document.createElement('button')

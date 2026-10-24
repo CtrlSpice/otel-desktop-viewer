@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
+    Cancel01Icon,
     FlowerIcon,
     HeartIcon,
     Leaf02Icon,
@@ -9,6 +11,7 @@
     Sun03Icon,
   } from '@hugeicons/core-free-icons'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
+  import ThemePreview from './ThemePreview.svelte'
   import { ACCENT_INKS } from '@/themes/accent-inks'
   import { SEASONS, type Season, type Theme } from '@/themes'
   import { accentInk } from '@/state/accent-ink.svelte'
@@ -35,8 +38,12 @@
   }))
   const chosen = $derived(inks.find(ink => ink.id === accentInk.value)!)
   let optionsList = $state<HTMLDivElement>()
+  let open = $state(false)
 
-  function focusInk(open: boolean) {
+  async function focusInk(nextOpen: boolean) {
+    open = nextOpen
+    if (!nextOpen) return
+    await tick()
     if (!open || !optionsList) return
     const button = optionsList.querySelector<HTMLButtonElement>(
       '[aria-pressed="true"]'
@@ -47,6 +54,7 @@
     const list = optionsList.getBoundingClientRect()
     optionsList.scrollTop +=
       item.top - list.top - (optionsList.clientHeight - item.height) / 2
+    button.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 </script>
 
@@ -61,6 +69,8 @@
 
 <FilterPopover
   label={`Theme: ${chosen.name}\n(${chosen.english})`}
+  anchor="center"
+  role="dialog"
   compact
   triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-bottom md:tooltip-left before:whitespace-pre-line"
   popoverClass="theme-picker-popover"
@@ -78,73 +88,99 @@
     />
   {/snippet}
   {#snippet children(close)}
-    <fieldset class="m-0 mb-2 min-w-0 shrink-0 border-0 p-0">
-      <legend class="sr-only">Background</legend>
-      <div class="grid grid-cols-4 gap-1">
-        {#each SEASONS as season (season.id)}
-          <button
-            type="button"
-            class="theme-picker__season item-state item-state--menu"
-            aria-label={`${season.japanese} (${season.name}) background`}
-            title={season.name}
-            aria-pressed={theme.season === season.id}
-            onclick={() => {
-              close()
-              onSeasonChange(season.id)
-            }}
-          >
-            <HugeiconsIcon
-              icon={seasonIcons[season.id]}
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          </button>
-        {/each}
-      </div>
-    </fieldset>
-    <fieldset class="m-0 min-h-0 min-w-0 border-0 p-0">
-      <legend class="sr-only">Ink</legend>
-      <div
-        class="theme-picker__inks theme-picker__choices anchor-popover__body"
-        bind:this={optionsList}
+    <div class="mb-4 flex shrink-0 items-center justify-between gap-3">
+      <h2 class="text-lg font-normal">Theme</h2>
+      <button
+        type="button"
+        class="header-icon-button"
+        aria-label="Close theme picker"
+        onclick={close}
       >
-        {#each inks as ink (ink.id)}
-          <button
-            type="button"
-            class="theme-picker__choice item-state item-state--menu"
-            data-ink-choice={ink.id}
-            aria-label={`${ink.name} (${ink.english})`}
-            title={ink.english}
-            aria-pressed={ink.id === accentInk.value}
-            onclick={() => {
-              accentInk.set(ink.id)
-              close()
-            }}
-          >
-            {@render swatches(ink.preview)}
-            <span>{ink.name}</span>
-          </button>
-        {/each}
+        <HugeiconsIcon
+          icon={Cancel01Icon}
+          size={18}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      </button>
+    </div>
+    <div class="theme-picker__layout">
+      <div class="min-w-0">
+        <div class="mb-3">
+          <p class="text-lg">{chosen.name}</p>
+          <p class="text-subtle">{chosen.english} · {theme.name}</p>
+        </div>
+        {#if open}<ThemePreview />{/if}
+        <p class="mt-3 text-sm text-subtle">
+          Ink sets accents and syntax. Seasons set backgrounds and highlights.
+        </p>
       </div>
-    </fieldset>
+      <div class="flex min-h-0 min-w-0 flex-col gap-3">
+        <fieldset class="m-0 min-h-0 min-w-0 border-0 p-0">
+          <legend class="sr-only">Ink</legend>
+          <div
+            class="theme-picker__inks theme-picker__choices anchor-popover__body"
+            bind:this={optionsList}
+          >
+            {#each inks as ink (ink.id)}
+              <button
+                type="button"
+                class="theme-picker__choice item-state item-state--menu"
+                data-ink-choice={ink.id}
+                aria-label={`${ink.name} (${ink.english})`}
+                title={ink.english}
+                aria-pressed={ink.id === accentInk.value}
+                onclick={() => accentInk.set(ink.id)}
+              >
+                {@render swatches(ink.preview)}
+                <span>{ink.name}</span>
+              </button>
+            {/each}
+          </div>
+        </fieldset>
+        <fieldset class="m-0 min-w-0 shrink-0 border-0 p-0">
+          <legend class="sr-only">Background</legend>
+          <div class="grid grid-cols-4 gap-1">
+            {#each SEASONS as season (season.id)}
+              <button
+                type="button"
+                class="theme-picker__season item-state item-state--menu"
+                aria-label={`${season.japanese} (${season.name}) background`}
+                title={season.name}
+                aria-pressed={theme.season === season.id}
+                onclick={() => onSeasonChange(season.id)}
+              >
+                <HugeiconsIcon
+                  icon={seasonIcons[season.id]}
+                  size={16}
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+              </button>
+            {/each}
+          </div>
+        </fieldset>
+      </div>
+    </div>
   {/snippet}
   {#snippet footer()}
-    <a
-      class="link mx-auto inline-flex items-center gap-2 text-sm text-subtle"
-      href="https://madoromi.moonwit.ch/"
-      target="_blank"
-      rel="noreferrer"
-    >
-      Madoromi
-      <HugeiconsIcon
-        icon={HeartIcon}
-        size={16}
-        strokeWidth={1.5}
-        class="text-(--color-sakura)"
-        aria-hidden="true"
-      />
-    </a>
+    <div class="flex w-full justify-center">
+      <a
+        class="link mx-auto inline-flex items-center gap-2 text-sm text-subtle"
+        href="https://madoromi.moonwit.ch/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Madoromi
+        <HugeiconsIcon
+          icon={HeartIcon}
+          size={16}
+          strokeWidth={1.5}
+          class="text-(--color-sakura)"
+          aria-hidden="true"
+        />
+      </a>
+    </div>
   {/snippet}
 </FilterPopover>
 
@@ -152,7 +188,18 @@
   @reference '../../app.css';
 
   :global(.filter-popover.theme-picker-popover) {
-    width: 22rem;
+    width: 58rem;
+    padding: 1.25rem;
+    max-height: calc(100dvh - 2rem);
+  }
+
+  :global(.theme-picker-popover::backdrop) {
+    background-color: rgb(0 0 0 / 0.2);
+  }
+
+  .theme-picker__layout {
+    @apply grid items-start gap-6;
+    grid-template-columns: minmax(15rem, 1fr) minmax(0, 1.7fr);
   }
 
   .theme-picker__choice {
@@ -164,15 +211,16 @@
   }
 
   .theme-picker__choices {
-    @apply grid grid-cols-2 gap-1;
+    @apply grid gap-1;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   }
 
   .theme-picker__inks {
-    max-height: min(45vh, 20rem);
+    max-height: min(55vh, 26rem);
   }
 
-  @media (max-width: 22.5rem) {
-    .theme-picker__choices {
+  @media (max-width: 52rem) {
+    .theme-picker__layout {
       grid-template-columns: minmax(0, 1fr);
     }
   }

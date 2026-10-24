@@ -29,12 +29,20 @@
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
   Group appearance controls as the theme picker and Day/Night, with
-  pill-rounded exterior corners and flat internal joins. The theme picker has
-  four icon-only season choices across the top, followed by compact two-column
-  ink choices: three 8px colour dots followed by the Japanese name. Keep section
-  names accessible but visually hidden. Omit its filter field and checkmark column.
+  pill-rounded exterior corners and flat internal joins. The theme picker opens
+  in the centre of the screen with an app-style sample preview beside the choices.
+  The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
+  The theme picker has
+  compact three-column ink choices: three 8px colour dots followed by the Japanese
+  name, with four icon-only season choices below the swatches. Fall back to fewer
+  columns in narrow windows. Keep section names accessible but visually hidden.
+  Omit its filter field and checkmark column.
   Keep English meanings in accessible names and on hover. Ink controls interface and syntax accents;
   season controls the background. Preserve selected-ink focus and scrolling.
+  Ink and season changes keep the picker open for live comparison. Season changes
+  update its inherited seasonal paper,
+  hover and selection surfaces without changing the selected ink or its swatches.
+  Preserve Escape, light dismissal, explicit Close and trigger-focus restoration.
   Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
   mixer; default to To-ro (warm lantern) with Autumn and the system's Day/Night

@@ -1,4 +1,4 @@
-export type PopoverAnchor = 'inward' | 'outward' | 'below-end'
+export type PopoverAnchor = 'inward' | 'outward' | 'below-end' | 'center'
 
 const POSITIONED_CLASS = 'anchor-popover--positioned'
 const VIEWPORT_MARGIN_PX = 8
@@ -19,7 +19,7 @@ export function createPopoverID(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** Fixed position relative to the trigger. */
+/** Fixed position at the requested viewport or trigger anchor. */
 export function positionAnchorPopover(
   trigger: HTMLElement,
   popover: HTMLElement,
@@ -31,7 +31,12 @@ export function positionAnchorPopover(
   popover.style.bottom = 'auto'
   popover.style.transform = 'none'
 
-  if (anchor === 'outward') {
+  if (anchor === 'center') {
+    popover.style.top = '50%'
+    popover.style.left = '50%'
+    popover.style.right = 'auto'
+    popover.style.transform = 'translate(-50%, -50%)'
+  } else if (anchor === 'outward') {
     popover.style.top = `${rect.top}px`
     popover.style.left = `${rect.right + outwardGapPx()}px`
     popover.style.right = 'auto'

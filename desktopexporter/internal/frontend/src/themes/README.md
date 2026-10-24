@@ -12,12 +12,17 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
 The theme picker and day/night button share one compact control group.
-The theme picker has four icon-only season choices across the top, followed by
-compact ink choices with three colour dots and the Japanese name. Section names
+The picker opens in the centre of the screen, with a live app-style sample
+preview beside the choices. The preview shows paper, selection, text and shared
+JSON syntax colours. Ink and season changes apply immediately and keep the
+picker open; Escape, clicking outside or Close dismisses it.
+The theme picker has compact ink choices with three colour dots and the Japanese
+name, with four icon-only season choices below the swatches. Section names
 remain accessible but visually hidden; there is no filter field. Flower, sun,
 leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
-Fuyu (Winter). Changing
-season retains the current mode; changing mode retains the season. The complete
+Fuyu (Winter). Season changes keep the picker open so its inherited paper,
+hover and selection surfaces update around the unchanged ink swatches. Changing
+season retains the current mode and ink; changing mode retains the season. The complete
 theme ID is saved in localStorage under `theme`. A valid saved choice takes
 precedence over the operating system's mode. Otherwise, Autumn uses the system
 preference read on load. If storage is blocked, controls still work for the
@@ -118,10 +123,11 @@ The top-bar appearance group contains **Theme · Day/Night**. The theme picker
 contains background-season choices and ink selection. Ink chooses
 one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
-To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact two-column choices
+To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact three-column choices
 show three dots in each named ink's official shades 1, 4 and 7, followed by its
 Japanese name. English names remain in accessible labels and on hover. The
 selected ink is focused and revealed when the picker opens; the ink list scrolls.
+The three-column grid falls back to fewer columns when the window is too narrow.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
 The top-bar control shows three 8px dots in the selected ink's official shades
