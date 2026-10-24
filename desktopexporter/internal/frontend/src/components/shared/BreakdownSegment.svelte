@@ -5,11 +5,9 @@
   let {
     part,
     unit,
-    single = false,
   }: {
     part: BubbleBreakdownPart
     unit: string
-    single?: boolean
   } = $props()
   const tooltipID = $props.id()
   let trigger = $state<HTMLSpanElement>()
@@ -51,7 +49,6 @@
 <span
   bind:this={trigger}
   class="breakdown-segment"
-  class:breakdown-segment--single={single}
   style:flex={part.count}
   style:--part-color={part.color}
   role="img"
@@ -61,9 +58,6 @@
   onpointerleave={scheduleClose}
 >
   <span class="breakdown-segment__fill" aria-hidden="true"></span>
-  {#if single}<span class="min-w-0 truncate text-subtle" aria-hidden="true"
-      >{part.label}</span
-    >{/if}
 </span>
 <div
   bind:this={tooltip}
@@ -97,12 +91,6 @@
   .breakdown-segment__fill {
     @apply pointer-events-none block h-2 w-full rounded-full;
     background-color: var(--part-color);
-  }
-  .breakdown-segment--single {
-    @apply min-w-0 gap-2 text-sm;
-  }
-  .breakdown-segment--single .breakdown-segment__fill {
-    @apply w-2 shrink-0;
   }
   .breakdown-tooltip {
     @apply overflow-y-auto px-3 py-2 font-normal;

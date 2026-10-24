@@ -36,7 +36,7 @@
   import { createFieldValueSource } from '@/components/shared/Search/codemirror/field-value-completions'
   import { createValueDiscoverySource } from './codemirror/value-completions'
   import { createQueryLinter } from './codemirror/linter'
-  import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
+  import { queryTheme } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
@@ -340,8 +340,6 @@
   })
 
   onMount(() => {
-    ensureTooltipStyles()
-
     const mountEl = editorContainer
     if (!mountEl) return
 
@@ -549,7 +547,10 @@
     </div>
 
     {#if activeFilter && !inToolbar}
-      <div bind:this={filterPopoverEl} class="search-filter-popover">
+      <div
+        bind:this={filterPopoverEl}
+        class="popover-surface search-filter-popover"
+      >
         {@render activeFilter.content()}
       </div>
     {/if}
@@ -881,7 +882,6 @@
   }
 
   .search-filter-popover {
-    @apply border-t border-base-300/70 bg-base-100/80 backdrop-blur-sm;
     @apply px-3 py-2;
   }
 

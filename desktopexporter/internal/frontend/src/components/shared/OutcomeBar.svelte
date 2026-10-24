@@ -35,7 +35,6 @@
   unit="result"
   emptyLabel="No results"
   tooltipOnly
-  staticSingle
   subtleLabels
   countFormat="bracketed"
   {right}

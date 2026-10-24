@@ -22,7 +22,6 @@
     countFormat = 'detailed',
     showAll = false,
     tooltipOnly = false,
-    staticSingle = false,
     subtleLabels = false,
     emptyLabel,
     right,
@@ -38,8 +37,6 @@
     showAll?: boolean
     /** Non-interactive segments with hover tooltips and accessible counts. */
     tooltipOnly?: boolean
-    /** Keep a sole category's label and count visible without a tooltip. */
-    staticSingle?: boolean
     /** Render visible category names and counts as secondary scan information. */
     subtleLabels?: boolean
     emptyLabel?: string
@@ -118,22 +115,13 @@
       focusedKey = null
   }}
 >
-  {#if staticSingle && colouredParts.length === 1}
-    <div class="breakdown-bar breakdown-bar--single">
-      <span class="breakdown-label">{@render partLabel(colouredParts[0])}</span>
-    </div>
-  {:else if tooltipOnly && colouredParts.length}
-    <div
-      class="breakdown-bar"
-      class:breakdown-bar--single={colouredParts.length === 1}
-      role="group"
-      aria-label={barLabel}
-    >
+  {#if tooltipOnly && colouredParts.length}
+    <div class="breakdown-bar" role="group" aria-label={barLabel}>
       {#each colouredParts as part (part.key)}
-        <BreakdownSegment {part} {unit} single={colouredParts.length === 1} />
+        <BreakdownSegment {part} {unit} />
       {/each}
     </div>
-  {:else if colouredParts.length > 1}
+  {:else if colouredParts.length}
     <div
       class="breakdown-bar"
       role="group"
@@ -185,7 +173,7 @@
       <span class="breakdown-label__name">{part.label}</span>
       {#if showSingleCount || colouredParts.length > 1}
         <span class="breakdown-label__count"
-          >{#if staticSingle && colouredParts.length === 1}[{part.count.toLocaleString()}]{:else if countFormat === 'compact'}({part.count.toLocaleString()}){:else if countFormat === 'bracketed'}[{part.count.toLocaleString()}]{:else}({countLabel(
+          >{#if countFormat === 'compact'}({part.count.toLocaleString()}){:else if countFormat === 'bracketed'}[{part.count.toLocaleString()}]{:else}({countLabel(
               part
             )}{#if colouredParts.length > 1},
               {percent.format(part.count / total)}{/if}){/if}</span
@@ -194,11 +182,11 @@
     </span>
   {/snippet}
 
-  {#if !tooltipOnly && !(staticSingle && colouredParts.length === 1) && (activePart || right || emptyLabel)}
+  {#if !tooltipOnly && (activePart || right || emptyLabel)}
     <div
       class="ball-pit"
       class:ball-pit--list={showAll}
-      class:ball-pit--after-bar={colouredParts.length > 1}
+      class:ball-pit--after-bar={colouredParts.length > 0}
     >
       <div class="min-w-0 flex-1">
         {#if showAll && colouredParts.length}
@@ -232,10 +220,6 @@
   .breakdown-bar {
     @apply flex w-full gap-1;
     height: var(--signal-card-row-h);
-  }
-
-  .breakdown-bar--single {
-    @apply items-center gap-2 text-sm;
   }
 
   .breakdown-segment {

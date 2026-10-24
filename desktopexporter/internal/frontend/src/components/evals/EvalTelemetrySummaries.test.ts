@@ -243,7 +243,7 @@ it('shows a trace-only identity without inventing an unavailable span', () => {
     entries: [{ reference: received, label: 'Execution' }],
   })
   expect(screen.getByText('Trace', { exact: true })).toBeVisible()
-  expect(screen.queryByText('Started:')).toBeNull()
+  expect(screen.queryByText('Start:')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Copy span ID' })).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(received))
   expect(screen.getByRole('link')).toHaveAttribute(
@@ -278,7 +278,7 @@ it.each([undefined, reference.spanID])(
     ).toBeVisible()
     expect(within(ids).getByTitle(received.traceID)).toBeVisible()
     if (spanID) expect(within(ids).getByTitle(spanID)).toBeVisible()
-    expect(screen.queryByText('Started:')).toBeNull()
+    expect(screen.queryByText('Start:')).toBeNull()
   }
 )
 
@@ -298,7 +298,7 @@ it('shows the stored trace root summary and start without inventing a span ident
     ],
   })
   await screen.findByText('Recorded trace root')
-  expect(screen.getByText('Started:')).toBeVisible()
+  expect(screen.getByText('Start:')).toBeVisible()
   expect(screen.getByRole('link')).toHaveAttribute(
     'href',
     `/traces/${reference.traceID}`

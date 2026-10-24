@@ -81,8 +81,7 @@
 
 .tooltip[data-tip]::before {
   color: var(--color-base-content);
-  box-shadow: 0 2px 8px -2px
-    color-mix(in oklab, var(--color-base-content) 35%, transparent);
+  box-shadow: none;
   font-weight: 400;
   @apply text-xs;
 }
@@ -892,16 +891,57 @@ svg {
   @apply rotate-180;
 }
 
-/* Shared native popover surface for time ranges, sorting, and timeline activity. */
+/* One flat Panel surface for dropdowns, popovers and portaled editor menus. */
+.popover-surface,
+.anchor-popover,
+html[data-theme] .cm-tooltip {
+  @apply overflow-hidden rounded-xl border-0 bg-base-200 text-sm font-normal text-base-content;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .anchor-popover {
-  @apply overflow-hidden rounded-xl border-0 bg-base-100 text-sm text-base-content;
   margin: 0;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
   inset: unset;
 }
 
-.anchor-popover[role='tooltip'] {
-  @apply bg-base-200 font-normal;
+/* CodeMirror menus are portaled outside .cm-editor. Keep their styles here. */
+html[data-theme] .cm-tooltip-autocomplete > ul {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 400;
+  padding: 0;
+}
+
+html[data-theme] .cm-tooltip-autocomplete > ul > li {
+  @apply flex items-center gap-2 rounded-xl px-4 py-1;
+  height: auto;
+  min-height: var(--table-row-h);
+  box-sizing: border-box;
+}
+
+html[data-theme] .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background-color: var(--item-selected-bg);
+  color: var(--color-base-content);
+}
+
+html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
+  background-color: var(--item-hover-bg);
+}
+
+html[data-theme] .cm-completionLabel {
+  color: var(--color-base-content);
+  padding-left: 0.25rem;
+}
+
+html[data-theme] .cm-completionDetail {
+  @apply m-0 text-sm not-italic text-secondary;
+}
+
+html[data-theme] .cm-completionDetail::before {
+  content: '· ';
+  color: var(--color-subtle);
 }
 
 .anchor-popover--anchored {

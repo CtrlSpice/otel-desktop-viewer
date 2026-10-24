@@ -5,8 +5,7 @@
   import type { SpanNode, TraceSummary } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { getServiceName } from '@/utils/resource'
-  import { formatDurationParts } from '@/utils/time'
-  import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
+  import { formatDuration } from '@/utils/time'
   import { traceHref } from './model'
   import { referenceKey } from './eval-traces'
   import type { EvalTelemetrySummary } from './eval-telemetry-summaries'
@@ -77,14 +76,6 @@
     void load()
     return () => controller.abort()
   })
-
-  function formatTelemetryDuration(nanoseconds: bigint): string {
-    const { value, unit } = formatDurationParts(nanoseconds)
-    return formatMetricValuePlain(Number(value), {
-      unit,
-      maxFractionDigits: 3,
-    })
-  }
 </script>
 
 <div aria-label="Referenced telemetry" class="eval-telemetry min-w-0">
@@ -103,8 +94,16 @@
     {@const title =
       span?.name ??
       (traceOnly ? (trace?.rootSpan?.name ?? 'Trace') : entry.label)}
+    {@const hasDuration = span !== undefined && span.endTime >= span.startTime}
     {#snippet startDate()}
-      <SignalDate label="Started" timestamp={startedAt} />
+      <SignalDate label="Start" timestamp={startedAt} />
+    {/snippet}
+    {#snippet durationSummary()}
+      {#if span && span.endTime >= span.startTime}<span class="shrink-0"
+          >Duration: <span class="text-base-content tabular-nums"
+            >{formatDuration(span.endTime - span.startTime)}</span
+          ></span
+        >{/if}
     {/snippet}
     {#snippet identifiers()}
       <span
@@ -133,6 +132,12 @@
       href={traceHref(entry.reference)}
       disabled={unavailable}
       date={startedAt !== undefined ? startDate : undefined}
+      dateEnd={startedAt !== undefined && hasDuration
+        ? durationSummary
+        : undefined}
+      meta={startedAt === undefined && hasDuration
+        ? durationSummary
+        : undefined}
       title={unavailable ? entry.label : title}
       subtitleContent={unavailable ? undefined : identifiers}
     >
@@ -179,13 +184,6 @@
             ></span>
             {span.statusCode}
           </span>{/if}
-      {/snippet}
-      {#snippet meta()}
-        {#if span && span.endTime >= span.startTime}<span
-            >Duration: <span class="text-base-content tabular-nums"
-              >{formatTelemetryDuration(span.endTime - span.startTime)}</span
-            ></span
-          >{/if}
       {/snippet}
     </SignalCard>
   {/each}

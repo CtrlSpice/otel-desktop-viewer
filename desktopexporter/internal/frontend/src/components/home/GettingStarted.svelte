@@ -74,11 +74,11 @@
 </script>
 
 <div class="getting-started">
-  <div class="flex shrink-0 items-center gap-4 py-2">
+  <div class="welcome-banner grid shrink-0 items-center gap-4 py-2">
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
-      class="aspect-square w-2/5 max-w-40 shrink-0 object-contain"
+      class="aspect-square min-w-0 w-full object-contain"
     />
     <div class="flex min-w-0 flex-col gap-3">
       <h2
@@ -87,7 +87,7 @@
         <span class="welcome-prompt shrink-0 select-none" aria-hidden="true"
           >&gt;</span
         >
-        <span class="min-w-0 text-balance">otel-desktop-viewer</span>
+        <span>otel-desktop-viewer</span>
       </h2>
       <p class="text-balance text-subtle">{tagline}</p>
     </div>
@@ -220,8 +220,11 @@
   .getting-started {
     @apply flex h-full min-h-0 min-w-0 flex-col p-3;
   }
+  .welcome-banner {
+    grid-template-columns: minmax(0, min(40%, 10rem)) minmax(min-content, 1fr);
+  }
   .welcome-title {
-    font-size: 1.375rem;
+    @apply whitespace-nowrap text-lg;
     line-height: 1.25;
   }
   .welcome-prompt {

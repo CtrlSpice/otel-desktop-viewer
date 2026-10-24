@@ -15,3 +15,8 @@ export function traceServiceColor(serviceName: string, theme: string): string {
     getSeriesPalette(theme)[identityColorSlot(serviceName, 'services')]!
   return graphColorOverrides.get('services', serviceName)?.color ?? automatic
 }
+
+/** Single-service waterfall colours use exact span names, not service slots. */
+export function spanNameColor(name: string, theme: string): string {
+  return getSeriesPalette(theme)[identityColorSlot(name, 'span-names')]!
+}

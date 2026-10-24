@@ -50,6 +50,24 @@
   <SummaryBreakdown parts={services} rootService={serviceLabel} tooltipOnly />
 {/snippet}
 
+{#snippet matchingSummary()}
+  <span class="text-subtle"
+    >[{matchingSpanCount?.toLocaleString()} matching {matchingSpanCount === 1
+      ? 'span'
+      : 'spans'}]</span
+  >
+{/snippet}
+
+{#snippet durationSummary()}
+  {#if durationParts}
+    <span class="flex shrink-0 items-center gap-1">
+      <span>Duration:</span>
+      <span class="text-base-content">{durationParts.value}</span>
+      <span class="text-base-content">{durationParts.unit}</span>
+    </span>
+  {/if}
+{/snippet}
+
 <SignalCard
   id={trace.traceID}
   {selected}
@@ -57,6 +75,8 @@
   subtitle={serviceLabel}
   subtitleContent={serviceBreakdown}
   titleContent={!trace.hasRootSpan ? missingRootTitle : undefined}
+  meta={matchingSpanCount !== undefined ? matchingSummary : undefined}
+  dateEnd={durationParts ? durationSummary : undefined}
   {onclick}
   {href}
 >
@@ -68,21 +88,7 @@
     />
   {/snippet}
   {#snippet date()}
-    <SignalDate label="Started" timestamp={trace.startTime} />
-  {/snippet}
-  {#snippet meta()}
-    {#if matchingSpanCount !== undefined}<span class="text-subtle"
-        >[{matchingSpanCount.toLocaleString()} matching {matchingSpanCount === 1
-          ? 'span'
-          : 'spans'}]</span
-      >{/if}
-    {#if durationParts}
-      <span class="flex shrink-0 items-center gap-1">
-        <span>Duration:</span>
-        <span class="text-base-content">{durationParts.value}</span>
-        <span class="text-base-content">{durationParts.unit}</span>
-      </span>
-    {/if}
+    <SignalDate label="Start" timestamp={trace.startTime} />
   {/snippet}
 </SignalCard>
 

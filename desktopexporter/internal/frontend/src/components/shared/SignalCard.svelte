@@ -17,8 +17,10 @@
     wrapTitle?: boolean
     subtitle?: string
     subtitleContent?: Snippet
-    /** Full-width date between identity and description. */
+    /** Date at the bottom-left, after summary content. */
     date?: Snippet
+    /** Optional trailing fact on the date row, such as a duration. */
+    dateEnd?: Snippet
     /** `plain`: value grid. `interval`: Start + Duration (traces). `labeled`: one labeled timestamp (logs/metrics). */
     timeLayout?: 'plain' | 'interval' | 'labeled'
     /** Label for `labeled` layout (e.g. "Timestamp:", "Last seen:"). */
@@ -35,7 +37,7 @@
     badge?: Snippet
     /** Place badges directly after the title or at the row's trailing edge. */
     badgePlacement?: 'inline' | 'end'
-    /** Subtle line under the title (e.g. metric description). */
+    /** Subtle line under the title (e.g. a log body preview). */
     description?: string
     descriptionIsID?: boolean
     /** Secondary line under header (custom content; prefer description). */
@@ -62,6 +64,7 @@
     subtitle,
     subtitleContent,
     date,
+    dateEnd,
     timeLayout = 'plain',
     timestampLabel,
     timestamp,
@@ -196,7 +199,12 @@
       </div>
     {/if}
     {#if date}
-      <div class="signal-row__date">{@render date()}</div>
+      <div class="signal-row__date">
+        {@render date()}
+        {#if dateEnd}
+          <div class="signal-row__date-end">{@render dateEnd()}</div>
+        {/if}
+      </div>
     {/if}
   </div>
 {/snippet}
@@ -287,9 +295,12 @@
   }
 
   .signal-row__date {
-    @apply min-h-[var(--signal-card-row-h)] min-w-0 w-full text-xs tabular-nums;
-    align-content: center;
+    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 w-full flex-wrap items-center justify-between gap-x-4 text-sm tabular-nums;
     color: var(--color-subtle);
+  }
+
+  .signal-row__date-end {
+    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 max-w-full shrink-0 items-center;
   }
 
   .signal-row__description {

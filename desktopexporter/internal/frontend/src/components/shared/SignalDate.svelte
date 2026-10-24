@@ -1,6 +1,11 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatTimestampParts, formatSignedDuration } from '@/utils/time'
+  import {
+    formatTimestampParts,
+    formatSignedDuration,
+    formatRelativeTime,
+  } from '@/utils/time'
+  import { wallClock } from '@/state/wall-clock.svelte'
 
   let {
     label,
@@ -20,7 +25,14 @@
   const parts = $derived(
     timestamp === undefined
       ? undefined
-      : formatTimestampParts(timestamp, timeContext.tz, 'milliseconds')
+      : formatTimestampParts(timestamp, timeContext.tz)
+  )
+  const value = $derived(
+    timestamp === undefined
+      ? '—'
+      : relativeTo !== undefined
+        ? formatSignedDuration(timestamp - relativeTo)
+        : formatRelativeTime(timestamp, wallClock.now)
   )
 </script>
 
@@ -32,9 +44,7 @@
 >
   <span class="signal-date__label">{label}:</span>
   <span class="min-w-0 truncate text-base-content"
-    >{timestamp !== undefined && relativeTo !== undefined
-      ? formatSignedDuration(timestamp - relativeTo)
-      : (parts?.value ?? '—')}{#if suffix}
+    >{value}{#if suffix}
       <span class="text-subtle">{' '}{suffix}</span>{/if}</span
   >
 </div>

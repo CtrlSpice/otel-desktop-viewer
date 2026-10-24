@@ -30,23 +30,24 @@
   service/series ownership and saved assignments when changing graph palettes.
   Group appearance controls as the theme picker and Day/Night, with
   pill-rounded exterior corners and flat internal joins. The theme picker opens
-  below its button, end-aligned and viewport-clamped, with compact ink and season
-  controls above the full-width app-style sample preview. The preview remains
+  below its button, end-aligned and viewport-clamped, with compact ink controls
+  below the full-width app-style sample preview. The preview remains
   the main visual element.
-  Use the season controls as the top row instead of a Theme/Preview heading.
-  Put the ink strip below them, then the sample summary card and its JSON.
+  Use one header row: `Preview: <original ink name>` at the left and the four
+  icon-only season choices at the right. Put the sample summary card and its
+  JSON below it, then the ink strip, then attribution. Omit redundant headings.
   Omit the extra Trace preview header and separate attributes.
   The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
   Each ink choice has three vertically stacked 8px colour dots in a 32px-wide,
   48px-high target, brightest at the top (official shades 7, 4, 1). Use one
-  horizontal row above the preview, scrolling when
+  horizontal row below the JSON preview, scrolling when
   necessary, with the selected original ink name shown once.
   Keep the chooser 34rem wide at most. Use native side-to-side scrolling for
   overflow, with optional left/right caret buttons that scroll without changing
   the selected ink. Disable each caret at its end. Do not snap or auto-advance.
   Keep every ink's name in its tooltip and accessible label. Use radio-group
   semantics, arrow/Home/End selection and one Tab stop for the swatch group.
-  Keep four icon-only season choices above the swatches. Keep section names accessible but visually hidden.
+  Keep section names accessible but visually hidden.
   Omit its filter field and checkmark column.
   Use the original names for ink and season labels, including tooltips and
   accessible names. Ink controls interface and syntax accents;
@@ -105,12 +106,13 @@
   attribute scope, exact-value inspection, Copy, sorting and filtering.
   Matching Telemetry remains alone in the right-hand Details pane with its
   signal tabs, independent pages and scroll positions.
-  The welcome app name uses 22px regular Atkinson Mono in Primary, with a 1.25
-  line-height and natural wrapping, as a display-title exception to the 16px
-  pane headings. Lulu uses 40% of the welcome width, capped at 160px, so the
-  name fits beside her.
+  The welcome app name and prompt use 16px regular Atkinson Mono in Primary,
+  with a 1.25 line-height. Keep the complete name and prompt on one line.
+  Lulu uses at most 40% of the welcome width, capped at 160px; let her column
+  shrink to make room for the unwrapped name rather than clipping it.
   Prefix the name with a decorative `>` in the Madoromi Sora operator role.
   Hide the prompt from assistive technology and text selection.
+  Home's search label and placeholder say Search telemetry, without “all”.
   Welcome axolotl facts use concise, qualified claims from peer-reviewed research,
   with IEEE-style numbered citations in first-appearance order. Put the reference
   number and DOI beside each fact in the source. Keep full IEEE references and
@@ -190,12 +192,22 @@
   Preserve marker/fill palette colours. Obtain explicit user
   approval before changing the palette or adding local colour overrides.
   Span and summary breakdown bars use solid palette fills without light-mode
-  fading or borders. Error status code/message values use neutral Text with an
+  fading or borders. For a trace with one service identity (including an unnamed
+  service), waterfall dots and bars use stable exact-span-name colours in their
+  own saved scope. Multi-service traces retain service colours. Determine this
+  from the full trace, not only matched, expanded or visible rows. Keep summary
+  bars and service indicators service-coloured, and retain Error overrides.
+  Error status code/message values use neutral Text with an
   8px Error dot before the value, only when the received status code is 2.
   Timeline activity markers retain their exact assigned colour without brightening.
   Swatch glyphs choose between the active theme's light/dark foregrounds using
   linear-sRGB contrast ratios, recalculating on theme changes.
   Tooltips use the seasonal Panel surface with regular-weight neutral Text.
+  Dropdowns and popovers share that flat Panel surface, rounded corners and
+  regular text through app.css. Do not add decorative shadows, translucent
+  backgrounds, blur or per-picker surface colours. Keep CodeMirror completion
+  menus in the shared stylesheet rather than injecting CSS at runtime.
+  Picker-specific styles own layout only; retain shared highlights and focus rings.
   Ghost buttons use the shared Low hover and Medium active/selected backgrounds;
   hover takes precedence while the pointer remains over the button.
 - Shared item states use Highlight Low for hover and Highlight Medium for
@@ -405,6 +417,10 @@
   opposite the service. Keep full meanings on hover, counts in Subtle, and no pill
   background or border. Names use the shared 17px regular card-title size;
   metadata stays 14px/21px.
+  Metric summary cards omit descriptions and their row. Keep received descriptions
+  unchanged in Details, raw JSON and Copy/Download.
+  Place Last seen on the left and Last value (when received) on the right of the
+  same shared bottom row. Keep matching-point counts separate from that row.
   Use continuous 24px rows and the shared 8px horizontal gap.
 - Signal card text uses the theme's 1.5 line-height; do not override it with
   `leading-none`, `leading-tight` or `leading-snug` on card text.
@@ -439,8 +455,9 @@
   Experiment summary cards keep status labels and `[count]` in the compact segment
   tooltips; do not repeat an outcome legend below the bar.
   Do not show an execution-status legend in the results header for now.
-  A single breakdown category uses its colour dot and name instead of a full-width
-  bar. Multiple categories retain the proportionate bar with hover details.
+  A single breakdown category uses a full-width 8px bar, with the same hover
+  details and accessible counts as multi-category bars. Multiple categories
+  retain their proportions. Do not replace singleton bars with a dot and label.
   Results, Tool calls and Cost are a single-select radio group. The active view
   uses Highlight Medium and Highlight Low on hover. Results has recorded score
   with its dot/label, without a duplicate case-percentage Summary column. Tool calls
@@ -477,7 +494,7 @@
   Duration-only and derived timing bars use Primary too when no span supplies
   a colour. Keep error overrides. Trace-only telemetry cards link to the trace's
   default root view and omit missing-span commentary.
-  Telemetry cards omit Started when no start timestamp is available. Confirm
+  Telemetry cards omit Start when no start timestamp is available. Confirm
   trace absence before marking IDs Unavailable and disabling navigation; a
   pending or failed lookup does not establish absence. Retain selectable IDs.
   Keep recorded and propagated error indicators; lifecycle status is not a
@@ -581,7 +598,7 @@
   Other later sections start collapsed. Preserve manual disclosure and resizing.
   Evals telemetry links reuse SignalCard: service-colour dot and span name,
   neutral status text with its status dot, Secondary provenance, duration,
-  and the shared bottom-left Started date. Service identity is on hover. Omit
+  and the shared bottom-left Start date. Service identity is on hover. Omit
   navigation hints; the summary card itself is the exact native trace link.
   Inside each Telemetry card, prefix the inline trace and span IDs with `Traces ·`
   to name the navigation destination. Use shared Identifier rendering, without
@@ -601,13 +618,19 @@
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
   Result Details.
 - All signal cards place the shared date row at the bottom-left, after summary
-  content. Label its meaning: `Started` for traces/Evals,
+  content. Label its meaning: `Start` for traces/Evals,
   `Last seen` for metrics and `Recorded` for logs. Align values through the shared
-  SignalDate component. Use the selected timezone without repeating its suffix;
-  retain the full timezone on hover and in Details. Missing dates stay unavailable,
-  not invented. Keep trace `Duration:` separately labelled.
+  SignalDate component. Show relative time such as `5 minutes ago` or `1 week ago`,
+  refreshing through one shared clock. Future timestamps use `in …`, not past
+  wording. Keep the full nanosecond timestamp in the selected timezone on hover
+  and unchanged in Details. Parent-relative event offsets remain signed durations.
+  Missing dates stay unavailable, not invented. Trace and referenced-telemetry
+  cards put Start on the left and separately labelled Duration on the right of
+  one shared bottom row. Wrap on narrow cards without shrinking text or hiding
+  values. Use standard minute/hour duration labels above 60 seconds/60 minutes,
+  with at most one fractional digit; retain the existing finer units below a minute.
   Missing dates display `—` with the reason on hover.
-  Evals experiment cards omit the entire Started row when no valid start is available.
+  Evals experiment cards omit the entire Start row when no valid start is available.
   Let date labels use their natural width with the shared gap; do not reserve a
   wide empty label column.
 - Log severity uses an 8px coloured dot followed by neutral `LABEL (number)`

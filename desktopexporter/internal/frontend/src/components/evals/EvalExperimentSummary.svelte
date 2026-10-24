@@ -24,7 +24,7 @@
 {/snippet}
 
 {#snippet startDate()}
-  <SignalDate label="Started" timestamp={BigInt(started) * 1_000_000n} />
+  <SignalDate label="Start" timestamp={BigInt(started) * 1_000_000n} />
 {/snippet}
 
 <SignalCard

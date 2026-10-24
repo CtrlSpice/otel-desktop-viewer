@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { JsonTraceData } from '../src/types/wire-types'
 import { ACCENT_INKS } from '../src/themes/accent-inks'
@@ -40,6 +40,16 @@ const HIGHLIGHT_THEMES = THEMES.map(theme => ({
   selected: themeRgb(theme.id, 'highlightMedium'),
   high: theme.colors.highlightHigh,
 }))
+
+async function expectFlatPanel(surface: Locator, theme: string) {
+  await expect(surface).toHaveCSS('background-color', themeRgb(theme, 'panel'))
+  await expect(surface).toHaveCSS('color', themeRgb(theme, 'text'))
+  await expect(surface).toHaveCSS('border-width', '0px')
+  await expect(surface).toHaveCSS('border-radius', '12px')
+  await expect(surface).toHaveCSS('box-shadow', 'none')
+  await expect(surface).toHaveCSS('backdrop-filter', 'none')
+  await expect(surface).toHaveCSS('font-weight', '400')
+}
 
 // Pinned upstream Usuzumi 1 / Kasure 1, deliberately not contrast-corrected.
 const NATIVE_NEUTRALS = {
@@ -582,6 +592,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     )
     await trigger.click()
     const picker = page.locator('.theme-picker-popover:popover-open')
+    await expectFlatPanel(picker, 'madoromi-aki-yoru')
     await expect(
       picker.getByRole('heading', { name: /^(Theme|Preview)$/ })
     ).toHaveCount(0)
@@ -599,6 +610,11 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     })
     await expect(seasons.getByRole('button')).toHaveCount(4)
     await expect(seasons.locator('svg')).toHaveCount(4)
+    const heading = picker.getByRole('heading', {
+      name: 'Preview: To-ro',
+      exact: true,
+    })
+    await expect(heading).toBeVisible()
     const choices = picker.locator('[data-ink-choice]')
     expect(
       await choices.evaluateAll(buttons =>
@@ -674,8 +690,14 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     await expect(code.locator('.cm-content')).toContainText(
       '"http.request.method": "GET"'
     )
-    expect(seasonBox.y + seasonBox.height).toBeLessThanOrEqual(listBox.y)
-    expect(previewBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
+    const headingBox = (await heading.boundingBox())!
+    expect(seasonBox.x).toBeGreaterThanOrEqual(headingBox.x + headingBox.width)
+    expect(seasonBox.y + seasonBox.height / 2).toBeCloseTo(
+      headingBox.y + headingBox.height / 2,
+      0
+    )
+    expect(seasonBox.y + seasonBox.height).toBeLessThanOrEqual(previewBox.y)
+    expect(listBox.y).toBeGreaterThanOrEqual(codeBox.y + codeBox.height)
     expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       listBox.y + listBox.height
@@ -775,7 +797,7 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   const picker = page.locator('.theme-picker-popover:popover-open')
   await expect(picker).toHaveCSS(
     'background-color',
-    themeRgb('madoromi-fuyu-hiru', 'canvas')
+    themeRgb('madoromi-fuyu-hiru', 'panel')
   )
   const selectedInk = picker.locator('[data-ink-choice="rikka"]')
   await expect(selectedInk).toHaveAttribute('aria-checked', 'true')
@@ -1019,7 +1041,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       'line-height',
       '25.5px'
     )
-    await expect(card.locator('.signal-date__label')).toHaveText('Started:')
+    await expect(card.locator('.signal-date__label')).toHaveText('Start:')
     const dateSpacing = await card.locator('.signal-date').evaluate(element => {
       const label = element.querySelector('.signal-date__label')!
       const text = document.createRange()
@@ -1096,6 +1118,10 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     )
     await expect(trigger.getByText('Sort by:', { exact: true })).toHaveCount(0)
     await trigger.click()
+    await expectFlatPanel(
+      page.getByRole('group', { name: 'Sort by', exact: true }),
+      theme
+    )
     await page
       .getByRole('group', { name: 'Sort by', exact: true })
       .getByRole('button', { name: 'Duration', exact: true })
@@ -1169,6 +1195,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       '.cm-tooltip-autocomplete li[aria-selected="true"]'
     )
     await expect(selected).toBeVisible()
+    await expectFlatPanel(page.locator('.cm-tooltip-autocomplete'), theme)
     await expect(selected).toHaveCSS('border-radius', '12px')
     await expect(selected).toHaveCSS('background-color', selectedColor)
     const idle = page
@@ -1246,12 +1273,60 @@ test.describe('home page accessibility', () => {
       name: 'otel-desktop-viewer',
       exact: true,
     })
-    await expect(welcome).toHaveCSS('font-size', '22px')
+    await expect(welcome).toHaveCSS('font-size', '16px')
     await expect(welcome).toHaveCSS('font-weight', '400')
     await expect(welcome.locator('.welcome-prompt')).toHaveAttribute(
       'aria-hidden',
       'true'
     )
+  })
+
+  test('keeps the welcome name and prompt on one line across drawer widths', async ({
+    page,
+  }) => {
+    for (const { width, drawer } of [
+      { width: 1920, drawer: 22 },
+      { width: 1920, drawer: 28 },
+      { width: 1920, drawer: 40 },
+      { width: 390, drawer: 22 },
+      { width: 320, drawer: 22 },
+    ]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.evaluate(drawer => {
+        localStorage.setItem('signal-drawer-width', String(drawer))
+        localStorage.setItem('signal-drawer:open', 'true')
+      }, drawer)
+      await page.reload()
+      await page.evaluate(() => document.fonts.ready)
+      const welcome = page.getByRole('heading', {
+        name: 'otel-desktop-viewer',
+        exact: true,
+      })
+      await expect(welcome).toBeVisible()
+      await expect(welcome).toHaveCSS('font-size', '16px')
+      await expect(welcome).toHaveCSS('white-space', 'nowrap')
+      const layout = await welcome.evaluate(element => {
+        const prompt = element.querySelector('.welcome-prompt')!
+        const name = element.lastElementChild!
+        const banner = element.closest('.welcome-banner')!
+        const image = banner.querySelector('img')!
+        return {
+          prompt: prompt.getBoundingClientRect().toJSON(),
+          name: name.getBoundingClientRect().toJSON(),
+          banner: banner.getBoundingClientRect().toJSON(),
+          image: image.getBoundingClientRect().toJSON(),
+          overflow: banner.scrollWidth > banner.clientWidth,
+        }
+      })
+      expect(layout.name.y).toBeCloseTo(layout.prompt.y, 0)
+      expect(layout.name.height).toBe(20)
+      expect(layout.name.x + layout.name.width).toBeLessThanOrEqual(
+        layout.banner.x + layout.banner.width
+      )
+      expect(layout.image.width).toBeGreaterThan(0)
+      expect(layout.image.x + layout.image.width).toBeLessThan(layout.prompt.x)
+      expect(layout.overflow).toBe(false)
+    }
   })
 
   test('uses the approved 20% Winter Day surfaces and mapped foregrounds', async ({

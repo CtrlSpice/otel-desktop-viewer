@@ -47,9 +47,11 @@
         tooltipOnly
       />
     {/snippet}
-    {#snippet meta()}<span>Duration: 42 ms</span>{/snippet}
+    {#snippet dateEnd()}<span class="shrink-0"
+        >Duration: <span class="text-base-content">42 ms</span></span
+      >{/snippet}
     {#snippet date()}<SignalDate
-        label="Started"
+        label="Start"
         timestamp={1770000000000000000n}
       />{/snippet}
   </SignalCard>

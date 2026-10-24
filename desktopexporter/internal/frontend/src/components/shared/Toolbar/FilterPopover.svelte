@@ -147,7 +147,7 @@
     @apply mb-2 flex min-h-8 items-center gap-2;
   }
   .filter-popover__footer {
-    @apply sticky bottom-0 mt-2 flex shrink-0 gap-2 bg-base-100;
+    @apply sticky bottom-0 mt-2 flex shrink-0 gap-2 bg-inherit;
   }
   .filter-popover__footer :global(.btn) {
     @apply flex-1 rounded-full;

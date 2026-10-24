@@ -151,11 +151,9 @@
   </button>
 
   {#if popoverOpen}
-    <div bind:this={popoverEl} class="field-filter__popover">
-      <div class="field-filter__popover-header header-surface">
-        <span class="text-xs font-semibold uppercase tracking-wide text-subtle"
-          >Columns</span
-        >
+    <div bind:this={popoverEl} class="popover-surface field-filter__popover">
+      <div class="field-filter__popover-header">
+        <span class="text-sm font-normal text-subtle">Columns</span>
       </div>
       <div class="field-filter__popover-list">
         {#each filterableFields as field (field.name + ':' + field.searchScope)}
@@ -227,12 +225,10 @@
   .field-filter__popover {
     @apply absolute right-0 top-full z-50 mt-1;
     @apply min-w-[14rem] max-w-[20rem];
-    @apply rounded-lg border-0 bg-base-100 shadow-lg;
-    @apply overflow-hidden;
   }
 
   .field-filter__popover-header {
-    @apply px-3 py-2 border-b border-base-300/50;
+    @apply px-3 py-2;
   }
 
   .field-filter__popover-list {

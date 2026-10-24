@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'svelte'
 import MetricCard from './MetricCard.svelte'
 import type { MetricSummary } from '@/types/api-types'
-import { formatTimestampParts } from '@/utils/time'
+import { formatRelativeTime, formatTimestampParts } from '@/utils/time'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeMetric(overrides: Partial<MetricSummary> = {}): MetricSummary {
@@ -40,13 +40,14 @@ describe('MetricCard', () => {
     expect(screen.getByText('orders-service')).toBeInTheDocument()
   })
 
-  it('renders the description', () => {
-    renderCard({
+  it('keeps descriptions out of summary cards without leaving an empty row', () => {
+    const { container } = renderCard({
       metric: makeMetric({ description: 'Duration of HTTP server requests' }),
     })
     expect(
-      screen.getByText('Duration of HTTP server requests')
-    ).toBeInTheDocument()
+      screen.queryByText('Duration of HTTP server requests')
+    ).not.toBeInTheDocument()
+    expect(container.querySelector('.signal-row__lead')).toBeNull()
   })
 
   it('renders the last value with its unit when available', () => {
@@ -129,22 +130,30 @@ describe('MetricCard', () => {
     )
   })
 
-  it('places the labelled last-seen timestamp after description and last reading', () => {
+  it('places Last seen and Last value on the shared bottom row with the exact date on hover', () => {
     const metric = makeMetric()
     renderCard({ metric })
     const lastSeenParts = formatTimestampParts(
       metric.lastSeen,
       'local',
-      'milliseconds'
+      'nanoseconds'
     )
     expect(screen.getByText('Last seen:')).toBeInTheDocument()
-    expect(screen.getByText(lastSeenParts.value)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        formatRelativeTime(metric.lastSeen, BigInt(Date.now()) * 1_000_000n)
+      )
+    ).toBeInTheDocument()
     const date = document.querySelector('.signal-date')
     expect(date).toHaveAttribute(
       'title',
       `Last seen: ${lastSeenParts.value} ${lastSeenParts.unit}`
     )
     expect(date).not.toHaveTextContent(lastSeenParts.unit)
+    expect(document.querySelector('.signal-row__date')).toContainElement(
+      screen.getByText('Last value:')
+    )
+    expect(document.querySelector('.signal-row__meta-row')).toBeNull()
     expect(
       document.querySelector('.signal-row__body')?.lastElementChild
     ).toContainElement(date as HTMLElement)

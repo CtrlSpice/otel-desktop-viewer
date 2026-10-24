@@ -7,7 +7,9 @@ import WaterfallView, {
   getTraceBounds,
 } from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
-import { traceServiceColor } from '@/utils/trace-service-color'
+import { spanNameColor, traceServiceColor } from '@/utils/trace-service-color'
+import { savedColorSlots } from '@/utils/color-slots'
+import { THEMES } from '@/themes'
 import { renderWithContexts } from '@/test/render-helpers'
 import { resetCollapseStoreForTests } from './waterfall-collapse-store'
 import { scrollMock } from '@/test/mock-virtual-list'
@@ -232,42 +234,105 @@ describe('WaterfallView bigint domain geometry', () => {
     expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
   })
 
-  it('keeps service colours across operations while preserving error semantics', () => {
+  it.each([undefined, 'one-service'])(
+    'colours a single %s service by exact span name while preserving errors',
+    service => {
+      const spans = [
+        spanNode('first', null, 0),
+        spanNode('second', null, 0),
+        spanNode('repeated', null, 0),
+        spanNode('error', null, 0),
+        spanNode('exception', null, 0),
+      ]
+      spans[2]!.spanData.name = 'first'
+      spans[3]!.spanData.statusCodeValue = 2
+      spans[4]!.spanData.events = [
+        {
+          name: 'exception',
+          timestamp: 0n,
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      ]
+      if (service !== undefined) {
+        for (const span of spans)
+          span.spanData.resource.attributes = [
+            { key: 'service.name', value: { kind: 'string', value: service } },
+          ]
+      }
+      const servicesBefore = savedColorSlots('services')
+
+      const rows = buildWaterfallRows(
+        spans,
+        getTraceBounds(spans),
+        'madoromi-fuyu-hiru'
+      )
+
+      expect(rows.map(row => row.color)).toEqual([
+        spanNameColor('first', 'madoromi-fuyu-hiru'),
+        spanNameColor('second', 'madoromi-fuyu-hiru'),
+        spanNameColor('first', 'madoromi-fuyu-hiru'),
+        'var(--color-error)',
+        'var(--color-error)',
+      ])
+      expect(rows[0].color).not.toBe(rows[1].color)
+      expect(savedColorSlots('services')).toEqual(servicesBefore)
+      const reordered = buildWaterfallRows(
+        [...spans].reverse(),
+        getTraceBounds(spans),
+        'madoromi-fuyu-hiru'
+      )
+      expect(reordered.map(row => row.color)).toEqual(
+        rows.map(row => row.color).reverse()
+      )
+    }
+  )
+
+  it('uses service colours for multi-service traces, including unmatched services', () => {
     const spans = [
       spanNode('first', null, 0),
       spanNode('second', null, 0),
       spanNode('error', null, 0),
     ]
+    for (const [index, span] of spans.entries())
+      span.spanData.resource.attributes = [
+        {
+          key: 'service.name',
+          value: {
+            kind: 'string',
+            value: index === 2 ? 'other-service' : 'one-service',
+          },
+        },
+      ]
+    spans[2]!.matched = false
     spans[2]!.spanData.statusCodeValue = 2
-
     const rows = buildWaterfallRows(
       spans,
       getTraceBounds(spans),
       'madoromi-fuyu-hiru'
     )
-
-    expect(rows.map(row => row.color)).toEqual([
-      traceServiceColor('', 'madoromi-fuyu-hiru'),
-      traceServiceColor('', 'madoromi-fuyu-hiru'),
-      'var(--color-error)',
-    ])
-    for (const span of spans)
-      span.spanData.resource.attributes = [
-        {
-          key: 'service.name',
-          value: { kind: 'string', value: 'one-service' },
-        },
-      ]
-    const serviceRows = buildWaterfallRows(
-      spans,
-      getTraceBounds(spans),
-      'madoromi-fuyu-hiru'
-    )
-    expect(serviceRows[0].color).toBe(
+    expect(rows[0].color).toBe(
       traceServiceColor('one-service', 'madoromi-fuyu-hiru')
     )
-    expect(serviceRows[1].color).toBe(serviceRows[0].color)
-    expect(serviceRows[2].color).toBe('var(--color-error)')
+    expect(rows[1].color).toBe(rows[0].color)
+    expect(rows[2].color).toBe('var(--color-error)')
+    spans[2]!.spanData.statusCodeValue = 1
+    expect(
+      buildWaterfallRows(spans, getTraceBounds(spans), 'madoromi-fuyu-hiru')[2]
+        .color
+    ).toBe(traceServiceColor('other-service', 'madoromi-fuyu-hiru'))
+  })
+
+  it('keeps exact span names distinct and their colours stable across all themes', () => {
+    const spans = [spanNode('first', null, 0), spanNode('second', null, 0)]
+    spans[1].spanData.name = 'first '
+    const colours = new Set<string>()
+    for (const theme of THEMES) {
+      const rows = buildWaterfallRows(spans, getTraceBounds(spans), theme.id)
+      expect(rows[0].color).not.toBe(rows[1].color)
+      colours.add(rows[0].color)
+    }
+    expect(colours.size).toBe(1)
   })
 })
 

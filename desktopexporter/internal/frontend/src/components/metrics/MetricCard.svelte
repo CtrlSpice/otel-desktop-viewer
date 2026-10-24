@@ -25,7 +25,6 @@
 
   let key = $derived(metricSummaryKey(metric))
 
-  let description = $derived((metric.description ?? '').trim())
   let typeSummary = $derived(
     metricTypeSummary(
       metric.metricType,
@@ -49,10 +48,8 @@
   id={key}
   {selected}
   title={metric.name}
-  description={description || undefined}
-  meta={lastValueLabel !== null || matchingPointCount !== undefined
-    ? reading
-    : undefined}
+  meta={matchingPointCount !== undefined ? matchingSummary : undefined}
+  dateEnd={lastValueLabel !== null ? reading : undefined}
   {onclick}
   {href}
 >
@@ -89,25 +86,24 @@
   {/snippet}
 </SignalCard>
 
+{#snippet matchingSummary()}
+  <span class="text-subtle"
+    >[{matchingPointCount?.toLocaleString()} matching {matchingPointCount === 1
+      ? 'datapoint'
+      : 'datapoints'}]</span
+  >
+{/snippet}
+
 {#snippet reading()}
-  <div class="flex w-full min-w-0 flex-wrap gap-x-2 text-sm tabular-nums">
-    {#if matchingPointCount !== undefined}<span class="text-subtle"
-        >[{matchingPointCount.toLocaleString()} matching {matchingPointCount ===
-        1
-          ? 'datapoint'
-          : 'datapoints'}]</span
-      >{/if}
-    {#if lastValueLabel}
-      <span class="flex min-w-0 items-center gap-1">
-        <span class="shrink-0">Last value:</span>
-        <span class="truncate text-base-content" title={lastValueLabel}>
-          {lastValueLabel}
-        </span>
-        {#if metric.unit}<span class="text-base-content">{metric.unit}</span
-          >{/if}
+  {#if lastValueLabel !== null}
+    <span class="flex min-w-0 items-center gap-1">
+      <span class="shrink-0">Last value:</span>
+      <span class="truncate text-base-content" title={lastValueLabel}>
+        {lastValueLabel}
       </span>
-    {/if}
-  </div>
+      {#if metric.unit}<span class="text-base-content">{metric.unit}</span>{/if}
+    </span>
+  {/if}
 {/snippet}
 
 <style lang="postcss">

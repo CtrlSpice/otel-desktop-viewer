@@ -140,7 +140,11 @@
   {/snippet}
   {#snippet children()}
     <div class="theme-picker__layout">
-      <div class="theme-picker__controls">
+      <div class="theme-picker__header">
+        <h2 class="theme-picker__current min-w-0 flex-1 text-sm font-normal">
+          <span class="text-subtle">Preview:</span>
+          {chosen.name}
+        </h2>
         <fieldset class="theme-picker__seasons">
           <legend class="sr-only">Background</legend>
           <div class="grid grid-cols-4 gap-1">
@@ -163,72 +167,69 @@
             {/each}
           </div>
         </fieldset>
-        <p class="theme-picker__current text-center text-sm">
-          {chosen.name}
-        </p>
-        <fieldset class="m-0 min-w-0 border-0 p-0">
-          <legend class="sr-only">Ink</legend>
-          <div class="theme-picker__ink-strip">
-            <button
-              type="button"
-              class="btn btn-ghost btn-circle btn-sm"
-              class:btn-disabled={!canScrollLeft}
-              aria-label="Scroll inks left"
-              title="Scroll inks left"
-              aria-disabled={!canScrollLeft}
-              onclick={() => scrollInks(-1)}
-            >
-              <HugeiconsIcon
-                icon={ArrowLeft01Icon}
-                size={18}
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </button>
-            <div
-              class="theme-picker__inks"
-              role="radiogroup"
-              aria-label="Theme inks"
-              bind:this={optionsList}
-              onscroll={updateInkScroll}
-            >
-              {#each inks as ink, index (ink.id)}
-                <button
-                  type="button"
-                  role="radio"
-                  class="theme-picker__choice item-state"
-                  data-ink-choice={ink.id}
-                  aria-label={ink.name}
-                  title={ink.name}
-                  aria-checked={ink.id === accentInk.value}
-                  tabindex={ink.id === accentInk.value ? 0 : -1}
-                  onkeydown={event => selectInk(event, index)}
-                  onclick={() => accentInk.set(ink.id)}
-                >
-                  {@render swatches(ink.preview, true)}
-                </button>
-              {/each}
-            </div>
-            <button
-              type="button"
-              class="btn btn-ghost btn-circle btn-sm"
-              class:btn-disabled={!canScrollRight}
-              aria-label="Scroll inks right"
-              title="Scroll inks right"
-              aria-disabled={!canScrollRight}
-              onclick={() => scrollInks(1)}
-            >
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                size={18}
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </button>
-          </div>
-        </fieldset>
       </div>
       {#if open}<ThemePreview />{/if}
+      <fieldset class="m-0 min-w-0 border-0 p-0">
+        <legend class="sr-only">Ink</legend>
+        <div class="theme-picker__ink-strip">
+          <button
+            type="button"
+            class="btn btn-ghost btn-circle btn-sm"
+            class:btn-disabled={!canScrollLeft}
+            aria-label="Scroll inks left"
+            title="Scroll inks left"
+            aria-disabled={!canScrollLeft}
+            onclick={() => scrollInks(-1)}
+          >
+            <HugeiconsIcon
+              icon={ArrowLeft01Icon}
+              size={18}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </button>
+          <div
+            class="theme-picker__inks"
+            role="radiogroup"
+            aria-label="Theme inks"
+            bind:this={optionsList}
+            onscroll={updateInkScroll}
+          >
+            {#each inks as ink, index (ink.id)}
+              <button
+                type="button"
+                role="radio"
+                class="theme-picker__choice item-state"
+                data-ink-choice={ink.id}
+                aria-label={ink.name}
+                title={ink.name}
+                aria-checked={ink.id === accentInk.value}
+                tabindex={ink.id === accentInk.value ? 0 : -1}
+                onkeydown={event => selectInk(event, index)}
+                onclick={() => accentInk.set(ink.id)}
+              >
+                {@render swatches(ink.preview, true)}
+              </button>
+            {/each}
+          </div>
+          <button
+            type="button"
+            class="btn btn-ghost btn-circle btn-sm"
+            class:btn-disabled={!canScrollRight}
+            aria-label="Scroll inks right"
+            title="Scroll inks right"
+            aria-disabled={!canScrollRight}
+            onclick={() => scrollInks(1)}
+          >
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              size={18}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+      </fieldset>
     </div>
   {/snippet}
   {#snippet footer()}
@@ -268,8 +269,8 @@
     @apply flex min-w-0 flex-col gap-4;
   }
 
-  .theme-picker__controls {
-    @apply flex min-w-0 flex-col gap-3;
+  .theme-picker__header {
+    @apply flex min-w-0 items-center gap-3;
   }
 
   .theme-picker__choice {
@@ -281,7 +282,7 @@
   }
 
   .theme-picker__seasons {
-    @apply m-0 mx-auto w-full min-w-0 max-w-64 shrink-0 border-0 p-0;
+    @apply m-0 min-w-0 shrink-0 border-0 p-0;
   }
 
   .theme-picker__inks {

@@ -42,7 +42,6 @@
   label="Spans by service"
   barLabel="Service breakdown by span count"
   unit="span"
-  staticSingle
   {tooltipOnly}
   {right}
 />

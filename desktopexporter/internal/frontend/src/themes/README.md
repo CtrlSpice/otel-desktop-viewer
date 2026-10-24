@@ -13,13 +13,14 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 
 The theme picker and day/night button share one compact control group.
 The picker opens below its button, end-aligned and clamped to the viewport, with
-a compact swatch strip and season controls above the full-width live app-style
-sample preview.
-Four season controls replace the redundant Theme/Preview heading at the top,
-followed by the ink strip. The shared sample trace summary and service breakdown sit above the JSON
+a compact swatch strip below the full-width live app-style sample preview.
+The header shows `Preview: <original ink name>` at the left and four icon-only
+season controls at the right. The shared sample trace summary and service breakdown sit above the JSON
 inspector in one narrow column, without a separate preview header or attributes
 section. Surfaces use shared rounded corners without nested borders. Sample
 service colours are fixed and do not allocate saved assignments.
+The ink strip sits below the JSON and above attribution.
+There is no separate season row or redundant Theme heading.
 Ink and season changes apply immediately and keep the
 picker open; Escape, clicking outside or the trigger dismisses it. There is no
 separate close button in the anchored dropdown.
@@ -32,8 +33,8 @@ original-name tooltips and accessible labels, without English translations.
 The chooser is at most 34rem wide. The ink row uses ordinary horizontal scrolling,
 with left/right caret buttons as a secondary way to scroll. Each caret is disabled
 at its end; scrolling does not change the ink selection. There is no snapping or
-auto-advance. Four icon-only season choices sit above
-the swatches. Section names
+auto-advance. Four icon-only season choices sit at the right of the Preview header.
+Section names
 remain accessible but visually hidden; there is no filter field. Flower, sun,
 leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
 Fuyu (Winter). Season changes keep the picker open so its inherited paper,
@@ -49,6 +50,20 @@ behaviour. Charts observe the same theme identity through `state/theme.svelte.ts
 Font families, sizes, weights and layout use the existing shared tokens.
 Summary card titles use the shared 17px regular Atkinson Hyperlegible Next size,
 with 14px metadata and unchanged Text colour. Pane headings remain 16px.
+Trace-service and evaluation-outcome breakdowns keep their 8px bars when only
+one category is present, filling the available width. Card bars retain shared
+hover details and accessible category counts without additional keyboard stops.
+Card date rows use relative time, with the full recorded timestamp and selected
+timezone on hover. Parent-relative event offsets remain signed durations.
+Trace and referenced-telemetry cards share one bottom row: Start at the left,
+Duration at the right. Narrow cards wrap the two groups without reducing text
+size. Durations of at least a minute use minutes, and durations of at least an
+hour use hours, with at most one fractional digit. Finer durations retain their
+existing seconds, milliseconds, microseconds or nanoseconds.
+Metric summary cards omit descriptions; received descriptions remain in Details
+and the complete source/Copy/Download views.
+Metric cards put Last seen at the left and Last value at the right of the same
+bottom row when a reading is available.
 
 ## Ownership and generation
 
@@ -105,7 +120,12 @@ Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
 nijimi 1. Hover takes precedence over selection while the pointer is present.
 Ghost buttons use the same hover and active/selected surfaces. Tooltips use
-Panel with regular-weight neutral Text. Timeline activity markers retain their
+Panel with regular-weight neutral Text. Dropdowns, colour pickers, filter
+popovers and search completions share the same flat Panel surface and rounded
+corners in `app.css`, without decorative shadows, translucent fills or blur.
+Picker-specific styles control layout rather than adding another surface theme.
+CodeMirror's portaled completion menu uses the shared stylesheet too; the editor
+does not inject a separate dropdown stylesheet at runtime. Timeline activity markers retain their
 assigned ink or Error colour without brightening. Swatch glyphs choose the
 higher-contrast seasonal light/dark foreground using linear-sRGB luminance,
 recalculating when the theme changes.
@@ -227,8 +247,9 @@ Interface text, field names, formatted values and search/filter inputs use
 Atkinson Hyperlegible Next, including placeholders and editor Find fields.
 JSON and code use Atkinson Hyperlegible Mono. Shared tokens in `../app.css`
 set 14px working text, 16px page/pane headings and 1.5 line-height at the default
-root size, with regular weight throughout. Home's welcome title is a 22px Mono
-display exception with 1.25 line-height. Field names keep their exact spelling.
+root size, with regular weight throughout. Home's welcome title and decorative
+prompt use 16px Mono with 1.25 line-height and stay on one line. The adjacent
+image can shrink to make room. Field names keep their exact spelling.
 Keys, section/column headers and helper text use Subtle; data and main titles use
 Text; type/provenance metadata uses Secondary. Muted is for unavailable or
 disabled content.
@@ -270,7 +291,7 @@ Assignments use the `madoromi-inks-v1` allocation namespace.
 
 Exact identities use FNV-1a with a 32-bit avalanche, then next-free-slot probing.
 Assignments are saved under the palette version, with one viewer-wide service
-scope and a separate scope per `metricRef`. Filtering does not release
+scope, one separate exact-span-name scope and a separate scope per `metricRef`. Filtering does not release
 slots. Saved owners never move; fresh collision winners can depend on encounter
 order. Blocked/full storage falls back to in-memory stability.
 
@@ -298,7 +319,7 @@ Overrides are saved under `graph-colour-overrides:madoromi-inks-v1:<scope>` as
 identity/ink-shade pairs. Services share the `services` scope, keyed by service-name
 text rather than Home's typed discovery identity. Series use `metric:<metricRef>`,
 keyed by `seriesRef`. Changes propagate to chart lines, sparklines,
-service dots and non-error waterfall bars, including across open tabs. Shades
+service dots, summary bars and multi-service non-error waterfall bars, including across open tabs. Shades
 owned by another identity in the same scope are visibly disabled, and keyboard
 navigation skips them. Reservations include hidden owners, their saved automatic
 reset slots and explicit overrides. The current choice remains available even
@@ -307,6 +328,15 @@ avoid overridden shades as well as occupied automatic slots. The reset icon to t
 ink restores the owner's saved automatic slot and is disabled when no override
 is set. Resetting never reallocates another identity. Blocked storage keeps
 overrides in memory. Actual error bars retain the semantic Error colour.
+
+Waterfall dots and duration bars use exact span-name colours when the full trace
+has only one service identity, including an unnamed service. Repeated names share
+a colour; these assignments use the separate `span-names` scope and never reserve
+or change service colours. With multiple service identities, waterfall rows use
+their service colours and overrides. Collapsing, searching or scrolling does not
+change the colour basis. Trace summary bars and service indicators always retain
+service colours. Error spans and exception events retain the semantic Error override.
+This follows [Honeycomb's default waterfall colour basis](https://docs.honeycomb.io/investigate/analyze/explore-traces/#change-color-in-waterfall-representation).
 
 When fewer than 32 of the 224 preset colours remain unreserved in a scope, the
 picker opens with one shade slider per ink instead of seven dots. This leaves

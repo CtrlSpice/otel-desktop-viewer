@@ -3,7 +3,7 @@
   import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
-  import { traceServiceColor } from '@/utils/trace-service-color'
+  import { spanNameColor, traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
 
@@ -131,7 +131,7 @@
     })
   }
 
-  /** Every service uses its Home colour. Errors retain their semantic colour. */
+  /** Use span names for a single service, otherwise Home service colours. */
   export function buildWaterfallRows(
     spans: SpanNode[],
     bounds: TraceBounds,
@@ -139,12 +139,18 @@
     logsBySpanID: ReadonlyMap<string, TraceLogSummary[]> = new Map()
   ): WaterfallRowData[] {
     const treeMeta = computeTreeMeta(spans)
+    const services = spans.map(
+      node => getServiceName(node.spanData.resource) ?? ''
+    )
+    const singleService = new Set(services).size <= 1
 
     return spans.map((node, i) => {
       const isError = isErrorSpan(node.spanData)
       const color = isError
         ? 'var(--color-error)'
-        : traceServiceColor(getServiceName(node.spanData.resource) ?? '', theme)
+        : singleService
+          ? spanNameColor(node.spanData.name, theme)
+          : traceServiceColor(services[i]!, theme)
       return {
         spanNode: node,
         color,

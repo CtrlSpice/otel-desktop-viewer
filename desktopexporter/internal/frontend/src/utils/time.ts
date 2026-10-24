@@ -520,8 +520,65 @@ export function formatSignedDuration(nanoseconds: bigint): string {
   return `${nanoseconds < 0n ? '-' : '+'}${formatDuration(magnitude)}`
 }
 
+const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', {
+  numeric: 'always',
+})
+const RELATIVE_TIME_UNITS = [
+  [31_536_000_000_000_000n, 'year'],
+  [2_592_000_000_000_000n, 'month'],
+  [604_800_000_000_000n, 'week'],
+  [86_400_000_000_000n, 'day'],
+  [3_600_000_000_000n, 'hour'],
+  [60_000_000_000n, 'minute'],
+] as const
+
+/** Approximate elapsed time; keep the received timestamp for exact inspection. */
+export function formatRelativeTime(timestamp: bigint, now: bigint): string {
+  const delta = timestamp - now
+  const magnitude = delta < 0n ? -delta : delta
+  for (const [scale, unit] of RELATIVE_TIME_UNITS) {
+    if (magnitude >= scale) {
+      const count = Number(magnitude / scale)
+      return relativeTimeFormatter.format(delta < 0n ? -count : count, unit)
+    }
+  }
+  return delta > 0n ? 'in less than a minute' : 'just now'
+}
+
+const LONG_DURATION_FORMATTERS = [
+  [
+    3_600_000_000_000n,
+    new Intl.NumberFormat('en', {
+      style: 'unit',
+      unit: 'hour',
+      unitDisplay: 'long',
+      maximumFractionDigits: 1,
+    }),
+  ],
+  [
+    60_000_000_000n,
+    new Intl.NumberFormat('en', {
+      style: 'unit',
+      unit: 'minute',
+      unitDisplay: 'long',
+      maximumFractionDigits: 1,
+    }),
+  ],
+] as const
+
 /** Value + unit for labeled duration display (e.g. drawer cards). */
 export function formatDurationParts(nanoseconds: bigint): FormattedValueParts {
+  for (const [scale, formatter] of LONG_DURATION_FORMATTERS) {
+    if (nanoseconds < scale) continue
+    const parts = formatter.formatToParts(Number(nanoseconds) / Number(scale))
+    return {
+      value: parts
+        .filter(part => part.type !== 'unit' && part.type !== 'literal')
+        .map(part => part.value)
+        .join(''),
+      unit: parts.find(part => part.type === 'unit')!.value,
+    }
+  }
   if (nanoseconds >= 1_000_000_000n) {
     const seconds = Number(nanoseconds) / 1_000_000_000
     return { value: seconds.toFixed(3), unit: 's' }

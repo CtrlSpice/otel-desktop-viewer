@@ -419,8 +419,8 @@
       <input
         class="input typed-field typed-field--pill min-w-0 flex-1"
         type="search"
-        aria-label="Search all telemetry"
-        placeholder="Search all telemetry…"
+        aria-label="Search telemetry"
+        placeholder="Search telemetry…"
         bind:value={draft}
       />
       <button

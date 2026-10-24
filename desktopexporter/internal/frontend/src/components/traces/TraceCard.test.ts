@@ -5,7 +5,11 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'svelte'
 import TraceCard from './TraceCard.svelte'
 import type { TraceSummary } from '@/types/api-types'
-import { formatDurationParts, formatTimestampParts } from '@/utils/time'
+import {
+  formatDurationParts,
+  formatRelativeTime,
+  formatTimestampParts,
+} from '@/utils/time'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeTrace(overrides: Partial<TraceSummary> = {}): TraceSummary {
@@ -31,15 +35,23 @@ function cardButton() {
 }
 
 describe('TraceCard', () => {
-  it('shows a single service as a decorative dot and name with its own count', () => {
+  it('shows a single service as a bar with its count in the shared tooltip', () => {
     renderCard({ trace: makeTrace() })
     const button = cardButton()
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
     const breakdown = screen.getByRole('group', { name: /^Spans by service/ })
-    expect(within(breakdown).getByText('orders-service')).toBeInTheDocument()
-    expect(breakdown).toHaveTextContent('orders-service [4]')
+    expect(
+      within(breakdown).getByRole('img', { name: 'orders-service: 4 spans' })
+    ).toBeInTheDocument()
+    expect(breakdown.querySelectorAll('.breakdown-segment')).toHaveLength(1)
+    expect(
+      breakdown.querySelector('.breakdown-segment__fill')
+    ).toBeInTheDocument()
+    expect(breakdown.querySelector('.breakdown-label')).toBeNull()
     expect(within(breakdown).queryByRole('button')).not.toBeInTheDocument()
-    expect(document.querySelector('[role="tooltip"]')).toBeNull()
+    expect(breakdown.querySelector('[role="tooltip"]')).toHaveTextContent(
+      'orders-service [4]'
+    )
     expect(within(button).getByText('[4 spans]')).toBeInTheDocument()
     expect(screen.queryByText('(4 spans)')).not.toBeInTheDocument()
   })
@@ -55,43 +67,50 @@ describe('TraceCard', () => {
     const traceID = '1234567890abcdef1234567890abcdef'
     const onclick = vi.fn()
     renderCard({ trace: makeTrace({ traceID }), onclick })
-    expect(document.querySelector('[role="tooltip"]')).toBeNull()
+    expect(document.querySelector('[role="tooltip"]')).toHaveTextContent(
+      'orders-service [4]'
+    )
     await userEvent.click(cardButton())
     expect(onclick).toHaveBeenCalledWith(traceID)
     expect(screen.queryByText(traceID)).not.toBeInTheDocument()
     expect(document.querySelector('.identifier, .ball-pit')).toBeNull()
-    expect(
-      document.querySelector('.signal-row__meta-row')
-    ).not.toHaveTextContent(traceID)
+    expect(document.querySelector('.signal-row__date')).not.toHaveTextContent(
+      traceID
+    )
   })
 
-  it('renders the duration before the labelled start time at the bottom', () => {
+  it('places relative Start and Duration together at the bottom with the exact date on hover', () => {
     const trace = makeTrace()
     renderCard({ trace })
     const startParts = formatTimestampParts(
       trace.startTime,
       'local',
-      'milliseconds'
+      'nanoseconds'
     )
     // SAFETY: makeTrace constructs this test fixture with a bigint durationNs value.
     const durationParts = formatDurationParts(trace.durationNs as bigint)
     expect(screen.getByText('Duration:')).toBeInTheDocument()
-    expect(screen.getByText(startParts.value)).toBeInTheDocument()
+    const relative = formatRelativeTime(
+      trace.startTime,
+      BigInt(Date.now()) * 1_000_000n
+    )
+    expect(screen.getByText(relative)).toBeInTheDocument()
     expect(screen.getByText(durationParts.value)).toBeInTheDocument()
     expect(screen.getByText(durationParts.unit)).toBeInTheDocument()
     const date = document.querySelector('.signal-date')
-    expect(date).toHaveTextContent(`Started: ${startParts.value}`)
+    expect(date).toHaveTextContent(`Start: ${relative}`)
     expect(date).toHaveAttribute(
       'title',
-      `Started: ${startParts.value} ${startParts.unit}`
+      `Start: ${startParts.value} ${startParts.unit}`
     )
     expect(date).not.toHaveTextContent(startParts.unit)
     expect(
       document.querySelector('.signal-row__body')?.lastElementChild
     ).toContainElement(date as HTMLElement)
-    expect(document.querySelector('.signal-row__meta-row')).toContainElement(
+    expect(document.querySelector('.signal-row__date')).toContainElement(
       screen.getByText('Duration:')
     )
+    expect(document.querySelector('.signal-row__meta-row')).toBeNull()
   })
 
   it('preserves a received zero duration', () => {

@@ -192,6 +192,55 @@ async function expectRoundedAxes(page: Page, colour: string) {
   await expect(page.locator('.metric-chart-view .lc-grid')).toHaveCount(0)
 }
 
+test('metric descriptions stay in Details rather than summary cards', async ({
+  page,
+}) => {
+  const description =
+    'Synthetic heatmap playground, same samples as the explicit histogram: Load burst'
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method === 'searchMetricSummaries')
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id, result: [{ ...summary, description }] },
+      })
+    if (method === 'getMetricView')
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id, result: { ...metric, description } },
+      })
+    return route.fallback()
+  })
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto(`/metrics/${metric.metricRef}`)
+  const card = page.getByRole('button', { name: /^request\.duration/ })
+  await expect(card).toBeVisible()
+  await expect(card).not.toContainText(description)
+  await expect(
+    card.locator('.signal-row__lead, .signal-row__description')
+  ).toHaveCount(0)
+  await expect(card.locator('.signal-row__meta-row')).toHaveCount(0)
+  const date = card.locator('.signal-row__date')
+  await expect(date).toHaveText(/Last seen:.*Last value: 40 ms/)
+  await page.evaluate(() => document.fonts.ready)
+  const layout = await date.evaluate(element => {
+    const [seen, value] = [...element.children].map(child =>
+      child.getBoundingClientRect()
+    )
+    return {
+      seen: seen!.toJSON(),
+      value: value!.toJSON(),
+      overflow: element.scrollWidth > element.clientWidth,
+    }
+  })
+  expect(layout.seen.y).toBeCloseTo(layout.value.y, 0)
+  expect(layout.value.x - layout.seen.right).toBeGreaterThanOrEqual(16)
+  expect(layout.overflow).toBe(false)
+  await expect(
+    page
+      .getByRole('table', { name: 'Metric fields' })
+      .getByText(description, { exact: true })
+  ).toBeVisible()
+})
+
 test('time-series axes use the shared rounded Muted border', async ({
   page,
 }) => {
@@ -253,6 +302,9 @@ for (const { id: theme } of THEMES) {
       name: 'Colour for route: /first options',
       exact: true,
     })
+    await expect(picker).toHaveCSS('background-color', themeRgb(theme, 'panel'))
+    await expect(picker).toHaveCSS('box-shadow', 'none')
+    await expect(picker).toHaveCSS('border-width', '0px')
     const shades = picker.locator('[data-ink-choice]')
     await expect(shades).toHaveCount(224)
     await expect(picker.locator('[aria-pressed="true"]')).toBeFocused()

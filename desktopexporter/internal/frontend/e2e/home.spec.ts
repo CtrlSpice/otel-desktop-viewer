@@ -341,7 +341,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await expect(serviceCards).toHaveCount(9)
   // Workspace navigation carries the submitted Home query. Service cards
   // select Details; individual telemetry cards navigate to exact records.
-  const search = page.getByRole('searchbox', { name: 'Search all telemetry' })
+  const search = page.getByRole('searchbox', { name: 'Search telemetry' })
   await search.fill(
     'attr(resource, "service.namespace", string) = "storefront"'
   )

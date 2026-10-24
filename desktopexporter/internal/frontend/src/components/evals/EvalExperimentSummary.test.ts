@@ -5,7 +5,11 @@ import userEvent from '@testing-library/user-event'
 import EvalExperimentSummary from './EvalExperimentSummary.svelte'
 import { exampleExperiments } from './examples'
 import { renderWithContexts as render } from '@/test/render-helpers'
-import { formatTimestampParts, normalizeTimezone } from '@/utils/time'
+import {
+  formatRelativeTime,
+  formatTimestampParts,
+  normalizeTimezone,
+} from '@/utils/time'
 import { toExperimentCard } from './experiment-summary'
 
 describe('EvalExperimentSummary', () => {
@@ -95,7 +99,7 @@ describe('EvalExperimentSummary', () => {
     expect(group).toHaveTextContent('Fail [2]')
   })
 
-  it('uses a plain label for a single outcome without inventing grades or cost', () => {
+  it('keeps the planned lifecycle count without inventing grades or cost', () => {
     render(EvalExperimentSummary, {
       experiment: toExperimentCard(exampleExperiments[2]),
       onclick: vi.fn(),
@@ -129,7 +133,13 @@ describe('EvalExperimentSummary', () => {
       name: /^Task completion outcomes/,
     })
     expect(group).toHaveTextContent('Unscored [16]')
-    expect(group.querySelector('[role="tooltip"]')).toBeNull()
+    expect(
+      within(group).getByRole('img', { name: 'Unscored: 16 results' })
+    ).toBeInTheDocument()
+    expect(group.querySelectorAll('.breakdown-segment')).toHaveLength(1)
+    expect(group.querySelector('[role="tooltip"]')).toHaveTextContent(
+      'Unscored [16]'
+    )
   })
 
   it('retains received zero scores and costs without calling failed grades execution faults', () => {
@@ -153,11 +163,17 @@ describe('EvalExperimentSummary', () => {
       name: /^Task completion outcomes/,
     })
     expect(group).toHaveTextContent('Fail [16]')
-    expect(group.querySelector('[role="tooltip"]')).toBeNull()
+    expect(
+      within(group).getByRole('img', { name: 'Fail: 16 results' })
+    ).toBeInTheDocument()
+    expect(group.querySelectorAll('.breakdown-segment')).toHaveLength(1)
+    expect(group.querySelector('[role="tooltip"]')).toHaveTextContent(
+      'Fail [16]'
+    )
   })
 
   it.each(['UTC', 'America/Toronto'] as const)(
-    'labels the received start in the selected %s timezone at the bottom of the card',
+    'shows relative start time with the exact %s timestamp on hover at the bottom of the card',
     tz => {
       localStorage.setItem('time-tz', tz)
       const { container } = render(EvalExperimentSummary, {
@@ -169,13 +185,15 @@ describe('EvalExperimentSummary', () => {
       const parts = formatTimestampParts(
         timestamp,
         normalizeTimezone(tz)!,
-        'milliseconds'
+        'nanoseconds'
       )
       const date = container.querySelector('.signal-date')
-      expect(date).toHaveTextContent(`Started: ${parts.value}`)
+      expect(date).toHaveTextContent(
+        `Start: ${formatRelativeTime(timestamp, BigInt(Date.now()) * 1_000_000n)}`
+      )
       expect(date).toHaveAttribute(
         'title',
-        `Started: ${parts.value} ${parts.unit}`
+        `Start: ${parts.value} ${parts.unit}`
       )
       expect(date).not.toHaveTextContent(parts.unit)
       expect(parts.value).toContain('.123')
@@ -204,6 +222,6 @@ describe('EvalExperimentSummary', () => {
       onclick: vi.fn(),
     })
     expect(container.querySelector('.signal-row__date')).toBeNull()
-    expect(screen.queryByText('Started:')).not.toBeInTheDocument()
+    expect(screen.queryByText('Start:')).not.toBeInTheDocument()
   })
 })

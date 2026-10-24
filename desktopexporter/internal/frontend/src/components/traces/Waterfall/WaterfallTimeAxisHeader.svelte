@@ -15,6 +15,7 @@
     { name: 'ms', ns: 1_000_000n },
     { name: 's', ns: 1_000_000_000n },
     { name: 'min', ns: 60_000_000_000n },
+    { name: 'h', ns: 3_600_000_000_000n },
   ]
 
   const NICE_MULTIPLIERS = [1n, 2n, 5n]
@@ -137,7 +138,7 @@
   //            If niceStep rounded up across a unit boundary, the labels follow.
   //            e.g. 5.5s trace → rawInterval=917ms → niceStep=1000ms=1s → display="s" ✓
   //
-  // This handles every unit boundary uniformly: ns↔μs, μs↔ms, ms↔s, s↔min.
+  // This handles every unit boundary uniformly: ns↔μs, μs↔ms, ms↔s, s↔min, min↔h.
 
   /** Time axis for the waterfall ruler. Uses the actual trace duration as extent. */
   export function waterfallTimeAxis(

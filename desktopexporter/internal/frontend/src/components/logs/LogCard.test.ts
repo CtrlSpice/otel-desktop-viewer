@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'svelte'
 import LogCard from './LogCard.svelte'
 import type { LogSummary } from '@/types/api-types'
-import { formatTimestampParts } from '@/utils/time'
+import { formatRelativeTime, formatTimestampParts } from '@/utils/time'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeLog(overrides: Partial<LogSummary> = {}): LogSummary {
@@ -62,35 +62,39 @@ describe('LogCard', () => {
     expect(screen.getByText('DEBUG (5)')).toBeInTheDocument()
   })
 
-  it('places the labelled recorded timestamp after the body preview', () => {
+  it('places relative recorded time after the body preview with the exact timestamp on hover', () => {
     const log = makeLog()
     renderCard({ log })
     const timestampParts = formatTimestampParts(
       log.timestamp,
       'local',
-      'milliseconds'
+      'nanoseconds'
     )
-    expect(screen.getByText(timestampParts.value)).toBeInTheDocument()
+    const relative = formatRelativeTime(
+      log.timestamp,
+      BigInt(Date.now()) * 1_000_000n
+    )
+    expect(screen.getByText(relative)).toBeInTheDocument()
     const date = document.querySelector('.signal-date')
-    expect(date).toHaveTextContent(`Recorded: ${timestampParts.value}`)
+    expect(date).toHaveTextContent(`Recorded: ${relative}`)
     expect(date).toHaveAttribute(
       'title',
       `Recorded: ${timestampParts.value} ${timestampParts.unit}`
     )
     expect(date).not.toHaveTextContent(timestampParts.unit)
-    expect(timestampParts.value).toContain('.123')
+    expect(timestampParts.value).toContain('.123456789')
     expect(
       document.querySelector('.signal-row__body')?.lastElementChild
     ).toContainElement(date as HTMLElement)
   })
 
-  it('shows an associated offset as Subtle text beside the recorded timestamp', () => {
+  it('shows an associated offset as Subtle text beside relative recorded time', () => {
     const log = makeLog()
     renderCard({ log, offset: '+500.000 ms' })
     const offset = screen.getByText('(+500.000 ms)', { exact: true })
     expect(offset).toHaveClass('text-subtle')
     expect(offset.closest('.signal-date')).toHaveTextContent(
-      `${formatTimestampParts(log.timestamp, 'local', 'milliseconds').value} (+500.000 ms)`
+      `${formatRelativeTime(log.timestamp, BigInt(Date.now()) * 1_000_000n)} (+500.000 ms)`
     )
     expect(screen.getByRole('button')).toContainElement(offset)
   })
