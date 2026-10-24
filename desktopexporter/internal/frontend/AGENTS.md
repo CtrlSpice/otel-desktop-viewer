@@ -261,6 +261,7 @@
   Signal filter popovers omit the redundant Filters heading and explanatory
   paragraphs. Use labelled controls and a Clear / Apply footer; show only short
   status text when a custom query must be edited in search.
+  Logs use their sortable table headings without a duplicate header sort picker.
   Do not restore persistent column guide lines or duplicate header grab handles.
   Keep row hover continuous across the full column resize hit strips. Pinned log
   cells inherit the row's animated background; do not overlay a separate state
