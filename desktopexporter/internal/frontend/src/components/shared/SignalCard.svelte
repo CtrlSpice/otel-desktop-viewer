@@ -41,7 +41,7 @@
     /** Secondary line under header (custom content; prefer description). */
     lead?: Snippet
     meta?: Snippet
-    /** Independent control beside the card's first heading, outside its button/link. */
+    /** Independent control before the card's first heading, outside its button/link. */
     action?: Snippet
     onclick?: (id: string) => void
     /** Navigation cards retain native link and open-in-new-tab behaviour. */
@@ -85,7 +85,12 @@
 {#snippet cardContent()}
   <div class="signal-row__identity">
     {@render beforeTitle?.()}
-    <div class="signal-row__header" class:signal-row__header--wrap={wrapTitle}>
+    <div
+      class="signal-row__header"
+      class:signal-row__header--wrap={wrapTitle}
+      class:signal-row__header--action={Boolean(action)}
+    >
+      {#if action}<span class="size-8 shrink-0" aria-hidden="true"></span>{/if}
       <span class="signal-row__title-cluster" {title}>
         <span class="signal-row__title"
           >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
@@ -100,7 +105,6 @@
           {@render badge()}
         </span>
       {/if}
-      {#if action}<span class="size-8 shrink-0" aria-hidden="true"></span>{/if}
     </div>
 
     {#if subtitleContent}
@@ -243,9 +247,9 @@
   }
   .signal-card__action {
     grid-area: 1 / 1;
-    justify-self: end;
+    justify-self: start;
     align-self: start;
-    margin: 0.375rem 0.5rem 0 0;
+    margin: 0.625rem 0 0 0.75rem;
   }
   .signal-card-with-action:hover > .signal-row:not(:disabled) {
     background-color: var(--color-highlight-low);
@@ -305,6 +309,10 @@
     height: auto;
     min-height: var(--signal-card-row-h);
     align-items: flex-start;
+  }
+
+  .signal-row__header--action {
+    align-items: center;
   }
 
   .signal-row__header--wrap .signal-row__title {

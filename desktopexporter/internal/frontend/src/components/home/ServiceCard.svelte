@@ -78,15 +78,11 @@
       identity={service.serviceName}
       label={`Colour for ${service.serviceName || 'Unnamed service'}`}
       color={serviceColor}
+      filled
     />
   {/snippet}
   {#snippet titleContent()}
     <span class="flex min-w-0 items-center gap-2 text-left font-normal">
-      <span
-        class="inline-block size-2 shrink-0 rounded-full"
-        style:background-color={serviceColor}
-        aria-hidden="true"
-      ></span>
       <span
         >{service.serviceName ||
           'Unnamed service'}{#if service.serviceNameKind && service.serviceNameKind !== 'string'}<span

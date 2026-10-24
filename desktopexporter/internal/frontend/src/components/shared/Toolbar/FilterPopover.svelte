@@ -13,6 +13,7 @@
     custom = false,
     compact = false,
     triggerClass,
+    triggerStyle,
     popoverClass = '',
     focusSelected = false,
     showHeader = true,
@@ -29,6 +30,7 @@
     custom?: boolean
     compact?: boolean
     triggerClass?: string
+    triggerStyle?: string
     popoverClass?: string
     focusSelected?: boolean
     showHeader?: boolean
@@ -77,6 +79,7 @@
       ? 'btn btn-xs chart-header-control tooltip tooltip-left'
       : 'btn btn-ghost btn-sm rounded-full text-sm font-normal')}
   class:text-primary={count > 0 || custom}
+  style={triggerStyle}
   aria-label={compact ? label : `${label} filter`}
   data-tip={compact ? label : undefined}
   aria-expanded={open}

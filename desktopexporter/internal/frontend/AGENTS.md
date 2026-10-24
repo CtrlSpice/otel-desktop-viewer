@@ -48,7 +48,10 @@
   Both ink pickers share InkPicker. Graph overrides use seven individually
   clickable official shades, with 32px targets around 8px dots, arrow-key
   navigation and selected-shade focus. Preserve native Escape/light dismissal.
-  Home service controls sit outside the whole-card button. Gauge/Sum series
+  Home service controls replace the name's colour dot with a DaisyUI
+  `btn btn-circle btn-sm` (32px)
+  filled with that service's colour and a readable 16px brush icon. Keep it before
+  the name and outside the whole-card button. Gauge/Sum series
   overrides live in metric Details, independently of visibility and disclosure.
   Persist overrides by service name or metric reference + native series identity;
   Automatic restores the saved automatic assignment. New automatic assignments

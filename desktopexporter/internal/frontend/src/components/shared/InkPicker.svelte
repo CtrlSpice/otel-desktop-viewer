@@ -17,6 +17,7 @@
   } from '@hugeicons/core-free-icons'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
   import FilterInput from './Search/FilterInput.svelte'
+  import { readableTextColor } from '@/utils/chart-palette'
 
   let {
     label,
@@ -26,6 +27,7 @@
     onchange,
     onreset,
     automatic = false,
+    triggerColor,
   }: {
     label: string
     options: readonly InkPickerOption[]
@@ -34,6 +36,7 @@
     onchange: (value: string) => void
     onreset?: () => void
     automatic?: boolean
+    triggerColor?: string
   } = $props()
 
   let open = $state(false)
@@ -134,7 +137,12 @@
 <FilterPopover
   {label}
   compact
-  triggerClass="header-icon-button tooltip tooltip-left"
+  triggerClass={triggerColor
+    ? 'btn btn-circle btn-sm font-normal tooltip tooltip-right'
+    : 'header-icon-button tooltip tooltip-left'}
+  triggerStyle={triggerColor
+    ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor)}`
+    : undefined}
   popoverClass={`ink-picker-popover ${mode === 'shade' ? 'ink-picker--shades' : ''}`}
   showHeader={false}
   onOpenChange={handleOpenChange}

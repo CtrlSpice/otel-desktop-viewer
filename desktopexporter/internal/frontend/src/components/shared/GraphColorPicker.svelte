@@ -8,8 +8,14 @@
     identity,
     label,
     color,
-  }: { scope: string; identity: string; label: string; color?: string } =
-    $props()
+    filled = false,
+  }: {
+    scope: string
+    identity: string
+    label: string
+    color?: string
+    filled?: boolean
+  } = $props()
   const override = $derived(graphColorOverrides.get(scope, identity))
   const value = $derived(
     override?.id ?? GRAPH_SWATCHES.find(swatch => swatch.color === color)?.id
@@ -20,6 +26,7 @@
   {label}
   options={GRAPH_INKS}
   {value}
+  triggerColor={filled ? color : undefined}
   mode="shade"
   automatic={!override}
   onchange={id => {

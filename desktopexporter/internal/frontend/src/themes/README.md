@@ -177,8 +177,9 @@ moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and on
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
 series cap is independent of the 224-colour capacity.
 
-The paintbrush on each Home service card opens the shared ink picker. It is a
-sibling of the card button, so changing colour does not select the card. Gauge
+Each Home service name has a DaisyUI `btn btn-circle btn-sm` (32px) filled with its assigned colour,
+with a readable 16px paintbrush icon. It replaces the small colour dot and opens
+the shared ink picker. It is a sibling of the card button, so changing colour does not select the card. Gauge
 and Sum series have the same control in their metric Details row; it does not
 toggle visibility or disclosure. Seven official shades per ink have 32px click
 targets around their 8px dots. Arrow keys move between shades and ink rows;
