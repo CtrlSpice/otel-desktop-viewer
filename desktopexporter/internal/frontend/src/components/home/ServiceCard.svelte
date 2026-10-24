@@ -160,7 +160,7 @@
     </div>
   {/snippet}
   {#snippet date()}
-    <div class="pl-10">
+    <div class="pl-2">
       <SignalDate
         label="Last seen"
         timestamp={service.lastSeen && service.lastSeen !== '0'
