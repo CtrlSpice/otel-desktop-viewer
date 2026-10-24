@@ -5,6 +5,8 @@ import {
   GutterMarker,
   ViewPlugin,
   gutterLineClass,
+  type DecorationSet,
+  type ViewUpdate,
 } from '@codemirror/view'
 import {
   foldEffect,
@@ -17,6 +19,11 @@ import {
 import { createJsonFoldCaret } from './json-fold-caret'
 
 type FoldHover = { from: number; line: number } | null
+type FoldGroupView = {
+  decorations: DecorationSet
+  pressed: { from: number; x: number; y: number } | null
+  update: (update: ViewUpdate) => void
+}
 const setFoldHover = StateEffect.define<FoldHover>()
 class ActiveFoldLine extends GutterMarker {
   elementClass = 'json-fold-group-active'
@@ -111,10 +118,10 @@ function toggle(view: EditorView, from: number) {
 /** Use CodeMirror's folding state for both the gutter and paired delimiters. */
 export const jsonFoldGroups = [
   foldHover,
-  ViewPlugin.define(
+  ViewPlugin.define<FoldGroupView>(
     view => ({
       decorations: brackets(view),
-      pressed: null as { from: number; x: number; y: number } | null,
+      pressed: null,
       update(update) {
         if (
           update.docChanged ||
@@ -190,7 +197,8 @@ export const jsonFoldGroups = [
         return false
       },
       mouseout(view, _line, event) {
-        const target = (event as MouseEvent).relatedTarget
+        if (!(event instanceof MouseEvent)) return false
+        const target = event.relatedTarget
         if (!(target instanceof Node) || !view.dom.contains(target))
           hover(view, null)
         return false

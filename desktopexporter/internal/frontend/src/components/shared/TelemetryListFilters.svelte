@@ -46,10 +46,10 @@
     Empty: CircleIcon,
   }
   let serviceSearch = $state('')
-  let kinds = $derived([
+  let kinds: ListFilter[] = $derived([
     'service',
     signal === 'traces' ? 'errors' : 'metricType',
-  ] as ListFilter[])
+  ])
   let filters = $derived(readListFilters(draftQuery, fields, signal))
   let applied = $derived(readListFilters(appliedQuery, fields, signal))
   let count = $derived(

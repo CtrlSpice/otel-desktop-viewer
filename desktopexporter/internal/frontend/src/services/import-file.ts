@@ -46,7 +46,7 @@ export async function detectImportFile(
       } else if (depth === 1) {
         if (token === TokenType.COMMA) key = true
         else if (token === TokenType.COLON) key = false
-        else if (token === TokenType.STRING && key) keys.add(value as string)
+        else if (token === TokenType.STRING && key) keys.add(value)
       }
     },
     signal

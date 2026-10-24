@@ -570,15 +570,18 @@ export type JsonReceivedExponentialHistogramDataPoint =
     negative: { offset: number; bucketCounts: string[] }
   }
 
+/** get_metric_series.sql selects each datapoint document by its owning metric type. */
 export type JsonExactMetricSeries = JsonExactMetricIdentity & {
   seriesRef: string
   attributes: JsonAttribute[]
-  datapoints: (
-    | JsonReceivedNumberDataPoint
-    | JsonReceivedHistogramDataPoint
-    | JsonReceivedExponentialHistogramDataPoint
-  )[]
-}
+} & (
+    | { metricType: 'Gauge' | 'Sum'; datapoints: JsonReceivedNumberDataPoint[] }
+    | { metricType: 'Histogram'; datapoints: JsonReceivedHistogramDataPoint[] }
+    | {
+        metricType: 'ExponentialHistogram'
+        datapoints: JsonReceivedExponentialHistogramDataPoint[]
+      }
+  )
 
 /** @derived Cross-series histogram view computed by get_metric_view.sql. The store
  * differences cumulative inputs or adds delta inputs within each time bucket,

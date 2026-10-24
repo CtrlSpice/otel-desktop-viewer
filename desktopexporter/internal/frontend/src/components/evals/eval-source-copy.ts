@@ -47,7 +47,11 @@ export function evalSourceFieldText(payload: string, pointer: string): string {
   }
   if (!node) throw new Error('Source field is missing.')
   const raw = payload.slice(node.from, node.to)
-  return node.name === 'String' ? (JSON.parse(raw) as string) : raw
+  if (node.name !== 'String') return raw
+  const decoded: unknown = JSON.parse(raw)
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Validate the decoded String subtree; non-string subtrees return their original source slice above.
+  if (typeof decoded !== 'string') throw new Error('Invalid source string.')
+  return decoded
 }
 
 /** Capture the immutable payload and row mapping. Parse on demand for Copy or

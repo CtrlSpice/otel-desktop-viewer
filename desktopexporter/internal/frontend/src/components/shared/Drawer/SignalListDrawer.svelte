@@ -125,8 +125,9 @@
     const rememberedRem = drawerWidth.rem
     const perPx = remPerPx()
     // Start at the rendered edge, including when a previous settle is interrupted.
-    const handle = e.currentTarget as HTMLElement
-    const seedRem = handle.parentElement!.getBoundingClientRect().width * perPx
+    const handle = e.currentTarget
+    if (!(handle instanceof HTMLElement) || !handle.parentElement) return
+    const seedRem = handle.parentElement.getBoundingClientRect().width * perPx
     let lastDesired = seedRem
     dragWidthRem = seedRem
     isResizing = true

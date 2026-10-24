@@ -63,6 +63,8 @@ type EvalExecutionEvidence = {
   answerType?: 'string' | 'number' | 'boolean' | 'null' | 'array' | 'map'
   state: 'Complete' | 'Running' | 'Error' | 'Planned'
   startedAt?: string
+  /** Exact correlated span start for display ordering; startedAt retains source text. */
+  startedTime?: bigint
   seconds?: number
   investigatorCost?: number
   graderCost?: number

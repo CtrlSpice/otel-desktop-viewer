@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { LogData, SpanNode } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
@@ -42,9 +43,10 @@
   )
   $effect(() => {
     void nodes
-    const references = JSON.parse(
-      selection
-    ) as EvalTelemetrySummary['reference'][]
+    void selection
+    const references = untrack(() =>
+      entries.map(entry => ({ ...entry.reference }))
+    )
     const full = wholeTraces
     const controller = new AbortController()
     logRefs = undefined

@@ -110,8 +110,7 @@ export async function scanOTLPFile(
         parent?.type === 'object' &&
         parent.expectingKey
       ) {
-        // The library emits string values for STRING tokens.
-        parent.key = value as string
+        parent.key = value
         return
       }
       if (token === TokenType.COLON) {

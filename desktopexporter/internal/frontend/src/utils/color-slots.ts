@@ -88,6 +88,15 @@ function storageKey(scope: string, size: number): string {
   return `graph-colour-slots:${SERIES_PALETTE_VERSION}:${size}:${scope}`
 }
 
+function isSavedSlot(value: unknown): value is [string, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === 'string' &&
+    typeof value[1] === 'number'
+  )
+}
+
 function loadSlots(key: string, size: number): [string, number][] {
   try {
     const raw = localStorage.getItem(key)
@@ -95,17 +104,9 @@ function loadSlots(key: string, size: number): [string, number][] {
     const saved: unknown = JSON.parse(raw)
     if (!Array.isArray(saved)) return []
     const slots: [string, number][] = []
-    for (const entry of saved) {
+    for (const entry of saved.filter(isSavedSlot)) {
       // localStorage is an external boundary; reject malformed keys and slots.
-      if (
-        Array.isArray(entry) &&
-        entry.length === 2 &&
-        typeof entry[0] === 'string' &&
-        typeof entry[1] === 'number' &&
-        Number.isInteger(entry[1]) &&
-        entry[1] >= 0 &&
-        entry[1] < size
-      ) {
+      if (Number.isInteger(entry[1]) && entry[1] >= 0 && entry[1] < size) {
         slots.push([entry[0], entry[1]])
       }
     }

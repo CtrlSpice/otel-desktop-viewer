@@ -749,9 +749,11 @@
 - `npm run lint:anti-slop:evaluate` reports the production anti-slop cleanup
   backlog; tests and test harnesses are excluded from this advisory scan only.
   Enforced lint, type checks, Vitest, and Playwright retain their existing scope.
-- Reviewed external-value decoding and runtime-capability checks may use a
-  next-line `anti-slop/no-runtime-typeof` exemption with a concrete boundary
-  justification. Scope it to one finding; keep all other findings visible.
+- Do not add lint suppressions, relax rules, or exclude findings without the
+  user's express approval. Correct the contract or implementation instead of
+  moving code into a shape that merely evades a rule. Run the full anti-slop
+  scan and report its findings; matching an already-regressed branch baseline
+  does not establish that there are no regressions.
 - After frontend changes, run `make build-ts` from the repository root and commit
   the updated `desktopexporter/internal/server/static` assets. `make test` runs
   the full local quality gate, including bundle freshness.

@@ -7,7 +7,9 @@ export type AccentInkId = CountPaletteId
 // A named ink is previewed by its own official shades, not a selection of
 // syntax roles that can come entirely from neighbouring inks in its mix.
 export const ACCENT_INKS = GRAPH_INKS
-export const DEFAULT_ACCENT_INK = data.default as AccentInkId
+const defaultInk = ACCENT_INKS.find(ink => ink.id === data.default)
+if (!defaultInk) throw new Error(`Unknown default accent ink: ${data.default}`)
+export const DEFAULT_ACCENT_INK = defaultInk.id
 
 export function restoreAccentInk(value: string | null): AccentInkId {
   return ACCENT_INKS.find(ink => ink.id === value)?.id ?? DEFAULT_ACCENT_INK

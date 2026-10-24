@@ -11,24 +11,28 @@ const scopes = new Map<string, Map<string, GraphColorId>>()
 // derived value must still notify that first reader when an override changes.
 let revision = $state(0)
 
+function isSavedOverride(value: unknown): value is [string, string] {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === 'string' &&
+    typeof value[1] === 'string'
+  )
+}
+
 function readSaved(scope: string): [string, GraphColorId][] {
   try {
     const raw: unknown = JSON.parse(
       localStorage.getItem(PREFIX + scope) ?? '[]'
     )
     if (!Array.isArray(raw)) return []
-    return raw.flatMap(entry => {
-      // Browser storage is an external boundary; accept known ink/shade IDs only.
-      if (
-        !Array.isArray(entry) ||
-        entry.length !== 2 ||
-        typeof entry[0] !== 'string' ||
-        typeof entry[1] !== 'string'
-      )
-        return []
-      const swatch = graphSwatch(entry[1])
-      return swatch ? [[entry[0], swatch.id] as [string, GraphColorId]] : []
-    })
+    return raw
+      .filter(isSavedOverride)
+      .flatMap((entry): [string, GraphColorId][] => {
+        // Browser storage is an external boundary; accept known ink/shade IDs only.
+        const swatch = graphSwatch(entry[1])
+        return swatch ? [[entry[0], swatch.id]] : []
+      })
   } catch {
     return []
   }

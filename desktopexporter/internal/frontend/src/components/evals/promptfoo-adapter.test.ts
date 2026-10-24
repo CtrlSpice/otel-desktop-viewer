@@ -95,6 +95,20 @@ it('preserves selected-experiment identities with global source ordinals and loc
 })
 
 describe('persisted source dataset projections', () => {
+  it.each([
+    ['-0', 'number'],
+    ['[-0,0,{"value":-0}]', 'array'],
+    ['{"value":-0,"literal":"-0"}', 'map'],
+  ])('retains signed zero in native output %s', (raw, type) => {
+    const envelope = promptfoo([
+      promptfooRow({ response: { output: 'OUTPUT_MARKER' } }),
+    ])
+    const payload = JSON.stringify(envelope).replace('"OUTPUT_MARKER"', raw)
+    const projection = supported(envelope, { payload })
+    expect(projection.experiments[0].results[0].answer).toBe(raw)
+    expect(projection.experiments[0].results[0].answerType).toBe(type)
+  })
+
   it('groups native expanded test indices without custom repetition metadata or invented phase rows', () => {
     const result = supported(
       promptfoo(

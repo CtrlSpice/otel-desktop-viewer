@@ -16,15 +16,16 @@ export type GraphSwatch = {
 export const GRAPH_PALETTE_VERSION = data.version
 export const GRAPH_CURVE_STEPS = curves.steps
 export const INK_SLIDER_THRESHOLD = 32
+const shades: readonly GraphShade[] = [1, 2, 3, 4, 5, 6, 7]
 export const GRAPH_INKS = COUNT_PALETTES.map(ink => ({
   ...ink,
-  swatches: data.inks[ink.id].slice(0, 7).map((color, index): GraphSwatch => ({
-    id: `${ink.id}:${index + 1}` as GraphColorId,
-    color,
-    ink: ink.id,
-    position: curves.inks[ink.id].positions[index]!,
-    shade: (index + 1) as GraphShade,
-  })),
+  swatches: shades.map((shade): GraphSwatch => {
+    const color = data.inks[ink.id][shade - 1]
+    const position = curves.inks[ink.id].positions[shade - 1]
+    if (color === undefined || position === undefined)
+      throw new Error(`Missing graph shade: ${ink.id}:${shade}`)
+    return { id: `${ink.id}:${shade}`, color, ink: ink.id, position, shade }
+  }),
 }))
 const swatchesById = new Map<string, GraphSwatch>(
   GRAPH_INKS.flatMap(ink =>
@@ -36,7 +37,9 @@ export const GRAPH_SWATCHES = data.slots.map(id => swatchesById.get(id)!)
 export const GRAPH_COLORS: readonly string[] = GRAPH_SWATCHES.map(
   swatch => swatch.color
 )
-const inksById = new Map(GRAPH_INKS.map(ink => [ink.id as string, ink]))
+const inksById = new Map<string, (typeof GRAPH_INKS)[number]>(
+  GRAPH_INKS.map(ink => [ink.id, ink])
+)
 const curveCache = new Map<string, readonly GraphSwatch[]>()
 
 export function graphInkCurve(id: string): readonly GraphSwatch[] {

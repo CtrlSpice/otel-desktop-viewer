@@ -10,7 +10,6 @@
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
   import {
     cost,
-    evalToolCounts,
     localTimestamp,
     type EvalExperiment,
     type EvalView,
@@ -152,16 +151,8 @@
         ]
       : [{ name: 'API estimate (CAD)', estimate: row.estimate }]
   )
-  const calls = $derived(
-    row.kind === 'case'
-      ? summary.calls
-      : (row.toolCounts?.total ?? (result ? evalToolCounts(result).total : 0))
-  )
-  const failures = $derived(
-    row.kind === 'case'
-      ? summary.failures
-      : (row.toolCounts?.failed ?? (result ? evalToolCounts(result).failed : 0))
-  )
+  const calls = $derived(row.toolCounts?.total ?? 0)
+  const failures = $derived(row.toolCounts?.failed ?? 0)
 </script>
 
 {#snippet overallInputCopy()}
@@ -316,11 +307,11 @@
             fieldValue={String(members.length)}
           />
         {/if}
-        {#if mode === 'time' && ['case', 'result', 'execution'].includes(row.kind)}
+        {#if mode === 'time' && row.toolCounts && ['case', 'result', 'execution'].includes(row.kind)}
           <DetailField
             fieldName="tool calls"
             fieldType="number"
-            fieldValue={members.some(item => item.toolsKnown === false)
+            fieldValue={result?.toolsKnown === false
               ? 'Unknown'
               : `${calls} total · ${failures} failed`}
           />

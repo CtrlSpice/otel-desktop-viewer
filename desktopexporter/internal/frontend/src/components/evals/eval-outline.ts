@@ -45,6 +45,7 @@ export type EvalOutlineRow = {
   window?: TimeWindow
   seconds?: number
   assessmentID?: string
+  /** Calls owned by this row only; ancestor error propagation never changes these counts. */
   toolCounts?: { total: number; failed: number }
   estimate: Estimate
   tree: TreeConnectorMeta
@@ -245,19 +246,20 @@ export function buildEvalOutline(
         resultRow.reference ??= result.telemetry
         rows.push(resultRow)
       }
+      const eventCounts = (span?: TelemetryReference) => {
+        const tools =
+          result.eventTools?.filter(
+            tool => span && referenceKey(tool.parent) === referenceKey(span)
+          ) ?? []
+        return {
+          total: tools.length,
+          failed: tools.filter(tool => tool.failed === true).length,
+        }
+      }
+      owner.toolCounts = eventCounts(owner.reference)
       const nativeNodes = resultTraceNodes(result, index)
       if (nativeNodes.length) {
         const root = resolveEvalReference(result.telemetry, index)?.spanData
-        const eventCounts = (span?: TelemetryReference) => {
-          const tools =
-            result.eventTools?.filter(
-              tool => span && referenceKey(tool.parent) === referenceKey(span)
-            ) ?? []
-          return {
-            total: tools.length,
-            failed: tools.filter(tool => tool.failed === true).length,
-          }
-        }
         owner.toolCounts = eventCounts(root)
         if (root)
           owner.reference = { traceID: root.traceID, spanID: root.spanID }
@@ -350,6 +352,7 @@ export function buildEvalOutline(
             state: execution.state,
             internalFault: execution.internalFault,
             spanError: execution.spanError,
+            toolCounts: eventCounts(result.telemetry),
             estimate: estimate(result.investigatorCost),
             tree: emptyTree,
           }
@@ -371,6 +374,14 @@ export function buildEvalOutline(
             state: child.state,
             internalFault: false,
             spanError: child.state === 'Error',
+            toolCounts: {
+              total:
+                (phase.kind === 'execution' ? 1 : 0) +
+                eventCounts(child.reference).total,
+              failed:
+                (phase.kind === 'execution' && child.ownError ? 1 : 0) +
+                eventCounts(child.reference).failed,
+            },
             reference: child.reference,
             window: spanWindow([child.node]),
             seconds: child.seconds,
@@ -408,10 +419,6 @@ export function buildEvalOutline(
   const byID = new Map(rows.map(row => [row.id, row]))
   for (const row of [...rows].reverse()) {
     const parent = row.parentID ? byID.get(row.parentID) : undefined
-    if (parent?.toolCounts && row.toolCounts) {
-      parent.toolCounts.total += row.toolCounts.total
-      parent.toolCounts.failed += row.toolCounts.failed
-    }
     if (parent && row.spanError) {
       parent.spanError = true
       parent.state = 'Error'

@@ -59,7 +59,9 @@
       event.target.closest('button, a, input, select, textarea, [role="tab"]')
     )
       return
-    ;(event.currentTarget as HTMLElement).focus({ preventScroll: true })
+    const header = event.currentTarget
+    if (!(header instanceof HTMLElement)) return
+    header.focus({ preventScroll: true })
     stack.start(previousSection.id, event, () => {
       suppressClick = true
     })

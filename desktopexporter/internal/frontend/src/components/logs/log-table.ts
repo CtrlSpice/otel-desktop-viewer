@@ -112,21 +112,26 @@ function optionFor(column: LogColumn): LogColumnOption {
   }
 }
 
+type SavedColumn = [LogColumn['kind'], LogColumn['source'], string]
+
+function isSavedColumn(value: unknown): value is SavedColumn {
+  if (!Array.isArray(value) || value.length !== 3) return false
+  const [kind, source, key]: unknown[] = value
+  return (
+    (kind === 'field' || kind === 'attribute') &&
+    (source === 'log' || source === 'resource' || source === 'scope') &&
+    typeof key === 'string'
+  )
+}
+
 function columnFromID(id: string): LogColumnOption | null {
   const fixed = LOG_COLUMNS.find(column => column.id === id)
   if (fixed) return fixed
   try {
     const parts: unknown = JSON.parse(id)
-    if (!Array.isArray(parts) || parts.length !== 3) return null
-    const [kind, source, key]: unknown[] = parts
-    if (
-      (kind !== 'field' && kind !== 'attribute') ||
-      (source !== 'log' && source !== 'resource' && source !== 'scope') ||
-      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Validates a persisted column tuple before accepting its key as a field or literal attribute name.
-      typeof key !== 'string' ||
-      (kind === 'field' && !FIELD_KEYS[source].includes(key))
-    )
-      return null
+    if (!isSavedColumn(parts)) return null
+    const [kind, source, key] = parts
+    if (kind === 'field' && !FIELD_KEYS[source].includes(key)) return null
     return optionFor({ kind, source, key })
   } catch {
     return null
@@ -218,12 +223,12 @@ export function loadLogColumns(): string[] {
     if (Array.isArray(stored)) {
       const selected = [
         ...new Set(
-          stored.flatMap(id => {
-            // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Rejects non-string localStorage entries before parsing the persisted column identifier.
-            if (typeof id !== 'string') return []
-            const column = columnFromID(id)
-            return column ? [column.id] : []
-          })
+          stored
+            .filter((id): id is string => typeof id === 'string')
+            .flatMap(id => {
+              const column = columnFromID(id)
+              return column ? [column.id] : []
+            })
         ),
       ]
       if (selected.length) return selected

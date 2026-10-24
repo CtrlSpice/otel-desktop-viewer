@@ -192,6 +192,8 @@ export type EvalExecutionRow = {
   cost?: number
   assessmentID?: string
   state: EvalResult['state']
+  /** Recorded failure of this row, separate from propagated descendant errors. */
+  ownError: boolean
   node?: SpanNode
   depth: number
   tree: TreeConnectorMeta
@@ -266,11 +268,14 @@ export function evalExecutionRows(
           : Infinity)
     )
     for (const item of siblings) {
+      const node = item.reference
+        ? index.nodes.get(referenceKey(item.reference))
+        : undefined
       rows.push({
         ...item,
-        node: item.reference
-          ? index.nodes.get(referenceKey(item.reference))
-          : undefined,
+        node,
+        ownError:
+          item.state === 'Error' || !!(node && isErrorSpan(node.spanData)),
         depth,
         tree: {
           childrenCount: 0,

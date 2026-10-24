@@ -129,7 +129,8 @@
       next = (next + direction + views.length) % views.length
     } while (!availableViews[views[next].id])
     viewKey = views[next].id
-    const button = event.currentTarget as HTMLButtonElement
+    const button = event.currentTarget
+    if (!(button instanceof HTMLButtonElement)) return
     button.parentElement
       ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
       [next]?.focus()
@@ -369,6 +370,56 @@
       item => item.id === experiment.headlineAssessment
     ) ?? experiment.assessments[0]
   )
+  const viewColumns: Column[] = $derived(
+    viewKey === 'time'
+      ? [
+          {
+            key: 'tools',
+            label: 'Tool calls',
+            group: 'Tool calls',
+            width: 176,
+            min: 144,
+          },
+        ]
+      : viewKey === 'results'
+        ? [
+            {
+              key: headline ? `assessment:${headline.id}` : 'state',
+              label: 'Assessment',
+              group: 'Results',
+              width: 160,
+              min: 144,
+              hint: headline?.scale,
+              assessment: headline,
+            },
+          ]
+        : [
+            {
+              key: 'investigatorCost',
+              label: 'Investigator',
+              group: 'Cost',
+              width: 160,
+              min: 144,
+              description: 'API estimate · CAD',
+            },
+            {
+              key: 'graderCost',
+              label: 'Grader',
+              group: 'Cost',
+              width: 160,
+              min: 144,
+              description: 'API estimate · CAD',
+            },
+            {
+              key: 'cost',
+              label: 'Total cost',
+              group: 'Cost',
+              width: 160,
+              min: 144,
+              description: 'API estimate · CAD',
+            },
+          ]
+  )
   const columns = $derived<Column[]>([
     {
       key: 'name',
@@ -397,54 +448,7 @@
       width: 288,
       min: maximumDuration > 1n ? 224 : 0,
     },
-    ...(viewKey === 'time'
-      ? [
-          {
-            key: 'tools',
-            label: 'Tool calls',
-            group: 'Tool calls',
-            width: 176,
-            min: 144,
-          } as Column,
-        ]
-      : viewKey === 'results'
-        ? [
-            {
-              key: headline ? `assessment:${headline.id}` : 'state',
-              label: 'Assessment',
-              group: 'Results',
-              width: 160,
-              min: 144,
-              hint: headline?.scale,
-              assessment: headline,
-            } as Column,
-          ]
-        : [
-            {
-              key: 'investigatorCost',
-              label: 'Investigator',
-              group: 'Cost',
-              width: 160,
-              min: 144,
-              description: 'API estimate · CAD',
-            } as Column,
-            {
-              key: 'graderCost',
-              label: 'Grader',
-              group: 'Cost',
-              width: 160,
-              min: 144,
-              description: 'API estimate · CAD',
-            } as Column,
-            {
-              key: 'cost',
-              label: 'Total cost',
-              group: 'Cost',
-              width: 160,
-              min: 144,
-              description: 'API estimate · CAD',
-            } as Column,
-          ]),
+    ...viewColumns,
   ])
   const sortScope = $derived(JSON.stringify([experiment.id, viewKey]))
   const activeSort = $derived(sorts[sortScope])
@@ -460,9 +464,7 @@
         ...result,
         state: execution[result.id]?.state ?? result.state,
         seconds: duration !== undefined ? Number(duration) / 1e9 : undefined,
-        startedAt: window
-          ? new Date(Number(window.startTime / 1000000n)).toISOString()
-          : result.startedAt,
+        startedTime: window?.startTime ?? result.startedTime,
       }
     })
   )
@@ -534,9 +536,9 @@
     onSelect?.(row)
   }
   function selectBar(event: MouseEvent) {
-    const id = (event.currentTarget as HTMLElement).closest<HTMLElement>(
-      '[data-outline-id]'
-    )?.dataset.outlineId
+    const bar = event.currentTarget
+    if (!(bar instanceof HTMLElement)) return
+    const id = bar.closest<HTMLElement>('[data-outline-id]')?.dataset.outlineId
     const row = outline.find(item => item.id === id)
     if (row) selectRow(event, row)
   }
@@ -576,17 +578,7 @@
 {/snippet}
 
 {#snippet ownedToolCount(row: EvalOutlineRow)}
-  {@const events =
-    row.result?.eventTools?.filter(
-      tool =>
-        row.reference &&
-        referenceKey(tool.parent) === referenceKey(row.reference)
-    ) ?? []}
-  {@render toolCount(
-    events.length + (row.kind === 'tool' ? 1 : 0),
-    events.filter(tool => tool.failed === true).length +
-      (row.kind === 'tool' && row.spanError ? 1 : 0)
-  )}
+  {@render toolCount(row.toolCounts?.total ?? 0, row.toolCounts?.failed ?? 0)}
 {/snippet}
 
 {#snippet executionNode(

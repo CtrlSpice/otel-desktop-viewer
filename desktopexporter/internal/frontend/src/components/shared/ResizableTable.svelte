@@ -27,6 +27,16 @@
   import type { DragHandle } from './utils/drag'
   import { resizeRowHover } from './utils/resize-row-hover'
 
+  function isStoredWidths(value: unknown): value is object {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+  }
+
+  function isNumericWidthEntry(
+    entry: [string, unknown]
+  ): entry is [string, number] {
+    return typeof entry[1] === 'number'
+  }
+
   let {
     columns,
     storageKey,
@@ -160,14 +170,12 @@
     current = {}
     try {
       const stored: unknown = JSON.parse(localStorage.getItem(key) ?? 'null')
-      if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+      if (isStoredWidths(stored))
         current = Object.fromEntries(
-          Object.entries(stored).filter(
-            ([, value]) =>
-              typeof value === 'number' && Number.isFinite(value) && value > 0
-          )
+          Object.entries(stored)
+            .filter(isNumericWidthEntry)
+            .filter(([, width]) => Number.isFinite(width) && width > 0)
         )
-      }
     } catch {
       /* Retain defaults when browser storage is unavailable. */
     }

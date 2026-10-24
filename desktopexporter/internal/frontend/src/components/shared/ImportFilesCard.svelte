@@ -6,7 +6,8 @@
   let input = $state<HTMLInputElement | null>(null)
 
   function chooseFiles(event: Event) {
-    const field = event.currentTarget as HTMLInputElement
+    const field = event.currentTarget
+    if (!(field instanceof HTMLInputElement)) return
     const files = Array.from(field.files ?? [])
     field.value = ''
     if (files.length > 0) onFiles(files)

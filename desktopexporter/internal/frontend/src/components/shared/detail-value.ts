@@ -37,10 +37,12 @@ export function compactValueTokens(
     const key = /^\s*:/.test(text.slice(part.index + lexeme.length))
     if (expandStrings && !key && lexeme.startsWith('"')) {
       try {
-        const decoded = JSON.parse(lexeme) as string
+        const decoded: unknown = JSON.parse(lexeme)
         // Server previews can end inside a container. Tokenize that prefix as
         // a preview, without inventing missing closing quotes or brackets.
-        if (/^\s*[[{]/.test(decoded)) return compactValueTokens(decoded, true)
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Only decoded JSON strings can supply an embedded preview; the received token remains authoritative.
+        if (typeof decoded === 'string' && /^\s*[[{]/.test(decoded))
+          return compactValueTokens(decoded, true)
       } catch {
         // An incomplete quoted token stays as received.
       }
@@ -181,7 +183,10 @@ export function jsonContainerTokens(
         // scalar strings and invalid JSON as received. This is display-only;
         // copy/export callers use the default, lossless mode.
         if (expandStrings && part.startsWith('"') && parts[index + 1] !== ':') {
-          const nested = format(JSON.parse(part) as string, depth)
+          const decoded: unknown = JSON.parse(part)
+          const nested =
+            // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Validate parsed string tokens before recursive display formatting; preserve source lexemes for all other values.
+            typeof decoded === 'string' ? format(decoded, depth) : null
           if (nested) {
             // Nested formatting already includes the parent indentation and
             // consumes the same budget; do not copy/reindent it a second time.

@@ -84,13 +84,32 @@ class ProjectionError extends Error {}
 
 // All runtime shape checks below belong to the external JSON boundary.
 function object(value: Json | undefined): JsonRecord | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decode an external JSON object; null and arrays are distinct source types.
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value
     : undefined
 }
 
 function text(value: Json | undefined): string | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Accept only received strings; never coerce JSON values into prose.
   return typeof value === 'string' ? value : undefined
+}
+
+/** Display serialization for validated JSON, retaining signed zero recursively.
+ * Source-backed Copy still uses original text, including numeric lexemes and duplicate keys. */
+function outputText(value: Json): string {
+  if (Object.is(value, -0)) return '-0'
+  if (Array.isArray(value)) return '[' + value.map(outputText).join(',') + ']'
+  const members = object(value)
+  if (members)
+    return (
+      '{' +
+      Object.entries(members)
+        .map(([key, child]) => JSON.stringify(key) + ':' + outputText(child))
+        .join(',') +
+      '}'
+    )
+  return JSON.stringify(value)
 }
 
 function identity(value: Json | undefined): string | undefined {
@@ -103,6 +122,7 @@ function identity(value: Json | undefined): string | undefined {
 }
 
 function number(value: Json | undefined): number | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decode nonnegative source measurements without accepting numeric-looking strings.
   return typeof value === 'number' && value >= 0 ? value : undefined
 }
 
@@ -124,6 +144,7 @@ function timestamp(value: Json | undefined): string | undefined {
  * invocation. Object key order does not change that identity. */
 function canonical(value: Json): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Recursive JSON identity must distinguish object members from scalar source values.
   if (value !== null && typeof value === 'object')
     return (
       '{' +
@@ -155,6 +176,7 @@ function validateJson(root: Json) {
     )
       throw new ProjectionError('JSON exceeds the projection complexity limit.')
     if (
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Validate parsed JSON numbers before projection; source text retains values JavaScript cannot represent.
       typeof value === 'number' &&
       (!Number.isFinite(value) ||
         (Number.isInteger(value) && !Number.isSafeInteger(value)))
@@ -162,6 +184,7 @@ function validateJson(root: Json) {
       throw new ProjectionError(
         'JSON contains a nonfinite or unsafe integer number. Use the original JSON for exact values.'
       )
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Traverse only JSON containers when enforcing the external-payload complexity budget.
     if (value !== null && typeof value === 'object') {
       const children = Array.isArray(value) ? value : Object.values(value)
       if (nodes + pending.length + children.length > evalProjectionLimits.nodes)
@@ -454,9 +477,11 @@ export function projectPromptfooDataset(
       const assessment: Assessment = {
         id: assessmentID,
         value:
+          // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Recorded scores accept negative/fractional numbers, but not numeric strings.
           typeof row.score === 'number'
             ? row.score
-            : typeof grading?.score === 'number'
+            : // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Apply the same native-number contract to the fallback grading score.
+              typeof grading?.score === 'number'
               ? grading.score
               : null,
         pass:
@@ -515,8 +540,10 @@ export function projectPromptfooDataset(
         assessments.push({
           id,
           sourceName: text(assertion?.type),
+          // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decode each native assertion score without coercion or nonnegative-range policy.
           value: typeof component.score === 'number' ? component.score : null,
           pass:
+            // oxlint-disable-next-line anti-slop/no-runtime-typeof -- An assertion outcome is recorded only for an actual JSON boolean.
             typeof component.pass === 'boolean' ? component.pass : undefined,
           label:
             component.pass === true
@@ -533,7 +560,7 @@ export function projectPromptfooDataset(
       const rawOutput = response?.output
       let answer: string | undefined
       if (rawOutput !== undefined)
-        answer = display(text(rawOutput) ?? JSON.stringify(rawOutput))
+        answer = display(text(rawOutput) ?? outputText(rawOutput))
       const fields: EvalSourceRowReference['fields'] = assessmentFields
       const sourceField = (
         field: EvalSourceTextField,
@@ -582,11 +609,14 @@ export function projectPromptfooDataset(
               ? 'null'
               : Array.isArray(rawOutput)
                 ? 'array'
-                : typeof rawOutput === 'object'
+                : // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Label the received output type after excluding null and arrays; display formatting does not determine type.
+                  typeof rawOutput === 'object'
                   ? 'map'
-                  : typeof rawOutput === 'number'
+                  : // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Preserve native numeric output classification, including signed zero.
+                    typeof rawOutput === 'number'
                     ? 'number'
-                    : typeof rawOutput === 'boolean'
+                    : // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Preserve native boolean output classification without interpreting strings.
+                      typeof rawOutput === 'boolean'
                       ? 'boolean'
                       : 'string',
         state: machineryError ? 'Error' : 'Complete',

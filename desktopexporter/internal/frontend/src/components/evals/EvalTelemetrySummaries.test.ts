@@ -121,6 +121,53 @@ it('summarizes stored evidence and provides a native exact-span link, preserving
   expect(screen.getByText('0 ns')).toBeVisible()
 })
 
+it('cancels obsolete log counts and refetches when telemetry nodes change', async () => {
+  type Logs = Awaited<ReturnType<typeof telemetryAPI.getTraceLogSummaries>>
+  let finish!: (logs: Logs) => void
+  const logs = vi
+    .spyOn(telemetryAPI, 'getTraceLogSummaries')
+    .mockReturnValueOnce(
+      new Promise<Logs>(resolve => {
+        finish = resolve
+      })
+    )
+    .mockResolvedValue([])
+  const props = { entries: [{ reference, label: 'Tool' }], evidenceLogs: [] }
+  const { rerender } = render(EvalTelemetrySection, props)
+  await waitFor(() => expect(logs).toHaveBeenCalledOnce())
+  const signal = logs.mock.calls[0][1]!
+  const next = {
+    ...props,
+    entries: [
+      { reference: { ...reference, spanID: 'c'.repeat(16) }, label: 'Other' },
+    ],
+  }
+  await rerender({ componentProps: next })
+  await waitFor(() => expect(logs).toHaveBeenCalledTimes(2))
+  expect(signal.aborted).toBe(true)
+  finish([
+    {
+      logRef: 'obsolete',
+      timestamp: 1n,
+      spanID: reference.spanID,
+      eventName: '',
+      severityNumber: 0,
+      severityText: '',
+      serviceName: '',
+      bodyPreview: '',
+    },
+  ])
+  await waitFor(() => expect(screen.getByText(/0 logs/)).toBeVisible())
+  expect(screen.queryByText(/1 log/)).toBeNull()
+  await rerender({
+    componentProps: {
+      ...next,
+      nodes: new Map([[referenceKey(reference), node]]),
+    },
+  })
+  await waitFor(() => expect(logs).toHaveBeenCalledTimes(3))
+})
+
 it('keeps unavailable references navigable and does not borrow a same-ID span from another trace', () => {
   const other = { ...reference, traceID: 'c'.repeat(32) }
   render(EvalTelemetrySummaries, {

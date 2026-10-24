@@ -1,6 +1,14 @@
-import { JSONParser } from '@streamparser/json'
+import { JSONParser, TokenType } from '@streamparser/json'
 
-export type JSONFileToken = Parameters<JSONParser['onToken']>[0]
+type ParserToken = Parameters<JSONParser['onToken']>[0]
+export type JSONFileToken = Omit<ParserToken, 'token' | 'value'> &
+  (
+    | { token: TokenType.STRING; value: string }
+    | {
+        token: Exclude<ParserToken['token'], TokenType.STRING>
+        value: ParserToken['value']
+      }
+  )
 
 /** Shared syntax scan. Offsets address the Blob; numeric token values are not storage values. */
 export async function scanJSONFile(
@@ -16,7 +24,17 @@ export async function scanJSONFile(
     keepStack: false,
     separator: '\n',
   })
-  parser.onToken = token => onToken({ ...token, offset: token.offset + base })
+  parser.onToken = token => {
+    const offset = token.offset + base
+    if (token.token === TokenType.STRING) {
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Check the third-party tokenizer's STRING/value invariant before publishing a discriminated token.
+      if (typeof token.value !== 'string')
+        throw new Error('Invalid JSON string token.')
+      onToken({ ...token, token: TokenType.STRING, value: token.value, offset })
+    } else {
+      onToken({ ...token, token: token.token, offset })
+    }
+  }
   const reader = file.stream().getReader()
   const utf8 = new TextDecoder('utf-8', { fatal: true })
   try {

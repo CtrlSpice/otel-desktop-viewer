@@ -2,7 +2,7 @@ import type { EvalExperiment } from './model'
 
 export type EvalExperimentSort = 'started' | 'name'
 
-function startedTimestamp(value: string | undefined): bigint | null {
+export function startedTimestamp(value: string | undefined): bigint | null {
   if (!value) return null
   const milliseconds = Date.parse(value)
   if (!Number.isFinite(milliseconds)) return null

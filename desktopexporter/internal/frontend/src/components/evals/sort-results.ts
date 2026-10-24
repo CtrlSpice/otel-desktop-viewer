@@ -1,4 +1,5 @@
 import { evalToolCounts, type EvalResult } from './model'
+import { startedTimestamp } from './experiment-sort'
 
 export type ResultSortKey =
   | 'name'
@@ -18,18 +19,13 @@ export type ResultSort = {
   direction: 'asc' | 'desc'
 }
 
-function sortValue(result: EvalResult, key: ResultSortKey) {
+function numericSortValue(
+  result: EvalResult,
+  key: Exclude<ResultSortKey, 'name' | 'state' | 'started'>
+) {
   switch (key) {
-    case 'name':
-      return result.name
-    case 'state':
-      return result.state
     case 'repetition':
       return result.repetition
-    case 'started': {
-      const time = result.startedAt ? Date.parse(result.startedAt) : NaN
-      return Number.isFinite(time) ? time : undefined
-    }
     case 'seconds':
       return result.seconds
     case 'tools':
@@ -57,26 +53,29 @@ export function sortResults(
   results: readonly EvalResult[],
   sort?: ResultSort
 ): EvalResult[] {
-  if (!sort)
-    return [...results].sort((a, b) => {
-      const start = (result: EvalResult) =>
-        result.startedAt ? Date.parse(result.startedAt) : NaN
-      const left = start(a),
-        right = start(b)
-      if (!Number.isFinite(left)) return Number.isFinite(right) ? 1 : 0
-      if (!Number.isFinite(right)) return -1
-      return left - right
+  const direction = sort?.direction === 'desc' ? -1 : 1
+  const key = sort?.key ?? 'started'
+  if (key === 'started')
+    return [...results].sort((left, right) => {
+      const a = left.startedTime ?? startedTimestamp(left.startedAt)
+      const b = right.startedTime ?? startedTimestamp(right.startedAt)
+      if (a === null) return b === null ? 0 : 1
+      if (b === null) return -1
+      return (a < b ? -1 : a > b ? 1 : 0) * direction
     })
-  const direction = sort.direction === 'asc' ? 1 : -1
+  if (key === 'name' || key === 'state')
+    return [...results].sort((left, right) => {
+      const a = left[key]
+      const b = right[key]
+      if (a == null) return b == null ? 0 : 1
+      if (b == null) return -1
+      return a.localeCompare(b, undefined, { numeric: true }) * direction
+    })
   return [...results].sort((left, right) => {
-    const a = sortValue(left, sort.key)
-    const b = sortValue(right, sort.key)
+    const a = numericSortValue(left, key)
+    const b = numericSortValue(right, key)
     if (a == null) return b == null ? 0 : 1
     if (b == null) return -1
-    const comparison =
-      typeof a === 'number' && typeof b === 'number'
-        ? a - b
-        : String(a).localeCompare(String(b), undefined, { numeric: true })
-    return comparison * direction
+    return (a - b) * direction
   })
 }

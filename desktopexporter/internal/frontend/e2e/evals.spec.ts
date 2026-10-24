@@ -868,7 +868,7 @@ test('waterfall labels and bars open eval details while tree controls only expan
   ).toContainText('3')
   await expect(
     details.getByRole('group', { name: 'tool calls', exact: true })
-  ).toContainText('9 total · 3 failed')
+  ).toHaveCount(0)
   await showOnly(page, 'Results')
   await expect(
     details.getByText(

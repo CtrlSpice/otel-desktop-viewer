@@ -67,6 +67,61 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
+  it.each(['native', 'explicit'] as const)(
+    'keeps %s tool ownership separate from descendant errors',
+    mode => {
+      const root = node(1, null, 0)
+      const parent = node(2, 1, 1)
+      const child = node(3, 2, 2, true)
+      for (const tool of [parent, child])
+        tool.spanData.attributes = [
+          {
+            key: 'gen_ai.operation.name',
+            value: { kind: 'string', value: 'execute_tool' },
+          },
+        ]
+      const index = indexEvalTraces([
+        { traceID, spans: [root, parent, child], unplacedSpanCount: 0 },
+      ])
+      const result = {
+        ...exampleExperiments[0].results[0],
+        telemetry: mode === 'native' ? { traceID } : ref(1),
+        resultTelemetry: undefined,
+        assessments: [],
+        tools:
+          mode === 'native'
+            ? []
+            : [
+                { name: 'parent', state: 'OK' as const, telemetry: ref(2) },
+                { name: 'child', state: 'Error' as const, telemetry: ref(3) },
+              ],
+      }
+      const experiment = projectEvalTraceEvidence(
+        { ...exampleExperiments[0], results: [result] },
+        index
+      )
+      const rows = buildEvalOutline(
+        groupResults(experiment.results, experiment.results),
+        experiment,
+        index
+      )
+      const parentRow = rows.find(
+        row => row.reference?.spanID === ref(2).spanID
+      )!
+      const childRow = rows.find(
+        row => row.reference?.spanID === ref(3).spanID
+      )!
+      expect(parentRow.spanError).toBe(true)
+      expect(parentRow.state).toBe('Error')
+      expect(parentRow.toolCounts).toEqual({ total: 1, failed: 0 })
+      expect(childRow.toolCounts).toEqual({ total: 1, failed: 1 })
+      expect(rows.find(row => row.kind === 'result')?.toolCounts).toEqual({
+        total: 0,
+        failed: 0,
+      })
+    }
+  )
+
   it('counts correlated tool logs only on their owning span and keeps genuine span events intact', () => {
     const root = node(1, null, 0)
     const parent = node(2, 1, 1)
@@ -604,8 +659,9 @@ describe('referenced eval hierarchy', () => {
       ref(4),
       ref(5),
     ])
-    expect(rows[2].toolCounts).toEqual({ total: 1, failed: 0 })
-    expect(rows[3].toolCounts).toEqual({ total: 1, failed: 0 })
+    expect(rows[2].toolCounts).toEqual({ total: 0, failed: 0 })
+    expect(rows[3].toolCounts).toEqual({ total: 0, failed: 0 })
+    expect(rows[4].toolCounts).toEqual({ total: 1, failed: 0 })
     expect(rows[6].toolCounts).toEqual({ total: 0, failed: 0 })
     expect(rows.slice(2).every(row => !row.tree.brokenParent)).toBe(true)
   })

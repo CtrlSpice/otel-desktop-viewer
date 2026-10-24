@@ -15,8 +15,46 @@ export type GradingInput = {
   artifact?: string
 }
 
-function record(value: unknown): value is Record<string, unknown> {
+function record(value: unknown): value is object {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+type GradingPacket = {
+  question: string
+  criteria: { text: string; scoring: Record<string, string>; id?: unknown }[]
+  reference?: unknown
+  viewerSkill?: unknown
+  evidence?: unknown
+  artifact?: unknown
+}
+
+function isGradingText(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isGradingPacket(value: unknown): value is GradingPacket {
+  if (
+    !record(value) ||
+    !('question' in value) ||
+    typeof value.question !== 'string' ||
+    !('criteria' in value) ||
+    !Array.isArray(value.criteria) ||
+    !value.criteria.length
+  )
+    return false
+  for (const criterion of value.criteria) {
+    if (
+      !record(criterion) ||
+      !('text' in criterion) ||
+      typeof criterion.text !== 'string' ||
+      !('scoring' in criterion) ||
+      !record(criterion.scoring)
+    )
+      return false
+    for (const description of Object.values(criterion.scoring))
+      if (typeof description !== 'string') return false
+  }
+  return true
 }
 
 /** Recognize the explicit rubric/evidence packet, not arbitrary prose or tool output.
@@ -29,31 +67,18 @@ export function parseGradingInput(raw: string): GradingInput | undefined {
   const json = raw.slice(start)
   try {
     const packet: unknown = JSON.parse(json)
-    if (
-      !record(packet) ||
-      typeof packet.question !== 'string' ||
-      !Array.isArray(packet.criteria) ||
-      !packet.criteria.length
-    )
-      return undefined
+    if (!isGradingPacket(packet)) return undefined
     const criteria: GradingCriterion[] = []
     for (const criterion of packet.criteria) {
-      if (
-        !record(criterion) ||
-        typeof criterion.text !== 'string' ||
-        !record(criterion.scoring)
-      )
-        return undefined
       const scoring: Record<string, string> = {}
       for (const [label, description] of Object.entries(criterion.scoring)) {
-        if (typeof description !== 'string') return undefined
         Object.defineProperty(scoring, label, {
           value: description,
           enumerable: true,
         })
       }
       criteria.push({
-        id: typeof criterion.id === 'string' ? criterion.id : undefined,
+        id: isGradingText(criterion.id) ? criterion.id : undefined,
         text: criterion.text,
         scoring,
       })
@@ -62,10 +87,10 @@ export function parseGradingInput(raw: string): GradingInput | undefined {
       instructions: raw.slice(0, start).trim(),
       question: packet.question,
       criteria,
-      reference:
-        typeof packet.reference === 'string' ? packet.reference : undefined,
-      viewerSkill:
-        typeof packet.viewerSkill === 'string' ? packet.viewerSkill : undefined,
+      reference: isGradingText(packet.reference) ? packet.reference : undefined,
+      viewerSkill: isGradingText(packet.viewerSkill)
+        ? packet.viewerSkill
+        : undefined,
       evidence:
         packet.evidence === undefined
           ? undefined

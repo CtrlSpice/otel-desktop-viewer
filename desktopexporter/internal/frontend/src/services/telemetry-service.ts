@@ -769,22 +769,14 @@ function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
   switch (json.metricType) {
     case 'Gauge':
     case 'Sum':
-      datapoints = json.datapoints.map(point =>
-        receivedNumberDataPointFromJSON(point as JsonReceivedNumberDataPoint)
-      )
+      datapoints = json.datapoints.map(receivedNumberDataPointFromJSON)
       break
     case 'Histogram':
-      datapoints = json.datapoints.map(point =>
-        receivedHistogramDataPointFromJSON(
-          point as JsonReceivedHistogramDataPoint
-        )
-      )
+      datapoints = json.datapoints.map(receivedHistogramDataPointFromJSON)
       break
     case 'ExponentialHistogram':
-      datapoints = json.datapoints.map(point =>
-        receivedExponentialHistogramDataPointFromJSON(
-          point as JsonReceivedExponentialHistogramDataPoint
-        )
+      datapoints = json.datapoints.map(
+        receivedExponentialHistogramDataPointFromJSON
       )
       break
   }

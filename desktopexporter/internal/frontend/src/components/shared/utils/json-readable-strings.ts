@@ -58,7 +58,9 @@ function strings(view: EditorView) {
         for (const match of source.matchAll(
           /(?:\\(?:u[\da-fA-F]{4}|["\\/bfnrt]))+/g
         )) {
-          const text = JSON.parse(`"${match[0]}"`) as string
+          const text: unknown = JSON.parse(`"${match[0]}"`)
+          // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Validate the decoded escape as text before creating a display-only widget over the intact JSON document.
+          if (typeof text !== 'string') continue
           ranges.push(
             Decoration.replace({ widget: new DecodedEscape(text) }).range(
               node.from + match.index,

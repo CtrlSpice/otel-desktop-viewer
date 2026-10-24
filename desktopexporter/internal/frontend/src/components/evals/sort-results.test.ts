@@ -61,6 +61,43 @@ describe('sortResults', () => {
     }
   })
 
+  it('orders nanosecond starts and exact correlated spans without changing source timestamps', () => {
+    const samples = [
+      {
+        ...results[0],
+        id: 'late',
+        startedAt: '2026-10-21T12:00:00.000000009Z',
+      },
+      {
+        ...results[0],
+        id: 'early',
+        startedAt: '2026-10-21T05:00:00.000000001-07:00',
+      },
+      { ...results[0], id: 'tie', startedAt: '2026-10-21T12:00:00.000000001Z' },
+      { ...results[0], id: 'unknown', startedAt: 'invalid' },
+    ]
+    expect(sortResults(samples).map(item => item.id)).toEqual([
+      'early',
+      'tie',
+      'late',
+      'unknown',
+    ])
+    expect(
+      sortResults(samples, { key: 'started', direction: 'desc' }).map(
+        item => item.id
+      )
+    ).toEqual(['late', 'early', 'tie', 'unknown'])
+    const correlated = samples.slice(0, 2).map((result, i) => ({
+      ...result,
+      startedTime: 1700000000000000001n + BigInt(i),
+    }))
+    expect(sortResults(correlated).map(item => item.id)).toEqual([
+      'late',
+      'early',
+    ])
+    expect(correlated[0].startedAt).toBe(samples[0].startedAt)
+  })
+
   it.each(['seconds', 'investigatorCost', 'graderCost'] as const)(
     'keeps unknown %s after measured values in both directions',
     key => {

@@ -4,6 +4,24 @@ import type {
   EvalExperimentSourcePage,
 } from './eval-experiment-types'
 
+type CompletedImport = { complete: true; ids: string[] }
+
+function isCompletedImport(value: unknown): value is CompletedImport {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    !('complete' in value) ||
+    value.complete !== true ||
+    !('ids' in value) ||
+    !Array.isArray(value.ids)
+  )
+    return false
+  for (const id of value.ids)
+    if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) return false
+  return true
+}
+
 // Keep Evals transport out of the shared telemetry API so public builds can
 // exclude the complete implementation, rather than merely hiding navigation.
 export const evalAPI = {
@@ -59,15 +77,8 @@ export const evalAPI = {
       ]
     if (!response.ok)
       return [(await response.text()).trim() || `HTTP ${response.status}`]
-    const reply: { complete?: unknown; ids?: unknown } = await response.json()
-    if (
-      !reply ||
-      reply.complete !== true ||
-      !Array.isArray(reply.ids) ||
-      !reply.ids.every(
-        id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)
-      )
-    )
+    const reply: unknown = await response.json()
+    if (!isCompletedImport(reply))
       throw new Error(
         'The server did not confirm a completed evaluation import. Retry the file to check completion.'
       )

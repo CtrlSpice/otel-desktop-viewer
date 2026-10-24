@@ -75,6 +75,30 @@ describe('OTLP file sender', () => {
       )
     }
   )
+  it.each([
+    'null',
+    '[]',
+    '42',
+    '{"complete":false,"ids":[]}',
+    '{"complete":true,"ids":null}',
+    '{"complete":true,"ids":[42]}',
+    JSON.stringify({ complete: true, ids: ['A'.repeat(64)] }),
+    JSON.stringify({ complete: true, ids: ['a'.repeat(63)] }),
+  ])('rejects malformed eval completion replies: %s', async body => {
+    receiver(async () => new Response(body))
+    await expect(
+      evalAPI.ingestEvalFile(new File(['{}'], 'eval.json'))
+    ).rejects.toThrow('did not confirm')
+  })
+
+  it('accepts an explicitly complete eval import with no IDs', async () => {
+    receiver(
+      async () => new Response('{"complete":true,"ids":[],"created":false}')
+    )
+    expect(await evalAPI.ingestEvalFile(new File(['{}'], 'eval.json'))).toEqual(
+      []
+    )
+  })
   it.skipIf(__EVALS_BUILT__)(
     'rejects eval files without making requests in a public build',
     async () => {
@@ -223,6 +247,10 @@ describe('OTLP file sender', () => {
     '42',
     '{"partialSuccess":42}',
     '{"partialSuccess":{"rejectedSpans":-1}}',
+    '{"partialSuccess":{"rejectedSpans":9007199254740992}}',
+    '{"partialSuccess":{"rejectedSpans":1.5}}',
+    '{"partialSuccess":{"rejectedSpans":"1e3"}}',
+    '{"partialSuccess":{"errorMessage":42}}',
   ])('reports malformed receiver responses: %s', async body => {
     receiver(async () => new Response(body))
     const issues = await importOTLPFile(
@@ -232,6 +260,34 @@ describe('OTLP file sender', () => {
     )
     expect(issues[0]).toContain('Invalid OTLP')
   })
+
+  it.each([
+    [
+      '{"partialSuccess":{"rejectedSpans":"9007199254740993"}}',
+      ['traces: The receiver rejected 9007199254740993 records.'],
+    ],
+    ['{"partialSuccess":{"rejectedSpans":0,"rejectedLogRecords":-1}}', []],
+    [
+      '{"partialSuccess":{"rejectedSpans":null,"rejectedLogRecords":"2","rejectedDataPoints":false}}',
+      ['traces: The receiver rejected 2 records.'],
+    ],
+    [
+      '{"partialSuccess":{"rejectedSpans":"0002","errorMessage":""}}',
+      ['traces: The receiver rejected 2 records.'],
+    ],
+  ])(
+    'preserves exact rejected counts and nullish field precedence: %s',
+    async (body, expected) => {
+      receiver(async () => new Response(body))
+      expect(
+        await importOTLPFile(
+          new File(['{"resourceSpans":[{}]}'], 'trace.json'),
+          'http://localhost:8000',
+          new AbortController().signal
+        )
+      ).toEqual(expected)
+    }
+  )
 
   it('sends large files in capped batches with only one request in flight', async () => {
     let release!: () => void
