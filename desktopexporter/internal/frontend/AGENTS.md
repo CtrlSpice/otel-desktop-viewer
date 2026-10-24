@@ -66,8 +66,9 @@
   Prefix the name with a decorative `>` in the Madoromi Sora operator role.
   Hide the prompt from assistive technology and text selection.
   Welcome axolotl facts use concise, qualified claims from peer-reviewed research,
-  with the primary publication cited beside each fact in the source. Omit the
-  "Axolotl fact:" prefix.
+  with author, journal, year and DOI beside each fact in the source. Keep the full
+  reference and claim context in `src/components/home/README.md`; update both when
+  changing a fact. Omit the "Axolotl fact:" prefix.
   Exporter help sits beside Copy in the terminal header and describes the
   selected HTTP or gRPC protocol, including default-port guidance when needed.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
