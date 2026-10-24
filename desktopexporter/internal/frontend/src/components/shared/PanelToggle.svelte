@@ -20,22 +20,29 @@
   const label = $derived(
     `${open ? 'Collapse' : 'Open'} ${side === 'left' ? 'sidebar' : 'details'}`
   )
-  const icon = $derived(open ? PanelLeftCloseIcon : PanelLeftOpenIcon)
 </script>
 
 <button
   type="button"
-  class="panel-toggle btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip"
+  class="panel-toggle item-state btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip"
   class:tooltip-right={side === 'left'}
   class:tooltip-left={side === 'right'}
   aria-label={label}
   data-tip={label}
   aria-expanded={open}
+  data-selected={open ? '' : undefined}
   aria-controls={controls}
   {onclick}
 >
   <span class="inline-flex" class:panel-toggle__mirror={side === 'right'}>
-    <HugeiconsIcon {icon} size={17} strokeWidth={1.5} aria-hidden="true" />
+    <HugeiconsIcon
+      icon={PanelLeftCloseIcon}
+      altIcon={PanelLeftOpenIcon}
+      showAlt={!open}
+      size={17}
+      strokeWidth={1.5}
+      aria-hidden="true"
+    />
   </span>
 </button>
 
@@ -43,11 +50,7 @@
   @reference "../../app.css";
 
   .panel-toggle {
-    @apply text-base-content;
-  }
-
-  .panel-toggle[aria-expanded='true'] {
-    @apply text-primary;
+    @apply rounded-full text-base-content;
   }
 
   .panel-toggle__mirror {

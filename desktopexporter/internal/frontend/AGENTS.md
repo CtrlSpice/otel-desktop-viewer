@@ -133,6 +133,9 @@
   pointer keeps Low until it leaves, then selected cards show Medium. Cards share
   Low across the whole parent card, including its tooltip-only breakdown bars.
   Text selection is transient; it does not use the persistent-selection token.
+  Sidebar and Details toggles keep neutral Text icons in both states. Use the
+  shared item highlights: Medium when open, Low on hover, transparent when
+  closed. Retain their directional icons, circular shape and keyboard focus.
 - Buttons stay still on press and release. Use colour and focus feedback;
   remove DaisyUI's active press translation from buttons and controls that apply
   its button styles. Do not add bounce, scale or press/release movement.
