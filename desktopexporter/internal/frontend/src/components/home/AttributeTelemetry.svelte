@@ -6,6 +6,7 @@
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import DetailNav from '@/components/shared/DetailNav.svelte'
+  import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import { itemHref } from '@/route'
   import type {
     DiscoveryOptions,
@@ -31,7 +32,7 @@
   }: {
     attribute: DiscoveredAttribute | null
     valueIdentity?: string
-    service: ServiceSummary
+    service: ServiceSummary | null
     options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>
     revision: number
   } = $props()
@@ -62,6 +63,7 @@
       return {
         id: signal,
         label: labels[signal],
+        countBrackets: true,
         count:
           group && !group.loading && !group.error
             ? group.cards.length
@@ -98,6 +100,11 @@
     void retry
     const controller = new AbortController()
     const selection = { attribute, valueIdentity, service, options }
+    if (!selection.service) {
+      groups = []
+      return
+    }
+    const selectedService = selection.service
     groups = discoverySignals
       .filter(
         signal =>
@@ -119,7 +126,7 @@
           group.signal,
           selection.attribute,
           selection.valueIdentity,
-          selection.service,
+          selectedService,
           selection.options,
           controller.signal
         )
@@ -145,11 +152,12 @@
   }
 </script>
 
-<div class="attribute-telemetry">
+{#snippet signalTabs()}
   <div class="attribute-telemetry__tabs">
     <PaneHeader
       mode="tabs"
       bare
+      tabLayout="right"
       {tabs}
       activeID={active?.signal ?? ''}
       onSelect={selectSignal}
@@ -157,77 +165,98 @@
       ariaLabel="Telemetry signals"
     />
   </div>
-  <div
-    id={panelID}
-    role="tabpanel"
-    aria-labelledby={active ? paneTabID(panelID, active.signal) : undefined}
-    aria-label={active ? undefined : 'Matching telemetry'}
-    class="flex min-h-0 min-w-0 flex-1 flex-col"
-  >
-    <!-- Keyboard users can focus and scroll the card list independently. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+{/snippet}
+
+<DetailBubble
+  label={attribute?.key ?? 'Telemetry'}
+  layoutKey="attribute-telemetry"
+  disabled={!service}
+  contained
+>
+  {#snippet labelSuffix()}
+    {#if attribute}
+      <span class="text-subtle" aria-hidden="true">·</span>
+      <span class="text-secondary">{attribute.kind}</span>
+      <span class="text-subtle" aria-hidden="true">·</span>
+      <span class="text-base-content">{attribute.ownerType}</span>
+    {/if}
+  {/snippet}
+  {#snippet action()}{@render signalTabs()}{/snippet}
+  <div class="attribute-telemetry">
     <div
-      bind:this={viewport}
-      class="attribute-telemetry__cards"
-      role="region"
-      aria-label={`Matching ${active?.signal ?? 'telemetry'}`}
-      aria-busy={active?.loading ?? false}
-      tabindex="0"
-      onscroll={event => {
-        if (active) active.scrollTop = event.currentTarget.scrollTop
-      }}
+      id={panelID}
+      role="tabpanel"
+      aria-labelledby={active ? paneTabID(panelID, active.signal) : undefined}
+      aria-label={active ? undefined : 'Matching telemetry'}
+      class="flex min-h-0 min-w-0 flex-1 flex-col"
     >
-      {#if active?.loading}<p role="status" class="text-subtle">
-          Loading matching {active.signal}…
-        </p>
-      {:else if active?.error}<p role="alert">{active.error}</p>
-        <button class="btn btn-ghost btn-sm" onclick={() => retry++}
-          >Retry</button
-        >
-      {:else if active}
-        {#each page as card (cardID(card))}
-          {#if card.signal === 'traces'}
-            <TraceCard
-              trace={card.trace}
-              matchingSpanCount={card.count}
-              href={itemHref('traces', card.trace.traceID, {
-                span: card.trace.matchedSpans?.[0]?.spanID,
-              })}
+      <!-- Keyboard users can focus and scroll the card list independently. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div
+        bind:this={viewport}
+        class="attribute-telemetry__cards"
+        role="region"
+        aria-label={`Matching ${active?.signal ?? 'telemetry'}`}
+        aria-busy={active?.loading ?? false}
+        tabindex="0"
+        onscroll={event => {
+          if (active) active.scrollTop = event.currentTarget.scrollTop
+        }}
+      >
+        {#if active?.loading}<p role="status" class="text-subtle">
+            Loading matching {active.signal}…
+          </p>
+        {:else if active?.error}<p role="alert" class="text-papaya">
+            {active.error}
+          </p>
+          <button class="btn btn-ghost btn-sm" onclick={() => retry++}
+            >Retry</button
+          >
+        {:else if active}
+          {#each page as card (cardID(card))}
+            {#if card.signal === 'traces'}
+              <TraceCard
+                trace={card.trace}
+                matchingSpanCount={card.count}
+                href={itemHref('traces', card.trace.traceID, {
+                  span: card.trace.matchedSpans?.[0]?.spanID,
+                })}
+              />
+            {:else if card.signal === 'logs'}
+              <LogCard
+                log={card.log}
+                href={itemHref('logs', card.log.logRef)}
+              />
+            {:else}
+              <MetricCard
+                metric={card.metric}
+                matchingPointCount={card.count}
+                href={itemHref('metrics', card.metric.metricRef)}
+              />
+            {/if}
+          {/each}
+        {:else}<p class="text-subtle">
+            No matching telemetry in this service, search and time range.
+          </p>{/if}
+      </div>
+      <SignalFooter label="page">
+        {#snippet navigation()}
+          <div class:invisible={active?.loading || !!active?.error}>
+            <DetailNav
+              index={active?.pageIndex ?? -1}
+              total={pageCount}
+              label="page"
+              onFirst={() => setPage(0)}
+              onPrev={() => setPage((active?.pageIndex ?? 0) - 1)}
+              onNext={() => setPage((active?.pageIndex ?? 0) + 1)}
+              onLast={() => setPage(pageCount - 1)}
             />
-          {:else if card.signal === 'logs'}
-            <LogCard
-              log={card.log}
-              href={itemHref('logs', card.log.logRef)}
-            />
-          {:else}
-            <MetricCard
-              metric={card.metric}
-              matchingPointCount={card.count}
-              href={itemHref('metrics', card.metric.metricRef)}
-            />
-          {/if}
-        {/each}
-      {:else}<p class="text-subtle">
-          No matching telemetry in this service, search and time range.
-        </p>{/if}
+          </div>
+        {/snippet}
+      </SignalFooter>
     </div>
-    <SignalFooter label="page">
-      {#snippet navigation()}
-        <div class:invisible={active?.loading || !!active?.error}>
-          <DetailNav
-            index={active?.pageIndex ?? -1}
-            total={pageCount}
-            label="page"
-            onFirst={() => setPage(0)}
-            onPrev={() => setPage((active?.pageIndex ?? 0) - 1)}
-            onNext={() => setPage((active?.pageIndex ?? 0) + 1)}
-            onLast={() => setPage(pageCount - 1)}
-          />
-        </div>
-      {/snippet}
-    </SignalFooter>
   </div>
-</div>
+</DetailBubble>
 
 <style lang="postcss">
   @reference '../../app.css';
@@ -236,7 +265,7 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
   .attribute-telemetry__tabs {
-    @apply shrink-0 overflow-x-auto px-3 py-2;
+    @apply min-w-0 overflow-x-auto;
   }
   .attribute-telemetry__tabs :global(.header-tabs)::before {
     content: none;

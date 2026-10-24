@@ -50,6 +50,8 @@
     icon?: Snippet
     /** Optional trailing count badge ("3", "12"). */
     count?: number
+    /** Use square brackets around this count instead of parentheses. */
+    countBrackets?: boolean
     /** Visible unit inside the count badge; defaults to the tab label. */
     countLabel?: string
     /** Disabled tabs render greyed out and ignore clicks. */
@@ -292,7 +294,9 @@
               <span
                 class="badge-count header-tab__count"
                 aria-hidden={tab.count === undefined}
-                >{#if tab.count !== undefined}({tab.count})<span
+                >{#if tab.count !== undefined}{tab.countBrackets
+                    ? '['
+                    : '('}{tab.count}{tab.countBrackets ? ']' : ')'}<span
                     class="sr-only"
                   >
                     {tab.countLabel ?? tab.label.toLowerCase()}</span
@@ -325,7 +329,9 @@
               <span
                 class="badge-count header-tab__count"
                 aria-hidden={tab.count === undefined}
-                >{#if tab.count !== undefined}({tab.count})<span
+                >{#if tab.count !== undefined}{tab.countBrackets
+                    ? '['
+                    : '('}{tab.count}{tab.countBrackets ? ']' : ')'}<span
                     class="sr-only"
                   >
                     {tab.countLabel ?? tab.label.toLowerCase()}</span

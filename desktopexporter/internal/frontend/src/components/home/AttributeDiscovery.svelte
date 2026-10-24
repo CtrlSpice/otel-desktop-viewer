@@ -157,7 +157,7 @@
       bind:value={filter}
     />
   </div>
-  {#if error}<p role="alert" class="p-3">{error}</p>
+  {#if error}<p role="alert" class="p-3 text-papaya">{error}</p>
   {:else if loading && keys.length === 0}<p
       role="status"
       class="p-3 text-subtle"

@@ -93,7 +93,7 @@
     </div>
   </div>
   {#snippet guide()}
-    <DetailBubble label="Getting started" contained>
+    <DetailBubble label="Getting started" contained headerless>
       <div class="guide-scroll">
         {@render importContent?.()}
         <section class="guide-section">

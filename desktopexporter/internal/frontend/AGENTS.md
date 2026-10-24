@@ -56,6 +56,9 @@
   column fills the remaining table width. Retain sorting and far-right Copy.
   Home's left pane contains Lulu above the shared section stack. Getting started
   is the primary open section, with setup instructions scrolling inside it.
+  Omit its redundant visible section heading beneath the welcome card.
+  Home attribute, telemetry and storage loading failures use Papaya text for
+  viewer/infrastructure faults; received telemetry errors retain their own roles.
   Storage and Ingestion issues are sibling sections using the standard disclosure,
   grouping and header-resize rules. Closed and inactive sections dock at the
   bottom; open sections share the available height. Use the shared sidebar toggle
@@ -76,7 +79,9 @@
   Exporter help sits beside Copy in the terminal header and describes the
   selected HTTP or gRPC protocol, including default-port guidance when needed.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
-  independent 25-card pages and scroll positions. Only the active card list
+  the tab group at the far right of the Telemetry section header and
+  square-bracketed counts, such as `[66]`. Retain independent 25-card pages
+  and scroll positions. Only the active card list
   scrolls; keep tabs at the top and shared page controls in a stable bottom
   footer. Tab changes are immediate and support arrow/Home/End navigation.
   Disable confirmed-empty or inapplicable signals, retaining loading/error
@@ -212,12 +217,13 @@
   Centre tab counts in the icon-height slot. Counts use text colour when inactive
   and Primary when selected, matching the tab icons.
   Tab counters display `(count)`, including `(0)`; this overrides the plain-count
-  rule for tab counters only. An unavailable count is not a received zero.
+  rule for tab counters except Home Telemetry, which uses `[count]`.
+  An unavailable count is not a received zero.
   Primary navigation counters use plain bracketed text, such as `[42]`, in
   Text at the regular 14px working size, matching the tab labels. No badge
   background, border, circle or reduced numeral size. Keep full counts and
   unavailable-count semantics. Local pane-tab counters retain their existing
-  parenthesised-count and active-colour styling.
+  active-colour styling; only Home Telemetry uses square brackets.
   Pane titles share the cards' 16px regular-weight heading style and normal letter
   spacing. The title row uses the same 2rem height as its controls.
 - Typography is an accessibility requirement across the entire UI: use 0.875rem

@@ -13,6 +13,7 @@ type Section = {
   id: string
   label: string
   layoutKey?: string
+  headerless?: boolean
   element: HTMLElement
   available: () => boolean
   expanded: () => boolean
@@ -190,7 +191,7 @@ export function createDetailStackState(storageKey: string) {
         section.id,
         section.element
           .querySelector('.detail-bubble__heading')
-          ?.getBoundingClientRect().height ?? remToPx(2.5),
+          ?.getBoundingClientRect().height ?? 0,
       ])
     )
     const initial = new Map(
@@ -339,7 +340,7 @@ export function createDetailStackState(storageKey: string) {
       const total = sections
         .filter(candidate => candidate.available() && candidate.expanded())
         .reduce((sum, candidate) => sum + weight(candidate), 0)
-      return `${(100 * weight(section)) / total} 1 var(--pane-header-h)`
+      return `${(100 * weight(section)) / total} 1 ${section.headerless ? '0px' : 'var(--pane-header-h)'}`
     },
     start(id: string, event: PointerEvent, onDrag: () => void) {
       if (event.button !== 0) return

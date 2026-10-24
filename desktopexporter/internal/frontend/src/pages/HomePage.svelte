@@ -272,34 +272,17 @@
   </DetailBubble>
 {/snippet}
 {#snippet foundOn()}
-  <DetailBubble
-    label={selectedAttribute?.key ?? 'Telemetry'}
-    layoutKey="attribute-telemetry"
-    disabled={!selected}
-    contained
-  >
-    {#snippet labelSuffix()}
-      {#if selectedAttribute}
-        <span class="text-subtle" aria-hidden="true">·</span>
-        <span class="text-secondary">{selectedAttribute.kind}</span>
-        <span class="text-subtle" aria-hidden="true">·</span>
-        <span class="text-base-content">{selectedAttribute.ownerType}</span>
-      {/if}
-    {/snippet}
-    {#if selected}
-      <AttributeTelemetry
-        attribute={selectedAttribute}
-        valueIdentity={selectedValue?.identity}
-        service={selected}
-        options={{ ...range, queries }}
-        {revision}
-      />
-    {/if}
-  </DetailBubble>
+  <AttributeTelemetry
+    attribute={selectedAttribute}
+    valueIdentity={selectedValue?.identity}
+    service={selected}
+    options={{ ...range, queries }}
+    {revision}
+  />
 {/snippet}
 {#snippet storage()}
   <DetailBubble label="Storage" initialOpen={false}>
-    {#if statsError}<p class="px-3" role="alert">
+    {#if statsError}<p class="px-3 text-papaya" role="alert">
         {statsError}{stats ? ' · Showing the last successful reading.' : ''}
       </p>{/if}
     {#if stats?.storage}{@const stored = stats.storage}

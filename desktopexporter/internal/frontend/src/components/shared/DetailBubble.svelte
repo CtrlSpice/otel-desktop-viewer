@@ -81,6 +81,9 @@
       get layoutKey() {
         return layoutKey
       },
+      get headerless() {
+        return headerless
+      },
       element,
       available: () => !unavailable,
       expanded: () => !unavailable && expanded,
@@ -102,6 +105,7 @@
     initialOpen = true,
     disabled = false,
     contained = false,
+    headerless = false,
   }: {
     label: string
     /** Preserve stored section sizing when its visible heading changes. */
@@ -117,6 +121,8 @@
     disabled?: boolean
     /** Let the content own scrolling within this section's allocated height. */
     contained?: boolean
+    /** An always-open primary section whose content already supplies its heading. */
+    headerless?: boolean
   } = $props()
   const unavailable = $derived(disabled || count === 0)
   let expanded = $state(untrack(() => initialOpen))
@@ -154,7 +160,14 @@
 {/snippet}
 
 {#snippet bubble()}
-  {#if unavailable}
+  {#if headerless && !unavailable}
+    <section
+      class="flex min-h-0 flex-1 flex-col overflow-hidden"
+      aria-label={label}
+    >
+      {@render children()}
+    </section>
+  {:else if unavailable}
     <section
       class="collapse collapse-close detail-bubble--unavailable min-h-0 bg-transparent"
       aria-label={label}
@@ -224,7 +237,11 @@
     data-detail-group={unavailable ? 'inactive' : expanded ? 'open' : 'closed'}
     style:flex={stack?.flex(stackID)}
     style:--detail-action-width={actionWidth ? `${actionWidth}px` : undefined}
-    style:--detail-heading-height={headingHeight ? `${headingHeight}px` : undefined}
+    style:--detail-heading-height={headerless
+      ? '0px'
+      : headingHeight
+        ? `${headingHeight}px`
+        : undefined}
     use:register
   >
     {@render bubble()}
@@ -325,8 +342,8 @@
   }
   .detail-bubble--contained {
     min-height: calc(
-      var(--detail-heading-height, var(--pane-header-h)) + var(--pane-header-h) +
-        var(--app-footer-height) + var(--table-row-h)
+      var(--detail-heading-height, var(--pane-header-h)) +
+        var(--pane-header-h) + var(--app-footer-height) + var(--table-row-h)
     );
   }
   .detail-bubble__disclosure--contained[open] {
