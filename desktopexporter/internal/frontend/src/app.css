@@ -1043,9 +1043,9 @@ svg {
   border-color: var(--color-input-border);
 }
 
-/* Monospace query-entry controls. Use typed-field--pill for rounded ends. */
+/* Query-entry controls. Use typed-field--pill for rounded ends. */
 .typed-field {
-  @apply min-h-0 border px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  @apply min-h-0 border px-4 py-0 text-left text-sm font-sans shadow-none;
   border-color: var(--color-input-border);
   background-color: var(--typed-field-bg, var(--color-input));
   height: calc(var(--table-row-h) + 0.5rem);
@@ -1062,7 +1062,7 @@ textarea.typed-field {
 input.typed-field::placeholder,
 textarea.typed-field::placeholder,
 .typed-field .cm-editor :where(.cm-placeholder) {
-  @apply text-left font-mono text-sm tracking-tight;
+  @apply text-left font-sans text-sm;
   color: var(--color-subtle);
   opacity: 1;
 }
@@ -1086,7 +1086,7 @@ textarea.typed-field::placeholder,
 
 /* CodeMirror inside a typed-field surface (search). */
 .typed-field :where(.cm-editor, .cm-content, .cm-line) {
-  @apply text-left font-mono text-sm tracking-tight;
+  @apply text-left font-sans text-sm;
 }
 
 .typed-field :where(.cm-content, .cm-line, .cm-scroller, .cm-placeholder) {

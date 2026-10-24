@@ -1,9 +1,12 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ComputerTerminal02Icon } from '@hugeicons/core-free-icons'
   import InkPicker from './InkPicker.svelte'
   import { ACCENT_INKS, restoreAccentInk } from '@/themes/accent-inks'
   import { accentInk } from '@/state/accent-ink.svelte'
+
+  let { children }: { children?: Snippet<[close: () => void]> } = $props()
 
   const chosen = $derived(ACCENT_INKS.find(ink => ink.id === accentInk.value)!)
   const preview = $derived(
@@ -17,6 +20,7 @@
   options={ACCENT_INKS}
   value={accentInk.value}
   onchange={id => accentInk.set(restoreAccentInk(id))}
+  controls={children}
 >
   {#snippet triggerContent()}
     <HugeiconsIcon
@@ -26,7 +30,6 @@
       class="shrink-0"
       aria-hidden="true"
     />
-    <span>{chosen.name}</span>
     <span class="flex shrink-0 items-center gap-2" aria-hidden="true">
       {#each preview as swatch (swatch.id)}
         <span

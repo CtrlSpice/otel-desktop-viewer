@@ -890,6 +890,7 @@ test('column search uses the compact shared filter input and retains filtering',
   const search = picker.getByRole('searchbox', { name: 'Find columns' })
   await expect(search).toHaveCSS('height', '32px')
   await expect(search).toHaveCSS('line-height', '21px')
+  await expect(search).toHaveCSS('font-family', /Atkinson Hyperlegible Next/)
   await search.fill('service.name')
   await expect(picker.getByRole('checkbox')).toHaveCount(2)
   await expect(

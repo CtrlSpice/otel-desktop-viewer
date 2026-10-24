@@ -353,9 +353,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       'data-accent-ink',
       'to-ro'
     )
-    await expect(
-      page.getByRole('button', { name: 'Season: Autumn' })
-    ).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Season:/ })).toHaveCount(0)
     await expect(
       page.getByRole('button', { name: 'Accent ink: To-ro (warm lantern)' })
     ).toBeVisible()
@@ -383,15 +381,15 @@ for (const { id: theme, scheme, name } of THEMES) {
       exact: true,
     })
     const ink = appearance.getByRole('button', { name: /^Accent ink:/ })
-    const season = appearance.getByRole('button', { name: /^Season:/ })
     const mode = appearance.getByRole('button', {
       name: `${name} theme active`,
     })
-    await expect(season.locator('svg')).toHaveCount(1) // Season icon, no caret.
-    await expect(season).toHaveCSS('border-radius', '0px')
+    await expect(
+      appearance.getByRole('button', { name: /^Season:/ })
+    ).toHaveCount(0)
     await expect(ink).toHaveCSS('border-top-right-radius', '0px')
     await expect(mode).toHaveCSS('border-top-left-radius', '0px')
-    for (const control of [ink, season, mode]) {
+    for (const control of [ink, mode]) {
       await expect(control).toHaveCSS('font-size', '14px')
       await expect(control).toHaveCSS('font-weight', '400')
     }
@@ -416,6 +414,7 @@ for (const { id: theme, scheme, name } of THEMES) {
       }))
     )
     await expect(ink.locator('svg')).toHaveCSS('width', '16px')
+    await expect(ink).toHaveText('')
     await expect(ink).toHaveAttribute(
       'data-tip',
       'Accent ink: To-ro\n(warm lantern)'
@@ -426,38 +425,44 @@ for (const { id: theme, scheme, name } of THEMES) {
       )
       return buttons.map(button => button.getBoundingClientRect().toJSON())
     })
-    expect(geometry).toHaveLength(3)
+    expect(geometry).toHaveLength(2)
     expect(geometry[1].left).toBeCloseTo(geometry[0].right, 0)
-    expect(geometry[2].left).toBeCloseTo(geometry[1].right, 0)
-    await season.hover()
-    await expect(season).toHaveCSS(
+    await ink.hover()
+    await expect(ink).toHaveCSS(
       'background-color',
       themeRgb(theme, 'highlightLow')
     )
-    const resting = await season.boundingBox()
+    const resting = await ink.boundingBox()
     await page.mouse.down()
-    await expect(season).toHaveCSS(
+    await expect(ink).toHaveCSS(
       'background-color',
       themeRgb(theme, 'highlightLow')
     )
-    expect(await season.boundingBox()).toEqual(resting)
+    expect(await ink.boundingBox()).toEqual(resting)
     // Release outside the button, then activate without pointer hover.
     await page.mouse.move(0, 0)
     await page.mouse.up()
-    await season.focus()
+    await ink.focus()
     await page.keyboard.down('Space')
-    await expect(season).toHaveCSS(
+    await expect(ink).toHaveCSS(
       'background-color',
       themeRgb(theme, 'highlightMedium')
     )
-    expect(await season.boundingBox()).toEqual(resting)
+    expect(await ink.boundingBox()).toEqual(resting)
     await page.keyboard.up('Space')
     const seasons = page.getByRole('group', { name: 'Seasons', exact: true })
-    await expect(seasons.getByRole('button', { pressed: true })).toBeFocused()
+    await expect(seasons).toBeVisible()
+    await expect(seasons.getByRole('button', { pressed: true })).toHaveText(
+      name.split(' ')[0]
+    )
     await expect(seasons.getByRole('button')).toHaveCount(4)
+    for (const choice of await seasons.getByRole('button').all()) {
+      await expect(choice.locator('svg')).toHaveCount(1)
+    }
     await page.keyboard.press('Escape')
-    await expect(season).toBeFocused()
-    await expect(season).toHaveAttribute('aria-expanded', 'false')
+    await expect(ink).toBeFocused()
+    await expect(ink).toHaveAttribute('aria-expanded', 'false')
+    await expect(seasons).not.toBeVisible()
     await ink.focus()
     await page.keyboard.press('Enter')
     const selectedInk = page.locator('[data-ink-choice="to-ro"]')
@@ -523,6 +528,7 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   page,
 }) => {
   await interceptRpc(page)
+  await page.setViewportSize({ width: 390, height: 800 })
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
   await page.goto('/')
   const ink = page.getByRole('button', { name: /^Accent ink:/ })
@@ -532,12 +538,14 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   await page.keyboard.press('Enter')
   await expect(ink).toBeFocused()
   await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
-  const season = page.getByRole('button', { name: /^Season:/ })
-  await season.click()
-  await page
+  await ink.click()
+  const winter = page
     .getByRole('group', { name: 'Seasons', exact: true })
     .getByRole('button', { name: 'Winter', exact: true })
-    .click()
+  await winter.focus()
+  await page.keyboard.press('Enter')
+  await expect(ink).toBeFocused()
+  await expect(ink).toHaveAttribute('aria-expanded', 'false')
   await expect(page.locator('html')).toHaveAttribute(
     'data-theme',
     'madoromi-fuyu-hiru'
@@ -1031,7 +1039,7 @@ test.describe('home page accessibility', () => {
       await expect(page.getByRole('main')).toHaveCSS('background-color', canvas)
       await expect(page.locator('.search-bar')).toHaveCSS(
         'background-color',
-        themeRgb(theme, 'highlightLow')
+        themeRgb(theme, 'chrome')
       )
       await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
         'background-color',
@@ -1077,7 +1085,7 @@ test.describe('home page accessibility', () => {
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(208, 209, 213)'
+      'rgb(221, 222, 224)'
     )
     await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
       'background-color',
@@ -1787,6 +1795,14 @@ test.describe('home page accessibility', () => {
         )
         await page.goto(`/${signal}`)
         const editor = page.locator('.cm-content[contenteditable="true"]')
+        await expect(editor).toHaveCSS(
+          'font-family',
+          /Atkinson Hyperlegible Next/
+        )
+        await expect(editor.locator('.cm-placeholder')).toHaveCSS(
+          'font-family',
+          /Atkinson Hyperlegible Next/
+        )
         await editor.pressSequentially('service.name = "checkout"')
         const sidebar = page.getByRole('button', {
           name: /^(Open|Collapse) sidebar$/,

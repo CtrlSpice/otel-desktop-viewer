@@ -71,9 +71,12 @@ import { editorColors as qc } from '@/components/shared/utils/editor-colors'
 export const queryEditorTheme = EditorView.theme({
   '&': {
     fontSize: 'var(--text-base)',
-    fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
+    fontFamily: 'var(--font-sans)',
     backgroundColor: 'transparent',
     color: qc.text,
+  },
+  '.cm-scroller': {
+    fontFamily: 'inherit',
   },
   '.cm-content': {
     caretColor: qc.cursor,
@@ -94,7 +97,7 @@ export const queryEditorTheme = EditorView.theme({
   '.cm-placeholder': {
     color: qc.subtle,
     fontSize: 'var(--text-base)',
-    fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
+    fontFamily: 'var(--font-sans)',
     fontStyle: 'normal',
     lineHeight: 'var(--text-base--line-height)',
   },

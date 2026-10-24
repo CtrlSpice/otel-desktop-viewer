@@ -35,6 +35,7 @@
     onOpenChange,
     triggerContent,
     triggerClass,
+    controls,
   }: {
     label: string
     options: readonly InkPickerOption[]
@@ -49,6 +50,7 @@
     onOpenChange?: (open: boolean) => void
     triggerContent?: Snippet
     triggerClass?: string
+    controls?: Snippet<[close: () => void]>
   } = $props()
 
   let open = $state(false)
@@ -207,6 +209,7 @@
   {/snippet}
   {#snippet children(close)}
     {#if open}
+      {@render controls?.(close)}
       <div class="ink-picker__measure" aria-hidden="true">
         {#each options as option (option.id)}<span
             >{option.name} ({option.english})</span

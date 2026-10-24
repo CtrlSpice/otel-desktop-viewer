@@ -72,6 +72,7 @@ export const jsonEditorExtensions = [
       color: 'var(--color-base-content)',
     },
     '.cm-textfield': {
+      fontFamily: 'var(--font-sans)',
       backgroundColor: 'var(--color-input)',
       borderColor: 'var(--color-input-border)',
       color: 'var(--color-base-content)',

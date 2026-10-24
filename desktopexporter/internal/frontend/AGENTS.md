@@ -28,9 +28,10 @@
   their original source shades without contrast adjustments. Text uses Sumi,
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
-  Group appearance controls as Ink, Season, Day/Night, with pill-rounded exterior
-  corners and flat internal joins. The Season button has an icon and label,
-  without a dropdown caret. Accent ink selects one of the 32 named seed
+  Group appearance controls as the terminal/theme picker and Day/Night, with
+  pill-rounded exterior corners and flat internal joins. Put the four labelled
+  season choices with their icons inside the theme picker above the ink search.
+  Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
   mixer; default to To-ro (warm lantern) with Autumn and the system's Day/Night
   preference. Saved user choices take precedence. Persist ink as `theme-accent-ink`. Use that family for
@@ -43,10 +44,10 @@
   Keep ink-family names visible in every picker.
   Accent-ink previews show the named seed's exact official shades 1–7, matching
   the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
-  The top-bar ink control shows a 16px terminal window, the selected ink's
-  original name, then three 8px dots using official shades 1, 4 and 7. Keep the English name in
-  its tooltip and picker rows. Put the parenthesised English name on a separate
-  line in the top-bar tooltip, using the standard tooltip style.
+  The top-bar ink control shows a 16px terminal window and three 8px dots using
+  official shades 1, 4 and 7. Keep the ink's original and English names in its
+  accessible name, tooltip and picker rows. Put the parenthesised English name
+  on a separate line in the top-bar tooltip, using the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
   Use additional rows on narrow screens so search and appearance do not overlap.
@@ -267,8 +268,10 @@
   Properties values use neutral Text. Code surfaces use bg-base-100: Madoromi's
   Kami background in both Day and Night. Apply this to JSON, shell examples,
   code snippets and compact JSON. Search and filter inputs, including editor
-  Find fields, use the shared input tokens: tinted Nijimi 0 fill and Nijimi 1
-  border. Preserve transparent query editors inside the shared search bar.
+  Find fields, use the shared input tokens: the darker Chitsu fill and Nijimi 1
+  border. Use Atkinson Hyperlegible Next for search/filter text and placeholders,
+  including query entry and editor Find fields. Preserve transparent query
+  editors inside the shared search bar.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.
   Properties presents ordinary string values as decoded text without their outer

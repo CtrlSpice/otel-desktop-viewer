@@ -45,7 +45,7 @@ export function themeTokens(theme: Theme) {
     '--color-highlight-low': c.highlightLow,
     '--color-highlight-med': c.highlightMedium,
     '--color-highlight-high': c.highlightHigh,
-    '--color-input': 'var(--color-highlight-low)',
+    '--color-input': 'var(--color-base-300)',
     '--color-input-border': 'var(--color-highlight-high)',
     '--color-primary-content': inverseContent,
     '--color-secondary-content': content,

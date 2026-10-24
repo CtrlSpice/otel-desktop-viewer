@@ -28,8 +28,11 @@ describe('ThemeToggle', () => {
     ).toBeInTheDocument()
     expect(localStorage.getItem('theme')).toBe('madoromi-aki-hiru')
     expect(
-      screen.getByRole('button', { name: 'Season: Autumn' })
+      screen.getByRole('button', { name: /^Accent ink:/ })
     ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('group', { name: 'Seasons' })
+    ).not.toBeInTheDocument()
   })
 
   it('restores a saved Winter Night theme', () => {
@@ -64,9 +67,7 @@ describe('ThemeToggle', () => {
   it('changes season while retaining the mode, then restores both', async () => {
     localStorage.setItem('theme', 'madoromi-aki-yoru')
     const view = render(ThemeToggle)
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Season: Autumn' })
-    )
+    await userEvent.click(screen.getByRole('button', { name: /^Accent ink:/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Summer' }))
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'madoromi-natsu-yoru'
@@ -74,9 +75,11 @@ describe('ThemeToggle', () => {
     expect(localStorage.getItem('theme')).toBe('madoromi-natsu-yoru')
     view.unmount()
     render(ThemeToggle)
-    expect(
-      screen.getByRole('button', { name: 'Season: Summer' })
-    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^Accent ink:/ }))
+    expect(screen.getByRole('button', { name: 'Summer' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
     expect(
       screen.getByRole('button', { name: 'Summer Night theme active' })
     ).toHaveAttribute('aria-pressed', 'true')

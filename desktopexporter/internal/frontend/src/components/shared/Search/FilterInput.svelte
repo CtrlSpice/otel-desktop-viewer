@@ -43,7 +43,7 @@
   @reference "../../../app.css";
 
   .filter-input {
-    @apply h-8 min-w-0 w-full rounded-full border pl-9 pr-3.5 py-0 font-mono text-sm tracking-tight text-base-content outline-none;
+    @apply h-8 min-w-0 w-full rounded-full border pl-9 pr-3.5 py-0 font-sans text-sm text-base-content outline-none;
     background-color: var(--color-input);
     border-color: var(--color-input-border);
   }

@@ -11,9 +11,10 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Autumn | `madoromi-aki-hiru`   | `madoromi-aki-yoru`   |
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
-The Season dropdown and day/night button share one compact control group, with
-the season on the left. Hugeicons identify Spring (flower), Summer (sun), Autumn
-(leaf) and Winter (snowflake) in the trigger and the menu. Changing
+The terminal/theme picker and day/night button share one compact control group.
+The four season choices are inside the theme picker, above the ink search.
+Hugeicons identify Spring (flower), Summer (sun), Autumn (leaf) and Winter
+(snowflake) beside their labels. Changing
 season retains the current mode; changing mode retains the season. The complete
 theme ID is saved in localStorage under `theme`. A valid saved choice takes
 precedence over the operating system's mode. Otherwise, Autumn uses the system
@@ -67,7 +68,7 @@ in both Day and Night:
 | Panel / bg-200         | Hyoshi          | Hyoshi          |
 | Chrome / bg-300        | Chitsu, darkest | Chitsu, darkest |
 
-Search and filter inputs use tinted Nijimi 0 for their fill and Nijimi 1 for
+Search and filter inputs use the darker Chitsu for their fill and Nijimi 1 for
 their border through `--color-input` and `--color-input-border`. This includes
 query entry, picker filters and editor Find fields. Query editors inside the
 shared search bar remain transparent so the input surface stays continuous.
@@ -111,7 +112,8 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 
 ## Editor roles
 
-The top-bar appearance group orders **Ink · Season · Day/Night**. Ink chooses
+The top-bar appearance group contains **Theme · Day/Night**. The theme picker
+contains season choices and ink selection. Ink chooses
 one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
 To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Original names and English
@@ -119,9 +121,10 @@ names stay visible and searchable; seven preview dots show that named ink's
 official shades 1–7, matching the graph colour picker across seasons and modes.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
-The top-bar control shows a terminal window, the selected ink's original name,
-then three 8px dots in its official shades 1, 4 and 7. Its tooltip puts the
-parenthesised English name on a separate second line.
+The top-bar control shows a terminal window and three 8px dots in the selected
+ink's official shades 1, 4 and 7. The ink's original and English names remain in
+its accessible name and tooltip. The tooltip puts the parenthesised English
+name on a separate second line.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
 syntax accent slots below. Season supplies the softened paper, neutral text,
@@ -190,8 +193,9 @@ Kasure 0 outline. Selection uses the shared selection token.
 
 ## Typography and data fidelity
 
-Interface text, field names and formatted values use Atkinson Hyperlegible Next;
-JSON, search and code use Atkinson Hyperlegible Mono. Shared tokens in `../app.css`
+Interface text, field names, formatted values and search/filter inputs use
+Atkinson Hyperlegible Next, including placeholders and editor Find fields.
+JSON and code use Atkinson Hyperlegible Mono. Shared tokens in `../app.css`
 set 14px working text, 16px page/pane headings and 1.5 line-height at the default
 root size, with regular weight throughout. Home's welcome title is a 22px Mono
 display exception with 1.25 line-height. Field names keep their exact spelling.
