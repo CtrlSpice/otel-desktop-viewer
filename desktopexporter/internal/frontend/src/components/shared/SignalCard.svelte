@@ -246,6 +246,7 @@
     grid-area: 1 / 1;
   }
   .signal-card__action {
+    @apply flex size-8 items-center justify-center;
     grid-area: 1 / 1;
     justify-self: start;
     align-self: start;

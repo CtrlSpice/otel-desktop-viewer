@@ -138,7 +138,7 @@
   {label}
   compact
   triggerClass={triggerColor
-    ? 'btn btn-circle btn-sm border-0 shadow-none font-normal tooltip tooltip-right'
+    ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
     : 'header-icon-button tooltip tooltip-left'}
   triggerStyle={triggerColor
     ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor)}`
@@ -296,6 +296,10 @@
 
 <style lang="postcss">
   @reference '../../app.css';
+  :global(.btn.ink-picker-trigger--filled) {
+    --size: 1.75rem;
+    min-height: var(--size);
+  }
   .ink-picker-options {
     max-height: min(55vh, 22rem);
     container-type: inline-size;
