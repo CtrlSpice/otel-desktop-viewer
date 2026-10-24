@@ -5,6 +5,8 @@
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import PageSizeSelect from '@/components/shared/PageSizeSelect.svelte'
+  import { loadPageSize, savePageSize, type PageSize } from '@/utils/page-size'
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import { itemHref } from '@/route'
@@ -44,7 +46,8 @@
     pageIndex: number
     scrollTop: number
   }
-  const PAGE_SIZE = 25
+  const PAGE_SIZE_KEY = 'home-telemetry-page-size'
+  let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
   let groups = $state<Group[]>([])
   let retry = $state(0)
   let selectedSignal = $state<DiscoverySignal>('traces')
@@ -72,11 +75,20 @@
       }
     })
   )
-  const pageCount = $derived(Math.ceil((active?.cards.length ?? 0) / PAGE_SIZE))
-  const pageStart = $derived((active?.pageIndex ?? 0) * PAGE_SIZE)
+  const pageCount = $derived(Math.ceil((active?.cards.length ?? 0) / pageSize))
+  const pageStart = $derived((active?.pageIndex ?? 0) * pageSize)
   const page = $derived(
-    active?.cards.slice(pageStart, pageStart + PAGE_SIZE) ?? []
+    active?.cards.slice(pageStart, pageStart + pageSize) ?? []
   )
+
+  function setPageSize(size: PageSize) {
+    pageSize = size
+    savePageSize(PAGE_SIZE_KEY, size)
+    for (const group of groups) {
+      group.pageIndex = 0
+      group.scrollTop = 0
+    }
+  }
 
   function selectSignal(id: string) {
     const group = available.find(group => group.signal === id)
@@ -239,9 +251,13 @@
             No matching telemetry in this service, search and time range.
           </p>{/if}
       </div>
-      <SignalFooter label="page">
+      <SignalFooter label="page" compact>
         {#snippet leading()}
-          <span class="text-subtle">{PAGE_SIZE} per page</span>
+          <PageSizeSelect
+            label="Telemetry per page"
+            value={pageSize}
+            onchange={setPageSize}
+          />
         {/snippet}
         {#snippet navigation()}
           <div class:invisible={active?.loading || !!active?.error}>

@@ -128,6 +128,9 @@ test('waterfall column groups toggle together without changing span selection', 
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
   const picker = page.getByRole('group', { name: 'Waterfall columns' })
   const search = picker.getByRole('searchbox', { name: 'Find columns' })
+  await picker
+    .getByRole('button', { name: 'Find columns', exact: true })
+    .click()
   await search.fill('sequence')
   await picker
     .getByRole('checkbox', { name: 'All span attributes columns', exact: true })
@@ -457,6 +460,9 @@ test('Waterfall columns persist across traces and align through resizing and ove
   ).toBeVisible()
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
   const picker = page.getByRole('group', { name: 'Waterfall columns' })
+  await picker
+    .getByRole('button', { name: 'Find columns', exact: true })
+    .click()
   await page.getByRole('searchbox', { name: 'Find columns' }).fill('request')
   await picker
     .getByRole('checkbox', { name: 'span: request.count', exact: true })
@@ -574,6 +580,9 @@ test('Waterfall columns persist across traces and align through resizing and ove
   ).toHaveCount(0)
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await picker
+    .getByRole('button', { name: 'Find columns', exact: true })
+    .click()
   await page.getByRole('searchbox', { name: 'Find columns' }).fill('kind')
   await picker
     .getByRole('checkbox', { name: 'span field: kind', exact: true })
@@ -609,6 +618,9 @@ test('Waterfall columns persist across traces and align through resizing and ove
   await expect(row.getByRole('gridcell').nth(1)).toHaveText('attribute kind')
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await picker
+    .getByRole('button', { name: 'Find columns', exact: true })
+    .click()
   await page.getByRole('searchbox', { name: 'Find columns' }).fill('')
   for (const key of ['traceId', 'spanId', 'parentSpanId']) {
     await picker

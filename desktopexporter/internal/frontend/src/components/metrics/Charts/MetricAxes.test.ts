@@ -40,4 +40,16 @@ describe('MetricAxes', () => {
     expect(axisBuckets('ms').label).toBe('value (ms)')
     expect(axisTime('UTC').format(new Date(0))).toBeTruthy()
   })
+
+  it('anchors Y-axis values at the container edge using the actual plot inset', () => {
+    for (const axis of [
+      axisValue('tokens', 184),
+      axisCount(184),
+      axisBucketBounds('ms', 184),
+    ]) {
+      expect(axis.tickLabelProps).toEqual({ dx: -184, textAnchor: 'start' })
+      expect(axis.labelProps).not.toHaveProperty('x')
+      expect(axis.labelProps.textAnchor).toBe('start')
+    }
+  })
 })

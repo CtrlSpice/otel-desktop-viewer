@@ -123,6 +123,8 @@
     title: string
     /** Optional service name shown as "(service)" after the title. */
     subtitle?: string
+    /** Exact colour owner when the subtitle also includes namespace text. */
+    subtitleService?: string
   }
 
   /** Tab strip layout. Defaults to 'left'. Title-tabs defaults to 'right'. */
@@ -147,6 +149,8 @@
     title: string
     /** Optional service name shown as "(service)" after the title. */
     subtitle?: string
+    /** Exact colour owner when the subtitle also includes namespace text. */
+    subtitleService?: string
     tabs: PaneTab[]
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
@@ -361,7 +365,7 @@
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
           <span class="pane-header__separator" aria-hidden="true">·</span>
-          <ServiceDot service={props.subtitle} /><span
+          <ServiceDot service={props.subtitleService ?? props.subtitle} /><span
             class="pane-header__subtitle">({props.subtitle.trim()})</span
           >
         {/if}

@@ -88,7 +88,7 @@
   }
 
   :global(.date-calendar .calendar-heading) {
-    @apply text-sm font-medium text-(--color-subtle);
+    @apply text-sm font-normal text-(--color-subtle);
   }
 
   :global(.date-calendar .calendar-nav) {
@@ -100,7 +100,7 @@
   }
 
   :global(.date-calendar .calendar-weekday) {
-    @apply h-8 text-center text-base font-medium uppercase tracking-wide text-(--color-subtle);
+    @apply h-8 text-center text-base font-normal uppercase tracking-wide text-(--color-subtle);
   }
 
   :global(.date-calendar .calendar-cell) {

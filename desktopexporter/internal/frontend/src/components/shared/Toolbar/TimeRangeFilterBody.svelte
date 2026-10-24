@@ -2,7 +2,7 @@
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Globe02Icon } from '@hugeicons/core-free-icons'
-  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
+  import ListFilter from '@/components/shared/Search/ListFilter.svelte'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -112,61 +112,63 @@
 <!-- Shared body: always-visible custom range and timezone group. -->
 <CustomTimeRange>
   {#snippet beforeApply()}
-    <details
-      class="timezone-group"
-      open={timezoneOpen}
-      ontoggle={event => (timezoneOpen = event.currentTarget.open)}
+    <ListFilter
+      label="Filter timezones"
+      bind:value={timezoneSearch}
+      onkeydown={event => {
+        if (event.key === 'Enter') event.preventDefault()
+      }}
     >
-      <summary class="timezone-heading">
-        <span>Timezone:</span>
-        <span
-          class="timezone-summary"
-          title={selectedTimezoneLabel}
-          aria-live="polite">{selectedTimezoneLabel}</span
+      {#snippet children(filterToggle, filterField)}
+        <details
+          class="timezone-group"
+          open={timezoneOpen}
+          ontoggle={event => (timezoneOpen = event.currentTarget.open)}
         >
-        <HugeiconsIcon
-          icon={Globe02Icon}
-          size={14}
-          strokeWidth={1.5}
-          class="timezone-icon"
-          aria-hidden="true"
-        />
-      </summary>
-      <div class="timezone-content">
-        {#if timezoneOpen}
-          <div class="timezone-search">
-            <FilterInput
-              id="timezone-filter"
-              label="Filter timezones"
-              onkeydown={event => {
-                if (event.key === 'Enter') event.preventDefault()
-              }}
-              bind:value={timezoneSearch}
+          <summary class="timezone-heading">
+            <span>Timezone:</span>
+            <span
+              class="timezone-summary"
+              title={selectedTimezoneLabel}
+              aria-live="polite">{selectedTimezoneLabel}</span
+            >
+            <HugeiconsIcon
+              icon={Globe02Icon}
+              size={14}
+              strokeWidth={1.5}
+              class="timezone-icon"
+              aria-hidden="true"
             />
-          </div>
-          <div
-            class="timezone-list"
-            aria-label="Timezone options"
-            bind:this={timezoneList}
-          >
-            {#each filteredTimezones as timezone (timezone.name)}
-              <button
-                type="button"
-                class="tz-option item-state item-state--menu"
-                aria-pressed={ctx.tz === timezone.name}
-                onclick={() => ctx.setTz(timezone.name)}
+            {#if timezoneOpen}{@render filterToggle()}{/if}
+          </summary>
+          <div class="timezone-content">
+            {#if timezoneOpen}
+              {@render filterField()}
+              <div
+                class="timezone-list"
+                aria-label="Timezone options"
+                bind:this={timezoneList}
               >
-                <span class="tz-name">{timezone.label}</span>
-                <span class="tz-badge">{timezone.shortLabel}</span>
-              </button>
-            {/each}
-            {#if filteredTimezones.length === 0}
-              <p class="timezone-list__empty">No matching timezones</p>
+                {#each filteredTimezones as timezone (timezone.name)}
+                  <button
+                    type="button"
+                    class="tz-option item-state item-state--menu"
+                    aria-pressed={ctx.tz === timezone.name}
+                    onclick={() => ctx.setTz(timezone.name)}
+                  >
+                    <span class="tz-name">{timezone.label}</span>
+                    <span class="tz-badge">{timezone.shortLabel}</span>
+                  </button>
+                {/each}
+                {#if filteredTimezones.length === 0}
+                  <p class="timezone-list__empty">No matching timezones</p>
+                {/if}
+              </div>
             {/if}
           </div>
-        {/if}
-      </div>
-    </details>
+        </details>
+      {/snippet}
+    </ListFilter>
   {/snippet}
 </CustomTimeRange>
 
@@ -174,7 +176,7 @@
   @reference "../../../app.css";
 
   .timezone-heading {
-    @apply flex cursor-pointer select-none list-none items-center gap-2 py-1.5 pl-3 text-sm font-medium;
+    @apply flex cursor-pointer select-none list-none items-center gap-2 py-1.5 pl-3 text-sm font-normal;
     color: var(--color-subtle);
   }
 
@@ -206,7 +208,7 @@
   }
 
   .tz-badge {
-    @apply shrink-0 font-mono text-xs text-(--color-subtle) tabular-nums;
+    @apply shrink-0 font-sans text-sm text-(--color-subtle) tabular-nums;
   }
 
   .timezone-list {
@@ -214,12 +216,8 @@
     scrollbar-width: thin;
   }
 
-  .timezone-search {
-    @apply py-1.5;
-  }
-
   .timezone-summary {
-    @apply ml-auto min-w-0 truncate text-right font-mono text-xs text-base-content;
+    @apply ml-auto min-w-0 truncate text-right font-sans text-sm text-base-content;
   }
 
   .timezone-list__empty {

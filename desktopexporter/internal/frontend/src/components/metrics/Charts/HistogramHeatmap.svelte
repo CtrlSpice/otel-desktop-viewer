@@ -62,9 +62,11 @@
   import {
     axisBucketBounds,
     axisTime,
-    chartPadding,
+    chartPadding as fallbackPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
+  import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
+
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatDateTime } from '@/utils/time'
@@ -76,6 +78,7 @@
 
   const timeContext = getTimeContext()
   const emphasis = createOverlayEmphasis()
+  let yAxisInset = $state<number>(fallbackPadding.left)
   const ctx = getMetricViewContext()
   const blobClipPrefix = $props.id()
   const quantileChannelID = `${blobClipPrefix}-quantile-channels`
@@ -103,7 +106,7 @@
     timeRange = null,
     onSelect,
     selectedTimestamp = null,
-    plotPaddingBottom = chartPadding.bottom,
+    plotPaddingBottom = fallbackPadding.bottom,
     unit = '',
     onClearSelection,
   }: Props = $props()
@@ -349,9 +352,9 @@
   // then scroll horizontally when even 8px columns overflow.
 
   let heatmapPlotPadding = $derived({
-    top: chartPadding.top,
-    left: chartPadding.left,
-    right: chartPadding.right,
+    top: fallbackPadding.top,
+    left: yAxisInset,
+    right: fallbackPadding.right,
     bottom: plotPaddingBottom,
   })
 
@@ -614,7 +617,7 @@
       format: formatTimeTick,
     },
     yAxis: {
-      ...axisBucketBounds(unit),
+      ...axisBucketBounds(unit, heatmapPlotPadding.left),
       tickSpacing: 50,
       format: formatBucketTick,
     },
@@ -647,6 +650,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="heatmap-wrapper"
+          use:measureChartAxisGutter={left => (yAxisInset = left)}
           class:heatmap-wrapper--clickable={!!onSelect}
           style:width="{scrollChartWidth}px"
           style:height="{chartRenderHeight}px"

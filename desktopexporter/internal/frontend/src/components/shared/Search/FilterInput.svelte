@@ -9,12 +9,14 @@
     placeholder = 'Filter',
     value = $bindable(''),
     onkeydown,
+    input = $bindable<HTMLInputElement>(),
   }: {
     id?: string
     label: string
     placeholder?: string
     value?: string
     onkeydown?: HTMLInputAttributes['onkeydown']
+    input?: HTMLInputElement
   } = $props()
 </script>
 
@@ -27,6 +29,7 @@
     aria-hidden="true"
   />
   <input
+    bind:this={input}
     {id}
     type="search"
     class="filter-input"

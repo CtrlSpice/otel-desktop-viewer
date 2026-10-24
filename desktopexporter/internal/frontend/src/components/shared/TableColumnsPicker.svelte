@@ -7,13 +7,14 @@
     disabled?: boolean
     count?: number
     countTitle?: string
+    pinnable?: boolean
   }
 </script>
 
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { LayoutThreeColumnIcon } from '@hugeicons/core-free-icons'
-  import FilterInput from './Search/FilterInput.svelte'
+  import { LayoutThreeColumnIcon, Pin02Icon } from '@hugeicons/core-free-icons'
+  import ListFilter from './Search/ListFilter.svelte'
   import Checkbox from './Checkbox.svelte'
   import { createPopoverID, setupAnchorPopover } from './utils/anchor-popover'
   import { updateColumnSelection } from './utils/column-selection'
@@ -24,12 +25,16 @@
     onchange,
     label = 'Table columns',
     minimumSelected = 0,
+    pinned = [],
+    onPin,
   }: {
     options: TableColumnOption[]
     selected: string[]
     onchange: (ids: string[]) => void
     label?: string
     minimumSelected?: number
+    pinned?: readonly string[]
+    onPin?: (id: string) => void
   } = $props()
   const popoverID = createPopoverID('table-columns')
   let trigger = $state<HTMLButtonElement>()
@@ -61,8 +66,8 @@
         open = next
         if (next)
           element
-            .querySelector<HTMLInputElement>('input[type="search"]')
-            ?.focus()
+            .querySelector<HTMLButtonElement>('[data-list-filter-toggle]')
+            ?.focus({ preventScroll: true })
       },
     })
   })
@@ -92,13 +97,19 @@
   aria-label={label}
   class="anchor-popover anchor-popover--anchored table-columns-picker"
 >
-  <div class="mb-2">
-    <FilterInput
-      bind:value={query}
-      label="Find columns"
-      placeholder="Find columns…"
-    />
-  </div>
+  <ListFilter
+    bind:value={query}
+    label="Find columns"
+    placeholder="Find columns…"
+  >
+    {#snippet children(filterToggle, filterField)}
+      <div class="mb-2 flex min-w-0 items-center gap-2 px-2">
+        <span class="min-w-0 flex-1 text-sm text-subtle">{label}</span>
+        {@render filterToggle()}
+      </div>
+      {@render filterField()}
+    {/snippet}
+  </ListFilter>
   {#each groups as group}
     {@const entries = filtered.filter(option => option.group === group)}
     {@const members = options.filter(option => option.group === group)}
@@ -131,25 +142,48 @@
           </label>
         </legend>
         {#each entries as option (option.id)}
-          <label
-            class="item-state flex cursor-pointer items-center gap-2 pl-8 pr-2 py-1.5 text-sm"
+          <div
+            class="item-state flex items-center gap-2 pl-8 pr-2 py-1.5 text-sm"
           >
-            <Checkbox
-              label={option.accessibleLabel ?? option.label}
-              checked={selected.includes(option.id)}
-              disabled={option.disabled ||
-                (selected.includes(option.id) &&
-                  selected.length <= minimumSelected)}
-              onchange={checked => toggle([option.id], checked)}
-            />
-            <span class="min-w-0 flex-1 break-words">{option.label}</span>
-            {#if option.count !== undefined}<span
-                class="shrink-0 text-sm {option.count
-                  ? 'text-base-content'
-                  : 'text-muted'}"
-                title={option.countTitle}>{option.count}</span
-              >{/if}
-          </label>
+            <label
+              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+            >
+              <Checkbox
+                label={option.accessibleLabel ?? option.label}
+                checked={selected.includes(option.id)}
+                disabled={option.disabled ||
+                  (selected.includes(option.id) &&
+                    selected.length <= minimumSelected)}
+                onchange={checked => toggle([option.id], checked)}
+              />
+              <span class="min-w-0 flex-1 break-words">{option.label}</span>
+              {#if option.count !== undefined}<span
+                  class="shrink-0 text-sm {option.count
+                    ? 'text-base-content'
+                    : 'text-muted'}"
+                  title={option.countTitle}>{option.count}</span
+                >{/if}
+            </label>
+            {#if onPin && option.pinnable !== false}
+              <button
+                type="button"
+                class="btn btn-ghost btn-circle btn-sm tooltip tooltip-left"
+                class:text-primary={pinned.includes(option.id)}
+                aria-label={`${pinned.includes(option.id) ? 'Unpin' : 'Pin'} ${option.label} column`}
+                aria-pressed={pinned.includes(option.id)}
+                data-tip={`${pinned.includes(option.id) ? 'Unpin' : 'Pin'} ${option.label} column`}
+                disabled={!selected.includes(option.id)}
+                onclick={() => onPin?.(option.id)}
+              >
+                <HugeiconsIcon
+                  icon={Pin02Icon}
+                  size={16}
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+              </button>
+            {/if}
+          </div>
         {/each}
       </fieldset>
     {/if}

@@ -41,12 +41,21 @@ const HIGHLIGHT_THEMES = THEMES.map(theme => ({
   high: theme.colors.highlightHigh,
 }))
 
-async function expectFlatPanel(surface: Locator, theme: string) {
+async function expectDropdownSurface(surface: Locator, theme: string) {
   await expect(surface).toHaveCSS('background-color', themeRgb(theme, 'panel'))
   await expect(surface).toHaveCSS('color', themeRgb(theme, 'text'))
   await expect(surface).toHaveCSS('border-width', '0px')
   await expect(surface).toHaveCSS('border-radius', '12px')
-  await expect(surface).toHaveCSS('box-shadow', 'none')
+  const shadow = await surface.evaluate(element => {
+    const probe = document.createElement('span')
+    probe.style.boxShadow = 'var(--popover-shadow)'
+    document.body.append(probe)
+    const expected = getComputedStyle(probe).boxShadow
+    probe.remove()
+    return { actual: getComputedStyle(element).boxShadow, expected }
+  })
+  expect(shadow.actual).not.toBe('none')
+  expect(shadow.actual).toBe(shadow.expected)
   await expect(surface).toHaveCSS('backdrop-filter', 'none')
   await expect(surface).toHaveCSS('font-weight', '400')
 }
@@ -199,7 +208,7 @@ async function showMetadataExamples(page: Page, theme: string) {
   await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
   await page.goto('/')
   await expect(
-    page.getByRole('region', { name: 'Services', exact: true })
+    page.getByRole('region', { name: 'Attributes', exact: true })
   ).toBeVisible()
   await page.evaluate(() => {
     const examples = document.createElement('section')
@@ -592,7 +601,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     )
     await trigger.click()
     const picker = page.locator('.theme-picker-popover:popover-open')
-    await expectFlatPanel(picker, 'madoromi-aki-yoru')
+    await expectDropdownSurface(picker, 'madoromi-aki-yoru')
     await expect(
       picker.getByRole('heading', { name: /^(Theme|Preview)$/ })
     ).toHaveCount(0)
@@ -1118,7 +1127,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     )
     await expect(trigger.getByText('Sort by:', { exact: true })).toHaveCount(0)
     await trigger.click()
-    await expectFlatPanel(
+    await expectDropdownSurface(
       page.getByRole('group', { name: 'Sort by', exact: true }),
       theme
     )
@@ -1195,7 +1204,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       '.cm-tooltip-autocomplete li[aria-selected="true"]'
     )
     await expect(selected).toBeVisible()
-    await expectFlatPanel(page.locator('.cm-tooltip-autocomplete'), theme)
+    await expectDropdownSurface(page.locator('.cm-tooltip-autocomplete'), theme)
     await expect(selected).toHaveCSS('border-radius', '12px')
     await expect(selected).toHaveCSS('background-color', selectedColor)
     const idle = page
@@ -1220,7 +1229,7 @@ test.describe('home page accessibility', () => {
     await interceptRpc(page)
     await page.goto('/')
     await expect(
-      page.getByRole('region', { name: 'Services', exact: true })
+      page.getByRole('region', { name: 'Attributes', exact: true })
     ).toBeVisible()
   })
 
@@ -1248,27 +1257,29 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
-  test('keeps Getting started headerless, labelled and regularly typeset', async ({
+  test('keeps Home welcome and import accessible without the deferred setup blocks', async ({
     page,
   }) => {
-    const guide = page.getByRole('region', {
-      name: 'Getting started',
+    const imports = page.getByRole('region', {
+      name: 'Import telemetry',
       exact: true,
     })
-    await expect(guide).toBeVisible()
-    await expect(guide.locator('summary, .detail-bubble__heading')).toHaveCount(
-      0
-    )
+    await expect(imports).toBeVisible()
+    await expect(
+      imports.locator('summary, .detail-bubble__heading')
+    ).toHaveCount(0)
     await expect(
       page.getByRole('heading', { name: 'Getting started', exact: true })
     ).toHaveCount(0)
     await expect(
-      guide.getByRole('heading', { name: 'Connect an exporter' })
-    ).toHaveCSS('font-size', '16px')
+      page.getByText('Connect an exporter', { exact: true })
+    ).toHaveCount(0)
     await expect(
-      guide.getByRole('heading', { name: 'Connect an exporter' })
-    ).toHaveCSS('font-weight', '400')
-    await expect(guide.locator('.guide-scroll')).toHaveCSS('overflow-y', 'auto')
+      page.getByText('Send a test trace', { exact: true })
+    ).toHaveCount(0)
+    await expect(
+      imports.getByRole('button', { name: 'Import files' })
+    ).toBeVisible()
     const welcome = page.getByRole('heading', {
       name: 'otel-desktop-viewer',
       exact: true,
@@ -1527,23 +1538,23 @@ test.describe('home page accessibility', () => {
       await expect(
         page.getByRole('navigation', { name: 'Primary' }).locator('.tab-active')
       ).toHaveCSS('background-color', selectedColor)
-      await page.goto('/')
       const paneTab = page
-        .getByRole('tablist', { name: 'OTLP endpoint protocol' })
+        .getByRole('tablist', { name: 'Detail view' })
+        .first()
         .getByRole('tab', { selected: true })
       await paneTab.hover()
       await expect(paneTab).toHaveCSS('background-color', low)
       await page.mouse.move(0, 0)
-      await expect(paneTab).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await expect(paneTab).toHaveCSS('background-color', selectedColor)
       await expect(paneTab).toHaveCSS('box-shadow', 'none')
       const highlight = await paneTab.evaluate(element => {
         const style = getComputedStyle(
           element.closest('.header-tabs')!,
           '::before'
         )
-        return { fill: style.backgroundColor, radius: style.borderRadius }
+        return style.content
       })
-      expect(highlight).toEqual({ fill: selectedColor, radius: '8px' })
+      expect(highlight).toBe('none')
 
       await page.goto('/traces')
       await page.getByRole('button', { name: /^Sort by:/ }).click()
@@ -2447,85 +2458,6 @@ test.describe('home page accessibility', () => {
     await expect(help).toBeFocused()
   })
 
-  test('keeps visible endpoint labels in their accessible names', async ({
-    page,
-  }) => {
-    const protocolTabs = page.getByRole('tablist', {
-      name: 'OTLP endpoint protocol',
-    })
-
-    await expect(protocolTabs).toMatchAriaSnapshot(`
-      - tablist "OTLP endpoint protocol":
-        - tab "HTTP" [selected]
-        - tab "gRPC"
-    `)
-
-    for (const label of ['HTTP', 'gRPC'] as const) {
-      const tab = protocolTabs.getByRole('tab', { name: label, exact: true })
-      await expect(tab).toHaveText(label)
-      await expect(tab).toHaveAccessibleName(label)
-    }
-  })
-
-  test('supports keyboard focus and activation for endpoint tabs', async ({
-    page,
-  }) => {
-    const protocolTabs = page.getByRole('tablist', {
-      name: 'OTLP endpoint protocol',
-    })
-    const httpTab = protocolTabs.getByRole('tab', {
-      name: 'HTTP',
-      exact: true,
-    })
-    const grpcTab = protocolTabs.getByRole('tab', {
-      name: 'gRPC',
-      exact: true,
-    })
-
-    await httpTab.focus()
-    await expect(httpTab).toBeFocused()
-
-    await page.keyboard.press('ArrowRight')
-    await expect(grpcTab).toBeFocused()
-    await expect(grpcTab).toHaveAttribute('aria-selected', 'true')
-    await expect(grpcTab).toHaveAttribute('tabindex', '0')
-    await expect(httpTab).toHaveAttribute('aria-selected', 'false')
-    await expect(httpTab).toHaveAttribute('tabindex', '-1')
-
-    const selectedStyle = await grpcTab.evaluate(element => {
-      const styles = getComputedStyle(element)
-      return {
-        borderWidth: styles.borderTopWidth,
-        boxShadow: styles.boxShadow,
-        outlineStyle: styles.outlineStyle,
-        background: styles.backgroundColor,
-      }
-    })
-    expect(selectedStyle.borderWidth).toBe('0px')
-    expect(selectedStyle.boxShadow).toBe('none')
-    expect(selectedStyle.outlineStyle).toBe('solid')
-    expect(selectedStyle.background).toBe('rgba(0, 0, 0, 0)')
-
-    await page.keyboard.press('Tab')
-    const exporterHelp = page.getByRole('button', {
-      name: 'Exporter connection help',
-    })
-    await expect(exporterHelp).toBeFocused()
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('note')).toContainText('OTLP over gRPC')
-    await expect(page.getByRole('note')).toContainText('Port 4317')
-    await page.keyboard.press('Escape')
-    await expect(exporterHelp).toBeFocused()
-    await page.keyboard.press('Tab')
-    await expect(
-      page.getByRole('button', { name: 'Copy OTLP environment variables' })
-    ).toBeFocused()
-    await page.keyboard.press('Tab')
-    await expect(
-      page.getByRole('tabpanel', { name: 'gRPC', exact: true })
-    ).toBeFocused()
-  })
-
   test('keeps focus while keyboard-resizing the Home panels', async ({
     page,
   }) => {
@@ -2656,6 +2588,102 @@ test.describe('home page accessibility', () => {
     }
     expect(alignment.tabs).toHaveLength(8)
   })
+
+  test('time-range menu has room for dates and uses Next throughout at every viewport width', async ({
+    page,
+  }) => {
+    for (const width of [1920, 900, 390, 320]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await page.goto('/traces')
+      await page.getByRole('button', { name: /Change time range/i }).click()
+      const popup = page.locator('.datetime-popover:popover-open')
+      await expect(popup).toBeVisible()
+      await page.evaluate(() => document.fonts.ready)
+      const box = (await popup.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(8)
+      expect(box.x + box.width).toBeLessThanOrEqual(width - 8)
+      if (width >= 900) expect(box.width).toBe(512)
+      await popup.getByText('Timezone:', { exact: true }).click()
+      const toggle = popup.getByRole('button', {
+        name: /^Filter timezones/,
+      })
+      const filter = popup.getByRole('searchbox', { name: 'Filter timezones' })
+      await expect(filter).toBeHidden()
+      await toggle.click()
+      await expect(filter).toBeFocused()
+      await filter.fill('los angeles')
+      await filter.press('Escape')
+      await expect(popup).toBeVisible()
+      await expect(filter).toBeHidden()
+      await expect(toggle).toBeFocused()
+      await expect(toggle).toHaveAccessibleName('Filter timezones (active)')
+      await toggle.click()
+      await expect(filter).toHaveValue('los angeles')
+      const layout = await popup.evaluate(element => ({
+        mono: [...element.querySelectorAll('*')].flatMap(child =>
+          getComputedStyle(child).fontFamily.includes(
+            'Atkinson Hyperlegible Mono'
+          )
+            ? [child.className]
+            : []
+        ),
+        rows: [...element.querySelectorAll('.range-editor-row')].map(row => ({
+          width: row.clientWidth,
+          scroll: row.scrollWidth,
+        })),
+        clippedInputs: [...element.querySelectorAll('input')].flatMap(input =>
+          input.getClientRects().length > 0 &&
+          input.scrollWidth > input.clientWidth
+            ? [input.getAttribute('aria-label')]
+            : []
+        ),
+      }))
+      expect(layout.mono).toEqual([])
+      expect(layout.clippedInputs).toEqual([])
+      for (const row of layout.rows)
+        expect(row.scroll).toBeLessThanOrEqual(row.width)
+      await expect(popup).not.toHaveCSS('box-shadow', 'none')
+      await page.keyboard.press('Escape')
+    }
+  })
+
+  for (const signal of ['traces', 'logs', 'metrics']) {
+    test(`${signal} service filter uses the shared header icon without clearing on collapse`, async ({
+      page,
+    }) => {
+      await page.goto(`/${signal}`)
+      await page.getByRole('button', { name: 'Filters', exact: true }).click()
+      const popup = page.getByRole('group', {
+        name: 'Filters options',
+        exact: true,
+      })
+      const toggle = popup.getByRole('button', {
+        name: /^Find services/,
+      })
+      const filter = popup.getByRole('searchbox', { name: 'Find services' })
+      await expect(filter).toBeHidden()
+      await toggle.focus()
+      await toggle.press('Enter')
+      await expect(filter).toBeFocused()
+      await expect(filter).toHaveCSS(
+        'font-family',
+        /Atkinson Hyperlegible Next/
+      )
+      await filter.fill('not-a-service')
+      await filter.press('Escape')
+      await expect(popup).toBeVisible()
+      await expect(filter).toBeHidden()
+      await expect(toggle).toBeFocused()
+      await expect(toggle).toHaveAccessibleName('Find services (active)')
+      await toggle.press('Space')
+      await expect(filter).toHaveValue('not-a-service')
+      await filter.fill('')
+      await filter.press('Escape')
+      await expect(toggle).toHaveAccessibleName('Find services')
+      await toggle.press('Escape')
+      await expect(popup).toBeHidden()
+    })
+  }
 
   test('keeps custom range controls circular and focus treatment inset', async ({
     page,
@@ -2791,6 +2819,9 @@ test.describe('home page accessibility', () => {
     const timezoneSummary = page.getByText('Timezone:', { exact: true })
     const timezoneSection = timezoneSummary.locator('xpath=ancestor::details')
     await timezoneSummary.click()
+    await page
+      .getByRole('button', { name: 'Filter timezones', exact: true })
+      .click()
 
     const timezoneList = timezoneSection.locator('.timezone-list')
     const timezoneOption = timezoneList.locator('.tz-option').first()
@@ -2824,9 +2855,12 @@ test.describe('home page accessibility', () => {
       timezoneListBounds!.width,
       0
     )
-    expect(timezoneFilterBounds!.x).toBeCloseTo(timezoneSectionBounds!.x, 0)
+    expect(timezoneFilterBounds!.x).toBeCloseTo(
+      timezoneSectionBounds!.x + 12,
+      0
+    )
     expect(timezoneFilterBounds!.x + timezoneFilterBounds!.width).toBeCloseTo(
-      timezoneSectionBounds!.x + timezoneSectionBounds!.width,
+      timezoneSectionBounds!.x + timezoneSectionBounds!.width - 12,
       0
     )
     const timezoneLeftInset = timezoneNameBounds!.x - timezoneListBounds!.x

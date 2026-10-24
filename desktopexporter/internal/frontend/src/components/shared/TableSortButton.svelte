@@ -60,6 +60,7 @@
   }
   .table-sort--inline-direction {
     @apply flex items-center gap-1;
+    padding-inline: 0;
   }
   .table-sort--inline-direction.table-sort--right {
     @apply justify-end;

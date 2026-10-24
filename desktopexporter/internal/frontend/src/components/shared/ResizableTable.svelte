@@ -48,6 +48,7 @@
     fillColumn,
     stableColumns = [],
     constrainToViewport = false,
+    selectable = false,
   }: {
     columns: ResizableTableColumn[]
     storageKey: string
@@ -60,6 +61,8 @@
     /** Preserve these resizable widths when the viewport or visible columns change. */
     stableColumns?: string[]
     constrainToViewport?: boolean
+    /** Rows use selectableTableRow for pointer and keyboard selection. */
+    selectable?: boolean
   } = $props()
   let viewportWidth = $state(0)
   let viewportHeight = $state(0)
@@ -287,6 +290,7 @@
     aria-label={`${caption} table viewport`}
   >
     <table
+      role={selectable ? 'grid' : undefined}
       class="table resizable-table__table"
       style:width="{tableWidth}px"
       bind:offsetHeight={tableHeight}

@@ -2,7 +2,7 @@
   import type { FieldDefinition } from '@/search/model'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
-  import FilterInput from './Search/FilterInput.svelte'
+  import ListFilter from './Search/ListFilter.svelte'
   import FieldGroup from './FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -19,7 +19,7 @@
   import {
     readListFilters,
     setListFilter,
-    type ListFilter,
+    type ListFilter as ListFilterKind,
   } from './list-filter-query'
 
   let {
@@ -46,7 +46,7 @@
     Empty: CircleIcon,
   }
   let serviceSearch = $state('')
-  let kinds: ListFilter[] = $derived([
+  let kinds: ListFilterKind[] = $derived([
     'service',
     signal === 'traces' ? 'errors' : 'metricType',
   ])
@@ -68,7 +68,7 @@
     )
   )
 
-  function toggle(kind: ListFilter, value: string) {
+  function toggle(kind: ListFilterKind, value: string) {
     const values = filters[kind].values.includes(value)
       ? filters[kind].values.filter(item => item !== value)
       : [...filters[kind].values, value]
@@ -123,42 +123,50 @@
   {#if !filters.editable}<p class="filter-hint" role="status">
       Edit query in search
     </p>{/if}
-  <FieldGroup label="Service">
-    <FilterInput
-      label="Find services"
-      placeholder="Find services…"
-      bind:value={serviceSearch}
-    />
-    {#if filters.service.custom && filters.editable}<p class="filter-hint">
-        Edit service in search
-      </p>{/if}
-    <div class="filter-options">
-      {#each visibleServices as service (service)}
-        <button
-          type="button"
-          class="filter-option item-state"
-          aria-label={`Service ${service}`}
-          aria-pressed={filters.service.values.includes(service)}
-          disabled={filters.service.custom || !editor?.setQuery}
-          onclick={() => toggle('service', service)}
-        >
-          <span
-            class="filter-dot"
-            style:background-color={traceServiceColor(
-              service,
-              themeSignal.value
-            )}
-            aria-hidden="true"
-          ></span>
-          <span class="min-w-0 truncate" title={service}>{service}</span>
-        </button>
-      {:else}<p class="filter-hint">
-          {serviceSearch
-            ? 'No matching services.'
-            : 'No named services in the loaded records.'}
-        </p>{/each}
-    </div>
-  </FieldGroup>
+  <ListFilter
+    label="Find services"
+    placeholder="Find services…"
+    bind:value={serviceSearch}
+  >
+    {#snippet children(filterToggle, filterField)}
+      <FieldGroup label="Service">
+        {#snippet headerAction()}
+          <span class="min-w-0 flex-1">Service</span>
+          {@render filterToggle()}
+        {/snippet}
+        {@render filterField()}
+        {#if filters.service.custom && filters.editable}<p class="filter-hint">
+            Edit service in search
+          </p>{/if}
+        <div class="filter-options">
+          {#each visibleServices as service (service)}
+            <button
+              type="button"
+              class="filter-option item-state"
+              aria-label={`Service ${service}`}
+              aria-pressed={filters.service.values.includes(service)}
+              disabled={filters.service.custom || !editor?.setQuery}
+              onclick={() => toggle('service', service)}
+            >
+              <span
+                class="filter-dot"
+                style:background-color={traceServiceColor(
+                  service,
+                  themeSignal.value
+                )}
+                aria-hidden="true"
+              ></span>
+              <span class="min-w-0 truncate" title={service}>{service}</span>
+            </button>
+          {:else}<p class="filter-hint">
+              {serviceSearch
+                ? 'No matching services.'
+                : 'No named services in the loaded records.'}
+            </p>{/each}
+        </div>
+      </FieldGroup>
+    {/snippet}
+  </ListFilter>
   {@const kind = signal === 'traces' ? 'errors' : 'metricType'}
   <FieldGroup label={signal === 'traces' ? 'Span status' : 'Type'}>
     {#if filters[kind].custom && filters.editable}<p class="filter-hint">

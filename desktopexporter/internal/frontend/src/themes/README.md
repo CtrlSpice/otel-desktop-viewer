@@ -121,14 +121,21 @@ over the panel, blended in sRGB. Stronger reveal highlights use tinted
 nijimi 1. Hover takes precedence over selection while the pointer is present.
 Ghost buttons use the same hover and active/selected surfaces. Tooltips use
 Panel with regular-weight neutral Text. Dropdowns, colour pickers, filter
-popovers and search completions share the same flat Panel surface and rounded
-corners in `app.css`, without decorative shadows, translucent fills or blur.
+popovers and search completions share the same opaque Panel surface, rounded
+corners and soft `--popover-shadow` in `app.css`, without translucent fills or blur.
 Picker-specific styles control layout rather than adding another surface theme.
 CodeMirror's portaled completion menu uses the shared stylesheet too; the editor
 does not inject a separate dropdown stylesheet at runtime. Timeline activity markers retain their
 assigned ink or Error colour without brightening. Swatch glyphs choose the
 higher-contrast seasonal light/dark foreground using linear-sRGB luminance,
 recalculating when the theme changes.
+
+List filters use `ListFilter.svelte`: a header icon reveals and focuses the shared
+32px filter field. The icon marks a nonempty query even while collapsed. Escape
+collapses the field without clearing its query and restores focus to the icon;
+inside a popover, this first Escape leaves the popover open. Attribute keys,
+service choices, columns, inks and timezones share this behaviour. Main workspace
+search and editor Find remain separate controls.
 
 | Shared role                           | Madoromi source |
 | ------------------------------------- | --------------- |
@@ -250,6 +257,9 @@ set 14px working text, 16px page/pane headings and 1.5 line-height at the defaul
 root size, with regular weight throughout. Home's welcome title and decorative
 prompt use 16px Mono with 1.25 line-height and stay on one line. The adjacent
 image can shrink to make room. Field names keep their exact spelling.
+The complete time-range menu uses Next, including dates, times, calendars,
+timezone names and ambiguity choices. Its 32rem preferred width is clamped to
+the viewport; endpoint controls wrap into two rows on narrow menus.
 Keys, section/column headers and helper text use Subtle; data and main titles use
 Text; type/provenance metadata uses Secondary. Muted is for unavailable or
 disabled content.
@@ -265,6 +275,11 @@ middle-truncated identifiers are display-only. Copy actions are explicit;
 ordinary values remain selectable text.
 
 ## Graph palettes
+
+Metric Y-axis tick values and horizontal unit headings start at the chart's left
+edge. The gutter is measured from rendered Y labels and angled X labels, with
+space between labels and the plot. It updates after label, font and size changes;
+fixed chart insets are only pre-measurement fallbacks.
 
 Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
 Copy has its own far-right column, with its tooltip opening left.

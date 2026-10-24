@@ -7,9 +7,33 @@ import {
   within,
 } from '@testing-library/svelte'
 import { afterEach, expect, it, vi } from 'vitest'
+import { tick } from 'svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { AttributeFrequency } from '@/services/discovery-types'
 import AttributeDiscovery from './AttributeDiscovery.svelte'
+
+const service = {
+  serviceName: 'checkout',
+  serviceNamespace: '',
+  traceCount: 100,
+  spanCount: 100,
+  errorSpanCount: 0,
+  logCount: 0,
+  errorLogCount: 0,
+  logSeverityCounts: {
+    trace: 0,
+    debug: 0,
+    info: 0,
+    warn: 0,
+    error: 0,
+    fatal: 0,
+    other: 0,
+  },
+  metricCount: 0,
+  dataPointCount: 0,
+  exemplarCount: 0,
+  lastSeen: null,
+}
 
 afterEach(() => {
   cleanup()
@@ -114,24 +138,28 @@ it.each([
     const stringHeading = heading('string')
     const intHeading = heading('int64')
     await waitFor(() => {
-      expect(within(stringHeading).getAllByRole('cell')[0]).toHaveTextContent(
-        new RegExp(`^${stringCount}$`)
-      )
-      expect(within(intHeading).getAllByRole('cell')[0]).toHaveTextContent(
-        /^1$/
-      )
+      expect(
+        stringHeading.querySelector('[data-attribute-column="count"]')
+      ).toHaveTextContent(new RegExp(`^${stringCount}$`))
+      expect(
+        intHeading.querySelector('[data-attribute-column="count"]')
+      ).toHaveTextContent(/^1$/)
     })
     expect(
-      within(stringHeading).getByTitle(`${stringCount} spans`)
+      within(stringHeading).getByTitle(
+        `${strings.length} distinct ${strings.length === 1 ? 'value' : 'values'} · ${stringCount} spans`
+      )
     ).toBeInTheDocument()
-    expect(within(intHeading).getByTitle('1 spans')).toBeInTheDocument()
+    expect(
+      within(intHeading).getByTitle('1 distinct value · 1 spans')
+    ).toBeInTheDocument()
 
     const headings = () => [
       ...container.querySelectorAll('tr[data-attribute-heading]'),
     ]
-    await fireEvent.click(getByRole('button', { name: 'Sort by count' }))
+    await fireEvent.click(getByRole('button', { name: 'Sort by records' }))
     expect(headings()).toEqual([stringHeading, intHeading])
-    await fireEvent.click(getByRole('button', { name: 'Sort by count' }))
+    await fireEvent.click(getByRole('button', { name: 'Sort by records' }))
     expect(headings()).toEqual([intHeading, stringHeading])
 
     await fireEvent.click(
@@ -154,3 +182,103 @@ it.each([
     ).toBeVisible()
   }
 )
+
+it('paginates attribute names, keeps global count sorting and retains expanded values across pages', async () => {
+  const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
+  const entries = Array.from({ length: 60 }, (_, index) => ({
+    key: `key-${String(index).padStart(3, '0')}`,
+    kind: 'string',
+    foundOn,
+  }))
+  vi.spyOn(telemetryAPI, 'discoverAttributeKeys').mockImplementation(
+    async options => ({
+      items:
+        options.signal === 'traces' && options.ownerType === 'span'
+          ? entries.filter(
+              entry => !options.term || entry.key.includes(options.term)
+            )
+          : [],
+      truncated: false,
+    })
+  )
+  const values = vi
+    .spyOn(telemetryAPI, 'discoverAttributeValues')
+    .mockImplementation(async options => {
+      const count = Number(options.key?.slice(4)) + 1
+      return {
+        items: [
+          {
+            identity: '{"kind":"string","value":"received"}',
+            value: { kind: 'string', value: 'received' },
+            foundOn,
+            count,
+            kindCount: count,
+            denominator: 100,
+            relativeFrequency: count / 100,
+          },
+        ],
+        truncated: false,
+      }
+    })
+  const onSelectAttribute = vi.fn()
+  const { container, getByRole, rerender } = render(AttributeDiscovery, {
+    service,
+    range: {},
+    revision: 0,
+    queries: { traces: null, logs: false, metrics: false },
+    selectedAttribute: null,
+    onSelectAttribute,
+  })
+  const headings = () => [
+    ...container.querySelectorAll('tr[data-attribute-heading]'),
+  ]
+  await waitFor(() => expect(headings()).toHaveLength(25))
+  await waitFor(() => expect(values).toHaveBeenCalledTimes(60))
+  await tick()
+  const firstHeading = headings()[0]
+  await fireEvent.click(
+    firstHeading.querySelector('[data-attribute-column="count"]')!,
+    { detail: 1 }
+  )
+  expect(onSelectAttribute).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ key: 'key-000' })
+  )
+  onSelectAttribute.mockClear()
+  await fireEvent.click(
+    getByRole('button', { name: 'Expand key-000 · span values' })
+  )
+  expect(
+    container.querySelector('tr[data-attribute-key="key-000"]')
+  ).not.toHaveAttribute('hidden')
+  await fireEvent.click(
+    container.querySelector(
+      'tr[data-attribute-key="key-000"] [data-attribute-column="count"]'
+    )!,
+    { detail: 1 }
+  )
+  expect(onSelectAttribute).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ key: 'key-000' }),
+    expect.objectContaining({ value: { kind: 'string', value: 'received' } })
+  )
+  onSelectAttribute.mockClear()
+  await fireEvent.click(getByRole('button', { name: 'Next page' }))
+  expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-025')
+  expect(container.querySelector('tr[data-attribute-key="key-000"]')).toBeNull()
+  await fireEvent.click(getByRole('button', { name: 'Previous page' }))
+  expect(
+    container.querySelector('tr[data-attribute-key="key-000"]')
+  ).not.toHaveAttribute('hidden')
+  expect(values).toHaveBeenCalledTimes(60)
+  expect(onSelectAttribute).not.toHaveBeenCalled()
+  await fireEvent.click(getByRole('button', { name: 'Sort by records' }))
+  expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-059')
+  const size = getByRole('combobox', { name: 'Attributes per page' })
+  await fireEvent.change(size, { target: { value: '50' } })
+  expect(headings()).toHaveLength(50)
+  await fireEvent.change(size, { target: { value: '100' } })
+  expect(headings()).toHaveLength(60)
+  expect(localStorage.getItem('home-attributes-page-size')).toBe('100')
+  await rerender({ filter: 'key-059' })
+  await waitFor(() => expect(headings()).toHaveLength(1))
+  expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-059')
+})

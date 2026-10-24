@@ -30,7 +30,7 @@
     drawerSearch?: Snippet
     drawerControls?: Snippet
     drawerFooter?: Snippet
-    /** Content for a non-list left pane, such as Home's getting-started guide. */
+    /** Custom left-pane content, such as Home's welcome, import and services. */
     drawerContent?: Snippet
     /** Omit the list pane and its toggle without changing the saved preference. */
     hideDrawer?: boolean

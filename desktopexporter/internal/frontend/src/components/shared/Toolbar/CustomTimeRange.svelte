@@ -590,7 +590,7 @@
   }
 
   .range-editor-row {
-    @apply grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3;
+    @apply grid grid-cols-[max-content_minmax(0,1fr)_auto] items-center gap-x-2;
   }
 
   .range-editor-row:has(input:focus) {
@@ -607,7 +607,7 @@
   }
 
   .endpoint-input {
-    @apply min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 text-left font-mono text-sm tracking-tight tabular-nums shadow-none outline-none;
+    @apply min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 text-left font-sans text-sm tabular-nums shadow-none outline-none;
     field-sizing: content;
     height: calc(var(--table-row-h) + 0.5rem);
     line-height: calc(var(--table-row-h) + 0.5rem);
@@ -619,7 +619,7 @@
   }
 
   .endpoint-fields {
-    @apply flex min-w-0 items-center justify-end font-mono text-sm;
+    @apply flex min-w-0 items-center justify-end font-sans text-sm tabular-nums;
   }
 
   .endpoint-fields > span {
@@ -627,7 +627,8 @@
   }
 
   .endpoint-date {
-    @apply w-[10ch] shrink-0;
+    width: max(10ch, 6.5rem);
+    flex-shrink: 0;
   }
 
   .endpoint-calendar-button {
@@ -644,6 +645,23 @@
   }
 
   .ambiguity-choice {
-    @apply min-w-0 truncate rounded-full border-0 px-2 py-1 font-mono text-base text-base-content;
+    @apply min-w-0 truncate rounded-full border-0 px-2 py-1 font-sans text-base text-base-content;
+  }
+
+  @container (width < 24rem) {
+    .range-editor-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .endpoint-label {
+      grid-area: 1 / 1;
+    }
+    .endpoint-calendar-button {
+      grid-area: 1 / 2;
+    }
+    .endpoint-fields {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      padding-inline: 0.75rem;
+    }
   }
 </style>

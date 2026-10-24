@@ -20,6 +20,12 @@ async function openTimezoneOptions() {
   await tick()
 }
 
+async function openTimezoneFilter() {
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Filter timezones' })
+  )
+}
+
 describe('TimeRangeFilterBody', () => {
   beforeEach(() => {
     // Pin a non-UTC zone: on a UTC machine (like CI) the "local" timezone
@@ -102,6 +108,7 @@ describe('TimeRangeFilterBody', () => {
     localStorage.setItem('time-tz', 'UTC')
     renderComponent()
     await openTimezoneOptions()
+    await openTimezoneFilter()
     const filter = screen.getByRole('searchbox', { name: 'Filter timezones' })
     const list = screen.getByLabelText('Timezone options')
 
@@ -178,6 +185,7 @@ describe('TimeRangeFilterBody', () => {
   it('filters named timezones by city and historical abbreviation', async () => {
     renderComponent()
     await openTimezoneOptions()
+    await openTimezoneFilter()
     const filter = screen.getByRole('searchbox', { name: 'Filter timezones' })
 
     await fireEvent.input(filter, { target: { value: 'los angeles' } })
@@ -208,6 +216,7 @@ describe('TimeRangeFilterBody', () => {
   it('returns every matching zone for an ambiguous abbreviation', async () => {
     renderComponent()
     await openTimezoneOptions()
+    await openTimezoneFilter()
 
     await fireEvent.input(
       screen.getByRole('searchbox', { name: 'Filter timezones' }),
@@ -232,6 +241,7 @@ describe('TimeRangeFilterBody', () => {
     )
     renderComponent()
     await openTimezoneOptions()
+    await openTimezoneFilter()
 
     expect(
       screen.getByRole('button', { name: 'America/Los_Angeles PST' })

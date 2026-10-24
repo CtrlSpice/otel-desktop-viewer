@@ -1,30 +1,39 @@
 <script lang="ts">
   import AttributeValues from './AttributeValues.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
-  import type { CoverageValue, DiscoveredAttribute } from './attribute-coverage'
+  import type {
+    AttributeValueSort,
+    CoverageValue,
+    DiscoveredAttribute,
+  } from './attribute-coverage'
+  import type { AttributeColumn, AttributeSummary } from './attribute-columns'
   import type { DiscoveryOptions } from '@/services/discovery-types'
   let {
     entry,
     options,
     sortBy,
     sortDirection,
-    pinnedLeft,
+    columns,
+    pinned,
     selected,
     onSelect,
     selectedValue,
     onSelectValue,
-    onCount,
+    onSummary,
+    hidden = false,
   }: {
     entry: DiscoveredAttribute
     options: Omit<DiscoveryOptions, 'kind'>
-    sortBy: 'name' | 'frequency'
+    sortBy: AttributeValueSort
     sortDirection: 'asc' | 'desc'
-    pinnedLeft?: number
+    columns: AttributeColumn[]
+    pinned: Record<string, number | undefined>
     selected: boolean
     onSelect: () => void
     selectedValue?: string
     onSelectValue: (value: CoverageValue) => void
-    onCount: (count: number) => void
+    onSummary: (summary: AttributeSummary) => void
+    hidden?: boolean
   } = $props()
   const valueOptions = $derived({ ...options, ownerType: entry.ownerType })
 </script>
@@ -35,11 +44,15 @@
   kind={entry.kind}
   {sortBy}
   {sortDirection}
-  {pinnedLeft}
+  {columns}
+  {pinned}
+  foundOn={entry.foundOn}
   {selected}
   {selectedValue}
   {onSelectValue}
-  {onCount}
+  {onSummary}
+  {onSelect}
+  {hidden}
 >
   {#snippet heading()}
     <div class="min-w-0 flex-1">
@@ -52,8 +65,10 @@
         <span
           class="min-w-0 truncate"
           title={`${entry.key} · ${entry.kind} · ${entry.ownerType}`}
-          >{entry.key}<span class="text-subtle" aria-hidden="true">{' · '}</span
-          ><span class="text-secondary">{entry.kind}</span></span
+          >{entry.key}{#if !columns.some(column => column.id === 'type')}<span
+              class="text-subtle"
+              aria-hidden="true">{' · '}</span
+            ><span class="text-secondary">{entry.kind}</span>{/if}</span
         >
       </TableValueCell>
     </div>

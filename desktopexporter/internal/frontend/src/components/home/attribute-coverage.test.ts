@@ -192,6 +192,12 @@ it('loads beyond the first page before cross-signal sorting and keeps all rare v
   expect(
     sortCoverageValues(coverage.values, 'frequency', 'asc').at(-1)?.value.value
   ).toBe('shared')
+  expect(
+    sortCoverageValues(coverage.values, 'logs', 'desc')[0]?.value.value
+  ).toBe('shared')
+  expect(
+    sortCoverageValues(coverage.values, 'logs', 'asc')[0]?.counts.logs
+  ).toBe(0)
 })
 
 it('does not merge double bit patterns or equal-looking values with different types', () => {

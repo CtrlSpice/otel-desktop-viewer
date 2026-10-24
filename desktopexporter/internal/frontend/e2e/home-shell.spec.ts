@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
+import { themeRgb } from './theme-colours'
 
 const command = `# recorded command\nprintf "%s\\n" "$HOME" | head -1\n./bin/otel-desktop-viewer query --endpoint http://127.0.0.1:8000 --limit 200 "SELECT '${'long value '.repeat(12)}'"`
 
-test('Home keeps services and attribute discovery in Main with matching Telemetry in Details', async ({
+test('Home keeps Services below file drop in the left pane, Attributes in Main and Telemetry in Details', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
@@ -104,28 +105,40 @@ test('Home keeps services and attribute discovery in Main with matching Telemetr
       .locator('.service-grid')
       .getByRole('button', { name: /^shell-service/ })
   ).toBeVisible()
-  await expect(
-    page.getByRole('searchbox', { name: 'Filter attribute keys' })
-  ).toHaveAttribute('placeholder', 'Filter')
+  const filterToggle = page.getByRole('button', {
+    name: 'Filter attribute keys',
+    exact: true,
+  })
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'false')
+  await filterToggle.click()
+  const filter = page.getByRole('searchbox', { name: 'Filter attribute keys' })
+  await expect(filter).toHaveAttribute('placeholder', 'Filter')
+  await expect(filter).toBeFocused()
+  await filter.press('Escape')
+  await expect(filter).toBeHidden()
+  await expect(filterToggle).toBeFocused()
   const layout = await page.evaluate(() => {
     const rect = (selector: string) =>
       document.querySelector(selector)!.getBoundingClientRect().toJSON()
     return {
-      servicesHeader: rect('.page-layout__main-chrome .pane-header'),
+      attributesHeader: rect('.page-layout__main-chrome .pane-header'),
       main: rect('.page-layout__main-chrome'),
       details: rect('#signal-drawer-detail'),
     }
   })
-  await expect(page.locator('.getting-started')).toBeVisible()
-  expect(layout.servicesHeader.y).toBeCloseTo(layout.main.y, 0)
+  await expect(page.locator('.home-welcome')).toBeVisible()
+  expect(layout.attributesHeader.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.x).toBeGreaterThan(layout.main.x)
   await expect(
     page.locator('.page-layout__main-chrome .service-grid .signal-row')
+  ).toHaveCount(0)
+  await expect(
+    page.locator('#signal-drawer-panel .service-grid .signal-row')
   ).toHaveCount(1)
   await expect(page.locator('#signal-drawer-panel')).toBeVisible()
   await expect(
-    page.locator('.page-layout__main-chrome').getByRole('table', {
+    page.locator('.page-layout__main-chrome').getByRole('grid', {
       name: 'Attributes',
       exact: true,
     })
@@ -140,37 +153,42 @@ test('Home keeps services and attribute discovery in Main with matching Telemetr
       .getByRole('tab', { name: 'Traces', exact: true })
   ).toHaveCount(0)
   await expect(
-    page.getByRole('region', { name: 'Getting started sections' })
+    page.getByRole('region', { name: 'Home sections' })
   ).toContainText('Storage')
-  const guide = page.getByRole('region', {
-    name: 'Getting started',
+  const imports = page.getByRole('region', {
+    name: 'Import telemetry',
     exact: true,
   })
-  await expect(guide).toBeVisible()
-  await expect(guide.locator('summary')).toHaveCount(0)
+  await expect(imports).toBeVisible()
+  await expect(imports.locator('summary')).toHaveCount(0)
   await expect(
     page.getByRole('heading', { name: 'Getting started', exact: true })
   ).toHaveCount(0)
   await expect(
-    guide.getByRole('heading', { name: 'Connect an exporter' })
-  ).toBeVisible()
-  await expect(guide.locator('.guide-scroll')).toHaveCSS('overflow-y', 'auto')
+    page.getByText('Connect an exporter', { exact: true })
+  ).toHaveCount(0)
+  await expect(
+    page.getByText('Send a test trace', { exact: true })
+  ).toHaveCount(0)
   await expect(page.locator('#signal-drawer-panel')).toContainText(
     'Ingestion issues'
   )
   await expect(
     page
-      .locator('.getting-started')
+      .locator('.home-welcome')
       .getByRole('button', { name: 'Import files', includeHidden: true })
   ).toBeAttached()
-  const discovery = page.getByRole('region', { name: 'Home discovery' })
-  const table = discovery.getByRole('table', {
+  const discovery = page.locator('.page-layout__main-chrome')
+  const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,
   })
   await expect(table).toHaveCount(1)
-  await expect(table.getByRole('columnheader')).toHaveCount(4)
-  await expect(table.getByRole('columnheader').nth(1)).toHaveText('Count')
+  await expect(table.getByRole('columnheader')).toHaveCount(5)
+  await expect(table.getByRole('columnheader').nth(1)).toHaveText(
+    'Distinct values'
+  )
+  await expect(table.getByRole('columnheader').nth(2)).toHaveText('Records')
   const tableHandle = await table.elementHandle()
   const rows = table.locator(
     'tr[data-attribute-key="bash_command"][data-attribute-source="event"]'
@@ -189,13 +207,13 @@ test('Home keeps services and attribute discovery in Main with matching Telemetr
     })
     .click()
   await expect(rows.last()).toBeVisible()
-  await expect(rows.locator('td:nth-child(2)')).toHaveText([
+  await expect(rows.locator('[data-attribute-column="count"]')).toHaveText([
     '75',
     '75',
     '5',
     '1',
   ])
-  await expect(rows.locator('td:nth-child(3)')).toHaveText([
+  await expect(rows.locator('[data-attribute-column="frequency"]')).toHaveText([
     '[75%]',
     '[75%]',
     '[5%]',
@@ -294,5 +312,108 @@ test('Home keeps services and attribute discovery in Main with matching Telemetr
       elements.map(element => getComputedStyle(element).backgroundColor)
     )
   ).toEqual(colors)
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await discovery.getByRole('button', { name: 'Columns', exact: true }).click()
+  const picker = page.getByRole('group', {
+    name: 'Attribute columns',
+    exact: true,
+  })
+  await expect(
+    picker.getByRole('checkbox', { name: 'Name', exact: true })
+  ).toBeDisabled()
+  await picker
+    .getByRole('checkbox', { name: 'All Attribute columns', exact: true })
+    .check()
+  await picker
+    .getByRole('checkbox', { name: 'All Records columns', exact: true })
+    .check()
+  await picker
+    .getByRole('button', { name: 'Pin Records column', exact: true })
+    .click()
+  await picker
+    .getByRole('button', { name: 'Pin Source column', exact: true })
+    .click()
+  await page.keyboard.press('Escape')
+  const order = [
+    'name',
+    'source',
+    'count',
+    'type',
+    'signals',
+    'values',
+    'traces',
+    'metrics',
+    'logs',
+    'frequency',
+    'copy',
+  ]
+  expect(
+    await table
+      .locator('thead th')
+      .evaluateAll(headings =>
+        headings.map(heading => heading.getAttribute('data-attribute-column'))
+      )
+  ).toEqual(order)
+  await expect(heading.locator('[data-attribute-column="source"]')).toHaveText(
+    'event'
+  )
+  await expect(heading.locator('[data-attribute-column="type"]')).toHaveText(
+    'string'
+  )
+  const theme = (await page.locator('html').getAttribute('data-theme'))!
+  await expect(
+    heading.locator('[data-attribute-column="type"] > span')
+  ).toHaveCSS('color', themeRgb(theme, 'secondary'))
+  await expect(
+    heading.locator('[data-attribute-column="source"] > span')
+  ).toHaveCSS('color', themeRgb(theme, 'secondary'))
+  await expect(heading.locator('[data-attribute-column="signals"]')).toHaveText(
+    'Traces'
+  )
+  await expect(heading.locator('[data-attribute-column="values"]')).toHaveText(
+    '4'
+  )
+  await expect(heading.locator('[data-attribute-column="count"]')).toHaveText(
+    '100'
+  )
+  await expect(heading.locator('[data-attribute-column="traces"]')).toHaveText(
+    '100'
+  )
+  await expect(heading.locator('[data-attribute-column="metrics"]')).toHaveText(
+    '0'
+  )
+  const pinnedHeader = table.locator('thead [data-attribute-column="count"]')
+  await expect(pinnedHeader).toHaveCSS('position', 'sticky')
+  const before = (await pinnedHeader.boundingBox())!
+  const scroll = discovery.getByRole('region', {
+    name: 'Attributes table viewport',
+  })
+  await scroll.evaluate(element => {
+    element.scrollLeft = 200
+  })
+  await expect
+    .poll(() => scroll.evaluate(element => element.scrollLeft))
+    .toBeGreaterThan(0)
+  expect((await pinnedHeader.boundingBox())!.x).toBeCloseTo(before.x, 0)
+  expect(
+    (await heading.locator('[data-attribute-column="count"]').boundingBox())!.x
+  ).toBeCloseTo(before.x, 0)
+  expect(await tableHandle!.evaluate(element => element.isConnected)).toBe(true)
+  await page.reload()
+  await expect(table).toBeVisible()
+  expect(
+    await table
+      .locator('thead th')
+      .evaluateAll(headings =>
+        headings.map(heading => heading.getAttribute('data-attribute-column'))
+      )
+  ).toEqual(order)
+  expect(
+    JSON.parse(
+      (await page.evaluate(() =>
+        localStorage.getItem('home-attribute-pinned-columns')
+      )) ?? '[]'
+    )
+  ).toEqual(['name', 'count', 'source'])
   expect(errors).toEqual([])
 })

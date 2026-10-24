@@ -23,7 +23,16 @@
   import IngestionIssues, {
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
-  import GettingStarted from '@/components/home/GettingStarted.svelte'
+  import HomeWelcome from '@/components/home/HomeWelcome.svelte'
+  import ListFilter from '@/components/shared/Search/ListFilter.svelte'
+  import TableColumnsPicker from '@/components/shared/TableColumnsPicker.svelte'
+  import {
+    ATTRIBUTE_COLUMNS,
+    loadAttributeColumns,
+    loadPinnedAttributeColumns,
+    saveAttributeColumns,
+    visibleAttributeColumns,
+  } from '@/components/home/attribute-columns'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
@@ -87,6 +96,28 @@
   let revision = $state(0)
   let selectedAttribute = $state<DiscoveredAttribute | null>(null)
   let selectedValue = $state<CoverageValue>()
+  let attributeFilter = $state('')
+  let selectedAttributeColumns = $state<string[]>(loadAttributeColumns())
+  let pinnedAttributeColumns = $state<string[]>(loadPinnedAttributeColumns())
+  const attributeColumns = $derived(
+    visibleAttributeColumns(selectedAttributeColumns, pinnedAttributeColumns)
+  )
+  const attributePinnedCount = $derived(
+    attributeColumns.filter(
+      column =>
+        column.pinnable !== false && pinnedAttributeColumns.includes(column.id)
+    ).length
+  )
+  function chooseAttributeColumns(ids: string[]) {
+    selectedAttributeColumns = ids
+    saveAttributeColumns(ids, pinnedAttributeColumns)
+  }
+  function pinAttributeColumn(id: string) {
+    pinnedAttributeColumns = pinnedAttributeColumns.includes(id)
+      ? pinnedAttributeColumns.filter(column => column !== id)
+      : [...pinnedAttributeColumns, id]
+    saveAttributeColumns(selectedAttributeColumns, pinnedAttributeColumns)
+  }
   const selectedServiceIdentity = $derived(
     selected ? serviceIdentity(selected) : null
   )
@@ -259,34 +290,50 @@
 </script>
 
 {#snippet attributes()}
-  <DetailBubble label="Attributes" layoutKey="attributes" disabled={!selected}>
-    {#snippet labelSuffix()}
-      {#if selected}
-        <span class="text-subtle" aria-hidden="true">·</span>
-        <span
-          class="min-w-0 truncate text-base-content"
-          title={selected.serviceName || 'Unnamed service'}
-        >
-          {selected.serviceName || 'Unnamed service'}
-        </span>
-        {#if selected.serviceNamespace}
-          <span class="text-subtle" aria-hidden="true">·</span>
-          <span class="min-w-0 truncate" title={selected.serviceNamespace}>
-            {selected.serviceNamespace}
-          </span>
-        {/if}
-      {/if}
+  <ListFilter label="Filter attribute keys" bind:value={attributeFilter}>
+    {#snippet children(filterToggle, filterField)}
+      <WorkspaceHeader
+        mode="title"
+        pill
+        title="Attributes"
+        subtitle={selected
+          ? [
+              selected.serviceName || 'Unnamed service',
+              selected.serviceNamespace,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : undefined}
+        ariaLabel="Attributes"
+        subtitleService={selected?.serviceName}
+      >
+        {#snippet right()}
+          {#if selected}{@render filterToggle()}{/if}
+          <TableColumnsPicker
+            options={ATTRIBUTE_COLUMNS}
+            selected={selectedAttributeColumns}
+            onchange={chooseAttributeColumns}
+            label="Attribute columns"
+            pinned={pinnedAttributeColumns}
+            onPin={pinAttributeColumn}
+          />
+        {/snippet}
+      </WorkspaceHeader>
+      <AttributeDiscovery
+        service={selected}
+        {range}
+        {queries}
+        {revision}
+        {selectedAttribute}
+        selectedValue={selectedValue?.identity}
+        onSelectAttribute={selectAttribute}
+        filter={attributeFilter}
+        filterControl={filterField}
+        columns={attributeColumns}
+        pinnedCount={attributePinnedCount}
+      />
     {/snippet}
-    <AttributeDiscovery
-      service={selected}
-      {range}
-      {queries}
-      {revision}
-      {selectedAttribute}
-      selectedValue={selectedValue?.identity}
-      onSelectAttribute={selectAttribute}
-    />
-  </DetailBubble>
+  </ListFilter>
 {/snippet}
 {#snippet foundOn()}
   <AttributeTelemetry
@@ -351,9 +398,14 @@
 {/snippet}
 
 {#snippet serviceList()}
-  <DetailBubble label="Service list" layoutKey="services" headerless>
+  <DetailBubble label="Services" layoutKey="services" contained>
+    {#snippet trailing()}<span class="text-subtle"
+        >{loaded
+          ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
+          : '[—]'}</span
+      >{/snippet}
     <div class="service-scroll" aria-busy={loading}>
-      {#if error}<p role="alert" class="p-3">
+      {#if error}<p role="alert" class="p-3 text-papaya">
           {error}{loaded ? ' · Showing the last successful reading.' : ''}
         </p>{/if}
       {#if loading && !loaded}<p role="status" class="p-3 text-subtle">
@@ -397,12 +449,12 @@
 {/snippet}
 
 <PageLayout
-  mainTitle="Services"
+  mainTitle="Attributes"
   items={[]}
   emptyDrawer
   selectedID={null}
   drawerID="signal-drawer"
-  drawerLabel="Getting started"
+  drawerLabel="Home"
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
   onRefresh={submit}
@@ -441,30 +493,17 @@
     </form>
   {/snippet}
   {#snippet drawerContent()}
-    <GettingStarted
+    <HomeWelcome
       {importContent}
       sections={[
+        { id: 'services', content: serviceList },
         { id: 'storage', content: storage },
         { id: 'issues', content: issues },
       ]}
     />
   {/snippet}
   {#snippet main()}
-    <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
-      {#snippet right()}<span class="text-subtle"
-          >{loaded
-            ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
-            : '[—]'}</span
-        >{/snippet}
-    </WorkspaceHeader>
-    <DetailStack
-      label="Home discovery"
-      storageKey="home-main"
-      sections={[
-        { id: 'services', content: serviceList },
-        { id: 'attributes', content: attributes },
-      ]}
-    />
+    {@render attributes()}
   {/snippet}
   {#snippet detail()}
     <DetailStack
@@ -482,7 +521,7 @@
   }
   .service-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, min(100%, 22rem));
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--header-gap);
     align-items: start;
   }

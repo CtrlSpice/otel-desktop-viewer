@@ -107,6 +107,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await page.addInitScript(() => {
     localStorage.setItem('signal-drawer:open', 'true')
     localStorage.setItem('signal-detail:open', 'true')
+    localStorage.setItem('signal-drawer-width', '40')
   })
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/?time=all')
@@ -204,37 +205,67 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect(page.locator('.service-grid')).toHaveCSS('display', 'grid')
+    const list = (await page.locator('.service-grid').boundingBox())!
     for (const service of await serviceCards.all()) {
-      expect((await service.boundingBox())!.width).toBeLessThanOrEqual(352)
+      expect((await service.boundingBox())!.width).toBeCloseTo(list.width, 0)
     }
   }
   for (const row of await page.locator('.service-summary__row').all())
     await expect(row).toHaveCSS('border-width', '0px')
   await page.setViewportSize({ width: 1600, height: 1000 })
-  const discovery = page.getByRole('region', { name: 'Home discovery' })
-  const table = discovery.getByRole('table', {
+  const discovery = page.locator('.page-layout__main-chrome')
+  const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,
   })
   const tableNode = await table.elementHandle()
-  const attributesSection = discovery.locator(
-    '[data-detail-section="attributes"]'
-  )
-  const attributeHeader = attributesSection.locator('summary')
-  await expect(attributesSection.locator('summary')).toContainText('checkout')
-  await expect(attributesSection.locator('summary')).toContainText('storefront')
+  const countSort = table.getByRole('button', {
+    name: 'Sort by records',
+    exact: true,
+  })
+  for (const direction of ['descending', 'ascending']) {
+    await countSort.click()
+    await expect(countSort.locator('..')).toHaveAttribute(
+      'aria-sort',
+      direction
+    )
+    const heading = countSort.locator('.table-column-heading__title')
+    await expect(heading).toHaveText('Records')
+    const size = await heading.evaluate(element => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth,
+    }))
+    expect(size.scroll).toBeLessThanOrEqual(size.client)
+  }
+  await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
+  const attributeHeader = discovery.locator('.pane-header')
+  await expect(attributeHeader).toContainText('checkout')
+  await expect(attributeHeader).toContainText('storefront')
+  await expect(
+    attributeHeader.locator(
+      '.pane-header__title-row > span[style*="background-color"]'
+    )
+  ).toHaveCSS('background-color', automaticColour)
   const details = page.getByRole('region', { name: 'Home details' })
   await expect(
-    details.getByRole('table', { name: 'Attributes', exact: true })
+    details.getByRole('grid', { name: 'Attributes', exact: true })
   ).toHaveCount(0)
-  const serviceSection = discovery.locator('[data-detail-section="services"]')
+  const left = page.locator('#signal-drawer-panel')
+  const serviceSection = left.locator('[data-detail-section="services"]')
   const serviceScroll = serviceSection.locator('.service-scroll')
   const servicesBox = (await serviceSection.boundingBox())!
-  const attributesBox = (await attributesSection.boundingBox())!
+  const attributesBox = (await discovery.boundingBox())!
   const detailsBox = await details.boundingBox()
-  expect(servicesBox.y + servicesBox.height).toBeLessThanOrEqual(
-    attributesBox.y
-  )
+  const drop = (await left
+    .getByRole('button', { name: 'Import files', exact: true })
+    .boundingBox())!
+  const storage = (await left
+    .locator('[data-detail-section="storage"]')
+    .boundingBox())!
+  expect(drop.y + drop.height).toBeLessThanOrEqual(servicesBox.y)
+  expect(servicesBox.y + servicesBox.height).toBeLessThanOrEqual(storage.y)
+  expect(servicesBox.x + servicesBox.width).toBeLessThanOrEqual(attributesBox.x)
+  await expect(discovery.locator('.service-grid')).toHaveCount(0)
   await expect(serviceScroll).toHaveCSS('overflow-y', 'auto')
   const headerY = (await attributeHeader.boundingBox())!.y
   await serviceScroll.evaluate(element => {
@@ -247,20 +278,15 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await serviceScroll.evaluate(element => {
     element.scrollTop = 0
   })
-  await attributeHeader.focus()
-  await attributeHeader.press('ArrowUp')
-  await expect
-    .poll(async () => (await serviceSection.boundingBox())!.height)
-    .toBeLessThan(servicesBox.height)
-  expect((await attributesSection.boundingBox())!.height).toBeGreaterThan(
-    attributesBox.height
-  )
+  expect(await discovery.boundingBox()).toEqual(attributesBox)
   expect(await details.boundingBox()).toEqual(detailsBox)
-  await attributeHeader.press('0')
   expect(await tableNode!.evaluate(node => node.isConnected)).toBe(true)
   const filter = discovery.getByRole('searchbox', {
     name: 'Filter attribute keys',
   })
+  await discovery
+    .getByRole('button', { name: 'Filter attribute keys', exact: true })
+    .click()
   await expect(filter).toHaveCSS('border-width', '0px')
   await expect(attributeHeader).toHaveCSS('border-width', '0px')
   await filter.focus()

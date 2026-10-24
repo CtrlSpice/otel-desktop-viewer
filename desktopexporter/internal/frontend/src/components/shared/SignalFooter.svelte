@@ -16,6 +16,8 @@
     leading?: Snippet
     navigation?: Snippet
     trailing?: Snippet
+    /** Wrap pagination controls together when a narrow pane cannot fit one row. */
+    compact?: boolean
   }
 
   let {
@@ -30,10 +32,11 @@
     leading,
     navigation,
     trailing,
+    compact = false,
   }: Props = $props()
 </script>
 
-<div class="signal-footer">
+<div class="signal-footer" class:signal-footer--compact={compact}>
   {#if leading}<div>{@render leading()}</div>{:else}<span aria-hidden="true"
     ></span>{/if}
   {#if navigation}{@render navigation()}{:else if onFirst && onPrev && onNext && onLast}<DetailNav
@@ -87,5 +90,11 @@
   }
   .signal-footer__actions {
     @apply flex items-center gap-2;
+  }
+  .signal-footer--compact {
+    @apply flex flex-wrap justify-between;
+  }
+  .signal-footer--compact > .signal-footer__actions:empty {
+    display: none;
   }
 </style>

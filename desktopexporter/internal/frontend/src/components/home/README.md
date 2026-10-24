@@ -1,6 +1,6 @@
 # Home welcome facts
 
-`GettingStarted.svelte` chooses one welcome line when it mounts. Four lines are
+`HomeWelcome.svelte` chooses one welcome line when it mounts. Four lines are
 playful taglines; four are paraphrased findings from peer-reviewed axolotl research.
 
 ## Citation convention
@@ -66,14 +66,45 @@ developmental plasticity,” _BMC Biol._, vol. 10, no. 1, 2012, Art. no. 103, do
 
 ## Discovery layout
 
-Home's main pane contains the service list above the selected service's
-Attributes section. Both use the shared resizable section stack and scroll
-independently, so a long service list does not push Attributes off-screen.
-The Attributes heading includes the selected service and namespace when present.
+Home's left pane contains the welcome, file-drop control, Services, Storage and
+Ingestion issues, in that order. Service cards fill the available list width.
+Services is the primary open section of the shared resizable section stack and
+scrolls independently. Attributes fills the main pane, with the selected service
+and namespace in its heading. The file-drop control remains visible above the
+service list.
 Attribute queries, typed values, sorting, filtering and exact Copy retain their
-existing scope and behaviour.
+existing scope and behaviour. The header's filter icon opens and focuses the
+attribute-key filter. Escape collapses the field and restores icon focus without
+clearing the filter; an active filter remains marked on the icon.
+
+Records is the number of distinct records carrying that attribute and type,
+combining spans, logs and datapoints. Expanded rows count records carrying each
+exact value. Those values can overlap on a record, so their counts are not
+necessarily additive.
+
+The Attributes header reuses the shared column picker. Name is required. The
+default columns are Name, Distinct values, Records, %, and Copy. Optional columns
+show the received Type, Source, Signals and separate Spans, Datapoints and Logs
+record counts. Column headings explain their scope. Changing visibility keeps
+the mounted table, selected attribute and expanded values intact.
+
+The picker can pin visible metadata columns. Name is pinned by default; Copy
+stays at the far right when shown. Visible pinned columns form the fixed left
+prefix, using the shared table's responsive pinning rules. Narrow panes fall
+back to native horizontal scrolling when the pinned prefix would leave too
+little room for another column. Visibility, pins and resized widths are saved.
+
+Clicking an attribute or value row shows its matching Telemetry. Native name
+and value buttons remain keyboard-accessible; a focused row also supports
+Enter/Space selection and Up/Down/Home/End navigation. Copy, disclosures and
+text selection do not activate the row.
+
+Attributes offers 25, 50 or 100 entries per page, with each entry's expanded values
+kept together. Filtering and sorting apply to all matching entries, not only the
+current page. Changing pages preserves the selected attribute and expansion state.
 
 The right-hand Details pane contains matching Telemetry, with counted signal
-tabs, independent 25-card pages and retained per-signal scroll positions.
+tabs, independent pages and retained per-signal scroll positions. Attributes and
+Telemetry each remember their own 25/50/100 page-size preference, defaulting to 25.
 Selecting a service, attribute key or exact value updates the matching records;
 record cards still navigate to their native signal workspace.

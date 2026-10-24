@@ -192,6 +192,80 @@ async function expectRoundedAxes(page: Page, colour: string) {
   await expect(page.locator('.metric-chart-view .lc-grid')).toHaveCount(0)
 }
 
+async function expectMeasuredAxisGutter(page: Page) {
+  const chart = page
+    .locator('#metric-chart-tabpanel svg.lc-layout-svg')
+    .filter({ has: page.locator('.placement-left') })
+  await expect(chart).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await expect
+    .poll(() =>
+      chart.evaluate(svg => {
+        const bounds = svg.getBoundingClientRect()
+        const root = svg.closest('.metric-chart-plot, .heatmap-wrapper')!
+        const axis = root.querySelector('.metric-axes')!.getBoundingClientRect()
+        const labels = [
+          ...svg.querySelectorAll('.placement-left .lc-axis-tick-label'),
+        ]
+        const xLabels = [
+          ...svg.querySelectorAll('.placement-bottom .lc-axis-tick-label'),
+        ]
+        const unit = svg
+          .querySelector('.placement-left .lc-axis-label')!
+          .getBoundingClientRect()
+        return {
+          labelsPresent: labels.length > 0,
+          aligned: labels.every(
+            label =>
+              Math.abs(label.getBoundingClientRect().left - bounds.left) < 1
+          ),
+          unitAligned: Math.abs(unit.left - bounds.left) < 1,
+          valuesFit: labels.every(
+            label => label.getBoundingClientRect().right <= axis.left - 11
+          ),
+          xFit: xLabels.every(
+            label => label.getBoundingClientRect().left >= bounds.left - 1
+          ),
+        }
+      })
+    )
+    .toEqual({
+      labelsPresent: true,
+      aligned: true,
+      unitAligned: true,
+      valuesFit: true,
+      xFit: true,
+    })
+}
+
+test('time-series Y-axis labels use the container edge and remeasure after resize and larger text', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?time=all&agg=raw`)
+  await expectMeasuredAxisGutter(page)
+  for (const width of [1200, 900, 1920]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expectMeasuredAxisGutter(page)
+  }
+  const axes = page.locator('.metric-axes')
+  const before = await axes.evaluate(element =>
+    parseFloat((element as HTMLElement).style.left)
+  )
+  await page
+    .locator('html')
+    .evaluate(element => (element.style.fontSize = '24px'))
+  await expectMeasuredAxisGutter(page)
+  await expect
+    .poll(() =>
+      axes.evaluate(element => parseFloat((element as HTMLElement).style.left))
+    )
+    .toBeGreaterThan(before)
+  await expect(
+    page.locator('.placement-left .lc-axis-tick-label').first()
+  ).toHaveCSS('font-size', '21px')
+})
+
 test('metric descriptions stay in Details rather than summary cards', async ({
   page,
 }) => {
@@ -303,7 +377,7 @@ for (const { id: theme } of THEMES) {
       exact: true,
     })
     await expect(picker).toHaveCSS('background-color', themeRgb(theme, 'panel'))
-    await expect(picker).toHaveCSS('box-shadow', 'none')
+    await expect(picker).not.toHaveCSS('box-shadow', 'none')
     await expect(picker).toHaveCSS('border-width', '0px')
     const shades = picker.locator('[data-ink-choice]')
     await expect(shades).toHaveCount(224)
@@ -505,6 +579,33 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
+  test('histogram and heatmap gutters fit long counts and high-precision bucket labels', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    const pending = await holdAggregates(page)
+    const large: JsonAggregateBucket = {
+      ...bucket,
+      count: 9_000_000_000_000_000,
+      sum: 1e20,
+      min: 0,
+      max: 246_913,
+      quantiles: null,
+      explicitBounds: [123_456.7890123451, 123_456.7890123452],
+      bucketCounts: [
+        3_000_000_000_000_000, 3_000_000_000_000_000, 3_000_000_000_000_000,
+      ],
+    }
+    for (const { route } of pending) await respond(route, large)
+    for (const tab of ['Heatmap', 'Histogram']) {
+      await page.getByRole('tab', { name: tab, exact: true }).click()
+      await expectMeasuredAxisGutter(page)
+      await page.setViewportSize({ width: 900, height: 1000 })
+      await expectMeasuredAxisGutter(page)
+      await page.setViewportSize({ width: 1440, height: 1000 })
+    }
+  })
+
   test('32 count inks share exact previews and global accent changes allow a saved chart override', async ({
     page,
   }) => {
@@ -538,6 +639,8 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(page.locator('.heatmap-cell').first()).toBeVisible()
     const original = await geometry()
     const assertCountInk = async (ink: CountPaletteId) => {
+      // Closing a picker can leave the pointer over a cell's hover highlight.
+      await page.mouse.move(0, 0)
       const ramp = countRamp('madoromi-aki-hiru', 4, ink)
       await expect
         .poll(() =>
@@ -642,10 +745,24 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(themePicker).not.toBeVisible()
     await trigger.click()
     await expect(picker.locator('[data-ink-choice="ajisai"]')).toBeFocused()
-    await picker
-      .getByRole('searchbox', { name: 'Find ink', exact: true })
-      .fill('deep cerulean blue')
+    await picker.getByRole('button', { name: 'Find ink', exact: true }).click()
+    const inkSearch = picker.getByRole('searchbox', {
+      name: 'Find ink',
+      exact: true,
+    })
+    await expect(inkSearch).toBeFocused()
+    await inkSearch.fill('deep cerulean blue')
     await expect(choices).toHaveCount(1)
+    await inkSearch.press('Escape')
+    await expect(picker).toBeVisible()
+    await expect(inkSearch).toBeHidden()
+    const inkFilter = picker.getByRole('button', {
+      name: 'Find ink (active)',
+      exact: true,
+    })
+    await expect(inkFilter).toBeFocused()
+    await inkFilter.click()
+    await expect(inkSearch).toHaveValue('deep cerulean blue')
     await picker.locator('[data-ink-choice="kon-peki"]').click()
     await assertCountInk('kon-peki')
     await expect(page.locator('html')).toHaveAttribute(

@@ -79,7 +79,7 @@
     transition: none;
   }
 
-  .detail-view-tabs .header-tab[aria-selected='true'] {
+  .detail-view-tabs .header-tab[aria-selected='true']:not(:hover) {
     background: var(--item-selected-bg);
   }
 </style>

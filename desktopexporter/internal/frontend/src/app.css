@@ -59,6 +59,7 @@
   --focus-ring-width: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-color: var(--color-primary);
+  --popover-shadow: 0 2px 8px rgb(0 0 0 / 0.16), 0 12px 32px rgb(0 0 0 / 0.2);
   --item-hover-bg: var(--color-highlight-low);
   --item-selected-bg: var(--color-highlight-med);
   --resize-grip-length: 3rem;
@@ -81,7 +82,7 @@
 
 .tooltip[data-tip]::before {
   color: var(--color-base-content);
-  box-shadow: none;
+  box-shadow: var(--popover-shadow);
   font-weight: 400;
   @apply text-xs;
 }
@@ -891,12 +892,12 @@ svg {
   @apply rotate-180;
 }
 
-/* One flat Panel surface for dropdowns, popovers and portaled editor menus. */
+/* One Panel surface and soft elevation for dropdowns and portaled editor menus. */
 .popover-surface,
 .anchor-popover,
 html[data-theme] .cm-tooltip {
   @apply overflow-hidden rounded-xl border-0 bg-base-200 text-sm font-normal text-base-content;
-  box-shadow: none;
+  box-shadow: var(--popover-shadow);
   backdrop-filter: none;
 }
 
@@ -1385,6 +1386,10 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 
 .table-row {
   height: var(--table-row-h);
+}
+
+.table-row[data-selectable-row] {
+  cursor: pointer;
 }
 
 .table-cell {

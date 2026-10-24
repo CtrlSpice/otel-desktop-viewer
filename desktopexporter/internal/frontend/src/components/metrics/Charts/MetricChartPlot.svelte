@@ -9,7 +9,7 @@
   const rotatedX = { rotate: 315, textAnchor: 'end' } as const
   const aboveYAxis = {
     labelPlacement: 'start' as const,
-    labelProps: { x: 0, dy: 8, textAnchor: 'start' as const },
+    labelProps: { dy: 8, textAnchor: 'start' as const },
   }
 
   const rotatedXBand = {
@@ -24,7 +24,7 @@
   /** Floor for fluid chart height when the pane is measured. */
   export const MIN_METRIC_CHART_HEIGHT = 280
 
-  /** Shared plot inset for line, bar, and heatmap charts. */
+  /** Fallback insets before rendered axis labels can be measured. */
   export const chartPadding = {
     top: 24,
     bottom: 96,
@@ -39,11 +39,12 @@
     right: 80,
   } as const
 
-  function valueYAxis(label: string) {
+  function valueYAxis(label: string, left: number) {
     return {
       label: label.trim() || 'value',
       ...aboveYAxis,
       rule: false as const,
+      tickLabelProps: { dx: -left, textAnchor: 'start' as const },
       format: (value: number) => formatMetricValue(value),
     }
   }
@@ -68,22 +69,26 @@
   }
 
   /** Bucket bound rows on the heatmap y-axis (color encodes count). */
-  export function axisBucketBounds(unit: string) {
+  export function axisBucketBounds(
+    unit: string,
+    left: number = chartPadding.left
+  ) {
     const trimmed = unit.trim()
     return {
       label: trimmed ? `value (${trimmed})` : 'value',
       ...aboveYAxis,
       rule: false as const,
+      tickLabelProps: { dx: -left, textAnchor: 'start' as const },
     }
   }
 
   /** Unit or fixed label on the y-axis. */
-  export function axisValue(label: string) {
-    return valueYAxis(label)
+  export function axisValue(label: string, left: number = chartPadding.left) {
+    return valueYAxis(label, left)
   }
 
-  export function axisCount() {
-    return { ...valueYAxis('count'), format: formatMetricCount }
+  export function axisCount(left: number = chartPadding.left) {
+    return { ...valueYAxis('count', left), format: formatMetricCount }
   }
 </script>
 

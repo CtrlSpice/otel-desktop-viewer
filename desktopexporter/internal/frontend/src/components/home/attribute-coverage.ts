@@ -18,6 +18,7 @@ export { discoverySignals }
 export type DiscoveredAttribute = AttributeKey & { ownerType: DiscoveryOwner }
 export type RecordCounts = Record<DiscoverySignal, number>
 export type CoverageValue = AttributeFrequency & { counts: RecordCounts }
+export type AttributeValueSort = 'name' | 'frequency' | DiscoverySignal
 export type AttributeCoverage = {
   values: CoverageValue[]
   kinds: Map<string, { counts: RecordCounts; count: number }>
@@ -147,18 +148,21 @@ export async function loadAttributeCoverage(
 
 export function sortCoverageValues(
   values: CoverageValue[],
-  by: 'name' | 'frequency',
+  by: AttributeValueSort,
   direction: 'asc' | 'desc'
 ): CoverageValue[] {
   const sign = direction === 'asc' ? 1 : -1
   return [...values].sort(
     (a, b) =>
       sign *
-        (by === 'frequency'
-          ? a.count - b.count
-          : attributeValueCopy(a.value).localeCompare(
+        (by === 'name'
+          ? attributeValueCopy(a.value).localeCompare(
               attributeValueCopy(b.value)
-            )) || a.identity.localeCompare(b.identity)
+            )
+          : by === 'frequency'
+            ? a.count - b.count
+            : a.counts[by] - b.counts[by]) ||
+      a.identity.localeCompare(b.identity)
   )
 }
 

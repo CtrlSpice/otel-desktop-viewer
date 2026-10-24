@@ -17,7 +17,7 @@
     Tick02Icon,
   } from '@hugeicons/core-free-icons'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
-  import FilterInput from './Search/FilterInput.svelte'
+  import ListFilter from './Search/ListFilter.svelte'
 
   let {
     label,
@@ -212,51 +212,50 @@
           class:ink-picker__measure-dots--shades={mode === 'shade'}
         ></div>
       </div>
-      <div class="mb-2 flex shrink-0 items-center gap-2">
-        <div class="min-w-0 flex-1">
-          <FilterInput
-            bind:value={search}
-            label="Find ink"
-            placeholder="Find an ink…"
-            onkeydown={event => {
-              if (
-                mode === 'shade' &&
-                event.key === 'ArrowDown' &&
-                visible.length
-              ) {
-                event.preventDefault()
-                const first = optionsList?.querySelector<HTMLElement>(
-                  '[data-ink-slider]:not(:disabled), [data-ink-choice]:not(:disabled)'
-                )
-                if (first) {
-                  first.focus({ preventScroll: true })
-                  reveal(first)
-                }
-              }
-            }}
-          />
-        </div>
-        {#if onreset}
-          <button
-            type="button"
-            class="btn btn-ghost btn-circle btn-sm tooltip tooltip-left"
-            aria-label="Reset to automatic colour"
-            data-tip="Reset to automatic colour"
-            disabled={automatic}
-            onclick={() => {
-              onreset?.()
-              close()
-            }}
-          >
-            <HugeiconsIcon
-              icon={RefreshIcon}
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          </button>
-        {/if}
-      </div>
+      <ListFilter
+        bind:value={search}
+        label="Find ink"
+        placeholder="Find an ink…"
+        onkeydown={event => {
+          if (mode === 'shade' && event.key === 'ArrowDown' && visible.length) {
+            event.preventDefault()
+            const first = optionsList?.querySelector<HTMLElement>(
+              '[data-ink-slider]:not(:disabled), [data-ink-choice]:not(:disabled)'
+            )
+            if (first) {
+              first.focus({ preventScroll: true })
+              reveal(first)
+            }
+          }
+        }}
+      >
+        {#snippet children(filterToggle, filterField)}
+          <div class="mb-2 flex shrink-0 items-center justify-end gap-2">
+            {@render filterToggle()}
+            {#if onreset}
+              <button
+                type="button"
+                class="btn btn-ghost btn-circle btn-sm tooltip tooltip-left"
+                aria-label="Reset to automatic colour"
+                data-tip="Reset to automatic colour"
+                disabled={automatic}
+                onclick={() => {
+                  onreset?.()
+                  close()
+                }}
+              >
+                <HugeiconsIcon
+                  icon={RefreshIcon}
+                  size={16}
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+              </button>
+            {/if}
+          </div>
+          {@render filterField()}
+        {/snippet}
+      </ListFilter>
       <div
         class="ink-picker-options anchor-popover__body"
         class:count-palette-options={mode === 'ink'}

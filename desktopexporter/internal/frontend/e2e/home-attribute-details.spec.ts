@@ -180,8 +180,8 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   })
   await page.goto('/?time=all&q=needle')
   const details = page.getByRole('region', { name: 'Home details' })
-  const discovery = page.getByRole('region', { name: 'Home discovery' })
-  const table = discovery.getByRole('table', {
+  const discovery = page.locator('.page-layout__main-chrome')
+  const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,
   })
@@ -191,8 +191,8 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   const rows = table.locator('tr[data-attribute-key="payload"]')
   await expect(rows.first()).toBeHidden()
   const foundOn = details.locator('[data-detail-section="found-on"]')
-  const attributes = discovery.locator('[data-detail-section="attributes"]')
-  const guide = page.getByRole('region', { name: 'Getting started sections' })
+  const attributes = discovery
+  const guide = page.getByRole('region', { name: 'Home sections' })
   await expect(
     guide.locator('[data-detail-section="storage"]')
   ).toHaveAttribute('data-detail-group', 'closed')
@@ -221,18 +221,16 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   expect(tabBox.y + tabBox.height).toBeLessThanOrEqual(
     headerBox.y + headerBox.height + 1
   )
-  await heading
-    .getByRole('button', {
-      name: 'Show payload · string · resource in details',
-    })
-    .click()
+  await heading.locator('[data-attribute-column="count"]').click()
   await expect(foundOn.locator('summary')).toContainText('payload')
   await expect(foundOn.locator('summary')).toContainText('string')
   await expect(foundOn.locator('summary')).toContainText('resource')
   await expect(foundOn.getByText('Found on', { exact: true })).toHaveCount(0)
   await expect(traces.getByRole('link')).toHaveCount(1)
   await expect(traces).toContainText('2 matching spans')
-  await expect(foundOn.getByText('25 per page', { exact: true })).toBeVisible()
+  await expect(
+    foundOn.getByRole('combobox', { name: 'Telemetry per page' })
+  ).toHaveValue('25')
   await tracesTab.focus()
   await tracesTab.press('ArrowRight')
   await expect(metricsTab).toBeFocused()
@@ -286,6 +284,21 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
     (await attributes.boundingBox())!.x +
       (await attributes.boundingBox())!.width
   )
+  const pageSize = foundOn.getByRole('combobox', { name: 'Telemetry per page' })
+  await pageSize.selectOption('50')
+  await expect(logs.getByRole('link')).toHaveCount(30)
+  await expect(navigation).toContainText('1 / 1 page')
+  await pageSize.selectOption('100')
+  await expect(logs.getByRole('link')).toHaveCount(30)
+  expect(
+    await page.evaluate(() => localStorage.getItem('home-telemetry-page-size'))
+  ).toBe('100')
+  await pageSize.selectOption('25')
+  const attributePageSize = attributes.getByRole('combobox', {
+    name: 'Attributes per page',
+  })
+  await attributePageSize.selectOption('50')
+  await expect(heading).toHaveCount(1)
   const tableNode = await table.elementHandle()
   const discoveryReads = requests.filter(
     request => request.method === 'discoverTelemetry'
@@ -294,8 +307,12 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
     .getByRole('button', { name: 'Expand payload · resource values' })
     .click()
   await table.getByRole('button', { name: 'Sort by percentage' }).click()
-  await expect(rows.first().locator('td:nth-child(2)')).toHaveText('100')
-  await expect(rows.first().locator('td:nth-child(3)')).toHaveText('[50%]')
+  await expect(
+    rows.first().locator('[data-attribute-column="count"]')
+  ).toHaveText('100')
+  await expect(
+    rows.first().locator('[data-attribute-column="frequency"]')
+  ).toHaveText('[50%]')
   await expect(rows.locator('.attribute-frequency-bar')).toHaveCount(3)
   await expect(rows.first().locator('.attribute-frequency-bar')).toBeVisible()
   await expect(rows.last()).toContainText('rare')
@@ -303,9 +320,23 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
     name: 'Show resource attribute: payload in details',
   })
   await expect(inspect).toHaveAttribute('title', value)
-  await inspect.focus()
-  await inspect.press('Enter')
+  const valueBox = (await inspect.boundingBox())!
+  await page.mouse.move(valueBox.x + 4, valueBox.y + valueBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(valueBox.x + 60, valueBox.y + valueBox.height / 2, {
+    steps: 8,
+  })
+  await page.mouse.up()
+  expect(
+    await page.evaluate(() => window.getSelection()?.toString().length ?? 0)
+  ).toBeGreaterThan(0)
+  await expect(rows.first()).not.toHaveClass(/table-row--selected/)
+  await expect(logsTab).toHaveAccessibleName('Logs [30] logs')
+  await page.evaluate(() => window.getSelection()?.removeAllRanges())
+  await rows.first().locator('[data-attribute-column="count"]').click()
   await expect(rows.first()).toHaveClass(/table-row--selected/)
+  await expect(rows.first()).toBeFocused()
+  await expect(rows.first()).toHaveAttribute('aria-selected', 'true')
   await expect(logsTab).toHaveAccessibleName('Logs [1] logs')
   await expect(logs.getByRole('link')).toHaveCount(1)
   await expect(logs.locator('.signal-row__description')).toHaveText(
@@ -334,14 +365,14 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['services', 'attributes'])
+  ).toEqual([])
   expect(
     await guide
       .locator('[data-detail-section]')
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['guide', 'storage', 'issues'])
+  ).toEqual(['services', 'storage', 'issues'])
   await expect(
     guide.locator('[data-detail-section="storage"]')
   ).toHaveAttribute('data-detail-group', 'closed')
@@ -390,6 +421,14 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
   ).toHaveLength(discoveryReads)
   expect(await tableNode!.evaluate(node => node.isConnected)).toBe(true)
   // Returning to the key clears the exact-value filter and resets each page.
+  await heading
+    .getByRole('button', {
+      name: 'Show payload · string · resource in details',
+    })
+    .click()
+  await rows.first().focus()
+  await rows.first().press('Enter')
+  await expect(logsTab).toHaveAccessibleName('Logs [1] logs')
   await heading
     .getByRole('button', {
       name: 'Show payload · string · resource in details',

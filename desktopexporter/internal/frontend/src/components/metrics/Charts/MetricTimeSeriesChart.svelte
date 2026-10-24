@@ -26,7 +26,7 @@
   import MetricChartPlot, {
     axisTime,
     axisValue,
-    timeSeriesChartPadding as chartPadding,
+    timeSeriesChartPadding as fallbackPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { chartNeutral } from '@/utils/chart-palette'
@@ -60,6 +60,10 @@
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
   import { timeSeriesChartPointSelection } from '@/components/metrics/utils/time-series-point-selection'
+  import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
+
+  let yAxisInset = $state<number>(fallbackPadding.left)
+  const chartPadding = $derived({ ...fallbackPadding, left: yAxisInset })
 
   const emphasis = createOverlayEmphasis()
 
@@ -720,7 +724,7 @@
   let chartProps = $derived({
     xAxis: axisTime(timeContext.tz),
     yAxis: {
-      ...axisValue(yAxisLabel),
+      ...axisValue(yAxisLabel, chartPadding.left),
       ticks: lineChartContext?.yScale
         .ticks?.(Math.round(lineChartContext.height / 50))
         .filter(
@@ -1005,6 +1009,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="metric-time-series-chart__plot chart-keyboard-surface-host"
+      use:measureChartAxisGutter={left => (yAxisInset = left)}
       bind:clientHeight={plotAreaHeight}
       onclick={handlePlotClick}
     >

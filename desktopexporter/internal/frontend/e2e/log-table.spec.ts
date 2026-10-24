@@ -888,6 +888,12 @@ test('column search uses the compact shared filter input and retains filtering',
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
   const picker = page.getByRole('group', { name: 'Log columns' })
   const search = picker.getByRole('searchbox', { name: 'Find columns' })
+  const toggle = picker.getByRole('button', {
+    name: /^Find columns/,
+  })
+  await expect(search).toBeHidden()
+  await toggle.click()
+  await expect(search).toBeFocused()
   await expect(search).toHaveCSS('height', '32px')
   await expect(search).toHaveCSS('line-height', '21px')
   await expect(search).toHaveCSS('font-family', /Atkinson Hyperlegible Next/)
@@ -901,6 +907,13 @@ test('column search uses the compact shared filter input and retains filtering',
   ).toBeVisible()
   await search.fill('not-a-column')
   await expect(picker.getByRole('checkbox')).toHaveCount(0)
+  await search.press('Escape')
+  await expect(picker).toBeVisible()
+  await expect(search).toBeHidden()
+  await expect(toggle).toBeFocused()
+  await expect(toggle).toHaveAccessibleName('Find columns (active)')
+  await toggle.click()
+  await expect(search).toHaveValue('not-a-column')
 })
 
 test('column groups toggle together and retain the final required column', async ({

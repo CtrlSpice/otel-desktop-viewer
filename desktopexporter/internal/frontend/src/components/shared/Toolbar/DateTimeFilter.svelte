@@ -103,7 +103,7 @@
   bind:this={popoverEl}
   popover="auto"
   id={popoverID}
-  class="anchor-popover anchor-popover--anchored anchor-popover--form gap-2"
+  class="anchor-popover anchor-popover--anchored anchor-popover--form datetime-popover gap-2"
 >
   <div class="min-w-0 shrink-0" role="toolbar" aria-label="Time range presets">
     <PresetTimeRanges />
@@ -114,6 +114,12 @@
 </div>
 
 <style>
+  .datetime-popover {
+    width: 32rem;
+    font-family: var(--font-sans);
+    container-type: inline-size;
+  }
+
   .time-filter-trigger::before {
     left: auto;
     right: 0;

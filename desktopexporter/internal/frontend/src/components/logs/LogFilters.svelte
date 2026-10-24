@@ -2,7 +2,7 @@
   import type { FieldDefinition } from '@/search/model'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
-  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
+  import ListFilter from '@/components/shared/Search/ListFilter.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { FilterIcon } from '@hugeicons/core-free-icons'
@@ -111,54 +111,60 @@
   {#if !filters.editable}<p class="log-filters__hint mb-2" role="status">
       Edit query in search
     </p>{/if}
-  <FieldGroup label="Service">
-    <div class="mb-2">
-      <FilterInput
-        label="Find services"
-        placeholder="Find services…"
-        bind:value={serviceSearch}
-      />
-    </div>
-    {#if filters.service.custom && filters.editable}<p
-        class="log-filters__hint"
-      >
-        Edit service in search
-      </p>{/if}
-    <div class="log-filters__chips">
-      {#each visibleServices as service (service)}
-        <button
-          type="button"
-          class="log-filters__service item-state"
-          aria-label={`Service ${service}`}
-          aria-pressed={filters.service.values.includes(service)}
-          disabled={filters.service.custom || !editor?.setQuery}
-          onclick={() =>
-            change(
-              'service',
-              service,
-              !filters.service.values.includes(service)
-            )}
-        >
-          <span
-            class="log-filters__dot"
-            style:background-color={traceServiceColor(
-              service,
-              themeSignal.value
-            )}
-            aria-hidden="true"
-          ></span>
-          <span class="min-w-0 truncate" title={service}>{service}</span>
-          {#if filters.service.values.includes(service)}<span aria-hidden="true"
-              >✓</span
-            >{/if}
-        </button>
-      {:else}<p class="log-filters__hint">
-          {serviceSearch
-            ? 'No matching services.'
-            : 'No named services in the loaded logs.'}
-        </p>{/each}
-    </div>
-  </FieldGroup>
+  <ListFilter
+    label="Find services"
+    placeholder="Find services…"
+    bind:value={serviceSearch}
+  >
+    {#snippet children(filterToggle, filterField)}
+      <FieldGroup label="Service">
+        {#snippet headerAction()}
+          <span class="min-w-0 flex-1">Service</span>
+          {@render filterToggle()}
+        {/snippet}
+        {@render filterField()}
+        {#if filters.service.custom && filters.editable}<p
+            class="log-filters__hint"
+          >
+            Edit service in search
+          </p>{/if}
+        <div class="log-filters__chips">
+          {#each visibleServices as service (service)}
+            <button
+              type="button"
+              class="log-filters__service item-state"
+              aria-label={`Service ${service}`}
+              aria-pressed={filters.service.values.includes(service)}
+              disabled={filters.service.custom || !editor?.setQuery}
+              onclick={() =>
+                change(
+                  'service',
+                  service,
+                  !filters.service.values.includes(service)
+                )}
+            >
+              <span
+                class="log-filters__dot"
+                style:background-color={traceServiceColor(
+                  service,
+                  themeSignal.value
+                )}
+                aria-hidden="true"
+              ></span>
+              <span class="min-w-0 truncate" title={service}>{service}</span>
+              {#if filters.service.values.includes(service)}<span
+                  aria-hidden="true">✓</span
+                >{/if}
+            </button>
+          {:else}<p class="log-filters__hint">
+              {serviceSearch
+                ? 'No matching services.'
+                : 'No named services in the loaded logs.'}
+            </p>{/each}
+        </div>
+      </FieldGroup>
+    {/snippet}
+  </ListFilter>
   <FieldGroup label="Severity">
     {#if filters.severity.custom && filters.editable}<p
         class="log-filters__hint"

@@ -279,7 +279,7 @@ describe('App real-page composition', () => {
     expect(searchLogPage).toHaveBeenCalled()
 
     navigate('/unknown')
-    await screen.findByRole('region', { name: 'Services' })
+    await screen.findByRole('region', { name: 'Attributes' })
     expect(getStats).toHaveBeenCalled()
   })
 

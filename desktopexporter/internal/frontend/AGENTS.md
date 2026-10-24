@@ -89,20 +89,31 @@
   Value columns use one third of the available row width, capped at 12rem;
   truncate long values with an ellipsis and retain the full value on hover.
   Aligned bar tracks fill the remaining width and keep their percentage scale.
-  Home Count and % columns stay fixed-width and right-aligned; the value/bar
-  column fills the remaining table width. Retain sorting and far-right Copy.
-  Home's left pane contains Lulu above the shared section stack. Getting started
-  is the primary open section, with setup instructions scrolling inside it.
-  Omit its redundant visible section heading beneath the welcome card.
+  Home calls the distinct matching-record count Records, not Count. Its default
+  columns are Name, Distinct values, Records, %, and Copy. Reuse TableColumnsPicker
+  for optional Type, Source, Signals, Spans, Datapoints and Logs columns, with
+  descriptions of their actual scope. Preserve received types and exact values.
+  Numeric columns stay right-aligned; let metadata columns resize and Name fill
+  remaining space. Copy stays far right when shown. Keep sorting global.
+  Reuse the shared table's pinned-prefix layout, with Name pinned by default.
+  Persist column visibility and pins independently from widths. Fall back to
+  native horizontal scrolling when the pinned prefix cannot fit usefully.
+  Whole attribute/value rows select matching Telemetry. Preserve native name/value
+  buttons, focused-row keyboard selection/navigation, text selection, independent
+  Copy and disclosure controls. Expose selectable rows through grid semantics.
+  Home's left pane contains Lulu, the file-drop control, Services, Storage and
+  Ingestion issues, in that order. Services is the primary open section of the
+  shared section stack, with full-width cards and independent scrolling. Keep
+  the file-drop control visible above it. Do not put exporter instructions or
+  test-trace commands in this pane.
   Home attribute, telemetry and storage loading failures use Papaya text for
   viewer/infrastructure faults; received telemetry errors retain their own roles.
   Storage and Ingestion issues are sibling sections using the standard disclosure,
   grouping and header-resize rules. Closed and inactive sections dock at the
   bottom; open sections share the available height. Use the shared sidebar toggle
   and saved width. Ingestion issue links reveal the left pane and their section.
-  Home's main pane stacks the service list above Attributes in the shared
-  resizable section stack. Each section scrolls independently. Keep Services
-  open, and identify the selected service in the Attributes heading. Preserve
+  Attributes fills Home's main pane. Identify the selected service and namespace
+  in its heading. Preserve
   attribute scope, exact-value inspection, Copy, sorting and filtering.
   Matching Telemetry remains alone in the right-hand Details pane with its
   signal tabs, independent pages and scroll positions.
@@ -120,15 +131,16 @@
   fact. Omit the "Axolotl fact:" prefix.
   Keep welcome taglines and facts left-aligned with balanced wrapping
   (`text-wrap: balance`) for more even line lengths.
-  Exporter help sits beside Copy in the terminal header and describes the
-  selected HTTP or gRPC protocol, including default-port guidance when needed.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
   the tab group at the far right of the Telemetry section header and
-  square-bracketed counts, such as `[66]`. Retain independent 25-card pages
+  square-bracketed counts, such as `[66]`. Retain independent pages
   and scroll positions. Only the active card list
   scrolls; keep tabs at the top and shared page controls in a stable bottom
   footer. Tab changes are immediate and support arrow/Home/End navigation.
-  Show the page size as `25 per page` beside the footer's page controls.
+  Attributes and Telemetry each offer 25, 50 or 100 per page in their footer,
+  remembering separate preferences and defaulting to 25. Keep each attribute's
+  expanded values together; apply filtering and sorting globally. Page changes
+  preserve attribute selection and expansion state.
   Disable confirmed-empty or inapplicable signals, retaining loading/error
   access. Reset pages when service, attribute/value, search, time range or
   refreshed results change. Keep other Home section disclosures independent.
@@ -182,7 +194,7 @@
   and disclosure.
   Series visibility checkboxes sit between the disclosure caret and series text.
   Persist overrides by service name or metric reference + native series identity;
-  Put an icon-only reset to the right of the ink search field; it restores the
+  Put an icon-only reset to the right of the ink filter control; it restores the
   saved automatic assignment and is disabled when no override is set. Keep only
   Madoromi attribution in the footer. New automatic assignments
   probe past occupied slots and explicit overrides without moving existing owners.
@@ -203,8 +215,8 @@
   Swatch glyphs choose between the active theme's light/dark foregrounds using
   linear-sRGB contrast ratios, recalculating on theme changes.
   Tooltips use the seasonal Panel surface with regular-weight neutral Text.
-  Dropdowns and popovers share that flat Panel surface, rounded corners and
-  regular text through app.css. Do not add decorative shadows, translucent
+  Dropdowns and popovers share that opaque Panel surface, rounded corners,
+  regular text and the approved soft --popover-shadow through app.css. Do not add per-picker shadows, translucent
   backgrounds, blur or per-picker surface colours. Keep CodeMirror completion
   menus in the shared stylesheet rather than injecting CSS at runtime.
   Picker-specific styles own layout only; retain shared highlights and focus rings.
@@ -363,6 +375,11 @@
   space permits and retain its full accessible label and tooltip.
   Column/service picker searches reuse FilterInput's
   shared 32px height rather than the taller query-entry field.
+  List filters share ListFilter: a header icon opens and focuses the field,
+  remains marked for a nonempty query, and exposes its expansion state. Escape
+  collapses the field without clearing its query, restores icon focus and leaves
+  an enclosing popover open. Use this for attribute keys, service choices,
+  columns, inks and timezones. Keep main workspace search and editor Find separate.
   Signal filter popovers omit the redundant Filters heading and explanatory
   paragraphs. Use labelled controls and a Clear / Apply footer; show only short
   status text when a custom query must be edited in search.
@@ -373,6 +390,9 @@
   gradient. Compact JSON in a row must not cover its hover/selection background.
   The time-range trigger uses the shared ghost-button style without its own
   background, border or hover-background overrides.
+  Its menu uses Next throughout, including dates, times, timezone labels,
+  calendars and ambiguity choices. Use a viewport-clamped 32rem preferred width
+  and wrap endpoint controls on narrow menus instead of shrinking text.
   In Details, use `key · type · provenance` on the heading line, omitting hidden
   types and absent provenance. Separate Resource/Scope provenance with a small `·`.
   Provenance and type use plain Secondary text to distinguish metadata from the
@@ -671,12 +691,15 @@
   tokens; components consume them without hardcoded size overrides.
   Metric line, histogram and heatmap charts use a continuous solid 1px Muted
   left/bottom axis border with the cards' --radius-xl bottom-left join. Keep
-  shared plot insets (24px top, 72px right, 96px bottom, 136px left), labels and scales; disable the old
+  shared plot insets (24px top, 72px right, 96px bottom), labels and scales; disable the old
   separate axis rules. All charts place their Y-axis label horizontally above
   the axis, including histogram count and heatmap value/unit labels. Histogram
   value/unit labels sit above the right end of the X-axis.
-  Time-series charts use a 96px left inset to reclaim the side-label gutter, with 80px
-  on the right for average/slope labels.
+  Left-align Y tick values and horizontal unit headings with the chart's left
+  edge. Measure the left gutter from rendered Y values and angled X labels;
+  update it on label, font and size changes. The 136px analytical / 96px
+  time-series left insets are pre-measurement fallbacks only. Time-series charts
+  retain 80px on the right for average/slope labels.
   When zero coincides with the bottom axis, use its rounded join without a
   duplicate straight zero rule, zero tick or zero label. Retain zero rules and labels inside the plot.
   Statistics can show min/max/average for an explicitly selected series or the

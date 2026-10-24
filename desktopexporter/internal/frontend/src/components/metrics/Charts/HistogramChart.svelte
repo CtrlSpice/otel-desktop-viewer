@@ -29,9 +29,11 @@
   import MetricChartPlot, {
     axisBuckets,
     axisCount,
-    chartPadding,
+    chartPadding as fallbackPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
+  import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
+
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
   import { countPalette } from '@/state/count-palette.svelte'
@@ -66,6 +68,8 @@
   } from '@/components/metrics/utils/histogram-aggregation'
 
   const emphasis = createOverlayEmphasis()
+  let yAxisInset = $state<number>(fallbackPadding.left)
+  const chartPadding = $derived({ ...fallbackPadding, left: yAxisInset })
 
   // lo/hi position quantile markers and may be infinite or both zero.
   type Bucket = {
@@ -462,9 +466,13 @@
 
   let chartWidth = $derived.by(() => {
     const natural = buckets.length * BAR_SLOT_WIDTH
-    const lower = Math.max(MIN_CHART_WIDTH, natural)
+    const lower = Math.max(
+      MIN_CHART_WIDTH,
+      natural,
+      chartPadding.left + chartPadding.right + BAR_SLOT_WIDTH
+    )
     if (parentWidth <= 0) return lower
-    return Math.max(parentWidth, natural)
+    return Math.max(parentWidth, lower)
   })
 
   let histogramScroll = $state<HTMLElement | undefined>(undefined)
@@ -643,7 +651,7 @@
         verticalAnchor: 'end' as const,
       },
     },
-    yAxis: axisCount(),
+    yAxis: axisCount(chartPadding.left),
   })
 </script>
 
@@ -669,6 +677,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="histogram-chart-wrapper"
+          use:measureChartAxisGutter={left => (yAxisInset = left)}
           style:width="{chartWidth}px"
           style:height="{chartRenderHeight}px"
           onclick={handlePlotClick}
@@ -677,6 +686,7 @@
             class="histogram-chart"
             height={chartRenderHeight}
             width={chartWidth}
+            padding={chartPadding}
           >
             <BarChart
               bind:context={chartContext}
