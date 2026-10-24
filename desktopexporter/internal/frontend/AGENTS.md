@@ -52,7 +52,8 @@
   `btn btn-circle btn-sm` (32px)
   filled with that service's colour and a readable 16px brush icon. Keep it before
   the name and outside the whole-card button. Centre the service summary icons
-  under the brush button, with their labels aligned under the service name. Gauge/Sum series
+  under the brush button, with their labels and Last seen aligned under the
+  service name. Gauge/Sum series
   overrides live in metric Details, independently of visibility and disclosure.
   Persist overrides by service name or metric reference + native series identity;
   Automatic restores the saved automatic assignment. New automatic assignments

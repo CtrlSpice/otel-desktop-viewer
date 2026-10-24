@@ -159,12 +159,16 @@
       {/each}
     </div>
   {/snippet}
-  {#snippet date()}<SignalDate
-      label="Last seen"
-      timestamp={service.lastSeen && service.lastSeen !== '0'
-        ? BigInt(service.lastSeen)
-        : undefined}
-    />{/snippet}
+  {#snippet date()}
+    <div class="pl-10">
+      <SignalDate
+        label="Last seen"
+        timestamp={service.lastSeen && service.lastSeen !== '0'
+          ? BigInt(service.lastSeen)
+          : undefined}
+      />
+    </div>
+  {/snippet}
 </SignalCard>
 
 <style lang="postcss">
