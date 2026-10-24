@@ -57,7 +57,14 @@ it('retains distinct discovery identities for signed zero and nested NaN payload
   ]
   stubRpcResult({
     rows: values.map(value => [
-      { value, foundOn: [], count: 1, denominator: 4, relativeFrequency: 0.25 },
+      {
+        value,
+        foundOn: [],
+        count: 1,
+        kindCount: 2,
+        denominator: 4,
+        relativeFrequency: 0.25,
+      },
     ]),
     truncated: false,
   })
@@ -69,6 +76,7 @@ it('retains distinct discovery identities for signed zero and nested NaN payload
   expect(new Set(page.items.map(item => item.identity)).size).toBe(4)
   expect(page.items[0].value.value).toBe(0)
   expect(Object.is(page.items[1].value.value, -0)).toBe(true)
+  expect(page.items.map(item => item.kindCount)).toEqual([2, 2, 2, 2])
 })
 
 function metricResult(

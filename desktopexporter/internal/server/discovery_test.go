@@ -192,7 +192,7 @@ func TestDiscoveryNamespaceValuesAndPagination(t *testing.T) {
 	options := map[string]any{"kind": "values", "serviceName": "pumpkin.pie", "namespace": "storefront", "signal": "traces", "ownerType": "span", "key": "exact'key", "limit": 1}
 	values := discover(options)
 	require.True(t, values.Truncated)
-	require.JSONEq(t, `{"value":{"kind":"int64","value":"9007199254740993"},"foundOn":[{"signal":"traces","ownerType":"span"}],"count":1,"denominator":2,"relativeFrequency":0.5}`, string(values.Rows[0][0]))
+	require.JSONEq(t, `{"value":{"kind":"int64","value":"9007199254740993"},"foundOn":[{"signal":"traces","ownerType":"span"}],"count":1,"kindCount":1,"denominator":2,"relativeFrequency":0.5}`, string(values.Rows[0][0]))
 	options["namespace"] = ""
 	values = discover(options)
 	require.False(t, values.Truncated)

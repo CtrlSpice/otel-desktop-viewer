@@ -428,6 +428,13 @@ grouping and paging; matching navigation totals cover all pages. Services use
 coverage pools distinct span, log and datapoint counts across applicable signals.
 The denominator counts records carrying the key in that owner scope, across
 stored kinds; percentages use the pooled counts rather than averaging percentages.
+Each typed attribute heading counts distinct records carrying that key and kind;
+multiple values of the same kind on one record do not inflate its heading count.
+
+Metric search selects Metric identities. Home intersects attribute matches with
+those identities; the submitted query and selected attribute need not match the
+same datapoint within a matching Metric. This follows the metric workspace's
+query-membership semantics rather than adding a separate datapoint query model.
 
 `AttributeTelemetry.svelte` combines signal summaries with exact attribute-record
 matches. Its Traces, Metrics and Logs tabs sit at the right of the section header

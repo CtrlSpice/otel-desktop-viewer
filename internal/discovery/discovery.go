@@ -148,13 +148,17 @@ func Values(query Query, location Location, records, key string) string {
     WHERE ` + Predicate(query) + ` AND a.key = ` + Literal(key) + `
 ), value_counts AS (
     SELECT value, count(DISTINCT record_id) AS count FROM owned_values GROUP BY value
+), kind_counts AS (
+    SELECT json_extract_string(value, '$.kind') AS kind, count(DISTINCT record_id) AS count
+    FROM owned_values GROUP BY json_extract_string(value, '$.kind')
 ), denominator AS (
     SELECT count(DISTINCT record_id) AS count FROM owned_values
 )
 SELECT json_object('value', v.value, 'foundOn', ` + foundOn(location) + `,
-    'count', v.count, 'denominator', d.count,
+    'count', v.count, 'kindCount', k.count, 'denominator', d.count,
     'relativeFrequency', v.count::DOUBLE / nullif(d.count, 0)::DOUBLE) AS entry
-FROM value_counts v CROSS JOIN denominator d
+FROM value_counts v JOIN kind_counts k ON k.kind = json_extract_string(v.value, '$.kind')
+CROSS JOIN denominator d
 ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
 }
 

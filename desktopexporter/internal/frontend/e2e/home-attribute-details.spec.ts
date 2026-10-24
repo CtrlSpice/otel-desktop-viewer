@@ -102,6 +102,7 @@ test('attribute value inspection scopes counted Telemetry tabs with independent 
               value: { kind: 'string', value: text },
               foundOn,
               count: counts[index],
+              kindCount: denominator,
               denominator,
               relativeFrequency: counts[index] / denominator,
             },

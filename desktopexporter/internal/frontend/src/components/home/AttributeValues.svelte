@@ -59,6 +59,7 @@
     onCount: (count: number) => void
   } = $props()
   let coverage = $state<AttributeCoverage>()
+  const kindCoverage = $derived(coverage?.kinds.get(kind))
   const PAGE_SIZE = 25
   let offset = $state(0)
   const values = $derived(
@@ -96,7 +97,7 @@
       .then(result => {
         if (controller.signal.aborted) return
         coverage = result
-        onCount(result.denominator)
+        onCount(result.kinds.get(kind)?.count ?? 0)
       })
       .catch(reason => {
         if (!controller.signal.aborted) error = String(reason)
@@ -143,8 +144,8 @@
     {@render heading()}
   </th>
   <td class="table-cell text-right tabular-nums">
-    <span title={coverage ? coverageCounts(coverage.denominators) : undefined}
-      >{coverage ? coverage.denominator.toLocaleString() : '—'}</span
+    <span title={kindCoverage ? coverageCounts(kindCoverage.counts) : undefined}
+      >{coverage ? (kindCoverage?.count ?? 0).toLocaleString() : '—'}</span
     >
   </td>
   <td class="table-cell text-right"></td>

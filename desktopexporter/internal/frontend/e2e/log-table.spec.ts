@@ -626,6 +626,42 @@ test('a delayed old-log Copy response cannot overwrite the newly selected log cl
   }
 })
 
+test('field Copy fallback preserves CRLF and lone carriage returns', async ({
+  page,
+  context,
+}) => {
+  const received = 'first\r\nsecond\rthird\nfourth'
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getLog' || params.logRef !== firstID)
+      return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result: { ...logs[0], body: { kind: 'string', value: received } },
+      },
+    })
+  })
+  await page.reload()
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async () => {
+      throw new DOMException('Denied', 'NotAllowedError')
+    }
+  })
+  const copy = page
+    .locator('[data-field="body"]')
+    .getByRole('button', { name: 'Copy body', exact: true })
+  await copy.focus()
+  await copy.press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(received)
+  await expect(copy).toBeFocused()
+  await expect(page.locator('textarea')).toHaveCount(0)
+})
+
 test('Raw JSON folding uses waterfall-style icon controls on the top line', async ({
   page,
 }) => {

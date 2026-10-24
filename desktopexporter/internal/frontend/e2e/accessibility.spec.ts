@@ -1052,6 +1052,7 @@ test.describe('home page accessibility', () => {
       await expect(detailHeadings).toHaveCount(3)
       for (const heading of await detailHeadings.all()) {
         await expect(heading).toHaveCSS('background-color', panel)
+        await expect(heading).toHaveCSS('font-weight', '400')
         // Shared 32px controls plus 8px vertical padding on each side.
         await expect(heading).toHaveCSS('height', '48px')
         await expect(heading).toHaveCSS('border-radius', '12px')

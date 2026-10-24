@@ -18,11 +18,19 @@ export async function copyText(text: string): Promise<void> {
     input.tabIndex = -1
     input.setAttribute('aria-hidden', 'true')
     input.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;'
+    let copied = false
+    input.addEventListener('copy', event => {
+      if (!event.clipboardData) return
+      // Textarea values normalize CR/CRLF. Write the received text directly.
+      event.clipboardData.setData('text/plain', text)
+      event.preventDefault()
+      copied = true
+    })
     document.body.append(input)
     try {
       input.focus({ preventScroll: true })
       input.select()
-      if (!document.execCommand('copy'))
+      if (!document.execCommand('copy') || !copied)
         throw new Error('Clipboard copy was denied')
     } finally {
       input.remove()

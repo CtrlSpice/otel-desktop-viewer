@@ -369,7 +369,7 @@
   padding-bottom: 0;
   margin-bottom: 0.3rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--color-subtle);
   text-align: left;
 }
@@ -393,7 +393,7 @@
 .chart-hover-card :where(.lc-tooltip-item-value) {
   color: var(--color-base-content);
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   text-align: right;
 }
 
@@ -460,7 +460,7 @@ html[data-color-scheme='light'] .chart-hover-card {
 
 .metric-chart-view :where(.chart-selection-legend__timestamp) {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--color-subtle);
   margin-bottom: 0.3rem;
 }
@@ -480,14 +480,6 @@ html[data-color-scheme='light'] .chart-hover-card {
   display: contents;
 }
 
-.metric-chart-view
-  :where(
-    .chart-selection-legend__row--primary .chart-selection-legend__label,
-    .chart-selection-legend__row--primary .chart-selection-legend__value
-  ) {
-  font-weight: 600;
-}
-
 .metric-chart-view :where(.chart-selection-legend__dot) {
   display: inline-block;
   width: 8px;
@@ -499,7 +491,7 @@ html[data-color-scheme='light'] .chart-hover-card {
 
 .metric-chart-view :where(.chart-selection-legend__glyph) {
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: 400;
   line-height: var(--text-base--line-height);
   opacity: 0.85;
   margin-right: 0.25rem;
@@ -517,7 +509,7 @@ html[data-color-scheme='light'] .chart-hover-card {
 
 .metric-chart-view :where(.chart-selection-legend__value) {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   text-align: right;
   white-space: nowrap;
 }
@@ -556,7 +548,7 @@ html[data-color-scheme='light'] .chart-hover-card {
 
 .metric-chart-view :where(.chart-aggregate-summary__value) {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 400;
   text-align: right;
   white-space: nowrap;
 }

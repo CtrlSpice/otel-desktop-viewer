@@ -60,6 +60,9 @@ export type AttributeFrequency = {
   value: AttributeValue
   foundOn: AttributeKey['foundOn']
   count: number
+  /** Distinct records carrying this key and received kind, before value pagination. */
+  kindCount: number
+  /** Distinct records carrying this key across all received kinds. */
   denominator: number
   relativeFrequency: number
 }

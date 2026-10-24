@@ -2073,7 +2073,14 @@ test('extrema use the series colour and the backed average stays behind the seri
     name: 'Emphasize avg overlay',
   })
   const before = page.url()
+  await expect(emphasis).toHaveCSS('font-weight', '400')
+  for (const text of await averageLabel
+    .locator('.chart-selection-legend__label, .chart-selection-legend__value')
+    .all()) {
+    await expect(text).toHaveCSS('font-weight', '400')
+  }
   await emphasis.click()
+  await expect(emphasis).toHaveCSS('font-weight', '400')
   await expect(average.locator('.series-average-line-backing')).toHaveCSS(
     'stroke-width',
     '8px'

@@ -109,10 +109,7 @@
               {/if}
               <ul class="chart-selection-legend__rows">
                 {#each column as row (row.key)}
-                  <li
-                    class="chart-selection-legend__row"
-                    class:chart-selection-legend__row--primary={row.isPrimary}
-                  >
+                  <li class="chart-selection-legend__row">
                     <span
                       class="chart-selection-legend__dot"
                       style:--color={row.color}
@@ -147,10 +144,7 @@
     {:else if rows.length > 0}
       <ul class="chart-selection-legend__rows">
         {#each rows as row (row.key)}
-          <li
-            class="chart-selection-legend__row"
-            class:chart-selection-legend__row--primary={row.isPrimary}
-          >
+          <li class="chart-selection-legend__row">
             <span
               class="chart-selection-legend__dot"
               style:--color={row.color}

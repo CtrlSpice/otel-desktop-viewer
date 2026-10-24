@@ -11,8 +11,16 @@ function clipboard(writeText: ReturnType<typeof vi.fn>) {
   })
 }
 
-function copyCommand(result: boolean) {
-  const command = vi.fn(() => result)
+function copyCommand(result: boolean, setData = vi.fn()) {
+  const command = vi.fn(() => {
+    if (result) {
+      const event = new Event('copy', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', { value: { setData } })
+      document.activeElement!.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+    }
+    return result
+  })
   Object.defineProperty(document, 'execCommand', {
     configurable: true,
     value: command,
@@ -44,15 +52,14 @@ describe('clipboard copying', () => {
     window.getSelection()!.removeAllRanges()
     window.getSelection()!.addRange(range)
     expect(window.getSelection()!.toString()).toBe('keep this selection')
-    const command = copyCommand(true).mockImplementation(() => {
-      expect(document.activeElement).toBeInstanceOf(HTMLTextAreaElement)
-      expect((document.activeElement as HTMLTextAreaElement).value).toBe(
-        '9223372036854775807\nsecond line'
-      )
-      return true
-    })
+    const setData = vi.fn()
+    const command = copyCommand(true, setData)
     await copyText('9223372036854775807\nsecond line')
     expect(command).toHaveBeenCalledWith('copy')
+    expect(setData).toHaveBeenCalledWith(
+      'text/plain',
+      '9223372036854775807\nsecond line'
+    )
     expect(document.activeElement).toBe(input)
     expect(window.getSelection()!.toString()).toBe('keep this selection')
     expect(document.querySelector('textarea')).toBeNull()
@@ -74,6 +81,24 @@ describe('clipboard copying', () => {
     clipboard(vi.fn().mockRejectedValue(new Error('denied')))
     copyCommand(false)
     await expect(copyText('value')).rejects.toThrow('Clipboard copy was denied')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it.each(['a\rb', 'a\r\nb', 'a\rb\r\nc\nd', ''])(
+    'preserves exact fallback clipboard text %j',
+    async text => {
+      clipboard(vi.fn().mockRejectedValue(new Error('denied')))
+      const setData = vi.fn()
+      copyCommand(true, setData)
+      await copyText(text)
+      expect(setData).toHaveBeenCalledExactlyOnceWith('text/plain', text)
+    }
+  )
+
+  it('rejects a successful copy command without a writable clipboard event', async () => {
+    clipboard(vi.fn().mockRejectedValue(new Error('denied')))
+    copyCommand(true).mockReturnValue(true)
+    await expect(copyText('a\rb')).rejects.toThrow('Clipboard copy was denied')
     expect(document.querySelector('textarea')).toBeNull()
   })
 })

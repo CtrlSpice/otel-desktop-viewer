@@ -83,6 +83,7 @@ test('Home keeps whole-card service selection in Main and collapsible value bars
                         ? [75, 75, 5, 1][index]
                         : 1,
                     denominator: options.key === 'payload' ? 1 : 100,
+                    kindCount: options.key === 'payload' ? 1 : 100,
                     relativeFrequency:
                       options.key === 'bash_command'
                         ? [0.75, 0.75, 0.05, 0.01][index]

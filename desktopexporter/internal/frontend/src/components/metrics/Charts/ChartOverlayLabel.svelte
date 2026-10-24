@@ -30,9 +30,10 @@
   .chart-overlay-label {
     @apply pointer-events-auto cursor-pointer rounded-sm border-0 bg-transparent p-0 text-left;
     font: inherit;
+    font-weight: 400;
     color: inherit;
   }
   .chart-overlay-label[aria-pressed='true'] {
-    @apply font-semibold text-base-content;
+    @apply text-base-content;
   }
 </style>

@@ -20,6 +20,7 @@ export type RecordCounts = Record<DiscoverySignal, number>
 export type CoverageValue = AttributeFrequency & { counts: RecordCounts }
 export type AttributeCoverage = {
   values: CoverageValue[]
+  kinds: Map<string, { counts: RecordCounts; count: number }>
   denominators: RecordCounts
   denominator: number
 }
@@ -59,10 +60,23 @@ export function mergeAttributeValues(
   groups: { signal: DiscoverySignal; values: AttributeFrequency[] }[]
 ): AttributeCoverage {
   const denominators: RecordCounts = { traces: 0, logs: 0, metrics: 0 }
+  const kinds: AttributeCoverage['kinds'] = new Map()
   const merged = new Map<string, CoverageValue>()
   for (const group of groups) {
     denominators[group.signal] = group.values[0]?.denominator ?? 0
     for (const item of group.values) {
+      const kindCounts = kinds.get(item.value.kind)?.counts ?? {
+        traces: 0,
+        logs: 0,
+        metrics: 0,
+      }
+      // Each value repeats the backend's distinct-record count for its kind.
+      // Values on the same record can overlap; only disjoint signals are pooled.
+      kindCounts[group.signal] = item.kindCount
+      kinds.set(item.value.kind, {
+        counts: kindCounts,
+        count: Object.values(kindCounts).reduce((sum, count) => sum + count, 0),
+      })
       const previous = merged.get(item.identity)
       const counts = previous?.counts ?? { traces: 0, logs: 0, metrics: 0 }
       counts[group.signal] = item.count
@@ -80,11 +94,13 @@ export function mergeAttributeValues(
   )
   const values = [...merged.values()].map(item => ({
     ...item,
+    kindCount: kinds.get(item.value.kind)!.count,
     denominator,
     relativeFrequency: denominator ? item.count / denominator : 0,
   }))
   return {
     values,
+    kinds,
     denominators,
     denominator,
   }
