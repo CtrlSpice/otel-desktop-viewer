@@ -58,6 +58,8 @@ fourteen syntax accents. Seasonal paper, text, highlights and semantic status
 colours retain their existing roles. Each mixed foreground receives the same
 readability adjustment against the viewer's five seasonal surfaces. The choice
 is independent of graph ownership and count palettes.
+The Accent ink picker previews the named seed's seven official graph swatches,
+not colours from its neighbouring inks or mixed syntax roles.
 
 The generated syntax palette follows the upstream code guide's role slots and
 contains all fourteen named slots plus Sumi, Kasure 2 and Usuzumi 0. Slot names

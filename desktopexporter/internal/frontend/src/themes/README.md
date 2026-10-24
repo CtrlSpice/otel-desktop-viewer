@@ -101,7 +101,10 @@ The top-bar appearance group orders **Ink · Season · Day/Night**. Ink chooses
 one of the 32 named seed inks, defaulting to Ajisai (hydrangea). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
 Ajisai's family is Ajisai, Ama-iro and Murasaki-shikibu. Original names and English
-names stay visible and searchable; seven preview dots show mixed syntax accents.
+names stay visible and searchable; seven preview dots show that named ink's
+official shades 1–7, matching the graph colour picker across seasons and modes.
+The analogous family applies when the seed is selected; mixed syntax-role
+colours do not replace the named ink's preview.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
 syntax accent slots below. Season supplies the softened paper, neutral text,
