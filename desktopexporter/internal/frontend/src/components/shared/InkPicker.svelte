@@ -32,7 +32,7 @@
     unavailable = new Set<string>(),
     shadeControls,
     onOpenChange,
-    triggerText,
+    triggerContent,
     triggerClass,
   }: {
     label: string
@@ -46,7 +46,7 @@
     unavailable?: ReadonlySet<string>
     shadeControls?: Snippet<[option: InkPickerOption, close: () => void]>
     onOpenChange?: (open: boolean) => void
-    triggerText?: string
+    triggerContent?: Snippet
     triggerClass?: string
   } = $props()
 
@@ -193,13 +193,16 @@
   onOpenChange={handleOpenChange}
 >
   {#snippet icon()}
-    <HugeiconsIcon
-      icon={PaintBrush01Icon}
-      size={16}
-      strokeWidth={1.5}
-      aria-hidden="true"
-    />
-    {#if triggerText}<span>{triggerText}</span>{/if}
+    {#if triggerContent}
+      {@render triggerContent()}
+    {:else}
+      <HugeiconsIcon
+        icon={PaintBrush01Icon}
+        size={16}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+    {/if}
   {/snippet}
   {#snippet children(close)}
     {#if open}

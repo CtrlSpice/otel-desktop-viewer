@@ -32,6 +32,8 @@
   shared count palette. Keep ink-family names visible in every picker.
   Accent-ink previews show the named seed's exact official shades 1–7, matching
   the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
+  The top-bar ink control shows the selected ink's name beside a small gradient
+  swash of those seven shades; retain the full English name in its tooltip.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
   Use additional rows on narrow screens so search and appearance do not overlap.

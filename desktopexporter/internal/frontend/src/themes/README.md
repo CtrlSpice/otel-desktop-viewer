@@ -105,6 +105,8 @@ names stay visible and searchable; seven preview dots show that named ink's
 official shades 1–7, matching the graph colour picker across seasons and modes.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
+The top-bar control shows the selected ink's name beside a small gradient swash
+of its seven official shades. Its tooltip includes the English name.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
 syntax accent slots below. Season supplies the softened paper, neutral text,
