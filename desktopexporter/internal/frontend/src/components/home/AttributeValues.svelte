@@ -192,7 +192,7 @@
         style:left={pinnedLeft === undefined ? undefined : `${pinnedLeft}px`}
       >
         <div class="flex min-w-0 items-center gap-2 pl-6">
-          <div class="min-w-0 flex-1">
+          <div class="min-w-0 w-1/3 max-w-48 shrink-0">
             <TableValueCell
               label={`${options.ownerType} attribute: ${name}`}
               {text}
@@ -209,7 +209,7 @@
           {#if item.value.kind !== kind}<span class="shrink-0 text-secondary"
               >{item.value.kind}</span
             >{/if}
-          <span class="flex h-2 w-24 shrink-0" aria-hidden="true">
+          <span class="flex h-2 min-w-2 flex-1" aria-hidden="true">
             <span
               class="attribute-frequency-bar h-2 rounded-full"
               style:width={`max(0.5rem, ${item.relativeFrequency * 100}%)`}

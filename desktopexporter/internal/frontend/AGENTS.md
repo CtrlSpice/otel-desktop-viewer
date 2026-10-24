@@ -45,6 +45,9 @@
   Bars are 8px high with round ends and a minimum 8px dot, using stable
   typed-value hashes into official shades 3–5 across the 32 graph inks. Keep
   parent attribute rows plain and preserve Name, Count, %, exact Copy and disclosures.
+  Value columns use one third of the available row width, capped at 12rem;
+  truncate long values with an ellipsis and retain the full value on hover.
+  Aligned bar tracks fill the remaining width and keep their percentage scale.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
   independent 25-card pages and scroll positions. Only the active card list
   scrolls; keep tabs at the top and shared page controls in a stable bottom

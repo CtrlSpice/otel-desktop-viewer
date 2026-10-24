@@ -179,8 +179,10 @@ shared 14px working size.
 
 Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
 Copy has its own far-right column, with its tooltip opening left.
-The percentage bar is 8px high in a 96px slot after the value. Short bars stop at
-the canonical 8px dot. Colours use
+The value column takes one third of the available row width, capped at 12rem.
+Long values use an ellipsis, with the full value available on hover and through Copy.
+The 8px-high percentage bar uses an aligned track that fills the remaining width.
+Short bars stop at the canonical 8px dot. Colours use
 official middle-strength shades 3–5 across the 32 graph inks, chosen by a stable
 hash of attribute source, key and typed value identity. Sorting, paging and theme
 changes preserve each value's colour. Parent attribute rows remain plain; counts,
