@@ -72,7 +72,6 @@
     { id: 'name', label: 'Name', min: 240, width: 400 },
     { id: 'count', label: 'Count', min: 80, width: 88 },
     { id: 'frequency', label: '%', min: 80, width: 88 },
-    { id: 'copy', label: 'Copy', min: 64, width: 64, fixed: true },
   ]
   function sort(column: SortColumn) {
     sortDirection =
@@ -240,9 +239,6 @@
                 <TableColumnHeading label="%" align="right" />
               </TableSortButton>
             </th>
-            <th class="table-cell" scope="col"
-              ><span class="sr-only">Copy</span></th
-            >
           </tr>
         {/snippet}
         {#snippet children(layout)}
