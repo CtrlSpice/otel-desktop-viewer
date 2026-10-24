@@ -175,18 +175,18 @@
 {#snippet spanIcon()}<HugeiconsIcon
     icon={BarChartHorizontalIcon}
     size={16}
-    class="shrink-0 text-rp-subtle"
+    class="shrink-0 text-subtle"
     strokeWidth={1.5}
   />{/snippet}
 
 {#snippet eventsIcon()}<LogIcon
-    class="size-4 shrink-0 text-rp-subtle"
+    class="size-4 shrink-0 text-subtle"
     aria-hidden="true"
   />{/snippet}
 {#snippet linksIcon()}<HugeiconsIcon
     icon={Link01Icon}
     size={16}
-    class="shrink-0 text-rp-subtle"
+    class="shrink-0 text-subtle"
     strokeWidth={1.5}
   />{/snippet}
 

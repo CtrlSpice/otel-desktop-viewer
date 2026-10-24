@@ -37,7 +37,7 @@
       <div class="issues-section">
         <h3 class="issues-heading">
           File import issues
-          <span class="text-rp-subtle">
+          <span class="text-subtle">
             {importFailures.length}
             {importFailures.length === 1 ? 'file' : 'files'}
           </span>
@@ -62,7 +62,7 @@
       <div class="issues-section">
         <h3 class="issues-heading">
           Rejected telemetry
-          <span class="text-rp-subtle">
+          <span class="text-subtle">
             {rejectedTotal} records
           </span>
         </h3>

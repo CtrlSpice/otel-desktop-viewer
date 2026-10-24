@@ -71,7 +71,7 @@
     <SignalDate label="Started" timestamp={trace.startTime} />
   {/snippet}
   {#snippet meta()}
-    {#if matchingSpanCount !== undefined}<span class="text-rp-subtle"
+    {#if matchingSpanCount !== undefined}<span class="text-subtle"
         >[{matchingSpanCount.toLocaleString()} matching {matchingSpanCount === 1
           ? 'span'
           : 'spans'}]</span
@@ -88,7 +88,7 @@
 
 {#snippet missingRootTitle()}
   <span
-    class="inline-flex items-center gap-2 text-sm font-normal text-rp-subtle"
+    class="inline-flex items-center gap-2 text-sm font-normal text-subtle"
   >
     [<span class="size-2 shrink-0 rounded-full bg-info" aria-hidden="true"
     ></span>

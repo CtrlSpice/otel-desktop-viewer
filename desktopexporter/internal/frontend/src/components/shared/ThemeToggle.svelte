@@ -3,7 +3,6 @@
   import { fade } from 'svelte/transition'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
-    ArrowDown01Icon,
     FlowerIcon,
     Leaf02Icon,
     Moon02Icon,
@@ -60,10 +59,8 @@
       'data-color-scheme',
       getTheme(theme).scheme
     )
-    document.documentElement.removeAttribute('data-palette')
     try {
       localStorage.setItem('theme', theme)
-      localStorage.removeItem('theme-palette')
     } catch {
       // Theme controls still work when browser storage is unavailable.
     }
@@ -135,12 +132,6 @@
       />
     {/key}
     <span>{SEASONS.find(season => season.id === theme.season)?.name}</span>
-    <HugeiconsIcon
-      icon={ArrowDown01Icon}
-      size={12}
-      strokeWidth={1.5}
-      aria-hidden="true"
-    />
   </button>
   <button
     class="theme-toggle {className}"

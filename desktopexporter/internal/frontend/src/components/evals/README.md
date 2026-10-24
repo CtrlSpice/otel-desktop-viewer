@@ -186,7 +186,7 @@ are on 16 October 2026; use an appropriate time window when browsing signals.
 ## Checks
 
 `e2e/evals.spec.ts` exercises gating, selection/history, separate assessments,
-filters, unknown costs, and desktop/mobile accessibility in Pine and Dawn.
+filters, unknown costs, and desktop/mobile accessibility in Day and Night.
 Run the normal frontend checks and rebuild embedded assets after changes.
 
 # Case totals

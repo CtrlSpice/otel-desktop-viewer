@@ -160,11 +160,11 @@
   {#if error}<p role="alert" class="p-3">{error}</p>
   {:else if loading && keys.length === 0}<p
       role="status"
-      class="p-3 text-rp-subtle"
+      class="p-3 text-subtle"
     >
       Loading attributes…
     </p>
-  {:else if keys.length === 0}<p class="p-3 text-rp-subtle">
+  {:else if keys.length === 0}<p class="p-3 text-subtle">
       No matching attributes in this service and time range.
     </p>
   {:else}
@@ -265,6 +265,6 @@
       </ResizableTable>
     {/key}
   {/if}
-{:else}<p class="p-3 text-rp-subtle">
+{:else}<p class="p-3 text-subtle">
     Select a service to discover its attributes.
   </p>{/if}

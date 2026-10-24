@@ -31,7 +31,7 @@
       {#snippet keyLabel()}
         <span class="detail-cell__key">
           {fieldName}{#if showType}
-            <span class="text-rp-subtle">{' · '}</span><span
+            <span class="text-subtle">{' · '}</span><span
               class="detail-cell__type">{fieldType}</span
             >{/if}
         </span>

@@ -63,7 +63,7 @@
             : [...draft, option.key])}
       >
         <EvalStatus label={option.label} tone={option.tone} />
-        <span class="ml-auto shrink-0 text-rp-subtle tabular-nums"
+        <span class="ml-auto shrink-0 text-subtle tabular-nums"
           >[{option.count}]</span
         >
         <span
@@ -75,7 +75,7 @@
         </span>
       </button>
     {:else}
-      <p class="text-sm text-rp-subtle">No outcomes in this source.</p>
+      <p class="text-sm text-subtle">No outcomes in this source.</p>
     {/each}
   </div>
 </FilterPopover>

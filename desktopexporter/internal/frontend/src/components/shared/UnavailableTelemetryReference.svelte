@@ -22,7 +22,7 @@
   class="unavailable-reference inline-flex min-w-0 flex-wrap items-center gap-2 text-sm"
 >
   <span class="size-2 shrink-0 rounded-full bg-muted" aria-hidden="true"></span>
-  <span class="text-rp-subtle">Traces:</span>
+  <span class="text-subtle">Traces:</span>
   <span
     class="min-w-0"
     data-field={revealFields ? 'traceId' : undefined}
@@ -59,7 +59,7 @@
         />{/if}
     </span>
   {/if}
-  <span class="text-rp-subtle">(unavailable)</span>
+  <span class="text-subtle">(unavailable)</span>
 </span>
 
 <style>

@@ -74,12 +74,12 @@
             ></span>{/if}
           <span class="truncate">{name}</span>
           <span class="shrink-0 text-sm text-secondary"
-            ><span class="text-rp-subtle" aria-hidden="true">{'· '}</span><span
+            ><span class="text-subtle" aria-hidden="true">{'· '}</span><span
               >Span event</span
             ></span
           >
           {#if provenance}
-            <span class="shrink-0 text-sm text-rp-subtle" aria-hidden="true"
+            <span class="shrink-0 text-sm text-subtle" aria-hidden="true"
               >·</span
             >
             <span

@@ -47,6 +47,10 @@
     gap: calc(var(--header-gap) / 2);
   }
 
+  .detail-stack > :global(:nth-child(1 of [data-detail-group='inactive'])) {
+    margin-block-start: auto;
+  }
+
   .detail-stack--dragging :global(.detail-bubble__heading--resizable) {
     cursor: grabbing;
   }

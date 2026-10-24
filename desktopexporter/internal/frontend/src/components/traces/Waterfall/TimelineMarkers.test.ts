@@ -166,7 +166,7 @@ describe('TimelineMarkers', () => {
     expect(screen.getByText('exception')).toHaveAttribute('title', 'exception')
     expect(
       screen.getByText('Span event').closest('.activity-popover__metadata')
-    ).toHaveClass('text-rp-subtle')
+    ).toHaveClass('text-subtle')
     expect(rows[0]!.querySelector('.bg-error')).toHaveAttribute(
       'aria-hidden',
       'true'
@@ -174,7 +174,7 @@ describe('TimelineMarkers', () => {
     expect(rows[0]!.querySelector('.text-error')).toBeNull()
     expect(
       screen.getByText('Log').closest('.activity-popover__metadata')
-    ).toHaveClass('text-rp-subtle')
+    ).toHaveClass('text-subtle')
     expect(rows.every(row => !row.querySelector('.badge'))).toBe(true)
 
     await fireEvent.click(rows[1]!)

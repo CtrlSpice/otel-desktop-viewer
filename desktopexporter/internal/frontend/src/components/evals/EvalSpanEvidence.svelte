@@ -93,7 +93,7 @@
     <caption
       title={record.sourceDescription}
       class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-secondary"
-      >{record.source}{#if record.toolError}<span class="text-rp-subtle">
+      >{record.source}{#if record.toolError}<span class="text-subtle">
           ·
         </span><span class="text-base-content">Tool error</span>{/if}</caption
     >
@@ -112,9 +112,9 @@
     </tbody>
   </table>
 {/each}
-{#if loading}<p class="px-3 py-2 text-sm text-rp-subtle" role="status">
+{#if loading}<p class="px-3 py-2 text-sm text-subtle" role="status">
     Loading linked log evidence…
   </p>
-{:else if failed}<p class="px-3 py-2 text-sm text-rp-subtle" role="status">
+{:else if failed}<p class="px-3 py-2 text-sm text-subtle" role="status">
     Linked log evidence could not be loaded.
   </p>{/if}

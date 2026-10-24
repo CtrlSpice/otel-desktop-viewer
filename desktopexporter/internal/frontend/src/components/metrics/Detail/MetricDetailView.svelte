@@ -55,13 +55,13 @@
 {#snippet metricIcon()}<HugeiconsIcon
     icon={ChartHistogramIcon}
     size={16}
-    class="shrink-0 text-rp-subtle"
+    class="shrink-0 text-subtle"
     strokeWidth={1.5}
   />{/snippet}
 {#snippet seriesIcon()}<HugeiconsIcon
     icon={ChartLineData02Icon}
     size={16}
-    class="shrink-0 text-rp-subtle"
+    class="shrink-0 text-subtle"
     strokeWidth={1.5}
   />{/snippet}
 

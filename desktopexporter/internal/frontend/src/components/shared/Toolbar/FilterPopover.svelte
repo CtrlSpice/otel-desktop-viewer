@@ -90,7 +90,7 @@
       class={compact && !showCount
         ? 'sr-only'
         : showCount
-          ? 'tabular-nums text-rp-subtle'
+          ? 'tabular-nums text-subtle'
           : 'tabular-nums'}>{showCount ? `[${count}]` : `(${count})`}</span
     >{:else if custom}<span class="sr-only">: custom query</span>{/if}
   {#if !compact}<svg

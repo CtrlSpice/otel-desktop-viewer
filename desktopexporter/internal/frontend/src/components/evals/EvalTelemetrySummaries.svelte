@@ -112,7 +112,7 @@
         role="group"
         aria-label={`${entry.label} identifiers`}
       >
-        <span class="text-rp-subtle">Traces:</span>
+        <span class="text-subtle">Traces:</span>
         <span
           ><span class="sr-only">Trace ID </span><Identifier
             value={entry.reference.traceID}
@@ -125,7 +125,7 @@
             /></span
           >
         {/if}
-        {#if unavailable}<span class="text-rp-subtle">(unavailable)</span>{/if}
+        {#if unavailable}<span class="text-subtle">(unavailable)</span>{/if}
       </span>
     {/snippet}
     <SignalCard

@@ -9,16 +9,20 @@
   import { QuestionMarkIcon } from '@/icons'
   import { setupAnchorPopover } from '@/components/shared/utils/anchor-popover'
 
-  let { importContent }: { importContent?: Snippet } = $props()
+  let {
+    importContent,
+    children,
+    footer,
+  }: { importContent?: Snippet; children?: Snippet; footer?: Snippet } = $props()
   const taglines = [
     'OpenTelemetry made cozy',
     "I'm not changing the name, buddy.",
     'Now with “a lot more functionality”™',
     "I have splintered the ecosystem. Pray I don't splinter it any further.",
-    'Axolotl fact: Axolotls are salamanders.',
-    'Axolotl fact: Those fluffy frills are gills.',
-    'Axolotl fact: Axolotls can regrow limbs.',
-    'Axolotl fact: Wild axolotls call Xochimilco home.',
+    'Axolotls are salamanders.',
+    'Those fluffy frills are gills.',
+    'Axolotls can regrow limbs.',
+    'Wild axolotls call Xochimilco home.',
   ]
   const tagline = taglines[Math.floor(Math.random() * taglines.length)]
   let protocol = $state('http')
@@ -77,7 +81,7 @@
         >
         <span class="min-w-0 text-balance">otel-desktop-viewer</span>
       </h2>
-      <p class="text-pretty text-rp-subtle">{tagline}</p>
+      <p class="text-pretty text-subtle">{tagline}</p>
     </div>
   </div>
   <div class="guide-scroll">
@@ -87,7 +91,7 @@
         <h2 class="text-lg font-normal text-balance text-base-content">
           Connect an exporter
         </h2>
-        <p class="text-pretty text-rp-subtle">
+        <p class="text-pretty text-subtle">
           Run these commands, then start your app.
         </p>
       </div>
@@ -163,7 +167,7 @@
         <h2 class="text-lg font-normal text-balance text-base-content">
           Send a test trace
         </h2>
-        <p class="text-pretty text-rp-subtle">
+        <p class="text-pretty text-subtle">
           Run this with <a
             class="text-secondary underline"
             href="https://github.com/equinix-labs/otel-cli#readme"
@@ -174,7 +178,7 @@
       </div>
       <div class="terminal">
         <div class="flex items-center justify-between gap-2 px-3 py-2">
-          <span class="text-rp-subtle">Shell</span>
+          <span class="text-subtle">Shell</span>
           <ValueCopyButton
             text={example}
             label="otel-cli example"
@@ -190,7 +194,9 @@
         </div>
       </div>
     </section>
+    {@render children?.()}
   </div>
+  {@render footer?.()}
 </div>
 
 <style lang="postcss">

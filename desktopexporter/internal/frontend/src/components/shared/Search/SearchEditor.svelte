@@ -567,7 +567,7 @@
     <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
     <button
       type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-rp-subtle hover:text-base-content tooltip tooltip-left"
+      class="btn btn-ghost btn-sm btn-square shrink-0 text-subtle hover:text-base-content tooltip tooltip-left"
       onclick={() => helpDialogElement?.close()}
       aria-label="Close"
       data-tip="Close"

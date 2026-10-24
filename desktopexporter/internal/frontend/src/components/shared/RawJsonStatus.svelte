@@ -12,7 +12,7 @@
 </script>
 
 <span
-  class="cursor-help whitespace-nowrap text-sm font-normal text-rp-subtle"
+  class="cursor-help whitespace-nowrap text-sm font-normal text-subtle"
   role="status"
   title={status.description}
   aria-describedby={hintID}>{status.label}</span

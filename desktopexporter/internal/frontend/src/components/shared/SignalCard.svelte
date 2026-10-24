@@ -171,7 +171,7 @@
                 <span class="signal-row__time-unit">{timestampUnit}</span>
               {/if}
               {#if timestampSuffix}
-                <span class="text-rp-subtle">{timestampSuffix}</span>
+                <span class="text-subtle">{timestampSuffix}</span>
               {/if}
             </span>
           {/if}

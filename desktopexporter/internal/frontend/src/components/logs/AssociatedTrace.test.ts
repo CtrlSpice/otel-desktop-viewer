@@ -56,7 +56,7 @@ describe('AssociatedTrace', () => {
     expect(screen.getByRole('heading', { name: 'Trace context' })).toHaveClass(
       'text-sm',
       'font-normal',
-      'text-rp-subtle'
+      'text-subtle'
     )
     expect(link.querySelector('[data-field="traceId"]')).toHaveTextContent(
       summary.traceID

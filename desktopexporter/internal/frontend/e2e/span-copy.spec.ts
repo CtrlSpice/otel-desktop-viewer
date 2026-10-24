@@ -761,7 +761,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.addInitScript(() =>
-    localStorage.setItem('theme', 'rose-pine-moon')
+    localStorage.setItem('theme', 'madoromi-fuyu-yoru')
   )
   const selectedExport = `{"resourceSpans":[{
     "schemaUrl":"https://opentelemetry.io/schemas/1.21.0",

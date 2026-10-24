@@ -69,9 +69,8 @@ export const AGG_COLOR_SELECTED = 'var(--color-primary)'
 export const AGG_COLOR_ALL = 'var(--color-secondary)'
 
 // On-swatch glyph colour (checkbox tick, etc.) for a categorical-palette
-// entry. The legend swatches use the same colours as the chart lines, which
-// span pine through gold/foam (light) through rose toward iris -- some are
-// dark enough for a white glyph, some are light enough to need a dark one.
+// entry. The legend swatches use the same colours as the chart lines; some
+// need a light glyph and others need a dark one.
 // Pre-baked fg tables don't survive theme switches or palette length changes,
 // so we do the contrast check at read time.
 
@@ -90,8 +89,7 @@ export function readableTextColor(bg: string): string {
   if (!rgb) return 'var(--color-on-dark)'
   const [r, g, b] = rgb
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-  // Threshold at ~140/255 picks the same dark/light split as eyeballing
-  // each Rosé Pine stem against the theme's surface + text colours.
+  // Choose between the theme's light and dark glyphs using swatch brightness.
   return luminance > 140 ? 'var(--color-on-light)' : 'var(--color-on-dark)'
 }
 

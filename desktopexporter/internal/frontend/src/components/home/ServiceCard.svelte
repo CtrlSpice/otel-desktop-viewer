@@ -90,7 +90,7 @@
           >
             · {service.serviceNameKind}</span
           >{/if}{#if service.serviceNamespace || (service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string')}<span
-            class="text-rp-subtle"
+            class="text-subtle"
           >
             · {service.serviceNamespace}{#if service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string'}<span
                 class="text-secondary text-sm"
@@ -106,7 +106,7 @@
       {#each signals as signal (signal.id)}
         <div class="service-summary__row">
           <span
-            class="service-summary__label inline-flex items-center gap-2 text-rp-subtle"
+            class="service-summary__label inline-flex items-center gap-2 text-subtle"
           >
             <span class="service-summary__icon">
               {#if signal.id === 'logs'}
@@ -128,14 +128,14 @@
           <span class="service-summary__counts">
             <span>{signal.count.toLocaleString()}</span>
             {#if signal.detailCount !== null}
-              <span class="text-rp-subtle" aria-hidden="true">·</span>
+              <span class="text-subtle" aria-hidden="true">·</span>
               <span
                 >{signal.detailCount.toLocaleString()}
-                <span class="text-rp-subtle">{signal.detail}</span></span
+                <span class="text-subtle">{signal.detail}</span></span
               >
             {/if}
             {#if signal.extraCount > 0}
-              <span class="text-rp-subtle" aria-hidden="true">·</span>
+              <span class="text-subtle" aria-hidden="true">·</span>
               <span class="inline-flex items-center gap-2">
                 {#if signal.marker}<span
                     class="size-2 shrink-0 rounded-full {signal.marker}"
@@ -149,7 +149,7 @@
                       ? `${signal.extraCount} error or fatal logs`
                       : undefined}>{signal.extraCount.toLocaleString()}</span
                 >
-                {#if signal.extra}<span class="text-rp-subtle"
+                {#if signal.extra}<span class="text-subtle"
                     >{signal.extra}</span
                   >{/if}
               </span>

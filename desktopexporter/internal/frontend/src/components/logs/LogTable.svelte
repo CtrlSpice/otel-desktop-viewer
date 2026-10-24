@@ -489,7 +489,7 @@
     {#snippet leading()}
       <button
         type="button"
-        class="header-icon-button item-state tooltip tooltip-right disabled:cursor-default disabled:text-rp-muted"
+        class="header-icon-button item-state tooltip tooltip-right disabled:cursor-default disabled:text-(--color-muted)"
         aria-label="Select logs"
         data-tip="Select logs"
         aria-pressed={selectionMode}

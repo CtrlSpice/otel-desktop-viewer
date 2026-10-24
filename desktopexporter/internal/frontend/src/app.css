@@ -10,7 +10,6 @@
 /* Internal viewer, harness and execution errors use the same papaya in every theme. */
 @theme {
   --color-papaya: #ff8000;
-  --color-papaya-content: #191724;
   /* One working text size, including compact component utilities. */
   --text-xs: 0.875rem;
   --text-xs--line-height: 1.5;
@@ -75,9 +74,6 @@
 
 /* Tooltips — inverted against the page.
 
-   daisyUI defaults the bubble to --color-neutral on --color-neutral-content,
-   which in Rosé Pine pairs Muted grey with Text and fails AA in every theme.
-
    Inverting against the surface — Text as the background, Base as the
    foreground — clears AA and reads as a bubble floating above the UI
    rather than a panel inside it, in both light and dark themes.
@@ -96,7 +92,7 @@
 .tooltip[data-tip]::before {
   color: var(--tt-fg);
   /* Small lift so the bubble separates from busy chart and table content;
-     dawn especially needs it, where bubble and page are both low contrast
+     light mode especially needs it, where bubble and page are both low contrast
      against the mid greys in between. */
   box-shadow: 0 2px 8px -2px
     color-mix(in oklab, var(--color-base-content) 35%, transparent);
@@ -142,11 +138,11 @@
   transition-delay: 0s !important;
 }
 
-/* Shared secondary and disabled text utilities; class names retain compatibility. */
-.text-rp-subtle {
+/* Shared secondary and disabled text utilities. */
+.text-subtle {
   color: var(--color-subtle);
 }
-.text-rp-muted {
+.text-muted {
   color: var(--color-muted);
 }
 
@@ -720,7 +716,7 @@ svg {
   transition-delay: 0s;
 }
 
-/* Header controls share neutral highlights and iris active icons. */
+/* Header controls share neutral highlights and Primary active icons. */
 .btn.chart-header-control,
 .btn.header-tab {
   @apply rounded-lg border-0 text-sm font-normal;
@@ -1555,15 +1551,6 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   width: var(--resize-grip-length);
   max-width: 100%;
   height: var(--resize-grip-thickness);
-}
-
-/* Rosé Pine rose token — used for Gauge metric type (not a built-in Daisy semantic). */
-.badge.badge-rose {
-  --badge-color: var(--color-rose);
-}
-
-.badge.badge-papaya {
-  --badge-color: var(--color-papaya);
 }
 
 /* Detail / toolbar metadata origins. */

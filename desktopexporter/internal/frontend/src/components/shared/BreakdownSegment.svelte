@@ -61,7 +61,7 @@
   onpointerleave={scheduleClose}
 >
   <span class="breakdown-segment__fill" aria-hidden="true"></span>
-  {#if single}<span class="min-w-0 truncate text-rp-subtle" aria-hidden="true"
+  {#if single}<span class="min-w-0 truncate text-subtle" aria-hidden="true"
       >{part.label}</span
     >{/if}
 </span>
@@ -82,7 +82,7 @@
       aria-hidden="true"
     ></span>
     <span class="breakdown-tooltip__label">{part.label}</span>
-    <span class="shrink-0 text-rp-subtle tabular-nums"
+    <span class="shrink-0 text-subtle tabular-nums"
       >[{part.count.toLocaleString()}]</span
     >
   </span>

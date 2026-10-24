@@ -93,7 +93,7 @@
                 role="listitem"
               >
                 <EvalStatus label={entry.label} tone={entry.tone} />
-                <span class="text-rp-subtle tabular-nums">[{entry.count}]</span>
+                <span class="text-subtle tabular-nums">[{entry.count}]</span>
               </span>
             {/each}
           </span>

@@ -37,7 +37,7 @@ describe('TableColumnHeading', () => {
       const provenance = screen.getByRole('img', { name: 'Source: resource' })
       const separator = heading.children[1]
       expect(separator).toHaveTextContent('·')
-      expect(separator).toHaveClass('text-rp-subtle')
+      expect(separator).toHaveClass('text-subtle')
       expect(separator).toHaveAttribute('aria-hidden', 'true')
       expect(heading.children[2]).toBe(provenance)
       expect(provenance).toHaveClass('metadata-origin')

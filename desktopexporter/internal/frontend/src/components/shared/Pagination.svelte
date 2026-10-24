@@ -172,7 +172,7 @@
         </button>
       {/if}
       <div class="pagination__size">
-        <label class="flex items-center gap-2 text-xs text-rp-subtle"
+        <label class="flex items-center gap-2 text-xs text-subtle"
           >Rows
           <select
             class="select select-ghost select-xs w-16 text-xs"

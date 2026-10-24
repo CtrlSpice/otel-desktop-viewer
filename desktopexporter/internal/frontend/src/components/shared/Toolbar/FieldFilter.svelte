@@ -154,7 +154,7 @@
     <div bind:this={popoverEl} class="field-filter__popover">
       <div class="field-filter__popover-header header-surface">
         <span
-          class="text-xs font-semibold uppercase tracking-wide text-rp-subtle"
+          class="text-xs font-semibold uppercase tracking-wide text-subtle"
           >Columns</span
         >
       </div>
@@ -208,7 +208,7 @@
             {/if}
             <span class="field-filter__field-name">{field.name}</span>
             {#if field.searchScope === 'attribute' && 'attributeScope' in field}
-              <span class="text-rp-subtle" aria-hidden="true">·</span>
+              <span class="text-subtle" aria-hidden="true">·</span>
               <span class="text-secondary">{field.attributeScope}</span>
             {/if}
           </button>

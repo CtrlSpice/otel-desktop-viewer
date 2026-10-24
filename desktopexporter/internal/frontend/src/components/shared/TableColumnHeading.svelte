@@ -25,7 +25,7 @@
 >
   <span class="table-column-heading__title" title={label}>{label}</span>
   {#if external}
-    <span class="shrink-0 text-rp-subtle" aria-hidden="true">·</span>
+    <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
     <span
       class="metadata-origin table-column-heading__source"
       role="img"

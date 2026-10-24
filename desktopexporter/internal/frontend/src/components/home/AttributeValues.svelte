@@ -109,7 +109,7 @@
 </script>
 
 {#snippet heading()}
-  <div id={headingID} class="flex min-w-0 items-center gap-2 text-rp-subtle">
+  <div id={headingID} class="flex min-w-0 items-center gap-2 text-subtle">
     {#if canExpand}
       <TreeToggle
         label={`${expanded ? 'Collapse' : 'Expand'} ${name} · ${options.ownerType} values`}
@@ -156,7 +156,7 @@
     <td class="table-cell" colspan="4">
       <div class="pl-6">
         {#if error}<span role="alert">{error}</span>
-        {:else}<span class="text-rp-subtle" role="status"
+        {:else}<span class="text-subtle" role="status"
             >{loading ? 'Loading values…' : 'No retained values.'}</span
           >{/if}
       </div>
@@ -223,7 +223,7 @@
           >{item.count.toLocaleString()}</span
         >
       </td>
-      <td class="table-cell text-right text-rp-subtle tabular-nums">
+      <td class="table-cell text-right text-subtle tabular-nums">
         <span
           title={`${coverageCounts(item.counts, coverage?.denominators)} · Of records carrying this attribute`}
           aria-label={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records · ${(item.relativeFrequency * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}

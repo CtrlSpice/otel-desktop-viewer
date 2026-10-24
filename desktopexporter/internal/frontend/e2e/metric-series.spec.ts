@@ -147,7 +147,7 @@ test('time-series axes use the shared rounded Muted border', async ({
   page,
 }) => {
   await page.addInitScript(() =>
-    localStorage.setItem('theme', 'rose-pine-moon')
+    localStorage.setItem('theme', 'madoromi-fuyu-yoru')
   )
   await page.goto(`/metrics/${metric.metricRef}`)
   await expect(page.locator('.metric-time-series-chart')).toBeVisible()
@@ -2112,7 +2112,7 @@ test('series open by their headers, one at a time, with one combined table', asy
     const icon = bubble.locator(':scope > summary svg')
     await expect(icon).toHaveCSS('width', '16px')
     await expect(icon).toHaveCSS('height', '16px')
-    await expect(icon).toHaveClass(/text-rp-subtle/)
+    await expect(icon).toHaveClass(/text-subtle/)
   }
   await expect(
     details.locator('.collapse-arrow, .field-group__caret')

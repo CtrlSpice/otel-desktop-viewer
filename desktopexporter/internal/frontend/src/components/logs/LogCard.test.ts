@@ -88,7 +88,7 @@ describe('LogCard', () => {
     const log = makeLog()
     renderCard({ log, offset: '+500.000 ms' })
     const offset = screen.getByText('(+500.000 ms)', { exact: true })
-    expect(offset).toHaveClass('text-rp-subtle')
+    expect(offset).toHaveClass('text-subtle')
     expect(offset.closest('.signal-date')).toHaveTextContent(
       `${formatTimestampParts(log.timestamp, 'local', 'milliseconds').value} (+500.000 ms)`
     )

@@ -26,17 +26,9 @@ export const THEMES = SEASONS.flatMap(season =>
 export type Theme = (typeof THEMES)[number]
 
 const byName = new Map<string, Theme>(THEMES.map(theme => [theme.id, theme]))
-const legacy = new Map<string, ThemeName>([
-  ['rose-pine-dawn', 'madoromi-fuyu-hiru'],
-  ['rose-pine-moon', 'madoromi-fuyu-yoru'],
-  ['rose-pine', 'madoromi-fuyu-yoru'],
-  ['madoromi-day', 'madoromi-fuyu-hiru'],
-  ['madoromi-night', 'madoromi-fuyu-yoru'],
-])
-
-/** Unknown names use Winter Night; previous theme IDs retain their mode. */
+/** Unknown names use Winter Night. */
 export function getTheme(name: string = ''): Theme {
-  return byName.get(legacy.get(name) ?? name) ?? byName.get(DEFAULT_THEME)!
+  return byName.get(name) ?? byName.get(DEFAULT_THEME)!
 }
 
 /** Official ink shades retain their identity across seasons and Day/Night. */
@@ -48,6 +40,6 @@ export function restoreTheme(
   saved: string | null,
   prefersDark: boolean
 ): Theme {
-  if (saved && (byName.has(saved) || legacy.has(saved))) return getTheme(saved)
+  if (saved && byName.has(saved)) return getTheme(saved)
   return getTheme(themeName('fuyu', prefersDark ? 'dark' : 'light'))
 }

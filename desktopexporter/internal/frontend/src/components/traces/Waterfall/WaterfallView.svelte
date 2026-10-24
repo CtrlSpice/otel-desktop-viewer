@@ -1048,7 +1048,7 @@
 >
   <PaneHeader pill mode="title" title={headerName} ariaLabel="Trace waterfall">
     {#snippet metaLeft()}
-      <div class="flex min-w-0 items-center gap-2 text-rp-subtle">
+      <div class="flex min-w-0 items-center gap-2 text-subtle">
         {#if headerService.trim()}
           <ServiceDot service={headerService} />
           <span class="truncate">({headerService.trim()})</span>

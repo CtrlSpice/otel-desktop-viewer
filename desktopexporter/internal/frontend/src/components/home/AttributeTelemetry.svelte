@@ -177,7 +177,7 @@
         if (active) active.scrollTop = event.currentTarget.scrollTop
       }}
     >
-      {#if active?.loading}<p role="status" class="text-rp-subtle">
+      {#if active?.loading}<p role="status" class="text-subtle">
           Loading matching {active.signal}…
         </p>
       {:else if active?.error}<p role="alert">{active.error}</p>
@@ -207,7 +207,7 @@
             />
           {/if}
         {/each}
-      {:else}<p class="text-rp-subtle">
+      {:else}<p class="text-subtle">
           No matching telemetry in this service, search and time range.
         </p>{/if}
     </div>

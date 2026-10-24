@@ -723,7 +723,7 @@
     />{/snippet}
   {#snippet badge()}
     <span
-      class="text-sm text-rp-subtle tabular-nums"
+      class="text-sm text-subtle tabular-nums"
       title="Shown results / total results"
       >{results.length}/{experiment.results.length} results</span
     >
@@ -758,7 +758,7 @@
           </span>
           <span class="header-tab__label"
             >{item.label}{#if item.id === 'cost'}<span
-                class:text-rp-subtle={availableViews[item.id]}
+                class:text-subtle={availableViews[item.id]}
                 >{' · CAD est.'}</span
               >{/if}</span
           >
@@ -953,7 +953,7 @@
                   ? row.name
                   : `${row.name} · ${completionLabel(row.state, row.internalFault)}`}
                 >{row.name}{#if row.kind === 'result' && item?.sourceID}<span
-                    class="ml-2 text-rp-subtle"
+                    class="ml-2 text-subtle"
                     ><Identifier value={item.sourceID} /></span
                   >{/if}</button
               >
@@ -1018,7 +1018,7 @@
                       maximum={column.assessment.maximum}
                     />
                     {#if assessment?.value != null}<span
-                        class="shrink-0 text-sm text-rp-subtle tabular-nums"
+                        class="shrink-0 text-sm text-subtle tabular-nums"
                         >({assessment.value}{column.assessment.maximum ===
                         undefined
                           ? ''

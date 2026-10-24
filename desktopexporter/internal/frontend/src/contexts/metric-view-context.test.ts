@@ -700,17 +700,17 @@ describe('metric view context visibility seeding', () => {
 
   it('keeps visible key slots and colour identities across theme changes', async () => {
     const previousTheme = document.documentElement.getAttribute('data-theme')
-    document.documentElement.setAttribute('data-theme', 'rose-pine')
+    document.documentElement.setAttribute('data-theme', 'madoromi-aki-yoru')
     try {
       const ctx = renderProbe('/metrics/m1')
       const before = new Map(ctx.timeseriesColorByKey)
-      document.documentElement.setAttribute('data-theme', 'rose-pine-dawn')
+      document.documentElement.setAttribute('data-theme', 'madoromi-fuyu-hiru')
       await tick()
       await tick()
 
       expect([...ctx.timeseriesColorByKey.keys()]).toEqual([...before.keys()])
-      const previous = getSeriesPalette('rose-pine')
-      const next = getSeriesPalette('rose-pine-dawn')
+      const previous = getSeriesPalette('madoromi-aki-yoru')
+      const next = getSeriesPalette('madoromi-fuyu-hiru')
       for (const [key, color] of before) {
         expect(ctx.timeseriesColorByKey.get(key)).toBe(
           next[previous.indexOf(color)]

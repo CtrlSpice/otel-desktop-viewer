@@ -575,7 +575,7 @@ test.describe('home page accessibility', () => {
       '--color-on-dark': '#f1f2f3',
       '--color-muted': '#8d91a4',
       '--color-subtle': '#5e6277',
-      '--color-rose': '#aa6e89',
+      '--color-sakura': '#aa6e89',
       '--color-primary': '#5e21b0',
       '--color-secondary': '#0f5894',
       '--color-accent': '#006156',
@@ -584,7 +584,7 @@ test.describe('home page accessibility', () => {
       '--color-info': '#005a8d',
       '--color-success': '#3a5f00',
       '--color-warning': '#e3940b',
-      '--color-error': '#cf042e',
+      '--color-error': '#bb355a',
     }
     const actual = await page.evaluate(tokens => {
       const style = getComputedStyle(document.documentElement)

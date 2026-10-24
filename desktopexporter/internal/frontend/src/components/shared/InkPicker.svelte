@@ -279,7 +279,7 @@
             >
               <span class="min-w-0 flex-1"
                 >{option.name}
-                <span class="text-rp-subtle">({option.english})</span></span
+                <span class="text-subtle">({option.english})</span></span
               >
               <span class="flex shrink-0 items-center gap-2" aria-hidden="true">
                 {#each option.swatches as swatch}<span
@@ -303,7 +303,7 @@
             >
               <span class="min-w-0"
                 >{option.name}
-                <span class="text-rp-subtle">({option.english})</span></span
+                <span class="text-subtle">({option.english})</span></span
               >
               {#if shadeControls}
                 {@render shadeControls(option, close)}
@@ -343,14 +343,14 @@
             </div>
           {/if}
         {:else}
-          <p class="px-3 py-2 text-sm text-rp-subtle">No matching inks.</p>
+          <p class="px-3 py-2 text-sm text-subtle">No matching inks.</p>
         {/each}
       </div>
     {/if}
   {/snippet}
   {#snippet footer()}
     <a
-      class="link mx-auto inline-flex items-center gap-2 text-sm text-rp-subtle"
+      class="link mx-auto inline-flex items-center gap-2 text-sm text-subtle"
       href="https://madoromi.moonwit.ch/"
       target="_blank"
       rel="noreferrer"
@@ -359,7 +359,7 @@
         icon={HeartIcon}
         size={16}
         strokeWidth={1.5}
-        class="shrink-0 text-(--color-rose)"
+        class="shrink-0 text-(--color-sakura)"
         aria-hidden="true"
       />
     </a>

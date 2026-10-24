@@ -23,7 +23,8 @@
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
   Group appearance controls as Ink, Season, Day/Night, with pill-rounded exterior
-  corners and flat internal joins. Accent ink selects one of the 32 named seed
+  corners and flat internal joins. The Season button has an icon and label,
+  without a dropdown caret. Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
   mixer; default to Ajisai. Persist it as `theme-accent-ink`. Use that family for
   Primary/Secondary/Accent and syntax accent slots. Season owns paper, neutral
@@ -54,6 +55,10 @@
   column fills the remaining table width. Retain sorting and far-right Copy.
   Home's left pane contains Lulu and Getting Started, with setup instructions
   scrolling below the welcome. Use the shared sidebar toggle and saved width.
+  Storage and Ingestion issues follow the setup steps in that scroll area, with
+  independent disclosures. Ingestion issue links reveal the left pane.
+  When Ingestion issues is empty, pin its disabled heading to the bottom of the
+  left pane, outside the setup scroll area.
   The welcome app name uses 22px regular Atkinson Mono in Primary, with a 1.25
   line-height and natural wrapping, as a display-title exception to the 16px
   pane headings. Lulu uses 40% of the welcome width, capped at 160px, so the
@@ -72,9 +77,9 @@
   Categorical graph colours use the official first seven swatches of the same
   32 Madoromi inks: 224 fixed shades across Day/Night and seasons. UI shades are
   allowed. The palest, eighth swatch is omitted from automatic assignments and
-  the seven-dot override picker. Migrate old Bloom owners through the generated
-  one-to-one nearest-colour slot mapping. Histogram and
-  heatmap count ramps use 32 colourful Madoromi inks, default Rikka, with one
+  the seven-dot override picker. Use current Madoromi theme IDs and graph
+  palettes directly; do not add compatibility migrations for prior UI experiments.
+  Histogram and heatmap count ramps use 32 colourful Madoromi inks, default Rikka, with one
   app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
   curve; Day reverses Night's exact shades, and seasons do not change the ink.
   The count-palette picker omits its redundant visible heading; retain its
@@ -120,12 +125,11 @@
   Error uses each variant's original Beni colour from the pinned upstream
   palette. Warning fills use original Yamabuki. Warning
   text uses neutral Text. Do not add separate darkened error text colours.
-  Historical Love/Pine/Iris names below refer to Error/Secondary/Primary roles.
   Preserve marker/fill palette colours. Obtain explicit user
   approval before changing the palette or adding local colour overrides.
   Span and summary breakdown bars use solid palette fills without light-mode
   fading or borders. Error status code/message values use neutral Text with an
-  8px Love dot before the value, only when the received status code is 2.
+  8px Error dot before the value, only when the received status code is 2.
 - Shared item states use Highlight Low for hover and Highlight Medium for
   persistent selection. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
@@ -148,14 +152,14 @@
   Card counts sit in the title row's normal layout. Do not paint a separate
   wrapper background or gradient over the title; truncate the title beside them.
 - Trace counts read `● [x err | y spans]` (singular `span` for one), with both counts
-  and the separator in Subtle, and an 8px Love dot before the error count.
+  and the separator in Subtle, and an 8px Error dot before the error count.
   Error span names use neutral Text
   without an extra dot; the waterfall already has coloured tree markers and bars.
   Omit the error count, dot and separator when there are no errors.
   Error navigation uses open Hugeicons left/right carets in Text, with an 8px
-  Love dot between the left caret and its Subtle label: `[x/y err]` for a selected
+  Error dot between the left caret and its Subtle label: `[x/y err]` for a selected
   error, otherwise `[y err]`. No badge background. The Span section heading adds
-  `· root` in Pine/Secondary only when the selected span has no recorded parent.
+  `· root` in Secondary only when the selected span has no recorded parent.
 - Main header order: title · (service) · counts on the left, optional error
   navigation and Download on the right; time and view controls below. The separate
   service/count row was rejected because it wastes space.
@@ -261,7 +265,7 @@
   aligned only to labelled ruler ticks behind the bars. Keep ruler text Subtle.
   Guides are decorative and cannot intercept pointer input.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
-  horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
+  horizontal dividers. Hide it at rest; show Text on hover and Primary on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
   Table headings use `name · source` for external provenance: name and separator
   use Subtle, and source names use Secondary. Shrink resource/scope labels down
@@ -285,7 +289,7 @@
   Subtle field name, without pills or right-aligned badges. The `·` separator
   uses Subtle. Preserve the actual field name.
   Span-event metadata labels are plain Subtle text. Exception events use an 8px
-  Love dot with neutral Text titles in cards and neutral metadata in timeline
+  Error dot with neutral Text titles in cards and neutral metadata in timeline
   popovers. Do not colour exception text red or restore pill backgrounds.
   Apply the same plain-label rules to activity popovers, link summaries and
   dropdown metadata. Search suggestions use Next at 14px/21px, with plain
@@ -447,9 +451,9 @@
   Do not embed trace Span, Events or Links Details in Evals.
   Child execution errors propagate to parent indicators, including collapsed
   branches, without changing recorded assessment scores.
-  Propagated span errors also colour ancestor duration bars Love, using the same
+  Propagated span errors also colour ancestor duration bars Error, using the same
   execution-error state as the indicators, whether the branch is open or closed.
-  Distinguish Love "Span error" from Papaya "Internal fault" (evaluation
+  Distinguish Error "Span error" from Papaya "Internal fault" (evaluation
   machinery). A failed assessment is "Fail", not an execution error. Preserve
   these meanings during parent propagation, including in dogfooding datasets.
   Evals keeps Details and Telemetry across row modes, with a sibling Assessments
@@ -497,7 +501,7 @@
   retain it in the source export but exclude it from execution duration displays.
   Other later sections start collapsed. Preserve manual disclosure and resizing.
   Evals telemetry links reuse SignalCard: service-colour dot and span name,
-  neutral status text with its status dot, Pine/Secondary provenance, duration,
+  neutral status text with its status dot, Secondary provenance, duration,
   and the shared bottom-left Started date. Service identity is on hover. Omit
   navigation hints; the summary card itself is the exact native trace link.
   Inside each Telemetry card, prefix the inline trace and span IDs with `Traces ·`
@@ -509,7 +513,7 @@
   row mode, including Tool calls. Do not substitute a parent's IDs or invent a
   span ID when only a trace reference is recorded.
   Span-event summaries follow the log-card layout: event identity and plain
-  Pine/Secondary `Span event` provenance, recorded exception message when present,
+  Secondary `Span event` provenance, recorded exception message when present,
   and the shared bottom-left Recorded date/offset. Preserve the exception dot
   and disclosure controls; do not invent severity or span status for events.
   Event cards use the recorded tool name when supplied, retaining a different
@@ -677,7 +681,8 @@
   outer insets, header heights and gaps consistent between two- and three-pane
   layouts. Verify cross-route DOM identity and geometry as well as restored state.
 - Disabled and zero-count Details headers use Muted for their labels, icons and counts.
-  Put these closed, unavailable sections at the bottom. Keep the normal top-level
+  Pin these closed, unavailable sections to the bottom, including when every
+  section is unavailable. Keep the normal top-level
   background and border with a Highlight Low overlay and Muted text. Keep canonical
   order within each group: open, closed available, then inactive. The primary
   (first) section stays open at the top and cannot collapse by click, keyboard or

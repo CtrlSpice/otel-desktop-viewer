@@ -93,11 +93,6 @@ positions retain exact source colours; other positions interpolate the original
 curve at equally spaced OKLab lightness values. Sliders skip occupied hex colours
 and save the ink/position identity without changing automatic assignments.
 
-The generator also builds a fixed one-to-one migration from the legacy Bloom
-slots, using nearest OKLab colour distance to both their Day and Night values.
-`legacy-series-palette.json` is that MIT-licensed input with its original source
-and copyright metadata; its full licence is at `/licenses/rose-pine-bloom.txt`.
-
 The frontend distributes the full licence, these inputs, the generator and the
 adapted JSON at `/licenses/madoromi/`. Those files are the source form of the
 theme adaptation. The unmodified conversion, palette builder and mixer sources

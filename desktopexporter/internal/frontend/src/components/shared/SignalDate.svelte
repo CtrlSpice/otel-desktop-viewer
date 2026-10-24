@@ -35,7 +35,7 @@
     >{timestamp !== undefined && relativeTo !== undefined
       ? formatSignedDuration(timestamp - relativeTo)
       : (parts?.value ?? '—')}{#if suffix}
-      <span class="text-rp-subtle">{' '}{suffix}</span>{/if}</span
+      <span class="text-subtle">{' '}{suffix}</span>{/if}</span
   >
 </div>
 

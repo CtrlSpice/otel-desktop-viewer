@@ -86,7 +86,7 @@ test('picker sends supported signal groups and lists profiles/invalid files with
   ])
   expect(requests[1].body).toBe(`{"resourceLogs":[${resource}]}`)
   await page
-    .locator('#signal-drawer-detail summary')
+    .locator('#signal-drawer-panel summary')
     .filter({ hasText: 'Ingestion issues' })
     .click()
   const issues = page.getByRole('region', { name: 'Ingestion issues' })

@@ -99,7 +99,7 @@
           spanID={link.spanID}
         />
       {:else}Invalid link target{/if}
-      <span class="text-sm text-rp-subtle">{' · Link'}</span>
+      <span class="text-sm text-subtle">{' · Link'}</span>
     {/snippet}
     {#snippet badge()}
       {#if invalid}{@render invalidLinkIcon()}{/if}

@@ -60,7 +60,7 @@
     <div class="metric-card__classification">
       {#if metric.serviceName?.trim()}
         <ServiceDot service={metric.serviceName} />
-        <span class="min-w-0 truncate text-rp-subtle" title={metric.serviceName}
+        <span class="min-w-0 truncate text-subtle" title={metric.serviceName}
           >{metric.serviceName.trim()}</span
         >
       {/if}
@@ -91,7 +91,7 @@
 
 {#snippet reading()}
   <div class="flex w-full min-w-0 flex-wrap gap-x-2 text-sm tabular-nums">
-    {#if matchingPointCount !== undefined}<span class="text-rp-subtle"
+    {#if matchingPointCount !== undefined}<span class="text-subtle"
         >[{matchingPointCount.toLocaleString()} matching {matchingPointCount ===
         1
           ? 'datapoint'

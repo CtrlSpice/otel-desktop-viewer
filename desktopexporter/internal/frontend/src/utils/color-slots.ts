@@ -1,5 +1,4 @@
 import { SERIES_COLOR_COUNT, SERIES_PALETTE_VERSION } from '@/themes'
-import { LEGACY_GRAPH_PALETTE } from '@/themes/graph-inks'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { colorSlotChanges } from '@/state/color-slot-changes.svelte'
 
@@ -121,25 +120,7 @@ function allocatorFor(scope: string, size: number): ColorSlotAllocator {
   const key = storageKey(scope, size)
   let allocator = allocators.get(key)
   if (!allocator) {
-    let saved = loadSlots(key, size)
-    if (saved.length === 0 && size === SERIES_COLOR_COUNT) {
-      const legacy = LEGACY_GRAPH_PALETTE
-      saved = loadSlots(
-        `graph-colour-slots:${legacy.version}:${legacy.slots.length}:${scope}`,
-        legacy.slots.length
-      ).map(
-        ([identity, slot]) =>
-          [identity, legacy.slots[slot]!] as [string, number]
-      )
-      if (saved.length > 0) {
-        try {
-          localStorage.setItem(key, JSON.stringify(saved))
-        } catch {
-          // Migration still preserves the owners in memory when storage is blocked.
-        }
-      }
-    }
-    allocator = new ColorSlotAllocator(size, saved)
+    allocator = new ColorSlotAllocator(size, loadSlots(key, size))
     allocators.set(key, allocator)
   }
   return allocator

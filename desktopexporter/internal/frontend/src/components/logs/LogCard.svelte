@@ -42,7 +42,7 @@
     />{/snippet}
   {#snippet titleContent()}
     <ServiceDot service={log.serviceName ?? ''} />
-    {serviceTitle}{#if showLogBadge}<span class="text-xs text-rp-subtle"
+    {serviceTitle}{#if showLogBadge}<span class="text-xs text-subtle"
         >{` · Log`}</span
       >{/if}
   {/snippet}

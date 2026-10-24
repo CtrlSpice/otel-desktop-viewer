@@ -110,9 +110,9 @@
   aria-label="Trace context"
   aria-busy={loading}
 >
-  <h3 class="text-sm font-normal text-rp-subtle">Trace context</h3>
+  <h3 class="text-sm font-normal text-subtle">Trace context</h3>
   {#if loading}
-    <p class="text-rp-subtle" role="status">Loading trace context…</p>
+    <p class="text-subtle" role="status">Loading trace context…</p>
   {:else if error}
     <div class="flex items-center gap-2" role="alert">
       <span>{error}</span>
@@ -122,14 +122,14 @@
     </div>
   {:else if span || trace}
     <div aria-label={span ? 'Span summary' : 'Trace summary'}>
-      {#if spanID && !span}<div class="text-rp-subtle">Trace summary</div>{/if}
+      {#if spanID && !span}<div class="text-subtle">Trace summary</div>{/if}
       <div class="flex min-w-0 flex-wrap items-baseline gap-x-2">
         {#if title !== undefined}
           <span class="break-words text-lg font-normal text-base-content"
             >{title}</span
           >
         {:else}
-          <span class="inline-flex items-center gap-2 text-rp-subtle">
+          <span class="inline-flex items-center gap-2 text-subtle">
             [<span
               class="size-2 shrink-0 rounded-full bg-info"
               aria-hidden="true"
@@ -137,7 +137,7 @@
             <span>No root span</span>]
           </span>
         {/if}
-        {#if service}<span class="text-rp-subtle">· ({service})</span>{/if}
+        {#if service}<span class="text-subtle">· ({service})</span>{/if}
       </div>
       <div class="flex flex-wrap items-baseline gap-x-2 text-base-content">
         {#if startParts}<span
@@ -145,11 +145,11 @@
             >{startParts.value}</span
           >{/if}
         {#if durationParts}
-          {#if startParts}<span class="text-rp-subtle" aria-hidden="true"
+          {#if startParts}<span class="text-subtle" aria-hidden="true"
               >·</span
             >{/if}
           <span
-            ><span class="text-rp-subtle">Duration:</span>
+            ><span class="text-subtle">Duration:</span>
             {durationParts.value}
             {durationParts.unit}</span
           >

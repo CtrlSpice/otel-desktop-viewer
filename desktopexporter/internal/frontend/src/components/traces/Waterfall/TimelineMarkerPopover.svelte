@@ -291,7 +291,7 @@
             <span class="activity-popover__offset">{offsetLabel(record)}</span>
           </span>
           <span
-            class="activity-popover__metadata text-rp-subtle"
+            class="activity-popover__metadata text-subtle"
             class:activity-popover__metadata--with-dot={record.kind === 'log' ||
               name === 'exception'}
           >

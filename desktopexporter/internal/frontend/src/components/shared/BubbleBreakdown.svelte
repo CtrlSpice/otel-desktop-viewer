@@ -216,7 +216,7 @@
             {@render partLabel(activePart)}
           </div>
         {:else if emptyLabel}
-          <span class="text-sm text-rp-subtle">{emptyLabel}</span>
+          <span class="text-sm text-subtle">{emptyLabel}</span>
         {/if}
       </div>
       {#if right}

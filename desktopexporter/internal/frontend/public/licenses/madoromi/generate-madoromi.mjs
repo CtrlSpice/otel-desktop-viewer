@@ -33,9 +33,7 @@ async function upstreamModule(file, dependencies = {}) {
   return `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`
 }
 const colorModule = await upstreamModule('color.ts')
-const { oklabToHex, oklabToOklch, linearToOklab, srgb8ToLinear } = await import(
-  colorModule
-)
+const { oklabToHex, oklabToOklch } = await import(colorModule)
 const paletteModule = await upstreamModule('palette.ts', {
   './color': colorModule,
 })
@@ -56,7 +54,7 @@ const roles = {
   primary: 'fuji',
   secondary: 'ruri',
   accent: 'tokiwa',
-  rose: 'sakura',
+  sakura: 'sakura',
   warning: 'yamabuki',
   error: 'beni',
   info: 'sora',
@@ -319,47 +317,12 @@ const graphInks = Object.fromEntries(
 const graphSlots = Array.from({ length: 7 }, (_, shade) =>
   countInks.map(id => `${id}:${shade + 1}`)
 ).flat()
-const graphColors = Array.from({ length: 7 }, (_, shade) =>
-  countInks.map(id => graphInks[id][shade])
-).flat()
-const hexLab = hex =>
-  linearToOklab(
-    ...hex
-      .slice(1)
-      .match(/../g)
-      .map(channel => srgb8ToLinear(parseInt(channel, 16)))
-  )
-const deltaSquared = (a, b) =>
-  a.reduce((sum, value, i) => sum + (value - b[i]) ** 2, 0)
-const legacyPalette = JSON.parse(
-  await readFile(new URL('src/themes/series-palette.json', frontend), 'utf8')
-)
-const labs = graphColors.map(hexLab)
-const migrated = new Set()
-// Preserve each old owner through a fixed, one-to-one nearest-colour mapping.
-const legacySlots = legacyPalette.slots.map((_, index) => {
-  const day = hexLab(legacyPalette.themes['rose-pine-dawn'][index])
-  const night = hexLab(legacyPalette.themes['rose-pine-moon'][index])
-  let best = -1,
-    distance = Infinity
-  labs.forEach((lab, slot) => {
-    if (migrated.has(slot)) return
-    const next = deltaSquared(lab, day) + deltaSquared(lab, night)
-    if (next < distance) {
-      best = slot
-      distance = next
-    }
-  })
-  migrated.add(best)
-  return best
-})
 const graphJson =
   JSON.stringify(
     {
       version: 'madoromi-inks-v1',
       inks: graphInks,
       slots: graphSlots,
-      legacy: { version: legacyPalette.version, slots: legacySlots },
     },
     null,
     2
@@ -414,10 +377,6 @@ await writeFile(
 await writeFile(new URL('graph-inks.json', publicSource), graphJson)
 await writeFile(new URL('graph-ink-curves.json', publicSource), graphCurveJson)
 await writeFile(new URL('accent-inks.json', publicSource), accentJson)
-await writeFile(
-  new URL('legacy-series-palette.json', publicSource),
-  JSON.stringify(legacyPalette, null, 2) + '\n'
-)
 for (const file of [
   'LICENSE',
   'palette.json',

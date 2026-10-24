@@ -64,8 +64,6 @@
     $props()
   const time = getTimeContext()
   const navigation = getNavigationCounts()
-  if (window.location.hash === `#${INGESTION_ISSUES_ID}`)
-    detailPanel.setOpen(true)
   const signals = SIGNAL_ORDER
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
   let fieldsReady = $state(false)
@@ -282,9 +280,9 @@
   >
     {#snippet labelSuffix()}
       {#if selectedAttribute}
-        <span class="text-rp-subtle" aria-hidden="true">·</span>
+        <span class="text-subtle" aria-hidden="true">·</span>
         <span class="text-secondary">{selectedAttribute.kind}</span>
-        <span class="text-rp-subtle" aria-hidden="true">·</span>
+        <span class="text-subtle" aria-hidden="true">·</span>
         <span class="text-base-content">{selectedAttribute.ownerType}</span>
       {/if}
     {/snippet}
@@ -332,7 +330,7 @@
               >{/snippet}
           </DetailProperty>
         </tbody>
-      </table>{:else}<p class="p-3 text-rp-subtle">
+      </table>{:else}<p class="p-3 text-subtle">
         Storage information unavailable.
       </p>{/if}
   </DetailBubble>
@@ -359,6 +357,7 @@
   selectedID={null}
   drawerID="signal-drawer"
   drawerLabel="Getting started"
+  revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
   onRefresh={submit}
   {loading}
@@ -396,11 +395,29 @@
     </form>
   {/snippet}
   {#snippet drawerContent()}
-    <GettingStarted {importContent} />
+    <GettingStarted {importContent}>
+      {#snippet children()}
+        <div
+          class="flex shrink-0 flex-col gap-1"
+          role="region"
+          aria-label="Viewer status"
+        >
+          {@render storage()}
+          {#if issueCount > 0}{@render issues()}{/if}
+        </div>
+      {/snippet}
+      {#snippet footer()}
+        {#if issueCount === 0}
+          <div class="shrink-0 px-3 pb-3">
+            {@render issues()}
+          </div>
+        {/if}
+      {/snippet}
+    </GettingStarted>
   {/snippet}
   {#snippet main()}
     <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
-      {#snippet right()}<span class="text-rp-subtle"
+      {#snippet right()}<span class="text-subtle"
           >{loaded
             ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
             : '[—]'}</span
@@ -410,10 +427,10 @@
       {#if error}<p role="alert" class="p-3">
           {error}{loaded ? ' · Showing the last successful reading.' : ''}
         </p>{/if}
-      {#if loading && !loaded}<p role="status" class="p-3 text-rp-subtle">
+      {#if loading && !loaded}<p role="status" class="p-3 text-subtle">
           Loading services…
         </p>
-      {:else if loaded && services.length === 0}<p class="p-3 text-rp-subtle">
+      {:else if loaded && services.length === 0}<p class="p-3 text-subtle">
           {term
             ? 'No services match this search.'
             : 'No services in this time range. Import a file or connect an exporter to get started.'}
@@ -455,8 +472,6 @@
       sections={[
         { id: 'found-on', content: foundOn },
         { id: 'attributes', content: attributes },
-        { id: 'storage', content: storage },
-        { id: 'issues', content: issues },
       ]}
     />
   {/snippet}

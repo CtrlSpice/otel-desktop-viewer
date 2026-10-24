@@ -119,7 +119,7 @@
       {/if}
     </tbody>
   </table>
-  {#if loading}<p class="px-3 py-2 text-sm text-rp-subtle" role="status">
+  {#if loading}<p class="px-3 py-2 text-sm text-subtle" role="status">
       Loading grader input…
     </p>{/if}
   {#if loadError}<p class="px-3 py-2 text-sm" role="alert">{loadError}</p>{/if}

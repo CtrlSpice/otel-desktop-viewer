@@ -497,8 +497,8 @@
       <div class="traces-page__placeholder traces-empty">Loading traces…</div>
     {:else if !page.loading && !hasTraceRows && !currentTraceData}
       <div class="traces-page__placeholder traces-empty">
-        <p class="text-rp-subtle">No traces in this time range</p>
-        <p class="mt-2 text-sm text-rp-subtle">
+        <p class="text-subtle">No traces in this time range</p>
+        <p class="mt-2 text-sm text-subtle">
           Send telemetry to the exporter or adjust the time range
         </p>
       </div>
@@ -531,7 +531,7 @@
       </div>
     {:else}
       <div class="traces-page__placeholder traces-empty">
-        <p class="text-rp-subtle">Select a trace to view details</p>
+        <p class="text-subtle">Select a trace to view details</p>
       </div>
     {/if}
   {/snippet}

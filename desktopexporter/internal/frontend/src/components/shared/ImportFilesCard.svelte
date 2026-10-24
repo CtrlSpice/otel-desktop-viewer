@@ -29,7 +29,7 @@
       aria-hidden="true"
     />
   </span>
-  <span class="text-balance text-rp-subtle">
+  <span class="text-balance text-subtle">
     Drop telemetry JSON files here or anywhere on the screen.
   </span>
 </button>

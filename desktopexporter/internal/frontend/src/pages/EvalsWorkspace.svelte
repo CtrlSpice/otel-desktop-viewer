@@ -604,13 +604,13 @@
     {#if (databaseMode && (experimentIndexing.remaining || experimentIndexing.unsupported || experimentIndexing.empty || experimentListHasMore)) || experimentListError}
       <div class="flex min-w-0 flex-col px-2 py-1 text-sm">
         {#if databaseMode && experimentIndexing.remaining > 0}<p
-            class="px-2 py-1 text-rp-subtle"
+            class="px-2 py-1 text-subtle"
             role="status"
           >
             Indexing saved evaluations… [{experimentIndexing.remaining}]
           </p>{/if}
         {#if databaseMode && (experimentIndexing.unsupported || experimentIndexing.empty)}<p
-            class="px-2 py-1 text-rp-subtle"
+            class="px-2 py-1 text-subtle"
           >
             {experimentIndexing.unsupported} unsupported · {experimentIndexing.empty}
             empty
@@ -639,7 +639,7 @@
       </div>{/if}
     {#if experiment}
       {#if databaseMode && storedExperimentLoading && loadingNoticeReady}
-        <p class="px-3 py-1 text-sm text-rp-subtle" role="status">
+        <p class="px-3 py-1 text-sm text-subtle" role="status">
           Loading experiment… Showing {experiment.name} until it is ready.
         </p>
       {:else if databaseMode && storedExperimentError}
@@ -668,7 +668,7 @@
             telemetryLoading = loading
           }}
         />
-        {#if !results.length}<p class="p-6 text-sm text-rp-subtle">
+        {#if !results.length}<p class="p-6 text-sm text-subtle">
             No results recorded for this experiment.
           </p>{/if}
       </div>
@@ -680,7 +680,7 @@
           title={storedExperimentSummary?.name ?? 'Evals'}
           reserveMetaRow
         />
-        <p class="p-3 text-sm text-rp-subtle" role="status">
+        <p class="p-3 text-sm text-subtle" role="status">
           Loading experiment…
         </p>
       {/if}
@@ -695,13 +695,13 @@
     {:else if experimentListLoading}
       {#if loadingNoticeReady}
         <div
-          class="m-[var(--layout-gap)] px-4 py-12 text-center text-rp-subtle"
+          class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle"
         >
           Loading evals…
         </div>
       {/if}
     {:else if !experimentListError}
-      <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-rp-subtle">
+      <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
         <p>No evals found</p>
         <p class="mt-2 text-sm">
           Import an evaluation file or clear the search and filters

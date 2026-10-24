@@ -32,8 +32,8 @@ describe('ThemeToggle', () => {
     ).toBeInTheDocument()
   })
 
-  it('migrates a previously saved dark theme without changing its mode', () => {
-    localStorage.setItem('theme', 'rose-pine')
+  it('restores a saved Winter Night theme', () => {
+    localStorage.setItem('theme', 'madoromi-fuyu-yoru')
     render(ThemeToggle)
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'madoromi-fuyu-yoru'
@@ -67,9 +67,7 @@ describe('ThemeToggle', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Season: Autumn' })
     )
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Summer' })
-    )
+    await userEvent.click(screen.getByRole('button', { name: 'Summer' }))
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'madoromi-natsu-yoru'
     )

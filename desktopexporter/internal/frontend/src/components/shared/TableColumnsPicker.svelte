@@ -146,7 +146,7 @@
             {#if option.count !== undefined}<span
                 class="shrink-0 text-sm {option.count
                   ? 'text-base-content'
-                  : 'text-rp-muted'}"
+                  : 'text-muted'}"
                 title={option.countTitle}>{option.count}</span
               >{/if}
           </label>
@@ -154,7 +154,7 @@
       </fieldset>
     {/if}
   {/each}
-  {#if !filtered.length}<p class="p-2 text-sm text-rp-subtle">
+  {#if !filtered.length}<p class="p-2 text-sm text-subtle">
       {query ? 'No matching columns.' : 'No columns available.'}
     </p>{/if}
 </div>

@@ -34,7 +34,7 @@ export function themeTokens(theme: Theme) {
     '--color-base-content': c.text,
     '--color-subtle': c.subtle,
     '--color-muted': c.muted,
-    '--color-rose': c.rose,
+    '--color-sakura': c.sakura,
     ...Object.fromEntries(
       Object.entries(theme.syntax).map(([name, color]) => [
         `--color-code-${name}`,

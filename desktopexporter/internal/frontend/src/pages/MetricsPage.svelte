@@ -1036,8 +1036,8 @@
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"
       >
-        <p class="text-rp-subtle">No metrics in this time range</p>
-        <p class="mt-2 text-sm text-rp-subtle">
+        <p class="text-subtle">No metrics in this time range</p>
+        <p class="mt-2 text-sm text-subtle">
           Send telemetry to the exporter or adjust the time range
         </p>
       </div>

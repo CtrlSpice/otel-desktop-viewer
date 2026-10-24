@@ -39,7 +39,7 @@
       state={experiment.state}
       pauseReason={experiment.pauseReason}
     />{#if experiment.state === 'Planned'}<span
-        class="text-rp-subtle tabular-nums"
+        class="text-subtle tabular-nums"
         >{' '}[{experiment.resultCount}]</span
       >{/if}{/snippet}
 </SignalCard>

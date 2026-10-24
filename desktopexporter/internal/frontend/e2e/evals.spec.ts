@@ -422,7 +422,11 @@ test('experiment selection, assessments, filtering and browser history stay conn
   ).toHaveAttribute('aria-disabled', 'true')
 })
 
-for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
+for (const theme of [
+  'madoromi-aki-yoru',
+  'madoromi-fuyu-yoru',
+  'madoromi-fuyu-hiru',
+]) {
   test(`summary views are exclusive radios with selection highlights in ${theme}`, async ({
     page,
   }) => {
@@ -1208,7 +1212,9 @@ test('case branches stay connected to aligned repetitions through sorting and re
   page,
 }) => {
   await enableEvals(page)
-  await page.addInitScript(() => localStorage.setItem('theme', 'rose-pine'))
+  await page.addInitScript(() =>
+    localStorage.setItem('theme', 'madoromi-aki-yoru')
+  )
   await page.setViewportSize({ width: 1920, height: 1000 })
   await openExamples(page, 'experiment=direct&result=request-latency-result-2')
   const table = page.getByRole('table', { name: 'Results for Direct agent' })
@@ -1377,14 +1383,14 @@ test('case branches stay connected to aligned repetitions through sorting and re
   )
 })
 
-for (const theme of ['rose-pine', 'rose-pine-dawn']) {
+for (const theme of ['madoromi-aki-yoru', 'madoromi-fuyu-hiru']) {
   test(`Case and Result stay pinned with shared row feedback in ${theme}`, async ({
     page,
   }) => {
     await enableEvals(page)
     await page.setViewportSize({ width: 1920, height: 1000 })
     await page.emulateMedia({
-      reducedMotion: theme === 'rose-pine' ? 'reduce' : 'no-preference',
+      reducedMotion: theme === 'madoromi-aki-yoru' ? 'reduce' : 'no-preference',
     })
     await page.addInitScript(
       theme => localStorage.setItem('theme', theme),
@@ -1465,7 +1471,7 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
       )
     await expect.poll(async () => new Set(await backgrounds()).size).toBe(1)
     expect((await backgrounds())[0]).not.toBe('rgba(0, 0, 0, 0)')
-    if (theme === 'rose-pine') {
+    if (theme === 'madoromi-aki-yoru') {
       await expect(selected.locator('th')).toHaveCSS(
         'transition-duration',
         '0s'
@@ -1507,7 +1513,7 @@ test('waterfall selection reveals closed Details and experiment selection restor
   expect(new URL(page.url()).searchParams.has('result')).toBe(false)
 })
 
-for (const theme of ['rose-pine', 'rose-pine-dawn']) {
+for (const theme of ['madoromi-aki-yoru', 'madoromi-fuyu-hiru']) {
   for (const width of [1440, 390]) {
     test(`Evals is accessible in ${theme} at ${width}px`, async ({ page }) => {
       await enableEvals(page)

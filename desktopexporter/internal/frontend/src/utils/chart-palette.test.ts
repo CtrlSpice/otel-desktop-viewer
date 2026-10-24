@@ -46,7 +46,7 @@ describe('countSwatches', () => {
     expect(countSwatches(0)).toEqual(countSwatches(1))
     expect(countSwatches(-5)).toEqual(countSwatches(1))
     expect(countSwatches(5, 'constructor')).toEqual(
-      countSwatches(5, 'rose-pine-moon')
+      countSwatches(5, 'madoromi-fuyu-yoru')
     )
     for (const invalid of [NaN, Infinity, 13, 2 ** 32]) {
       expect(() => countSwatches(invalid)).toThrow(RangeError)
@@ -76,7 +76,7 @@ describe.each([
     }
     expect(palette(size, 'unknown')).toEqual(pool)
     expect(palette(size, 'constructor')).toEqual(pool)
-    expect(palette(size, 'rose-pine-dawn')).toEqual(pool)
+    expect(palette(size, 'madoromi-fuyu-hiru')).toEqual(pool)
   })
 
   it('validates requested counts', () => {

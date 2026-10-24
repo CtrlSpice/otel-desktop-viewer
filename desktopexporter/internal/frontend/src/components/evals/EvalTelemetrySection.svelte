@@ -97,7 +97,7 @@
 >
   {#snippet trailing()}
     {#if entries.length && (traceCount !== undefined || logCount !== undefined)}
-      <span class="text-sm text-rp-subtle">[{counts}]</span>
+      <span class="text-sm text-subtle">[{counts}]</span>
     {/if}
   {/snippet}
   {#if entries.length}

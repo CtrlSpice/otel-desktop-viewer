@@ -75,7 +75,11 @@ describe('Waterfall direct-child counts', () => {
       spanNode('orphan', 'missing', 0),
       spanNode('recovered', 'wrong-parent', 1),
     ]
-    const rows = buildWaterfallRows(spans, getTraceBounds(spans), 'rose-pine')
+    const rows = buildWaterfallRows(
+      spans,
+      getTraceBounds(spans),
+      'madoromi-aki-yoru'
+    )
     expect(rows.map(row => row.tree.childrenCount)).toEqual([
       2, 2, 0, 0, 0, 1, 0,
     ])
@@ -239,12 +243,12 @@ describe('WaterfallView bigint domain geometry', () => {
     const rows = buildWaterfallRows(
       spans,
       getTraceBounds(spans),
-      'rose-pine-dawn'
+      'madoromi-fuyu-hiru'
     )
 
     expect(rows.map(row => row.color)).toEqual([
-      traceServiceColor('', 'rose-pine-dawn'),
-      traceServiceColor('', 'rose-pine-dawn'),
+      traceServiceColor('', 'madoromi-fuyu-hiru'),
+      traceServiceColor('', 'madoromi-fuyu-hiru'),
       'var(--color-error)',
     ])
     for (const span of spans)
@@ -257,10 +261,10 @@ describe('WaterfallView bigint domain geometry', () => {
     const serviceRows = buildWaterfallRows(
       spans,
       getTraceBounds(spans),
-      'rose-pine-dawn'
+      'madoromi-fuyu-hiru'
     )
     expect(serviceRows[0].color).toBe(
-      traceServiceColor('one-service', 'rose-pine-dawn')
+      traceServiceColor('one-service', 'madoromi-fuyu-hiru')
     )
     expect(serviceRows[1].color).toBe(serviceRows[0].color)
     expect(serviceRows[2].color).toBe('var(--color-error)')

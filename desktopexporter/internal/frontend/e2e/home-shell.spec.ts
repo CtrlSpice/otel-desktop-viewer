@@ -112,14 +112,14 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
       details: rect('#signal-drawer-detail'),
     }
   })
-  await expect(page.locator('.getting-started')).toBeHidden()
+  await expect(page.locator('.getting-started')).toBeVisible()
   expect(layout.servicesHeader.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.x).toBeGreaterThan(layout.main.x)
   await expect(
     page.locator('.page-layout__main-chrome').getByRole('article')
   ).toHaveCount(1)
-  await expect(page.locator('#signal-drawer-panel')).toBeHidden()
+  await expect(page.locator('#signal-drawer-panel')).toBeVisible()
   await expect(
     page.locator('.page-layout__main-chrome').getByRole('table')
   ).toHaveCount(0)
@@ -130,10 +130,10 @@ test('Home keeps service cards in Main and collapsible attributes in Details wit
       .getByRole('tab', { name: 'Traces', exact: true })
   ).toHaveCount(0)
   await expect(
-    page.getByRole('region', { name: 'Home details' })
+    page.getByRole('region', { name: 'Viewer status' })
   ).toContainText('Storage')
   await expect(
-    page.getByRole('region', { name: 'Home details' })
+    page.locator('#signal-drawer-panel')
   ).toContainText('Ingestion issues')
   await expect(
     page

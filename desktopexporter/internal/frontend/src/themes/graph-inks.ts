@@ -14,7 +14,6 @@ export type GraphSwatch = {
 }
 
 export const GRAPH_PALETTE_VERSION = data.version
-export const LEGACY_GRAPH_PALETTE = data.legacy
 export const GRAPH_CURVE_STEPS = curves.steps
 export const INK_SLIDER_THRESHOLD = 32
 export const GRAPH_INKS = COUNT_PALETTES.map(ink => ({

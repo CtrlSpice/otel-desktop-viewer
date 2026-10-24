@@ -15,8 +15,7 @@ The Season dropdown and day/night button share one compact control group, with
 the season on the left. Hugeicons identify Spring (flower), Summer (sun), Autumn
 (leaf) and Winter (snowflake) in the trigger and the menu. Changing
 season retains the current mode; changing mode retains the season. The complete
-theme ID is saved in localStorage under `theme`. Previous Rosé Pine IDs migrate
-to Winter in their existing light/dark mode. With no saved choice, Winter uses
+theme ID is saved in localStorage under `theme`. With no valid saved choice, Winter uses
 the operating system's preferred mode. If storage is blocked, controls still work
 for the current page.
 
@@ -30,11 +29,10 @@ Font families, sizes, weights and layout use the existing shared tokens.
 - `count-palettes.json`: generated Madoromi histogram count ramps, sizes 1–12.
 - `count-palette-names.json`: generated English ink names from the pinned source.
 - `count-palettes.ts`: ordered count-palette catalogue and default Rikka ink.
-- `index.ts`: catalogue, seasonal selection, legacy migration and graph lookup.
+- `index.ts`: catalogue, seasonal selection and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
-- `graph-inks.json`: official ink swatches, 224 categorical slots and legacy migration.
+- `graph-inks.json`: official ink swatches and 224 categorical slots.
 - `graph-inks.ts`: shared seven-shade catalogue and stable ink/shade identities.
-- `series-palette.json`: legacy Bloom tables retained as a migration input.
 - `utils/color-slots.ts`: saved service/series identity allocation.
 - `state/graph-color-overrides.svelte.ts`: persisted, reactive per-identity overrides.
 
@@ -77,7 +75,7 @@ nijimi 1. Hover takes precedence over selection while the pointer is present.
 | Accent                                | Tokiwa                     |
 | Info                                  | Sora                       |
 | Success                               | Wakaba                     |
-| Rose compatibility token              | Sakura                     |
+| Attribution heart                     | Sakura                     |
 | Warning markers and fills             | Yamabuki                   |
 | Error markers                         | Beni                       |
 
@@ -200,13 +198,7 @@ bands. Each colour retains its exact hex value across seasons and Day/Night.
 
 Slot order visits every ink in Madoromi's pinned colour order at shade 1, then
 at shade 2, through shade 7. Ink/shade IDs, such as `rikka:4`, identify overrides.
-The `madoromi-inks-v1` allocation namespace replaces Bloom. On first use of a
-scope, existing Bloom owners migrate through a generated one-to-one mapping to
-the closest available Madoromi shades, comparing both old Day and Night colours
-in OKLab. The old records remain intact. Migration retains ownership and shared
-slots, including any existing exhaustion collisions; subsequent loads use the
-saved Madoromi assignments. The legacy input and MIT attribution are distributed
-alongside the generator; the full MIT licence remains at `/licenses/rose-pine-bloom.txt`.
+Assignments use the `madoromi-inks-v1` allocation namespace.
 
 Exact identities use FNV-1a with a 32-bit avalanche, then next-free-slot probing.
 Assignments are saved under the palette version, with one viewer-wide service
