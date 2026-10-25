@@ -2,7 +2,7 @@
 
 ## Pixel Lulu
 
-The welcome uses the front-view pixel Lulu from
+The retained pixel Lulu artwork comes from
 [CtrlSpice/lulu](https://github.com/CtrlSpice/lulu/blob/06495f736a62c975584a4e9235c1d85aa9e7627b/views/front.txt),
 dedicated to the public domain under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
@@ -15,22 +15,17 @@ Lulu Axol'Otel was created for OTel Desktop Viewer. The original painting is by
 [Chelsey Bateson](https://cbatesonart.artstation.com/); it is a separate artwork
 and is not covered by the pixel sprite's CC0 dedication.
 
-The welcome fits the shared 48px pane header: a 32px Lulu, a decorative blue `>`
-prompt and the complete product name. The title uses 16px semibold Atkinson Mono
-and stays on one line; the rest of the interface retains its regular weight.
-Lulu and the title are vertically centred, with a 12px gap. The prompt is hidden
-from assistive technology and text selection.
-
 ## Discovery layout
 
-Home's left pane contains the welcome, Getting started, the file-drop box,
-Storage and Ingestion issues. The full-width dashed box fills the remaining
-space below the instructions, just above Storage, with an 80px minimum height.
-Instructions scroll independently when space is limited, keeping import visible.
+Home's left pane contains Getting started, the file-drop box, Storage and
+Ingestion issues. The dotted box matches the terminals' width and neutral border
+colour. It has a fixed 96px height, centred content and a 2px dotted outline.
+It sits directly below the Getting started header, before the exporter and
+test-trace instructions in the same scrollable guide.
 The box opens the multi-file JSON/JSONL picker and says “Drop telemetry JSON
 files here or anywhere on the screen.” File dropping works across the app.
-Getting started is the primary open section of the
-shared resizable stack. The main pane contains the Service map, with each service
+Getting started has the shared section header and stays open as the primary
+section of the resizable stack. The main pane contains the Service map, with each service
 represented once and recorded cross-service parent/child connections drawn as
 edges. Selecting a node keeps the map layout stable and shows matching records
 in Details.

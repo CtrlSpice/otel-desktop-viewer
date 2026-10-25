@@ -72,7 +72,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
       details: rect('#signal-drawer-detail'),
     }
   })
-  await expect(page.locator('.home-welcome')).toBeVisible()
+  await expect(page.locator('.home-sidebar')).toBeVisible()
   expect(layout.mapHeader.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.x).toBeGreaterThan(layout.main.x)
@@ -109,7 +109,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
   )
   await expect(
     page.locator('[data-detail-section="guide"] summary')
-  ).toHaveCount(0)
+  ).toHaveText('Getting started')
   await expect(
     page.getByText('Connect an exporter', { exact: true })
   ).toBeVisible()
@@ -120,7 +120,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     'Ingestion issues'
   )
   await expect(
-    page.locator('.home-welcome').getByRole('button', {
+    page.locator('.home-sidebar').getByRole('button', {
       name: 'Import files',
       includeHidden: true,
     })

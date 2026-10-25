@@ -1067,18 +1067,16 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
-  test('keeps Home welcome, import and setup guide accessible', async ({
-    page,
-  }) => {
+  test('keeps Home import and setup guide accessible', async ({ page }) => {
     const imports = page.getByRole('button', { name: 'Import files' })
     await expect(imports).toBeVisible()
     await expect(imports).toHaveText(
       'Drop telemetry JSON files here or anywhere on the screen.'
     )
-    await expect(imports).toHaveCSS('border-style', 'dashed')
+    await expect(imports).toHaveCSS('border-style', 'dotted')
     await expect(
-      page.getByRole('heading', { name: 'Getting started', exact: true })
-    ).toHaveCount(0)
+      page.locator('[data-detail-section="guide"] summary')
+    ).toHaveText('Getting started')
     await expect(
       page.getByText('Connect an exporter', { exact: true })
     ).toBeVisible()
@@ -1090,70 +1088,6 @@ test.describe('home page accessibility', () => {
         .locator('.page-layout__main-chrome > footer')
         .getByRole('link', { name: 'Madoromi' })
     ).toHaveAttribute('href', 'https://madoromi.moonwit.ch/')
-    const welcome = page.getByRole('heading', {
-      name: 'otel-desktop-viewer',
-      exact: true,
-    })
-    await expect(welcome).toHaveCSS('font-size', '16px')
-    await expect(welcome).toHaveCSS('font-weight', '600')
-    await expect(
-      page.getByRole('img', { name: 'Lulu the axolotl', exact: true })
-    ).toBeVisible()
-    await expect(page.locator('.welcome-banner')).toHaveCSS('height', '48px')
-    await expect(welcome).toHaveText('> otel-desktop-viewer')
-  })
-
-  test('keeps the welcome name on one line across drawer widths', async ({
-    page,
-  }) => {
-    for (const { width, drawer } of [
-      { width: 1920, drawer: 22 },
-      { width: 1920, drawer: 28 },
-      { width: 1920, drawer: 40 },
-      { width: 390, drawer: 22 },
-      { width: 320, drawer: 22 },
-    ]) {
-      await page.setViewportSize({ width, height: 900 })
-      await page.evaluate(drawer => {
-        localStorage.setItem('signal-drawer-width', String(drawer))
-        localStorage.setItem('signal-drawer:open', 'true')
-      }, drawer)
-      await page.reload()
-      await page.evaluate(() => document.fonts.ready)
-      const welcome = page.getByRole('heading', {
-        name: 'otel-desktop-viewer',
-        exact: true,
-      })
-      await expect(welcome).toBeVisible()
-      await expect(welcome).toHaveCSS('font-size', '16px')
-      await expect(welcome).toHaveCSS('white-space', 'nowrap')
-      const layout = await welcome.evaluate(element => {
-        const name = element.lastElementChild!
-        const banner = element.closest('.welcome-banner')!
-        const image = banner.querySelector('svg[role="img"]')!
-        return {
-          name: name.getBoundingClientRect().toJSON(),
-          banner: banner.getBoundingClientRect().toJSON(),
-          image: image.getBoundingClientRect().toJSON(),
-          title: element.getBoundingClientRect().toJSON(),
-          overflow: banner.scrollWidth > banner.clientWidth,
-        }
-      })
-      expect(layout.title.height).toBe(24)
-      expect(layout.title.y + layout.title.height / 2).toBeCloseTo(
-        layout.image.y + layout.image.height / 2,
-        0
-      )
-      expect(layout.name.x + layout.name.width).toBeLessThanOrEqual(
-        layout.banner.x + layout.banner.width
-      )
-      expect(layout.image.width).toBe(32)
-      expect(layout.image.x + layout.image.width + 12).toBeCloseTo(
-        layout.title.x,
-        0
-      )
-      expect(layout.overflow).toBe(false)
-    }
   })
 
   test('uses the approved 20% Winter Day surfaces and mapped foregrounds', async ({

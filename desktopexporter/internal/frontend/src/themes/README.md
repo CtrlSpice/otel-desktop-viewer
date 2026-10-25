@@ -117,8 +117,9 @@ cards stay borderless. Code is flat unless it is part of an explicitly joined
 terminal, which has one enclosing boundary. Unchecked checkbox outlines use
 Nijimi 1; checked controls use Primary. Cards use shared hover/selection fills
 without acquiring shadows. Chart axes, tree connectors and keyboard focus rings
-retain their distinct meanings. Home's full-width dashed import box sits above
-Storage and explains that files can be dropped anywhere.
+retain their distinct meanings. Home's dotted import box sits below the Getting started header,
+matches the terminals' width and border colour, and explains that files can be
+dropped anywhere.
 
 Workspace edges and pane gutters use a shared 16px spacing. Pane headings,
 signal cards and Details fields use 16px horizontal content insets; the List
@@ -262,9 +263,8 @@ Interface text, field names, formatted values and search/filter inputs use
 Atkinson Hyperlegible Next, including placeholders and editor Find fields.
 JSON and code use Atkinson Hyperlegible Mono. Shared tokens in `../app.css`
 set 14px working text, 16px page/pane headings and 1.5 line-height at the default
-root size, with regular weight for data and controls. Home's welcome title and
-decorative prompt use 16px semibold Mono with 1.5 line-height and stay on one
-line beside a 32px Lulu in the shared 48px header. Field names keep their exact spelling.
+root size, with regular weight for data and controls. Field names keep their
+exact spelling.
 The complete time-range menu uses Next, including dates, times, calendars,
 timezone names and ambiguity choices. Its 32rem preferred width is clamped to
 the viewport; endpoint controls wrap into two rows on narrow menus.

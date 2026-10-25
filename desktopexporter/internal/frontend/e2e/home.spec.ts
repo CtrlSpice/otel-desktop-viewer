@@ -170,11 +170,23 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const storage = (await left
     .locator('[data-detail-section="storage"]')
     .boundingBox())!
-  const scrollBox = (await guideScroll.boundingBox())!
-  expect(drop.y).toBeGreaterThanOrEqual(scrollBox.y + scrollBox.height)
-  expect(drop.width).toBeCloseTo(guideBox.width, 0)
-  expect(drop.height).toBeGreaterThanOrEqual(80)
-  expect(drop.y + drop.height).toBeCloseTo(guideBox.y + guideBox.height, 0)
+  const connectBox = (await guideScroll
+    .locator('section')
+    .first()
+    .boundingBox())!
+  expect(connectBox.y).toBeCloseTo(drop.y + drop.height + 24, 0)
+  const terminal = guide.getByRole('tabpanel', { name: 'HTTP' }).locator('..')
+  const terminalBox = (await terminal.boundingBox())!
+  expect(drop.x).toBeCloseTo(terminalBox.x, 0)
+  expect(drop.width).toBeCloseTo(terminalBox.width, 0)
+  await expect(
+    left.getByRole('button', { name: 'Import files', exact: true })
+  ).toHaveCSS(
+    'border-color',
+    await terminal.evaluate(element => getComputedStyle(element).borderColor)
+  )
+  expect(drop.height).toBe(96)
+  expect(drop.y + drop.height).toBeLessThanOrEqual(guideBox.y + guideBox.height)
   expect(guideBox.y + guideBox.height).toBeLessThanOrEqual(storage.y)
   expect(guideBox.x + guideBox.width).toBeLessThanOrEqual(detailsBox.x)
   await expect(left.locator('.signal-row')).toHaveCount(0)
@@ -193,11 +205,9 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     )
     .toBe(true)
   expect((await serviceHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
-  expect(
-    await left
-      .getByRole('button', { name: 'Import files', exact: true })
-      .boundingBox()
-  ).toEqual(drop)
+  await expect(
+    left.getByRole('button', { name: 'Import files', exact: true })
+  ).toBeVisible()
   await guideScroll.evaluate(element => {
     element.scrollTop = 0
   })

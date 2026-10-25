@@ -22,7 +22,7 @@
   import IngestionIssues, {
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
-  import HomeWelcome from '@/components/home/HomeWelcome.svelte'
+  import HomeSidebar from '@/components/home/HomeSidebar.svelte'
   import GettingStarted from '@/components/home/GettingStarted.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
   import ServiceMap from '@/components/home/ServiceMap.svelte'
@@ -336,7 +336,7 @@
 {/snippet}
 
 {#snippet guide()}
-  <DetailBubble label="Getting started" contained headerless>
+  <DetailBubble label="Getting started" contained>
     <GettingStarted {importContent} />
   </DetailBubble>
 {/snippet}
@@ -386,7 +386,7 @@
     </form>
   {/snippet}
   {#snippet drawerContent()}
-    <HomeWelcome
+    <HomeSidebar
       sections={[
         { id: 'guide', content: guide },
         { id: 'storage', content: storage },
