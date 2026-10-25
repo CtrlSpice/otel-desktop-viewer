@@ -732,6 +732,27 @@ test('associated logs reuse summary cards and open the full log without losing t
   expect(Math.max(...titleRows) - Math.min(...titleRows)).toBeLessThan(1)
   await expect(card.locator('.signal-row__date > .signal-date')).toHaveCount(1)
   await expect(card).toContainText('Associated warning')
+  await card.evaluate(element => {
+    element.style.width = '260px'
+  })
+  const wrappedTitle = await card.evaluate(element => {
+    const title = element.querySelector('.signal-row__title > span')!
+    const boxes = [...title.children].map(child =>
+      child.getBoundingClientRect()
+    )
+    return {
+      rows: new Set(boxes.map(box => Math.round(box.y + box.height / 2))).size,
+      titleBottom: Math.max(...boxes.map(box => box.bottom)),
+      bodyTop: element
+        .querySelector('.signal-row__body')!
+        .getBoundingClientRect().top,
+    }
+  })
+  expect(wrappedTitle.rows).toBeGreaterThan(1)
+  expect(wrappedTitle.titleBottom).toBeLessThanOrEqual(wrappedTitle.bodyTop)
+  await card.evaluate(element => {
+    element.style.removeProperty('width')
+  })
   const fields = page.getByRole('table', { name: 'Span fields' })
   const key = fields.locator('.detail-property__key').first()
   const subtle = await key.evaluate(element => {

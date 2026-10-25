@@ -38,6 +38,7 @@
 <SignalCard
   id={log.logRef}
   {selected}
+  wrapTitle
   title={activity ? `${displayTitle} · ${serviceTitle}` : serviceTitle}
   description={bodyPreview && bodyPreview !== activity?.name
     ? bodyPreview
