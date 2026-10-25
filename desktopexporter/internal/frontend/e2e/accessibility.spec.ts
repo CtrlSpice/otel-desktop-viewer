@@ -1070,14 +1070,12 @@ test.describe('home page accessibility', () => {
   test('keeps Home welcome, import and setup guide accessible', async ({
     page,
   }) => {
-    const imports = page.getByRole('button', { name: 'Browse files to import' })
+    const imports = page.getByRole('button', { name: 'Import files' })
     await expect(imports).toBeVisible()
-    await expect(imports).toHaveAccessibleDescription(
-      'Drop JSON files anywhere'
+    await expect(imports).toHaveText(
+      'Drop telemetry JSON files here or anywhere on the screen.'
     )
-    await expect(
-      page.getByText('Drop JSON files anywhere', { exact: true })
-    ).toBeVisible()
+    await expect(imports).toHaveCSS('border-style', 'dashed')
     await expect(
       page.getByRole('heading', { name: 'Getting started', exact: true })
     ).toHaveCount(0)
@@ -1097,12 +1095,12 @@ test.describe('home page accessibility', () => {
       exact: true,
     })
     await expect(welcome).toHaveCSS('font-size', '16px')
-    await expect(welcome).toHaveCSS('font-weight', '400')
+    await expect(welcome).toHaveCSS('font-weight', '600')
     await expect(
       page.getByRole('img', { name: 'Lulu the axolotl', exact: true })
     ).toBeVisible()
-    await expect(page.locator('.welcome-banner')).toHaveCSS('height', '80px')
-    await expect(welcome).toHaveText('otel-desktop-viewer')
+    await expect(page.locator('.welcome-banner')).toHaveCSS('height', '48px')
+    await expect(welcome).toHaveText('> otel-desktop-viewer')
   })
 
   test('keeps the welcome name on one line across drawer widths', async ({
@@ -1149,8 +1147,8 @@ test.describe('home page accessibility', () => {
       expect(layout.name.x + layout.name.width).toBeLessThanOrEqual(
         layout.banner.x + layout.banner.width
       )
-      expect(layout.image.width).toBeGreaterThan(0)
-      expect(layout.image.x + layout.image.width + 24).toBeCloseTo(
+      expect(layout.image.width).toBe(32)
+      expect(layout.image.x + layout.image.width + 12).toBeCloseTo(
         layout.title.x,
         0
       )
@@ -2204,7 +2202,7 @@ test.describe('home page accessibility', () => {
         expect(bounds.bubble.top).toBeGreaterThanOrEqual(0)
         expect(bounds.bubble.bottom).toBeLessThanOrEqual(900)
         if (themeInk) {
-          await expect(button).toHaveAttribute('data-tip', 'To-ro')
+          await expect(button).toHaveAttribute('data-tip', 'Autumn')
         }
         if (direction === 'right')
           expect(bounds.bubble.left).toBeGreaterThan(bounds.trigger.right)

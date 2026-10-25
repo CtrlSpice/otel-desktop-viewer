@@ -267,7 +267,7 @@
     grid-area: 1 / 1;
     justify-self: start;
     align-self: start;
-    margin: 0.625rem 0 0 0.75rem;
+    margin: 0.625rem 0 0 var(--pane-inline-inset);
   }
   .signal-card-with-action:hover > .signal-row:not(:disabled) {
     background-color: var(--color-highlight-low);
@@ -288,7 +288,8 @@
   .signal-row {
     /* Titles share the card-title size; details use the working size. */
     --item-idle-bg: transparent;
-    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm;
+    @apply flex w-full flex-col gap-0 rounded-xl py-2.5 text-left text-sm;
+    padding-inline: var(--pane-inline-inset);
     cursor: pointer;
   }
 

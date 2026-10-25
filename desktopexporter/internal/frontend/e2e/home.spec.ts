@@ -117,7 +117,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const countsBox = (await card.locator('.signal-row__badge').boundingBox())!
   expect(countsBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width)
   expect(countsBox.x + countsBox.width).toBeCloseTo(
-    cardBox.x + cardBox.width - 12,
+    cardBox.x + cardBox.width - 16,
     0
   )
   expect(countsBox.y + countsBox.height / 2).toBeCloseTo(
@@ -165,12 +165,16 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const guideBox = (await guide.boundingBox())!
   const detailsBox = (await details.boundingBox())!
   const drop = (await left
-    .getByRole('button', { name: 'Browse files to import', exact: true })
+    .getByRole('button', { name: 'Import files', exact: true })
     .boundingBox())!
   const storage = (await left
     .locator('[data-detail-section="storage"]')
     .boundingBox())!
-  expect(drop.y + drop.height).toBeLessThanOrEqual(guideBox.y)
+  const scrollBox = (await guideScroll.boundingBox())!
+  expect(drop.y).toBeGreaterThanOrEqual(scrollBox.y + scrollBox.height)
+  expect(drop.width).toBeCloseTo(guideBox.width, 0)
+  expect(drop.height).toBeGreaterThanOrEqual(80)
+  expect(drop.y + drop.height).toBeCloseTo(guideBox.y + guideBox.height, 0)
   expect(guideBox.y + guideBox.height).toBeLessThanOrEqual(storage.y)
   expect(guideBox.x + guideBox.width).toBeLessThanOrEqual(detailsBox.x)
   await expect(left.locator('.signal-row')).toHaveCount(0)
@@ -189,6 +193,11 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     )
     .toBe(true)
   expect((await serviceHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
+  expect(
+    await left
+      .getByRole('button', { name: 'Import files', exact: true })
+      .boundingBox()
+  ).toEqual(drop)
   await guideScroll.evaluate(element => {
     element.scrollTop = 0
   })

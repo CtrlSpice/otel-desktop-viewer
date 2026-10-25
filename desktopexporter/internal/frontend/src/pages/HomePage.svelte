@@ -337,7 +337,7 @@
 
 {#snippet guide()}
   <DetailBubble label="Getting started" contained headerless>
-    <GettingStarted />
+    <GettingStarted {importContent} />
   </DetailBubble>
 {/snippet}
 
@@ -387,7 +387,6 @@
   {/snippet}
   {#snippet drawerContent()}
     <HomeWelcome
-      {importContent}
       sections={[
         { id: 'guide', content: guide },
         { id: 'storage', content: storage },

@@ -714,7 +714,8 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 min-w-0 shrink-0;
+    @apply min-w-0 shrink-0;
+    margin-inline-start: var(--layout-gap);
   }
 
   .signal-drawer__body {
@@ -733,7 +734,8 @@
   }
 
   .signal-drawer__item {
-    @apply min-w-0 px-3;
+    @apply min-w-0;
+    padding-inline-start: var(--layout-gap);
   }
 
   /* ── Empty state (zero results with filters still reachable above) ── */

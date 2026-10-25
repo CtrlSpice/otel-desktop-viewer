@@ -117,8 +117,13 @@ cards stay borderless. Code is flat unless it is part of an explicitly joined
 terminal, which has one enclosing boundary. Unchecked checkbox outlines use
 Nijimi 1; checked controls use Primary. Cards use shared hover/selection fills
 without acquiring shadows. Chart axes, tree connectors and keyboard focus rings
-retain their distinct meanings. Import uses an inline Browse action in a
-drop-anywhere hint.
+retain their distinct meanings. Home's full-width dashed import box sits above
+Storage and explains that files can be dropped anywhere.
+
+Workspace edges and pane gutters use a shared 16px spacing. Pane headings,
+signal cards and Details fields use 16px horizontal content insets; the List
+pane uses the adjacent gutter rather than adding another trailing outer inset.
+Controls retain their 8px gaps, and data-row heights stay compact.
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
@@ -257,9 +262,9 @@ Interface text, field names, formatted values and search/filter inputs use
 Atkinson Hyperlegible Next, including placeholders and editor Find fields.
 JSON and code use Atkinson Hyperlegible Mono. Shared tokens in `../app.css`
 set 14px working text, 16px page/pane headings and 1.5 line-height at the default
-root size, with regular weight throughout. Home's welcome title and decorative
-prompt use 16px Mono with 1.25 line-height and stay on one line. The adjacent
-image can shrink to make room. Field names keep their exact spelling.
+root size, with regular weight for data and controls. Home's welcome title and
+decorative prompt use 16px semibold Mono with 1.5 line-height and stay on one
+line beside a 32px Lulu in the shared 48px header. Field names keep their exact spelling.
 The complete time-range menu uses Next, including dates, times, calendars,
 timezone names and ambiguity choices. Its 32rem preferred width is clamped to
 the viewport; endpoint controls wrap into two rows on narrow menus.

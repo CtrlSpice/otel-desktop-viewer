@@ -15,21 +15,25 @@ Lulu Axol'Otel was created for OTel Desktop Viewer. The original painting is by
 [Chelsey Bateson](https://cbatesonart.artstation.com/); it is a separate artwork
 and is not covered by the pixel sprite's CC0 dedication.
 
-The welcome is an 80px-high horizontal lockup: Lulu and the complete product name,
-vertically centred with a 24px gap. Lulu's column shrinks on narrow drawers to
-keep the title on one line at the regular 16px Atkinson Mono size. It has no
-tagline or decorative prompt.
+The welcome fits the shared 48px pane header: a 32px Lulu, a decorative blue `>`
+prompt and the complete product name. The title uses 16px semibold Atkinson Mono
+and stays on one line; the rest of the interface retains its regular weight.
+Lulu and the title are vertically centred, with a 12px gap. The prompt is hidden
+from assistive technology and text selection.
 
 ## Discovery layout
 
-Home's left pane contains the welcome, the inline hint “Drop JSON files anywhere,
-or browse”, Getting started, Storage and Ingestion issues. Browse opens the
-multi-file JSON/JSONL picker; file dropping works across the app.
+Home's left pane contains the welcome, Getting started, the file-drop box,
+Storage and Ingestion issues. The full-width dashed box fills the remaining
+space below the instructions, just above Storage, with an 80px minimum height.
+Instructions scroll independently when space is limited, keeping import visible.
+The box opens the multi-file JSON/JSONL picker and says “Drop telemetry JSON
+files here or anywhere on the screen.” File dropping works across the app.
 Getting started is the primary open section of the
 shared resizable stack. The main pane contains the Service map, with each service
 represented once and recorded cross-service parent/child connections drawn as
 edges. Selecting a node keeps the map layout stable and shows matching records
-in Details. The welcome has no decorative prompt before the app name.
+in Details.
 
 Service cards use three shared card rows: service name and right-aligned Error
 dot/count, then comma-separated trace, metric and log counts, then Last seen.

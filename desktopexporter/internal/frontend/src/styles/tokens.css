@@ -56,9 +56,9 @@
   --table-header-h: 2.75rem;
   --table-heading-color: var(--color-subtle);
   --waterfall-gutter-tail: 4px;
-  --layout-gap: 0.75rem;
+  --layout-gap: 1rem;
   --resize-bar-hit-width: 0.75rem;
-  --panel-split-total: 0.75rem;
+  --panel-split-total: var(--layout-gap);
   --panel-split-flex-gap: calc(
     (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
   );
@@ -67,7 +67,7 @@
   --header-counter-min-width: 1rem;
   --signal-card-row-h: 1.5rem;
   --header-padding: 0.5rem;
-  --header-padding-inline: 0.75rem;
+  --header-padding-inline: var(--pane-inline-inset);
   --pane-header-row-h: 2rem;
   --pane-header-single-h: calc(
     var(--pane-header-row-h) + 2 * var(--header-padding)

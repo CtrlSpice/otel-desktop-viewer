@@ -283,7 +283,7 @@
       >
     </div>{/each}
   {#if nodes.length && layoutReady}
-    <p class="p-3 text-subtle">
+    <p class="px-[var(--pane-inline-inset)] py-3 text-subtle">
       Scroll to move. Pinch to zoom.
       <span class="sr-only"
         >You can also drag empty space to move the map, or use arrow keys with a
