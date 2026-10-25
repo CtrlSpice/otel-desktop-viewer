@@ -35,13 +35,7 @@
    *   manufacturing borders around or between the header and pane body.
    */
   import type { Snippet } from 'svelte'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import PaneTimestampHeader from '@/components/shared/PaneTimestampHeader.svelte'
-
-  export type PaneTimeRange = {
-    startMs: number
-    endMs: number
-  }
 
   export type PaneTab = {
     id: string
@@ -101,18 +95,15 @@
     rounded?: boolean
     /** Main signal headers share the base-300 pill surface of detail headings. */
     pill?: boolean
-    /** Optional chart/query window below the title, beside graph tabs when present. */
-    timeRange?: PaneTimeRange
     /** Optional single timestamp (ms) on its own line below the title
      *  or tab strip (e.g. log record time). */
     timestampMs?: number
-    /** Custom content in place of the time range on the lower row. */
+    /** Custom content at the left of the lower row. */
     metaLeft?: Snippet
     /** Controls centred horizontally in the second header row. */
     metaCenter?: Snippet
     /** Optional right-aligned controls on the second header row (below
-     *  the title). Renders beside `timeRange` / `timestampMs` when
-     *  those are set, or alone on that row when they are not. */
+     *  the title). Renders beside the timestamp or custom metadata when set. */
     metaRight?: Snippet
   }
 
@@ -180,7 +171,6 @@
   let stackedClass = $derived(
     props.mode === 'title' ||
       props.mode === 'title-tabs' ||
-      props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
       props.metaLeft !== undefined ||
       props.metaCenter !== undefined ||
@@ -207,11 +197,6 @@
     <div class="pane-header__time-range">
       {#if props.metaLeft}
         {@render props.metaLeft()}
-      {:else if props.timeRange}
-        <ChartTimeRangeHeader
-          startMs={props.timeRange.startMs}
-          endMs={props.timeRange.endMs}
-        />
       {:else if props.timestampMs !== undefined}
         <PaneTimestampHeader timestampMs={props.timestampMs} />
       {/if}
@@ -380,7 +365,7 @@
     </div>
     {#if props.mode === 'title-tabs'}
       <div class="pane-header__tabs-row">
-        {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
+        {#if props.timestampMs !== undefined || props.metaLeft || props.metaRight}
           {@render metaRow(false)}
         {/if}
         {@render tabStrip(
@@ -426,7 +411,7 @@
         </div>
       {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
+    {#if props.timestampMs !== undefined || props.metaLeft || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>

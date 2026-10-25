@@ -217,14 +217,21 @@ test('service cards are unique graph nodes with standalone services, stable insp
     0
   )
   const viewport = (await map.locator('.service-map__canvas').boundingBox())!
-  expect(afterCentre.worker.x + afterCentre.worker.width / 2).toBeCloseTo(
+  const overview = await map
+    .locator('.service-map__node')
+    .evaluateAll(nodes => {
+      const boxes = nodes.map(node => node.getBoundingClientRect())
+      return {
+        left: Math.min(...boxes.map(box => box.left)),
+        right: Math.max(...boxes.map(box => box.right)),
+        top: Math.min(...boxes.map(box => box.top)),
+      }
+    })
+  expect((overview.left + overview.right) / 2).toBeCloseTo(
     viewport.x + viewport.width / 2,
     0
   )
-  expect(afterCentre.worker.y + afterCentre.worker.height / 2).toBeCloseTo(
-    viewport.y + viewport.height / 2,
-    0
-  )
+  expect(overview.top).toBeCloseTo(viewport.y + 32, 0)
   await apiNode.focus()
   await apiNode.press('Enter')
   await expect(apiNode).toHaveAttribute('aria-pressed', 'true')
@@ -234,6 +241,9 @@ test('service cards are unique graph nodes with standalone services, stable insp
     beforeCentre.api.y - beforeCentre.worker.y,
     0
   )
+  await page.getByRole('button', { name: 'Reset service map view' }).click()
+  expect(await apiNode.boundingBox()).toEqual(afterCentre.api)
+  expect(await workerNode.boundingBox()).toEqual(afterCentre.worker)
   await workerNode.focus()
   await workerNode.press('Enter')
   expect(expansions).toEqual(graphReads)
@@ -247,6 +257,7 @@ test('service cards are unique graph nodes with standalone services, stable insp
   await page.getByRole('button', { name: 'Reset service map view' }).click()
   await expect(workerNode).toBeVisible()
   const centred = (await workerNode.boundingBox())!
+  expect(centred).toEqual(afterCentre.worker)
   await workerNode.focus()
   await workerNode.press('ArrowRight')
   await expect

@@ -312,10 +312,6 @@
   )
   const metricCtx = getMetricViewContext()
 
-  let chartHeaderTimeRange = $derived(
-    metricCtx.isUnsafeTemporality ? undefined : metricCtx.chartDataTimeRange
-  )
-
   let hasMetricRows = $derived(page.items.length > 0)
   let displayError = $derived(page.error ?? actionError)
 
@@ -973,7 +969,6 @@
           }}
           ariaLabel="Metric chart"
           tabPanelID={METRIC_CHART_PANEL_ID}
-          timeRange={showChartHistogramTabs ? undefined : chartHeaderTimeRange}
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           {#snippet metaRight()}
@@ -995,7 +990,6 @@
           title={selectedSummary.name}
           subtitle={selectedSummary.serviceName || undefined}
           ariaLabel="Metric chart"
-          timeRange={chartHeaderTimeRange}
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           {#snippet metaRight()}

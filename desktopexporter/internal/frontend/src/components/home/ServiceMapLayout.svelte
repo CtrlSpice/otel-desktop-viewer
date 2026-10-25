@@ -17,23 +17,19 @@
   let {
     services,
     connections,
-    centreID,
     viewRevision,
     sizes,
     children,
   }: {
     services: ServiceSummary[]
     connections: ServiceConnection[]
-    centreID: string
     viewRevision: number
     sizes: ServiceSizes
     children: Snippet<[ServiceLayout]>
   } = $props()
   const chart = getChartContext()
   let layout = $state<ServiceLayout>({ positions: new Map(), paths: new Map() })
-  let camera:
-    | { identity: string; width: number; height: number; revision: number }
-    | undefined
+  let camera: { width: number; height: number; revision: number } | undefined
 
   $effect.pre(() => {
     const items = services,
@@ -51,12 +47,17 @@
     })
   })
   $effect(() => {
-    const point = layout.positions.get(centreID)
+    const positions = layout.positions
     const transform = chart.transform
     const width = chart.width,
       height = chart.height
     const revision = viewRevision
-    if (!point || width <= 0 || height <= 0 || transform.mode !== 'canvas')
+    if (
+      !positions.size ||
+      width <= 0 ||
+      height <= 0 ||
+      transform.mode !== 'canvas'
+    )
       return
     if (
       camera &&
@@ -73,30 +74,25 @@
         }
         return
       }
-      if (!camera || camera.revision !== revision) transform.scale = 1
-      const points = [...layout.positions].map(([identity, position]) => ({
+      transform.scale = 1
+      const points = [...positions].map(([identity, position]) => ({
         ...position,
         width: sizes.get(identity)?.width ?? SERVICE_CARD_WIDTH,
         height: sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT,
       }))
-      const centre = !camera
-        ? {
-            x:
-              (Math.min(...points.map(p => p.x - p.width / 2)) +
-                Math.max(...points.map(p => p.x + p.width / 2))) /
-              2,
-            y:
-              Math.min(...points.map(p => p.y - p.height / 2)) +
-              height / 2 -
-              32,
-          }
-        : point
+      const centre = {
+        x:
+          (Math.min(...points.map(p => p.x - p.width / 2)) +
+            Math.max(...points.map(p => p.x + p.width / 2))) /
+          2,
+        y: Math.min(...points.map(p => p.y - p.height / 2)) + height / 2 - 32,
+      }
       transform.translate = {
         x: width / 2 - centre.x * transform.scale,
         y: height / 2 - centre.y * transform.scale,
       }
     })
-    camera = { identity: centreID, width, height, revision }
+    camera = { width, height, revision }
   })
 </script>
 

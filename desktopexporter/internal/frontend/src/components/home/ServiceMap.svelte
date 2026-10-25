@@ -309,7 +309,6 @@
             <ServiceMapLayout
               services={nodes}
               {connections}
-              centreID={inspectedID}
               {viewRevision}
               {sizes}
             >

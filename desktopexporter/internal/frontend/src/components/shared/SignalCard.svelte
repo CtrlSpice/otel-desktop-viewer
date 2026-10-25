@@ -39,6 +39,7 @@
     badgePlacement?: 'inline' | 'end'
     /** Subtle line under the title (e.g. a log body preview). */
     description?: string
+    singleLineDescription?: boolean
     descriptionIsID?: boolean
     /** Secondary line under header (custom content; prefer description). */
     lead?: Snippet
@@ -76,6 +77,7 @@
     badge,
     badgePlacement = 'end',
     description,
+    singleLineDescription = false,
     descriptionIsID = false,
     lead,
     meta,
@@ -122,7 +124,11 @@
   <div class="signal-row__body">
     {#if description}
       <div class="signal-row__lead">
-        <p class="signal-row__description" title={description}>
+        <p
+          class="signal-row__description"
+          class:signal-row__description--single-line={singleLineDescription}
+          title={description}
+        >
           {#if descriptionIsID}<Identifier
               value={description}
             />{:else}{description}{/if}
@@ -309,6 +315,10 @@
   .signal-row__description {
     @apply min-w-0 line-clamp-2 text-sm;
     color: var(--color-subtle);
+  }
+
+  .signal-row__description--single-line {
+    @apply block truncate;
   }
 
   .signal-row__header {

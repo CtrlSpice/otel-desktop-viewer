@@ -1226,7 +1226,7 @@ test.describe('home page accessibility', () => {
     await interceptRpc(page)
     await page.goto('/')
     await expect(
-      page.getByRole('region', { name: 'Attributes', exact: true })
+      page.getByRole('region', { name: 'Service map', exact: true })
     ).toBeVisible()
   })
 
@@ -1408,11 +1408,10 @@ test.describe('home page accessibility', () => {
         '.detail-stack:visible > .detail-bubble > :is(details, section) > .detail-bubble__heading'
       )
       await expect(detailHeadings).toHaveCount(3)
-      for (const [index, heading] of (await detailHeadings.all()).entries()) {
+      for (const heading of await detailHeadings.all()) {
         await expect(heading).toHaveCSS('background-color', panel)
         await expect(heading).toHaveCSS('font-weight', '400')
-        // Only the pane's first heading reserves a second control row.
-        await expect(heading).toHaveCSS('height', index === 0 ? '88px' : '48px')
+        await expect(heading).toHaveCSS('height', '48px')
         await expect(heading).toHaveCSS('border-radius', '12px')
       }
     })

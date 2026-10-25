@@ -32,6 +32,7 @@
   {selected}
   title={serviceTitle}
   description={bodyPreview || undefined}
+  singleLineDescription
   {onclick}
   {href}
 >

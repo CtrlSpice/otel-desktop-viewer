@@ -347,7 +347,6 @@ export function createDetailStackState(storageKey: string) {
       }
     },
     previous,
-    isPrimary: (id: string) => primary()?.id === id,
     canClose,
     setOpen,
     ensureOpen() {

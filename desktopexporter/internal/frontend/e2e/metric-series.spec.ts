@@ -2373,7 +2373,7 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
     page
       .getByRole('region', { name: 'Metric chart', exact: true })
       .locator('[aria-label="Chart time range"]')
-  ).toBeVisible()
+  ).toHaveCount(0)
 })
 
 test('Rate clicks pin the exact bucket and put slope at the right edge', async ({
@@ -2743,9 +2743,7 @@ test('series open by their headers, one at a time, with one combined table', asy
       .locator('.metric-chart-view')
       .getByRole('checkbox', { name: 'Show Statistics' })
   ).toHaveCount(0)
-  await expect(range).toHaveCount(1)
-  await expect(range).toContainText('Start')
-  await expect(range).toContainText('End')
+  await expect(range).toHaveCount(0)
   await expect(
     page.locator('.metric-chart-view [aria-label="Chart time range"]')
   ).toHaveCount(0)
@@ -2759,9 +2757,6 @@ test('series open by their headers, one at a time, with one combined table', asy
     const tabs = header
       .querySelector('[role="tablist"]')!
       .getBoundingClientRect()
-    const range = header
-      .querySelector('[aria-label="Chart time range"]')!
-      .getBoundingClientRect()
     const title = header
       .querySelector('.pane-header__title')!
       .getBoundingClientRect()
@@ -2774,14 +2769,12 @@ test('series open by their headers, one at a time, with one combined table', asy
       downloadInset: top.right - download.right,
       topBottom: top.bottom,
       tabsTop: tabs.top,
-      rangeTop: range.top,
     }
   })
   expect(headerLayout.badgesAfterTitle).toBe(true)
   expect(headerLayout.badgesBeforeDownload).toBe(true)
   expect(Math.abs(headerLayout.downloadInset)).toBeLessThan(1)
   expect(headerLayout.tabsTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
-  expect(headerLayout.rangeTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
   await expect(mainHeader).toHaveCSS(
     'background-color',
     await fieldsBubble

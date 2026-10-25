@@ -404,9 +404,10 @@ One app-wide set of saved side-pane widths and open preferences applies across
 signals. An omitted pane gives its space to Main without changing its saved
 preference; responsive clamping changes only rendered geometry. Destination
 geometry applies immediately, including loading, empty and error states.
-The first header in List, Main and Details reserves two equal-height rows for
-identity and controls. Lower section headers retain their single-row height.
-Home's Services header is single-row beneath Lulu's welcome.
+Workspace headers reserve two equal-height rows for identity and controls.
+Collapsible section headers use one row throughout, including the primary
+Details section, with actions beside the title. Metric chart headers omit the
+repeated Start/End range; the global time selector and chart axes supply time context.
 
 `DetailStack.svelte` and `DetailBubble.svelte` share disclosure and sizing across
 Home and signal Details. The available primary section stays open. Open sections
@@ -438,7 +439,8 @@ appends the next 100-item page without removing existing nodes.
 Selecting a card shows its Telemetry without moving the map or repeating the
 service summary in Details. New neighbours occupy free space without moving
 existing nodes. A new search/time scope or refresh starts a new layout. Reset view
-centres the inspected service at the default zoom. Selecting a directed connection
+restores the top-aligned graph overview at the default zoom, independently of
+the inspected service. Selecting a directed connection
 shows its counts and 25-item pages of recorded child spans, each linking to its
 exact trace and span.
 
@@ -481,6 +483,8 @@ multiple values of the same kind on one record do not inflate its heading count.
 Home Telemetry shows signal summaries scoped to the inspected service, search
 and time range. Metric search selects Metric identities, following the metric
 workspace's query-membership semantics.
+Log cards keep body previews on one ellipsized line, with the preview on hover
+and the complete received body available in Details.
 
 Tabs in the second header row offer Traces, Metrics
 and Logs with known matching counts. Each signal keeps its own page and scroll position. Only the
