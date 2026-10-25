@@ -33,16 +33,16 @@
   below its button, end-aligned and viewport-clamped, with compact ink controls
   below the full-width app-style sample preview. The preview remains
   the main visual element.
-  Use one header row: `Preview: <original ink name>` at the left and the four
+  Use one shared section-header row: `Preview: <original ink name>` at the left and the four
   icon-only season choices at the right. Put the sample summary card and its
   JSON below it, then the ink strip, then attribution. Omit redundant headings.
   Omit the extra Trace preview header and separate attributes.
   The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
-  Each ink choice has three vertically stacked 8px colour dots in a 32px-wide,
+  Each ink choice has three vertically stacked 8px colour dots in a 24px-wide,
   48px-high target, brightest at the top (official shades 7, 4, 1). Use one
   horizontal row below the JSON preview, scrolling when
   necessary, with the selected original ink name shown once.
-  Keep the chooser 34rem wide at most. Use native side-to-side scrolling for
+  Keep adjacent ink targets without extra gaps and the chooser 28rem wide at most. Use native side-to-side scrolling for
   overflow, with optional left/right caret buttons that scroll without changing
   the selected ink. Disable each caret at its end. Do not snap or auto-advance.
   Keep every ink's name in its tooltip and accessible label. Use radio-group
@@ -89,15 +89,15 @@
   Value columns use one third of the available row width, capped at 12rem;
   truncate long values with an ellipsis and retain the full value on hover.
   Aligned bar tracks fill the remaining width and keep their percentage scale.
-  Home calls the distinct matching-record count Records, not Count. Its default
-  columns are Name, Distinct values, Records, %, and Copy. Reuse TableColumnsPicker
-  for optional Type, Source, Signals, Spans, Datapoints and Logs columns, with
-  descriptions of their actual scope. Preserve received types and exact values.
-  Numeric columns stay right-aligned; let metadata columns resize and Name fill
-  remaining space. Copy stays far right when shown. Keep sorting global.
-  Reuse the shared table's pinned-prefix layout, with Name pinned by default.
-  Persist column visibility and pins independently from widths. Fall back to
-  native horizontal scrolling when the pinned prefix cannot fit usefully.
+  Home calls the distinct matching-record count Records, not Count. Keep four
+  columns: Name, Records, %, and Copy, with received types beside names and
+  provenance on hover. Numeric columns stay right-aligned; Name fills remaining
+  space and Copy stays far right. Keep sorting global. Reuse the shared table's
+  responsive pinned-prefix layout for Name and remember resized widths.
+  Fall back to native horizontal scrolling when the pinned prefix cannot fit
+  usefully. The Attributes header has trace-style Collapse all / Expand all
+  controls that apply across pages and pending value loads. Preserve individual
+  disclosures until the next bulk action; reset them when discovery scope changes.
   Whole attribute/value rows select matching Telemetry. Preserve native name/value
   buttons, focused-row keyboard selection/navigation, text selection, independent
   Copy and disclosure controls. Expose selectable rows through grid semantics.
@@ -112,8 +112,10 @@
   grouping and header-resize rules. Closed and inactive sections dock at the
   bottom; open sections share the available height. Use the shared sidebar toggle
   and saved width. Ingestion issue links reveal the left pane and their section.
-  Attributes fills Home's main pane. Identify the selected service and namespace
-  in its heading. Preserve
+  Home's main header shows the selected service and namespace. Put Collapse all,
+  Expand all and the attribute filter at the right of its second row. Omit the
+  repeated service summary and visible Attributes title. The attribute table
+  fills the space below the header. Preserve
   attribute scope, exact-value inspection, Copy, sorting and filtering.
   Matching Telemetry remains alone in the right-hand Details pane with its
   signal tabs, independent pages and scroll positions.
@@ -131,12 +133,14 @@
   fact. Omit the "Axolotl fact:" prefix.
   Keep welcome taglines and facts left-aligned with balanced wrapping
   (`text-wrap: balance`) for more even line lengths.
-  Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
-  the tab group at the far right of the Telemetry section header and
-  square-bracketed counts, such as `[66]`. Retain independent pages
-  and scroll positions. Only the active card list
-  scrolls; keep tabs at the top and shared page controls in a stable bottom
-  footer. Tab changes are immediate and support arrow/Home/End navigation.
+  Home Telemetry uses a single-select signal filter at the far right of its
+  section header. The closed trigger shows the active signal and known
+  square-bracketed count, such as `Traces [66]`. Its menu offers Traces, Metrics
+  and Logs with known counts. Retain independent pages and scroll positions.
+  Only the active card list scrolls; keep the filter at the top and shared page
+  controls in a stable bottom footer. Changes are immediate and support
+  arrow/Home/End navigation. Opening focuses the selected choice; choosing an
+  item or pressing Escape closes the menu and restores trigger focus.
   Attributes and Telemetry each offer 25, 50 or 100 per page in their footer,
   remembering separate preferences and defaulting to 25. Keep each attribute's
   expanded values together; apply filtering and sorting globally. Page changes

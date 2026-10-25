@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test'
-import { themeRgb } from './theme-colours'
 
 const command = `# recorded command\nprintf "%s\\n" "$HOME" | head -1\n./bin/otel-desktop-viewer query --endpoint http://127.0.0.1:8000 --limit 200 "SELECT '${'long value '.repeat(12)}'"`
 
@@ -179,16 +178,36 @@ test('Home keeps Services below file drop in the left pane, Attributes in Main a
       .getByRole('button', { name: 'Import files', includeHidden: true })
   ).toBeAttached()
   const discovery = page.locator('.page-layout__main-chrome')
+  const overview = discovery.getByRole('region', {
+    name: 'Attributes',
+    exact: true,
+  })
+  await expect(overview).toContainText('shell-service')
+  await expect(overview.locator('.pane-header__title')).toHaveText(
+    'shell-service'
+  )
+  await expect(overview).not.toContainText('Last seen')
+  const controls = overview.locator('.pane-header__meta-controls')
+  await expect(controls.getByRole('button')).toHaveCount(3)
+  const titleBox = (await overview.locator('.pane-header__top').boundingBox())!
+  const controlsBox = (await controls.boundingBox())!
+  expect(controlsBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height)
+  expect(controlsBox.x + controlsBox.width).toBeCloseTo(
+    titleBox.x + titleBox.width,
+    0
+  )
   const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,
   })
   await expect(table).toHaveCount(1)
-  await expect(table.getByRole('columnheader')).toHaveCount(5)
-  await expect(table.getByRole('columnheader').nth(1)).toHaveText(
-    'Distinct values'
-  )
-  await expect(table.getByRole('columnheader').nth(2)).toHaveText('Records')
+  await expect(table.getByRole('columnheader')).toHaveCount(4)
+  await expect(table.getByRole('columnheader')).toContainText([
+    'Name',
+    'Records',
+    '%',
+    'Copy',
+  ])
   const tableHandle = await table.elementHandle()
   const rows = table.locator(
     'tr[data-attribute-key="bash_command"][data-attribute-source="event"]'
@@ -313,107 +332,29 @@ test('Home keeps Services below file drop in the left pane, Attributes in Main a
     )
   ).toEqual(colors)
   await page.setViewportSize({ width: 1920, height: 1100 })
-  await discovery.getByRole('button', { name: 'Columns', exact: true }).click()
-  const picker = page.getByRole('group', {
-    name: 'Attribute columns',
-    exact: true,
-  })
-  await expect(
-    picker.getByRole('checkbox', { name: 'Name', exact: true })
-  ).toBeDisabled()
-  await picker
-    .getByRole('checkbox', { name: 'All Attribute columns', exact: true })
-    .check()
-  await picker
-    .getByRole('checkbox', { name: 'All Records columns', exact: true })
-    .check()
-  await picker
-    .getByRole('button', { name: 'Pin Records column', exact: true })
-    .click()
-  await picker
-    .getByRole('button', { name: 'Pin Source column', exact: true })
-    .click()
-  await page.keyboard.press('Escape')
-  const order = [
-    'name',
-    'source',
-    'count',
-    'type',
-    'signals',
-    'values',
-    'traces',
-    'metrics',
-    'logs',
-    'frequency',
-    'copy',
-  ]
-  expect(
-    await table
-      .locator('thead th')
-      .evaluateAll(headings =>
-        headings.map(heading => heading.getAttribute('data-attribute-column'))
-      )
-  ).toEqual(order)
-  await expect(heading.locator('[data-attribute-column="source"]')).toHaveText(
-    'event'
-  )
-  await expect(heading.locator('[data-attribute-column="type"]')).toHaveText(
-    'string'
-  )
-  const theme = (await page.locator('html').getAttribute('data-theme'))!
-  await expect(
-    heading.locator('[data-attribute-column="type"] > span')
-  ).toHaveCSS('color', themeRgb(theme, 'secondary'))
-  await expect(
-    heading.locator('[data-attribute-column="source"] > span')
-  ).toHaveCSS('color', themeRgb(theme, 'secondary'))
-  await expect(heading.locator('[data-attribute-column="signals"]')).toHaveText(
-    'Traces'
-  )
-  await expect(heading.locator('[data-attribute-column="values"]')).toHaveText(
-    '4'
-  )
   await expect(heading.locator('[data-attribute-column="count"]')).toHaveText(
     '100'
   )
-  await expect(heading.locator('[data-attribute-column="traces"]')).toHaveText(
-    '100'
-  )
-  await expect(heading.locator('[data-attribute-column="metrics"]')).toHaveText(
-    '0'
-  )
-  const pinnedHeader = table.locator('thead [data-attribute-column="count"]')
-  await expect(pinnedHeader).toHaveCSS('position', 'sticky')
-  const before = (await pinnedHeader.boundingBox())!
-  const scroll = discovery.getByRole('region', {
-    name: 'Attributes table viewport',
+  const collapseAll = discovery.getByRole('button', {
+    name: 'Collapse all attributes',
+    exact: true,
   })
-  await scroll.evaluate(element => {
-    element.scrollLeft = 200
+  const expandAll = discovery.getByRole('button', {
+    name: 'Expand all attributes',
+    exact: true,
   })
-  await expect
-    .poll(() => scroll.evaluate(element => element.scrollLeft))
-    .toBeGreaterThan(0)
-  expect((await pinnedHeader.boundingBox())!.x).toBeCloseTo(before.x, 0)
-  expect(
-    (await heading.locator('[data-attribute-column="count"]').boundingBox())!.x
-  ).toBeCloseTo(before.x, 0)
+  await collapseAll.focus()
+  await collapseAll.press('Enter')
+  await expect(table.locator('tr[data-attribute-key]:visible')).toHaveCount(0)
+  await expandAll.click()
+  await expect(table.locator('tr[data-attribute-key]:visible')).toHaveCount(30)
+  await collapse.click()
+  await expect(rows.first()).toBeHidden()
+  await expect(payload).toBeVisible()
+  await expandAll.click()
+  await expect(rows.first()).toBeVisible()
+  await collapseAll.click()
+  await expect(table.locator('tr[data-attribute-key]:visible')).toHaveCount(0)
   expect(await tableHandle!.evaluate(element => element.isConnected)).toBe(true)
-  await page.reload()
-  await expect(table).toBeVisible()
-  expect(
-    await table
-      .locator('thead th')
-      .evaluateAll(headings =>
-        headings.map(heading => heading.getAttribute('data-attribute-column'))
-      )
-  ).toEqual(order)
-  expect(
-    JSON.parse(
-      (await page.evaluate(() =>
-        localStorage.getItem('home-attribute-pinned-columns')
-      )) ?? '[]'
-    )
-  ).toEqual(['name', 'count', 'source'])
   expect(errors).toEqual([])
 })

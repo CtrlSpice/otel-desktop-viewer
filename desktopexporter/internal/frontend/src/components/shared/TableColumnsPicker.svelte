@@ -7,13 +7,12 @@
     disabled?: boolean
     count?: number
     countTitle?: string
-    pinnable?: boolean
   }
 </script>
 
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { LayoutThreeColumnIcon, Pin02Icon } from '@hugeicons/core-free-icons'
+  import { LayoutThreeColumnIcon } from '@hugeicons/core-free-icons'
   import ListFilter from './Search/ListFilter.svelte'
   import Checkbox from './Checkbox.svelte'
   import { createPopoverID, setupAnchorPopover } from './utils/anchor-popover'
@@ -25,16 +24,12 @@
     onchange,
     label = 'Table columns',
     minimumSelected = 0,
-    pinned = [],
-    onPin,
   }: {
     options: TableColumnOption[]
     selected: string[]
     onchange: (ids: string[]) => void
     label?: string
     minimumSelected?: number
-    pinned?: readonly string[]
-    onPin?: (id: string) => void
   } = $props()
   const popoverID = createPopoverID('table-columns')
   let trigger = $state<HTMLButtonElement>()
@@ -142,48 +137,25 @@
           </label>
         </legend>
         {#each entries as option (option.id)}
-          <div
-            class="item-state flex items-center gap-2 pl-8 pr-2 py-1.5 text-sm"
+          <label
+            class="item-state flex cursor-pointer items-center gap-2 pl-8 pr-2 py-1.5 text-sm"
           >
-            <label
-              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
-            >
-              <Checkbox
-                label={option.accessibleLabel ?? option.label}
-                checked={selected.includes(option.id)}
-                disabled={option.disabled ||
-                  (selected.includes(option.id) &&
-                    selected.length <= minimumSelected)}
-                onchange={checked => toggle([option.id], checked)}
-              />
-              <span class="min-w-0 flex-1 break-words">{option.label}</span>
-              {#if option.count !== undefined}<span
-                  class="shrink-0 text-sm {option.count
-                    ? 'text-base-content'
-                    : 'text-muted'}"
-                  title={option.countTitle}>{option.count}</span
-                >{/if}
-            </label>
-            {#if onPin && option.pinnable !== false}
-              <button
-                type="button"
-                class="btn btn-ghost btn-circle btn-sm tooltip tooltip-left"
-                class:text-primary={pinned.includes(option.id)}
-                aria-label={`${pinned.includes(option.id) ? 'Unpin' : 'Pin'} ${option.label} column`}
-                aria-pressed={pinned.includes(option.id)}
-                data-tip={`${pinned.includes(option.id) ? 'Unpin' : 'Pin'} ${option.label} column`}
-                disabled={!selected.includes(option.id)}
-                onclick={() => onPin?.(option.id)}
-              >
-                <HugeiconsIcon
-                  icon={Pin02Icon}
-                  size={16}
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-              </button>
-            {/if}
-          </div>
+            <Checkbox
+              label={option.accessibleLabel ?? option.label}
+              checked={selected.includes(option.id)}
+              disabled={option.disabled ||
+                (selected.includes(option.id) &&
+                  selected.length <= minimumSelected)}
+              onchange={checked => toggle([option.id], checked)}
+            />
+            <span class="min-w-0 flex-1 break-words">{option.label}</span>
+            {#if option.count !== undefined}<span
+                class="shrink-0 text-sm {option.count
+                  ? 'text-base-content'
+                  : 'text-muted'}"
+                title={option.countTitle}>{option.count}</span
+              >{/if}
+          </label>
         {/each}
       </fieldset>
     {/if}

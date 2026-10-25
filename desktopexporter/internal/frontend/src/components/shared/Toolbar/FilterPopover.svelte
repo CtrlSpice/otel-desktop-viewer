@@ -62,7 +62,9 @@
         open = value
         if (value && focusSelected) {
           popover
-            ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+            ?.querySelector<HTMLButtonElement>(
+              '[aria-pressed="true"], [aria-checked="true"]'
+            )
             ?.focus({ preventScroll: true })
         }
         onOpenChange?.(value)

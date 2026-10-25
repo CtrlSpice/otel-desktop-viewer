@@ -14,7 +14,7 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 The theme picker and day/night button share one compact control group.
 The picker opens below its button, end-aligned and clamped to the viewport, with
 a compact swatch strip below the full-width live app-style sample preview.
-The header shows `Preview: <original ink name>` at the left and four icon-only
+The shared section header shows `Preview: <original ink name>` at the left and four icon-only
 season controls at the right. The shared sample trace summary and service breakdown sit above the JSON
 inspector in one narrow column, without a separate preview header or attributes
 section. Surfaces use shared rounded corners without nested borders. Sample
@@ -27,10 +27,10 @@ separate close button in the anchored dropdown.
 Its centred footer reads “Colours: Madoromi” with the attribution heart;
 only Madoromi is the link.
 Ink choices show three vertically stacked colour dots, brightest at the top
-(official shades 7, 4, 1), in one horizontal row,
+(official shades 7, 4, 1), in adjacent 24px-wide, 48px-high targets in one horizontal row,
 with the selected original ink name shown once above them. All choices retain
 original-name tooltips and accessible labels, without English translations.
-The chooser is at most 34rem wide. The ink row uses ordinary horizontal scrolling,
+The chooser is at most 28rem wide. The ink row uses ordinary horizontal scrolling,
 with left/right caret buttons as a secondary way to scroll. Each caret is disabled
 at its end; scrolling does not change the ink selection. There is no snapping or
 auto-advance. Four icon-only season choices sit at the right of the Preview header.

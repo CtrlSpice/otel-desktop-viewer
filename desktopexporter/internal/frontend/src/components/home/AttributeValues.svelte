@@ -1,10 +1,8 @@
 <script module lang="ts">
   import { GRAPH_INKS } from '@/themes/graph-inks'
   import { colorIdentityHash } from '@/utils/color-slots'
-
   // Middle-strength official shades stay clear as small marks in Day and Night.
   const valueColors = GRAPH_INKS.flatMap(ink => ink.swatches.slice(2, 5))
-  const signalLabels = { traces: 'Traces', metrics: 'Metrics', logs: 'Logs' }
 </script>
 
 <script lang="ts">
@@ -15,14 +13,9 @@
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import { selectableTableRow } from '@/components/shared/utils/selectable-table-row'
-  import type {
-    AttributeKey,
-    DiscoveryOptions,
-  } from '@/services/discovery-types'
-  import type { AttributeColumn, AttributeSummary } from './attribute-columns'
+  import type { DiscoveryOptions } from '@/services/discovery-types'
   import {
     coverageCounts,
-    discoverySignals,
     loadAttributeCoverage,
     sortCoverageValues,
     type AttributeCoverage,
@@ -49,14 +42,14 @@
     heading: attributeHeading,
     sortBy,
     sortDirection,
-    columns,
-    pinned,
-    foundOn,
+    pinnedLeft,
     selected,
     selectedValue,
     onSelect,
     onSelectValue,
-    onSummary,
+    onCount,
+    expanded,
+    onExpandedChange,
     hidden = false,
   }: {
     options: Omit<DiscoveryOptions, 'kind'>
@@ -65,14 +58,14 @@
     heading: Snippet
     sortBy: AttributeValueSort
     sortDirection: 'asc' | 'desc'
-    columns: AttributeColumn[]
-    pinned: Record<string, number | undefined>
-    foundOn: AttributeKey['foundOn']
+    pinnedLeft?: number
     selected: boolean
     selectedValue?: string
     onSelect: () => void
     onSelectValue: (value: CoverageValue) => void
-    onSummary: (summary: AttributeSummary) => void
+    onCount: (count: number) => void
+    expanded: boolean
+    onExpandedChange: (expanded: boolean) => void
     hidden?: boolean
   } = $props()
   let coverage = $state<AttributeCoverage>()
@@ -92,19 +85,9 @@
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
-  const signals = $derived(
-    discoverySignals
-      .flatMap(signal =>
-        foundOn.some(source => source.signal === signal)
-          ? [signalLabels[signal]]
-          : []
-      )
-      .join(' · ')
-  )
   let loading = $state(false)
   let error = $state('')
   const headingID = $props.id()
-  let expanded = $state(false)
   const canExpand = $derived(values.length > 0)
   $effect.pre(() => {
     void sortBy
@@ -119,12 +102,7 @@
       .then(result => {
         if (controller.signal.aborted) return
         coverage = result
-        const group = result.kinds.get(kind)
-        onSummary({
-          count: group?.count ?? 0,
-          values: result.values.filter(item => item.value.kind === kind).length,
-          counts: group?.counts ?? { traces: 0, metrics: 0, logs: 0 },
-        })
+        onCount(result.kinds.get(kind)?.count ?? 0)
       })
       .catch(reason => {
         if (!controller.signal.aborted) error = String(reason)
@@ -142,7 +120,7 @@
       <TreeToggle
         label={`${expanded ? 'Collapse' : 'Expand'} ${name} · ${options.ownerType} values`}
         {expanded}
-        onclick={() => (expanded = !expanded)}
+        onclick={() => onExpandedChange(!expanded)}
       >
         <HugeiconsIcon
           icon={ArrowRight01Icon}
@@ -166,63 +144,32 @@
     data-attribute-heading={name}
     data-attribute-source={options.ownerType}
   >
-    {#each columns as column (column.id)}
-      <svelte:element
-        this={column.id === 'name' ? 'th' : 'td'}
-        scope={column.id === 'name' ? 'row' : undefined}
-        class="table-cell font-normal"
-        data-attribute-column={column.id}
-        class:text-left={['name', 'type', 'source', 'signals'].includes(
-          column.id
-        )}
-        class:text-right={!['name', 'type', 'source', 'signals'].includes(
-          column.id
-        )}
-        class:tabular-nums={[
-          'values',
-          'count',
-          'traces',
-          'metrics',
-          'logs',
-        ].includes(column.id)}
-        class:table-cell--pinned={pinned[column.id] !== undefined}
-        style:left={pinned[column.id] === undefined
-          ? undefined
-          : `${pinned[column.id]}px`}
+    <th
+      scope="row"
+      class="table-cell text-left font-normal"
+      data-attribute-column="name"
+      class:table-cell--pinned={pinnedLeft !== undefined}
+      style:left={pinnedLeft === undefined ? undefined : `${pinnedLeft}px`}
+    >
+      {@render heading()}
+    </th>
+    <td
+      class="table-cell text-right tabular-nums"
+      data-attribute-column="count"
+    >
+      <span
+        title={kindCoverage
+          ? `${values.length.toLocaleString()} distinct ${values.length === 1 ? 'value' : 'values'} · ${coverageCounts(kindCoverage.counts)}`
+          : undefined}
+        >{coverage ? (kindCoverage?.count ?? 0).toLocaleString() : '—'}</span
       >
-        {#if column.id === 'name'}{@render heading()}
-        {:else if column.id === 'type'}<span class="text-secondary" title={kind}
-            >{kind}</span
-          >
-        {:else if column.id === 'source'}<span
-            class="text-secondary"
-            title={options.ownerType}>{options.ownerType}</span
-          >
-        {:else if column.id === 'signals'}{signals}
-        {:else if column.id === 'values'}{coverage
-            ? values.length.toLocaleString()
-            : '—'}
-        {:else if column.id === 'count'}
-          <span
-            title={kindCoverage
-              ? `${values.length.toLocaleString()} distinct ${values.length === 1 ? 'value' : 'values'} · ${coverageCounts(kindCoverage.counts)}`
-              : undefined}
-            >{coverage
-              ? (kindCoverage?.count ?? 0).toLocaleString()
-              : '—'}</span
-          >
-        {:else if column.id === 'traces' || column.id === 'metrics' || column.id === 'logs'}
-          {coverage
-            ? (kindCoverage?.counts[column.id] ?? 0).toLocaleString()
-            : '—'}
-        {/if}
-      </svelte:element>
-    {/each}
+    </td>
+    <td class="table-cell text-right" data-attribute-column="frequency"></td>
+    <td class="table-cell" data-attribute-column="copy"></td>
   </tr>
-
   {#if error || values.length === 0}
     <tr
-      ><td class="table-cell" colspan={columns.length}
+      ><td class="table-cell" colspan="4"
         ><div class="pl-6">
           {#if error}<span role="alert" class="text-papaya">{error}</span>
           {:else}<span class="text-subtle" role="status"
@@ -261,94 +208,65 @@
         aria-describedby={headingID}
         aria-busy={loading}
       >
-        {#each columns as column (column.id)}
-          <td
-            class="table-cell"
-            data-attribute-column={column.id}
-            class:text-left={['name', 'type', 'source', 'signals'].includes(
-              column.id
-            )}
-            class:text-right={!['name', 'type', 'source', 'signals'].includes(
-              column.id
-            )}
-            class:tabular-nums={[
-              'count',
-              'traces',
-              'metrics',
-              'logs',
-              'frequency',
-            ].includes(column.id)}
-            class:table-cell--pinned={pinned[column.id] !== undefined}
-            style:left={pinned[column.id] === undefined
-              ? undefined
-              : `${pinned[column.id]}px`}
-          >
-            {#if column.id === 'name'}
-              <div class="flex min-w-0 items-center gap-2 pl-6">
-                <div class="min-w-0 w-1/3 max-w-48 shrink-0">
-                  <TableValueCell
-                    label={`${options.ownerType} attribute: ${name}`}
-                    {text}
-                    inset={false}
-                    onInspect={() => onSelectValue(item)}
-                  >
-                    {#if item.value.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
-                        text={item.value.value}
-                      />
-                    {:else if tokens}<ValueSyntax {tokens} />{:else}{text === ''
-                        ? '""'
-                        : text}{/if}
-                  </TableValueCell>
-                </div>
-                <span class="flex h-2 min-w-2 flex-1" aria-hidden="true"
-                  ><span
-                    class="attribute-frequency-bar h-2 rounded-full"
-                    style:width={`max(0.5rem, ${item.relativeFrequency * 100}%)`}
-                    style:background-color={color}
-                  ></span></span
-                >
-              </div>
-            {:else if column.id === 'type'}<span
-                class="text-secondary"
-                title={item.value.kind}>{item.value.kind}</span
-              >
-            {:else if column.id === 'source'}<span
-                class="text-secondary"
-                title={options.ownerType}>{options.ownerType}</span
-              >
-            {:else if column.id === 'signals'}{discoverySignals
-                .flatMap(signal =>
-                  item.counts[signal] > 0 ? [signalLabels[signal]] : []
-                )
-                .join(' · ')}
-            {:else if column.id === 'count'}<span
-                title={coverageCounts(item.counts)}
-                >{item.count.toLocaleString()}</span
-              >
-            {:else if column.id === 'traces' || column.id === 'metrics' || column.id === 'logs'}{item.counts[
-                column.id
-              ].toLocaleString()}
-            {:else if column.id === 'frequency'}
-              <span
-                class="text-subtle"
-                title={`${coverageCounts(item.counts, coverage?.denominators)} · Of records carrying this attribute`}
-                aria-label={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records · ${(item.relativeFrequency * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
-                >[{(item.relativeFrequency * 100).toLocaleString(undefined, {
-                  maximumFractionDigits: 1,
-                })}%]</span
-              >
-            {:else if column.id === 'copy'}<ValueCopyButton
+        <td
+          class="table-cell text-left"
+          data-attribute-column="name"
+          class:table-cell--pinned={pinnedLeft !== undefined}
+          style:left={pinnedLeft === undefined ? undefined : `${pinnedLeft}px`}
+        >
+          <div class="flex min-w-0 items-center gap-2 pl-6">
+            <div class="min-w-0 w-1/3 max-w-48 shrink-0">
+              <TableValueCell
+                label={`${options.ownerType} attribute: ${name}`}
                 {text}
-                label={`${name} value`}
-                tooltip="Copy"
-              />{/if}
-          </td>
-        {/each}
+                inset={false}
+                onInspect={() => onSelectValue(item)}
+              >
+                {#if item.value.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
+                    text={item.value.value}
+                  />
+                {:else if tokens}<ValueSyntax {tokens} />{:else}{text === ''
+                    ? '""'
+                    : text}{/if}
+              </TableValueCell>
+            </div>
+            <span class="flex h-2 min-w-2 flex-1" aria-hidden="true"
+              ><span
+                class="attribute-frequency-bar h-2 rounded-full"
+                style:width={`max(0.5rem, ${item.relativeFrequency * 100}%)`}
+                style:background-color={color}
+              ></span></span
+            >
+          </div>
+        </td>
+        <td
+          class="table-cell text-right tabular-nums"
+          data-attribute-column="count"
+          ><span title={coverageCounts(item.counts)}
+            >{item.count.toLocaleString()}</span
+          ></td
+        >
+        <td
+          class="table-cell text-right tabular-nums"
+          data-attribute-column="frequency"
+        >
+          <span
+            class="text-subtle"
+            title={`${coverageCounts(item.counts, coverage?.denominators)} · Of records carrying this attribute`}
+            aria-label={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records · ${(item.relativeFrequency * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
+            >[{(item.relativeFrequency * 100).toLocaleString(undefined, {
+              maximumFractionDigits: 1,
+            })}%]</span
+          >
+        </td>
+        <td class="table-cell text-right" data-attribute-column="copy"
+          ><ValueCopyButton {text} label={`${name} value`} tooltip="Copy" /></td
+        >
       </tr>
     {/each}
     {#if pageCount > 1}
       <tr hidden={!expanded}
-        ><td class="table-cell" colspan={columns.length}
+        ><td class="table-cell" colspan="4"
           ><div class="flex justify-center">
             <DetailNav
               index={pageIndex}

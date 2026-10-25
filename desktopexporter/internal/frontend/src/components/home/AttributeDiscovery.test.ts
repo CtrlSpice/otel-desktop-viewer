@@ -270,6 +270,41 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
   ).not.toHaveAttribute('hidden')
   expect(values).toHaveBeenCalledTimes(60)
   expect(onSelectAttribute).not.toHaveBeenCalled()
+  await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
+  expect(
+    container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
+  ).toHaveLength(25)
+  await fireEvent.click(getByRole('button', { name: 'Next page' }))
+  expect(
+    container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
+  ).toHaveLength(25)
+  await fireEvent.click(
+    getByRole('button', { name: 'Collapse key-025 · span values' })
+  )
+  expect(
+    container.querySelector('tr[data-attribute-key="key-025"]')
+  ).toHaveAttribute('hidden')
+  await fireEvent.click(getByRole('button', { name: 'Previous page' }))
+  expect(
+    container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
+  ).toHaveLength(25)
+  await fireEvent.click(getByRole('button', { name: 'Next page' }))
+  expect(
+    container.querySelector('tr[data-attribute-key="key-025"]')
+  ).toHaveAttribute('hidden')
+  await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
+  expect(
+    container.querySelector('tr[data-attribute-key="key-025"]')
+  ).not.toHaveAttribute('hidden')
+  await fireEvent.click(
+    getByRole('button', { name: 'Collapse all attributes' })
+  )
+  await fireEvent.click(getByRole('button', { name: 'Previous page' }))
+  expect(
+    container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
+  ).toHaveLength(0)
+  expect(values).toHaveBeenCalledTimes(60)
+  expect(onSelectAttribute).not.toHaveBeenCalled()
   await fireEvent.click(getByRole('button', { name: 'Sort by records' }))
   expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-059')
   const size = getByRole('combobox', { name: 'Attributes per page' })
@@ -281,4 +316,78 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
   await rerender({ filter: 'key-059' })
   await waitFor(() => expect(headings()).toHaveLength(1))
   expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-059')
+})
+
+it('applies the latest bulk disclosure to values that finish loading later', async () => {
+  const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
+  vi.spyOn(telemetryAPI, 'discoverAttributeKeys').mockImplementation(
+    async options => ({
+      items:
+        options.signal === 'traces' && options.ownerType === 'span'
+          ? ['early', 'late'].map(key => ({ key, kind: 'string', foundOn }))
+          : [],
+      truncated: false,
+    })
+  )
+  const early =
+    Promise.withResolvers<
+      Awaited<ReturnType<typeof telemetryAPI.discoverAttributeValues>>
+    >()
+  const late =
+    Promise.withResolvers<
+      Awaited<ReturnType<typeof telemetryAPI.discoverAttributeValues>>
+    >()
+  vi.spyOn(telemetryAPI, 'discoverAttributeValues').mockImplementation(
+    options => (options.key === 'early' ? early.promise : late.promise)
+  )
+  const onSelectAttribute = vi.fn()
+  const { container, getByRole } = render(AttributeDiscovery, {
+    service,
+    range: {},
+    revision: 0,
+    queries: { traces: null, logs: false, metrics: false },
+    selectedAttribute: null,
+    onSelectAttribute,
+  })
+  await waitFor(() =>
+    expect(getByRole('button', { name: 'Expand all attributes' })).toBeEnabled()
+  )
+  await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
+  const result = {
+    items: [
+      {
+        identity: 'received',
+        value: { kind: 'string' as const, value: 'received' },
+        foundOn,
+        count: 1,
+        kindCount: 1,
+        denominator: 1,
+        relativeFrequency: 1,
+      },
+    ],
+    truncated: false,
+  }
+  early.resolve(result)
+  await waitFor(() =>
+    expect(
+      container.querySelector('tr[data-attribute-key="early"]')
+    ).toBeVisible()
+  )
+  await fireEvent.click(
+    getByRole('button', { name: 'Collapse all attributes' })
+  )
+  late.resolve(result)
+  await waitFor(() =>
+    expect(
+      container.querySelector('tr[data-attribute-key="late"]')
+    ).toHaveAttribute('hidden')
+  )
+  expect(
+    container.querySelector('tr[data-attribute-key="early"]')
+  ).toHaveAttribute('hidden')
+  await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
+  expect(
+    container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
+  ).toHaveLength(2)
+  expect(onSelectAttribute).not.toHaveBeenCalled()
 })

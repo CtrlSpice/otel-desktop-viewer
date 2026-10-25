@@ -6,33 +6,34 @@
     CoverageValue,
     DiscoveredAttribute,
   } from './attribute-coverage'
-  import type { AttributeColumn, AttributeSummary } from './attribute-columns'
   import type { DiscoveryOptions } from '@/services/discovery-types'
   let {
     entry,
     options,
     sortBy,
     sortDirection,
-    columns,
-    pinned,
+    pinnedLeft,
     selected,
     onSelect,
     selectedValue,
     onSelectValue,
-    onSummary,
+    onCount,
+    expanded,
+    onExpandedChange,
     hidden = false,
   }: {
     entry: DiscoveredAttribute
     options: Omit<DiscoveryOptions, 'kind'>
     sortBy: AttributeValueSort
     sortDirection: 'asc' | 'desc'
-    columns: AttributeColumn[]
-    pinned: Record<string, number | undefined>
+    pinnedLeft?: number
     selected: boolean
     onSelect: () => void
     selectedValue?: string
     onSelectValue: (value: CoverageValue) => void
-    onSummary: (summary: AttributeSummary) => void
+    onCount: (count: number) => void
+    expanded: boolean
+    onExpandedChange: (expanded: boolean) => void
     hidden?: boolean
   } = $props()
   const valueOptions = $derived({ ...options, ownerType: entry.ownerType })
@@ -44,13 +45,13 @@
   kind={entry.kind}
   {sortBy}
   {sortDirection}
-  {columns}
-  {pinned}
-  foundOn={entry.foundOn}
+  {pinnedLeft}
   {selected}
   {selectedValue}
   {onSelectValue}
-  {onSummary}
+  {onCount}
+  {expanded}
+  {onExpandedChange}
   {onSelect}
   {hidden}
 >
@@ -65,10 +66,8 @@
         <span
           class="min-w-0 truncate"
           title={`${entry.key} · ${entry.kind} · ${entry.ownerType}`}
-          >{entry.key}{#if !columns.some(column => column.id === 'type')}<span
-              class="text-subtle"
-              aria-hidden="true">{' · '}</span
-            ><span class="text-secondary">{entry.kind}</span>{/if}</span
+          >{entry.key}<span class="text-subtle" aria-hidden="true">{' · '}</span
+          ><span class="text-secondary">{entry.kind}</span></span
         >
       </TableValueCell>
     </div>

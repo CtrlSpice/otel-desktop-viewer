@@ -12,6 +12,7 @@
     Sun03Icon,
   } from '@hugeicons/core-free-icons'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
+  import PaneHeader from './PaneHeader.svelte'
   import ThemePreview from './ThemePreview.svelte'
   import { ACCENT_INKS } from '@/themes/accent-inks'
   import { SEASONS, type Season, type Theme } from '@/themes'
@@ -140,34 +141,36 @@
   {/snippet}
   {#snippet children()}
     <div class="theme-picker__layout">
-      <div class="theme-picker__header">
-        <h2 class="theme-picker__current min-w-0 flex-1 text-sm font-normal">
-          <span class="text-subtle">Preview:</span>
-          {chosen.name}
-        </h2>
-        <fieldset class="theme-picker__seasons">
-          <legend class="sr-only">Background</legend>
-          <div class="grid grid-cols-4 gap-1">
-            {#each SEASONS as season (season.id)}
-              <button
-                type="button"
-                class="theme-picker__season item-state item-state--menu"
-                aria-label={`${season.japanese} background`}
-                title={season.japanese}
-                aria-pressed={theme.season === season.id}
-                onclick={() => onSeasonChange(season.id)}
-              >
-                <HugeiconsIcon
-                  icon={seasonIcons[season.id]}
-                  size={16}
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-              </button>
-            {/each}
-          </div>
-        </fieldset>
-      </div>
+      <PaneHeader mode="toolbar" pill ariaLabel="Theme preview controls">
+        {#snippet right()}
+          <h2 class="mr-2 min-w-0 flex-1 text-sm font-normal">
+            <span class="text-subtle">Preview:</span>
+            {chosen.name}
+          </h2>
+          <fieldset class="theme-picker__seasons">
+            <legend class="sr-only">Background</legend>
+            <div class="grid grid-cols-4 gap-1">
+              {#each SEASONS as season (season.id)}
+                <button
+                  type="button"
+                  class="theme-picker__season item-state item-state--menu"
+                  aria-label={`${season.japanese} background`}
+                  title={season.japanese}
+                  aria-pressed={theme.season === season.id}
+                  onclick={() => onSeasonChange(season.id)}
+                >
+                  <HugeiconsIcon
+                    icon={seasonIcons[season.id]}
+                    size={16}
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                </button>
+              {/each}
+            </div>
+          </fieldset>
+        {/snippet}
+      </PaneHeader>
       {#if open}<ThemePreview />{/if}
       <fieldset class="m-0 min-w-0 border-0 p-0">
         <legend class="sr-only">Ink</legend>
@@ -260,8 +263,8 @@
   @reference '../../app.css';
 
   :global(.filter-popover.theme-picker-popover) {
-    width: 34rem;
-    padding: 1.25rem;
+    width: 28rem;
+    padding: 0.75rem;
     max-height: calc(100dvh - 2rem);
   }
 
@@ -269,12 +272,8 @@
     @apply flex min-w-0 flex-col gap-4;
   }
 
-  .theme-picker__header {
-    @apply flex min-w-0 items-center gap-3;
-  }
-
   .theme-picker__choice {
-    @apply flex h-12 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full p-0;
+    @apply flex h-12 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full p-0;
   }
 
   .theme-picker__season {
@@ -286,9 +285,9 @@
   }
 
   .theme-picker__inks {
-    @apply mx-auto grid max-w-full grid-flow-col gap-0.5 overflow-x-auto py-1;
+    @apply mx-auto grid max-w-full grid-flow-col overflow-x-auto py-1;
     width: max-content;
-    grid-auto-columns: 2rem;
+    grid-auto-columns: 1.5rem;
   }
 
   .theme-picker__ink-strip {

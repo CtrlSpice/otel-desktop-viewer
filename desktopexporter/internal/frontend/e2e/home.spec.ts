@@ -238,12 +238,15 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     expect(size.scroll).toBeLessThanOrEqual(size.client)
   }
   await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
-  const attributeHeader = discovery.locator('.pane-header')
-  await expect(attributeHeader).toContainText('checkout')
-  await expect(attributeHeader).toContainText('storefront')
+  const serviceHeader = discovery.getByRole('region', {
+    name: 'Attributes',
+    exact: true,
+  })
+  await expect(serviceHeader).toContainText('checkout')
+  await expect(serviceHeader).toContainText('storefront')
   await expect(
-    attributeHeader.locator(
-      '.pane-header__title-row > span[style*="background-color"]'
+    serviceHeader.locator(
+      '.pane-header__leading > span[style*="background-color"]'
     )
   ).toHaveCSS('background-color', automaticColour)
   const details = page.getByRole('region', { name: 'Home details' })
@@ -267,14 +270,14 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   expect(servicesBox.x + servicesBox.width).toBeLessThanOrEqual(attributesBox.x)
   await expect(discovery.locator('.service-grid')).toHaveCount(0)
   await expect(serviceScroll).toHaveCSS('overflow-y', 'auto')
-  const headerY = (await attributeHeader.boundingBox())!.y
+  const headerY = (await serviceHeader.boundingBox())!.y
   await serviceScroll.evaluate(element => {
     element.scrollTop = element.scrollHeight
   })
   await expect
     .poll(() => serviceScroll.evaluate(element => element.scrollTop))
     .toBeGreaterThan(0)
-  expect((await attributeHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
+  expect((await serviceHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
   await serviceScroll.evaluate(element => {
     element.scrollTop = 0
   })
@@ -288,7 +291,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     .getByRole('button', { name: 'Filter attribute keys', exact: true })
     .click()
   await expect(filter).toHaveCSS('border-width', '0px')
-  await expect(attributeHeader).toHaveCSS('border-width', '0px')
+  await expect(serviceHeader).toHaveCSS('border-width', '0px')
   await filter.focus()
   await expect(filter).toHaveCSS('outline-style', 'solid')
   await expect(filter).toHaveCSS('outline-color', themeRgb(theme, 'primary'))
@@ -343,12 +346,12 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     .locator('.service-grid')
     .getByRole('button', { name: /^worker-1(?:\s|·)/ })
     .click()
-  await expect(attributeHeader).toContainText('worker-1')
+  await expect(serviceHeader).toContainText('worker-1')
   await expect
     .poll(() => attributeScopes.some(scope => scope.serviceName === 'worker-1'))
     .toBe(true)
   await card.click()
-  await expect(attributeHeader).toContainText('checkout')
+  await expect(serviceHeader).toContainText('checkout')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
   services.push({ ...services[0]!, serviceName: 'new-worker' })
   await page.getByLabel('Choose telemetry JSON files').setInputFiles({

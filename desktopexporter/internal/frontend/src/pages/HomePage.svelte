@@ -16,7 +16,6 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -24,15 +23,6 @@
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
   import HomeWelcome from '@/components/home/HomeWelcome.svelte'
-  import ListFilter from '@/components/shared/Search/ListFilter.svelte'
-  import TableColumnsPicker from '@/components/shared/TableColumnsPicker.svelte'
-  import {
-    ATTRIBUTE_COLUMNS,
-    loadAttributeColumns,
-    loadPinnedAttributeColumns,
-    saveAttributeColumns,
-    visibleAttributeColumns,
-  } from '@/components/home/attribute-columns'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
@@ -96,28 +86,6 @@
   let revision = $state(0)
   let selectedAttribute = $state<DiscoveredAttribute | null>(null)
   let selectedValue = $state<CoverageValue>()
-  let attributeFilter = $state('')
-  let selectedAttributeColumns = $state<string[]>(loadAttributeColumns())
-  let pinnedAttributeColumns = $state<string[]>(loadPinnedAttributeColumns())
-  const attributeColumns = $derived(
-    visibleAttributeColumns(selectedAttributeColumns, pinnedAttributeColumns)
-  )
-  const attributePinnedCount = $derived(
-    attributeColumns.filter(
-      column =>
-        column.pinnable !== false && pinnedAttributeColumns.includes(column.id)
-    ).length
-  )
-  function chooseAttributeColumns(ids: string[]) {
-    selectedAttributeColumns = ids
-    saveAttributeColumns(ids, pinnedAttributeColumns)
-  }
-  function pinAttributeColumn(id: string) {
-    pinnedAttributeColumns = pinnedAttributeColumns.includes(id)
-      ? pinnedAttributeColumns.filter(column => column !== id)
-      : [...pinnedAttributeColumns, id]
-    saveAttributeColumns(selectedAttributeColumns, pinnedAttributeColumns)
-  }
   const selectedServiceIdentity = $derived(
     selected ? serviceIdentity(selected) : null
   )
@@ -290,50 +258,15 @@
 </script>
 
 {#snippet attributes()}
-  <ListFilter label="Filter attribute keys" bind:value={attributeFilter}>
-    {#snippet children(filterToggle, filterField)}
-      <WorkspaceHeader
-        mode="title"
-        pill
-        title="Attributes"
-        subtitle={selected
-          ? [
-              selected.serviceName || 'Unnamed service',
-              selected.serviceNamespace,
-            ]
-              .filter(Boolean)
-              .join(' · ')
-          : undefined}
-        ariaLabel="Attributes"
-        subtitleService={selected?.serviceName}
-      >
-        {#snippet right()}
-          {#if selected}{@render filterToggle()}{/if}
-          <TableColumnsPicker
-            options={ATTRIBUTE_COLUMNS}
-            selected={selectedAttributeColumns}
-            onchange={chooseAttributeColumns}
-            label="Attribute columns"
-            pinned={pinnedAttributeColumns}
-            onPin={pinAttributeColumn}
-          />
-        {/snippet}
-      </WorkspaceHeader>
-      <AttributeDiscovery
-        service={selected}
-        {range}
-        {queries}
-        {revision}
-        {selectedAttribute}
-        selectedValue={selectedValue?.identity}
-        onSelectAttribute={selectAttribute}
-        filter={attributeFilter}
-        filterControl={filterField}
-        columns={attributeColumns}
-        pinnedCount={attributePinnedCount}
-      />
-    {/snippet}
-  </ListFilter>
+  <AttributeDiscovery
+    service={selected}
+    {range}
+    {queries}
+    {revision}
+    {selectedAttribute}
+    selectedValue={selectedValue?.identity}
+    onSelectAttribute={selectAttribute}
+  />
 {/snippet}
 {#snippet foundOn()}
   <AttributeTelemetry
@@ -449,7 +382,8 @@
 {/snippet}
 
 <PageLayout
-  mainTitle="Attributes"
+  mainTitle="Services"
+  mainHeaderRows={2}
   items={[]}
   emptyDrawer
   selectedID={null}

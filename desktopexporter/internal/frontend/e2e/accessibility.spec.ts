@@ -666,7 +666,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     )
     expect(new Set(inkBoxes.map(box => box.y)).size).toBe(1)
     for (const inkBox of inkBoxes) {
-      expect(inkBox.width).toBe(32)
+      expect(inkBox.width).toBe(24)
       expect(inkBox.height).toBe(48)
     }
     const listBox = (await list.boundingBox())!
@@ -736,7 +736,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       box.y + box.height
     )
-    expect(box.width).toBeLessThanOrEqual(544)
+    expect(box.width).toBeLessThanOrEqual(448)
     await list.hover()
     await page.mouse.wheel(-2000, 0)
     await expect

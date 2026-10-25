@@ -1,6 +1,10 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
   import AttributeKey from './AttributeKey.svelte'
+  import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
+  import ListFilter from '@/components/shared/Search/ListFilter.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
@@ -9,15 +13,6 @@
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import { loadPageSize, savePageSize, type PageSize } from '@/utils/page-size'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import {
-    loadAttributeColumns,
-    loadPinnedAttributeColumns,
-    visibleAttributeColumns,
-    type AttributeColumn,
-    type AttributeColumnID,
-    type AttributeSortColumn,
-    type AttributeSummary,
-  } from './attribute-columns'
   import {
     serviceIdentity,
     type ServiceSummary,
@@ -31,6 +26,7 @@
     type DiscoveredAttribute,
     type CoverageValue,
   } from './attribute-coverage'
+
   let {
     service,
     range,
@@ -39,13 +35,7 @@
     selectedAttribute,
     onSelectAttribute,
     selectedValue,
-    filter = '',
-    filterControl,
-    columns = visibleAttributeColumns(
-      loadAttributeColumns(),
-      loadPinnedAttributeColumns()
-    ),
-    pinnedCount = 1,
+    filter = $bindable(''),
   }: {
     service: ServiceSummary | null
     range: Pick<DiscoveryOptions, 'startTime' | 'endTime'>
@@ -58,17 +48,21 @@
     ) => void
     selectedValue?: string
     filter?: string
-    filterControl?: Snippet
-    columns?: AttributeColumn[]
-    pinnedCount?: number
   } = $props()
   let term = $state('')
   let keys = $state<DiscoveredAttribute[]>([])
-  let summaries = $state<Record<string, AttributeSummary>>({})
+  let counts = $state<Record<string, number>>({})
   let loading = $state(false)
   let error = $state('')
-  let sortBy = $state<AttributeSortColumn>('name')
+  type SortColumn = 'name' | 'count' | 'frequency'
+  let sortBy = $state<SortColumn>('name')
   let sortDirection = $state<'asc' | 'desc'>('asc')
+  let allExpanded = $state(false)
+  let expansionOverrides = $state<Record<string, boolean>>({})
+  function setAll(expanded: boolean) {
+    allExpanded = expanded
+    expansionOverrides = {}
+  }
   const PAGE_SIZE_KEY = 'home-attributes-page-size'
   let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
   let pageIndex = $state(0)
@@ -89,42 +83,13 @@
     const sign = sortDirection === 'asc' ? 1 : -1
     return [...keys].sort((a, b) => {
       let comparison = 0
-      if (['count', 'values', 'traces', 'metrics', 'logs'].includes(sortBy)) {
-        const numeric = (entry: DiscoveredAttribute) => {
-          const summary = summaries[attributeIdentity(entry)]
-          if (!summary) return undefined
-          switch (sortBy) {
-            case 'count':
-            case 'values':
-              return summary[sortBy]
-            case 'traces':
-            case 'metrics':
-            case 'logs':
-              return summary.counts[sortBy]
-            default:
-              return undefined
-          }
-        }
-        const left = numeric(a)
-        const right = numeric(b)
+      if (sortBy === 'count') {
+        const left = counts[attributeIdentity(a)]
+        const right = counts[attributeIdentity(b)]
         if (left === undefined || right === undefined) {
           if (left !== right) return left === undefined ? 1 : -1
         } else comparison = left - right
-      } else if (sortBy === 'name') {
-        comparison = a.key.localeCompare(b.key)
-      } else if (sortBy === 'type') {
-        comparison = a.kind.localeCompare(b.kind)
-      } else if (sortBy === 'source') {
-        comparison = a.ownerType.localeCompare(b.ownerType)
-      } else if (sortBy === 'signals') {
-        const signals = (entry: DiscoveredAttribute) =>
-          discoverySignals
-            .filter(signal =>
-              entry.foundOn.some(source => source.signal === signal)
-            )
-            .join(' ')
-        comparison = signals(a).localeCompare(signals(b))
-      }
+      } else if (sortBy === 'name') comparison = a.key.localeCompare(b.key)
       return (
         sign * comparison ||
         a.key.localeCompare(b.key) ||
@@ -134,26 +99,24 @@
     })
   })
   const pageCount = $derived(Math.ceil(sortedKeys.length / pageSize))
-  function sort(column: AttributeColumnID) {
-    if (column === 'copy') return
+  const columns = [
+    { id: 'name', label: 'Name', min: 240, width: 400 },
+    { id: 'count', label: 'Records', min: 112, width: 112, fixed: true },
+    { id: 'frequency', label: '%', min: 80, width: 88, fixed: true },
+    { id: 'copy', label: 'Copy', min: 64, width: 64, fixed: true },
+  ]
+  function sort(column: SortColumn) {
     sortDirection =
       sortBy === column
         ? sortDirection === 'asc'
           ? 'desc'
           : 'asc'
-        : ['name', 'type', 'source', 'signals'].includes(column)
+        : column === 'name'
           ? 'asc'
           : 'desc'
     sortBy = column
     setPage(0)
   }
-  $effect(() => {
-    if (!columns.some(column => column.id === sortBy)) {
-      sortBy = 'name'
-      sortDirection = 'asc'
-      setPage(0)
-    }
-  })
   const options = $derived({
     ...range,
     queries,
@@ -178,10 +141,11 @@
     void revision
     const controller = new AbortController()
     keys = []
-    summaries = {}
+    counts = {}
     error = ''
     loading = Boolean(active)
     pageIndex = 0
+    setAll(false)
     if (active)
       void Promise.all(
         discoverySignals
@@ -206,8 +170,8 @@
           )
       )
         .then(pages => {
-          if (controller.signal.aborted) return
-          keys = mergeAttributeKeys(pages.flat())
+          if (!controller.signal.aborted)
+            keys = mergeAttributeKeys(pages.flat())
         })
         .catch(reason => {
           if (!controller.signal.aborted) error = String(reason)
@@ -219,133 +183,219 @@
   })
 </script>
 
-<div class="attribute-discovery">
-  {#if service}
-    {@render filterControl?.()}
-    {#if error}<p role="alert" class="p-3 text-papaya">{error}</p>
-    {:else if loading && keys.length === 0}<p
-        role="status"
-        class="p-3 text-subtle"
-      >
-        Loading attributes…
-      </p>
-    {:else if keys.length === 0}<p class="p-3 text-subtle">
-        No matching attributes in this service and time range.
-      </p>
-    {:else}
-      <div class="attribute-discovery__table" bind:this={viewport}>
-        {#key `${identity}:${revision}:${term}`}
-          <ResizableTable
-            {columns}
-            storageKey="home-attribute-column-widths"
-            caption="Attributes"
-            fillColumn="name"
-            {pinnedCount}
-            stableColumns={['name']}
-            selectable
+<ListFilter label="Filter attribute keys" bind:value={filter}>
+  {#snippet children(filterToggle, filterField)}
+    <WorkspaceHeader
+      mode="title"
+      pill
+      title={service ? service.serviceName || 'Unnamed service' : 'Services'}
+      ariaLabel="Attributes"
+      badge={service?.serviceNamespace ? namespaceBadge : undefined}
+    >
+      {#snippet leading()}{#if service}<ServiceDot
+            service={service.serviceName}
+          />{/if}{/snippet}
+      {#snippet metaRight()}
+        <button
+          type="button"
+          class="btn btn-xs chart-header-control tooltip tooltip-left"
+          onclick={() => setAll(false)}
+          disabled={keys.length === 0}
+          aria-label="Collapse all attributes"
+          data-tip="Collapse all attributes"
+        >
+          <HugeiconsIcon
+            icon={UnfoldLessIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="btn btn-xs chart-header-control tooltip tooltip-left"
+          onclick={() => setAll(true)}
+          disabled={keys.length === 0}
+          aria-label="Expand all attributes"
+          data-tip="Expand all attributes"
+        >
+          <HugeiconsIcon
+            icon={UnfoldMoreIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4"
+            aria-hidden="true"
+          />
+        </button>
+        {#if service}{@render filterToggle()}{/if}
+      {/snippet}
+    </WorkspaceHeader>
+    <div class="attribute-discovery">
+      {#if service}
+        {@render filterField()}
+        {#if error}<p role="alert" class="p-3 text-papaya">{error}</p>
+        {:else if loading && keys.length === 0}<p
+            role="status"
+            class="p-3 text-subtle"
           >
-            {#snippet header(layout)}
-              <tr>
-                {#each columns as column (column.id)}
-                  {@const align = [
-                    'name',
-                    'type',
-                    'source',
-                    'signals',
-                  ].includes(column.id)
-                    ? 'left'
-                    : 'right'}
-                  <th
-                    class="table-cell"
-                    class:text-left={align === 'left'}
-                    class:text-right={align === 'right'}
-                    class:table-cell--pinned={layout.pinned[column.id] !==
-                      undefined}
-                    style:left={layout.pinned[column.id] === undefined
-                      ? undefined
-                      : `${layout.pinned[column.id]}px`}
-                    data-attribute-column={column.id}
-                    scope="col"
-                    aria-sort={column.id === 'copy'
-                      ? undefined
-                      : sortBy === column.id
+            Loading attributes…
+          </p>
+        {:else if keys.length === 0}<p class="p-3 text-subtle">
+            No matching attributes in this service and time range.
+          </p>
+        {:else}
+          <div class="attribute-discovery__table" bind:this={viewport}>
+            {#key `${identity}:${revision}:${term}`}
+              <ResizableTable
+                {columns}
+                storageKey="home-attribute-column-widths"
+                caption="Attributes"
+                fillColumn="name"
+                pinnedCount={1}
+                constrainToViewport
+                selectable
+              >
+                {#snippet header(layout)}
+                  <tr>
+                    <th
+                      class="table-cell text-left"
+                      class:table-cell--pinned={layout.pinned.name !==
+                        undefined}
+                      style:left={layout.pinned.name === undefined
+                        ? undefined
+                        : `${layout.pinned.name}px`}
+                      data-attribute-column="name"
+                      scope="col"
+                      aria-sort={sortBy === 'name'
                         ? sortDirection === 'asc'
                           ? 'ascending'
                           : 'descending'
                         : 'none'}
-                  >
-                    {#if column.id === 'copy'}<span class="sr-only">Copy</span>
-                    {:else}
+                    >
                       <TableSortButton
-                        label={column.id === 'frequency'
-                          ? 'percentage'
-                          : column.label.toLowerCase()}
+                        label="name"
                         inlineDirection
-                        {align}
-                        title={column.description}
-                        direction={sortBy === column.id
+                        title="Sort attributes and their values by name"
+                        direction={sortBy === 'name'
                           ? sortDirection
                           : undefined}
-                        onclick={() => sort(column.id)}
+                        onclick={() => sort('name')}
                       >
-                        <TableColumnHeading label={column.label} {align} />
+                        <TableColumnHeading label="Name" />
                       </TableSortButton>
-                    {/if}
-                  </th>
-                {/each}
-              </tr>
-            {/snippet}
-            {#snippet children(layout)}
-              {#each sortedKeys as entry, index (attributeIdentity(entry))}<AttributeKey
-                  {entry}
-                  {options}
-                  sortBy={sortBy === 'name' ||
-                  sortBy === 'traces' ||
-                  sortBy === 'metrics' ||
-                  sortBy === 'logs'
-                    ? sortBy
-                    : 'frequency'}
-                  {sortDirection}
-                  onSummary={summary =>
-                    (summaries[attributeIdentity(entry)] = summary)}
-                  {columns}
-                  pinned={layout.pinned}
-                  selected={selectedAttribute !== null &&
-                    attributeIdentity(selectedAttribute) ===
-                      attributeIdentity(entry)}
-                  onSelect={() => onSelectAttribute(entry)}
-                  {selectedValue}
-                  onSelectValue={value => onSelectAttribute(entry, value)}
-                  hidden={index < pageIndex * pageSize ||
-                    index >= (pageIndex + 1) * pageSize}
-                />{/each}
-            {/snippet}
-          </ResizableTable>
-        {/key}
-      </div>
-    {/if}
-    <SignalFooter label="page" compact>
-      {#snippet leading()}<PageSizeSelect
-          label="Attributes per page"
-          value={pageSize}
-          onchange={setPageSize}
-        />{/snippet}
-      {#snippet navigation()}
-        <DetailNav
-          index={keys.length ? pageIndex : -1}
-          total={pageCount}
-          label="page"
-          onFirst={() => setPage(0)}
-          onPrev={() => setPage(pageIndex - 1)}
-          onNext={() => setPage(pageIndex + 1)}
-          onLast={() => setPage(pageCount - 1)}
-        />
-      {/snippet}
-    </SignalFooter>
-  {:else}<p class="p-3 text-subtle">
-      Select a service to discover its attributes.
-    </p>{/if}
-</div>
+                    </th>
+                    <th
+                      class="table-cell text-right"
+                      data-attribute-column="count"
+                      scope="col"
+                      aria-sort={sortBy === 'count'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'}
+                    >
+                      <TableSortButton
+                        label="records"
+                        inlineDirection
+                        align="right"
+                        title="Records containing this attribute and type; value rows count records containing that exact value"
+                        direction={sortBy === 'count'
+                          ? sortDirection
+                          : undefined}
+                        onclick={() => sort('count')}
+                      >
+                        <TableColumnHeading label="Records" align="right" />
+                      </TableSortButton>
+                    </th>
+                    <th
+                      class="table-cell text-right"
+                      data-attribute-column="frequency"
+                      scope="col"
+                      aria-sort={sortBy === 'frequency'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'}
+                    >
+                      <TableSortButton
+                        label="percentage"
+                        inlineDirection
+                        align="right"
+                        title="Sort values within each attribute"
+                        direction={sortBy === 'frequency'
+                          ? sortDirection
+                          : undefined}
+                        onclick={() => sort('frequency')}
+                      >
+                        <TableColumnHeading label="%" align="right" />
+                      </TableSortButton>
+                    </th>
+                    <th
+                      class="table-cell"
+                      data-attribute-column="copy"
+                      scope="col"><span class="sr-only">Copy</span></th
+                    >
+                  </tr>
+                {/snippet}
+                {#snippet children(layout)}
+                  {#each sortedKeys as entry, index (attributeIdentity(entry))}
+                    {@const id = attributeIdentity(entry)}
+                    <AttributeKey
+                      {entry}
+                      {options}
+                      sortBy={sortBy === 'name' ? 'name' : 'frequency'}
+                      {sortDirection}
+                      onCount={count => (counts[id] = count)}
+                      pinnedLeft={layout.pinned.name}
+                      expanded={expansionOverrides[id] ?? allExpanded}
+                      onExpandedChange={expanded =>
+                        (expansionOverrides[id] = expanded)}
+                      selected={selectedAttribute !== null &&
+                        attributeIdentity(selectedAttribute) === id}
+                      onSelect={() => onSelectAttribute(entry)}
+                      {selectedValue}
+                      onSelectValue={value => onSelectAttribute(entry, value)}
+                      hidden={index < pageIndex * pageSize ||
+                        index >= (pageIndex + 1) * pageSize}
+                    />
+                  {/each}
+                {/snippet}
+              </ResizableTable>
+            {/key}
+          </div>
+        {/if}
+        <SignalFooter label="page" compact>
+          {#snippet leading()}<PageSizeSelect
+              label="Attributes per page"
+              value={pageSize}
+              onchange={setPageSize}
+            />{/snippet}
+          {#snippet navigation()}
+            <DetailNav
+              index={keys.length ? pageIndex : -1}
+              total={pageCount}
+              label="page"
+              onFirst={() => setPage(0)}
+              onPrev={() => setPage(pageIndex - 1)}
+              onNext={() => setPage(pageIndex + 1)}
+              onLast={() => setPage(pageCount - 1)}
+            />
+          {/snippet}
+        </SignalFooter>
+      {:else}<p class="p-3 text-subtle">
+          Select a service to discover its attributes.
+        </p>{/if}
+    </div>
+  {/snippet}
+</ListFilter>
+
+{#snippet namespaceBadge()}
+  <span
+    class="max-w-48 truncate text-sm text-subtle"
+    title={service?.serviceNamespace}>{service?.serviceNamespace}</span
+  >
+{/snippet}
 
 <style lang="postcss">
   @reference '../../app.css';
