@@ -281,11 +281,12 @@
   // Scalar aggregates for the checked and full series pools.
   let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
 
-  // Unreduced expanded-series datapoints, cleared when their request scope changes.
+  // Unreduced inspected-series datapoints, cleared when their request scope changes.
   let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
+  let seriesDatapointErrors = new SvelteMap<string, string>()
   let seriesDatapointsKey = ''
   let seriesDatapointsScopeKey = ''
-  let expandedSeriesSnapshot = new Set<string>()
+  let inspectedSeriesSnapshot: string | null = null
   let seriesDatapointsMetricID = $derived.by(() => {
     const summaryID = selectedSummary?.metricRef
     return summaryID && selectedMetric?.metricRef === summaryID
@@ -484,10 +485,10 @@
     return { startTime: startNs, endTime: endNs }
   }
 
-  // Expanded lists require received datapoints, so fetch one unreduced series on demand.
+  // Series selection loads received datapoints independently of chart visibility.
   $effect(() => {
     const metricRef = seriesDatapointsMetricID
-    const expanded = [...metricCtx.expandedTimeseries]
+    const selectedSeries = metricCtx.selectedSeriesKey
     const selection = timeContext.selection
     const timezone = timeContext.tz
     // Presets keep their duration here; requests resolve their moving bounds.
@@ -499,14 +500,12 @@
       seriesDatapointsScopeKey = scopeKey
       seriesDatapointsKey = ''
       seriesDatapoints.clear()
+      seriesDatapointErrors.clear()
     }
-    const expansionTriggered = expanded.some(
-      seriesKey => !expandedSeriesSnapshot.has(seriesKey)
-    )
-    expandedSeriesSnapshot = new Set(expanded)
-    if (!metricRef || expanded.length === 0) return
-    // Collapsing one row while another remains open is not a refetch trigger.
-    if (!scopeChanged && !expansionTriggered) return
+    const selectionChanged = selectedSeries !== inspectedSeriesSnapshot
+    inspectedSeriesSnapshot = selectedSeries
+    if (!metricRef || !selectedSeries) return
+    if (!scopeChanged && !selectionChanged) return
 
     const now = Date.now()
     const { startTime, endTime } = selectionToQueryRangeNs(selection, now)
@@ -525,9 +524,10 @@
     if (key !== seriesDatapointsKey) {
       seriesDatapointsKey = key
       seriesDatapoints.clear()
+      seriesDatapointErrors.clear()
     }
 
-    for (const seriesKey of expanded) {
+    for (const seriesKey of [selectedSeries]) {
       // Cache publication must not trigger another live-window request.
       if (untrack(() => seriesDatapoints.has(seriesKey))) continue
       void fetchSeriesDatapoints({
@@ -567,6 +567,7 @@
     const requestKey = JSON.stringify([cacheKey, seriesKey])
     if (seriesInFlight.has(requestKey)) return
     seriesInFlight.add(requestKey)
+    seriesDatapointErrors.delete(seriesKey)
     try {
       const result = await telemetryAPI.getMetricView(
         metricRef,
@@ -587,6 +588,8 @@
       // Cache terminal empty results so pending URL selections can resolve.
       seriesDatapoints.set(seriesKey, series?.datapoints ?? [])
     } catch (err) {
+      if (cacheKey === seriesDatapointsKey)
+        seriesDatapointErrors.set(seriesKey, 'Could not load datapoints.')
       console.error('Failed to fetch series datapoints:', err)
     } finally {
       seriesInFlight.delete(requestKey)
@@ -1038,7 +1041,11 @@
   {/snippet}
 
   {#snippet detail()}
-    <MetricDetailView />
+    <MetricDetailView
+      datapointsError={metricCtx.selectedSeriesKey
+        ? seriesDatapointErrors.get(metricCtx.selectedSeriesKey)
+        : undefined}
+    />
   {/snippet}
 
   {#snippet pageFooter()}

@@ -3,7 +3,8 @@
    * MetricDetailView is the "detail" pane on the metrics page.
    * Stacked collapsible sections contain:
    *   - Metric: metric, resource and instrumentation scope fields
-   *   - Series: per-timeseries rows with nested datapoints
+   *   - Series: independently selectable series and chart visibility
+   *   - Datapoints: received rows for the selected series
    *
    * Reads everything through MetricViewContext: this is a near-pure
    * renderer. Disclosure state stays local to the panel.
@@ -24,11 +25,18 @@
   } from '@hugeicons/core-free-icons'
   import MetricField from '@/components/shared/DetailProperty.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
+  import DatapointsPanel from './DatapointsPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { readOTLPText } from '@/services/export-service'
 
   const ctx = getMetricViewContext()
+  let { datapointsError }: { datapointsError?: string } = $props()
+  const selectedSeries = $derived(
+    ctx.metric?.timeseries.find(
+      series => series.seriesRef === ctx.selectedSeriesKey
+    )
+  )
   const timeContext = getTimeContext()
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
@@ -75,6 +83,16 @@
     {#if ctx.metric}<TimeseriesPanel />{:else}<p class="p-3 text-subtle">
         Select a metric to view details
       </p>{/if}
+  </DetailBubble>
+{/snippet}
+{#snippet datapointsSection()}
+  <DetailBubble
+    label="Datapoints"
+    icon={seriesIcon}
+    disabled={!selectedSeries}
+    count={selectedSeries?.datapointCount}
+  >
+    <DatapointsPanel error={datapointsError} />
   </DetailBubble>
 {/snippet}
 {#snippet metricSection()}
@@ -223,7 +241,8 @@
   label="Metric details"
   storageKey="metric-detail-section-sizes"
   sections={[
-    { id: 'series', content: seriesSection },
     { id: 'metric', content: metricSection },
+    { id: 'series', content: seriesSection },
+    { id: 'datapoints', content: datapointsSection },
   ]}
 />

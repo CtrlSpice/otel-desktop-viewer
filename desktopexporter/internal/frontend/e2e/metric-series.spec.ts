@@ -1019,13 +1019,13 @@ test.describe('independent histogram aggregate loading', () => {
           exact: true,
         })
         await series.locator('.ts-row').first().click()
-        await expect(series.locator('.dp-list__range').first()).toContainText(
-          '2 datapoints'
-        )
-        const rows = series
-          .locator('[data-series-detail]')
-          .first()
-          .locator('tr[data-dp-id]')
+        const datapoints = page.getByRole('region', {
+          name: 'Selected series datapoints',
+        })
+        await expect(
+          datapoints.locator('.dp-list__range').first()
+        ).toContainText('2 datapoints')
+        const rows = datapoints.locator('tr[data-dp-id]')
         await expect(rows).toHaveCount(2)
         for (const row of await rows.all()) {
           await expect(row.locator('td').nth(1)).toHaveText('12')
@@ -2529,6 +2529,7 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`/metrics/${metric.metricRef}?agg=rate`)
+  await page.locator('.ts-row[data-series-key]').first().click()
   await expect(page.locator('.metric-time-series-chart')).toBeVisible()
   await expect(page.locator('.chart-sticky__card')).toHaveCount(0)
   await expect(page.locator('.selection-dot--selected')).toHaveCount(0)
@@ -2647,6 +2648,9 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  await page
+    .getByRole('button', { name: 'Select route: /first', exact: true })
+    .click()
   const graph = page.getByRole('application', {
     name: 'Metric time series chart',
     exact: true,
@@ -2672,7 +2676,7 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
     .toBe(selectedID)
 })
 
-test('Raw selection keeps Series open and preserves the lower Metric disclosure state', async ({
+test('chart selection preserves section disclosure and the inspected series', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -2682,16 +2686,21 @@ test('Raw selection keeps Series open and preserves the lower Metric disclosure 
     name: 'Metric details',
     exact: true,
   })
-  const sections = details.locator('.detail-bubble__disclosure')
-  const series = sections.nth(0)
-  const fields = sections.nth(1)
+  const series = details.locator('[data-detail-section="series"] details')
+  const fields = details.locator('[data-detail-section="metric"] details')
+  const datapoints = details.locator(
+    '[data-detail-section="datapoints"] details'
+  )
+  await page
+    .getByRole('button', { name: 'Select route: /first', exact: true })
+    .click()
   await series.locator(':scope > summary').click()
-  await expect(series).toHaveAttribute('open')
+  await expect(series).not.toHaveAttribute('open')
   await fields
     .locator(':scope > summary')
     .getByText('Metric', { exact: true })
     .click()
-  await expect(fields).not.toHaveAttribute('open')
+  await expect(fields).toHaveAttribute('open')
   const graph = page.getByRole('application', {
     name: 'Metric time series chart',
     exact: true,
@@ -2699,22 +2708,21 @@ test('Raw selection keeps Series open and preserves the lower Metric disclosure 
   await graph.focus()
   await graph.press('Home')
   await graph.press('Enter')
-  await expect(series).toHaveAttribute('open')
-  await expect(fields).not.toHaveAttribute('open')
+  await expect(series).not.toHaveAttribute('open')
+  await expect(fields).toHaveAttribute('open')
   const selectedID = new URL(page.url()).searchParams.get('dp')!
-  const selected = series.locator(`[data-dp-id="${selectedID}"]`)
+  const selected = datapoints.locator(`[data-dp-id="${selectedID}"]`)
   await expect(selected).toHaveAttribute('aria-selected', 'true')
   await expect(selected).toBeInViewport()
-  // The top section also resists keyboard collapse; field disclosure is independent.
-  await series.locator(':scope > summary').click()
-  await series.locator(':scope > summary').press('Enter')
-  await series.locator(':scope > summary').press('Space')
-  await expect(series).toHaveAttribute('open')
+  // Metric remains primary; chart picks do not reopen other sections.
+  await fields.locator(':scope > summary').press('Enter')
+  await fields.locator(':scope > summary').press('Space')
+  await expect(fields).toHaveAttribute('open')
   await graph.focus()
   await graph.press('Enter')
-  await expect(series).toHaveAttribute('open')
+  await expect(series).not.toHaveAttribute('open')
   await expect(selected).toBeInViewport()
-  await expect(fields).not.toHaveAttribute('open')
+  await expect(fields).toHaveAttribute('open')
 })
 
 test('dense pinned legends scroll by wheel and keyboard at the 280px chart floor', async ({
@@ -2798,7 +2806,7 @@ test('dense pinned legends scroll by wheel and keyboard at the 280px chart floor
   ).toBeVisible()
 })
 
-test('series open by their headers, one at a time, with one combined table', async ({
+test('series selection drives a separate datapoint section with independent attributes and visibility', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -2808,8 +2816,15 @@ test('series open by their headers, one at a time, with one combined table', asy
     name: 'Metric details',
     exact: true,
   })
-  const seriesBubble = details.locator('details.collapse').nth(0)
-  const fieldsBubble = details.locator('details.collapse').nth(1)
+  const seriesBubble = details.locator(
+    '[data-detail-section="series"] details.collapse'
+  )
+  const fieldsBubble = details.locator(
+    '[data-detail-section="metric"] details.collapse'
+  )
+  const datapointsBubble = details.locator(
+    '[data-detail-section="datapoints"] details.collapse'
+  )
   const mainHeader = page.getByRole('region', {
     name: 'Metric chart',
     exact: true,
@@ -2882,19 +2897,22 @@ test('series open by their headers, one at a time, with one combined table', asy
       .evaluate(element => getComputedStyle(element).backgroundColor)
   )
   const series = page.locator('.ts-row[data-series-key]')
-  const seriesDetails = page.locator('[data-series-detail]')
+  const seriesDetails = page.locator('[data-series-attributes]')
   await expect(series).toHaveCount(2)
   for (const item of await series.all()) {
     await expect(item).toHaveClass(/item-state/)
-    await expect(item).toHaveAttribute('aria-expanded', 'false')
+    await expect(item).toHaveAttribute('aria-selected', 'false')
   }
   const firstCheckbox = page.getByRole('checkbox', {
     name: 'Show route: /first in chart',
   })
   await firstCheckbox.uncheck()
-  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'false')
+  await expect(series.nth(0)).toHaveAttribute('aria-selected', 'false')
   await firstCheckbox.check()
-  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'false')
+  await expect(series.nth(0)).toHaveAttribute('aria-selected', 'false')
+  await expect(
+    series.nth(0).locator('td').last().getByRole('checkbox')
+  ).toBeChecked()
   await expect(seriesBubble).toHaveAttribute('open')
   await expect(fieldsBubble).toHaveAttribute('open')
   await expect(fieldsBubble.locator(':scope > summary')).toHaveText('Metric')
@@ -2920,10 +2938,20 @@ test('series open by their headers, one at a time, with one combined table', asy
     details.locator('.collapse-arrow, .field-group__caret')
   ).toHaveCount(0)
   await series.nth(0).locator('.ts-row__attrs').click()
-  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(series.nth(0)).toHaveAttribute('aria-selected', 'true')
+  await expect(seriesDetails).toHaveCount(0)
+  await page
+    .getByRole('button', {
+      name: 'Expand attributes for route: /first',
+      exact: true,
+    })
+    .click()
   await expect(seriesDetails.nth(0).locator('table')).toHaveCount(1)
-  const table = seriesDetails.nth(0).getByRole('table', { name: 'Datapoints' })
-  const attribute = table.locator('[data-field="route"]')
+  const table = datapointsBubble.getByRole('table', {
+    name: 'Datapoints',
+    exact: true,
+  })
+  const attribute = seriesDetails.nth(0).locator('[data-field="route"]')
   await expect(attribute.locator('.detail-property__key')).toHaveText(
     'route · string'
   )
@@ -2956,7 +2984,8 @@ test('series open by their headers, one at a time, with one combined table', asy
   expect(fieldLayout.copyLeft - fieldLayout.keyRight).toBeGreaterThanOrEqual(8)
   expect(fieldLayout.copyInset).toBeCloseTo(0, 0)
   expect(fieldLayout.copyTop).toBeCloseTo(fieldLayout.headingTop, 0)
-  await expect(table).toContainText('/first')
+  await expect(seriesDetails.nth(0)).toContainText('/first')
+  await expect(table.locator('[data-field="route"]')).toHaveCount(0)
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
   const datapoint = table.locator('tr[data-dp-id]').first()
   await datapoint.hover()
@@ -3010,7 +3039,7 @@ test('series open by their headers, one at a time, with one combined table', asy
     'border-top-left-radius',
     '12px'
   )
-  const nextPage = seriesDetails.nth(0).getByRole('button', {
+  const nextPage = datapointsBubble.getByRole('button', {
     name: 'Next page',
     exact: true,
   })
@@ -3021,10 +3050,9 @@ test('series open by their headers, one at a time, with one combined table', asy
     'data-dp-id',
     'first-25'
   )
-  await expect(seriesDetails.nth(0)).toContainText('26-40 of 40 datapoints')
+  await expect(datapointsBubble).toContainText('26-40 of 40 datapoints')
   await expect(nextPage).toBeDisabled()
-  await seriesDetails
-    .nth(0)
+  await datapointsBubble
     .getByRole('button', { name: 'First page', exact: true })
     .click()
   await expect(table.locator('tr[data-dp-id]').first()).toHaveAttribute(
@@ -3033,8 +3061,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   )
   await page.setViewportSize({ width: 1440, height: 720 })
   await expect(nextPage).toBeInViewport({ ratio: 1 })
-  await seriesDetails
-    .nth(0)
+  await datapointsBubble
     .getByRole('combobox', { name: 'Rows per page' })
     .selectOption('50')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(40)
@@ -3065,18 +3092,22 @@ test('series open by their headers, one at a time, with one combined table', asy
   await page
     .getByRole('checkbox', { name: 'Show route: /first in chart' })
     .uncheck()
-  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(series.nth(0)).toHaveAttribute('aria-selected', 'true')
+  await expect(datapoint).toHaveAttribute('aria-selected', 'true')
   await series.nth(1).locator('.ts-row__attrs').click()
-  await expect(series.nth(1)).toHaveAttribute('aria-expanded', 'true')
-  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'false')
+  await expect(series.nth(1)).toHaveAttribute('aria-selected', 'true')
+  await expect(series.nth(0)).toHaveAttribute('aria-selected', 'false')
   await expect(seriesDetails.locator('table:visible')).toHaveCount(1)
-  await expect(
-    seriesDetails.nth(1).getByRole('table', { name: 'Datapoints' })
-  ).toContainText('/second')
+  await expect(table.locator('tr[data-dp-id]').first()).toHaveAttribute(
+    'data-dp-id',
+    'second-0'
+  )
+  await expect(page).not.toHaveURL(/[?&]dp=/)
   await series.nth(0).focus()
   await page.keyboard.press('Enter')
-  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'true')
-  await expect(series.nth(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(series.nth(0)).toHaveAttribute('aria-selected', 'true')
+  await expect(series.nth(1)).toHaveAttribute('aria-selected', 'false')
+  await expect(firstCheckbox).not.toBeChecked()
 })
 
 test('header tabs use icons and tooltips only when their panel is narrow', async ({
@@ -3248,7 +3279,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
     headingBox.x + headingBox.width - copyBox.x - copyBox.width
   ).toBeCloseTo(16, 0)
   await heading.getByText('Metric', { exact: true }).click()
-  await expect(bubble.locator('details')).not.toHaveAttribute('open')
+  await expect(bubble.locator('details')).toHaveAttribute('open')
   await expect(copy).toBeVisible()
   await page.evaluate(() => navigator.clipboard.writeText('keep my clipboard'))
   await copy.click()
@@ -3262,6 +3293,6 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
   await expect(status).toHaveText('Copied metric.')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(raw)
   expect(exportRequests).toBe(2)
-  await expect(bubble.locator('details')).not.toHaveAttribute('open')
+  await expect(bubble.locator('details')).toHaveAttribute('open')
   await expect(page).toHaveURL(`/metrics/${metric.metricRef}?agg=raw`)
 })

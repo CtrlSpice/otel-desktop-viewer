@@ -1,8 +1,9 @@
 <script lang="ts">
   import ExemplarTraceReference from './ExemplarTraceReference.svelte'
+  import DatapointFields from './DatapointFields.svelte'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   /*
-   * Paginated datapoint rows for a single timeseries. Nested under an expanded
-   * series row in TimeseriesPanel. Selection, flags/exemplar expansion, and
+   * Paginated datapoint rows for the selected timeseries. Selection and
    * histogram snapshot sync go through MetricViewContext.
    */
   import { tick } from 'svelte'
@@ -13,28 +14,13 @@
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
-  import DetailProperty from '@/components/shared/DetailProperty.svelte'
-  import type { Attributes, DataPoint, Exemplar } from '@/types/api-types'
+  import type { DataPoint, Exemplar } from '@/types/api-types'
 
   type Props = {
     datapoints: DataPoint[]
-    attributes?: Attributes
-    attributeOwner?: string
-    /** Show a color swatch column (flat cross-series lists). */
-    showSwatch?: boolean
-    seriesColor?: string
-    /** Drop horizontal inset (nested under series rows). */
-    flush?: boolean
   }
 
-  let {
-    datapoints,
-    attributes = [],
-    attributeOwner = 'series',
-    showSwatch = false,
-    seriesColor,
-    flush = false,
-  }: Props = $props()
+  let { datapoints }: Props = $props()
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
@@ -45,7 +31,7 @@
     datapoints.some(dp => dp.flags > 0 || dp.exemplars.length > 0)
   )
   let columnCount = $derived(
-    (ctx.isHistogramKind ? 3 : 2) + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)
+    (ctx.isHistogramKind ? 3 : 2) + (hasDetails ? 1 : 0)
   )
 
   const PAGE_SIZES = [25, 50, 100] as const
@@ -64,6 +50,26 @@
   let cachedDatapointIndexByID = new Map<string, number>()
   let revealedDatapoints: DataPoint[] | undefined
   let revealedSelectedID: string | null | undefined
+  const revealDatapointID = $derived(
+    ctx.selectionSource === 'chart'
+      ? (ctx.chartRelatedDatapointIDs.values().next().value ?? null)
+      : ctx.selectedDatapointID
+  )
+
+  $effect(() => {
+    const id = revealDatapointID
+    if (!id || !detailPanel.open) return
+    let cancelled = false
+    void tick().then(() => {
+      if (cancelled || listRoot?.closest('details')?.open === false) return
+      listRoot
+        ?.querySelector(`[data-dp-id="${CSS.escape(id)}"]`)
+        ?.scrollIntoView?.({ block: 'nearest' })
+    })
+    return () => {
+      cancelled = true
+    }
+  })
 
   function datapointIndexByID(points: DataPoint[]): Map<string, number> {
     if (points === indexedDatapoints) return cachedDatapointIndexByID
@@ -128,7 +134,7 @@
   $effect.pre(() => {
     const points = datapoints
     const size = pageSize
-    const selectedID = ctx.selectedDatapointID
+    const selectedID = revealDatapointID
     const focused = focusedDatapointRow()
     const indexByID = datapointIndexByID(points)
     const selectedIndex = selectedID ? (indexByID.get(selectedID) ?? -1) : -1
@@ -312,8 +318,8 @@
 
 {#snippet datapointRows(dp: DataPoint, datapointIndex: number)}
   {@const selected = ctx.selectedDatapointID === dp.id}
-  {@const hasExtra = dp.flags > 0 || dp.exemplars.length > 0}
-  {@const expanded = hasExtra && ctx.expandedDatapoints.has(dp.id)}
+  {@const expanded = selected}
+  {@const chartRelated = ctx.chartRelatedDatapointIDs.has(dp.id)}
   {@const valueParts = datapointValueParts(dp)}
   {@const formattedTime = formatDatapointTime(dp.timestamp)}
   <tr
@@ -322,20 +328,14 @@
     data-dp-index={datapointIndex}
     tabindex="0"
     aria-label={datapointRowLabel(dp.id, formattedTime, valueParts)}
-    aria-selected={selected}
-    aria-expanded={hasExtra ? expanded : undefined}
-    onclick={() => ctx.onDatapointClick(dp)}
+    aria-selected={selected || chartRelated}
+    aria-expanded={expanded}
+    title={chartRelated ? 'In selected chart point or interval' : undefined}
+    onclick={() => {
+      if (!window.getSelection()?.toString()) ctx.onDatapointClick(dp)
+    }}
     onkeydown={e => handleDatapointKeydown(e, dp, datapointIndex)}
   >
-    {#if showSwatch}
-      <td class="dp-list__td dp-list__td--swatch">
-        <span
-          class="dp-list__swatch"
-          style:background-color={seriesColor}
-          aria-hidden="true"
-        ></span>
-      </td>
-    {/if}
     <td class="dp-list__td dp-list__td--time tabular-nums">
       {formattedTime}
     </td>
@@ -364,12 +364,7 @@
     <tr class="dp-list__expansion-row">
       <td colspan={columnCount} class="dp-list__expansion-cell">
         <div class="dp-list__expansion">
-          {#if dp.flags > 0}
-            <div class="dp-list__detail">
-              <span class="dp-list__detail-label">flags</span>
-              <span class="dp-list__detail-value">{dp.flags}</span>
-            </div>
-          {/if}
+          <DatapointFields datapoint={dp} />
           {#if withheld(dp)}
             <div class="dp-list__detail">
               <span class="dp-list__detail-label">exemplars</span>
@@ -405,41 +400,15 @@
   {/if}
 {/snippet}
 
-{#if datapoints.length === 0 && attributes.length === 0}
-  <p class="dp-list__empty" class:dp-list__empty--flush={flush}>
-    No datapoints
-  </p>
+{#if datapoints.length === 0}
+  <p class="dp-list__empty">No datapoints</p>
 {:else}
   <div bind:this={listRoot} class="dp-list__container">
     <div class="dp-list__table-wrap">
-      <table
-        class="dp-list"
-        class:dp-list--flush={flush}
-        aria-label="Datapoints"
-      >
-        {#if attributes.length > 0}
-          <tbody aria-label="Series attributes">
-            {#each attributes as attribute, index (`${attributeOwner}:${attribute.id ?? 'unidentified'}:${index}`)}
-              <DetailProperty
-                fieldName={attribute.key}
-                fieldType={attribute.value.kind}
-                typedValue={attribute.value}
-                colspan={columnCount}
-                defectLabel={attribute.hasConflict
-                  ? `Conflicting typed values retained for ${attribute.key} in ${attributeOwner}.`
-                  : undefined}
-              />
-            {/each}
-          </tbody>
-        {/if}
+      <table class="dp-list" aria-label="Datapoints">
         <tbody>
           {#if datapoints.length > 0}
             <tr class="dp-list__header-row">
-              {#if showSwatch}
-                <th scope="col" class="dp-list__th dp-list__th--swatch">
-                  <span class="sr-only">Series</span>
-                </th>
-              {/if}
               <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
               {#if ctx.isHistogramKind}
                 <th scope="col" class="dp-list__th dp-list__th--value">Count</th
@@ -510,20 +479,6 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .dp-list__empty--flush {
-    @apply px-0;
-  }
-
-  .dp-list--flush .dp-list__td--swatch,
-  .dp-list--flush .dp-list__th--swatch {
-    @apply pl-0;
-  }
-
-  .dp-list--flush .dp-list__td--time,
-  .dp-list--flush .dp-list__th--time {
-    @apply pl-3;
-  }
-
   .dp-list__empty {
     @apply m-0 px-3 py-2 text-center text-xs italic;
     color: var(--color-muted);
@@ -566,18 +521,6 @@
   .dp-list__th:last-child,
   .dp-list__td:last-child {
     padding-inline-end: calc(var(--pane-inline-inset) + var(--header-gap));
-  }
-
-  .dp-list__td--swatch,
-  .dp-list__th--swatch {
-    @apply pl-3 pr-1;
-    width: 1.25rem;
-  }
-
-  .dp-list__swatch {
-    @apply inline-block rounded-full;
-    width: 6px;
-    height: 6px;
   }
 
   .dp-list__td--time {
@@ -681,18 +624,12 @@
     }
   }
 
-  .dp-list__expansion-row {
-    @apply bg-base-200/50;
-  }
-
   .dp-list__expansion-cell {
     @apply p-0;
   }
 
   .dp-list__expansion {
-    @apply flex flex-col gap-2 px-4 py-2;
-    border-bottom: 1px solid
-      color-mix(in oklab, var(--color-base-300) 30%, transparent);
+    @apply flex flex-col;
   }
 
   .dp-list__detail {
@@ -710,7 +647,7 @@
   }
 
   .dp-list__exemplar {
-    @apply flex flex-col gap-0.5;
+    @apply flex flex-col gap-0.5 px-3 py-2;
   }
 
   .dp-list__exemplar-fields {

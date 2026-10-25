@@ -598,9 +598,8 @@ describe('MetricsPage raw series fetching', () => {
 
       renderWithContexts(MetricsPage)
       await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
-      expect(
-        document.querySelector('tr[data-dp-id="dp-reduced"]')
-      ).not.toBeNull()
+      expect(document.querySelector('tr[data-dp-id="dp-reduced"]')).toBeNull()
+      expect(screen.getByText('Loading datapoints…')).toBeVisible()
 
       raw.resolve(response())
       await raw.promise
@@ -610,7 +609,7 @@ describe('MetricsPage raw series fetching', () => {
 
       const user = userEvent.setup()
       const seriesRow = screen
-        .getByText('default series', { exact: true })
+        .getByRole('button', { name: 'Select default series' })
         .closest('tr')!
       await user.click(seriesRow)
       await user.click(seriesRow)

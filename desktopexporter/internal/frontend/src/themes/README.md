@@ -372,6 +372,20 @@ the native series identifier; this never changes grouping or colour ownership.
 Sorting cycles ascending, descending and received order without changing visibility
 or datapoint selection. Column filters are omitted.
 
+Metric Details has separate Metric, Series and Datapoints sections. Selecting a
+series loads its received datapoints in Datapoints; changing series clears the
+selected datapoint. The left caret reveals series attributes independently, and
+the rightmost Show checkbox controls chart visibility. The editable colour dot
+sits directly before the first distinguishing value. Inspection, including URL
+restoration, does not change saved visibility or colours.
+
+Selecting a datapoint reveals its fields and its existing chart highlight or
+histogram contribution. Chart point picks stay within the inspected series;
+chart interval picks highlight that series' received rows in the interval.
+They do not switch series or reopen closed sections. Attributes stay under the
+series row, not in the datapoint table. All three sections use the shared Details
+stack, resizing and independent scrolling.
+
 Existing overrides are read from `graph-colour-overrides:madoromi-inks-v1:<scope>` as
 identity/ink-shade pairs; new series choices store six-digit RGB hex values in
 the same scope. Services share the `services` scope, keyed by service-name

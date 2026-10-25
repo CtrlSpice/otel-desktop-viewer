@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { tick } from 'svelte'
+  import { SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import {
     getMetricViewContext,
     SPARKLINE_WIDTH_PX,
@@ -16,14 +17,12 @@
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import { selectableTableRow } from '@/components/shared/utils/selectable-table-row'
   import { compareSeriesCells } from '@/components/metrics/utils/minimal-series-labels'
-  import SeriesDatapointList from './SeriesDatapointList.svelte'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
-  import { detailPanel } from '@/state/detail-panel.svelte'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
 
   const ctx = getMetricViewContext()
   const id = $props.id()
-  let panel: HTMLDivElement
+  const expandedAttributes = new SvelteSet<string>()
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
@@ -33,6 +32,7 @@
     hoveredSeriesKey = null
     focusedSeriesKey = null
     sort = null
+    expandedAttributes.clear()
   })
   $effect(() => {
     ctx.previewSeriesKey = ctx.isHistogramKind
@@ -54,8 +54,15 @@
     !ctx.isHistogramKind && checkedKeys.size >= MAX_VISIBLE_TIMESERIES
   )
   const timeseriesByKey = $derived(
-    new Map(ctx.metric?.timeseries.map(ts => [ts.seriesRef, ts]) ?? [])
+    new Map(
+      ctx.metric?.timeseries.map(series => [series.seriesRef, series]) ?? []
+    )
   )
+
+  function toggleAttributes(key: string) {
+    if (expandedAttributes.has(key)) expandedAttributes.delete(key)
+    else expandedAttributes.add(key)
+  }
   const identityColumn = $derived(
     table.columns.length === 0 ||
       [...table.labels.values()].some(label => label.needsIdentity)
@@ -66,10 +73,7 @@
       [...ctx.sparklineByKey.values()].some(points => points.length > 0)
   )
   const columns = $derived([
-    { id: 'controls', label: 'Show', min: 64, width: 64, fixed: true },
-    ...(!ctx.isHistogramKind
-      ? [{ id: 'colour', label: 'Colour', min: 64, width: 64, fixed: true }]
-      : []),
+    { id: 'controls', label: 'Attributes', min: 32, width: 32, fixed: true },
     ...table.columns.map(column => ({
       id: `attr:${column.key}`,
       label: column.key,
@@ -82,6 +86,7 @@
     ...(previewColumn
       ? [{ id: 'preview', label: 'Preview', min: 104, width: 104, fixed: true }]
       : []),
+    { id: 'show', label: 'Show', min: 56, width: 56, fixed: true },
   ])
   const sortedRows = $derived.by(() => {
     const column = table.columns.find(column => column.key === sort?.key)
@@ -112,45 +117,26 @@
       'default series'
     )
   }
-
-  function toggleOpen(key: string) {
-    const wasOpen = ctx.expandedTimeseries.has(key)
-    ctx.expandedTimeseries.clear()
-    if (!wasOpen) ctx.expandedTimeseries.add(key)
-  }
-
-  $effect(() => {
-    const dpID = ctx.selectedDatapointID
-    void detailPanel.revealRequest
-    const seriesKey = ctx.selectedSeriesKey
-    if (!dpID || !seriesKey || !detailPanel.open) return
-    ctx.expandedTimeseries.clear()
-    ctx.expandedTimeseries.add(seriesKey)
-    let cancelled = false
-    void tick().then(async () => {
-      if (cancelled) return
-      const disclosure = panel.closest('details')
-      if (disclosure) {
-        disclosure.open = true
-        await tick()
-      }
-      if (!cancelled)
-        panel
-          .querySelector(`[data-dp-id="${CSS.escape(dpID)}"]`)
-          ?.scrollIntoView({ block: 'nearest' })
-    })
-    return () => {
-      cancelled = true
-    }
-  })
 </script>
 
-<div class="ts-panel" role="region" aria-label="Timeseries" bind:this={panel}>
+{#snippet colour(key: string, label: string)}
+  {@const color = ctx.savedTimeseriesColorByKey.get(key)}
+  {#if !ctx.isHistogramKind && color && ctx.metric}
+    <GraphColorPicker
+      scope={`metric:${ctx.metric.metricRef}`}
+      identity={key}
+      label={`Colour for ${label}`}
+      {color}
+    />
+  {/if}
+{/snippet}
+
+<div class="ts-panel" role="region" aria-label="Timeseries">
   <ResizableTable
     {columns}
     caption="Metric series"
     storageKey="metric-series-table:widths"
-    pinnedCount={ctx.isHistogramKind ? 2 : 3}
+    pinnedCount={2}
     selectable
   >
     {#snippet header(layout)}
@@ -159,15 +145,9 @@
           scope="col"
           class="table-cell"
           class:table-cell--pinned={layout.pinned.controls !== undefined}
-          style:left="{layout.pinned.controls}px">Show</th
+          style:left="{layout.pinned.controls}px"
+          ><span class="sr-only">Attributes</span></th
         >
-        {#if !ctx.isHistogramKind}<th
-            scope="col"
-            class="table-cell"
-            class:table-cell--pinned={layout.pinned.colour !== undefined}
-            style:left="{layout.pinned.colour}px"
-            ><span class="sr-only">Colour</span></th
-          >{/if}
         {#each table.columns as column (column.key)}
           <th
             scope="col"
@@ -197,6 +177,7 @@
         {/each}
         {#if identityColumn}<th scope="col">Series identity</th>{/if}
         {#if previewColumn}<th scope="col">Preview</th>{/if}
+        <th scope="col" class="text-right">Show</th>
       </tr>
     {/snippet}
     {#snippet children(layout)}
@@ -210,18 +191,16 @@
         {@const headerLabel = label.needsIdentity
           ? `${label.text} · ${ts.key}`
           : label.text}
-        {@const expanded = ctx.expandedTimeseries.has(ts.key)}
-        {@const detailID = `${id}-series-${ts.key}`}
-        {@const metricTs = timeseriesByKey.get(ts.key)}
+        {@const attributes = timeseriesByKey.get(ts.key)?.attributes ?? []}
+        {@const expanded = expandedAttributes.has(ts.key)}
+        {@const detailID = `${id}-attributes-${ts.key}`}
         <tr
           class="ts-row item-state"
           data-series-key={ts.key}
           data-selectable-row
-          aria-expanded={expanded}
-          aria-controls={detailID}
           use:selectableTableRow={{
-            selected: expanded,
-            onSelect: () => toggleOpen(ts.key),
+            selected: ctx.selectedSeriesKey === ts.key,
+            onSelect: () => ctx.selectSeries(ts.key),
           }}
           onpointerenter={() => (hoveredSeriesKey = ts.key)}
           onpointerleave={() => (hoveredSeriesKey = null)}
@@ -237,10 +216,11 @@
               <button
                 type="button"
                 class="ts-row__caret"
-                aria-label={`${expanded ? 'Collapse' : 'Expand'} ${headerLabel}`}
+                disabled={!attributes.length}
+                aria-label={`${expanded ? 'Collapse' : 'Expand'} attributes for ${headerLabel}`}
                 aria-expanded={expanded}
                 aria-controls={detailID}
-                onclick={() => toggleOpen(ts.key)}
+                onclick={() => toggleAttributes(ts.key)}
               >
                 <HugeiconsIcon
                   icon={ArrowRight01Icon}
@@ -249,34 +229,8 @@
                   class={expanded ? 'rotate-90' : ''}
                 />
               </button>
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs ts-row__checkbox"
-                {checked}
-                disabled={!checked && capReached}
-                aria-label={`Show ${headerLabel} in chart`}
-                onchange={event =>
-                  ctx.toggleTimeseriesVisible(
-                    ts.key,
-                    event.currentTarget.checked
-                  )}
-              />
             </div>
           </td>
-          {#if !ctx.isHistogramKind}<td
-              class="table-cell"
-              class:table-cell--pinned={layout.pinned.colour !== undefined}
-              style:left="{layout.pinned.colour}px"
-            >
-              {#if seriesColor && ctx.metric}
-                <GraphColorPicker
-                  scope={`metric:${ctx.metric.metricRef}`}
-                  identity={ts.key}
-                  label={`Colour for ${headerLabel}`}
-                  color={seriesColor}
-                />
-              {/if}
-            </td>{/if}
           {#each table.columns as column (column.key)}
             <td
               class="table-cell ts-row__attrs"
@@ -284,16 +238,38 @@
                 undefined}
               style:left="{layout.pinned[`attr:${column.key}`]}px"
               title={attrsTooltip(ts.attributes)}
-              >{column.cells.get(ts.key)!.label}</td
+              >{#if column === table.columns[0]}<div
+                  class="flex min-w-0 items-center"
+                >
+                  {@render colour(ts.key, headerLabel)}<button
+                    type="button"
+                    class="min-w-0 text-left"
+                    aria-label={`Select ${headerLabel}`}
+                    onclick={() => ctx.selectSeries(ts.key)}
+                    >{column.cells.get(ts.key)!.label}</button
+                  >
+                </div>{:else}{column.cells.get(ts.key)!.label}{/if}</td
             >
           {/each}
           {#if identityColumn}<td
               class="table-cell"
               title={attrsTooltip(ts.attributes)}
             >
-              {#if label.needsIdentity}<Identifier
-                  value={ts.key}
-                />{:else}{label.text}{/if}
+              <div class="flex min-w-0 items-center">
+                {#if table.columns.length === 0}{@render colour(
+                    ts.key,
+                    headerLabel
+                  )}{/if}
+                <button
+                  type="button"
+                  class="max-w-full text-left"
+                  aria-label={`Select ${headerLabel}`}
+                  onclick={() => ctx.selectSeries(ts.key)}
+                  >{#if label.needsIdentity}<Identifier
+                      value={ts.key}
+                    />{:else}{label.text}{/if}</button
+                >
+              </div>
             </td>{/if}
           {#if previewColumn}<td
               ><span class="ts-row__sparkline">
@@ -304,24 +280,38 @@
                 />
               </span></td
             >{/if}
-        </tr>
-        <tr
-          id={detailID}
-          class="ts-row__detail"
-          data-series-detail={ts.key}
-          hidden={!expanded}
-        >
-          <td colspan={columns.length}>
-            {#if metricTs}
-              <SeriesDatapointList
-                datapoints={ctx.seriesDatapoints(ts.key) ?? metricTs.datapoints}
-                attributes={metricTs.attributes}
-                attributeOwner={`timeseries ${ts.key}`}
-                flush
-              />
-            {:else}<p class="text-sm text-muted">Timeseries not found</p>{/if}
+          <td class="table-cell text-right">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs ts-row__checkbox"
+              {checked}
+              disabled={!checked && capReached}
+              aria-label={`Show ${headerLabel} in chart`}
+              onchange={event =>
+                ctx.toggleTimeseriesVisible(
+                  ts.key,
+                  event.currentTarget.checked
+                )}
+            />
           </td>
         </tr>
+        {#if expanded}
+          <tr id={detailID} data-series-attributes={ts.key}>
+            <td colspan={columns.length} class="p-0">
+              <table
+                class="detail-fields w-full"
+                aria-label={`Attributes for ${headerLabel}`}
+              >
+                <tbody
+                  ><AttributeRows
+                    {attributes}
+                    owner={`timeseries ${ts.key}`}
+                  /></tbody
+                >
+              </table>
+            </td>
+          </tr>
+        {/if}
       {/each}
       {#if rows.length === 0}<tr
           ><td colspan={columns.length} class="text-subtle">No series.</td></tr
@@ -342,7 +332,7 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
   .ts-row__caret {
-    @apply inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle focus-visible:outline-2 focus-visible:outline-primary;
+    @apply inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle focus-visible:outline-2 focus-visible:outline-primary disabled:text-muted disabled:cursor-default;
   }
   .ts-row__attrs {
     @apply text-sm;
@@ -353,8 +343,5 @@
   }
   .ts-row__sparkline :global(.sparkline) {
     @apply block h-[18px] w-full;
-  }
-  .ts-row__detail > td {
-    padding: 0;
   }
 </style>

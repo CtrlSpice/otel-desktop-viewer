@@ -73,7 +73,11 @@
   untrack(() => oncontext?.(ctx))
 
   $effect(() => {
-    if (expandDatapointID) ctx.expandedDatapoints.add(expandDatapointID)
+    const point = datapoints.find(dp => dp.id === expandDatapointID)
+    if (point)
+      untrack(() => {
+        if (ctx.selectedDatapointID !== point.id) ctx.onDatapointClick(point)
+      })
   })
 </script>
 
