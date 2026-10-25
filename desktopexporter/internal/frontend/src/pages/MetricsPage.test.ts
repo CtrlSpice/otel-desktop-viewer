@@ -275,23 +275,16 @@ describe('Metric main-header range', () => {
     confirm.mockRestore()
   })
   it.each(['Gauge', 'Sum'] as const)(
-    'keeps the %s effective range in the header rather than the plot',
+    'omits the duplicate %s time range from the compact header and plot',
     async metricType => {
       await renderSelected(metricType)
       const header = screen.getByRole('region', {
         name: 'Metric chart',
       })
-      const range = header.querySelector('[aria-label="Chart time range"]')!
-      expect(range).toHaveTextContent('Start')
-      expect(range).toHaveTextContent('End')
+      expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
       expect(
         document.querySelectorAll('[aria-label="Chart time range"]')
-      ).toHaveLength(1)
-      expect(
-        document.querySelector(
-          '.metric-chart-view [aria-label="Chart time range"]'
-        )
-      ).toBeNull()
+      ).toHaveLength(0)
     }
   )
 

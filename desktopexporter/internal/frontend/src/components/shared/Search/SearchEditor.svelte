@@ -927,7 +927,7 @@
   }
 
   .help-section-heading {
-    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-(--color-subtle);
+    @apply mt-4 text-sm font-normal uppercase tracking-wide text-subtle;
   }
 
   .help-query-lines {
@@ -939,11 +939,11 @@
   }
 
   .help-op-table thead th {
-    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-(--color-subtle);
+    @apply pb-2 pt-1 text-sm font-normal uppercase tracking-wide text-subtle;
   }
 
   .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-(--color-subtle);
+    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-sm font-normal text-subtle;
   }
 
   .help-op-table tbody td {
@@ -993,7 +993,7 @@
 
   .q-logic {
     color: var(--color-primary);
-    font-weight: 600;
+    font-weight: 400;
   }
 
   .q-value {

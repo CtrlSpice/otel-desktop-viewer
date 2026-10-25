@@ -128,11 +128,11 @@
           >
             Edit service in search
           </p>{/if}
-        <div class="log-filters__chips">
+        <div class="filter-options">
           {#each visibleServices as service (service)}
             <button
               type="button"
-              class="log-filters__service item-state"
+              class="filter-option item-state"
               aria-label={`Service ${service}`}
               aria-pressed={filters.service.values.includes(service)}
               disabled={filters.service.custom || !editor?.setQuery}
@@ -144,7 +144,7 @@
                 )}
             >
               <span
-                class="log-filters__dot"
+                class="filter-dot"
                 style:background-color={traceServiceColor(
                   service,
                   themeSignal.value
@@ -171,11 +171,11 @@
       >
         Edit severity in search
       </p>{/if}
-    <div class="log-filters__chips">
+    <div class="filter-options">
       {#each LOG_SEVERITIES as level (level.label)}
         <button
           type="button"
-          class="log-filters__severity item-state"
+          class="filter-option item-state"
           aria-label={`Severity ${level.label}`}
           aria-pressed={filters.severity.values.includes(level.label)}
           disabled={filters.severity.custom || !editor?.setQuery}
@@ -187,7 +187,7 @@
             )}
         >
           <span
-            class="log-filters__dot"
+            class="filter-dot"
             style:background-color={severityColor(level.min)}
             aria-hidden="true"
           ></span>
@@ -207,25 +207,11 @@
 
 <style lang="postcss">
   @reference "../../app.css";
-  .log-filters__chips {
-    @apply flex min-w-0 flex-wrap gap-2 px-2 py-1;
-  }
-  .log-filters__service,
-  .log-filters__severity {
-    @apply inline-flex min-h-8 max-w-full cursor-pointer items-center gap-2 border-0 px-3 py-1 text-sm font-normal text-base-content;
-  }
-  .log-filters__dot {
-    @apply size-2 shrink-0 rounded-full;
-  }
   .log-filters__check {
     opacity: 0;
   }
   .log-filters__check--selected {
     opacity: 1;
-  }
-  .log-filters__service:disabled,
-  .log-filters__severity:disabled {
-    @apply cursor-default opacity-50;
   }
   .log-filters__hint {
     @apply px-2 text-sm;

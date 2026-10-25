@@ -182,6 +182,7 @@
 <DetailBubble
   label={attribute?.key ?? 'Telemetry'}
   layoutKey="attribute-telemetry"
+  hideLabel={!attribute}
   disabled={!service}
   contained
 >

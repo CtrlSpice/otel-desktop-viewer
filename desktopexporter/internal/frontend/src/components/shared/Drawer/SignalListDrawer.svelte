@@ -742,7 +742,7 @@
   }
 
   .signal-drawer__empty-title {
-    @apply text-sm font-medium text-base-content/70;
+    @apply text-sm font-normal text-subtle;
   }
 
   .signal-drawer__empty-hint {

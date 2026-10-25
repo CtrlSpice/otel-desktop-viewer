@@ -199,18 +199,6 @@
 
 <style lang="postcss">
   @reference "../../app.css";
-  .filter-options {
-    @apply flex min-w-0 flex-wrap gap-2 px-2 py-1;
-  }
-  .filter-option {
-    @apply inline-flex min-h-8 max-w-full cursor-pointer items-center gap-2 border-0 px-3 py-1 text-sm font-normal text-base-content;
-  }
-  .filter-option:disabled {
-    @apply cursor-default opacity-50;
-  }
-  .filter-dot {
-    @apply size-2 shrink-0 rounded-full;
-  }
   .filter-hint {
     @apply my-2 px-2 text-sm;
     color: var(--color-subtle);

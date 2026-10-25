@@ -1,0 +1,341 @@
+/* Shared LayerChart chrome, keyboard interaction and data overlays.
+   Chart-specific geometry belongs in the owning Svelte component. */
+.metric-chart-view :where(.lc-axis-tick-label, .lc-axis-label) {
+  font-size: var(--text-base);
+  line-height: 1rem;
+  font-weight: 400;
+  fill: var(--color-subtle);
+  stroke: none;
+}
+
+.chart-keyboard-surface {
+  position: absolute;
+  z-index: 9;
+  inset: calc(var(--focus-ring-width) + var(--focus-ring-offset));
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--radius-box);
+  pointer-events: none;
+}
+.chart-keyboard-surface:focus {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+.chart-keyboard-readout {
+  position: absolute;
+  z-index: 10;
+  top: 0.25rem;
+  left: 50%;
+  width: max-content;
+  max-width: min(90%, 42rem);
+  transform: translateX(-50%);
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-field);
+  background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+  color: var(--color-base-content);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+  font-size: var(--text-base);
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+}
+.chart-keyboard-surface:focus .chart-keyboard-readout {
+  opacity: 1;
+}
+.chart-keyboard-surface-host
+  :where(
+    .chart-keyboard-cursor,
+    .chart-keyboard-cursor-band,
+    .chart-keyboard-cursor-cell
+  ) {
+  opacity: 0;
+  pointer-events: none;
+}
+.chart-keyboard-surface-host:has(> .chart-keyboard-surface:focus)
+  :where(
+    .chart-keyboard-cursor,
+    .chart-keyboard-cursor-band,
+    .chart-keyboard-cursor-cell
+  ) {
+  opacity: 1;
+}
+.metric-chart-view :where(.chart-keyboard-cursor-rule) {
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+.metric-chart-view :where(.chart-keyboard-cursor-point) {
+  stroke: var(--color-base-100);
+  stroke-width: 2;
+  pointer-events: none;
+}
+.metric-chart-view
+  :where(.chart-keyboard-cursor-band, .chart-keyboard-cursor-cell) {
+  fill: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  rx: var(--radius-selector);
+  ry: var(--radius-selector);
+  pointer-events: none;
+}
+
+/* Series splines use .lc-path; overlays use .lc-line and custom classes. */
+.metric-chart-view :where(.lc-rule-x-line, .lc-rule-y-line) {
+  --stroke-color: var(--color-base-300);
+}
+.metric-chart-view :where(.lc-axis-tick) {
+  --stroke-color: var(--color-muted);
+  stroke-width: 1;
+}
+.metric-chart-view :where(.lc-path) {
+  stroke-opacity: var(--metric-series-line-opacity, 1);
+}
+.metric-chart-view :where(.selection-dot-halo) {
+  fill: var(--color-surface-100, white);
+  stroke: var(--color-surface-100, white);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.metric-chart-view
+  :where(.selection-dot, .series-stat-overlay, .series-stat-marker) {
+  pointer-events: none;
+}
+.metric-chart-view :where(.selection-dot--selected) {
+  stroke: var(--color-surface-100, white);
+  stroke-width: 1.5;
+}
+
+/* Translucent interaction washes preserve the underlying data colours. */
+.metric-chart-view :where(.histogram-hover-column, .heatmap-hover-column) {
+  fill: var(--item-hover-bg);
+  fill-opacity: 0.22;
+  stroke: none;
+  rx: var(--radius-selector);
+  ry: var(--radius-selector);
+  pointer-events: none;
+}
+.metric-chart-view :where(.value-bucket-pin-highlight, .heatmap-selection) {
+  fill: var(--item-selected-bg);
+  fill-opacity: 0.28;
+  stroke: var(--item-selected-bg);
+  stroke-width: 1;
+  rx: var(--radius-selector);
+  ry: var(--radius-selector);
+  pointer-events: none;
+}
+.metric-chart-view :where(.series-stat-dot) {
+  pointer-events: none;
+  stroke: var(--color-surface-100, white);
+  stroke-width: 1.25;
+}
+.metric-chart-view
+  :where(
+    .series-average-line,
+    .series-slope-line,
+    .quantile-line,
+    .heatmap-quantile-line
+  ) {
+  fill: none;
+  stroke: var(--quantile-color, var(--color-subtle));
+  stroke-width: var(--overlay-line-width, 2);
+  opacity: var(--overlay-line-opacity, 0.35);
+  pointer-events: none;
+}
+.metric-chart-view :where(.series-average-line, .series-slope-line) {
+  stroke-dasharray: 6 4;
+  stroke: var(--color-primary);
+}
+.metric-chart-view
+  :where(.quantile-line-backing, .series-average-line-backing) {
+  fill: none;
+  stroke: var(--color-base-100);
+  stroke-width: var(--overlay-backing-width, 4);
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.metric-chart-view :where(.chart-overlay--emphasized) {
+  --overlay-line-width: 4;
+  --overlay-line-opacity: 0.95;
+  --overlay-backing-width: 8;
+}
+.metric-chart-view :where(.heatmap-quantile-channel) {
+  stroke-width: var(--overlay-backing-width, 4);
+}
+
+/* Pinned labels rest on the plot; cursor readouts use the shared floating surface. */
+.metric-chart-view :where(.chart-selection-legend),
+.chart-hover-card {
+  pointer-events: none;
+  @apply rounded-md border-0 text-base-content;
+  padding: 0.4rem 0.55rem;
+  font-size: var(--text-base);
+  line-height: 1.25;
+  min-width: 10rem;
+  max-width: 18rem;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 2px 6px rgb(0 0 0 / 0.06);
+  background-color: var(--color-base-100);
+}
+.chart-hover-card {
+  backdrop-filter: none;
+  max-width: min(30rem, calc(100vw - 2rem));
+  box-shadow: var(--popover-shadow);
+}
+.chart-hover-card :where(.lc-tooltip-header) {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  color: var(--color-subtle);
+  text-align: left;
+}
+.chart-hover-card :where(.lc-tooltip-list) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+}
+.chart-hover-card :where(.lc-tooltip-item-label) {
+  min-width: 0;
+  color: var(--color-subtle);
+}
+.chart-hover-card :where(.lc-tooltip-item-color) {
+  flex-shrink: 0;
+}
+.chart-hover-card :where(.lc-tooltip-item-value) {
+  color: var(--color-base-content);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-align: right;
+}
+.metric-chart-view :where(.chart-selection-legend--stat) {
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+  padding: 0.25rem 0.4rem;
+}
+.metric-chart-view
+  :where(.chart-selection-legend--stat .chart-selection-legend__rows) {
+  grid-template-columns: auto auto auto;
+  width: max-content;
+}
+.metric-chart-view
+  :where(.chart-selection-legend--stat .chart-selection-legend__value) {
+  min-width: max-content;
+}
+html[data-color-scheme='light']
+  .metric-chart-view
+  :where(.lc-rule-x-line, .lc-rule-y-line) {
+  --stroke-color: var(--color-neutral);
+}
+html[data-color-scheme='light']
+  .metric-chart-view
+  :where(.chart-selection-legend),
+html[data-color-scheme='light'] .chart-hover-card {
+  background-color: var(--color-base-300);
+}
+.metric-chart-view :where(.chart-selection-legend--columns) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+.metric-chart-view :where(.chart-selection-legend__columns) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem 1.5rem;
+}
+.metric-chart-view
+  :where(.chart-selection-legend--columns .chart-selection-legend__rows) {
+  min-width: 8.5rem;
+}
+.metric-chart-view :where(.chart-selection-legend__timestamp) {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  color: var(--color-subtle);
+  margin-bottom: 0.3rem;
+}
+.metric-chart-view :where(.chart-selection-legend__rows) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+}
+.metric-chart-view
+  :where(.chart-selection-legend__row, .chart-aggregate-summary__row) {
+  display: contents;
+}
+.metric-chart-view :where(.chart-selection-legend__dot) {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background-color: var(--color);
+  align-self: center;
+}
+.metric-chart-view :where(.chart-selection-legend__glyph) {
+  font-size: var(--text-base);
+  font-weight: 400;
+  line-height: var(--text-base--line-height);
+  opacity: 0.85;
+  margin-right: 0.25rem;
+}
+.metric-chart-view :where(.chart-selection-legend__label),
+.chart-hover-card :where(.chart-series-label) {
+  display: block;
+  min-width: 0;
+  max-width: min(24rem, calc(100vw - 8rem));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-chart-view
+  :where(.chart-selection-legend__value, .chart-aggregate-summary__value) {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-align: right;
+  white-space: nowrap;
+}
+.metric-chart-view :where(.chart-aggregate-summary) {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0.3rem 0 0;
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+}
+.metric-chart-view :where(.chart-aggregate-summary__line) {
+  width: 1.125rem;
+  align-self: center;
+  border-top: 2px dashed var(--agg-color, var(--color-primary));
+}
+.metric-chart-view :where(.chart-aggregate-summary__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-subtle);
+}
+
+/* Shared positioning for histogram and time-series statistic readouts. */
+.series-stat-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  width: max-content;
+  max-width: none;
+}

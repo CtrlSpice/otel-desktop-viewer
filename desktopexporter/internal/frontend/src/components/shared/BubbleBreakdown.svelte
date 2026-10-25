@@ -222,17 +222,8 @@
     height: var(--signal-card-row-h);
   }
 
-  .breakdown-segment {
-    @apply flex min-w-2 items-center rounded-full border-0 bg-transparent p-0;
-  }
-
   .breakdown-segment--interactive {
     @apply cursor-pointer;
-  }
-
-  .breakdown-segment__fill {
-    @apply pointer-events-none block h-2 w-full rounded-full;
-    background-color: var(--part-color);
   }
 
   .breakdown-segment:focus-visible {

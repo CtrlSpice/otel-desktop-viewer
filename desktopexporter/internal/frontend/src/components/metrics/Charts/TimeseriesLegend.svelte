@@ -124,7 +124,7 @@
   }
 
   .timeseries-legend__title {
-    @apply text-xs font-semibold uppercase tracking-wide text-(--color-subtle);
+    @apply text-sm font-normal uppercase tracking-wide text-subtle;
   }
 
   .timeseries-legend__count {

@@ -35,6 +35,7 @@ it('repaints sample services from the real ink ranking without allocating or res
   const checkout = screen.getByRole('img', { name: 'checkout-api: 6 spans' })
   const postgres = screen.getByRole('img', { name: 'postgres: 3 spans' })
   const payments = screen.getByRole('img', { name: 'payments: 1 span' })
+  const queue = screen.getByRole('img', { name: 'queue: 1 span' })
   const color = (slot: number) => GRAPH_SWATCHES[slot]!.color
   expect(checkout.style.getPropertyValue('--part-color')).toBe(
     color(serviceInkSlots('to-ro')[0]!)
@@ -49,6 +50,9 @@ it('repaints sample services from the real ink ranking without allocating or res
   )
   expect(payments.style.getPropertyValue('--part-color')).toBe(
     color(serviceInkSlots('ajisai')[3]!)
+  )
+  expect(queue.style.getPropertyValue('--part-color')).toBe(
+    color(serviceInkSlots('ajisai')[4]!)
   )
   expect(graphStorage()).toEqual(saved)
   await fireEvent.click(screen.getByRole('radio', { name: 'To-ro' }))

@@ -59,38 +59,38 @@ const all = Object.keys(graph.inks).flatMap(ink =>
 // and a lighter colour where the source offers one. Avoid near-black/paper
 // extremes. These same swatches supply the theme control's three dots.
 const shades = {
-  'shimbashi-iro': [2, 3, 4],
-  ebisu: [2, 3, 5],
+  'shimbashi-iro': [1, 3, 4],
+  ebisu: [1, 2, 4],
   'ama-iro': [2, 3, 5],
   'kon-peki': [3, 4, 6],
   ajisai: [2, 4, 6],
-  jurojin: [3, 4, 6],
+  jurojin: [2, 4, 6],
   'murasaki-shikibu': [3, 4, 6],
   'asa-gao': [4, 5, 7],
-  'tsuyu-kusa': [4, 5, 7],
-  'shin-kai': [4, 5, 7],
+  'tsuyu-kusa': [3, 5, 7],
+  'shin-kai': [3, 5, 7],
   'tsuki-yo': [4, 5, 7],
   rikka: [3, 6, 7],
-  'ku-jaku': [5, 6, 7],
+  'ku-jaku': [4, 6, 7],
   'sui-gyoku': [5, 6, 7],
   'shin-ryoku': [5, 6, 7],
   'ina-ho': [5, 6, 7],
   'edo-murasaki': [3, 4, 5],
-  'yama-budo': [4, 5, 7],
-  tsutsuji: [3, 4, 6],
+  'yama-budo': [3, 5, 7],
+  tsutsuji: [1, 4, 7],
   bishamonten: [2, 3, 6],
-  'hana-ikada': [2, 3, 6],
+  'hana-ikada': [1, 3, 5],
   kosumosu: [2, 4, 6],
-  momiji: [2, 3, 6],
+  momiji: [1, 3, 6],
   benzaiten: [2, 4, 6],
-  'fuyu-gaki': [2, 3, 5],
-  'yu-yake': [2, 4, 6],
-  'to-ro': [2, 3, 5],
-  daikokuten: [2, 3, 4],
-  'hotaru-bi': [2, 3, 4],
-  'chiku-rin': [4, 5, 6],
+  'fuyu-gaki': [1, 2, 5],
+  'yu-yake': [1, 2, 6],
+  'to-ro': [1, 3, 6],
+  daikokuten: [1, 3, 4],
+  'hotaru-bi': [1, 3, 4],
+  'chiku-rin': [2, 4, 6],
   fukurokuju: [3, 4, 5],
-  'syo-ro': [4, 5, 6],
+  'syo-ro': [3, 5, 6],
 }
 const previews = Object.fromEntries(
   Object.entries(shades).map(([ink, values]) => [
@@ -110,9 +110,47 @@ const representative = ink => {
   return swatch
 }
 const distance = (a, b) => Math.hypot(...a.lab.map((v, i) => v - b.lab[i]))
+const hue = swatch => Math.atan2(swatch.lab[2], swatch.lab[1])
+const chroma = swatch => Math.hypot(swatch.lab[1], swatch.lab[2])
+const hueOffset = (a, b) =>
+  Math.atan2(Math.sin(hue(a) - hue(b)), Math.cos(hue(a) - hue(b)))
+const hueDistance = (a, b) => Math.abs(hueOffset(a, b))
+
+function companions(seed) {
+  const anchor = representative(seed)
+  const chosen = previews[seed].map(id => byID.get(id))
+  const sides = []
+  for (const direction of [-1, 1]) {
+    // Wider neighbours on either side of the seed supply different hues, not
+    // almost-identical inks. Keep their strength moderate and avoid opposites.
+    const candidates = bright.filter(s => {
+      const angle = (hueOffset(s, anchor) * direction * 180) / Math.PI
+      return (
+        s.ink !== seed &&
+        !sides.some(side => side.ink === s.ink) &&
+        angle >= 45 &&
+        angle <= 100 &&
+        s.lab[0] >= 0.62 &&
+        s.lab[0] <= 0.83 &&
+        Math.abs(s.lab[0] - anchor.lab[0]) <= 0.18 &&
+        chroma(s) <= Math.max(0.16, chroma(anchor)) &&
+        chosen.every(other => distance(s, other) >= 0.1)
+      )
+    })
+    const score = s =>
+      Math.abs(hueOffset(s, anchor) / Math.PI - (direction * 70) / 180) +
+      2 * Math.abs(s.lab[0] - Math.max(0.7, anchor.lab[0])) +
+      Math.abs(chroma(s) - Math.min(chroma(anchor), 0.16))
+    candidates.sort((a, b) => score(a) - score(b))
+    const next = candidates[0]
+    if (!next) throw new Error(`Missing distinct companion: ${seed}`)
+    sides.push(next)
+    chosen.push(next)
+  }
+  return sides
+}
 
 function ranking(seed) {
-  const family = harmonies.inks[seed]
   const related = previews[seed].map(id => byID.get(id))
   if (
     related.length !== 3 ||
@@ -120,19 +158,10 @@ function ranking(seed) {
     !related.includes(representative(seed))
   )
     throw new Error(`Invalid preview shades: ${seed}`)
-  const contrasts = family.triadic
-    .filter(ink => ink !== seed)
-    .map(representative)
-    .sort(
-      (a, b) =>
-        distance(b, representative(seed)) - distance(a, representative(seed))
-    )
-    .slice(0, 1)
-  if (contrasts.length !== 1 || contrasts.some(s => related.includes(s)))
-    throw new Error(`Invalid triadic companions: ${seed}`)
+  const sideColors = companions(seed)
 
   // Composition and order are separate: seed first, then visually separated
-  // neighbours. The 3:1 composition is not a fixed on/on/on/off sequence.
+  // neighbours. The 3:2 mix is a composition, not a repeating sequence.
   const ordered = [representative(seed)]
   const append = (pool, contrastSet = new Set()) => {
     let remaining = pool.filter(s => !ordered.includes(s))
@@ -141,20 +170,31 @@ function ranking(seed) {
       let candidates = remaining.filter(
         s => !contrastSet.has(last) || !contrastSet.has(s)
       )
+      const sideCount = remaining.filter(s => contrastSet.has(s)).length
+      if (!contrastSet.has(last) && remaining.length - sideCount < sideCount)
+        candidates = candidates.filter(s => contrastSet.has(s))
       if (!candidates.length) candidates = remaining
+      const differentInk = candidates.filter(s => s.ink !== last.ink)
+      if (differentInk.length) candidates = differentInk
       candidates.sort((a, b) => distance(b, last) - distance(a, last))
       const next = candidates[0]
       ordered.push(next)
       remaining = remaining.filter(s => s !== next)
     }
   }
-  append([...related, ...contrasts], new Set(contrasts))
-  // Larger scopes use other bright shades of these families, then the wider
-  // bright catalogue. Exhaustion must never introduce a dark/pale shade.
-  const familyInks = new Set([...family.analogous, ...family.triadic])
-  append(bright.filter(s => familyInks.has(s.ink)))
-  append(Object.keys(graph.inks).map(representative))
-  append(bright)
+  append([...related, ...sideColors], new Set(sideColors))
+  // Larger scopes favour a visibly new colour over another close shade of an
+  // already-used family. A hue penalty keeps nearby options preferable when
+  // they provide similar separation. Exhaustion still uses only this pool.
+  let remaining = bright.filter(s => !ordered.includes(s))
+  const novelty = s =>
+    Math.min(...ordered.map(other => distance(s, other))) /
+    (1 + hueDistance(s, representative(seed)) / Math.PI)
+  while (remaining.length) {
+    remaining.sort((a, b) => novelty(b) - novelty(a))
+    ordered.push(remaining[0])
+    remaining = remaining.slice(1)
+  }
   if (
     ordered.length !== bright.length ||
     new Set(ordered).size !== bright.length
@@ -165,10 +205,13 @@ function ranking(seed) {
 
 const output = await format(
   JSON.stringify({
-    version: 'shades-3-1-v1',
+    version: 'varied-3-2-v1',
     source: harmonies.source,
     representatives,
     previews,
+    companions: Object.fromEntries(
+      Object.keys(graph.inks).map(ink => [ink, companions(ink).map(s => s.id)])
+    ),
     inks: Object.fromEntries(
       Object.keys(graph.inks).map(ink => [ink, ranking(ink)])
     ),

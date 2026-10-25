@@ -151,7 +151,7 @@
 
   .field-group__heading {
     padding-inline: var(--fg-inline);
-    @apply cursor-pointer select-none list-none py-1.5 text-sm font-medium flex items-center gap-2;
+    @apply cursor-pointer select-none list-none py-1.5 text-sm font-normal flex items-center gap-2;
     color: var(--color-subtle);
   }
 

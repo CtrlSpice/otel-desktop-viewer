@@ -1287,13 +1287,14 @@ test.describe('home page accessibility', () => {
     })
     await expect(welcome).toHaveCSS('font-size', '16px')
     await expect(welcome).toHaveCSS('font-weight', '400')
-    await expect(welcome.locator('.welcome-prompt')).toHaveAttribute(
-      'aria-hidden',
-      'true'
-    )
+    await expect(
+      page.getByRole('img', { name: 'Lulu the axolotl', exact: true })
+    ).toBeVisible()
+    await expect(page.locator('.welcome-banner')).toHaveCSS('height', '80px')
+    await expect(welcome).toHaveText('otel-desktop-viewer')
   })
 
-  test('keeps the welcome name and prompt on one line across drawer widths', async ({
+  test('keeps the welcome name on one line across drawer widths', async ({
     page,
   }) => {
     for (const { width, drawer } of [
@@ -1318,25 +1319,30 @@ test.describe('home page accessibility', () => {
       await expect(welcome).toHaveCSS('font-size', '16px')
       await expect(welcome).toHaveCSS('white-space', 'nowrap')
       const layout = await welcome.evaluate(element => {
-        const prompt = element.querySelector('.welcome-prompt')!
         const name = element.lastElementChild!
         const banner = element.closest('.welcome-banner')!
-        const image = banner.querySelector('img')!
+        const image = banner.querySelector('svg[role="img"]')!
         return {
-          prompt: prompt.getBoundingClientRect().toJSON(),
           name: name.getBoundingClientRect().toJSON(),
           banner: banner.getBoundingClientRect().toJSON(),
           image: image.getBoundingClientRect().toJSON(),
+          title: element.getBoundingClientRect().toJSON(),
           overflow: banner.scrollWidth > banner.clientWidth,
         }
       })
-      expect(layout.name.y).toBeCloseTo(layout.prompt.y, 0)
-      expect(layout.name.height).toBe(20)
+      expect(layout.title.height).toBe(24)
+      expect(layout.title.y + layout.title.height / 2).toBeCloseTo(
+        layout.image.y + layout.image.height / 2,
+        0
+      )
       expect(layout.name.x + layout.name.width).toBeLessThanOrEqual(
         layout.banner.x + layout.banner.width
       )
       expect(layout.image.width).toBeGreaterThan(0)
-      expect(layout.image.x + layout.image.width).toBeLessThan(layout.prompt.x)
+      expect(layout.image.x + layout.image.width + 24).toBeCloseTo(
+        layout.title.x,
+        0
+      )
       expect(layout.overflow).toBe(false)
     }
   })

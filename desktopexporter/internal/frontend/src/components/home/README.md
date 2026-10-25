@@ -1,79 +1,33 @@
-# Home welcome facts
+# Home
 
-`HomeWelcome.svelte` chooses one welcome line when it mounts. Four lines are
-playful taglines; four are paraphrased findings from peer-reviewed axolotl research.
+## Pixel Lulu
 
-## Citation convention
+The welcome uses the front-view pixel Lulu from
+[CtrlSpice/lulu](https://github.com/CtrlSpice/lulu/blob/06495f736a62c975584a4e9235c1d85aa9e7627b/views/front.txt),
+dedicated to the public domain under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+`assets/images/lulu-pixel.txt` retains the source pixel grid. `Lulu.svelte` draws
+it as inline SVG, without the telescope, using fixed official Edo-murasaki,
+Fuyu-gaki and Bishamonten swatches. Lulu keeps her soft pink identity across ink, season
+and Day/Night changes. The outline, shading, body, gills and eyes retain separate
+colour roles; the palest Edo-murasaki swatch supplies her eye highlights.
+Lulu Axol'Otel was created for OTel Desktop Viewer. The original painting is by
+[Chelsey Bateson](https://cbatesonart.artstation.com/); it is a separate artwork
+and is not covered by the pixel sprite's CC0 dedication.
 
-Use IEEE-style numbered citations, ordered by first appearance. Each scientific
-fact has a matching reference number and DOI link beside it in the source. The
-reference list includes authors, article title, journal, volume, issue when
-available, page range or article number, year and DOI. When changing a fact,
-update its source comment and this document together. Keep the wording within
-the species, tissue and developmental stage studied.
-
-## Facts
-
-### Genome size
-
-> An axolotl’s genome is about ten times the size of a human’s [1].
-
-The paper reports a 32-gigabase-pair genome and explicitly compares it with the
-human genome. The comparison concerns DNA length, not the number of genes.
-
-### Immune cells and limb regeneration
-
-> Axolotls need immune cells called macrophages to regrow a limb [2].
-
-The experiments used axolotls. Depleting macrophages early after limb amputation
-blocked regeneration despite wound closure; the requirement is timing-dependent.
-
-### Forebrain regeneration
-
-> Axolotls can replace lost neurons and rebuild connections in parts of their forebrain [3].
-
-The study found restoration of neuron populations and axonal connections after
-injury in the telencephalon. This does not establish regeneration of every brain
-region or complete recovery of every brain function.
-
-### A developmental limit on lens regeneration
-
-> Axolotls lose the ability to regrow an eye lens about two weeks after hatching [4].
-
-Lens regeneration was observed during a limited early developmental window,
-roughly the first two weeks after hatching under the study conditions. This is an
-approximate developmental window, not a universal cutoff at exactly fourteen days.
-
-## References
-
-[1] S. Nowoshilow _et al._, “The axolotl genome and the evolution of key tissue
-formation regulators,” _Nature_, vol. 554, no. 7690, pp. 50–55, 2018, doi:
-[10.1038/nature25458](https://doi.org/10.1038/nature25458).
-
-[2] J. W. Godwin, A. R. Pinto, and N. A. Rosenthal, “Macrophages are required for
-adult salamander limb regeneration,” _Proc. Natl. Acad. Sci. U.S.A._, vol. 110,
-no. 23, pp. 9415–9420, 2013, doi:
-[10.1073/pnas.1300290110](https://doi.org/10.1073/pnas.1300290110).
-
-[3] K. Lust _et al._, “Single-cell analyses of axolotl telencephalon organization,
-neurogenesis, and regeneration,” _Science_, vol. 377, no. 6610, 2022,
-Art. no. eabp9262, doi:
-[10.1126/science.abp9262](https://doi.org/10.1126/science.abp9262).
-
-[4] R. Suetsugu-Maki _et al._, “Lens regeneration in axolotl: new evidence of
-developmental plasticity,” _BMC Biol._, vol. 10, no. 1, 2012, Art. no. 103, doi:
-[10.1186/1741-7007-10-103](https://doi.org/10.1186/1741-7007-10-103).
+The welcome is an 80px-high horizontal lockup: Lulu and the complete product name,
+vertically centred with a 24px gap. Lulu's column shrinks on narrow drawers to
+keep the title on one line at the regular 16px Atkinson Mono size. It has no
+tagline or decorative prompt.
 
 ## Discovery layout
 
-Home's left pane contains the welcome, file-drop control, Services, Storage and
-Ingestion issues, in that order. Service cards fill the available list width.
-Services is the primary open section of the shared resizable section stack and
-scrolls independently. The main pane's shared header shows the selected service
-and namespace. Collapse, expand and filter controls sit at the right of its
-second row. The attribute table fills the space below it. The file-drop control
-remains visible above the service list.
-Services uses a single-row header beneath Lulu's welcome.
+Home's left pane contains the welcome, file-drop control, Getting started,
+Storage and Ingestion issues. Getting started is the primary open section of the
+shared resizable stack. The main pane contains the Service map, with each service
+represented once and recorded cross-service parent/child connections drawn as
+edges. Selecting a node keeps the map layout stable and shows matching records
+in Details. The welcome has no decorative prompt before the app name.
 
 Service cards use three shared card rows: service name and right-aligned Error
 dot/count, then comma-separated trace, metric and log counts, then Last seen.
@@ -111,8 +65,10 @@ Attributes offers 25, 50 or 100 entries per page, with each entry's expanded val
 kept together. Filtering and sorting apply to all matching entries, not only the
 current page. Changing pages preserves the selected attribute and expansion state.
 
-The right-hand Details pane contains matching Telemetry. Its second header row
+The right-hand Details pane contains matching records. Its single header row
 offers shared Traces, Metrics and Logs tabs with known matching-record counts.
+The redundant visible Telemetry label is omitted; the section retains its
+accessible name. An inspected attribute keeps its actual field name and metadata.
 Choices switch immediately; arrow, Home and End keys navigate available signals.
 Each signal retains independent pages and scroll positions. Attributes and
 Telemetry each remember their own 25/50/100 page-size preference, defaulting to 25.

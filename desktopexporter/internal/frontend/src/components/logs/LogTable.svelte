@@ -781,7 +781,7 @@
     @apply sticky top-0 z-20 h-10 bg-base-100;
   }
   .log-table__heading {
-    @apply relative flex min-w-0 items-center gap-2 py-2 text-left text-sm font-semibold;
+    @apply relative flex min-w-0 items-center gap-2 py-2 text-left text-sm font-normal;
     padding-inline: var(--table-cell-inline-padding);
     color: var(--table-heading-color);
   }

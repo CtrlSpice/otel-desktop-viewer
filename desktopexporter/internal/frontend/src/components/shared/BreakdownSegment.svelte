@@ -85,13 +85,6 @@
 <style lang="postcss">
   @reference "../../app.css";
 
-  .breakdown-segment {
-    @apply flex min-w-2 items-center rounded-full border-0 bg-transparent p-0;
-  }
-  .breakdown-segment__fill {
-    @apply pointer-events-none block h-2 w-full rounded-full;
-    background-color: var(--part-color);
-  }
   .breakdown-tooltip {
     @apply overflow-y-auto px-3 py-2 font-normal;
     max-width: calc(100vw - 1rem);

@@ -9,7 +9,7 @@ const slots = new Map<string, number>(
 )
 const cache = new Map<AccentInkId, readonly number[]>()
 
-/** Three selected-ink shades + one triadic, then other colourful swatches. */
+/** Three selected-ink shades + two distinct companions, then varied families. */
 export function serviceInkSlots(seed: AccentInkId): readonly number[] {
   const cached = cache.get(seed)
   if (cached) return cached

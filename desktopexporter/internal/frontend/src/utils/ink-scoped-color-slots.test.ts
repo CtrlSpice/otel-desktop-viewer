@@ -50,32 +50,35 @@ for (const scope of ['metric:one', 'span-names']) {
       )
     })
 
-    it('recolours prior ink assignments and reserves hidden/manual owners across inks', async () => {
-      const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:${scope}:ink:to-ro:bright-3-2-v1`
-      const saved = JSON.stringify([
-        ['existing', 19],
-        ['hidden', 21],
-      ])
-      localStorage.setItem(key, saved)
-      const state = await setup()
-      const warm = serviceInkSlots('to-ro')
-      expect(state.identityColorSlot('existing', scope)).toBe(warm[0])
-      const manual = GRAPH_SWATCHES[serviceInkSlots('ajisai')[0]!]!
-      state.graphColorOverrides.set(scope, 'manual owner', manual.id)
-      state.accentInk.set('ajisai')
-      const cool = state.identityColorSlot('existing', scope)
-      expect(cool).not.toBe(serviceInkSlots('ajisai')[0])
-      expect(state.graphColorAvailability(scope, 'new').unavailable).toContain(
-        GRAPH_SWATCHES[warm[1]!]!.color
-      )
-      expect(state.graphColorOverrides.get(scope, 'manual owner')?.color).toBe(
-        manual.color
-      )
-      state.accentInk.set('to-ro')
-      expect(state.identityColorSlot('existing', scope)).toBe(warm[0])
-      expect(state.identityColorSlot('hidden', scope)).toBe(warm[1])
-      expect(localStorage.getItem(key)).toBe(saved)
-    })
+    it.each(['shades-3-1-v1', 'neighbours-3-2-v1'])(
+      'recolours %s assignments and reserves hidden/manual owners across inks',
+      async version => {
+        const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:${scope}:ink:to-ro:${version}`
+        const saved = JSON.stringify([
+          ['existing', 19],
+          ['hidden', 21],
+        ])
+        localStorage.setItem(key, saved)
+        const state = await setup()
+        const warm = serviceInkSlots('to-ro')
+        expect(state.identityColorSlot('existing', scope)).toBe(warm[0])
+        const manual = GRAPH_SWATCHES[serviceInkSlots('ajisai')[0]!]!
+        state.graphColorOverrides.set(scope, 'manual owner', manual.id)
+        state.accentInk.set('ajisai')
+        const cool = state.identityColorSlot('existing', scope)
+        expect(cool).not.toBe(serviceInkSlots('ajisai')[0])
+        expect(
+          state.graphColorAvailability(scope, 'new').unavailable
+        ).toContain(GRAPH_SWATCHES[warm[1]!]!.color)
+        expect(
+          state.graphColorOverrides.get(scope, 'manual owner')?.color
+        ).toBe(manual.color)
+        state.accentInk.set('to-ro')
+        expect(state.identityColorSlot('existing', scope)).toBe(warm[0])
+        expect(state.identityColorSlot('hidden', scope)).toBe(warm[1])
+        expect(localStorage.getItem(key)).toBe(saved)
+      }
+    )
 
     it('uses every bright shade before reusing any slot', async () => {
       const state = await setup()

@@ -1024,14 +1024,6 @@
     cursor: pointer;
   }
 
-  .series-stat-tooltip {
-    position: absolute;
-    pointer-events: none;
-    z-index: 2;
-    width: max-content;
-    max-width: none;
-  }
-
   .series-stat-tooltip--above {
     transform: translate(-50%, calc(-100% - 8px));
   }

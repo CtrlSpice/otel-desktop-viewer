@@ -547,7 +547,7 @@
   }
 
   .dp-list__th {
-    @apply px-2 py-1 text-left text-xs font-medium;
+    @apply px-2 py-1 text-left text-sm font-normal;
     color: var(--color-subtle);
   }
 
@@ -700,7 +700,7 @@
   }
 
   .dp-list__detail-label {
-    @apply shrink-0 text-xs font-medium;
+    @apply shrink-0 text-sm font-normal;
     color: var(--color-subtle);
   }
 

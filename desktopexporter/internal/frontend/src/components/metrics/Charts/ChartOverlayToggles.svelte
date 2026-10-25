@@ -87,6 +87,6 @@
       transparent
     );
     color: var(--color-base-content);
-    @apply font-medium;
+    @apply font-normal;
   }
 </style>

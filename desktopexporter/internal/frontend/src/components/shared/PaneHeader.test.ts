@@ -83,7 +83,7 @@ describe('PaneHeader main pill', () => {
     expect(badges.parentElement).toBe(title)
   })
 
-  it('puts graph tabs below the title and trailing badges without changing tab semantics', async () => {
+  it('keeps graph tabs and trailing badges in the compact header without changing tab semantics', async () => {
     const onSelect = vi.fn()
     const { container } = render(PaneHeader, {
       mode: 'title-tabs',
@@ -98,9 +98,9 @@ describe('PaneHeader main pill', () => {
     expect(
       top.querySelector('.pane-header__title-row .pane-header__badges')
     ).toHaveTextContent('Sum')
-    const secondRow = top.nextElementSibling!
-    expect(secondRow).toHaveClass('pane-header__tabs-row')
-    expect(secondRow).toContainElement(screen.getByRole('tablist'))
+    const controls = top.nextElementSibling!
+    expect(controls).toHaveClass('pane-header__tab-group')
+    expect(controls).toContainElement(screen.getByRole('tablist'))
     const active = screen.getByRole('tab', { name: 'Fields' })
     expect(active).toHaveAttribute('aria-controls', 'graph')
     active.focus()

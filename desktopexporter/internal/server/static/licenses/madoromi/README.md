@@ -71,8 +71,11 @@ readability adjustment against the viewer's five seasonal surfaces. Changing
 the global accent ink also selects that ink for histogram and heatmap counts;
 the chart picker can then choose a different count ink. Saved choices are
 retained on load. Service and series colour ownership is independent.
-The Accent ink picker previews the named seed's seven official graph swatches,
-not colours from its neighbouring inks or mixed syntax roles.
+The Accent ink picker previews the named seed's three selected plotting shades,
+not colours from its companion inks or mixed syntax roles. Automatic categorical
+rankings start with those three shades and two distinct, moderate-strength
+companion hues; larger scopes favour visibly different colours. This ordering is
+a viewer adaptation over unchanged official swatches, not a Madoromi Mix ratio.
 
 The generated syntax palette follows the upstream code guide's role slots and
 contains all fourteen named slots plus Sumi, Kasure 2 and Usuzumi 0. Slot names
@@ -98,9 +101,9 @@ for its mode (lightest at Night, darkest by Day). Seasons do not change the ink.
 Categorical graphs and their per-service/per-series override picker use the
 first seven official swatches from each of those 32 inks. Their 224 colours keep
 the original hex values across themes. The palest eighth swatch is omitted;
-shades also used by the UI are permitted. The searchable seven-dot picker keeps
-the ink's original name and pinned upstream English name, and visibly links to
-Madoromi. Home attribute-value bars also use official shades 3–5 of these inks,
+shades also used by the UI are permitted. Automatic allocation uses a colourful
+132-swatch subset. The searchable override grid retains all 224 swatches, original
+ink names and attribution to Madoromi. Home attribute-value bars use official shades 3–5 of these inks,
 selected by a stable typed-value hash.
 
 Taken shades are disabled within the owner scope, including hidden owners and

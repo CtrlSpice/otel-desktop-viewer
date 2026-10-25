@@ -286,7 +286,7 @@
   }
 
   .waterfall-time-axis-header__th-label {
-    @apply relative py-2 align-middle text-left text-sm font-semibold tracking-normal;
+    @apply relative py-2 align-middle text-left text-sm font-normal tracking-normal;
     color: var(--table-heading-color);
   }
 

@@ -108,6 +108,7 @@
     disabled = false,
     contained = false,
     headerless = false,
+    hideLabel = false,
   }: {
     label: string
     /** Preserve stored section sizing when its visible heading changes. */
@@ -125,6 +126,8 @@
     contained?: boolean
     /** An always-open primary section whose content already supplies its heading. */
     headerless?: boolean
+    /** Keep the section's accessible name while its controls identify the content. */
+    hideLabel?: boolean
   } = $props()
   const unavailable = $derived(disabled || count === 0)
   let expanded = $state(untrack(() => initialOpen))
@@ -150,7 +153,10 @@
 {#snippet heading()}
   <span class="detail-bubble__title-row">
     {@render icon?.()}
-    <span class="truncate" title={label}>{label}</span>
+    <span
+      class={hideLabel ? 'sr-only' : 'truncate'}
+      title={hideLabel ? undefined : label}>{label}</span
+    >
     {@render labelSuffix?.()}
     {#if count !== undefined}
       <span

@@ -265,7 +265,7 @@
   }
 
   .waterfall-row__cycle--cycle-point {
-    @apply text-error text-sm font-bold;
+    @apply text-error text-sm font-normal;
   }
 
   .waterfall-row__bar-area {

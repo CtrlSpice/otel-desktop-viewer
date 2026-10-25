@@ -1058,7 +1058,7 @@
   }
 
   .heatmap-hover-cell dd {
-    @apply m-0 font-medium tabular-nums text-base-content;
+    @apply m-0 font-normal tabular-nums text-base-content;
   }
 
   .metric-heatmap-chart__selection-legend {
@@ -1066,7 +1066,7 @@
   }
 
   .heatmap-selection-heading {
-    @apply mb-1 font-semibold text-base-content;
+    @apply mb-1 font-normal text-base-content;
   }
 
   .heatmap-selected-cell {

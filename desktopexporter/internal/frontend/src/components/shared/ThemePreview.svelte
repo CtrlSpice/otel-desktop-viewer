@@ -36,6 +36,12 @@
       count: 1,
       color: GRAPH_SWATCHES[slots[3]!]!.color,
     },
+    {
+      key: 'queue',
+      label: 'queue',
+      count: 1,
+      color: GRAPH_SWATCHES[slots[4]!]!.color,
+    },
   ])
   let selected = $state(true)
 </script>
@@ -49,7 +55,7 @@
   >
     {#snippet badge()}<SignalBadges
         signal="trace"
-        spanCount={12}
+        spanCount={13}
         errorCount={1}
       />{/snippet}
     {#snippet subtitleContent()}

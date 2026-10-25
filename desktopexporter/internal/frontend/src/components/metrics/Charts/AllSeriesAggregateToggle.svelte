@@ -31,7 +31,7 @@
 
   .all-series-aggregate-toggle {
     @apply inline-flex shrink-0 cursor-pointer items-center gap-1.5
-           rounded-full px-2 py-1 text-xs font-medium;
+           rounded-full px-2 py-1 text-sm font-normal;
     color: var(--color-base-content);
   }
 
