@@ -39,7 +39,7 @@ Apache-2.0 licence does not replace those terms.
 `desktopexporter/internal/frontend/scripts/generate-madoromi.mjs` generates
 `src/themes/madoromi.json`, `src/themes/count-palettes.json`,
 `src/themes/count-palette-names.json`, `src/themes/graph-inks.json`,
-`src/themes/graph-ink-curves.json` and `src/themes/accent-inks.json` from these files.
+`src/themes/graph-ink-curves.json` and `src/themes/interface-palette.json` from these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
 ```sh
@@ -54,38 +54,38 @@ pinned upstream [paper guide](https://github.com/the-moonwitch/madoromi/blob/f8b
 Hover uses nijimi 0; selection uses nijimi 2 at 45% over the panel, blended in
 sRGB; stronger highlights use nijimi 1.
 
-Body text uses sumi, labels use usuzumi 1, primary uses the fuji slot, metadata uses
-ruri, accent uses tokiwa, info uses sora and success uses wakaba. Text and accent
+Body text uses sumi and labels use usuzumi 1. Text and accent
 foregrounds move in 0.001 OKLCH lightness steps only as needed to reach 4.5:1
 against all three surfaces, hover and selection. Subtle usuzumi 1, Muted kasure 1,
-sakura and yamabuki warning fills retain their original colours without contrast
-adjustments. Error uses each variant's original Beni colour from the pinned
-upstream palette.
+and the Sakura attribution heart retain their original colours without contrast
+adjustments.
 
-The global Accent ink picker runs the unmodified upstream analogous mixer for
-each of the 32 seed inks. To-ro is the default; its family adds Fuyu-gaki and
-Daikokuten. The mixed slots supply Primary, Secondary, Accent and the
-fourteen syntax accents. Seasonal paper, text, highlights and semantic status
-colours retain their existing roles. Each mixed foreground receives the same
-readability adjustment against the viewer's five seasonal surfaces. Changing
-the global accent ink also selects that ink for histogram and heatmap counts;
-the chart picker can then choose a different count ink. Saved choices are
-retained on load. Service and series colour ownership is independent.
-The Accent ink picker previews the named seed's seven official graph swatches,
-not colours from its neighbouring inks or mixed syntax roles.
+The interface uses a six-role arrangement inspired by Rosé Pine, with colours
+derived from Madoromi's measured curves: Jurojin for lavender Iris, Tsuki-yo for
+blue Pine, Shin-ryoku for mint-green Foam, To-ro for Gold, Benzaiten for blush Rose
+and Momiji for berry Love. Each source has one fixed sample hue and softened
+chroma, with separate Day/Night lightness. The generator checks all four seasons'
+five surfaces together, keeping identical accents across seasons within a mode.
+These are viewer adaptations, not upstream mix output or Rosé Pine hex colours.
+Primary uses Iris, metadata uses Rose, information uses Pine, success and accents
+use Foam, warnings use Gold and errors use Love. Seasonal paper, neutral text and
+highlights retain their existing roles. Appearance
+controls select only season and Day/Night. Graph colours are independent of those
+controls, and the season popover retains visible Madoromi attribution.
 
 The generated syntax palette follows the upstream code guide's role slots and
 contains all fourteen named slots plus Sumi, Kasure 2 and Usuzumi 0. Slot names
-refer to the selected analogous mix rather than fixed rainbow hues. Each syntax foreground
+map to the six shared ink roles. Each syntax foreground
 uses the same shared readability correction. The upstream guide assigns Wakaba
 to strings and Kaki to literals; the viewer uses Sumi for their value text and
 JSON/query quote marks for calmer, cohesive reading. Keywords use Fuji, keys Ruri,
-operators Sora and escapes Botan. Syntax Beni is the
-native built-in colour; invalid syntax uses the semantic Beni Error colour.
+operators Sora and escapes Botan. These resolve to Iris, blue Pine, blue Pine
+and Love respectively. Functions and annotations use Rose; types use Gold.
+Built-ins and invalid syntax share Love.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
-Histogram and heatmap count palettes offer 32 colourful inks, defaulting to
-To-ro (warm lantern). The picker excludes the four seasonal neutral sources
+Histogram and heatmap counts use the fixed Shin-kai ramp. The source catalogue
+retains 32 colourful inks, excluding the four seasonal neutral sources
 (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
 plus Take-sumi, Hoteison, Syun-gyo and Tsukushi: the black, muted-green and
 brown-dominant ramps. All 40 curves remain in the source distribution.
@@ -95,20 +95,17 @@ the pinned `oklabToHex` conversion. Night orders shades dark to light; Day uses
 the exact same shades reversed. A one-step ramp uses the high-count endpoint
 for its mode (lightest at Night, darkest by Day). Seasons do not change the ink.
 
-Categorical graphs and their per-service/per-series override picker use the
-first seven official swatches from each of those 32 inks. Their 224 colours keep
-the original hex values across themes. The palest eighth swatch is omitted;
-shades also used by the UI are permitted. The searchable seven-dot picker keeps
-the ink's original name and pinned upstream English name, and visibly links to
-Madoromi. Home attribute-value bars also use official shades 3–5 of these inks,
+The categorical catalogue contains the first seven official swatches from each
+of those 32 inks. Their 224 colours keep the original hex values across themes.
+Automatic graphs use all 118 swatches with OKLab lightness 0.55–0.87 and chroma
+at least 0.10, visiting all 32 families before further shades. The palest eighth
+swatch is omitted. This ordering is a viewer adaptation over unchanged source
+colours. Home attribute-value bars also use official shades 3–5 of these inks,
 selected by a stable typed-value hash.
 
-Taken shades are disabled within the owner scope, including hidden owners and
-their saved reset colours. With fewer than 32 unreserved presets, per-ink
-sliders sample 1,001 positions between official shades 1 and 7. The seven preset
-positions retain exact source colours; other positions interpolate the original
-curve at equally spaced OKLab lightness values. Sliders skip occupied hex colours
-and save the ink/position identity without changing automatic assignments.
+There are no graph swatch or count-ink pickers. Existing saved overrides remain
+readable, including curve positions sampled between official shades 1 and 7.
+Automatic assignment preserves identity ownership and skips saved manual colours.
 
 ## Distributed licence and source
 
@@ -126,8 +123,7 @@ the directory URL itself is not a file index.
   palette builder and mixer sources.
 - `generate-madoromi.mjs`: viewer adaptation generator.
 - `themes.json`: generated `src/themes/madoromi.json`.
-- `accent-inks.json`: generated analogous accent families for 32 seeds across
-  eight themes.
+- `interface-palette.json`: the fixed interface palette across eight themes.
 - `count-palettes.json`, `count-palette-names.json`: generated adaptive count
   ramps of sizes 1–12 and pinned English names.
 - `graph-inks.json`, `graph-ink-curves.json`: official graph swatches, 224

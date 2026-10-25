@@ -114,7 +114,7 @@
     @apply inline-flex shrink-0 items-center rounded-full border-0 bg-base-200;
   }
 
-  .theme-controls :global(.theme-ink) {
+  .theme-controls :global(.theme-season) {
     @apply gap-2 rounded-l-full rounded-r-none;
   }
 

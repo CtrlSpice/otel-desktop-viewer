@@ -115,7 +115,6 @@
   import PaneHeader, {
     paneTabID,
   } from '@/components/shared/WorkspaceHeader.svelte'
-  import CountPalettePicker from '@/components/shared/CountPalettePicker.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
@@ -973,9 +972,6 @@
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           {#snippet metaRight()}
             {#if showChartOverlayControls}{@render overlayControl()}{/if}
-            {#if showChartHistogramTabs}
-              <CountPalettePicker label="Histogram count palette" />
-            {/if}
             {#if selectedSummary}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />

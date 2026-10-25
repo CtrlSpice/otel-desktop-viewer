@@ -1,4 +1,5 @@
 import definitions from './madoromi.json' with { type: 'json' }
+import interfacePalette from './interface-palette.json' with { type: 'json' }
 import { GRAPH_COLORS, GRAPH_PALETTE_VERSION } from './graph-inks'
 
 export type ThemeName = keyof typeof definitions
@@ -20,7 +21,16 @@ export function themeName(season: Season, scheme: ColorScheme): ThemeName {
 export const THEMES = SEASONS.flatMap(season =>
   (['light', 'dark'] as const).map(scheme => {
     const id = themeName(season.id, scheme)
-    return { id, season: season.id, scheme, ...definitions[id] }
+    const base = definitions[id]
+    const accents = interfacePalette[id]
+    return {
+      id,
+      season: season.id,
+      scheme,
+      ...base,
+      colors: { ...base.colors, ...accents.colors },
+      syntax: { ...base.syntax, ...accents.syntax },
+    }
   })
 )
 export type Theme = (typeof THEMES)[number]

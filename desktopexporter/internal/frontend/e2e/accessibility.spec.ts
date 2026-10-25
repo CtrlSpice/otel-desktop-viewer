@@ -2,8 +2,6 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { JsonTraceData } from '../src/types/wire-types'
-import { ACCENT_INKS } from '../src/themes/accent-inks'
-import { inkPreviewColors } from '../src/themes/service-ink-slots'
 import { SEASONS } from '../src/themes'
 
 type RpcRequest = {
@@ -213,7 +211,7 @@ async function showMetadataExamples(page: Page, theme: string) {
   await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
   await page.goto('/')
   await expect(
-    page.getByRole('region', { name: 'Attributes', exact: true })
+    page.getByRole('region', { name: 'Service map', exact: true })
   ).toBeVisible()
   await page.evaluate(() => {
     const examples = document.createElement('section')
@@ -364,7 +362,7 @@ for (const { id: theme, colors, syntax } of THEMES) {
 }
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`defaults to To-ro and Autumn with the system ${colorScheme} preference`, async ({
+  test(`defaults to Autumn with the system ${colorScheme} preference`, async ({
     page,
   }) => {
     await interceptRpc(page)
@@ -374,14 +372,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       'data-theme',
       `madoromi-aki-${colorScheme === 'light' ? 'hiru' : 'yoru'}`
     )
-    await expect(page.locator('html')).toHaveAttribute(
-      'data-accent-ink',
-      'to-ro'
-    )
-    await expect(page.getByRole('button', { name: /^Season:/ })).toHaveCount(0)
-    await expect(
-      page.getByRole('button', { name: 'Theme: To-ro' })
-    ).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Season:/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /Evals/ })).toHaveCount(0)
   })
 }
@@ -405,42 +396,19 @@ for (const { id: theme, scheme, name } of THEMES) {
       name: 'Appearance',
       exact: true,
     })
-    const ink = appearance.getByRole('button', { name: /^Theme:/ })
+    const ink = appearance.getByRole('button', { name: /^Season:/ })
     await expect(appearance).toHaveCSS('border-width', '0px')
     const mode = appearance.getByRole('button', {
       name: `${name} theme active`,
     })
-    await expect(
-      appearance.getByRole('button', { name: /^Season:/ })
-    ).toHaveCount(0)
     await expect(ink).toHaveCSS('border-top-right-radius', '0px')
     await expect(mode).toHaveCSS('border-top-left-radius', '0px')
     for (const control of [ink, mode]) {
       await expect(control).toHaveCSS('font-size', '14px')
       await expect(control).toHaveCSS('font-weight', '400')
     }
-    const preview = ink.locator('span[aria-hidden="true"] > span')
-    await expect(preview).toHaveCount(3)
-    const dots = await preview.evaluateAll(elements =>
-      elements.map(element => {
-        const style = getComputedStyle(element)
-        return {
-          color: style.backgroundColor,
-          width: style.width,
-          height: style.height,
-        }
-      })
-    )
-    expect(dots).toEqual(
-      inkPreviewColors('to-ro').map(color => ({
-        color: `rgb(${[1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16)).join(', ')})`,
-        width: '8px',
-        height: '8px',
-      }))
-    )
-    await expect(ink.locator('svg')).toHaveCount(0)
+    await expect(ink.locator('svg')).toHaveCount(1)
     await expect(ink).toHaveText('')
-    await expect(ink).toHaveAttribute('data-tip', 'To-ro')
     const geometry = await appearance.evaluate(element => {
       const buttons = [...element.children].filter(
         child => child.tagName === 'BUTTON'
@@ -472,42 +440,33 @@ for (const { id: theme, scheme, name } of THEMES) {
     )
     expect(await ink.boundingBox()).toEqual(resting)
     await page.keyboard.up('Space')
-    const seasons = page.getByRole('group', { name: 'Background', exact: true })
+    const seasons = page.getByRole('radiogroup', {
+      name: 'Season',
+      exact: true,
+    })
     await expect(seasons).toBeVisible()
     const selectedSeason = SEASONS.find(
       season => season.name === name.split(' ')[0]
     )!
     await expect(
-      seasons.getByRole('button', { pressed: true })
-    ).toHaveAccessibleName(`${selectedSeason.japanese} background`)
-    await expect(seasons.getByRole('button')).toHaveCount(4)
-    for (const choice of await seasons.getByRole('button').all()) {
+      seasons.getByRole('radio', { checked: true })
+    ).toHaveAccessibleName(selectedSeason.japanese)
+    await expect(seasons.getByRole('radio')).toHaveCount(4)
+    for (const choice of await seasons.getByRole('radio').all()) {
       await expect(choice.locator('svg')).toHaveCount(1)
-      await expect(choice).toHaveText('')
     }
     const themePicker = page.locator('.theme-picker-popover:popover-open')
     await expect(themePicker).toHaveCSS('border-width', '1px')
     await expect(themePicker).toHaveRole('dialog')
-    await expect(
-      themePicker.getByRole('region', {
-        name: 'Theme preview (sample trace)',
-      })
-    ).toBeVisible()
     await expect(themePicker.getByRole('searchbox')).toHaveCount(0)
-    await expect(themePicker.locator('[data-ink-choice]')).toHaveCount(32)
-    const toRoChoice = themePicker.locator('[data-ink-choice="to-ro"]')
-    await expect(toRoChoice).toHaveText('')
-    await expect(toRoChoice).toHaveAccessibleName('To-ro')
-    await expect(
-      toRoChoice.locator('span[aria-hidden="true"] > span')
-    ).toHaveCount(3)
+    await expect(themePicker.locator('[data-ink-choice]')).toHaveCount(0)
     await page.keyboard.press('Escape')
     await expect(ink).toBeFocused()
     await expect(ink).toHaveAttribute('aria-expanded', 'false')
     await expect(seasons).not.toBeVisible()
     await ink.focus()
     await page.keyboard.press('Enter')
-    const selectedInk = page.locator('[data-ink-choice="to-ro"]')
+    const selectedInk = seasons.getByRole('radio', { checked: true })
     await expect(selectedInk).toBeFocused()
     await expect(selectedInk).toHaveAttribute('aria-checked', 'true')
     await page.keyboard.press('Escape')
@@ -566,19 +525,13 @@ for (const { id: theme, scheme, name } of THEMES) {
   })
 }
 
-test('theme picker keeps icon-only seasons and three-dot ink choices compact', async ({
+test('season picker stays compact and viewport-clamped without swatch controls', async ({
   page,
 }) => {
   await interceptRpc(page)
   await page.addInitScript(() =>
     localStorage.setItem('theme', 'madoromi-aki-yoru')
   )
-  const rgb = (color: string) =>
-    `rgb(${color
-      .slice(1)
-      .match(/../g)!
-      .map(hex => parseInt(hex, 16))
-      .join(', ')})`
   for (const viewport of [
     { width: 320, height: 720 },
     { width: 390, height: 720 },
@@ -592,9 +545,8 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       height: viewport.height,
     })
     await page.goto('/')
-    const trigger = page.getByRole('button', { name: /^Theme:/ })
-    await expect(trigger.locator('span[style]')).toHaveCount(3)
-    await expect(trigger.locator('svg')).toHaveCount(0)
+    const trigger = page.getByRole('button', { name: /^Season:/ })
+    await expect(trigger.locator('svg')).toHaveCount(1)
     const savedAssignments = await page.evaluate(() =>
       Object.entries(localStorage).filter(([key]) =>
         key.startsWith('graph-colour-')
@@ -614,108 +566,17 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       picker.getByRole('button', { name: 'Close theme picker' })
     ).toHaveCount(0)
     await expect(picker.getByRole('searchbox')).toHaveCount(0)
-    const seasons = picker.getByRole('group', {
-      name: 'Background',
+    const seasons = picker.getByRole('radiogroup', {
+      name: 'Season',
       exact: true,
     })
-    await expect(seasons.getByRole('button')).toHaveCount(4)
+    await expect(seasons.getByRole('radio')).toHaveCount(4)
     await expect(seasons.locator('svg')).toHaveCount(4)
-    const heading = picker.getByRole('heading', {
-      name: 'To-ro',
-      exact: true,
-    })
-    await expect(heading).toBeVisible()
-    const choices = picker.locator('[data-ink-choice]')
-    expect(
-      await choices.evaluateAll(buttons =>
-        buttons.map(button => ({
-          id: button.getAttribute('data-ink-choice'),
-          text: button.textContent!.trim(),
-          label: button.getAttribute('aria-label'),
-          dots: [...button.querySelectorAll<HTMLElement>('span[style]')]
-            .sort(
-              (a, b) =>
-                a.getBoundingClientRect().top - b.getBoundingClientRect().top
-            )
-            .map(dot => dot.style.backgroundColor),
-          overflow: button.scrollWidth > button.clientWidth,
-        }))
-      )
-    ).toEqual(
-      ACCENT_INKS.map(ink => ({
-        id: ink.id,
-        text: '',
-        label: ink.name,
-        dots: [...inkPreviewColors(ink.id)].reverse().map(rgb),
-        overflow: false,
-      }))
-    )
-    const selected = picker.locator('[data-ink-choice="to-ro"]')
+    await expect(picker.locator('[data-ink-choice]')).toHaveCount(0)
+    const selected = seasons.getByRole('radio', { name: 'Aki' })
     await expect(selected).toBeFocused()
     const selectedBox = (await selected.boundingBox())!
-    const list = picker.locator('.theme-picker__inks')
-    await expect(list).toHaveRole('radiogroup')
-    await expect(list).toHaveCSS('overflow-x', 'auto')
-    await expect(list).toHaveCSS('scroll-snap-type', 'none')
-    expect(
-      await list.evaluate(element => element.scrollWidth > element.clientWidth)
-    ).toBe(true)
-    await expect(list.getByRole('radio')).toHaveCount(32)
-    await expect(list.locator('[tabindex="0"]')).toHaveCount(1)
-    const inkBoxes = await choices.evaluateAll(buttons =>
-      buttons.map(button => button.getBoundingClientRect().toJSON())
-    )
-    expect(new Set(inkBoxes.map(box => box.y)).size).toBe(1)
-    for (const inkBox of inkBoxes) {
-      expect(inkBox.width).toBe(24)
-      expect(inkBox.height).toBe(48)
-    }
-    const listBox = (await list.boundingBox())!
-    const seasonBox = (await seasons.boundingBox())!
-    const preview = picker.getByRole('region', {
-      name: 'Theme preview (sample trace)',
-    })
-    const previewBox = (await preview.boundingBox())!
-    const summary = preview.locator('.signal-row')
-    const code = preview.locator('.theme-preview__code')
-    const summaryBox = (await summary.boundingBox())!
-    const codeBox = (await code.boundingBox())!
-    expect(codeBox.y).toBeGreaterThanOrEqual(summaryBox.y + summaryBox.height)
-    expect(codeBox.x).toBe(summaryBox.x)
-    expect(codeBox.width).toBe(summaryBox.width)
-    await expect(preview).toHaveCSS('border-width', '0px')
-    await expect(code).toHaveCSS('border-width', '0px')
-    const radius = await summary.evaluate(
-      element => getComputedStyle(element).borderTopLeftRadius
-    )
-    expect(parseFloat(radius)).toBeGreaterThan(0)
-    for (const corner of [
-      'top-left',
-      'top-right',
-      'bottom-left',
-      'bottom-right',
-    ]) {
-      await expect(preview).toHaveCSS(`border-${corner}-radius`, radius)
-    }
-    await expect(code.locator('.cm-content')).toContainText(
-      '"http.request.method": "GET"'
-    )
-    const headingBox = (await heading.boundingBox())!
-    expect(seasonBox.x).toBeGreaterThanOrEqual(headingBox.x + headingBox.width)
-    expect(seasonBox.y + seasonBox.height / 2).toBeCloseTo(
-      headingBox.y + headingBox.height / 2,
-      0
-    )
-    expect(seasonBox.y + seasonBox.height).toBeLessThanOrEqual(previewBox.y)
-    expect(listBox.y).toBeGreaterThanOrEqual(codeBox.y + codeBox.height)
-    expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
-    expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
-      listBox.y + listBox.height
-    )
-    expect(selectedBox.x).toBeGreaterThanOrEqual(listBox.x)
-    expect(selectedBox.x + selectedBox.width).toBeLessThanOrEqual(
-      listBox.x + listBox.width
-    )
+    await expect(seasons.locator('[tabindex="0"]')).toHaveCount(1)
     expect(
       await page.evaluate(() =>
         Object.entries(localStorage).filter(([key]) =>
@@ -737,65 +598,27 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       box.y + box.height
     )
-    expect(box.width).toBeLessThanOrEqual(448)
-    await list.hover()
-    await page.mouse.wheel(-2000, 0)
-    await expect
-      .poll(() => list.evaluate(element => element.scrollLeft))
-      .toBe(0)
-    const left = picker.getByRole('button', {
-      name: 'Scroll inks left',
-      exact: true,
-    })
-    const right = picker.getByRole('button', {
-      name: 'Scroll inks right',
-      exact: true,
-    })
-    await expect(left).toBeDisabled()
-    await expect(right).toBeEnabled()
-    await right.focus()
-    await page.keyboard.press('Enter')
-    await expect
-      .poll(() => list.evaluate(element => element.scrollLeft))
-      .toBeGreaterThan(0)
-    await expect(left).toBeEnabled()
-    await left.click()
-    await expect
-      .poll(() => list.evaluate(element => element.scrollLeft))
-      .toBe(0)
-    await list.hover()
-    await page.mouse.wheel(200, 0)
-    await expect
-      .poll(() => list.evaluate(element => element.scrollLeft))
-      .toBeGreaterThan(0)
-    await page.mouse.wheel(2000, 0)
-    await expect(right).toBeDisabled()
-    await expect(left).toBeEnabled()
+    expect(box.width).toBeLessThanOrEqual(288)
     await expect(selected).toHaveAttribute('aria-checked', 'true')
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
   }
 })
 
-test('persists the chosen ink independently of season and Day/Night', async ({
+test('persists season and Day/Night with one fixed interface palette', async ({
   page,
 }) => {
   await interceptRpc(page)
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
   await page.goto('/')
-  const ink = page.getByRole('button', { name: /^Theme:/ })
+  const ink = page.getByRole('button', { name: /^Season:/ })
   await ink.click()
-  await expect(page.locator('[data-ink-choice="to-ro"]')).toBeFocused()
-  const rikka = page.locator('[data-ink-choice="rikka"]')
-  await rikka.focus()
-  await page.keyboard.press('Enter')
-  await expect(rikka).toBeFocused()
-  await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
+  await expect(page.getByRole('radio', { name: 'Aki' })).toBeFocused()
   await expect(ink).toHaveAttribute('aria-expanded', 'true')
   const winter = page
-    .getByRole('group', { name: 'Background', exact: true })
-    .getByRole('button', { name: 'Fuyu background', exact: true })
+    .getByRole('radiogroup', { name: 'Season', exact: true })
+    .getByRole('radio', { name: 'Fuyu', exact: true })
   await winter.focus()
   await page.keyboard.press('Enter')
   await expect(winter).toBeFocused()
@@ -809,22 +632,11 @@ test('persists the chosen ink independently of season and Day/Night', async ({
     'background-color',
     themeRgb('madoromi-fuyu-hiru', 'panel')
   )
-  const selectedInk = picker.locator('[data-ink-choice="rikka"]')
+  const selectedInk = winter
   await expect(selectedInk).toHaveAttribute('aria-checked', 'true')
   await expect(selectedInk).toHaveCSS(
     'background-color',
     themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
-  )
-  const preview = picker.getByRole('region', {
-    name: 'Theme preview (sample trace)',
-  })
-  await expect(preview.locator('.signal-row')).toHaveCSS(
-    'background-color',
-    themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
-  )
-  await expect(preview.getByText('name', { exact: true })).toHaveCSS(
-    'color',
-    themeRgb('madoromi-fuyu-hiru', 'secondary', 'rikka')
   )
   await selectedInk.hover()
   await expect(selectedInk).toHaveCSS(
@@ -840,30 +652,27 @@ test('persists the chosen ink independently of season and Day/Night', async ({
     'data-theme',
     'madoromi-fuyu-yoru'
   )
-  await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute(
     'data-theme',
     'madoromi-fuyu-yoru'
   )
-  await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
   await expect(page.locator('.primary-navigation .tab-active svg')).toHaveCSS(
     'color',
-    themeRgb('madoromi-fuyu-yoru', 'primary', 'rikka')
+    themeRgb('madoromi-fuyu-yoru', 'primary')
   )
   expect(
     await page.evaluate(() => ({
       theme: localStorage.getItem('theme'),
-      ink: localStorage.getItem('theme-accent-ink'),
     }))
-  ).toEqual({ theme: 'madoromi-fuyu-yoru', ink: 'rikka' })
+  ).toEqual({ theme: 'madoromi-fuyu-yoru' })
   await ink.click()
-  await expect(rikka).toBeFocused()
+  await expect(winter).toBeFocused()
   await ink.click()
   await expect(ink).toBeFocused()
   await expect(picker).not.toBeVisible()
   await ink.click()
-  await expect(rikka).toBeFocused()
+  await expect(winter).toBeFocused()
   await page.mouse.click(8, 8)
   await expect(picker).not.toBeVisible()
 })
@@ -1358,7 +1167,7 @@ test.describe('home page accessibility', () => {
       'data-theme',
       'madoromi-fuyu-hiru'
     )
-    // 20% surfaces, 45% selection, native Subtle/Muted and default To-ro ink.
+    // 20% surfaces, 45% selection, native neutrals and the shared six-role palette.
     const expected = {
       '--color-base-100': '#f1f2f3',
       '--color-base-200': '#e7e8ea',
@@ -1372,15 +1181,15 @@ test.describe('home page accessibility', () => {
       '--color-muted': '#8d91a4',
       '--color-subtle': '#5e6277',
       '--color-sakura': '#aa6e89',
-      '--color-primary': '#ad2100',
-      '--color-secondary': '#ad2100',
-      '--color-accent': '#ad2100',
+      '--color-primary': '#57518d',
+      '--color-secondary': '#764d58',
+      '--color-accent': '#18644a',
       '--color-neutral': '#8d91a4',
       '--color-neutral-content': '#4a4e63',
-      '--color-info': '#005d92',
-      '--color-success': '#3d6300',
-      '--color-warning': '#e3940b',
-      '--color-error': '#bb355a',
+      '--color-info': '#1e5d88',
+      '--color-success': '#18644a',
+      '--color-warning': '#7a5000',
+      '--color-error': '#9b334e',
     }
     const actual = await page.evaluate(tokens => {
       const style = getComputedStyle(document.documentElement)
@@ -2297,7 +2106,7 @@ test.describe('home page accessibility', () => {
         { name: /^(Open|Collapse) sidebar$/, direction: 'right' },
         { name: /^(Open|Collapse) details$/, direction: 'left' },
         {
-          name: /^Theme:/,
+          name: /^Season:/,
           direction: width < 768 ? 'bottom' : 'left',
           themeInk: true,
         },
@@ -2469,7 +2278,7 @@ test.describe('home page accessibility', () => {
       )
       await expect(editor).toBeVisible()
       await expect(editor.locator('.cm-placeholder')).toBeVisible()
-      await page.getByRole('button', { name: /^Theme:/ }).focus()
+      await page.getByRole('button', { name: /^Season:/ }).focus()
       await expect(bar).toHaveCSS('outline-style', 'none')
     }
   })

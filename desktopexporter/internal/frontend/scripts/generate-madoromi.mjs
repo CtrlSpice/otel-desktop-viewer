@@ -39,16 +39,6 @@ async function upstreamModule(file, dependencies = {}) {
 }
 const colorModule = await upstreamModule('color.ts')
 const { oklabToHex, oklabToOklch } = await import(colorModule)
-const paletteModule = await upstreamModule('palette.ts', {
-  './color': colorModule,
-})
-const { mixFamily, harmonyInks } = await import(
-  await upstreamModule('mix.ts', { './palette': paletteModule })
-)
-const views = new Map(
-  Object.entries(inks).map(([id, lab]) => [id, { curve: { lab } }])
-)
-const accentHarmony = 'analogous'
 
 const TINT = 0.2
 const TEXT_CONTRAST = 4.5
@@ -82,7 +72,7 @@ function at(swatch, L = swatch.oklch[0], strength = 1) {
   ])
 }
 // Read the pinned ink curve at the requested lightness, as upstream colourAt does.
-function inkAt(ink, L) {
+function inkLabAt(ink, L) {
   const lab = inks[ink]
   const n = lab.length / 3
   if (L < lab[0] || L > lab[(n - 1) * 3]) {
@@ -94,11 +84,14 @@ function inkAt(ink, L) {
     1,
     Math.max(0, (L - lab[i * 3]) / (lab[(i + 1) * 3] - lab[i * 3] || 1))
   )
-  return oklabToHex([
+  return [
     L,
     lab[i * 3 + 1] + (lab[(i + 1) * 3 + 1] - lab[i * 3 + 1]) * f,
     lab[i * 3 + 2] + (lab[(i + 1) * 3 + 2] - lab[i * 3 + 2]) * f,
-  ])
+  ]
+}
+function inkAt(ink, L) {
+  return oklabToHex(inkLabAt(ink, L))
 }
 function luminance(hex) {
   const rgb = hex.match(/[\da-f]{2}/gi).map(c => parseInt(c, 16) / 255)
@@ -207,7 +200,7 @@ await writeFile(new URL('src/themes/madoromi.json', frontend), json)
 
 // Full measured curves, equally spaced in OKLab lightness including endpoints.
 // Store each adaptive size independently; shorter ramps are never prefixes.
-// Keep the graph picker colourful: omit the seasonal neutral families and
+// Keep the graph catalogue colourful: omit the seasonal neutral families and
 // the remaining black, muted-green and brown-dominant ramps.
 const neutralInks = new Set([
   ...palette.seasons.map(season => season.grey),
@@ -217,65 +210,86 @@ const neutralInks = new Set([
   'tsukushi',
 ])
 const countInks = inkOrder.filter(id => !neutralInks.has(id))
-// The global accent choice is independent of paper/neutral season and graph
-// ownership. Run the pinned mixer for each seed, then check its accents against
-// the viewer's actual seasonal surfaces rather than the mix's own paper.
-const accentInks = Object.fromEntries(
-  countInks.map(id => {
-    const family = mixFamily(views, [id], accentHarmony)
-    const themes = Object.fromEntries(
-      Object.entries(definitions).map(([themeID, theme]) => {
-        const dark = themeID.endsWith('-yoru')
-        const mixed = family.find(
-          flavour => flavour.mode === (dark ? 'yoru' : 'hiru')
+// Six complementary roles inspired by Rose Pine's balance, using Madoromi inks.
+// Sample each source once to retain its hue in both modes, then soften chroma.
+// Pine is deep blue (Tsuki-yo); Foam is mint green (Shin-ryoku).
+const interfaceInks = {
+  iris: { ink: 'jurojin', at: 0.8, strength: 0.9, day: 0.51, night: 0.79 },
+  pine: { ink: 'tsuki-yo', at: 0.63, strength: 0.85, day: 0.47, night: 0.7 },
+  foam: { ink: 'shin-ryoku', at: 0.67, strength: 0.65, day: 0.51, night: 0.81 },
+  gold: { ink: 'to-ro', at: 0.81, strength: 0.7, day: 0.53, night: 0.81 },
+  rose: { ink: 'benzaiten', at: 0.84, strength: 0.6, day: 0.53, night: 0.84 },
+  love: { ink: 'momiji', at: 0.7, strength: 0.7, day: 0.5, night: 0.7 },
+}
+const syntaxRoles = {
+  sakura: 'rose',
+  nadeshiko: 'rose',
+  botan: 'love',
+  fuji: 'iris',
+  kikyo: 'iris',
+  beni: 'love',
+  akane: 'rose',
+  kaki: 'gold',
+  yamabuki: 'gold',
+  wakaba: 'foam',
+  tokiwa: 'foam',
+  sora: 'pine',
+  ruri: 'pine',
+  ai: 'rose',
+}
+// Check each mode against every seasonal surface so accents stay exactly the
+// same between seasons, not just similar. Only Day/Night changes their strength.
+const interfaceModes = Object.fromEntries(
+  ['day', 'night'].map(mode => {
+    const dark = mode === 'night'
+    const backgrounds = Object.entries(definitions)
+      .filter(([id]) => id.endsWith(dark ? '-yoru' : '-hiru'))
+      .flatMap(([, theme]) =>
+        ['canvas', 'panel', 'chrome', 'highlightLow', 'highlightMedium'].map(
+          key => theme.colors[key]
         )
-        const backgrounds = [
-          'canvas',
-          'panel',
-          'chrome',
-          'highlightLow',
-          'highlightMedium',
-        ].map(key => theme.colors[key])
-        const syntax = Object.fromEntries(
-          palette.accents.map(({ key }) => {
-            const swatch = mixed.colours[key]
-            return [
-              key,
-              readable(
-                { ...swatch, oklch: oklabToOklch(swatch.lab) },
-                backgrounds,
-                dark
-              ),
-            ]
-          })
-        )
+      )
+    const accents = Object.fromEntries(
+      Object.entries(interfaceInks).map(([role, source]) => {
+        const [, C, h] = oklabToOklch(inkLabAt(source.ink, source.at))
+        const swatch = { oklch: [source[mode], C * source.strength, h] }
         return [
-          themeID,
-          {
-            colors: {
-              primary: syntax.fuji,
-              secondary: syntax.ruri,
-              accent: syntax.tokiwa,
-            },
-            syntax,
-          },
+          role,
+          readable({ ...swatch, hex: at(swatch) }, backgrounds, dark),
         ]
       })
     )
-    return [id, { family: harmonyInks(views, [id], accentHarmony), themes }]
+    const syntax = Object.fromEntries(
+      Object.entries(syntaxRoles).map(([slot, role]) => [slot, accents[role]])
+    )
+    return [
+      mode,
+      {
+        colors: {
+          primary: syntax.fuji,
+          secondary: syntax.nadeshiko,
+          accent: syntax.tokiwa,
+          info: syntax.sora,
+          success: syntax.wakaba,
+          warning: syntax.yamabuki,
+          error: syntax.beni,
+        },
+        syntax,
+      },
+    ]
   })
 )
-const accentJson =
-  JSON.stringify(
-    {
-      harmony: accentHarmony,
-      default: 'to-ro',
-      inks: accentInks,
-    },
-    null,
-    2
-  ) + '\n'
-await writeFile(new URL('src/themes/accent-inks.json', frontend), accentJson)
+const interfacePalette = Object.fromEntries(
+  Object.keys(definitions).map(id => [
+    id,
+    interfaceModes[id.endsWith('-yoru') ? 'night' : 'day'],
+  ])
+)
+const interfaceJson = JSON.stringify(interfacePalette, null, 2) + '\n'
+await writeFile(
+  new URL('src/themes/interface-palette.json', frontend),
+  interfaceJson
+)
 const countRamps = Object.fromEntries(
   countInks.map(id => {
     const lab = inks[id]
@@ -381,7 +395,7 @@ await writeFile(
 )
 await writeFile(new URL('graph-inks.json', publicSource), graphJson)
 await writeFile(new URL('graph-ink-curves.json', publicSource), graphCurveJson)
-await writeFile(new URL('accent-inks.json', publicSource), accentJson)
+await writeFile(new URL('interface-palette.json', publicSource), interfaceJson)
 for (const file of [
   'LICENSE',
   'NOTICE',

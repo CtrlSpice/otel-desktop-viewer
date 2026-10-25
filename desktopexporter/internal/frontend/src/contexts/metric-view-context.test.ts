@@ -19,15 +19,13 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { metricViewStorageKey } from '@/components/metrics/utils/metric-timeseries-visible'
 import { detailPanel } from '@/state/detail-panel.svelte'
 import { getSeriesPalette } from '@/themes'
-import { accentInk } from '@/state/accent-ink.svelte'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { GRAPH_SWATCHES } from '@/themes/graph-inks'
 
 const BASE_TIMESTAMP_MS = 1_700_000_000_000
 
-it('switches automatic series colours by ink while retaining overrides and datapoint selection', async () => {
-  const previousInk = accentInk.value
-  accentInk.set('to-ro')
+it('retains saved overrides and datapoint selection across seasonal changes', async () => {
+  const previousTheme = document.documentElement.getAttribute('data-theme')
   const scope = 'metric:ink-switch-test'
   setTestUrl('/metrics/ink-switch-test')
   let ctx!: MetricViewContext
@@ -44,23 +42,24 @@ it('switches automatic series colours by ink while retaining overrides and datap
     await tick()
     const url = window.location.href
     const visible = [...ctx.visibleSeries]
-    accentInk.set('ajisai')
+    document.documentElement.setAttribute('data-theme', 'madoromi-fuyu-hiru')
     await tick()
     expect(ctx.timeseriesColorByKey.get('route=/a')).toBe(manual.color)
-    expect(ctx.timeseriesColorByKey.get('route=/b')).not.toBe(
+    expect(ctx.timeseriesColorByKey.get('route=/b')).toBe(
       original.get('route=/b')
     )
     expect(ctx.selectedDatapointID).toBe('dp-a1')
     expect([...ctx.visibleSeries]).toEqual(visible)
     expect(window.location.href).toBe(url)
-    accentInk.set('to-ro')
     graphColorOverrides.set(scope, 'route=/a', null)
     await tick()
     expect(ctx.timeseriesColorByKey).toEqual(original)
   } finally {
     view.unmount()
     graphColorOverrides.set(scope, 'route=/a', null)
-    accentInk.set(previousInk)
+    if (previousTheme)
+      document.documentElement.setAttribute('data-theme', previousTheme)
+    else document.documentElement.removeAttribute('data-theme')
   }
 })
 

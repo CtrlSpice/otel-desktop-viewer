@@ -1,9 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { ThemeName } from '../src/themes'
-import { accentInkColors } from '../src/themes/accent-inks'
 import {
-  COUNT_PALETTES,
+  DEFAULT_COUNT_PALETTE,
   countPaletteRamps,
   type CountPaletteId,
 } from '../src/themes/count-palettes'
@@ -12,7 +11,7 @@ import {
   GRAPH_PALETTE_VERSION,
   GRAPH_SWATCHES,
 } from '../src/themes/graph-inks'
-import { serviceInkSlots } from '../src/themes/service-ink-slots'
+import { AUTOMATIC_COLOR_SLOTS } from '../src/themes/service-ink-slots'
 import type {
   JsonAggregateBucket,
   JsonDataPoint,
@@ -30,13 +29,13 @@ function rgb(hex: string) {
 }
 
 function accentRgb(theme: ThemeName) {
-  return rgb(accentInkColors('to-ro', theme).colors.primary)
+  return themeRgb(theme, 'primary')
 }
 
 function countRamp(
   theme: ThemeName,
   steps: number,
-  ink: CountPaletteId = 'to-ro'
+  ink: CountPaletteId = DEFAULT_COUNT_PALETTE
 ) {
   return countPaletteRamps[ink][steps]![
     theme.endsWith('-hiru') ? 'day' : 'night'
@@ -336,11 +335,7 @@ test('series header hover and keyboard focus emphasize only the corresponding vi
   await headers.nth(1).focus()
   await expect(second).toHaveAttribute('data-emphasized', 'true')
   await expect(first).toHaveAttribute('data-emphasized', 'false')
-  const edit = headers
-    .nth(1)
-    .getByRole('button', { name: 'Colour for route: /second', exact: true })
-  await edit.focus()
-  await expect(edit.locator('svg')).toHaveCount(1)
+  await headers.nth(1).getByRole('checkbox').focus()
   await expect(second).toHaveAttribute('data-emphasized', 'true')
   await page
     .getByRole('button', { name: 'Download metric', exact: true })
@@ -366,7 +361,7 @@ test('time-series axes use the shared rounded Muted border', async ({
 })
 
 for (const { id: theme } of THEMES) {
-  test(`categorical series follow bright ink rankings with 224 manual shades in ${theme}`, async ({
+  test(`categorical series keep their bright colours across season changes and reloads in ${theme}`, async ({
     page,
   }) => {
     await page.addInitScript(
@@ -402,130 +397,32 @@ for (const { id: theme } of THEMES) {
     const official = GRAPH_INKS.flatMap(ink => ink.swatches)
     expect(official).toHaveLength(224)
     expect(original.map(line => line.colour)).toEqual(
-      serviceInkSlots('to-ro')
-        .slice(0, 2)
-        .map(slot => rgb(GRAPH_SWATCHES[slot]!.color))
+      AUTOMATIC_COLOR_SLOTS.slice(0, 2).map(slot =>
+        rgb(GRAPH_SWATCHES[slot]!.color)
+      )
     )
     expect(new Set(original.map(line => line.colour)).size).toBe(2)
 
-    const trigger = page.getByRole('button', {
-      name: 'Colour for route: /first',
-      exact: true,
-    })
-    await trigger.click()
-    const picker = page.getByRole('group', {
-      name: 'Colour for route: /first options',
-      exact: true,
-    })
-    await expect(picker).toHaveCSS('background-color', themeRgb(theme, 'panel'))
-    await expect(picker).not.toHaveCSS('box-shadow', 'none')
-    await expect(picker).toHaveCSS('border-width', '1px')
-    const shades = picker.locator('[data-ink-choice]')
-    await expect(shades).toHaveCount(224)
-    await expect(picker.locator('[aria-pressed="true"]')).toBeFocused()
-    const rendered = await shades.evaluateAll(buttons =>
-      buttons.map(button => ({
-        id: button.getAttribute('data-ink-choice'),
-        colour: getComputedStyle(button.querySelector('span')!).backgroundColor,
-        disabled: (button as HTMLButtonElement).disabled,
-        label: button.getAttribute('aria-label'),
-        width: getComputedStyle(button).width,
-        dotWidth: getComputedStyle(button.querySelector('span')!).width,
-      }))
+    await expect(page.getByRole('button', { name: /^Colour for/ })).toHaveCount(
+      0
     )
-    expect(rendered).toEqual(
-      GRAPH_INKS.flatMap(ink =>
-        ink.swatches.map(swatch => {
-          const disabled =
-            swatch.id === GRAPH_SWATCHES[serviceInkSlots('to-ro')[1]!]!.id
-          return {
-            id: swatch.id,
-            colour: disabled ? themeRgb(theme, 'chrome') : rgb(swatch.color),
-            disabled,
-            label: `${ink.name} (${ink.english}), shade ${swatch.shade}, ${swatch.color}${disabled ? ', already assigned' : ''}`,
-            width: '24px',
-            dotWidth: '8px',
-          }
-        })
-      )
-    )
-    const grid = picker.locator('.ink-picker-options')
-    const gridBox = (await grid.boundingBox())!
-    const boxes = await shades.evaluateAll(buttons =>
-      buttons.map(button => button.getBoundingClientRect().toJSON())
-    )
-    expect(new Set(boxes.map(box => box.x)).size).toBe(16)
-    expect(new Set(boxes.map(box => box.y)).size).toBe(14)
-    expect(
-      boxes.every(
-        box =>
-          box.x >= gridBox.x &&
-          box.y >= gridBox.y &&
-          box.x + box.width <= gridBox.x + gridBox.width + 1 &&
-          box.y + box.height <= gridBox.y + gridBox.height + 1
-      )
-    ).toBe(true)
-    await shades.nth(6).focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(shades.nth(13)).toBeFocused()
-    await page.keyboard.press('ArrowLeft')
-    await expect(shades.nth(6)).toBeFocused()
-    await page.keyboard.press('Control+End')
-    await expect(shades.nth(217)).toBeFocused()
-    await page.keyboard.press('Control+Home')
-    await expect(shades.nth(6)).toBeFocused()
-    await shades.first().focus()
-    await page.keyboard.press('ArrowDown')
-    await expect(shades.nth(118)).toBeFocused()
-    // The other owner reserves its shade even while hidden.
-    const reserved = rendered
-      .filter(shade => shade.disabled)
-      .map(shade => shade.id)
-    expect(reserved).toEqual([GRAPH_SWATCHES[serviceInkSlots('to-ro')[1]!]!.id])
-    await page.keyboard.press('Escape')
-    await expect(trigger).toBeFocused()
     const second = page.getByRole('checkbox', {
       name: 'Show route: /second in chart',
       exact: true,
     })
     await second.uncheck()
-    await trigger.click()
-    await expect(picker).toBeVisible()
-    await expect
-      .poll(() =>
-        picker
-          .locator('[data-ink-choice]:disabled')
-          .evaluateAll(buttons =>
-            buttons.map(button => button.getAttribute('data-ink-choice'))
-          )
-      )
-      .toEqual(reserved)
-    await page.keyboard.press('Escape')
+    await expect(lines).toHaveCount(1)
     await second.check()
     await expect(lines).toHaveCount(2)
 
-    await page.getByRole('button', { name: /^Theme:/ }).click()
-    await page
-      .locator('.theme-picker-popover:popover-open [data-ink-choice="ajisai"]')
-      .click()
-    await expect(page.locator('html')).toHaveAttribute(
-      'data-accent-ink',
-      'ajisai'
-    )
-    const cool = original.map((line, index) => ({
-      ...line,
-      colour: rgb(GRAPH_SWATCHES[serviceInkSlots('ajisai')[index]!]!.color),
-    }))
-    await expect.poll(drawing).toEqual(cool)
+    await page.getByRole('button', { name: /^Season:/ }).click()
+    await page.getByRole('radio', { name: 'Fuyu' }).click()
+    await page.keyboard.press('Escape')
+    await expect.poll(drawing).toEqual(original)
     await page.reload()
     await expect(lines).toHaveCount(2)
-    await expect.poll(drawing).toEqual(cool)
-    await page.getByRole('button', { name: /^Theme:/ }).click()
-    await page
-      .locator('.theme-picker-popover:popover-open [data-ink-choice="to-ro"]')
-      .click()
+    await page.locator('.theme-toggle').click()
     await expect.poll(drawing).toEqual(original)
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
   })
 }
 
@@ -685,7 +582,7 @@ test.describe('independent histogram aggregate loading', () => {
     }
   })
 
-  test('32 count inks share exact previews and global accent changes allow a saved chart override', async ({
+  test('one count ramp retains exact colours and geometry across seasons and reloads', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1920, height: 1000 })
@@ -701,10 +598,6 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
       'madoromi-aki-hiru'
-    )
-    await expect(page.locator('html')).toHaveAttribute(
-      'data-accent-ink',
-      'to-ro'
     )
     const geometry = () =>
       page
@@ -742,124 +635,40 @@ test.describe('independent histogram aggregate loading', () => {
         .toEqual([fills[0], fills[1], fills[3]].sort())
       expect(await geometry()).toEqual(original)
     }
-    await assertCountInk('to-ro')
-    const trigger = page.getByRole('button', {
-      name: 'Histogram count palette',
-      exact: true,
-    })
-    await trigger.click()
-    const picker = page.getByRole('group', {
-      name: 'Histogram count palette options',
-      exact: true,
-    })
-    await expect(picker.locator('.filter-popover__header')).toHaveCount(0)
-    const choices = picker.locator('[data-ink-choice]')
-    await expect(choices).toHaveCount(32)
-    await expect(picker.locator('[data-ink-choice="to-ro"]')).toBeFocused()
-    expect(
-      await choices.evaluateAll(buttons =>
-        buttons.map(button => ({
-          id: button.getAttribute('data-ink-choice'),
-          label: button.textContent!.trim().replace(/\s+/g, ' '),
-          fontSize: getComputedStyle(button).fontSize,
-          dots: [...button.querySelectorAll('span[style]')].map(dot => ({
-            colour: getComputedStyle(dot).backgroundColor,
-            width: getComputedStyle(dot).width,
-            height: getComputedStyle(dot).height,
-            border: getComputedStyle(dot).borderTopWidth,
-            gap: getComputedStyle(dot.parentElement!).columnGap,
-          })),
-        }))
-      )
-    ).toEqual(
-      COUNT_PALETTES.map(ink => ({
-        id: ink.id,
-        label: `${ink.name} (${ink.english})`,
-        fontSize: '14px',
-        dots: countRamp('madoromi-aki-hiru', 7, ink.id).map(colour => ({
-          colour: rgb(colour),
-          width: '8px',
-          height: '8px',
-          border: '0px',
-          gap: '8px',
-        })),
-      }))
-    )
-    await page.keyboard.press('Escape')
-    await expect(trigger).toBeFocused()
+    await assertCountInk('shin-kai')
+    await expect(
+      page.getByRole('button', { name: 'Histogram count palette', exact: true })
+    ).toHaveCount(0)
     await page.locator('.theme-toggle').click()
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
       'madoromi-aki-yoru'
     )
-    await trigger.click()
-    await expect(picker.locator('[data-ink-choice="to-ro"]')).toBeFocused()
-    expect(
-      await choices.evaluateAll(buttons =>
-        buttons.map(button =>
-          [...button.querySelectorAll('span[style]')].map(
-            dot => getComputedStyle(dot).backgroundColor
+    await expect
+      .poll(() =>
+        page
+          .locator('.heatmap-legend__swatch')
+          .evaluateAll(dots =>
+            dots.map(dot => getComputedStyle(dot).backgroundColor)
           )
-        )
       )
-    ).toEqual(
-      COUNT_PALETTES.map(ink =>
-        [...countRamp('madoromi-aki-hiru', 7, ink.id)].reverse().map(rgb)
-      )
-    )
-    await page.keyboard.press('Escape')
+      .toEqual(countRamp('madoromi-aki-yoru', 4, 'shin-kai').map(rgb))
     await page.locator('.theme-toggle').click()
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
       'madoromi-aki-hiru'
     )
-    const themeTrigger = page.getByRole('button', { name: /^Theme:/ })
+    const themeTrigger = page.getByRole('button', { name: /^Season:/ })
     await themeTrigger.click()
     const themePicker = page.locator('.theme-picker-popover:popover-open')
-    await themePicker.locator('[data-ink-choice="ajisai"]').click()
-    await assertCountInk('ajisai')
+    await themePicker.getByRole('radio', { name: 'Fuyu' }).click()
+    await assertCountInk('shin-kai')
     await expect(themePicker).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(themeTrigger).toBeFocused()
     await expect(themePicker).not.toBeVisible()
-    await trigger.click()
-    await expect(picker.locator('[data-ink-choice="ajisai"]')).toBeFocused()
-    await picker.getByRole('button', { name: 'Find ink', exact: true }).click()
-    const inkSearch = picker.getByRole('searchbox', {
-      name: 'Find ink',
-      exact: true,
-    })
-    await expect(inkSearch).toBeFocused()
-    await inkSearch.fill('deep cerulean blue')
-    await expect(choices).toHaveCount(1)
-    await inkSearch.press('Escape')
-    await expect(picker).toBeVisible()
-    await expect(inkSearch).toBeHidden()
-    const inkFilter = picker.getByRole('button', {
-      name: 'Find ink (active)',
-      exact: true,
-    })
-    await expect(inkFilter).toBeFocused()
-    await inkFilter.click()
-    await expect(inkSearch).toHaveValue('deep cerulean blue')
-    await picker.locator('[data-ink-choice="kon-peki"]').click()
-    await assertCountInk('kon-peki')
-    await expect(page.locator('html')).toHaveAttribute(
-      'data-accent-ink',
-      'ajisai'
-    )
-    expect(
-      await page.evaluate(() => [
-        localStorage.getItem('theme-accent-ink'),
-        localStorage.getItem('graph-count-palette'),
-      ])
-    ).toEqual(['ajisai', 'kon-peki'])
     await page.reload()
-    await assertCountInk('kon-peki')
-    await expect(page.locator('html')).toHaveAttribute(
-      'data-accent-ink',
-      'ajisai'
-    )
+    await assertCountInk('shin-kai')
     await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
     await expect
       .poll(() =>
@@ -869,7 +678,7 @@ test.describe('independent histogram aggregate loading', () => {
       )
       .toEqual(
         [0, 3, 1].map(index =>
-          rgb(countRamp('madoromi-aki-hiru', 4, 'kon-peki')[index]!)
+          rgb(countRamp('madoromi-aki-hiru', 4, 'shin-kai')[index]!)
         )
       )
   })

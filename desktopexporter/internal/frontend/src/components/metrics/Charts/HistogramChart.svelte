@@ -36,7 +36,7 @@
 
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
-  import { countPalette } from '@/state/count-palette.svelte'
+  import { DEFAULT_COUNT_PALETTE } from '@/themes/count-palettes'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import {
     formatMetricValue,
@@ -417,7 +417,7 @@
     const palette = computeHistogramBarColorScale(
       datapoint,
       themeSignal.value,
-      countPalette.value
+      DEFAULT_COUNT_PALETTE
     )
     return scaleThreshold<number, string>()
       .domain(palette.thresholds)

@@ -33,7 +33,7 @@ Service cards use three shared card rows: service name and right-aligned Error
 dot/count, then comma-separated trace, metric and log counts, then Last seen.
 The lower rows align with the service name. The error total adds
 error spans and error/fatal logs, with the breakdown on hover and in its accessible
-label. The colour control remains independent of card selection.
+label. Each service keeps a decorative assigned-colour dot before its name.
 Attribute queries, typed values, sorting, filtering and exact Copy retain their
 existing scope and behaviour. The header's filter icon opens and focuses the
 attribute-key filter. Escape collapses the field and restores icon focus without

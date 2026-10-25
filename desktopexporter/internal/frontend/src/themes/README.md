@@ -11,41 +11,20 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Autumn | `madoromi-aki-hiru`   | `madoromi-aki-yoru`   |
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
-The theme picker and day/night button share one compact control group.
-The picker opens below its button, end-aligned and clamped to the viewport, with
-a compact swatch strip below the full-width live app-style sample preview.
-The shared section header shows the original ink name at the left and four icon-only
-season controls at the right. The shared sample trace summary and service breakdown sit above the JSON
-inspector in one narrow column, without a separate preview header or attributes
-section. Surfaces use shared rounded corners without nested borders. Sample
-services use fixed positions in the selected ink's automatic service ranking.
-Their colours update with the ink without allocating identities, reserving shades
-or changing saved service/series assignments.
-The ink strip sits below the JSON and above attribution.
-There is no separate season row or redundant Theme heading.
-Ink and season changes apply immediately and keep the
-picker open; Escape, clicking outside or the trigger dismisses it. There is no
-separate close button in the anchored dropdown.
-Its centred footer reads “Colours by Madoromi” with the attribution heart;
-only Madoromi is the link.
-Ink choices show three vertically stacked colour dots, brightest at the top
-(the three selected plotting shades), in 24px-wide, 48px-high targets with 4px gaps in one horizontal row,
-with the selected original ink name shown once above them. All choices retain
-original-name tooltips and accessible labels, without English translations.
-The chooser is at most 28rem wide. The ink row uses ordinary horizontal scrolling,
-with left/right caret buttons as a secondary way to scroll. Each caret is disabled
-at its end; scrolling does not change the ink selection. There is no snapping or
-auto-advance. Four icon-only season choices sit at the right of the shared header.
-Section names
-remain accessible but visually hidden; there is no filter field. Flower, sun,
-leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
-Fuyu (Winter). Season changes keep the picker open so its inherited paper,
-hover and selection surfaces update around the unchanged ink swatches. Changing
-season retains the current mode and ink; changing mode retains the season. The complete
-theme ID is saved in localStorage under `theme`. A valid saved choice takes
-precedence over the operating system's mode. Otherwise, Autumn uses the system
-preference read on load. If storage is blocked, controls still work for the
-current page.
+The season picker and Day/Night button share one compact control group. The
+picker opens below its seasonal icon, end-aligned and viewport-clamped. Four
+labelled icon controls select Haru, Natsu, Aki or Fuyu. The radio group has one Tab
+stop and supports arrow keys and Home/End. Opening focuses the selected season.
+Changes keep the picker open; Escape, the trigger or clicking outside dismisses
+it. Its footer retains “Colours by Madoromi” and the Sakura attribution heart.
+There are no ink or swatch controls.
+
+One six-role ink palette supplies accents across all four seasons.
+Season changes affect the paper, neutral text and highlights; Day/Night adjusts
+foreground strength for readability. The complete theme ID is saved under
+`theme`. Saved choices take precedence; otherwise Autumn uses the system mode.
+Blocked storage retains the current page's choice. Appearance changes do not
+reassign graph colours.
 
 `data-theme` selects the generated CSS; `data-color-scheme` identifies light/dark
 behaviour. Charts observe the same theme identity through `state/theme.svelte.ts`.
@@ -70,21 +49,19 @@ bottom row when a reading is available.
 ## Ownership and generation
 
 - `madoromi.json`: generated interface colours for all eight variants.
-- `accent-inks.json` / `accent-inks.ts`: generated analogous families and seed catalogue.
+- `interface-palette.json`: the fixed Iris, Pine, Foam, Gold, Rose and Love accents.
 - `count-palettes.json`: generated Madoromi histogram count ramps, sizes 1–12.
 - `count-palette-names.json`: generated English ink names from the pinned source.
-- `count-palettes.ts`: ordered count-palette catalogue and default To-ro ink.
+- `count-palettes.ts`: source ramp catalogue and fixed Shin-kai count ink.
 - `index.ts`: catalogue, seasonal selection and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
 - `graph-inks.json`: official ink swatches and 224 categorical slots.
 - `graph-ink-curves.json`: generated slider colours and exact preset positions.
 - `graph-inks.ts`: shared seven-shade catalogue and stable ink/shade identities.
-- `service-ink-harmonies.json`: pinned Mix selections for automatic service colours.
-- `service-ink-slots.ts`: pure ink-led ordering of the official service swatches.
-- `bright-ink-slots.json`: generated bright-only automatic rankings.
+- `service-ink-slots.ts`: the shared automatic slot sequence.
+- `bright-ink-slots.json`: one generated bright-only ranking across all 32 inks.
 - `../utils/color-slots.ts`: saved service/series identity allocation.
 - `../state/graph-color-overrides.svelte.ts`: persisted, reactive per-identity overrides.
-- `../state/accent-ink.svelte.ts` / `../state/count-palette.svelte.ts`: independent saved ink choices.
 
 The Madoromi source is pinned to
 [`f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695`](https://github.com/the-moonwitch/madoromi/tree/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695).
@@ -93,7 +70,6 @@ Its original palette, conversion code and full MPL-2.0 licence are in
 
 ```sh
 node scripts/generate-madoromi.mjs
-node scripts/generate-service-ink-harmonies.mjs
 node scripts/generate-bright-ink-slots.mjs
 ```
 
@@ -160,7 +136,7 @@ recalculating when the theme changes.
 These are viewer mappings of upstream roles, not a claim that the guide specifies
 every component's geometry. The viewer retains its approved 20% paper chroma,
 regular Atkinson typography, readable Subtle placeholders and neutral telemetry
-values. Existing selection opacity, fixed status colours and per-ink categorical
+values. Existing selection opacity, shared status colours and fixed categorical
 assignments remain the viewer's documented adaptations.
 
 List filters use `ListFilter.svelte`: a header icon reveals and focuses the shared
@@ -170,67 +146,58 @@ inside a popover, this first Escape leaves the popover open. Attribute keys,
 service choices, columns, inks and timezones share this behaviour. Main workspace
 search and editor Find remain separate controls.
 
-| Shared role                           | Madoromi source |
-| ------------------------------------- | --------------- |
-| Text                                  | Sumi            |
-| Subtle: keys, headers and helper text | Usuzumi 1       |
-| Muted: unavailable and disabled       | Kasure 1        |
-| Primary / focus                       | Fuji            |
-| Secondary / metadata                  | Ruri            |
-| Accent                                | Tokiwa          |
-| Info                                  | Sora            |
-| Success                               | Wakaba          |
-| Attribution heart                     | Sakura          |
-| Warning markers and fills             | Yamabuki        |
-| Error markers                         | Beni            |
+| Shared role                           | Palette role |
+| ------------------------------------- | ------------ |
+| Text                                  | Sumi         |
+| Subtle: keys, headers and helper text | Usuzumi 1    |
+| Muted: unavailable and disabled       | Kasure 1     |
+| Primary / focus                       | Iris         |
+| Secondary / metadata                  | Rose         |
+| Accent                                | Foam         |
+| Info                                  | Pine         |
+| Success                               | Foam         |
+| Attribution heart                     | Sakura       |
+| Warning markers and fills             | Gold         |
+| Error markers                         | Love         |
 
-These role assignments apply to all eight variants. Each variant supplies its
-own source ink and shade. Info and Success have independent Sora and Wakaba
-colours rather than sharing Accent and Secondary.
+These role assignments apply to all eight variants. The six accents are identical
+across seasons within each mode. Info uses blue Pine and Success uses green Foam.
 
 The generator minimally adjusts Text and accent foregrounds in 0.001 OKLCH
 lightness steps until they reach 4.5:1 on canvas, panel, chrome, hover and
-selection. Gamut mapping reduces chroma only when needed for sRGB. Stronger
-reveal highlights are outside this five-background target. Subtle, Muted and
-the original sakura/yamabuki colours retain their source values without contrast
-adjustments. Error uses each variant's original Beni colour from the pinned
-upstream palette. Warning
+selection. The six ink-derived accents are softened before these corrections and
+checked against all four seasons together. Stronger reveal highlights are outside
+this five-background target. Subtle, Muted and the original Sakura attribution
+colour retain their source values without contrast adjustments. Warning
 and received error values use neutral Text with meaningful coloured markers.
 Papaya (`#ff8000`) continues to identify internal faults rather than span errors.
 
 ## Editor roles
 
-The top-bar appearance group contains **Theme · Day/Night**. The theme picker
-contains background-season choices and ink selection. Ink chooses
-one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
-Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
-To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact swatches show three dots
-using the same three official shades included in its opening automatic graph
-palette. These selected mid-range shades vary by ink. The selected ink's name appears
-once; each choice's original name remains in its accessible label and tooltip.
-The selected ink is focused and revealed when the picker opens.
-The swatch group has one Tab stop. Arrow keys and Home/End select inks, updating
-the preview immediately. The row scrolls horizontally when the window is narrower.
-The analogous family applies when the seed is selected; mixed syntax-role
-colours do not replace the named ink's preview.
-The top-bar control shows those same three 8px dots. Its tooltip shows only the Japanese
-ink name, which is also used in its accessible name and inside the picker.
+The interface uses six complementary roles inspired by Rosé Pine's balance, with
+colours derived from the pinned Madoromi ink curves:
 
-The choice supplies interface Primary, Secondary and Accent, plus the fourteen
-syntax accent slots below. Season supplies the softened paper, neutral text,
-punctuation and Nijimi highlights. Semantic status colours and the Sakura
-attribution heart retain their existing roles. Each family has Day/Night
-strengths checked against the five actual seasonal UI surfaces. The theme
-generator writes these overrides to `accent-inks.json` with the source family.
+| Role | Ink        | Character and use                                      |
+| ---- | ---------- | ------------------------------------------------------ |
+| Iris | Jurojin    | Lavender controls, focus and keywords                  |
+| Pine | Tsuki-yo   | Definite blue for information, code keys and operators |
+| Foam | Shin-ryoku | Mint green for success and accents                     |
+| Gold | To-ro      | Honey-gold warnings and code types                     |
+| Rose | Benzaiten  | Soft blush metadata, functions and cursors             |
+| Love | Momiji     | Berry-rose errors, built-ins and escapes               |
 
-`theme-accent-ink` persists the seed independently of `theme`; invalid or absent
-values use To-ro. Changes propagate across tabs, and blocked storage retains
-the selection in memory. Selecting an accent ink also applies that ink to the
-histogram/heatmap count palette and its legend. The chart's count picker can then
-select a different ink. Startup restores both choices independently: loading the
-saved accent does not overwrite the saved count ink. Automatic service,
-metric-series and single-service span-name colours follow the selected accent ink;
-manual overrides remain fixed. Navigation stays left-aligned; search fills the
+Pine is deeper and bluer; Foam is lighter and greener. Each source is sampled at
+a fixed point on its curve, with softened chroma and a stable hue for Day/Night.
+Readable Day strengths are deeper; Night uses the lighter colours. This is a
+viewer adaptation, not an upstream Madoromi mix or a copy of Rosé Pine's hexes.
+Season supplies the existing paper, neutral text, punctuation and Nijimi
+highlights. The theme generator writes the shared accents to
+`interface-palette.json`; the Sakura attribution heart retains its original shade.
+Semantic roles retain the guide's slots: Fuji for focus, Sora for information,
+Wakaba for success, Yamabuki for warnings and Beni for errors. The custom palette
+changes their ink/shade values. Viewer metadata uses the warm Nadeshiko/Rose slot.
+
+Navigation stays left-aligned; search fills the
 available desktop space and appearance controls stay together at the right.
 Narrow screens place navigation above search and appearance controls; the
 smallest screens give search a full-width row.
@@ -263,8 +230,8 @@ cohesive reading. Keys, punctuation and escapes retain their distinct roles:
 | Comments                              | Kasure 2           |
 | Invalid syntax                        | Beni / Error       |
 
-The role names identify slots in the selected analogous mix, rather than fixed
-rainbow hues. The generated `syntax` palette also contains each season's readable
+The Madoromi syntax slot names map to the six roles above. The resolved `syntax`
+palette also contains each season's readable
 Sumi, Kasure 2 and Usuzumi 0. Its foregrounds meet the same five-background 4.5:1
 target as interface text. Code uses `--color-code-*` tokens independently of
 interface Primary/Secondary aliases. `--color-code-literal` resolves to Sumi,
@@ -329,8 +296,8 @@ and percentages keep their record denominator, and Copy retains the full value.
 
 The categorical catalogue contains the first seven official swatches from the same
 32 colourful Madoromi inks: 224 distinct colours. Automatic allocation uses its
-132 colourful swatches, including the selected preview shades; the manual picker retains all 224. The original
-eighth (palest) shade remains in the distributed source but is omitted from both.
+118 bright swatches across all 32 families. The original
+eighth (palest) shade remains in the distributed source but is omitted from automatic allocation.
 These are the
 upstream eight-step ramp's original colour values, not lightness-resampled count
 bands. Each colour retains its exact hex value across seasons and Day/Night.
@@ -339,101 +306,47 @@ Slot order visits every ink in Madoromi's pinned colour order at shade 1, then
 at shade 2, through shade 7. Ink/shade IDs, such as `rikka:4`, identify overrides.
 Assignments use the `madoromi-inks-v1` allocation namespace.
 
-Services, metric series and single-service span names share ink-ranked allocation.
+Services, metric series and single-service span names share one bright ranking.
 They retain separate scopes: exact service-name text viewer-wide, native series
-identity per `metricRef`, and exact span-name text. Automatic assignments in each
-scope are saved per selected interface ink.
+identity per `metricRef`, and exact span-name text. Each scope has one saved set
+of assignments, independent of appearance.
 Filtering, ordering and paging do not release slots. New identities never move
 existing owners. Fresh assignments can depend on encounter order. Blocked/full
 storage falls back to in-memory stability.
 
-Interface accent families use the selection rules of
-[Madoromi Mix](https://madoromi.moonwit.ch/#palettes/mix/), from the pinned
-`third_party/madoromi/mix.ts` revision above. `harmonyInks` measures chroma-weighted
-hue across each full ink curve, excludes low-chroma candidates, skips covered
-hues and scores candidates by hue distance and peak chroma. The harmony metadata
-is generated by executing that unmodified function against the pinned curves:
-analogous (−30°/+30°), complementary (180°), triadic (120°/240°) and tetradic
-(90°/180°/270°). `node scripts/generate-service-ink-harmonies.mjs --check` verifies
-the generated selections. The Mix selection rules choose ink families; the
-viewer keeps exact official swatch hexes rather than generating mixed colours.
-
-The shared categorical ranking starts with three shades of the selected ink and two
-distinct companion inks. The three shades are exactly those shown in its picker and top-bar dots;
-they include deeper and lighter colourful shades without the near-black or
-paper-like extremes. Companions come from opposite sides of the seed's hue, each
-45–100° away, targeting 70°. They use lightness 0.62–0.83, stay within 0.18 of the
-seed's lightness, and favour moderate chroma. Each companion stays at least 0.10
-OKLab distance from the other four opening colours. These wider neighbours give
-the chart different hues rather than nearly identical inks from a narrow family.
-The seed's vivid representative comes first; the companions separate its three
-shades, with adjacent colour distance deciding their order. The sample card shows
-all five colours. Larger scopes choose colours by their minimum distance from all
-already-used colours, with a hue-distance penalty favouring the selected ink's
-neighbourhood. This introduces different families before exhausting close shades.
-The opening 3:2 mix is not repeated or guaranteed for larger scopes.
-
-`scripts/generate-bright-ink-slots.mjs` defines the fixed representatives and checks
-them against the source ramps. The pool combines the selected preview shades
-with swatches of OKLab lightness 0.60–0.87 and chroma at least 0.10. Preview shades
-extend the depth and lightness variety while staying within lightness 0.45–0.87.
-`node scripts/generate-bright-ink-slots.mjs --check`
-verifies the generated rankings. These are viewer ordering rules over unchanged
-Madoromi swatches, not upstream palette recommendations. Seasons and Day/Night
-never remap these colours. The companion separation rule does not guarantee a
-minimum distance between every pair in a larger scope.
+`scripts/generate-bright-ink-slots.mjs` admits all official swatches with OKLab
+lightness 0.55–0.87 and chroma at least 0.10. It starts with Shin-kai and visits
+one bright representative from every family before using additional shades.
+Within each stage, it chooses the swatch whose minimum OKLab distance from
+already-used colours is greatest. There is no selected-ink restriction or 3:2
+ratio. `node scripts/generate-bright-ink-slots.mjs --check` verifies the generated
+sequence. This is a viewer ordering rule over unchanged Madoromi swatches.
 
 Each new identity takes the first unoccupied ranked slot, skipping manual choices.
-Switching ink restores that ink's saved slots and assigns all known hidden owners
-before newly encountered identities. Switching back restores the same assignments.
-The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:ink:<ink>:varied-3-2-v1`, where
+The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:fixed-bright-v1`, where
 scope is `services`, `metric:<metricRef>` or `span-names`.
 Prior automatic assignments retain their identities and encounter order while
 receiving bright-ranked reset slots; their original storage remains intact. Explicit
-overrides stay in their existing ownership scopes and remain fixed across
-ink changes. An ink switch does not change selection, visibility or disclosure.
+overrides stay in their existing ownership scopes and remain fixed. Previous
+per-ink owners are carried forward with the last active ink's encounter order
+first, including hidden identities. Old palette settings no longer control the UI.
 
 After all bright slots are occupied, new identities reuse a hashed bright slot without
 moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and one
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
-series cap is independent of the 132-colour automatic capacity. Exhaustion stays
+series cap is independent of the 118-colour automatic capacity. Exhaustion stays
 within this pool rather than adding near-black or pale extremes.
 
-Each Home service name has its assigned 8px colour dot in a 24px circular target.
-The target stays transparent at rest, with shared Low hover and Medium open-state
-highlights and a visible keyboard focus ring. The dot opens
-the shared ink picker. It is a sibling of the card button, so changing colour does not select the card. Gauge
-and Sum series use a pencil-edit control in their metric Details row; it does not
-toggle visibility or disclosure. Graph overrides fit all 224 choices into two
-stacked groups of 16 inks. Each ink is a vertical light-to-dark column of seven
-shades, with 24px targets around 8px dots.
-The hovered or focused ink name and shade appear once above the grid; full names,
-shade numbers and exact colours remain in tooltips and accessible labels.
-Unavailable dots use the darkest seasonal surface (`base-300`).
-Arrow keys follow the grid's visible rows and columns, skipping unavailable shades;
-Home/End move to the ends of a row (Control+Home/End reaches the entire list's
-ends). Enter/Space selects. Opening focuses and reveals the current shade;
-selection and Escape return focus to the trigger without moving the page.
-The shade grid keeps its width while filtering and uses eight columns with native
-scrolling on narrow screens. Count and slider pickers measure their widest full
-ink name at the current font size; count-picker names wrap beside their seven
-aligned dots. Their shared footer reads “Colours by Madoromi”.
+Home service names retain their assigned 8px dots with an 8px gap before the name.
+The dots are decorative; cards retain their normal selection action. Service,
+series and count-palette pickers have been removed.
 
-Overrides are saved under `graph-colour-overrides:madoromi-inks-v1:<scope>` as
+Existing overrides are read from `graph-colour-overrides:madoromi-inks-v1:<scope>` as
 identity/ink-shade pairs. Services share the `services` scope, keyed by service-name
 text rather than Home's typed discovery identity. Series use `metric:<metricRef>`,
-keyed by `seriesRef`. Changes propagate to chart lines, sparklines,
-service dots, summary bars and multi-service non-error waterfall bars, including across open tabs. Shades
-owned by another identity in the same scope are visibly disabled, and keyboard
-navigation skips them. Reservations include hidden owners, their saved automatic
-reset slots and explicit overrides. Service reservations include reset slots in
-previously visited inks too, so manual choices cannot normally claim another
-owner's saved colour on return to that ink. The current choice remains available even
-when older saved assignments already share that colour. New automatic assignments
-avoid overridden shades as well as occupied automatic slots. The reset icon to the right of Find
-ink restores the owner's saved automatic slot and is disabled when no override
-is set. Resetting never reallocates another identity. Blocked storage keeps
-overrides in memory. Actual error bars retain the semantic Error colour.
+keyed by `seriesRef`. These still apply to chart lines, sparklines, service dots,
+summary bars and non-error waterfall bars. New automatic assignments avoid saved
+manual shades and occupied automatic slots. Actual errors retain the Error role.
 
 Waterfall dots and duration bars use exact span-name colours when the full trace
 has only one service identity, including an unnamed service. Repeated names share
@@ -444,57 +357,18 @@ change the colour basis. Trace summary bars and service indicators always retain
 service colours. Error spans and exception events retain the semantic Error override.
 This follows [Honeycomb's default waterfall colour basis](https://docs.honeycomb.io/investigate/analyze/explore-traces/#change-color-in-waterfall-representation).
 
-When fewer than 32 of the 224 preset colours remain unreserved in a scope, the
-picker opens with one shade slider per ink instead of seven dots. This leaves
-about one spare preset per ink before using the finer curve. The layout stays
-fixed while the picker is open. A saved curve choice also opens in slider mode,
-so it stays editable if reservations later fall below the threshold.
-
-Sliders follow each pinned Madoromi curve between official shades 1 and 7, using
-1,001 positions. The seven preset positions keep their exact official colours;
-the remaining positions sample equal OKLab lightness steps with upstream colour
-conversion. Positions that produce an occupied hex colour are skipped, including
-duplicate hex values at adjacent positions. Native arrow, Page Up/Down and
-Home/End controls adjust the shade live; the adjacent swatch selects it and
-closes the picker. Escape and light dismissal retain the chosen colour. Curve
-overrides persist as `ink:curve:position`, in the same owner scope as preset IDs.
-Reset restores the saved automatic slot. Histogram/count pickers use whole inks
-and do not use reservations or sliders.
-
 Histogram and exponential-histogram heatmaps, distribution bars and count
-legends share one app-wide ink choice. The paintbrush in the selected metric
-header opens one searchable ink picker with 32 colourful ramps, in Madoromi's
-pinned colour order. This preserves the source's full-ramp similarity sequence
-after omitting excluded inks; search retains that order. It excludes the four
-seasonal neutral sources (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
-plus Take-sumi, Hoteison, Syun-gyo and
-Tsukushi. These are the grey, black, muted-green and brown-dominant families.
-Each original ink name is followed by Madoromi's English name in Subtle
-parentheses, such as `Ajisai (hydrangea)`. Search matches either name.
-The seven-dot previews show each full ramp in the current mode. Its footer links
-to Madoromi with visible ink attribution. To-ro is the default. The choice is saved
-in localStorage under `graph-count-palette`; invalid saved values fall back
-to To-ro, and blocked storage retains the choice for the current page. Existing
-saved choices retain their ink and shades. Palette changes propagate across tabs.
-Opening the picker focuses and reveals
-the saved choice inside its scrollable list; searching does not change the choice.
+legends share the fixed Shin-kai ramp. Counts remain sequential rather than using
+categorical hues. Legacy count-palette preferences are left in storage but no
+longer select a different ramp.
 
 The generator samples each full pinned measured curve at equally spaced OKLab
 lightness values, including its endpoints, interpolates a/b at that lightness,
 then uses upstream `oklabToHex`. Every adaptive ramp size from 1–12 is generated
 separately. Night uses dark-to-light count order; Day uses the exact same shades
 reversed. A singleton uses its mode's high-count endpoint. Season changes do
-not change the chosen ink. Dropdown previews use seven evenly sampled shades from
-the full curve, with the same Day/Night reversal.
-
-These controls are independent of metric context: `themes/count-palettes.ts`
-owns the catalogue, `utils/chart-palette.ts` exposes the pure
-`countSwatches(steps, theme, palette)` sampler, and `state/count-palette.svelte.ts`
-owns the shared saved preference. `components/shared/CountPalettePicker.svelte`
-uses `InkPicker` with whole-ink selection; `GraphColorPicker` uses the same
-search, attribution and popover with individually selectable shades. Charts pass
-`countPalette.value` into their scale helpers; the metric header only mounts
-the picker for histogram kinds.
+not change the ink. `themes/count-palettes.ts` owns the source catalogue and fixed
+default; `utils/chart-palette.ts` provides the pure sampler.
 
 Count thresholds, source zero/empty buckets and categorical identity assignments
 retain their existing treatment. Semantic error overrides and chart guides use

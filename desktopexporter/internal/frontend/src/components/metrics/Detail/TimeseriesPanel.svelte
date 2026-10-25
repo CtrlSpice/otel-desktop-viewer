@@ -16,7 +16,6 @@
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import { themeSignal } from '@/state/theme.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import GraphColorPicker from '@/components/shared/GraphColorPicker.svelte'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
@@ -225,17 +224,6 @@
               />
             </span>
           {/if}
-          <div class="flex shrink-0 items-center">
-            {#if !ctx.isHistogramKind && ctx.metric}
-              <GraphColorPicker
-                scope={`metric:${ctx.metric.metricRef}`}
-                identity={ts.key}
-                label={`Colour for ${headerLabel}`}
-                color={seriesColor}
-                editTrigger
-              />
-            {/if}
-          </div>
         </div>
       {/snippet}
 
@@ -279,7 +267,7 @@
 
   .ts-row__title-row {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr);
     align-items: center;
     gap: 0.5rem;
     min-height: var(--table-row-h);
@@ -292,7 +280,7 @@
   }
 
   .ts-row__title-row--preview {
-    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 96px) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 96px);
   }
 
   .ts-row__sparkline {

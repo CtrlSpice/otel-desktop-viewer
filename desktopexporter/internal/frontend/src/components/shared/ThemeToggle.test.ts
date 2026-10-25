@@ -4,8 +4,6 @@ import { screen } from '@testing-library/svelte'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import userEvent from '@testing-library/user-event'
 import ThemeToggle from './ThemeToggle.svelte'
-import { accentInk } from '@/state/accent-ink.svelte'
-import { DEFAULT_ACCENT_INK } from '@/themes/accent-inks'
 
 // document.documentElement persists across tests in this file, so reset the
 // attribute the component owns before/after each test.
@@ -13,7 +11,6 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-theme')
   document.documentElement.removeAttribute('data-color-scheme')
   localStorage.clear()
-  accentInk.set(DEFAULT_ACCENT_INK)
 })
 
 afterEach(() => {
@@ -22,22 +19,23 @@ afterEach(() => {
 })
 
 describe('ThemeToggle', () => {
-  it('lets arrow and Home/End keys select named ink swatches', async () => {
+  it('lets arrow and Home/End keys select seasons', async () => {
     const user = userEvent.setup()
     render(ThemeToggle)
-    await user.click(screen.getByRole('button', { name: /^Theme:/ }))
-    const toRo = screen.getByRole('radio', { name: 'To-ro' })
+    await user.click(screen.getByRole('button', { name: /^Season:/ }))
+    const autumn = screen.getByRole('radio', { name: 'Aki' })
     await user.keyboard('{ArrowRight}')
-    expect(screen.getByRole('radio', { name: 'Daikokuten' })).toHaveFocus()
+    expect(screen.getByRole('radio', { name: 'Fuyu' })).toHaveFocus()
     await user.keyboard('{ArrowLeft}')
-    expect(toRo).toHaveFocus()
-    expect(toRo).toHaveAttribute('aria-checked', 'true')
+    expect(autumn).toHaveFocus()
+    expect(autumn).toHaveAttribute('aria-checked', 'true')
     await user.keyboard('{Home}')
-    expect(
-      screen.getByRole('radio', { name: 'Shimbashi-iro' })
-    ).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Haru' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
     await user.keyboard('{End}')
-    expect(screen.getByRole('radio', { name: 'Syo-ro' })).toHaveAttribute(
+    expect(screen.getByRole('radio', { name: 'Fuyu' })).toHaveAttribute(
       'aria-checked',
       'true'
     )
@@ -52,7 +50,7 @@ describe('ThemeToggle', () => {
       screen.getByRole('button', { name: 'Autumn Day theme active' })
     ).toBeInTheDocument()
     expect(localStorage.getItem('theme')).toBe('madoromi-aki-hiru')
-    expect(screen.getByRole('button', { name: /^Theme:/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Season:/ })).toBeInTheDocument()
     expect(
       screen.queryByRole('group', { name: 'Background' })
     ).not.toBeInTheDocument()
@@ -90,20 +88,19 @@ describe('ThemeToggle', () => {
   it('changes season while retaining the mode, then restores both', async () => {
     localStorage.setItem('theme', 'madoromi-aki-yoru')
     const view = render(ThemeToggle)
-    await userEvent.click(screen.getByRole('button', { name: /^Theme:/ }))
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Natsu background' })
-    )
+    await userEvent.click(screen.getByRole('button', { name: /^Season:/ }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Natsu' }))
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'madoromi-natsu-yoru'
     )
     expect(localStorage.getItem('theme')).toBe('madoromi-natsu-yoru')
     view.unmount()
     render(ThemeToggle)
-    await userEvent.click(screen.getByRole('button', { name: /^Theme:/ }))
-    expect(
-      screen.getByRole('button', { name: 'Natsu background' })
-    ).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: /^Season:/ }))
+    expect(screen.getByRole('radio', { name: 'Natsu' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
     expect(
       screen.getByRole('button', { name: 'Summer Night theme active' })
     ).toHaveAttribute('aria-pressed', 'true')

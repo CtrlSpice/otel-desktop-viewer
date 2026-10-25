@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test'
-import { themeRgb } from './theme-colours'
 
 test('Home service nodes retain card controls and keep incoming imports out of the current reading', async ({
   page,
@@ -102,21 +101,15 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   )
   await expect(card.getByRole('link')).toHaveCount(0)
   await expect(card.getByRole('button')).toHaveCount(0)
-  const colour = page.getByRole('button', {
-    name: 'Colour for checkout',
-    exact: true,
-  })
-  const colourDot = colour.locator('span[aria-hidden="true"]')
-  const theme = (await page.locator('html').getAttribute('data-theme'))!
-  await expect(colour).toHaveCSS('width', '24px')
-  await expect(colour).toHaveCSS('height', '24px')
+  await expect(page.getByRole('button', { name: /^Colour for/ })).toHaveCount(0)
+  const colourDot = card.locator('.signal-row__title span[aria-hidden="true"]')
   await expect(colourDot).toHaveCSS('width', '8px')
   await expect(colourDot).toHaveCSS('height', '8px')
   const dotBox = (await colourDot.boundingBox())!
-  const titleBox = (await card.locator('.signal-row__title').boundingBox())!
-  const colourBox = (await colour.boundingBox())!
+  const titleBox = (await card
+    .locator('.signal-row__title > span > span:last-child')
+    .boundingBox())!
   expect(titleBox.x - dotBox.x - dotBox.width).toBeCloseTo(8, 0)
-  expect(colourBox.x + colourBox.width).toBeLessThanOrEqual(titleBox.x)
   const dateBox = (await card.locator('.signal-date').boundingBox())!
   expect(dateBox.x).toBeCloseTo(titleBox.x, 0)
   await expect(card.locator('svg')).toHaveCount(0)
@@ -131,39 +124,14 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     titleBox.y + titleBox.height / 2,
     0
   )
-  await expect(colour.locator('svg')).toHaveCount(0)
-  await expect(colour).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   const automaticColour = await colourDot.evaluate(
     element => getComputedStyle(element).backgroundColor
   )
-  await colour.hover()
-  await expect(colour).toHaveCSS(
-    'background-color',
-    themeRgb(theme, 'highlightLow')
-  )
-  await colour.click()
-  const picker = page.getByRole('group', {
-    name: 'Colour for checkout options',
-    exact: true,
-  })
-  await expect(picker).toBeVisible()
-  await page.mouse.move(0, 0)
-  await expect(colour).toHaveCSS(
-    'background-color',
-    themeRgb(theme, 'highlightMedium')
-  )
-  await picker
-    .locator('[data-ink-choice]:not(:disabled):not([aria-pressed="true"])')
-    .first()
-    .click()
-  await expect(colourDot).not.toHaveCSS('background-color', automaticColour)
+  await page.getByRole('button', { name: /^Season:/ }).click()
+  await page.getByRole('radio', { name: 'Fuyu' }).click()
+  await page.keyboard.press('Escape')
   await expect(card).toHaveAttribute('aria-pressed', 'true')
-  await colour.click()
-  await picker
-    .getByRole('button', { name: 'Reset to automatic colour' })
-    .click()
   await expect(colourDot).toHaveCSS('background-color', automaticColour)
-  await expect(colour).toBeFocused()
   await expect(card.locator('.signal-row__lead')).toHaveText(
     '42 traces · 8 metrics · 36 logs'
   )

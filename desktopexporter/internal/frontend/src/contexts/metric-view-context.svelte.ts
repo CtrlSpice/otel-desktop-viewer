@@ -75,7 +75,6 @@ import {
   metricSeriesPalette,
 } from '@/utils/chart-palette'
 import { themeSignal } from '@/state/theme.svelte'
-import { accentInk } from '@/state/accent-ink.svelte'
 import { SERIES_COLOR_COUNT } from '@/themes'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { detailPanel } from '@/state/detail-panel.svelte'
@@ -1370,7 +1369,6 @@ export function createMetricViewContext(
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
 
   let assignedColorPool: readonly string[] = []
-  let assignedInk = accentInk.value
 
   function colorScope(metricRef = getMetric()?.metricRef): string {
     return `metric:${metricRef ?? ''}`
@@ -1382,7 +1380,6 @@ export function createMetricViewContext(
   ) {
     view.timeseriesColorByKey = next
     assignedColorPool = [...pool]
-    assignedInk = accentInk.value
   }
 
   /** Ensure every visible series has a colour assignment. */
@@ -1505,22 +1502,6 @@ export function createMetricViewContext(
       })
     })
     return unsubscribe
-  })
-
-  // Ink changes restore this metric's own saved automatic assignments.
-  $effect(() => {
-    const ink = accentInk.value
-    untrack(() => {
-      if (assignedInk === ink) return
-      replaceColorAssignments(
-        seedColorAssignments(
-          timeseriesChartColors,
-          view.visibleSeries,
-          [...view.timeseriesColorByKey.keys()],
-          colorScope()
-        )
-      )
-    })
   })
 
   // Remap colours when the theme or shape-specific palette changes.

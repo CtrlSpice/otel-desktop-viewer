@@ -1,24 +1,4 @@
 import type { Theme } from './index'
-import {
-  accentInkColors,
-  DEFAULT_ACCENT_INK,
-  type AccentInkId,
-} from './accent-inks'
-
-export function accentInkTokens(theme: Theme, ink: AccentInkId) {
-  const accent = accentInkColors(ink, theme.id)
-  return {
-    '--color-primary': accent.colors.primary,
-    '--color-secondary': accent.colors.secondary,
-    '--color-accent': accent.colors.accent,
-    ...Object.fromEntries(
-      Object.entries(accent.syntax).map(([name, color]) => [
-        `--color-code-${name}`,
-        color,
-      ])
-    ),
-  }
-}
 
 /** One CSS adapter for DaisyUI, charts, and read-only code surfaces. */
 export function themeTokens(theme: Theme) {
@@ -47,6 +27,9 @@ export function themeTokens(theme: Theme) {
     '--color-highlight-high': c.highlightHigh,
     '--color-input': 'var(--color-base-200)',
     '--color-border': 'var(--color-highlight-low)',
+    '--color-primary': c.primary,
+    '--color-secondary': c.secondary,
+    '--color-accent': c.accent,
     '--color-primary-content': inverseContent,
     '--color-secondary-content': content,
     '--color-accent-content': inverseContent,
@@ -72,6 +55,5 @@ export function themeTokens(theme: Theme) {
     '--waterfall-gutter-hub': '8px',
     '--waterfall-gutter-leaf': '8px',
     '--metric-series-line-opacity': light ? '0.6' : '1',
-    ...accentInkTokens(theme, DEFAULT_ACCENT_INK),
   }
 }

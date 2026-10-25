@@ -15,7 +15,6 @@ export type GraphSwatch = {
 
 export const GRAPH_PALETTE_VERSION = data.version
 export const GRAPH_CURVE_STEPS = curves.steps
-export const INK_SLIDER_THRESHOLD = 32
 const shades: readonly GraphShade[] = [1, 2, 3, 4, 5, 6, 7]
 export const GRAPH_INKS = COUNT_PALETTES.map(ink => ({
   ...ink,
@@ -32,7 +31,7 @@ const swatchesById = new Map<string, GraphSwatch>(
     ink.swatches.map(swatch => [swatch.id, swatch] as const)
   )
 )
-// Freeze identity slots independently of picker filtering or visible series.
+// Freeze identity slots independently of filtering or visible series.
 export const GRAPH_SWATCHES = data.slots.map(id => swatchesById.get(id)!)
 export const GRAPH_COLORS: readonly string[] = GRAPH_SWATCHES.map(
   swatch => swatch.color
@@ -59,23 +58,6 @@ export function graphInkCurve(id: string): readonly GraphSwatch[] {
   )
   curveCache.set(id, values)
   return values
-}
-
-/** Skip occupied rendered colours, including different positions with the same hex. */
-export function availableCurveShade(
-  curve: readonly GraphSwatch[],
-  position: number,
-  unavailable: ReadonlySet<string>,
-  direction: 1 | -1 = 1
-): GraphSwatch | undefined {
-  const start = Math.max(0, Math.min(GRAPH_CURVE_STEPS, Math.round(position)))
-  for (const step of [direction, -direction]) {
-    for (let at = start; at >= 0 && at < curve.length; at += step) {
-      const swatch = curve[at]!
-      if (!unavailable.has(swatch.color)) return swatch
-    }
-  }
-  return undefined
 }
 
 export function graphSwatch(id: string | undefined): GraphSwatch | undefined {
