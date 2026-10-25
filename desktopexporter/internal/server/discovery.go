@@ -146,7 +146,7 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 		if options.Kind == "services" {
 			statement += ", 'totals', json_object('home', (SELECT count(*) FROM filtered), 'traces', (SELECT count(DISTINCT trace_id) FROM home_spans), 'logs', (SELECT count(*) FROM home_logs), 'metrics', (SELECT count(*) FROM home_metrics))"
 		}
-		statement += ")::VARCHAR"
+		statement += ", 'columns', json_array(json_object('name', 'entry', 'type', 'JSON')))::VARCHAR"
 		return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 			var result []byte
 			err := db.QueryRowContext(ctx, statement, args...).Scan(&result)

@@ -178,6 +178,11 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await expect(logsChoice).toHaveAttribute('aria-selected', 'true')
   await expect(serviceCards.getByRole('link')).toHaveCount(0)
   await input.fill('an unsubmitted draft')
+  // Home can fetch in the same millisecond as the picker writes its URL.
+  // Keep those anchors equal, then advance the clock before navigation so a
+  // destination that incorrectly retains the live preset cannot pass by chance.
+  const presetTime = new Date('2026-10-25T12:00:00.123Z')
+  await page.clock.setFixedTime(presetTime)
   await page.getByRole('button', { name: /^Change time range,/ }).click()
   await page.getByRole('button', { name: 'Last 5 min', exact: true }).click()
   await expect(page).toHaveURL(/start=/)
@@ -210,8 +215,8 @@ test('Home selection, map, telemetry and workspace links share the submitted que
       })
     )
     .toBe(true)
-  // Presets re-anchor when Home fetches; the picker URL is an earlier snapshot.
-  // Navigation must carry the exact received reading into the next workspace.
+  // Navigation must carry the exact received reading into the next workspace,
+  // even when it equals the picker's URL snapshot.
   const reading = [...discovery]
     .reverse()
     .find(options => options.kind === 'services' && options.startTime != null)!
@@ -241,6 +246,11 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   expect(target.searchParams.get('end')).toBe(
     String(BigInt(String(reading.endTime)) / 1_000_000n)
   )
+  expect(target.searchParams.get('end')).toBe(String(presetTime.getTime()))
+  expect(new URL(page.url()).searchParams.get('end')).toBe(
+    target.searchParams.get('end')
+  )
+  await page.clock.setFixedTime(new Date(presetTime.getTime() + 161))
   await link.click()
   await expect(page).toHaveURL(/\/logs\?q=/)
   await expect.poll(() => logPageQueries.length).toBeGreaterThan(0)

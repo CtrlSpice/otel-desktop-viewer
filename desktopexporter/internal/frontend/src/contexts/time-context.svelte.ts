@@ -191,7 +191,9 @@ function createTimeContext(): TimeContext {
     localStorage.setItem('time-tz', restoredTz)
   }
 
-  const urlTime = parseTimeQuery(readRoute().query)
+  const initialRoute = readRoute()
+  const urlTime = parseTimeQuery(initialRoute.query)
+  let workspace = initialRoute.path.split('/')[1]
 
   let selection = $state<TimeSelection>(
     urlTime?.type === 'all'
@@ -245,15 +247,18 @@ function createTimeContext(): TimeContext {
     localStorage.setItem('time-tz', newTz)
   }
 
-  // Adopt the window from the URL on external changes only. An external change
-  // is one whose absolute bounds differ from what we last wrote, so item
-  // navigation (which leaves the time query untouched) and our own writes are
-  // both ignored — no feedback loop, no clobbering live presets.
+  // Workspace links carry an exact reading, even when its bounds happen to
+  // equal our last picker write. Within a workspace, unchanged bounds still
+  // preserve live presets across item navigation and our own URL writes.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
-      const fromUrl = parseTimeQuery(readRoute().query)
+      const route = readRoute()
+      const nextWorkspace = route.path.split('/')[1]
+      const workspaceChanged = nextWorkspace !== workspace
+      workspace = nextWorkspace
+      const fromUrl = parseTimeQuery(route.query)
       if (!fromUrl) return
-      if (sameRouteTime(fromUrl, urlWindowSnapshot)) return
+      if (!workspaceChanged && sameRouteTime(fromUrl, urlWindowSnapshot)) return
       urlWindowSnapshot = fromUrl
       selection =
         fromUrl.type === 'all'

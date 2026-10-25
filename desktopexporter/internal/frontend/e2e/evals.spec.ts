@@ -153,7 +153,7 @@ test('case telemetry summarizes every repetition and links to its exact span', a
   await expect(links).toHaveCount(results.length)
   for (const [index, result] of results.entries()) {
     await expect(links.nth(index).getByTitle('eval-agent')).toBeVisible()
-    await expect(links.nth(index)).toContainText('37 s')
+    await expect(links.nth(index)).toContainText('37.000 s')
     await expect(links.nth(index)).toHaveAttribute(
       'href',
       `/traces/${result.telemetry!.traceID}?span=${result.telemetry!.spanID}`
@@ -562,7 +562,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await showOnly(page, 'Tool calls')
   const time = page.getByRole('table', { name: 'Tool calls for Direct agent' })
   await expect(time.locator('[data-result-id="cpu-evidence"]')).toContainText(
-    '89.000 s'
+    '1.5 minutes'
   )
   await expect(
     time.locator('[data-result-id="checkout-latency"] td').first()

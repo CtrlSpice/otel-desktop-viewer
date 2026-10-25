@@ -15,6 +15,33 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+func TestDiscoveryQueryResultColumns(t *testing.T) {
+	h := setupHandler(t)
+	ctx := context.Background()
+	for _, populated := range []bool{false, true} {
+		if populated {
+			require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+				return spans.Ingest(ctx, conn, buildTestTraces(), h.store.FlushedIDs())
+			}))
+		}
+		for _, kind := range []string{"services", "keys", "values"} {
+			options := map[string]any{"kind": kind, "signal": "traces", "ownerType": "span", "key": "http.method"}
+			for _, filtered := range []bool{false, true} {
+				if filtered {
+					options["queries"] = map[string]any{}
+				}
+				result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
+				require.NoError(t, err)
+				var page map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+				require.JSONEq(t, `[{"name":"entry","type":"JSON"}]`, string(page["columns"]), "kind=%s filtered=%t populated=%t", kind, filtered, populated)
+				require.Contains(t, page, "rows")
+				require.Contains(t, page, "truncated")
+			}
+		}
+	}
+}
+
 func TestServiceIdentityRetainsTypesAcrossDiscoveryAndSignalSearch(t *testing.T) {
 	h := setupHandler(t)
 	h.logger = zaptest.NewLogger(t)
