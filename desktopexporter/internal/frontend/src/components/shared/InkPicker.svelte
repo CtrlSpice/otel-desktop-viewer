@@ -351,7 +351,7 @@
       target="_blank"
       rel="noreferrer"
     >
-      <span>Inks by Madoromi</span><HugeiconsIcon
+      <span>Colours by Madoromi</span><HugeiconsIcon
         icon={HeartIcon}
         size={16}
         strokeWidth={1.5}

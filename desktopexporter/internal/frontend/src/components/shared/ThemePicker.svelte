@@ -239,7 +239,7 @@
     <div
       class="flex w-full items-center justify-center gap-1 text-sm text-subtle"
     >
-      <span>Colours:</span>
+      <span>Colours by</span>
       <a
         class="link inline-flex items-center gap-2"
         href="https://madoromi.moonwit.ch/"
