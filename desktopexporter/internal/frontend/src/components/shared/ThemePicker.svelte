@@ -14,6 +14,7 @@
   import PaneHeader from './PaneHeader.svelte'
   import ThemePreview from './ThemePreview.svelte'
   import { ACCENT_INKS } from '@/themes/accent-inks'
+  import { inkPreviewColors } from '@/themes/service-ink-slots'
   import { SEASONS, type Season, type Theme } from '@/themes'
   import { accentInk } from '@/state/accent-ink.svelte'
 
@@ -33,9 +34,7 @@
   }
   const inks = ACCENT_INKS.map(ink => ({
     ...ink,
-    preview: ink.swatches
-      .filter((_, index) => index % 3 === 0)
-      .map(swatch => swatch.color),
+    preview: inkPreviewColors(ink.id),
   }))
   const chosen = $derived(inks.find(ink => ink.id === accentInk.value)!)
   let optionsList = $state<HTMLDivElement>()

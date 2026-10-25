@@ -9,7 +9,7 @@ const slots = new Map<string, number>(
 )
 const cache = new Map<AccentInkId, readonly number[]>()
 
-/** Three related + two triadic, then other bright official swatches. */
+/** Three selected-ink shades + one triadic, then other colourful swatches. */
 export function serviceInkSlots(seed: AccentInkId): readonly number[] {
   const cached = cache.get(seed)
   if (cached) return cached
@@ -21,4 +21,13 @@ export function serviceInkSlots(seed: AccentInkId): readonly number[] {
   })
   cache.set(seed, order)
   return order
+}
+
+/** The exact three selected-ink shades used in the opening automatic palette. */
+export function inkPreviewColors(seed: AccentInkId): readonly string[] {
+  return rankings.previews[seed].map(id => {
+    const slot = slots.get(id)
+    if (slot === undefined) throw new Error(`Unknown preview ink shade: ${id}`)
+    return GRAPH_SWATCHES[slot]!.color
+  })
 }

@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { JsonTraceData } from '../src/types/wire-types'
 import { ACCENT_INKS } from '../src/themes/accent-inks'
+import { inkPreviewColors } from '../src/themes/service-ink-slots'
 import { SEASONS } from '../src/themes'
 
 type RpcRequest = {
@@ -418,7 +419,6 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(control).toHaveCSS('font-size', '14px')
       await expect(control).toHaveCSS('font-weight', '400')
     }
-    const toRo = ACCENT_INKS.find(ink => ink.id === 'to-ro')!
     const preview = ink.locator('span[aria-hidden="true"] > span')
     await expect(preview).toHaveCount(3)
     const dots = await preview.evaluateAll(elements =>
@@ -432,8 +432,8 @@ for (const { id: theme, scheme, name } of THEMES) {
       })
     )
     expect(dots).toEqual(
-      [0, 3, 6].map(index => ({
-        color: `rgb(${[1, 3, 5].map(offset => parseInt(toRo.swatches[index].color.slice(offset, offset + 2), 16)).join(', ')})`,
+      inkPreviewColors('to-ro').map(color => ({
+        color: `rgb(${[1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16)).join(', ')})`,
         width: '8px',
         height: '8px',
       }))
@@ -646,7 +646,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
         id: ink.id,
         text: '',
         label: ink.name,
-        dots: [6, 3, 0].map(index => rgb(ink.swatches[index]!.color)),
+        dots: [...inkPreviewColors(ink.id)].reverse().map(rgb),
         overflow: false,
       }))
     )

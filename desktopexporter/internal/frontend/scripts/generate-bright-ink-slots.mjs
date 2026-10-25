@@ -16,8 +16,8 @@ const { ramps } = await readJSON(
   new URL('../../../../third_party/madoromi/ink-ramps.json', import.meta.url)
 )
 
-// The fixed vivid representatives approved in the all-ink preview. Shade
-// numbers alone do not describe brightness consistently across different inks.
+// Vivid starting colours. Shade numbers alone do not describe brightness
+// consistently across different inks.
 const representatives = {
   'shimbashi-iro': 3,
   ebisu: 2,
@@ -55,8 +55,53 @@ const representatives = {
 const all = Object.keys(graph.inks).flatMap(ink =>
   ramps[ink].slice(0, 7).map((lab, i) => ({ ink, id: `${ink}:${i + 1}`, lab }))
 )
+// Three usable shades of the actual named ink: some depth, a vivid middle,
+// and a lighter colour where the source offers one. Avoid near-black/paper
+// extremes. These same swatches supply the theme control's three dots.
+const shades = {
+  'shimbashi-iro': [2, 3, 4],
+  ebisu: [2, 3, 5],
+  'ama-iro': [2, 3, 5],
+  'kon-peki': [3, 4, 6],
+  ajisai: [2, 4, 6],
+  jurojin: [3, 4, 6],
+  'murasaki-shikibu': [3, 4, 6],
+  'asa-gao': [4, 5, 7],
+  'tsuyu-kusa': [4, 5, 7],
+  'shin-kai': [4, 5, 7],
+  'tsuki-yo': [4, 5, 7],
+  rikka: [3, 6, 7],
+  'ku-jaku': [5, 6, 7],
+  'sui-gyoku': [5, 6, 7],
+  'shin-ryoku': [5, 6, 7],
+  'ina-ho': [5, 6, 7],
+  'edo-murasaki': [3, 4, 5],
+  'yama-budo': [4, 5, 7],
+  tsutsuji: [3, 4, 6],
+  bishamonten: [2, 3, 6],
+  'hana-ikada': [2, 3, 6],
+  kosumosu: [2, 4, 6],
+  momiji: [2, 3, 6],
+  benzaiten: [2, 4, 6],
+  'fuyu-gaki': [2, 3, 5],
+  'yu-yake': [2, 4, 6],
+  'to-ro': [2, 3, 5],
+  daikokuten: [2, 3, 4],
+  'hotaru-bi': [2, 3, 4],
+  'chiku-rin': [4, 5, 6],
+  fukurokuju: [3, 4, 5],
+  'syo-ro': [4, 5, 6],
+}
+const previews = Object.fromEntries(
+  Object.entries(shades).map(([ink, values]) => [
+    ink,
+    values.map(shade => `${ink}:${shade}`),
+  ])
+)
+const previewIDs = new Set(Object.values(previews).flat())
 const bright = all.filter(
-  ({ lab: [L, a, b] }) => L >= 0.6 && L <= 0.87 && Math.hypot(a, b) >= 0.1
+  ({ id, lab: [L, a, b] }) =>
+    previewIDs.has(id) || (L >= 0.6 && L <= 0.87 && Math.hypot(a, b) >= 0.1)
 )
 const byID = new Map(bright.map(swatch => [swatch.id, swatch]))
 const representative = ink => {
@@ -68,26 +113,26 @@ const distance = (a, b) => Math.hypot(...a.lab.map((v, i) => v - b.lab[i]))
 
 function ranking(seed) {
   const family = harmonies.inks[seed]
-  const related = family.analogous.map(representative).slice(0, 3)
-  const relatedPool = bright.filter(s => family.analogous.includes(s.ink))
-  while (related.length < 3) {
-    const candidates = relatedPool.filter(s => !related.includes(s))
-    candidates.sort(
-      (a, b) =>
-        Math.min(...related.map(s => distance(b, s))) -
-        Math.min(...related.map(s => distance(a, s)))
-    )
-    if (!candidates.length) throw new Error(`Missing related shade: ${seed}`)
-    related.push(candidates[0])
-  }
+  const related = previews[seed].map(id => byID.get(id))
+  if (
+    related.length !== 3 ||
+    related.some(s => !s) ||
+    !related.includes(representative(seed))
+  )
+    throw new Error(`Invalid preview shades: ${seed}`)
   const contrasts = family.triadic
     .filter(ink => ink !== seed)
     .map(representative)
-  if (contrasts.length !== 2 || contrasts.some(s => related.includes(s)))
+    .sort(
+      (a, b) =>
+        distance(b, representative(seed)) - distance(a, representative(seed))
+    )
+    .slice(0, 1)
+  if (contrasts.length !== 1 || contrasts.some(s => related.includes(s)))
     throw new Error(`Invalid triadic companions: ${seed}`)
 
   // Composition and order are separate: seed first, then visually separated
-  // neighbours, keeping the two contrasting colours apart when possible.
+  // neighbours. The 3:1 composition is not a fixed on/on/on/off sequence.
   const ordered = [representative(seed)]
   const append = (pool, contrastSet = new Set()) => {
     let remaining = pool.filter(s => !ordered.includes(s))
@@ -120,9 +165,10 @@ function ranking(seed) {
 
 const output = await format(
   JSON.stringify({
-    version: 'bright-3-2-v1',
+    version: 'shades-3-1-v1',
     source: harmonies.source,
     representatives,
+    previews,
     inks: Object.fromEntries(
       Object.keys(graph.inks).map(ink => [ink, ranking(ink)])
     ),

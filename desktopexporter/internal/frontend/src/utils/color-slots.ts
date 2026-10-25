@@ -203,9 +203,11 @@ function inkAllocator(scope: string): ColorSlotAllocator {
     ink,
     ...ACCENT_INKS.map(candidate => candidate.id).filter(id => id !== ink),
   ].flatMap(id =>
-    loadSlots(
-      storageKey(`${scope}:ink:${id}`, SERIES_COLOR_COUNT),
-      SERIES_COLOR_COUNT
+    [':bright-3-2-v1', ''].flatMap(version =>
+      loadSlots(
+        storageKey(`${scope}:ink:${id}${version}`, SERIES_COLOR_COUNT),
+        SERIES_COLOR_COUNT
+      )
     )
   )
   const before = active.snapshot().length

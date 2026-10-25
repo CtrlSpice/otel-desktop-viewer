@@ -51,7 +51,7 @@ for (const scope of ['metric:one', 'span-names']) {
     })
 
     it('recolours prior ink assignments and reserves hidden/manual owners across inks', async () => {
-      const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:${scope}:ink:to-ro`
+      const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:${scope}:ink:to-ro:bright-3-2-v1`
       const saved = JSON.stringify([
         ['existing', 19],
         ['hidden', 21],

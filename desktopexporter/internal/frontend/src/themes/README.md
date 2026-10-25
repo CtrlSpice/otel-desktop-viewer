@@ -29,7 +29,7 @@ separate close button in the anchored dropdown.
 Its centred footer reads “Colours by Madoromi” with the attribution heart;
 only Madoromi is the link.
 Ink choices show three vertically stacked colour dots, brightest at the top
-(official shades 7, 4, 1), in 24px-wide, 48px-high targets with 4px gaps in one horizontal row,
+(the three selected plotting shades), in 24px-wide, 48px-high targets with 4px gaps in one horizontal row,
 with the selected original ink name shown once above them. All choices retain
 original-name tooltips and accessible labels, without English translations.
 The chooser is at most 28rem wide. The ink row uses ordinary horizontal scrolling,
@@ -205,15 +205,15 @@ contains background-season choices and ink selection. Ink chooses
 one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
 To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact swatches show three dots
-in each named ink's official shades 1, 4 and 7. The selected ink's name appears
+using the same three official shades included in its opening automatic graph
+palette. These selected mid-range shades vary by ink. The selected ink's name appears
 once; each choice's original name remains in its accessible label and tooltip.
 The selected ink is focused and revealed when the picker opens.
 The swatch group has one Tab stop. Arrow keys and Home/End select inks, updating
 the preview immediately. The row scrolls horizontally when the window is narrower.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
-The top-bar control shows three 8px dots in the selected ink's official shades
-1, 4 and 7. Its tooltip shows only the Japanese
+The top-bar control shows those same three 8px dots. Its tooltip shows only the Japanese
 ink name, which is also used in its accessible name and inside the picker.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
@@ -329,7 +329,7 @@ and percentages keep their record denominator, and Copy retains the full value.
 
 The categorical catalogue contains the first seven official swatches from the same
 32 colourful Madoromi inks: 224 distinct colours. Automatic allocation uses its
-101 bright, colourful swatches; the manual picker retains all 224. The original
+129 colourful swatches, including the selected preview shades; the manual picker retains all 224. The original
 eighth (palest) shade remains in the distributed source but is omitted from both.
 These are the
 upstream eight-step ramp's original colour values, not lightness-resampled count
@@ -358,18 +358,22 @@ analogous (−30°/+30°), complementary (180°), triadic (120°/240°) and tetr
 the generated selections. The Mix selection rules choose ink families; the
 viewer keeps exact official swatch hexes rather than generating mixed colours.
 
-The shared ranking starts with three related colours and the two triadic companions.
-Related colours use fixed bright representatives of the analogous family; a family
-with only two inks contributes another bright shade. Composition and ordering are
-separate: the selected ink comes first, then adjacent OKLab distance orders the
-remaining colours, keeping the two contrasting colours apart when possible.
+The shared ranking starts with three shades of the selected ink and one triadic
+accent. The three shades are exactly those shown in its picker and top-bar dots;
+they include deeper and lighter colourful shades without the near-black or
+paper-like extremes. The accent is the more distant of the two triadic
+representatives in OKLab. Composition and ordering are separate: the selected
+ink's vivid representative comes first, then adjacent OKLab distance orders the
+remaining colours.
 Larger scopes use the remaining bright shades from those families, then bright
 representatives of other inks, then the rest of the bright catalogue. The opening
-3:2 mix is not a repeating sequence or a ratio guaranteed for larger scopes.
+3:1 mix is not a repeating sequence or a ratio guaranteed for larger scopes.
 
 `scripts/generate-bright-ink-slots.mjs` defines the fixed representatives and checks
-them against the source ramps. Automatic swatches have OKLab lightness 0.60–0.87
-and chroma at least 0.10. `node scripts/generate-bright-ink-slots.mjs --check`
+them against the source ramps. The pool combines the selected preview shades
+with swatches of OKLab lightness 0.60–0.87 and chroma at least 0.10. Preview shades
+extend the depth and lightness variety while staying within lightness 0.45–0.87.
+`node scripts/generate-bright-ink-slots.mjs --check`
 verifies the generated rankings. These are viewer ordering rules over unchanged
 Madoromi swatches, not upstream palette recommendations. Seasons and Day/Night
 never remap these colours. No minimum perceptual-distance guarantee is made.
@@ -377,7 +381,7 @@ never remap these colours. No minimum perceptual-distance guarantee is made.
 Each new identity takes the first unoccupied ranked slot, skipping manual choices.
 Switching ink restores that ink's saved slots and assigns all known hidden owners
 before newly encountered identities. Switching back restores the same assignments.
-The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:ink:<ink>:bright-3-2-v1`, where
+The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:ink:<ink>:shades-3-1-v1`, where
 scope is `services`, `metric:<metricRef>` or `span-names`.
 Prior automatic assignments retain their identities and encounter order while
 receiving bright-ranked reset slots; their original storage remains intact. Explicit
@@ -387,8 +391,8 @@ ink changes. An ink switch does not change selection, visibility or disclosure.
 After all bright slots are occupied, new identities reuse a hashed bright slot without
 moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and one
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
-series cap is independent of the 101-colour automatic capacity. Exhaustion does
-not introduce dark or pale automatic colours.
+series cap is independent of the 129-colour automatic capacity. Exhaustion stays
+within this pool rather than adding near-black or pale extremes.
 
 Each Home service name has its assigned 8px colour dot in a 24px circular target.
 The target stays transparent at rest, with shared Low hover and Medium open-state
