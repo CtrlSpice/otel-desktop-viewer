@@ -80,6 +80,7 @@ interface TimeContext {
   selection: TimeSelection
   tz: Timezone
   setSelection: (selection: TimeSelection) => void
+  adoptUrlWindow: (query: RouteQuery) => void
   setTz: (tz: Timezone) => void
 }
 
@@ -191,9 +192,7 @@ function createTimeContext(): TimeContext {
     localStorage.setItem('time-tz', restoredTz)
   }
 
-  const initialRoute = readRoute()
-  const urlTime = parseTimeQuery(initialRoute.query)
-  let workspace = initialRoute.path.split('/')[1]
+  const urlTime = parseTimeQuery(readRoute().query)
 
   let selection = $state<TimeSelection>(
     urlTime?.type === 'all'
@@ -247,23 +246,27 @@ function createTimeContext(): TimeContext {
     localStorage.setItem('time-tz', newTz)
   }
 
-  // Workspace links carry an exact reading, even when its bounds happen to
-  // equal our last picker write. Within a workspace, unchanged bounds still
-  // preserve live presets across item navigation and our own URL writes.
+  // Reading links explicitly adopt their bounds, including a reading that
+  // happens to equal the picker's snapshot. Do not persist a new preference.
+  function adoptUrlWindow(query: RouteQuery) {
+    const fromUrl = parseTimeQuery(query)
+    if (!fromUrl) return
+    urlWindowSnapshot = fromUrl
+    selection =
+      fromUrl.type === 'all'
+        ? { type: 'all' }
+        : { type: 'custom', start: fromUrl.start, end: fromUrl.end }
+  }
+
+  // Ordinary navigation carries the picker snapshot without freezing a live
+  // preset. Changed URL bounds still select the explicit destination window.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
       const route = readRoute()
-      const nextWorkspace = route.path.split('/')[1]
-      const workspaceChanged = nextWorkspace !== workspace
-      workspace = nextWorkspace
       const fromUrl = parseTimeQuery(route.query)
       if (!fromUrl) return
-      if (!workspaceChanged && sameRouteTime(fromUrl, urlWindowSnapshot)) return
-      urlWindowSnapshot = fromUrl
-      selection =
-        fromUrl.type === 'all'
-          ? { type: 'all' }
-          : { type: 'custom', start: fromUrl.start, end: fromUrl.end }
+      if (sameRouteTime(fromUrl, urlWindowSnapshot)) return
+      adoptUrlWindow(route.query)
     })
     return unsubscribe
   })
@@ -276,6 +279,7 @@ function createTimeContext(): TimeContext {
       return tz
     },
     setSelection,
+    adoptUrlWindow,
     setTz,
   }
 

@@ -94,7 +94,8 @@
 </script>
 
 <script lang="ts">
-  import { isPlainLeftClick, navigate, signalHref } from '@/route'
+  import { isPlainLeftClick, navigate, parseRoute, signalHref } from '@/route'
+  import { getTimeContext } from '@/contexts/time-context.svelte'
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import {
@@ -106,6 +107,7 @@
   const countID = $props.id()
   const routeContext = getRouteContext()
   const totals = getNavigationCounts()
+  const time = getTimeContext()
   function destination(signal: SignalName) {
     return totals?.matching && totals.links[signal]
       ? totals.links[signal]!
@@ -129,8 +131,10 @@
     if (!item) return
     event.preventDefault()
     if (totals?.matching && item.id !== 'home' && item.id !== 'evals') {
-      if (counts[item.id] !== 0 && totals.links[item.id])
+      if (counts[item.id] !== 0 && totals.links[item.id]) {
+        time.adoptUrlWindow(parseRoute(totals.links[item.id]!).query)
         navigate(totals.links[item.id]!)
+      }
       return
     }
     if (item.id === 'home' || item.id === 'evals') navigate(item.path)
