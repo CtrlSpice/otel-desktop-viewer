@@ -1,63 +1,105 @@
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte'
   import { getChartContext } from 'layerchart'
-  import type { HierarchyPointNode } from 'd3-hierarchy'
-  import { serviceIdentity } from '@/services/discovery-types'
   import {
-    retainServicePositions,
-    servicePositions,
-    type ServiceBranch,
-    type ServicePositions,
+    serviceIdentity,
+    type ServiceSummary,
+    type ServiceConnection,
+  } from '@/services/discovery-types'
+  import {
+    serviceGraphLayout,
+    type ServiceLayout,
+    type ServiceSizes,
+    SERVICE_CARD_WIDTH,
+    SERVICE_CARD_HEIGHT,
   } from './service-map'
 
   let {
-    nodes,
+    services,
+    connections,
     centreID,
     viewRevision,
+    sizes,
     children,
   }: {
-    nodes: HierarchyPointNode<ServiceBranch>[]
+    services: ServiceSummary[]
+    connections: ServiceConnection[]
     centreID: string
     viewRevision: number
-    children: Snippet<[ServicePositions]>
+    sizes: ServiceSizes
+    children: Snippet<[ServiceLayout]>
   } = $props()
   const chart = getChartContext()
-  let positions = $state<ServicePositions>(new Map())
+  let layout = $state<ServiceLayout>({ positions: new Map(), paths: new Map() })
   let camera:
     | { identity: string; width: number; height: number; revision: number }
     | undefined
 
   $effect.pre(() => {
-    const candidates = servicePositions(nodes)
+    const items = services,
+      edges = connections,
+      dimensions = sizes,
+      width = chart.width
     untrack(() => {
-      positions = retainServicePositions(positions, candidates)
+      layout = serviceGraphLayout(
+        items,
+        edges,
+        dimensions,
+        width,
+        layout.positions
+      )
     })
   })
   $effect(() => {
-    const point = positions.get(centreID)
+    const point = layout.positions.get(centreID)
     const transform = chart.transform
     const width = chart.width,
       height = chart.height
     const revision = viewRevision
-    if (!point || transform.mode !== 'canvas') return
+    if (!point || width <= 0 || height <= 0 || transform.mode !== 'canvas')
+      return
     if (
-      camera?.identity === centreID &&
+      camera &&
       camera.width === width &&
       camera.height === height &&
       camera.revision === revision
     )
       return
     untrack(() => {
+      if (camera && camera.revision === revision) {
+        transform.translate = {
+          x: transform.translate.x + (width - camera.width) / 2,
+          y: transform.translate.y + (height - camera.height) / 2,
+        }
+        return
+      }
       if (!camera || camera.revision !== revision) transform.scale = 1
+      const points = [...layout.positions].map(([identity, position]) => ({
+        ...position,
+        width: sizes.get(identity)?.width ?? SERVICE_CARD_WIDTH,
+        height: sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT,
+      }))
+      const centre = !camera
+        ? {
+            x:
+              (Math.min(...points.map(p => p.x - p.width / 2)) +
+                Math.max(...points.map(p => p.x + p.width / 2))) /
+              2,
+            y:
+              Math.min(...points.map(p => p.y - p.height / 2)) +
+              height / 2 -
+              32,
+          }
+        : point
       transform.translate = {
-        x: width / 2 - point.x * transform.scale,
-        y: height / 2 - point.y * transform.scale,
+        x: width / 2 - centre.x * transform.scale,
+        y: height / 2 - centre.y * transform.scale,
       }
     })
     camera = { identity: centreID, width, height, revision }
   })
 </script>
 
-{#if nodes.every(node => positions.has(serviceIdentity(node.data.service)))}
-  {@render children(positions)}
+{#if services.every(service => layout.positions.has(serviceIdentity(service)))}
+  {@render children(layout)}
 {/if}

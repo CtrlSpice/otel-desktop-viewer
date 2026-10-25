@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('Home selection, attributes, telemetry and workspace links share the submitted query', async ({
+test('Home selection, map, telemetry and workspace links share the submitted query', async ({
   page,
 }) => {
   const errors: string[] = []
@@ -123,10 +123,10 @@ test('Home selection, attributes, telemetry and workspace links share the submit
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto('/?time=all')
-  const serviceCards = page.locator('.service-grid .signal-row')
+  const serviceCards = page.locator('.service-map__node .signal-row')
   await expect(serviceCards).toHaveCount(3)
   const typedService = page
-    .locator('.service-grid')
+    .locator('.service-map__node')
     .getByRole('button', { name: /^checkout.*int64/ })
   await typedService.focus()
   await typedService.press('Enter')
@@ -139,12 +139,13 @@ test('Home selection, attributes, telemetry and workspace links share the submit
     .poll(() =>
       discovery.some(
         options =>
-          options.kind === 'keys' && options.serviceIdentity === typedIdentity
+          options.kind === 'connections' &&
+          options.serviceIdentity === typedIdentity
       )
     )
     .toBe(true)
   const stringService = page
-    .locator('.service-grid')
+    .locator('.service-map__node')
     .getByRole('button', { name: /^checkout/ })
     .filter({ hasNotText: 'int64' })
   await stringService.focus()
@@ -187,7 +188,7 @@ test('Home selection, attributes, telemetry and workspace links share the submit
     .poll(() =>
       discovery.some(
         options =>
-          options.kind === 'keys' &&
+          options.kind === 'connections' &&
           options.serviceIdentity === service.serviceIdentity &&
           JSON.stringify(options.queries).includes('declined')
       )
@@ -292,7 +293,9 @@ test('Home selection, attributes, telemetry and workspace links share the submit
   await expect(
     page.getByRole('link', { name: 'Home', exact: true })
   ).toHaveAccessibleDescription('Matching services: [0]')
-  await expect(page.getByText('No services match this search.')).toBeVisible()
+  await expect(
+    page.getByText('No services match this search and time range.')
+  ).toBeVisible()
   // A fresh metric URL submits before reactive parent notifications can run.
   metricQueries.length = 0
   const metricQuery = `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`

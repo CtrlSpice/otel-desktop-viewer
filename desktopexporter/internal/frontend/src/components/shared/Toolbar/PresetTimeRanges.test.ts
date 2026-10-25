@@ -2,7 +2,6 @@
 import { describe, expect, it, afterEach, vi } from 'vitest'
 import { screen, fireEvent } from '@testing-library/svelte'
 import PresetTimeRanges from './PresetTimeRanges.svelte'
-import { TIME_RANGE_PRESETS } from '@/contexts/time-context.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 const PRESET_LABELS = [
@@ -43,11 +42,6 @@ describe('PresetTimeRanges', () => {
     renderComponent()
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'true')
     expect(getPresetButton('All')).toHaveClass('header-tab')
-    expect(
-      document
-        .querySelector<HTMLElement>('.preset-time-ranges')!
-        .style.getPropertyValue('--header-active-index')
-    ).toBe('0')
     for (const label of PRESET_LABELS.slice(1)) {
       expect(getPresetButton(label)).toHaveAttribute('aria-pressed', 'false')
       expect(getPresetButton(label)).toHaveClass('header-tab')
@@ -69,15 +63,6 @@ describe('PresetTimeRanges', () => {
     expect(window.location.search).toContain(`start=${Date.now() - 300_000}`)
     expect(window.location.search).toContain(`end=${Date.now()}`)
     expect(getPresetButton('5 min')).toHaveAttribute('aria-pressed', 'true')
-    expect(
-      document
-        .querySelector<HTMLElement>('.preset-time-ranges')!
-        .style.getPropertyValue('--header-active-index')
-    ).toBe(
-      String(
-        TIME_RANGE_PRESETS.findIndex(preset => preset.durationMs === 300_000)
-      )
-    )
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'false')
   })
 

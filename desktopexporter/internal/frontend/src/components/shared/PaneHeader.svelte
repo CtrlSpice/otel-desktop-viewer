@@ -7,7 +7,7 @@
    *   • title       — regular title above a reserved control row, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
-   *   • tabs        — compact tab strip with a sliding selected fill. Use
+   *   • tabs        — compact tab strip with an immediate selected fill. Use
    *                   when the pane has 2+ views or route destinations.
    *   • title-tabs  — title and badges above a compact segmented view switch.
    *                   Use when the pane has a stable label AND tabs that
@@ -270,7 +270,6 @@
       aria-label={ariaLabel}
       class="header-tabs"
       style:--header-tab-count={tabs.length}
-      style:--header-active-index={tabs.findIndex(tab => tab.id === activeID)}
       onkeydown={navigation ? undefined : handleTablistKeydown}
     >
       {#each tabs as tab (tab.id)}

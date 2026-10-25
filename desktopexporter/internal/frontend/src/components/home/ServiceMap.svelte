@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
   import { Chart, Svg, type ChartState } from 'layerchart'
-  import { Tree } from 'layerchart/hierarchy'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     Add01Icon,
@@ -9,6 +8,8 @@
     RefreshIcon,
   } from '@hugeicons/core-free-icons'
   import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
+  import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import ServiceCard from './ServiceCard.svelte'
   import ServiceMapLayout from './ServiceMapLayout.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -17,13 +18,13 @@
     type ServiceConnection,
     type DiscoveryOptions,
   } from '@/services/discovery-types'
-  import { traceServiceColor } from '@/utils/trace-service-color'
-  import { themeSignal } from '@/state/theme.svelte'
   import {
     connectionIdentity,
-    serviceHierarchy,
-    connectionPath,
+    graphServices,
     type MapSelection,
+    SERVICE_CARD_WIDTH,
+    SERVICE_CARD_HEIGHT,
+    type ServiceSizes,
   } from './service-map'
 
   let {
@@ -32,37 +33,88 @@
     revision,
     selection,
     onSelect,
+    services,
+    totalServices,
+    loadingServices,
+    servicesError,
+    moreServices,
+    onMoreServices,
   }: {
     service: ServiceSummary | null
     options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>
     revision: number
     selection: MapSelection | null
     onSelect: (selection: MapSelection) => void
+    services: ServiceSummary[]
+    totalServices?: number
+    loadingServices: boolean
+    servicesError: string
+    moreServices: boolean
+    onMoreServices: () => void
   } = $props()
   let connections = $state<ServiceConnection[]>([])
   let pages = $state<Record<string, { offset: number; more: boolean }>>({})
-  let busy = $state(false)
-  let error = $state('')
-  let failedNode = $state<ServiceSummary | null>(null)
+  let pending = $state(0)
+  const busy = $derived(pending > 0)
+  let layoutReady = $state(false)
+  let failures = $state<
+    Record<string, { service: ServiceSummary; message: string }>
+  >({})
   let chart = $state<ChartState>()
   const transform = $derived(chart?.transform)
-  let request: AbortController | undefined
-  let layoutRoot = $state<ServiceSummary | null>(null)
+  const requests = new Map<string, AbortController>()
+  let sizes = $state<ServiceSizes>(new Map())
   let graphRevision = $state(0)
   let viewRevision = $state(0)
   let previousScope: typeof options | undefined
   let previousRevision: number | undefined
   const markerID = $props.id()
-  const tree = $derived(
-    layoutRoot ? serviceHierarchy(layoutRoot, connections) : null
-  )
+  const nodes = $derived(graphServices(services, connections))
   const inspected = $derived(
     selection?.kind === 'service' ? selection.service : service
   )
   const inspectedPage = $derived(
     inspected ? pages[serviceIdentity(inspected)] : undefined
   )
-  const rootID = $derived(service ? serviceIdentity(service) : '')
+  const inspectedID = $derived(inspected ? serviceIdentity(inspected) : '')
+
+  function measureCard(element: HTMLDivElement, identity: string) {
+    // Card text and colour controls keep their native interactions. Map dragging
+    // starts on the surrounding canvas; an open picker owns its own scrolling.
+    const keepPointer = (event: PointerEvent) => {
+      if (
+        event.pointerType !== 'touch' ||
+        (event.target instanceof Element && event.target.closest('[popover]'))
+      )
+        event.stopPropagation()
+    }
+    const keepWheel = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest('[popover]'))
+        event.stopPropagation()
+    }
+    const keepDoubleClick = (event: MouseEvent) => event.stopPropagation()
+    element.addEventListener('pointerdown', keepPointer)
+    element.addEventListener('wheel', keepWheel)
+    element.addEventListener('dblclick', keepDoubleClick)
+    const observer = new ResizeObserver(() => {
+      const height = element.offsetHeight
+      if (height > 0 && sizes.get(identity)?.height !== height) {
+        sizes = new Map(sizes).set(identity, {
+          width: SERVICE_CARD_WIDTH,
+          height,
+        })
+      }
+    })
+    observer.observe(element)
+    return {
+      destroy: () => {
+        observer.disconnect()
+        element.removeEventListener('pointerdown', keepPointer)
+        element.removeEventListener('wheel', keepWheel)
+        element.removeEventListener('dblclick', keepDoubleClick)
+      },
+    }
+  }
 
   function panKey(event: KeyboardEvent) {
     if (!transform) return
@@ -91,15 +143,16 @@
     }
   }
 
-  async function expand(node: ServiceSummary, reset = false) {
-    request?.abort()
-    const controller = new AbortController()
-    request = controller
+  async function expand(node: ServiceSummary) {
     const identity = serviceIdentity(node)
-    const offset = reset ? 0 : (pages[identity]?.offset ?? 0)
-    busy = true
-    error = ''
-    failedNode = null
+    if (requests.has(identity)) return
+    const controller = new AbortController()
+    requests.set(identity, controller)
+    pending = requests.size
+    const offset = pages[identity]?.offset ?? 0
+    const remaining = { ...failures }
+    delete remaining[identity]
+    failures = remaining
     try {
       const page = await telemetryAPI.discoverServiceConnections(
         { ...options, serviceIdentity: identity, offset, limit: 100 },
@@ -107,11 +160,10 @@
       )
       if (controller.signal.aborted) return
       const merged = new Map(
-        (reset ? [] : connections).map(edge => [connectionIdentity(edge), edge])
+        connections.map(edge => [connectionIdentity(edge), edge])
       )
       for (const edge of page.items) merged.set(connectionIdentity(edge), edge)
       connections = [...merged.values()]
-      if (reset) pages = {}
       pages = {
         ...pages,
         [identity]: {
@@ -121,71 +173,79 @@
       }
     } catch (reason) {
       if (!controller.signal.aborted) {
-        error = String(reason)
-        failedNode = node
+        failures = {
+          ...failures,
+          [identity]: { service: node, message: String(reason) },
+        }
       }
     } finally {
-      if (!controller.signal.aborted) busy = false
+      if (requests.get(identity) === controller) {
+        requests.delete(identity)
+        pending = requests.size
+        if (pending === 0) layoutReady = true
+      }
     }
   }
   $effect(() => {
-    const root = service
     const scope = options
     const reading = revision
+    const visible = services
     untrack(() => {
       const sameScope = previousScope === scope && previousRevision === reading
       previousScope = scope
       previousRevision = reading
-      const known =
-        root &&
-        tree
-          ?.descendants()
-          .some(
-            node => serviceIdentity(node.data.service) === serviceIdentity(root)
-          )
-      if (sameScope && known) {
-        if (!pages[serviceIdentity(root)]) void expand(root)
-        return
+      if (!sameScope) {
+        for (const controller of requests.values()) controller.abort()
+        requests.clear()
+        connections = []
+        pages = {}
+        sizes = new Map()
+        failures = {}
+        pending = 0
+        layoutReady = false
+        graphRevision++
       }
-      request?.abort()
-      connections = []
-      pages = {}
-      error = ''
-      failedNode = null
-      busy = false
-      layoutRoot = root
-      graphRevision++
-      if (root) void expand(root, true)
+      for (const node of visible) {
+        if (!pages[serviceIdentity(node)]) void expand(node)
+      }
     })
   })
-  onDestroy(() => request?.abort())
+  $effect(() => {
+    const node = inspected
+    untrack(() => {
+      if (node && !pages[serviceIdentity(node)]) void expand(node)
+    })
+  })
+  onDestroy(() => {
+    for (const controller of requests.values()) controller.abort()
+  })
 </script>
 
 <WorkspaceHeader
   mode="title"
   title="Service map"
-  subtitle={service
-    ? `${service.serviceName || 'Unnamed service'}${service.serviceNamespace ? ` · ${service.serviceNamespace}` : ''}`
+  subtitle={inspected
+    ? `${inspected.serviceName || 'Unnamed service'}${inspected.serviceNamespace ? ` · ${inspected.serviceNamespace}` : ''}`
     : undefined}
-  subtitleService={service?.serviceName}
+  subtitleService={inspected?.serviceName}
   ariaLabel="Service map"
   pill
 >
   {#snippet metaLeft()}<span class="text-sm text-subtle"
-      >{tree?.descendants().length ?? 0} services · {connections.length} connections</span
+      >{nodes.length} services · {connections.length}
+      {connections.length === 1 ? 'connection' : 'connections'}</span
     >{/snippet}
   {#snippet metaRight()}
-    <button
-      class="btn btn-ghost btn-sm"
-      disabled={!inspected || busy || (!!inspectedPage && !inspectedPage.more)}
-      onclick={() => inspected && expand(inspected)}
-      >{inspectedPage?.more ? 'More connections' : 'Expand connections'}</button
-    >
+    {#if inspectedPage?.more}<button
+        class="btn btn-ghost btn-sm"
+        disabled={busy}
+        onclick={() => inspected && expand(inspected)}>More connections</button
+      >{/if}
     <button
       class="header-icon-button tooltip tooltip-left"
       aria-label="Zoom out service map"
       data-tip="Zoom out"
-      disabled={!tree}
+      disabled={!layoutReady || nodes.length === 0}
       onclick={() => transform?.zoomOut()}
       ><HugeiconsIcon icon={MinusSignIcon} size={16} /></button
     >
@@ -193,7 +253,7 @@
       class="header-icon-button tooltip tooltip-left"
       aria-label="Zoom in service map"
       data-tip="Zoom in"
-      disabled={!tree}
+      disabled={!layoutReady || nodes.length === 0}
       onclick={() => transform?.zoomIn()}
       ><HugeiconsIcon icon={Add01Icon} size={16} /></button
     >
@@ -201,37 +261,41 @@
       class="header-icon-button tooltip tooltip-left"
       aria-label="Reset service map view"
       data-tip="Reset view"
-      disabled={!tree}
+      disabled={!layoutReady || nodes.length === 0}
       onclick={() => viewRevision++}
       ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
     >
   {/snippet}
 </WorkspaceHeader>
 <div class="service-map" aria-busy={busy}>
-  {#if error}<div class="flex items-center gap-2 p-3">
-      <p role="alert" class="text-papaya">{error}</p>
+  {#if servicesError}<p role="alert" class="p-3 text-papaya">
+      {servicesError}
+    </p>{/if}
+  {#each Object.values(failures) as failure (serviceIdentity(failure.service))}<div
+      class="flex items-center gap-2 p-3"
+    >
+      <p role="alert" class="text-papaya">
+        {failure.service.serviceName || 'Unnamed service'}: {failure.message}
+      </p>
       <button
         class="btn btn-ghost btn-sm"
-        onclick={() => failedNode && expand(failedNode)}>Retry</button
+        onclick={() => expand(failure.service)}>Retry</button
       >
-    </div>{/if}
-  {#if busy}<p class="px-3 text-subtle" role="status">
-      Loading connections…
-    </p>{/if}
-  {#if tree}
+    </div>{/each}
+  {#if nodes.length && layoutReady}
     <div class="service-map__canvas">
       {#key graphRevision}
         <Chart
-          radial
           padding={0}
           bind:context={chart}
           transform={{
             mode: 'canvas',
+            scrollMode: 'translate',
             motion: 'none',
             scaleExtent: [0.1, 6],
           }}
         >
-          <Svg center title="Service connections">
+          <Svg title="Service connections">
             {#snippet defs()}<marker
                 id={markerID}
                 viewBox="0 0 10 10"
@@ -242,134 +306,120 @@
                 orient="auto-start-reverse"
                 ><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker
               >{/snippet}
-            <Tree hierarchy={tree}>
-              {#snippet children({ nodes })}
-                <ServiceMapLayout {nodes} centreID={rootID} {viewRevision}>
-                  {#snippet children(positions)}
-                    {#each connections as edge (connectionIdentity(edge))}
-                      {@const source = positions.get(
-                        serviceIdentity(edge.source)
-                      )!}
-                      {@const target = positions.get(
-                        serviceIdentity(edge.target)
-                      )!}
-                      {@const chosen =
-                        selection?.kind === 'connection' &&
-                        connectionIdentity(selection.connection) ===
-                          connectionIdentity(edge)}
-                      <g
-                        class="service-map__edge"
-                        class:service-map__edge--selected={chosen}
+            <ServiceMapLayout
+              services={nodes}
+              {connections}
+              centreID={inspectedID}
+              {viewRevision}
+              {sizes}
+            >
+              {#snippet children({ positions, paths })}
+                {#each connections as edge (connectionIdentity(edge))}
+                  {@const chosen =
+                    selection?.kind === 'connection' &&
+                    connectionIdentity(selection.connection) ===
+                      connectionIdentity(edge)}
+                  {@const path = paths.get(connectionIdentity(edge)) ?? ''}
+                  <g
+                    class="service-map__edge"
+                    class:service-map__edge--selected={chosen}
+                  >
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width={chosen ? 2 : 1}
+                      marker-end={`url(#${markerID})`}
+                    />
+                    <path
+                      class="service-map__edge-target"
+                      d={path}
+                      fill="none"
+                      stroke="transparent"
+                      stroke-width="16"
+                      role="button"
+                      tabindex="0"
+                      aria-pressed={chosen}
+                      aria-label={`${edge.source.serviceName || 'Unnamed service'} → ${edge.target.serviceName || 'Unnamed service'}: ${edge.spanCount} parent-child connections in ${edge.traceCount} traces`}
+                      onclick={() =>
+                        onSelect({ kind: 'connection', connection: edge })}
+                      onkeydown={event => {
+                        panKey(event)
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onSelect({ kind: 'connection', connection: edge })
+                        }
+                      }}
+                    >
+                      <title
+                        >{edge.spanCount} parent-child connections · {edge.traceCount}
+                        traces</title
                       >
-                        <path
-                          d={connectionPath(source, target)}
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width={chosen ? 2 : 1}
-                          marker-end={`url(#${markerID})`}
-                        />
-                        <path
-                          class="service-map__edge-target"
-                          d={connectionPath(source, target)}
-                          fill="none"
-                          stroke="transparent"
-                          stroke-width="16"
-                          role="button"
-                          tabindex="0"
-                          aria-pressed={chosen}
-                          aria-label={`${edge.source.serviceName || 'Unnamed service'} → ${edge.target.serviceName || 'Unnamed service'}: ${edge.spanCount} parent-child connections in ${edge.traceCount} traces`}
-                          onclick={() =>
-                            onSelect({ kind: 'connection', connection: edge })}
-                          onkeydown={event => {
-                            panKey(event)
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault()
-                              onSelect({ kind: 'connection', connection: edge })
-                            }
-                          }}
-                        >
-                          <title
-                            >{edge.spanCount} parent-child connections · {edge.traceCount}
-                            traces</title
-                          >
-                        </path>
-                      </g>
-                    {/each}
-                    {#each nodes as node (serviceIdentity(node.data.service))}
-                      {@const identity = serviceIdentity(node.data.service)}
-                      {@const point = positions.get(identity)!}
-                      {@const chosen =
-                        selection?.kind === 'service' &&
-                        serviceIdentity(selection.service) === identity}
-                      <foreignObject
-                        x={point.x - 90}
-                        y={point.y - 32}
-                        width="180"
-                        height="64"
-                        overflow="visible"
-                      >
-                        <button
-                          type="button"
-                          class="service-map__node item-state"
-                          class:service-map__node--root={identity === rootID}
-                          aria-pressed={chosen}
-                          data-selected={chosen || undefined}
-                          data-service-identity={identity}
-                          title={`${node.data.service.serviceName || 'Unnamed service'}${node.data.service.serviceNamespace ? ` (${node.data.service.serviceNamespace})` : ''}`}
-                          aria-label={`Inspect ${node.data.service.serviceName || 'Unnamed service'}${node.data.service.serviceNamespace ? ` (${node.data.service.serviceNamespace})` : ''}`}
-                          onclick={() =>
-                            onSelect({
-                              kind: 'service',
-                              service: node.data.service,
-                            })}
-                          onkeydown={panKey}
-                        >
-                          <span
-                            class="flex min-w-0 items-center justify-center gap-2"
-                            ><span
-                              class="size-2 shrink-0 rounded-full"
-                              style:background-color={traceServiceColor(
-                                node.data.service.serviceName,
-                                themeSignal.value
-                              )}
-                              aria-hidden="true"
-                            ></span><span class="truncate"
-                              >{node.data.service.serviceName ||
-                                'Unnamed service'}</span
-                            ></span
-                          >
-                          {#if node.data.service.serviceNamespace}<span
-                              class="block truncate text-subtle"
-                              >{node.data.service.serviceNamespace}</span
-                            >{/if}
-                        </button>
-                      </foreignObject>
-                    {/each}
-                  {/snippet}
-                </ServiceMapLayout>
+                    </path>
+                  </g>
+                {/each}
+                {#each nodes as node (serviceIdentity(node))}
+                  {@const identity = serviceIdentity(node)}
+                  {@const point = positions.get(identity)!}
+                  {@const chosen =
+                    selection?.kind === 'service' &&
+                    serviceIdentity(selection.service) === identity}
+                  <foreignObject
+                    x={point.x - SERVICE_CARD_WIDTH / 2}
+                    y={point.y -
+                      (sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT) / 2}
+                    width={SERVICE_CARD_WIDTH}
+                    height={sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT}
+                    overflow="visible"
+                  >
+                    <div
+                      class="service-map__node"
+                      data-service-identity={identity}
+                      use:measureCard={identity}
+                    >
+                      <ServiceCard
+                        service={node}
+                        selected={chosen}
+                        onSelect={() =>
+                          onSelect({
+                            kind: 'service',
+                            service: node,
+                          })}
+                        onkeydown={panKey}
+                      />
+                    </div>
+                  </foreignObject>
+                {/each}
               {/snippet}
-            </Tree>
+            </ServiceMapLayout>
           </Svg>
         </Chart>
       {/key}
     </div>
-    {#if !busy && !error && connections.length === 0}<p class="p-3 text-subtle">
-        No recorded cross-service parent-child connections match this search and
-        time range.
-      </p>{/if}
-    {#if Object.values(pages).some(page => page.more)}<p
-        class="px-3 text-subtle"
-      >
-        More connections are available. Select a service and choose More
-        connections.
-      </p>{/if}
     <p class="p-3 text-subtle">
-      Arrows follow recorded parent → child spans. Drag or use arrow keys on
-      focused items to pan; scroll to zoom.
+      Scroll to move. Pinch to zoom.
+      <span class="sr-only"
+        >You can also drag empty space to move the map, or use arrow keys with a
+        service or connection focused. Control and scroll zooms.</span
+      >
     </p>
   {:else}<p class="p-3 text-subtle">
-      Select a service to explore its connections.
+      {loadingServices || busy
+        ? 'Loading service map…'
+        : 'No services match this search and time range.'}
     </p>{/if}
+  {#if moreServices}<SignalFooter label="services" compact>
+      {#snippet leading()}<span class="text-subtle"
+          >{services.length}{totalServices == null
+            ? ''
+            : ` of ${totalServices}`} services loaded</span
+        >{/snippet}
+      {#snippet trailing()}<button
+          class="btn btn-ghost btn-sm"
+          disabled={loadingServices}
+          onclick={onMoreServices}>More services</button
+        >{/snippet}
+    </SignalFooter>{/if}
 </div>
 
 <style lang="postcss">
@@ -381,14 +431,7 @@
     @apply relative min-h-0 flex-1 overflow-hidden;
   }
   .service-map__node {
-    @apply h-full w-full cursor-pointer rounded-xl px-3 py-2 text-sm text-base-content;
-    --item-idle-bg: var(--color-base-200);
-  }
-  .service-map__node--root {
-    @apply text-primary;
-  }
-  .service-map__node:focus-visible {
-    outline: 2px solid var(--color-primary);
+    @apply w-full rounded-xl bg-base-200;
   }
   .service-map__edge {
     color: var(--color-muted);

@@ -26,7 +26,6 @@
 <div
   class="preset-time-ranges header-tabs min-w-0 w-full"
   style:--header-tab-count={TIME_RANGE_PRESETS.length}
-  style:--header-active-index={selectedIndex}
   style:--header-control-padding="0.25rem"
 >
   {#each TIME_RANGE_PRESETS as preset, index (preset.label)}

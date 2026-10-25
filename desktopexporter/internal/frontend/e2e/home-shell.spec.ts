@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('Home keeps services in List, the radial map in Main and service inspection in Details', async ({
+test('Home keeps Getting started in List, service cards in the map and Telemetry in Details', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
@@ -60,7 +60,7 @@ test('Home keeps services in List, the radial map in Main and service inspection
   await page.goto('/?time=all')
   await expect(
     page
-      .locator('.service-grid')
+      .locator('.service-map__node')
       .getByRole('button', { name: /^shell-service/ })
   ).toBeVisible()
   const layout = await page.evaluate(() => {
@@ -77,18 +77,19 @@ test('Home keeps services in List, the radial map in Main and service inspection
   expect(layout.details.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.x).toBeGreaterThan(layout.main.x)
   await expect(
-    page.locator('.page-layout__main-chrome .service-grid .signal-row')
-  ).toHaveCount(0)
-  await expect(
-    page.locator('#signal-drawer-panel .service-grid .signal-row')
+    page.locator('.page-layout__main-chrome .service-map__node .signal-row')
   ).toHaveCount(1)
+  await expect(page.locator('#signal-drawer-panel .signal-row')).toHaveCount(0)
   await expect(page.locator('#signal-drawer-panel')).toBeVisible()
   await expect(
     page.getByRole('grid', { name: 'Attributes', exact: true })
   ).toHaveCount(0)
   await expect(
     page.getByRole('table', { name: 'Service details' })
-  ).toContainText('shell-service')
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('region', { name: 'Home details' })
+  ).toContainText('Telemetry')
   await expect(page.locator('.page-layout__footer')).toHaveCount(0)
   await expect(
     page
@@ -105,14 +106,14 @@ test('Home keeps services in List, the radial map in Main and service inspection
   await expect(imports).toBeVisible()
   await expect(imports.locator('summary')).toHaveCount(0)
   await expect(
-    page.getByRole('heading', { name: 'Getting started', exact: true })
+    page.locator('[data-detail-section="guide"] summary')
   ).toHaveCount(0)
   await expect(
     page.getByText('Connect an exporter', { exact: true })
-  ).toHaveCount(0)
+  ).toBeVisible()
   await expect(
     page.getByText('Send a test trace', { exact: true })
-  ).toHaveCount(0)
+  ).toBeVisible()
   await expect(page.locator('#signal-drawer-panel')).toContainText(
     'Ingestion issues'
   )

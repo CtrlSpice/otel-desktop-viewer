@@ -46,6 +46,7 @@
     /** Independent control before the card's first heading, outside its button/link. */
     action?: Snippet
     onclick?: (id: string) => void
+    onkeydown?: (event: KeyboardEvent) => void
     /** Navigation cards retain native link and open-in-new-tab behaviour. */
     href?: string
     disabled?: boolean
@@ -80,6 +81,7 @@
     meta,
     action,
     onclick,
+    onkeydown,
     href,
     disabled = false,
   }: Props = $props()
@@ -227,6 +229,7 @@
       class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
       data-selected={selected || undefined}
       onclick={() => onclick?.(id)}
+      {onkeydown}
       aria-pressed={expanded === undefined ? selected : undefined}
       aria-expanded={expanded}
       aria-controls={controls}>{@render cardContent()}</button

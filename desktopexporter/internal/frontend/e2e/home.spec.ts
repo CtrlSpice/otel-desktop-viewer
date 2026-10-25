@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { themeRgb } from './theme-colours'
 
-test('Home reflows services and keeps incoming imports out of the current reading', async ({
+test('Home service nodes retain card controls and keep incoming imports out of the current reading', async ({
   page,
 }) => {
   const errors: string[] = []
@@ -79,14 +79,15 @@ test('Home reflows services and keeps incoming imports out of the current readin
   })
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/?time=all')
-  const serviceCards = page.locator('.service-grid .signal-row')
+  const serviceCards = page.locator('.service-map__node .signal-row')
   await expect(serviceCards).toHaveCount(8)
   const homeTab = page.getByRole('link', { name: 'Home', exact: true })
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   const card = page
-    .locator('.service-grid')
+    .locator('.service-map__node')
     .getByRole('button', { name: /^checkout/ })
   await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Reset service map view' }).click()
   await expect(card.locator('.signal-row__title')).toHaveCSS(
     'font-size',
     '17px'
@@ -164,7 +165,7 @@ test('Home reflows services and keeps incoming imports out of the current readin
   await expect(colourDot).toHaveCSS('background-color', automaticColour)
   await expect(colour).toBeFocused()
   await expect(card.locator('.signal-row__lead')).toHaveText(
-    '42 traces, 8 metrics, 36 logs'
+    '42 traces · 8 metrics · 36 logs'
   )
   await expect(card.locator('.signal-row__badge')).toHaveText('[5 err]')
   await expect(
@@ -173,10 +174,8 @@ test('Home reflows services and keeps incoming imports out of the current readin
   await expect(card.locator('.signal-row__meta-row')).toHaveCount(0)
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
-    await expect(page.locator('.service-grid')).toHaveCSS('display', 'grid')
-    const list = (await page.locator('.service-grid').boundingBox())!
     for (const service of await serviceCards.all()) {
-      expect((await service.boundingBox())!.width).toBeCloseTo(list.width, 0)
+      expect((await service.boundingBox())!.width).toBeCloseTo(320, 0)
     }
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
@@ -185,17 +184,17 @@ test('Home reflows services and keeps incoming imports out of the current readin
     exact: true,
   })
   await expect(serviceHeader).toContainText('checkout')
-  await expect(
-    page.getByRole('table', { name: 'Service details' })
-  ).toContainText('storefront')
+  await expect(card).toContainText('storefront')
   const details = page.getByRole('region', { name: 'Home details' })
+  // Wait for the default 28rem Details width after restoring the viewport.
+  await expect(details).toHaveCSS('width', '448px')
   await expect(
     details.getByRole('grid', { name: 'Attributes', exact: true })
   ).toHaveCount(0)
   const left = page.locator('#signal-drawer-panel')
-  const serviceSection = left.locator('[data-detail-section="services"]')
-  const serviceScroll = serviceSection.locator('.service-scroll')
-  const servicesBox = (await serviceSection.boundingBox())!
+  const guide = left.locator('[data-detail-section="guide"]')
+  const guideScroll = guide.locator('.guide-scroll')
+  const guideBox = (await guide.boundingBox())!
   const detailsBox = (await details.boundingBox())!
   const drop = (await left
     .getByRole('button', { name: 'Import files', exact: true })
@@ -203,33 +202,39 @@ test('Home reflows services and keeps incoming imports out of the current readin
   const storage = (await left
     .locator('[data-detail-section="storage"]')
     .boundingBox())!
-  expect(drop.y + drop.height).toBeLessThanOrEqual(servicesBox.y)
-  expect(servicesBox.y + servicesBox.height).toBeLessThanOrEqual(storage.y)
-  expect(servicesBox.x + servicesBox.width).toBeLessThanOrEqual(detailsBox.x)
-  await expect(details.locator('.service-grid')).toHaveCount(0)
-  await expect(serviceScroll).toHaveCSS('overflow-y', 'auto')
+  expect(drop.y + drop.height).toBeLessThanOrEqual(guideBox.y)
+  expect(guideBox.y + guideBox.height).toBeLessThanOrEqual(storage.y)
+  expect(guideBox.x + guideBox.width).toBeLessThanOrEqual(detailsBox.x)
+  await expect(left.locator('.signal-row')).toHaveCount(0)
+  await expect(guideScroll).toHaveCSS('overflow-y', 'auto')
+  await expect(guide).toContainText('http://localhost:54318')
   const headerY = (await serviceHeader.boundingBox())!.y
-  await serviceScroll.evaluate(element => {
+  await guideScroll.evaluate(element => {
     element.scrollTop = element.scrollHeight
   })
   await expect
-    .poll(() => serviceScroll.evaluate(element => element.scrollTop))
-    .toBeGreaterThan(0)
+    .poll(() =>
+      guideScroll.evaluate(
+        element =>
+          element.scrollTop === element.scrollHeight - element.clientHeight
+      )
+    )
+    .toBe(true)
   expect((await serviceHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
-  await serviceScroll.evaluate(element => {
+  await guideScroll.evaluate(element => {
     element.scrollTop = 0
   })
   expect(await details.boundingBox()).toEqual(detailsBox)
   await expect(serviceHeader).toHaveCSS('border-width', '0px')
-  await page
-    .locator('.service-grid')
+  const worker = page
+    .locator('.service-map__node')
     .getByRole('button', { name: /^worker-1(?:\s|·)/ })
-    .click()
+  await worker.focus()
+  await worker.press('Enter')
   await expect(serviceHeader).toContainText('worker-1')
-  await expect(
-    details.getByRole('table', { name: 'Service details' })
-  ).toContainText('worker-1')
-  await card.click()
+  await expect(worker).toHaveAttribute('aria-pressed', 'true')
+  await card.focus()
+  await card.press('Enter')
   await expect(serviceHeader).toContainText('checkout')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
   services.push({ ...services[0]!, serviceName: 'new-worker' })

@@ -418,27 +418,43 @@ space; drag-induced collapse commits on release.
 
 ### Home discovery and search
 
-`HomePage.svelte` presents Services in List, a radial service map in Main, and
-contextual inspection in Details. Lulu and the file-drop control sit above the left section
-stack; Services is its primary open section, with Storage and Ingestion issues as siblings.
-Issue links reveal that pane and section.
+`HomePage.svelte` presents Getting started in List, service cards as graph
+nodes in Main, and contextual Telemetry in Details. Lulu and the file-drop control
+sit above the left section stack. The primary, headerless guide contains exporter
+configuration and an `otel-cli` example; Storage and Ingestion issues are siblings.
+HTTP configuration uses the received import port. The gRPC example identifies its
+default port. Joined terminal containers have one enclosing border and use
+Madoromi's Kami for code and Chitsu for their tab/tool bars, with Sumi text and
+the shared syntax colours. Header tabs switch their selected fill immediately,
+without a sliding indicator.
+Issue links reveal the left pane and section.
 
-Service cards choose the map centre. Selecting a map node inspects that service
-without recentering. Switching
-to a discovered service pans the view while preserving node positions, zoom and
-expanded connections. New neighbours occupy free space without moving existing
-nodes. A new search/time scope, refresh or an undiscovered disconnected service
-starts a new layout. Reset view centres the chosen service at the default zoom. Service
-Details shows service properties and matching Telemetry. Selecting a directed
-connection shows its counts and 25-item pages of recorded child spans, each
-linking to its exact trace and span.
+Each service appears once as a three-row card: identity and errors, signal counts
+separated by middle dots, then Last seen. Cards use the theme's Panel surface and
+retain independent colour controls. Services without recorded connections remain
+visible; layout ancestry alone never creates an edge. The footer's **More services**
+appends the next 100-item page without removing existing nodes.
 
-The map uses LayerChart's radial Tree for placement and draws all directed edges
-separately, retaining cycles, reverse edges and shared dependencies without
-duplicating service nodes. **Expand connections** loads neighbours of the inspected
-service in 100-edge pages; **More connections** continues a truncated result.
-Drag or use arrow keys on focused items to pan; use the wheel or header buttons
-to zoom. Exact typed service
+Selecting a card shows its Telemetry without moving the map or repeating the
+service summary in Details. New neighbours occupy free space without moving
+existing nodes. A new search/time scope or refresh starts a new layout. Reset view
+centres the inspected service at the default zoom. Selecting a directed connection
+shows its counts and 25-item pages of recorded child spans, each linking to its
+exact trace and span.
+
+The map uses LayerChart's Dagre layout utility for top-to-bottom connected flows
+and routed edges. Component packing places standalone cards alongside flows when
+space permits, or below them on narrow views. Measured card dimensions determine
+spacing and arrow endpoints. Cycles, reverse edges and shared dependencies retain
+their recorded direction without duplicating service nodes.
+It automatically loads the first 100 connections for
+each loaded service, and for a newly inspected neighbour. **More connections**
+continues a truncated result for the inspected service. The initial layout waits
+for the first connection requests and opens at readable card size near the top
+of the map; later discoveries preserve positions and zoom.
+Scroll, drag empty space or use arrow keys on focused items to pan. Pinch,
+Ctrl+wheel and the header buttons zoom. Card text and colour pickers retain
+native selection and scrolling. Exact typed service
 identities, including namespaces, distinguish nodes.
 
 `discoverTelemetry` kinds `connections` and `connection-spans` follow recorded

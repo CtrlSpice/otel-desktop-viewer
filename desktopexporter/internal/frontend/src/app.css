@@ -713,31 +713,17 @@ svg {
   column-gap: var(--header-gap);
 }
 
-.header-tabs:has(
-    > :is([aria-selected='true'], [aria-current='page'], [aria-pressed='true'])
-  )::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: calc(
-    (100% - (var(--header-tab-count) - 1) * var(--header-gap)) /
-      var(--header-tab-count)
-  );
-  border-radius: 0.5rem;
-  background: var(--item-selected-bg);
-  transform: translateX(
-    calc(var(--header-active-index) * (100% + var(--header-gap)))
-  );
-  transition: transform var(--motion-compact-duration)
-    var(--motion-settle-easing);
-  pointer-events: none;
-}
-
 .btn.header-tab {
   @apply relative z-[1] gap-2 whitespace-nowrap;
+  transition: none;
 }
 
-.btn.header-tab.header-toggle:is([aria-pressed='true'], [aria-checked='true']) {
+.btn.header-tab:is(
+    [aria-selected='true'],
+    [aria-current='page'],
+    [aria-pressed='true'],
+    [aria-checked='true']
+  ) {
   background: var(--item-selected-bg);
 }
 

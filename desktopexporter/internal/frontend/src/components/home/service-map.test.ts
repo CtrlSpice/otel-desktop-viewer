@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   connectionIdentity,
-  serviceHierarchy,
-  servicePositions,
+  graphServices,
+  serviceGraphLayout,
   retainServicePositions,
-  connectionPath,
+  type ServicePositions,
 } from './service-map'
-import { tree } from 'd3-hierarchy'
 import {
   serviceIdentity,
   type ServiceSummary,
@@ -45,85 +44,112 @@ const edge = (
   traceCount: 1,
   errorSpanCount: 0,
 })
+function expectNoOverlap(positions: ServicePositions) {
+  const points = [...positions.values()]
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      expect(
+        Math.abs(points[i]!.x - points[j]!.x) >= 352 ||
+          Math.abs(points[i]!.y - points[j]!.y) >= 128
+      ).toBe(true)
+    }
+  }
+}
 
-describe('service map layout hierarchy', () => {
-  it('keeps discovered positions when tree angles change and places new nodes without overlap', () => {
-    const previous = new Map([
-      ['api', { x: 0, y: 0 }],
-      ['worker', { x: 0, y: 220 }],
-    ])
-    const candidates = new Map([
-      ['api', { x: 0, y: 0 }],
-      ['worker', { x: 220, y: 0 }],
-      ['store', { x: 0, y: 220 }],
-    ])
-    const positions = retainServicePositions(previous, candidates)
-    expect(positions.get('api')).toEqual(previous.get('api'))
-    expect(positions.get('worker')).toEqual(previous.get('worker'))
-    expect(positions.get('store')!.x).toBeCloseTo(0)
-    expect(positions.get('store')!.y).toBeCloseTo(440)
-    expect(previous.size).toBe(2)
-  })
-  it('keeps one node per service through cycles, shared dependencies and reverse edges', () => {
+describe('service graph layout', () => {
+  it('keeps complete service summaries and exact identities through cycles and shared dependencies', () => {
     const a = service('api'),
-      b = service('worker'),
+      b = { ...service('worker'), metricCount: 12 },
       c = service('store'),
       other = service('api', 'other')
     const edges = [
-      edge(a, b),
+      edge(a, { ...b, metricCount: 0 }),
       edge(b, a),
       edge(b, c),
       edge(a, c),
       edge(c, other),
     ]
-    const nodes = serviceHierarchy(a, edges).descendants()
-    expect(
-      nodes.map(node => serviceIdentity(node.data.service)).sort()
-    ).toEqual([a, b, c, other].map(serviceIdentity).sort())
-    expect(nodes[0]!.data.service).toEqual(a)
-    expect(new Set(edges.map(connectionIdentity)).size).toBe(5)
-    expect(nodes.find(node => node.data.service === c)!.depth).toBe(1)
+    const services = graphServices([a, b], edges)
+    expect(services.map(serviceIdentity).sort()).toEqual(
+      [a, b, c, other].map(serviceIdentity).sort()
+    )
+    expect(services.find(s => s.serviceName === 'worker')!.metricCount).toBe(12)
+    const layout = serviceGraphLayout(services, edges, new Map(), 1000)
+    expect(layout.positions.size).toBe(4)
+    expect(layout.paths.size).toBe(5)
+    for (const path of layout.paths.values()) {
+      expect(path).toMatch(/^M/)
+      expect(path).not.toMatch(/NaN|Infinity/)
+    }
+    expect(layout.paths.get(connectionIdentity(edges[0]!))).not.toEqual(
+      layout.paths.get(connectionIdentity(edges[1]!))
+    )
+    expectNoOverlap(layout.positions)
   })
-  it('ignores disconnected stale edges and remains deterministic under response ordering', () => {
+
+  it('lays out directed flows vertically and packs standalone cards beside them without invented edges', () => {
     const a = service('api'),
       b = service('worker'),
-      c = service('store'),
-      d = service('elsewhere'),
-      e = service('other')
-    const edges = [edge(a, b), edge(a, c), edge(d, e)]
-    const ids = (links: ServiceConnection[]) =>
-      serviceHierarchy(a, links)
-        .descendants()
-        .map(node => serviceIdentity(node.data.service))
-    expect(ids(edges)).toEqual(ids([...edges].reverse()))
-    expect(ids(edges)).toHaveLength(3)
-    expect(serviceHierarchy(a, []).descendants()).toHaveLength(1)
+      c = service('metrics-only'),
+      d = service('logs-only')
+    const edges = [edge(a, b)]
+    const services = graphServices([a, b, c, d], edges)
+    const layout = serviceGraphLayout(services, edges, new Map(), 900)
+    const point = (s: ServiceSummary) =>
+      layout.positions.get(serviceIdentity(s))!
+    expect(point(a).x).toBe(point(b).x)
+    expect(point(a).y).toBeLessThan(point(b).y)
+    expect(point(c).x).toBe(point(d).x)
+    expect(point(c).x).toBeGreaterThan(point(a).x)
+    expect(layout.paths.size).toBe(1)
+    expectNoOverlap(layout.positions)
+    const path = layout.paths.get(connectionIdentity(edges[0]!))!
+    const start = path.match(/^M([^,]+),([^LC]+)/)!
+    expect(Number(start[2])).toBeGreaterThan(point(a).y + 48)
+    expect(
+      Math.max(...[...layout.positions.values()].map(p => p.x + 160))
+    ).toBeLessThan(900)
   })
-  it('leaves room for readable nodes on crowded rings and keeps arrowheads outside labels', () => {
-    const root = service('root')
-    const edges = Array.from({ length: 100 }, (_, index) =>
-      edge(root, service(`worker-${index}`))
+
+  it('keeps discovered positions when new nodes arrive or the viewport changes', () => {
+    const a = service('api'),
+      b = service('worker'),
+      c = service('store')
+    const initial = serviceGraphLayout([a, b], [edge(a, b)], new Map(), 900)
+    const next = serviceGraphLayout(
+      [a, b, c],
+      [edge(a, b), edge(b, c)],
+      new Map(),
+      448,
+      initial.positions
     )
-    const layout = tree<ReturnType<typeof serviceHierarchy>['data']>().size([
-      2 * Math.PI,
-      50,
-    ])(serviceHierarchy(root, edges))
-    const positions = [...servicePositions(layout.descendants()).values()]
-    expect(Math.hypot(positions[0]!.x, positions[0]!.y)).toBe(0)
-    for (let i = 0; i < positions.length; i++) {
-      for (let j = i + 1; j < positions.length; j++) {
-        expect(
-          Math.hypot(
-            positions[i]!.x - positions[j]!.x,
-            positions[i]!.y - positions[j]!.y
-          )
-        ).toBeGreaterThanOrEqual(209.9)
-      }
-    }
-    const path = connectionPath({ x: 0, y: 0 }, { x: 220, y: 0 })
-    const numbers = path.match(/-?\d+(?:\.\d+)?/g)!.map(Number)
-    expect(numbers[0]).toBeGreaterThan(90)
-    expect(numbers[4]).toBeLessThan(130)
-    expect(connectionPath({ x: 220, y: 0 }, { x: 0, y: 0 })).not.toEqual(path)
+    expect(next.positions.get(serviceIdentity(a))).toEqual(
+      initial.positions.get(serviceIdentity(a))
+    )
+    expect(next.positions.get(serviceIdentity(b))).toEqual(
+      initial.positions.get(serviceIdentity(b))
+    )
+    expectNoOverlap(next.positions)
+    const collision = retainServicePositions(
+      new Map([['a', { x: 0, y: 0 }]]),
+      new Map([
+        ['a', { x: 100, y: 100 }],
+        ['b', { x: 0, y: 0 }],
+      ])
+    )
+    expect(collision.get('a')).toEqual({ x: 0, y: 0 })
+    expectNoOverlap(collision)
+  })
+
+  it('packs a page of standalone cards at readable size without overlap', () => {
+    const services = Array.from({ length: 100 }, (_, i) =>
+      service(`service-${i}`)
+    )
+    const layout = serviceGraphLayout(services, [], new Map(), 900)
+    expect(layout.positions.size).toBe(100)
+    expect(layout.paths.size).toBe(0)
+    expectNoOverlap(layout.positions)
+    const narrow = serviceGraphLayout(services.slice(0, 4), [], new Map(), 448)
+    expect(new Set([...narrow.positions.values()].map(p => p.x)).size).toBe(1)
   })
 })

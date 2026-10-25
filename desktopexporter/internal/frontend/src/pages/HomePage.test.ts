@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor } from '@testing-library/svelte'
 import HomePage, { rejectionLabel } from './HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -21,13 +21,15 @@ describe('rejectionLabel', () => {
 describe('Home service discovery', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('scopes discovery by namespace and service and refreshes only on request', async () => {
+  it('scopes telemetry by typed service identity and refreshes only on request', async () => {
     vi.spyOn(telemetryAPI, 'getTraceAttributeDefinitions').mockResolvedValue([])
     vi.spyOn(telemetryAPI, 'getMetricAttributeDefinitions').mockResolvedValue(
       []
     )
     vi.spyOn(telemetryAPI, 'getLogAttributeDefinitions').mockResolvedValue([])
-    vi.spyOn(telemetryAPI, 'searchTraceSummaries').mockResolvedValue([])
+    const traces = vi
+      .spyOn(telemetryAPI, 'searchTraceSummaries')
+      .mockResolvedValue([])
     vi.spyOn(telemetryAPI, 'searchMetricSummaries').mockResolvedValue([])
     vi.spyOn(telemetryAPI, 'searchLogSummaries').mockResolvedValue([])
     vi.spyOn(telemetryAPI, 'getStats').mockResolvedValue({
@@ -73,71 +75,22 @@ describe('Home service discovery', () => {
         items: [base, { ...base, serviceNamespace: 'internal' }],
         truncated: false,
       })
-    const keys = vi
-      .spyOn(telemetryAPI, 'discoverAttributeKeys')
-      .mockImplementation(async options => ({
-        items:
-          options.ownerType === 'resource' || options.ownerType === 'span'
-            ? [
-                {
-                  key: 'shared.name',
-                  kind: 'string',
-                  foundOn: [
-                    { signal: options.signal!, ownerType: options.ownerType },
-                  ],
-                },
-              ]
-            : [],
-        truncated: false,
-      }))
-    setTestUrl('/?time=all')
-    vi.spyOn(telemetryAPI, 'discoverAttributeValues').mockResolvedValue({
+    vi.spyOn(telemetryAPI, 'discoverServiceConnections').mockResolvedValue({
       items: [],
       truncated: false,
     })
+    setTestUrl('/?time=all')
     renderWithContexts(HomePage)
-    const card = await screen.findByRole('button', {
-      name: /^checkout\s*· storefront/,
-    })
-    await waitFor(() =>
-      expect(keys).toHaveBeenCalledWith(
-        expect.objectContaining({
-          serviceName: 'checkout',
-          namespace: 'storefront',
-          signal: 'traces',
-          ownerType: 'resource',
-        }),
-        expect.any(AbortSignal)
-      )
-    )
-    await waitFor(() =>
-      expect(screen.getAllByText('shared.name', { exact: false })).toHaveLength(
-        2
-      )
-    )
+    await waitFor(() => expect(traces).toHaveBeenCalled())
+    const query = JSON.stringify(traces.mock.calls[0]![2])
+    expect(query).toContain('checkout')
+    expect(query).toContain('storefront')
+    expect(query).not.toContain('internal')
     expect(
       screen.queryByRole('combobox', { name: 'Attribute owner' })
     ).not.toBeInTheDocument()
-    expect(card).toHaveAttribute('aria-pressed', 'true')
-    expect(within(card).queryByRole('link')).not.toBeInTheDocument()
-    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
-    await fireEvent.click(
-      screen.getByRole('button', { name: /^checkout\s*· internal/ })
-    )
-    await waitFor(() =>
-      expect(keys).toHaveBeenCalledWith(
-        expect.objectContaining({ namespace: 'internal' }),
-        expect.any(AbortSignal)
-      )
-    )
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: /^Logs/ })).toBeDisabled()
-    )
-    await waitFor(() =>
-      expect(keys).toHaveBeenCalledWith(
-        expect.objectContaining({ namespace: 'internal', signal: 'logs' }),
-        expect.any(AbortSignal)
-      )
     )
     expect(services).toHaveBeenCalledTimes(1)
     expect(window.location.pathname).toBe('/')

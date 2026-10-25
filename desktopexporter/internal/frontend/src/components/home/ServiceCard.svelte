@@ -13,10 +13,12 @@
     service,
     selected,
     onSelect,
+    onkeydown,
   }: {
     service: ServiceSummary
     selected: boolean
     onSelect: () => void
+    onkeydown?: (event: KeyboardEvent) => void
   } = $props()
   const serviceColor = $derived(
     traceServiceColor(service.serviceName, themeSignal.value)
@@ -32,6 +34,7 @@
   title={service.serviceName || 'Unnamed service'}
   {selected}
   onclick={onSelect}
+  {onkeydown}
 >
   {#snippet action()}
     <GraphColorPicker
@@ -65,8 +68,8 @@
   {#snippet lead()}
     <span class="badge-count pl-6"
       >{service.traceCount.toLocaleString()}
-      {service.traceCount === 1 ? 'trace' : 'traces'}, {service.metricCount.toLocaleString()}
-      {service.metricCount === 1 ? 'metric' : 'metrics'}, {service.logCount.toLocaleString()}
+      {service.traceCount === 1 ? 'trace' : 'traces'} · {service.metricCount.toLocaleString()}
+      {service.metricCount === 1 ? 'metric' : 'metrics'} · {service.logCount.toLocaleString()}
       {service.logCount === 1 ? 'log' : 'logs'}</span
     >
   {/snippet}

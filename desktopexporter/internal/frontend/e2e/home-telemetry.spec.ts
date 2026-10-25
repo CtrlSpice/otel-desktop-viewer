@@ -209,21 +209,21 @@ test('service inspection scopes the counted Telemetry tabs with independent 25-c
     await page.evaluate(() => localStorage.getItem('home-telemetry-page-size'))
   ).toBe('100')
   await pageSize.selectOption('25')
-  await expect(details.locator('[data-detail-section]')).toHaveCount(2)
+  await expect(details.locator('[data-detail-section]')).toHaveCount(1)
   expect(
     await details
       .locator('[data-detail-section]')
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['selection', 'found-on'])
+  ).toEqual(['found-on'])
   expect(
     await guide
       .locator('[data-detail-section]')
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['services', 'storage', 'issues'])
+  ).toEqual(['guide', 'storage', 'issues'])
   await expect(
     guide.locator('[data-detail-section="storage"]')
   ).toHaveAttribute('data-detail-group', 'closed')

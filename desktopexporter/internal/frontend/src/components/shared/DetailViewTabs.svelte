@@ -20,7 +20,7 @@
     role="tablist"
     tabindex="-1"
     aria-label="Detail view"
-    class="detail-view-tabs header-tabs"
+    class="header-tabs"
     style:--header-tab-count={2}
     onkeydown={handleTablistKeydown}
   >
@@ -69,17 +69,3 @@
   </div>
   {#if action}{@render action()}{/if}
 </div>
-
-<style>
-  .detail-view-tabs.header-tabs::before {
-    content: none;
-  }
-
-  .detail-view-tabs .header-tab {
-    transition: none;
-  }
-
-  .detail-view-tabs .header-tab[aria-selected='true']:not(:hover) {
-    background: var(--item-selected-bg);
-  }
-</style>

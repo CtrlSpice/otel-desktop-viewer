@@ -23,7 +23,7 @@
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
   import HomeWelcome from '@/components/home/HomeWelcome.svelte'
-  import ServiceCard from '@/components/home/ServiceCard.svelte'
+  import GettingStarted from '@/components/home/GettingStarted.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
   import ServiceMap from '@/components/home/ServiceMap.svelte'
   import ServiceConnectionDetails from '@/components/home/ServiceConnectionDetails.svelte'
@@ -97,10 +97,6 @@
     mapSelection = selection
     detailPanel.setOpen(true)
   }
-  function centre(service: ServiceSummary) {
-    selected = service
-    inspect({ kind: 'service', service })
-  }
   let range = $state<Pick<DiscoveryOptions, 'startTime' | 'endTime'>>({
     startTime: null,
     endTime: null,
@@ -150,7 +146,17 @@
         controller.signal
       )
       if (controller.signal.aborted) return
-      services = page.items
+      services =
+        pageOffset === 0
+          ? page.items
+          : [
+              ...new Map(
+                [...services, ...page.items].map(service => [
+                  serviceIdentity(service),
+                  service,
+                ])
+              ).values(),
+            ]
       if (refresh || !loaded) {
         range = nextRange
         queries = options.queries
@@ -267,51 +273,13 @@
     {revision}
   />
 {/snippet}
-{#snippet selectionDetails()}
+{#snippet connectionDetails()}
   {#if mapSelection?.kind === 'connection'}
     <ServiceConnectionDetails
       connection={mapSelection.connection}
       options={discoveryScope}
       {revision}
     />
-  {:else}
-    <DetailBubble
-      label={inspectedService?.serviceName || 'Service'}
-      layoutKey="service-selection"
-      disabled={!inspectedService}
-    >
-      {#if inspectedService}
-        <table class="detail-fields w-full" aria-label="Service details">
-          <tbody>
-            <DetailProperty
-              fieldName="service.name"
-              fieldType={inspectedService.serviceNameKind ?? 'string'}
-              fieldValue={inspectedService.serviceName}
-            />
-            <DetailProperty
-              fieldName="service.namespace"
-              fieldType={inspectedService.serviceNamespaceKind ?? 'string'}
-              fieldValue={inspectedService.serviceNamespace}
-            />
-            <DetailProperty
-              fieldName="Traces"
-              fieldType="number"
-              fieldValue={String(inspectedService.traceCount)}
-            />
-            <DetailProperty
-              fieldName="Metrics"
-              fieldType="number"
-              fieldValue={String(inspectedService.metricCount)}
-            />
-            <DetailProperty
-              fieldName="Logs"
-              fieldType="number"
-              fieldValue={String(inspectedService.logCount)}
-            />
-          </tbody>
-        </table>
-      {/if}
-    </DetailBubble>
   {/if}
 {/snippet}
 {#snippet storage()}
@@ -367,51 +335,9 @@
   </DetailBubble>
 {/snippet}
 
-{#snippet serviceList()}
-  <DetailBubble label="Services" layoutKey="services" contained compactHeader>
-    {#snippet trailing()}<span class="text-subtle"
-        >{loaded
-          ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
-          : '[—]'}</span
-      >{/snippet}
-    <div class="service-scroll" aria-busy={loading}>
-      {#if error}<p role="alert" class="p-3 text-papaya">
-          {error}{loaded ? ' · Showing the last successful reading.' : ''}
-        </p>{/if}
-      {#if loading && !loaded}<p role="status" class="p-3 text-subtle">
-          Loading services…
-        </p>
-      {:else if loaded && services.length === 0}<p class="p-3 text-subtle">
-          {term
-            ? 'No services match this search.'
-            : 'No services in this time range. Import a file or connect an exporter to get started.'}
-        </p>{/if}
-      <div class="service-grid">
-        {#each services as service (serviceIdentity(service))}
-          <ServiceCard
-            {service}
-            selected={selected !== null &&
-              serviceIdentity(selected) === serviceIdentity(service)}
-            onSelect={() => {
-              centre(service)
-            }}
-          />
-        {/each}
-      </div>
-      {#if offset > 0 || more}
-        <div class="flex gap-2 py-2">
-          <button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || offset === 0}
-            onclick={() => load(offset - 100)}>Previous</button
-          ><button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || !more}
-            onclick={() => load(offset + 100)}>Next</button
-          >
-        </div>
-      {/if}
-    </div>
+{#snippet guide()}
+  <DetailBubble label="Getting started" contained headerless>
+    <GettingStarted />
   </DetailBubble>
 {/snippet}
 
@@ -463,7 +389,7 @@
     <HomeWelcome
       {importContent}
       sections={[
-        { id: 'services', content: serviceList },
+        { id: 'guide', content: guide },
         { id: 'storage', content: storage },
         { id: 'issues', content: issues },
       ]}
@@ -472,6 +398,12 @@
   {#snippet main()}
     <ServiceMap
       service={selected}
+      {services}
+      {totalServices}
+      loadingServices={loading}
+      servicesError={error}
+      moreServices={more}
+      onMoreServices={() => load(offset + 100)}
       options={discoveryScope}
       {revision}
       selection={mapSelection}
@@ -483,24 +415,8 @@
       label="Home details"
       storageKey="home-details"
       sections={mapSelection?.kind === 'connection'
-        ? [{ id: 'selection', content: selectionDetails }]
-        : [
-            { id: 'selection', content: selectionDetails },
-            { id: 'found-on', content: foundOn },
-          ]}
+        ? [{ id: 'connection', content: connectionDetails }]
+        : [{ id: 'found-on', content: foundOn }]}
     />
   {/snippet}
 </PageLayout>
-
-<style lang="postcss">
-  @reference '../app.css';
-  .service-scroll {
-    @apply min-h-0 flex-1 overflow-y-auto p-3;
-  }
-  .service-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--header-gap);
-    align-items: start;
-  }
-</style>
