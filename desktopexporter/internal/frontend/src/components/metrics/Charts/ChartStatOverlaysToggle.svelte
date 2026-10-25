@@ -38,21 +38,6 @@
     @apply relative shrink-0 gap-2;
   }
 
-  .chart-stat-overlays-toggle__checkbox {
-    @apply rounded-full;
-    border-color: currentColor;
-    background: var(--color-base-200);
-    box-shadow: none;
-  }
-
-  .chart-stat-overlays-toggle__checkbox:checked {
-    color: var(--color-primary);
-  }
-
-  .chart-stat-overlays-toggle__checkbox::before {
-    transition: none;
-  }
-
   .chart-stat-overlays-toggle__label {
     @apply whitespace-nowrap;
   }

@@ -68,6 +68,7 @@
 {#snippet seriesSection()}
   <DetailBubble
     label="Series"
+    contained
     icon={seriesIcon}
     count={ctx.metric ? seriesCount : undefined}
   >

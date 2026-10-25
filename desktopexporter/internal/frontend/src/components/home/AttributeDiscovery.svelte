@@ -356,7 +356,7 @@
           </div>
         {/if}
         <SignalFooter label="page" compact>
-          {#snippet leading()}<PageSizeSelect
+          {#snippet trailing()}<PageSizeSelect
               label="Attributes per page"
               value={pageSize}
               onchange={setPageSize}

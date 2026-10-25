@@ -101,8 +101,14 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   )
   await expect(card.getByRole('link')).toHaveCount(0)
   await expect(card.getByRole('button')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Colour for/ })).toHaveCount(0)
-  const colourDot = card.locator('.signal-row__title span[aria-hidden="true"]')
+  await expect(page.getByRole('button', { name: /^Colour for/ })).toHaveCount(8)
+  const picker = page.getByLabel('Colour for checkout', { exact: true })
+  const colourDot = picker.locator('span')
+  expect(
+    await picker.evaluate(element =>
+      Boolean(element.parentElement?.closest('button'))
+    )
+  ).toBe(false)
   await expect(colourDot).toHaveCSS('width', '8px')
   await expect(colourDot).toHaveCSS('height', '8px')
   const dotBox = (await colourDot.boundingBox())!
@@ -132,6 +138,27 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await page.keyboard.press('Escape')
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(colourDot).toHaveCSS('background-color', automaticColour)
+  await picker.click()
+  const hex = page.getByRole('textbox', {
+    name: 'Hex colour for checkout',
+    exact: true,
+  })
+  await expect(hex).toBeFocused()
+  await hex.fill('#123abc')
+  await expect(colourDot).toHaveCSS('background-color', 'rgb(18, 58, 188)')
+  await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await page.reload()
+  await expect(colourDot).toHaveCSS('background-color', 'rgb(18, 58, 188)')
+  await picker.click()
+  const reset = page.getByRole('button', {
+    name: 'Reset colour for checkout to automatic',
+    exact: true,
+  })
+  await reset.focus()
+  await reset.click()
+  await expect(colourDot).toHaveCSS('background-color', automaticColour)
+  await page.keyboard.press('Escape')
+  await expect(picker).toBeFocused()
   await expect(card.locator('.signal-row__lead')).toHaveText(
     '42 traces · 8 metrics · 36 logs'
   )
@@ -232,11 +259,11 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   })
   await imported
   await expect(page).toHaveURL(/\/\?time=all$/)
-  expect(serviceReads).toBe(2) // Home's page and the database-wide tab total.
+  expect(serviceReads).toBe(4) // Home and tab totals, including the persistence reload.
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   await expect(serviceCards).toHaveCount(8)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expect.poll(() => serviceReads).toBe(4)
+  await expect.poll(() => serviceReads).toBe(6)
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [9]')
   await expect(serviceCards).toHaveCount(9)
   // Workspace navigation carries the submitted Home query. Service cards

@@ -312,7 +312,7 @@ test('series header hover and keyboard focus emphasize only the corresponding vi
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
-  const headers = page.locator('details[name="metric-series"] > summary')
+  const headers = page.locator('.ts-row[data-series-key]')
   const first = page.locator('.metric-series-line[data-series-key="first"]')
   const second = page.locator('.metric-series-line[data-series-key="second"]')
   await expect(first).toBeVisible()
@@ -416,7 +416,7 @@ for (const { id: theme } of THEMES) {
   })
 }
 
-test('native series colour overrides persist independently of visibility and disclosure and reset to automatic', async ({
+test('series colour picker overrides persist independently of visibility and disclosure and reset to automatic', async ({
   page,
 }) => {
   await page.route('**/rpc', async route => {
@@ -458,54 +458,73 @@ test('native series colour overrides persist independently of visibility and dis
     element => getComputedStyle(element).stroke
   )
   const picker = page.getByLabel('Colour for route: /first', { exact: true })
-  const disclosure = page.locator('.ts-panel details').first()
-  await expect(disclosure.locator('.ts-row__attrs')).toHaveText('route: /first')
+  const hex = page.getByRole('textbox', {
+    name: 'Hex colour for route: /first',
+    exact: true,
+  })
+  const disclosure = page.locator('.ts-row[data-series-key]').first()
+  await expect(disclosure.locator('.ts-row__attrs')).toHaveText('/first')
   await expect(disclosure.locator('.ts-row__attrs')).toHaveAttribute(
     'title',
     /session.id: long-session-identifier-first/
   )
   const wasOpen = await disclosure.evaluate(element =>
-    element.hasAttribute('open')
+    element.getAttribute('aria-expanded')
   )
   const title = (await disclosure.locator('.ts-row__attrs').boundingBox())!
   const edit = (await picker.boundingBox())!
-  expect(edit.x).toBeGreaterThanOrEqual(title.x + title.width)
-  const editControls = disclosure.locator('.ts-row__colour-edit')
+  expect(edit.x + edit.width).toBeLessThanOrEqual(title.x)
+  const dot = disclosure.locator('.series-colour-edit > span')
   await page.mouse.move(0, 0)
-  await expect(editControls).toHaveCSS('opacity', '0')
-  await disclosure.locator('summary').hover()
-  await expect(editControls).toHaveCSS('opacity', '1')
-  await page.mouse.move(0, 0)
+  await expect(dot).toBeVisible()
   await picker.focus()
-  await expect(editControls).toHaveCSS('opacity', '1')
   await picker.click()
+  await expect(hex).toBeFocused()
+  const hue = page.getByRole('slider', { name: 'Hue', exact: true })
+  const before = await hue.getAttribute('aria-valuenow')
+  await hue.focus()
+  await hue.press('ArrowRight')
+  await expect(hue).not.toHaveAttribute('aria-valuenow', before!)
+  await expect(first).not.toHaveCSS('stroke', original)
   await page.keyboard.press('Escape')
-  expect(
-    await disclosure.evaluate(element => element.hasAttribute('open'))
-  ).toBe(wasOpen)
+  await expect(picker).toBeFocused()
+  expect(await disclosure.getAttribute('aria-expanded')).toBe(wasOpen)
   const visible = page.getByRole('checkbox', {
     name: 'Show route: /first in chart',
     exact: true,
   })
-  await picker.fill('#123abc')
+  await picker.click()
+  await hex.fill('#123abc')
   await expect(first).toHaveCSS('stroke', rgb('#123abc'))
   await expect(second).toHaveCSS('stroke', other)
+  await expect(dot).toHaveCSS('background-color', rgb('#123abc'))
+  await expect(visible).toHaveCSS(
+    'color',
+    await page
+      .getByRole('checkbox', {
+        name: 'Show route: /second in chart',
+        exact: true,
+      })
+      .evaluate(element => getComputedStyle(element).color)
+  )
+  await expect(visible).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(visible).toBeChecked()
-  expect(
-    await disclosure.evaluate(element => element.hasAttribute('open'))
-  ).toBe(wasOpen)
+  expect(await disclosure.getAttribute('aria-expanded')).toBe(wasOpen)
+  await page.keyboard.press('Escape')
   await visible.uncheck()
   await expect(picker).toHaveCount(0)
   await expect(visible).not.toBeChecked()
-  await expect(disclosure.locator('.ts-row__attrs')).toHaveText('route: /first')
+  await expect(disclosure.locator('.ts-row__attrs')).toHaveText('/first')
   await visible.check()
   await expect(first).toHaveCSS('stroke', rgb('#123abc'))
-  await picker.fill('#a234bc')
+  await picker.click()
+  await hex.fill('#a234bc')
   await expect(first).toHaveCSS('stroke', rgb('#a234bc'))
   await page.reload()
-  await expect(picker).toHaveValue('#a234bc')
+  await picker.click()
+  await expect(hex).toHaveValue('#a234bc')
   await expect(first).toHaveCSS('stroke', rgb('#a234bc'))
-  await disclosure.locator('summary').hover()
+  await disclosure.hover()
   await page
     .getByRole('button', {
       name: 'Reset colour for route: /first to automatic',
@@ -516,6 +535,108 @@ test('native series colour overrides persist independently of visibility and dis
   await expect(second).toHaveCSS('stroke', other)
   await page.reload()
   await expect(first).toHaveCSS('stroke', original)
+})
+
+test('series table sorts attributes while retaining checked choices and colours', async ({
+  page,
+}) => {
+  const samples = [
+    { key: 'a', model: 'haiku', type: 'input' },
+    { key: 'b', model: 'haiku', type: 'output' },
+    { key: 'c', model: 'sonnet', type: 'input' },
+  ]
+  const received: JsonMetricViewData = {
+    ...metric,
+    timeseries: samples.map(sample => ({
+      ...timeseries[0]!,
+      seriesRef: sample.key,
+      attributes: [
+        { key: 'model', value: { kind: 'string', value: sample.model } },
+        { key: 'type', value: { kind: 'string', value: sample.type } },
+      ],
+      datapoints: timeseries[0]!.datapoints.map((point, index) => ({
+        ...point,
+        id: `${sample.key}-${index}`,
+      })),
+    })),
+  }
+  let requested: string[] = []
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON()
+    if (request.method === 'getMetricView')
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id: request.id, result: received },
+      })
+    if (request.method === 'getMetricAggregateView')
+      requested = request.params.selectedSeriesRefs
+    return route.fallback()
+  })
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const grid = page.getByRole('grid', { name: 'Metric series', exact: true })
+  const rows = grid.locator('.ts-row:visible')
+  const lines = page.locator('.metric-series-line')
+  await expect(lines).toHaveCount(3)
+  const colors = await lines.evaluateAll(elements =>
+    Object.fromEntries(
+      elements.map(element => [
+        element.getAttribute('data-series-key'),
+        getComputedStyle(element).stroke,
+      ])
+    )
+  )
+  await grid.getByRole('button', { name: 'Sort by model', exact: true }).click()
+  await grid.getByRole('button', { name: 'Sort by model', exact: true }).click()
+  await expect(rows.first()).toHaveAttribute('data-series-key', 'c')
+  await expect(
+    grid.getByRole('columnheader').filter({
+      has: page.getByRole('button', { name: 'Sort by model', exact: true }),
+    })
+  ).toHaveAttribute('aria-sort', 'descending')
+  await expect(grid.getByRole('button', { name: /^Filter / })).toHaveCount(0)
+  await expect(rows).toHaveCount(3)
+  await expect(lines).toHaveCount(3)
+  await grid
+    .getByRole('checkbox', {
+      name: 'Show model: haiku · type: input in chart',
+      exact: true,
+    })
+    .uncheck()
+  await grid.getByRole('button', { name: 'Sort by type', exact: true }).click()
+  await grid.getByRole('button', { name: 'Sort by type', exact: true }).click()
+  await expect(rows.first()).toHaveAttribute('data-series-key', 'b')
+  await expect(rows).toHaveCount(3)
+  await expect(lines).toHaveCount(2)
+  await expect.poll(() => requested).toEqual(['b', 'c'])
+  await expect(
+    grid.getByRole('checkbox', {
+      name: 'Show model: haiku · type: input in chart',
+      exact: true,
+    })
+  ).not.toBeChecked()
+  for (const key of ['b', 'c'])
+    await expect(
+      page.locator(`.metric-series-line[data-series-key="${key}"]`)
+    ).toHaveCSS('stroke', colors[key]!)
+  await expect(
+    grid.getByRole('button', { name: 'Sort by model', exact: true })
+  ).toBeVisible()
+  await expect(
+    grid.getByRole('button', { name: 'Sort by type', exact: true })
+  ).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page
+    .getByRole('button', { name: 'Collapse sidebar', exact: true })
+    .click()
+  await expect(
+    page.getByRole('region', {
+      name: 'Metric series table viewport',
+      exact: true,
+    })
+  ).toBeVisible()
+  expect(
+    await grid.evaluate(element => element.getBoundingClientRect().width)
+  ).toBeGreaterThan(300)
 })
 
 test.describe('independent histogram aggregate loading', () => {
@@ -2732,22 +2853,20 @@ test('series open by their headers, one at a time, with one combined table', asy
       .locator(':scope > summary')
       .evaluate(element => getComputedStyle(element).backgroundColor)
   )
-  const series = page.locator('details[name="metric-series"]')
+  const series = page.locator('.ts-row[data-series-key]')
+  const seriesDetails = page.locator('[data-series-detail]')
   await expect(series).toHaveCount(2)
   for (const item of await series.all()) {
-    const card = item.locator(':scope > summary')
-    await expect(card).toHaveClass(/item-state/)
-    await expect(card).toHaveCSS('border-radius', '12px')
-    await expect(card).toHaveCSS('padding-top', '10px')
-    await expect(card).toHaveCSS('padding-bottom', '10px')
+    await expect(item).toHaveClass(/item-state/)
+    await expect(item).toHaveAttribute('aria-expanded', 'false')
   }
   const firstCheckbox = page.getByRole('checkbox', {
     name: 'Show route: /first in chart',
   })
   await firstCheckbox.uncheck()
-  await expect(series.nth(0)).not.toHaveAttribute('open')
+  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'false')
   await firstCheckbox.check()
-  await expect(series.nth(0)).not.toHaveAttribute('open')
+  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'false')
   await expect(seriesBubble).toHaveAttribute('open')
   await expect(fieldsBubble).toHaveAttribute('open')
   await expect(fieldsBubble.locator(':scope > summary')).toHaveText('Metric')
@@ -2772,10 +2891,10 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(
     details.locator('.collapse-arrow, .field-group__caret')
   ).toHaveCount(0)
-  await series.nth(0).locator(':scope > summary').click()
-  await expect(series.nth(0)).toHaveAttribute('open')
-  await expect(series.nth(0).locator('table')).toHaveCount(1)
-  const table = series.nth(0).getByRole('table', { name: 'Datapoints' })
+  await series.nth(0).locator('.ts-row__attrs').click()
+  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(seriesDetails.nth(0).locator('table')).toHaveCount(1)
+  const table = seriesDetails.nth(0).getByRole('table', { name: 'Datapoints' })
   const attribute = table.locator('[data-field="route"]')
   await expect(attribute.locator('.detail-property__key')).toHaveText(
     'route · string'
@@ -2863,7 +2982,7 @@ test('series open by their headers, one at a time, with one combined table', asy
     'border-top-left-radius',
     '12px'
   )
-  const nextPage = series.nth(0).getByRole('button', {
+  const nextPage = seriesDetails.nth(0).getByRole('button', {
     name: 'Next page',
     exact: true,
   })
@@ -2874,9 +2993,9 @@ test('series open by their headers, one at a time, with one combined table', asy
     'data-dp-id',
     'first-25'
   )
-  await expect(series.nth(0)).toContainText('26-40 of 40 datapoints')
+  await expect(seriesDetails.nth(0)).toContainText('26-40 of 40 datapoints')
   await expect(nextPage).toBeDisabled()
-  await series
+  await seriesDetails
     .nth(0)
     .getByRole('button', { name: 'First page', exact: true })
     .click()
@@ -2886,7 +3005,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   )
   await page.setViewportSize({ width: 1440, height: 720 })
   await expect(nextPage).toBeInViewport({ ratio: 1 })
-  await series
+  await seriesDetails
     .nth(0)
     .getByRole('combobox', { name: 'Rows per page' })
     .selectOption('50')
@@ -2918,18 +3037,18 @@ test('series open by their headers, one at a time, with one combined table', asy
   await page
     .getByRole('checkbox', { name: 'Show route: /first in chart' })
     .uncheck()
-  await expect(series.nth(0)).toHaveAttribute('open')
-  await series.nth(1).locator(':scope > summary').click()
-  await expect(series.nth(1)).toHaveAttribute('open')
-  await expect(series.nth(0)).not.toHaveAttribute('open')
-  await expect(series.locator('table:visible')).toHaveCount(1)
+  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'true')
+  await series.nth(1).locator('.ts-row__attrs').click()
+  await expect(series.nth(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'false')
+  await expect(seriesDetails.locator('table:visible')).toHaveCount(1)
   await expect(
-    series.nth(1).getByRole('table', { name: 'Datapoints' })
+    seriesDetails.nth(1).getByRole('table', { name: 'Datapoints' })
   ).toContainText('/second')
-  await series.nth(0).locator(':scope > summary').focus()
+  await series.nth(0).focus()
   await page.keyboard.press('Enter')
-  await expect(series.nth(0)).toHaveAttribute('open')
-  await expect(series.nth(1)).not.toHaveAttribute('open')
+  await expect(series.nth(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(series.nth(1)).toHaveAttribute('aria-expanded', 'false')
 })
 
 test('header tabs use icons and tooltips only when their panel is narrow', async ({

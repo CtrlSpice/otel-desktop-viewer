@@ -343,13 +343,29 @@ svg {
   }
 }
 
-/* Neutral boundaries at rest; accent belongs to checked and focused controls. */
-.checkbox.checkbox-primary:not(:checked):not(:indeterminate) {
-  background-color: var(--color-input);
+/* One quiet checkbox treatment; categorical colour belongs to adjacent dots. */
+.checkbox {
+  --input-color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
   border-color: var(--color-highlight-high);
+  box-shadow: none;
 }
 
-.checkbox.checkbox-primary:focus-visible {
+.checkbox:checked,
+.checkbox:indeterminate {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: transparent;
+  box-shadow: none;
+}
+
+.checkbox::before {
+  box-shadow: none;
+  transition: none;
+}
+
+.checkbox:focus-visible {
   outline-color: var(--focus-ring-color);
 }
 

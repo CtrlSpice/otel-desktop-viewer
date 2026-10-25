@@ -249,7 +249,7 @@
         </p>{/if}
     </div>
     <SignalFooter label="page" compact>
-      {#snippet leading()}
+      {#snippet trailing()}
         <PageSizeSelect
           label="Telemetry per page"
           value={pageSize}

@@ -77,6 +77,10 @@ import {
 import { themeSignal } from '@/state/theme.svelte'
 import { SERIES_COLOR_COUNT } from '@/themes'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+import {
+  minimalSeriesTable,
+  type SeriesTable,
+} from '@/components/metrics/utils/minimal-series-labels'
 import { detailPanel } from '@/state/detail-panel.svelte'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
@@ -251,6 +255,7 @@ export interface MetricViewContext {
   readonly histogramTimeseriesCount: number
   /** Series checked in the legend. Empty means none for filterable metrics. */
   readonly visibleSeries: SvelteSet<string>
+  readonly seriesTable: SeriesTable
   /** Resets and seeds view state before the metric renders. */
   seedForMetric(metric: MetricViewData | undefined): void
   /** Received series datapoints, or undefined until fetched. */
@@ -1207,6 +1212,11 @@ export function createMetricViewContext(
     }))
   })
 
+  const seriesRows = $derived(
+    isHistogramKind ? histogramLegendTimeseries : gaugeSumLegendTimeseries
+  )
+  const seriesTable = $derived(minimalSeriesTable(seriesRows))
+
   const heatmapBucketSeries = $derived.by((): HistogramSlicePoint[] | null => {
     if (!isHistogramKind) return null
     if (histogramAggregation.error) return []
@@ -1979,6 +1989,9 @@ export function createMetricViewContext(
     },
     get visibleSeries() {
       return view.visibleSeries
+    },
+    get seriesTable() {
+      return seriesTable
     },
     seedForMetric,
     seriesDatapoints(seriesKey: string) {

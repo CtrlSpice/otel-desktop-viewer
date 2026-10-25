@@ -157,8 +157,8 @@ it('keeps series attributes and datapoints in one table without nested disclosur
     oncontext: ctx => ctx.expandedTimeseries.add('route=/a'),
   })
   await tick()
-  const series = view.container.querySelector<HTMLDetailsElement>(
-    'details[name="metric-series"][open]'
+  const series = view.container.querySelector<HTMLTableRowElement>(
+    '[data-series-detail="route=/a"]'
   )!
   const table = within(series).getByRole('table', { name: 'Datapoints' })
   expect(series.querySelectorAll('table')).toHaveLength(1)
@@ -174,9 +174,10 @@ it('keeps series attributes and datapoints in one table without nested disclosur
   expect(table).toHaveTextContent('Time')
   expect(table).toHaveTextContent('Value')
   expect(series.querySelector('.field-group__caret')).toBeNull()
-  expect(series.querySelector(':scope > summary')).toHaveClass('item-state')
-  expect(series).toHaveClass('field-group--card')
-  expect(series).toHaveAttribute('name', 'metric-series')
+  expect(
+    view.container.querySelector('[data-series-key="route=/a"]')
+  ).toHaveClass('item-state')
+  expect(series).not.toHaveAttribute('hidden')
   expect(screen.queryByText('Resource attributes')).toBeNull()
 
   await view.rerender({

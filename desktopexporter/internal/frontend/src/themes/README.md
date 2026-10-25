@@ -346,21 +346,23 @@ series cap is independent of the 118-colour automatic capacity. Exhaustion stays
 within this pool rather than adding near-black or pale extremes.
 
 Home service names retain their assigned 8px dots with an 8px gap before the name.
-The dots are decorative; cards retain their normal selection action. Service
-and count-palette pickers are omitted. Gauge/Sum series in metric Details have
-a pencil after the sparkline for series with an assigned colour. It opens the
-native colour picker, with a reset action when an override is set. Controls
-appear on row hover or keyboard focus, and stay visible on touch devices. Colour
-changes are independent of disclosure, and saved choices survive visibility changes. Reset restores
-the series' saved automatic assignment without moving other series.
+Service dots open a shared colour popover independently of card selection.
+Gauge/Sum series with assigned colours have the same editable dot before their
+attribute values. The popover uses vanilla-colorful's dependency-free hex picker,
+with a hue slider, colour field, hex input and Reset to automatic. Checkboxes use
+the shared Primary checkmark on a transparent background, independent of series
+colour. Saved choices survive visibility changes. Reset restores the owner's
+saved automatic assignment without moving other owners.
 
-Series headings use an exact minimum set of attribute keys that distinguishes
+The sortable Series table uses an exact minimum set of attribute columns that distinguishes
 all series in the metric, including hidden series. Equivalent choices favour
 shorter labels, with deterministic key ordering. Full attributes remain on hover
 and in the expanded fields. Selected labels wrap in narrow panes instead of
 truncating the distinguishing values. Missing values, received types and duplicate keys
 remain distinct. If attributes alone cannot distinguish rows, the heading adds
 the native series identifier; this never changes grouping or colour ownership.
+Sorting cycles ascending, descending and received order without changing visibility
+or datapoint selection. Column filters are omitted.
 
 Existing overrides are read from `graph-colour-overrides:madoromi-inks-v1:<scope>` as
 identity/ink-shade pairs; new series choices store six-digit RGB hex values in

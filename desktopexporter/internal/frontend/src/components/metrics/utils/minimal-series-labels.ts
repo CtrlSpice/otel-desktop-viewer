@@ -10,6 +10,16 @@ type Column = {
 }
 type Partition = number[][]
 export type SeriesLabel = { text: string; needsIdentity: boolean }
+export type SeriesCell = {
+  label: string
+  signature: string
+  values: readonly AttributeValue[]
+}
+export type SeriesColumn = { key: string; cells: Map<string, SeriesCell> }
+export type SeriesTable = {
+  columns: SeriesColumn[]
+  labels: Map<string, SeriesLabel>
+}
 
 function valueSignature(value: AttributeValue): string {
   // Preserve bigint and non-finite/-0 doubles without delimiter ambiguities in
@@ -92,10 +102,10 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
 }
 
 /** One minimum distinguishing key set for all rows, including hidden series. */
-export function minimalSeriesLabels(
+export function minimalSeriesTable(
   rows: readonly LegendTimeseries[]
-): Map<string, SeriesLabel> {
-  if (rows.length === 0) return new Map()
+): SeriesTable {
+  if (rows.length === 0) return { columns: [], labels: new Map() }
   const attributes = rows.map(row => {
     const byKey = new Map<string, AttributeValue[]>()
     for (const { key, value } of row.attributes) {
@@ -192,7 +202,7 @@ export function minimalSeriesLabels(
   )
   const counts = new Map<string, number>()
   for (const text of texts) counts.set(text, (counts.get(text) ?? 0) + 1)
-  return new Map(
+  const labels = new Map(
     rows.map((row, index) => [
       row.key,
       {
@@ -200,5 +210,48 @@ export function minimalSeriesLabels(
         needsIdentity: counts.get(texts[index]!)! > 1,
       },
     ])
+  )
+  return {
+    labels,
+    columns: selected.map(column => ({
+      key: column.key,
+      cells: new Map(
+        rows.map((row, index) => [
+          row.key,
+          {
+            label: column.labels[index]!,
+            signature: column.signatures[index]!,
+            values: attributes[index]!.get(column.key) ?? [],
+          },
+        ])
+      ),
+    })),
+  }
+}
+
+export function minimalSeriesLabels(
+  rows: readonly LegendTimeseries[]
+): Map<string, SeriesLabel> {
+  return minimalSeriesTable(rows).labels
+}
+
+/** Numeric telemetry sorts numerically; other values use deterministic natural text order. */
+export function compareSeriesCells(a: SeriesCell, b: SeriesCell): number {
+  const left = a.values[0]
+  const right = b.values[0]
+  if (
+    a.values.length === 1 &&
+    b.values.length === 1 &&
+    left &&
+    right &&
+    (left.kind === 'int64' || left.kind === 'double') &&
+    (right.kind === 'int64' || right.kind === 'double')
+  ) {
+    if (left.value < right.value) return -1
+    if (left.value > right.value) return 1
+  }
+  return (
+    a.label.localeCompare(b.label, 'en', { numeric: true }) ||
+    a.signature.localeCompare(b.signature, 'en')
   )
 }

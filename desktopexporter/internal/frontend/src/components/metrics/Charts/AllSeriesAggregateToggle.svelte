@@ -17,7 +17,7 @@
   <label class="all-series-aggregate-toggle chart-control-toggle" title={label}>
     <input
       type="checkbox"
-      class="checkbox checkbox-xs checkbox-soft all-series-aggregate-toggle__checkbox"
+      class="checkbox checkbox-xs all-series-aggregate-toggle__checkbox"
       checked={ctx.showAllSeriesAggregate}
       aria-label={label}
       onchange={e => ctx.setShowAllSeriesAggregate(e.currentTarget.checked)}

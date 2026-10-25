@@ -1,7 +1,11 @@
 import { expect, it } from 'vitest'
 import type { LegendTimeseries } from '@/types/metric-chart-types'
 import type { Attribute } from '@/types/api-types'
-import { minimalSeriesLabels } from './minimal-series-labels'
+import {
+  minimalSeriesLabels,
+  minimalSeriesTable,
+  compareSeriesCells,
+} from './minimal-series-labels'
 
 function row(key: string, values: Record<string, string>): LegendTimeseries {
   return {
@@ -12,6 +16,44 @@ function row(key: string, values: Record<string, string>): LegendTimeseries {
     })),
   }
 }
+
+it('sorts numeric attributes without losing int64 precision and keeps typed filter identities', () => {
+  const rows: LegendTimeseries[] = [
+    {
+      key: 'big',
+      attributes: [
+        { key: 'n', value: { kind: 'int64', value: 9007199254740993n } },
+      ],
+    },
+    {
+      key: 'small',
+      attributes: [
+        { key: 'n', value: { kind: 'int64', value: 9007199254740992n } },
+      ],
+    },
+    {
+      key: 'negative',
+      attributes: [{ key: 'n', value: { kind: 'double', value: -10 } }],
+    },
+    {
+      key: 'string',
+      attributes: [{ key: 'n', value: { kind: 'string', value: '-10' } }],
+    },
+  ]
+  const column = minimalSeriesTable(rows).columns[0]!
+  expect(
+    compareSeriesCells(column.cells.get('big')!, column.cells.get('small')!)
+  ).toBeGreaterThan(0)
+  expect(
+    compareSeriesCells(
+      column.cells.get('negative')!,
+      column.cells.get('small')!
+    )
+  ).toBeLessThan(0)
+  expect(column.cells.get('negative')!.signature).not.toBe(
+    column.cells.get('string')!.signature
+  )
+})
 
 it('uses model and type instead of redundant session IDs, stably across row order', () => {
   const rows = ['haiku', 'sonnet', 'opus'].flatMap(model =>
