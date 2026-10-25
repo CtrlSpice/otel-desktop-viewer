@@ -116,7 +116,7 @@ Borders mark an editable control, floating surface or meaningful divider; they
 do not enclose every visual group. Pane bodies, headers and ordinary signal
 cards stay borderless. Code is flat unless it is part of an explicitly joined
 terminal, which has one enclosing boundary. Unchecked checkbox outlines use
-Nijimi 1; checked controls use Primary. Cards use shared hover/selection fills
+Nijimi 1; round checked controls use neutral Text, with Primary keyboard focus. Cards use shared hover/selection fills
 without acquiring shadows. Chart axes, tree connectors and keyboard focus rings
 retain their distinct meanings. Home's dotted import box sits below the Getting started header,
 matches the terminals' width and border colour, and explains that files can be
@@ -357,7 +357,7 @@ Seven 8px dots offer the current ink's official shades. Named preset and curve
 overrides retain their ink identity; custom RGB values use the closest official
 shade in OKLab and show “Closest ink”. The picker has no opacity control.
 Checkboxes use
-the shared Primary checkmark on a transparent background, independent of series
+the shared neutral Text checkmark and round outline on a transparent background, independent of series
 colour. Saved choices survive visibility changes. Reset restores the owner's
 saved automatic assignment without moving other owners. Previously coloured series
 retain their editor while unchecked; editing them does not change chart visibility.

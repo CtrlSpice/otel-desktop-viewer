@@ -345,8 +345,8 @@ svg {
 
 /* One quiet checkbox treatment; categorical colour belongs to adjacent dots. */
 .checkbox {
-  --input-color: var(--color-primary);
-  border-radius: var(--radius-sm);
+  --input-color: var(--color-base-content);
+  border-radius: 50%;
   background: transparent;
   border-color: var(--color-highlight-high);
   box-shadow: none;
@@ -354,8 +354,8 @@ svg {
 
 .checkbox:checked,
 .checkbox:indeterminate {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
+  color: var(--color-base-content);
+  border-color: var(--color-base-content);
   background: transparent;
   box-shadow: none;
 }
