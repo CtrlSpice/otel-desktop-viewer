@@ -7,7 +7,6 @@
     FlowerIcon,
     HeartIcon,
     Leaf02Icon,
-    MonitorIcon,
     SnowflakeIcon,
     Sun03Icon,
   } from '@hugeicons/core-free-icons'
@@ -131,20 +130,12 @@
 >
   {#snippet icon()}
     {@render swatches(chosen.preview)}
-    <HugeiconsIcon
-      icon={MonitorIcon}
-      size={18}
-      strokeWidth={1.5}
-      class="shrink-0"
-      aria-hidden="true"
-    />
   {/snippet}
   {#snippet children()}
     <div class="theme-picker__layout">
       <PaneHeader mode="toolbar" pill ariaLabel="Theme preview controls">
         {#snippet right()}
           <h2 class="mr-2 min-w-0 flex-1 text-sm font-normal">
-            <span class="text-subtle">Preview:</span>
             {chosen.name}
           </h2>
           <fieldset class="theme-picker__seasons">

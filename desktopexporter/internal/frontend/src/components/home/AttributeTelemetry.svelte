@@ -1,11 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { FilterIcon } from '@hugeicons/core-free-icons'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import LogCard from '@/components/logs/LogCard.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
-  import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
+  import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PageSizeSelect from '@/components/shared/PageSizeSelect.svelte'
   import { loadPageSize, savePageSize, type PageSize } from '@/utils/page-size'
@@ -62,12 +60,13 @@
   const active = $derived(
     available.find(group => group.signal === selectedSignal) ?? available[0]
   )
-  const signalChoices = $derived(
+  const tabs = $derived(
     discoverySignals.map(signal => {
       const group = groups.find(group => group.signal === signal)
       return {
         id: signal,
         label: labels[signal],
+        countBrackets: true,
         count:
           group && !group.loading && !group.error
             ? group.cards.length
@@ -75,9 +74,6 @@
         disabled: !available.some(group => group.signal === signal),
       }
     })
-  )
-  const activeChoice = $derived(
-    signalChoices.find(choice => choice.id === active?.signal)
   )
   const pageCount = $derived(Math.ceil((active?.cards.length ?? 0) / pageSize))
   const pageStart = $derived((active?.pageIndex ?? 0) * pageSize)
@@ -97,26 +93,6 @@
   function selectSignal(id: string) {
     const group = available.find(group => group.signal === id)
     if (group) selectedSignal = group.signal
-  }
-  function navigateSignal(event: KeyboardEvent, signal: DiscoverySignal) {
-    const choices = signalChoices.filter(choice => !choice.disabled)
-    const index = choices.findIndex(choice => choice.id === signal)
-    let next: number
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight')
-      next = (index + 1) % choices.length
-    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft')
-      next = (index - 1 + choices.length) % choices.length
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = choices.length - 1
-    else return
-    event.preventDefault()
-    const choice = choices[next]
-    if (!choice) return
-    selectSignal(choice.id)
-    if (event.currentTarget instanceof HTMLElement)
-      event.currentTarget.parentElement
-        ?.querySelector<HTMLButtonElement>(`[data-signal="${choice.id}"]`)
-        ?.focus()
   }
   function setPage(index: number) {
     if (!active || active.loading || active.error) return
@@ -188,58 +164,19 @@
   }
 </script>
 
-{#snippet signalFilter()}
-  <FilterPopover
-    label={`Filter telemetry${activeChoice ? `: ${activeChoice.label}${activeChoice.count !== undefined ? ` [${activeChoice.count}]` : ''}` : ''}`}
-    tooltip="Filter telemetry"
-    compact
-    showHeader={false}
-    focusSelected
-    popoverClass="telemetry-signal-filter"
-  >
-    {#snippet icon()}
-      {#if activeChoice}<span
-          >{activeChoice.label}{#if activeChoice.count !== undefined}<span
-              class="text-subtle tabular-nums"
-            >
-              [{activeChoice.count}]</span
-            >{/if}</span
-        >{/if}
-      <HugeiconsIcon
-        icon={FilterIcon}
-        size={16}
-        strokeWidth={1.5}
-        aria-hidden="true"
-      />
-    {/snippet}
-    {#snippet children(close)}
-      <div role="radiogroup" aria-label="Telemetry signals">
-        {#each signalChoices as choice (choice.id)}
-          <button
-            type="button"
-            role="radio"
-            class="item-state item-state--menu flex w-full items-center justify-between gap-2 px-3 py-2 text-left disabled:text-muted"
-            aria-checked={active?.signal === choice.id}
-            aria-controls={panelID}
-            tabindex={active?.signal === choice.id ? 0 : -1}
-            disabled={choice.disabled}
-            data-signal={choice.id}
-            onkeydown={event => navigateSignal(event, choice.id)}
-            onclick={() => {
-              selectSignal(choice.id)
-              close()
-            }}
-          >
-            <span>{choice.label}</span>
-            {#if choice.count !== undefined}<span
-                class="tabular-nums"
-                class:text-subtle={!choice.disabled}>[{choice.count}]</span
-              >{/if}
-          </button>
-        {/each}
-      </div>
-    {/snippet}
-  </FilterPopover>
+{#snippet signalTabs()}
+  <div class="attribute-telemetry__tabs">
+    <PaneHeader
+      mode="tabs"
+      bare
+      tabLayout="right"
+      {tabs}
+      activeID={active?.signal ?? ''}
+      onSelect={selectSignal}
+      tabPanelID={panelID}
+      ariaLabel="Telemetry signals"
+    />
+  </div>
 {/snippet}
 
 <DetailBubble
@@ -256,8 +193,14 @@
       <span class="text-base-content">{attribute.ownerType}</span>
     {/if}
   {/snippet}
-  {#snippet action()}{@render signalFilter()}{/snippet}
-  <div id={panelID} class="attribute-telemetry">
+  {#snippet action()}{@render signalTabs()}{/snippet}
+  <div
+    id={panelID}
+    role="tabpanel"
+    aria-labelledby={active ? paneTabID(panelID, active.signal) : undefined}
+    aria-label={active ? undefined : 'Matching telemetry'}
+    class="attribute-telemetry"
+  >
     <!-- Keyboard users can focus and scroll the card list independently. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
@@ -335,8 +278,8 @@
   .attribute-telemetry {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
-  :global(.filter-popover.telemetry-signal-filter) {
-    @apply w-48 p-2;
+  .attribute-telemetry__tabs {
+    @apply min-w-0 overflow-x-auto;
   }
   .attribute-telemetry__cards {
     @apply min-h-0 flex-1 overflow-auto px-3 pb-3;

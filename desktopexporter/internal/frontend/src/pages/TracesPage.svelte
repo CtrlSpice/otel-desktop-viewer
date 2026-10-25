@@ -414,7 +414,6 @@
 </script>
 
 <PageLayout
-  mainHeaderRows={2}
   mainSurface="base"
   items={page.sortedItems}
   selectedID={page.selectedID}

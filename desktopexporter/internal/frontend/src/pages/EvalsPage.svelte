@@ -20,7 +20,6 @@
   {#await workspace}
     <PageLayout
       mainTitle="Evals"
-      mainHeaderRows={2}
       items={[]}
       selectedID={null}
       drawerID="signal-drawer"
@@ -38,7 +37,6 @@
   {:catch}
     <PageLayout
       mainTitle="Evals"
-      mainHeaderRows={2}
       items={[]}
       selectedID={null}
       drawerID="signal-drawer"

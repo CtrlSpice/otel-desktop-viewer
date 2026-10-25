@@ -589,11 +589,8 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     })
     await page.goto('/')
     const trigger = page.getByRole('button', { name: /^Theme:/ })
-    const dots = (await trigger
-      .locator('span[aria-hidden="true"]')
-      .boundingBox())!
-    const monitor = (await trigger.locator('svg').boundingBox())!
-    expect(dots.x + dots.width).toBeLessThan(monitor.x)
+    await expect(trigger.locator('span[style]')).toHaveCount(3)
+    await expect(trigger.locator('svg')).toHaveCount(0)
     const savedAssignments = await page.evaluate(() =>
       Object.entries(localStorage).filter(([key]) =>
         key.startsWith('graph-colour-')
@@ -620,7 +617,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     await expect(seasons.getByRole('button')).toHaveCount(4)
     await expect(seasons.locator('svg')).toHaveCount(4)
     const heading = picker.getByRole('heading', {
-      name: 'Preview: To-ro',
+      name: 'To-ro',
       exact: true,
     })
     await expect(heading).toBeVisible()
@@ -1395,10 +1392,9 @@ test.describe('home page accessibility', () => {
         'background-color',
         themeRgb(theme, 'chrome')
       )
-      await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
-        'background-color',
-        panel
-      )
+      await expect(
+        page.locator('.signal-drawer__controls > .pane-header')
+      ).toHaveCSS('background-color', panel)
       await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
         'background-color',
         canvas
@@ -1412,11 +1408,11 @@ test.describe('home page accessibility', () => {
         '.detail-stack:visible > .detail-bubble > :is(details, section) > .detail-bubble__heading'
       )
       await expect(detailHeadings).toHaveCount(3)
-      for (const heading of await detailHeadings.all()) {
+      for (const [index, heading] of (await detailHeadings.all()).entries()) {
         await expect(heading).toHaveCSS('background-color', panel)
         await expect(heading).toHaveCSS('font-weight', '400')
-        // Shared 32px controls plus 8px vertical padding on each side.
-        await expect(heading).toHaveCSS('height', '48px')
+        // Only the pane's first heading reserves a second control row.
+        await expect(heading).toHaveCSS('height', index === 0 ? '88px' : '48px')
         await expect(heading).toHaveCSS('border-radius', '12px')
       }
     })

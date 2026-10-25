@@ -11,7 +11,6 @@
     mode: 'title',
     pill: true,
     title: props.mainTitle ?? props.drawerLabel,
-    reserveMetaRow: props.mainHeaderRows === 2,
   }))
   const contexts = getAllContexts<Map<unknown, unknown>>()
 

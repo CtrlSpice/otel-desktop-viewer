@@ -4,7 +4,6 @@
 
   export type LayoutOptions<T> = {
     mainTitle?: string
-    mainHeaderRows?: 1 | 2
     mainHeaderInert?: boolean
     header?: WorkspaceHeaderState
     // ── Drawer (forwarded to SignalListDrawer) ─────────────────────

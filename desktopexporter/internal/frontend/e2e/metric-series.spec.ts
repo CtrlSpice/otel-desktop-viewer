@@ -398,15 +398,43 @@ for (const { id: theme } of THEMES) {
           const disabled = swatch.id === GRAPH_SWATCHES[1]!.id
           return {
             id: swatch.id,
-            colour: disabled ? themeRgb(theme, 'panel') : rgb(swatch.color),
+            colour: disabled ? themeRgb(theme, 'chrome') : rgb(swatch.color),
             disabled,
             label: `${ink.name} (${ink.english}), shade ${swatch.shade}, ${swatch.color}${disabled ? ', already assigned' : ''}`,
-            width: '32px',
+            width: '24px',
             dotWidth: '8px',
           }
         })
       )
     )
+    const grid = picker.locator('.ink-picker-options')
+    const gridBox = (await grid.boundingBox())!
+    const boxes = await shades.evaluateAll(buttons =>
+      buttons.map(button => button.getBoundingClientRect().toJSON())
+    )
+    expect(new Set(boxes.map(box => box.x)).size).toBe(16)
+    expect(new Set(boxes.map(box => box.y)).size).toBe(14)
+    expect(
+      boxes.every(
+        box =>
+          box.x >= gridBox.x &&
+          box.y >= gridBox.y &&
+          box.x + box.width <= gridBox.x + gridBox.width + 1 &&
+          box.y + box.height <= gridBox.y + gridBox.height + 1
+      )
+    ).toBe(true)
+    await shades.nth(6).focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(shades.nth(13)).toBeFocused()
+    await page.keyboard.press('ArrowLeft')
+    await expect(shades.nth(6)).toBeFocused()
+    await page.keyboard.press('Control+End')
+    await expect(shades.nth(217)).toBeFocused()
+    await page.keyboard.press('Control+Home')
+    await expect(shades.nth(6)).toBeFocused()
+    await shades.first().focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(shades.nth(118)).toBeFocused()
     // The other owner reserves its shade even while hidden.
     const reserved = rendered
       .filter(shade => shade.disabled)
@@ -2922,10 +2950,13 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(nextPage).toBeInViewport({ ratio: 1 })
   // Section allocation stays stable when more vertical room becomes available.
   const sectionRatio = async () => {
-    const seriesHeight = (await seriesBubble.boundingBox())!.height
-    return (
-      seriesHeight / (seriesHeight + (await fieldsBubble.boundingBox())!.height)
-    )
+    const seriesHeight =
+      (await seriesBubble.boundingBox())!.height -
+      (await seriesBubble.locator(':scope > summary').boundingBox())!.height
+    const fieldsHeight =
+      (await fieldsBubble.boundingBox())!.height -
+      (await fieldsBubble.locator(':scope > summary').boundingBox())!.height
+    return seriesHeight / (seriesHeight + fieldsHeight)
   }
   const beforeResize = await sectionRatio()
   await page.setViewportSize({ width: 1920, height: 2400 })

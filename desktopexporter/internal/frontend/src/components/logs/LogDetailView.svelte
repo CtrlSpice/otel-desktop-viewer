@@ -109,7 +109,7 @@
     ariaLabel="Log record"
   >
     {#snippet leading()}{#if log}<ServiceDot {service} />{/if}{/snippet}
-    {#snippet right()}
+    {#snippet metaRight()}
       <DetailViewTabs id={detailViewID} bind:view={detailView} />
       {#if log}{#key log.logRef}
           <ValueCopyButton

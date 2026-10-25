@@ -93,7 +93,7 @@
       class:signal-row__header--wrap={wrapTitle}
       class:signal-row__header--action={Boolean(action)}
     >
-      {#if action}<span class="h-8 w-6 shrink-0" aria-hidden="true"></span>{/if}
+      {#if action}<span class="size-6 shrink-0" aria-hidden="true"></span>{/if}
       <span class="signal-row__title-cluster" {title}>
         <span class="signal-row__title"
           >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
@@ -258,7 +258,7 @@
     grid-area: 1 / 1;
     justify-self: start;
     align-self: start;
-    margin: 0.875rem 0 0 0.75rem;
+    margin: 0.625rem 0 0 0.75rem;
   }
   .signal-card-with-action:hover > .signal-row:not(:disabled) {
     background-color: var(--color-highlight-low);
@@ -352,7 +352,7 @@
   }
 
   .signal-row__badge {
-    @apply flex max-w-[55%] shrink-0 items-center justify-end;
+    @apply flex max-w-full shrink-0 items-center justify-end;
     gap: var(--header-gap);
   }
 

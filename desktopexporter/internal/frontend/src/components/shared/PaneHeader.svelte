@@ -4,7 +4,7 @@
    * unified layout. Four modes, one visual contract.
    *
    * Modes
-   *   • title       — plain bold label on the bar background, no tabs.
+   *   • title       — regular title above a reserved control row, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
    *   • tabs        — compact tab strip with a sliding selected fill. Use
@@ -80,9 +80,7 @@
 
   type CommonProps = {
     inert?: boolean
-    /** Keep the destination's control row in place while its data loads. */
-    reserveMetaRow?: boolean
-    /** Optional action before the title in title and title-tabs headers. */
+    /** Optional identity mark before the title. Actions belong in metaRight. */
     leading?: Snippet
     /** Right-aligned badges (counts, severity, offsets) as
      *  plain strings. Use for ad-hoc badges where there's no shared
@@ -180,7 +178,8 @@
         : 'pane-header--flush'
   )
   let stackedClass = $derived(
-    props.reserveMetaRow ||
+    props.mode === 'title' ||
+      props.mode === 'title-tabs' ||
       props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
       props.metaLeft !== undefined ||
@@ -396,7 +395,7 @@
           true
         )}
       </div>
-    {:else if props.reserveMetaRow || props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
+    {:else}
       {@render metaRow()}
     {/if}
   </div>
@@ -463,24 +462,16 @@
 
   .pane-header--pill {
     @apply rounded-xl;
-    min-height: var(--pane-header-h);
+    min-height: var(--pane-header-single-h);
   }
 
   .pane-header--flush {
     border-radius: 0;
   }
 
-  /* Match the first row of detail and drawer headers. */
-  .pane-header--title {
-    @apply items-center;
-  }
-
   .pane-header--stacked {
-    @apply flex-col items-stretch gap-2;
-  }
-
-  .pane-header--stacked.pane-header--title {
-    @apply items-stretch;
+    @apply flex-col items-stretch;
+    min-height: var(--pane-header-h);
   }
 
   .pane-header__top {
@@ -489,13 +480,13 @@
   }
 
   .pane-header__meta-row {
-    @apply flex w-full min-w-0 flex-wrap items-center justify-between gap-2;
+    @apply flex w-full min-w-0 items-center justify-between gap-2;
     min-height: var(--pane-header-row-h);
   }
 
   .pane-header__meta-row--centered {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
   }
 
   .pane-header__meta-center {
@@ -548,18 +539,13 @@
     overflow: visible;
   }
 
-  /* Graph tabs have their own row, leaving title and badges on the first. */
-  .pane-header--title-tabs {
-    @apply flex-col items-stretch gap-2;
-  }
-
   .pane-header__tabs-row {
-    @apply flex min-w-0 w-full flex-wrap items-center gap-2;
+    @apply flex min-w-0 w-full items-center gap-2;
+    min-height: var(--pane-header-row-h);
   }
 
   .pane-header__tabs-row .pane-header__meta-row {
     @apply w-auto flex-1 pb-0;
-    flex-basis: 20rem;
   }
 
   .pane-header__meta-controls {
@@ -571,7 +557,7 @@
   }
 
   .pane-header__tab-group--controls {
-    @apply flex-wrap overflow-visible;
+    @apply shrink-0 overflow-visible;
   }
 
   .pane-header__tab-group--left {

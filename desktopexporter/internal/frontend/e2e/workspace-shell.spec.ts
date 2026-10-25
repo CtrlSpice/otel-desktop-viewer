@@ -118,17 +118,26 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         )
       ).toBe(true)
       await expect(page.locator('.workspace-shell')).toHaveCount(1)
+      await expect(main.locator(':scope > .pane-header')).toHaveCSS(
+        'height',
+        '88px'
+      )
       if (await list.isVisible()) {
         expect((await list.boundingBox())!.y).toBeCloseTo(
           (await main.boundingBox())!.y,
           0
         )
         const controls = page.locator('.signal-drawer__controls')
-        if (await controls.isVisible())
+        if (await controls.isVisible()) {
+          await expect(controls.locator('.pane-header')).toHaveCSS(
+            'height',
+            '88px'
+          )
           expect((await controls.boundingBox())!.y).toBeCloseTo(
             (await main.boundingBox())!.y,
             0
           )
+        }
       }
       expect(
         await page.evaluate(() => [

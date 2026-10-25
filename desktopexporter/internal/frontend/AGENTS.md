@@ -33,7 +33,7 @@
   below its button, end-aligned and viewport-clamped, with compact ink controls
   below the full-width app-style sample preview. The preview remains
   the main visual element.
-  Use one shared section-header row: `Preview: <original ink name>` at the left and the four
+  Use one shared section-header row: the original ink name at the left and the four
   icon-only season choices at the right. Put the sample summary card and its
   JSON below it, then the ink strip, then attribution. Omit redundant headings.
   Omit the extra Trace preview header and separate attributes.
@@ -74,8 +74,8 @@
   retain ink-family names beside their swatches.
   Accent-ink previews show the named seed's exact official shades 1, 4 and 7,
   from the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
-  The top-bar theme control shows three 8px dots using official shades 1, 4
-  and 7, followed by a simple 18px monitor. Use original ink names in the theme
+  The top-bar theme control shows only three 8px dots using official shades 1, 4
+  and 7. Use original ink names in the theme
   picker's visible text, tooltips and accessible labels; omit English translations.
   Use the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
@@ -133,14 +133,12 @@
   fact. Omit the "Axolotl fact:" prefix.
   Keep welcome taglines and facts left-aligned with balanced wrapping
   (`text-wrap: balance`) for more even line lengths.
-  Home Telemetry uses a single-select signal filter at the far right of its
-  section header. The closed trigger shows the active signal and known
-  square-bracketed count, such as `Traces [66]`. Its menu offers Traces, Metrics
-  and Logs with known counts. Retain independent pages and scroll positions.
-  Only the active card list scrolls; keep the filter at the top and shared page
+  Home Telemetry uses shared Traces, Metrics and Logs tabs in its second header
+  row, with known square-bracketed counts, such as `Traces [66]`.
+  Retain independent pages and scroll positions.
+  Only the active card list scrolls; keep the tabs at the top and shared page
   controls in a stable bottom footer. Changes are immediate and support
-  arrow/Home/End navigation. Opening focuses the selected choice; choosing an
-  item or pressing Escape closes the menu and restores trigger focus.
+  arrow/Home/End navigation and one Tab stop for the signal tabs.
   Attributes and Telemetry each offer 25, 50 or 100 per page in their footer,
   remembering separate preferences and defaulting to 25. Keep each attribute's
   expanded values together; apply filtering and sorting globally. Page changes
@@ -171,12 +169,16 @@
   the regular text size while keeping the seven preview dots aligned.
   Size both pickers from the widest full ink label plus their dots and controls,
   capped by the viewport. Keep that width stable when search filters the list.
-  Both ink pickers share InkPicker. Graph overrides use seven individually
-  clickable official shades, with 32px targets around 8px dots, arrow-key
-  navigation and selected-shade focus. Preserve native Escape/light dismissal.
+  Both ink pickers share InkPicker. Graph overrides show all 224 official shades
+  as a compact rectangle: two stacked groups of 16 inks, each ink a vertical
+  light-to-dark column of seven 8px dots in 24px targets. Show the hovered/focused
+  ink name and shade once above the grid; retain full names in tooltips and
+  accessible labels. Narrow screens use eight columns with native scrolling.
+  Preserve search, spatial arrow/Home/End navigation,
+  selected-shade focus and native Escape/light dismissal.
   Disable shades reserved by other owners in the same scope, including hidden
   owners, saved reset slots and overrides; skip them during keyboard navigation.
-  Disabled shade dots use solid base-200, rather than faded ink colours.
+  Disabled shade dots use solid base-300, the darkest surface.
   Keep the current choice available, including pre-existing saved collisions.
   With fewer than 32 unreserved presets, open per-ink sliders along the pinned
   curves between official shades 1 and 7. Skip occupied hex colours. Keep the
@@ -184,16 +186,16 @@
   Preserve exact preset colours and persist curve positions in the same scope.
   Home service colour controls use an 8px dot inside a 24px circular target,
   with an 8px visible dot-to-title gap and no overlapping title hit area.
-  Centre summary icons under the dot and align their labels with the title.
-  Home service cards are at most 22rem wide. Metric-series colour controls retain
+  Home service cards have three rows: name and a right-aligned Error dot/count,
+  then comma-separated trace, metric and log counts, then Last seen.
+  Align counts and Last seen with the service name. Omit
+  signal icons, separate leading labels and the span/point/exemplar summary rows.
+  The error total combines error spans and error/fatal logs; retain the exact
+  breakdown on hover and in its accessible label. Metric-series colour controls retain
   their 8px dot inside a 32px circular target. Keep idle backgrounds transparent; use shared
   Low hover, Medium open-state highlights and a visible keyboard focus ring.
   Do not fill the target with the colour or add a brush icon. Keep it before
-  the name and outside the whole-card button. Centre the service summary icons
-  under the colour dot, with their labels aligned under the service name.
-  Align Last seen beneath the left edge of the log icon.
-  Service summary counts omit the middle-dot separator immediately before a
-  coloured status dot; retain separators between unmarked counts.
+  the name and outside the whole-card button.
   Gauge/Sum series overrides live in metric Details, independently of visibility
   and disclosure.
   Series visibility checkboxes sit between the disclosure caret and series text.
@@ -257,14 +259,12 @@
   Error dot between the left caret and its Subtle label: `[x/y err]` for a selected
   error, otherwise `[y err]`. No badge background. The Span section heading adds
   `· root` in Secondary only when the selected span has no recorded parent.
-- Main header order: title · (service) · counts on the left, optional error
-  navigation and Download on the right; time and view controls below. The separate
-  service/count row was rejected because it wastes space.
+- Main header order: title · (service) · counts on the first row; time, error
+  navigation and view controls on the second row, with Download at the far right.
   Use only Copy (clipboard) and Download (file) as action names, not Export.
   Both use icon-only Hugeicons controls with tooltips and accessible names that
   identify the copied or downloaded scope. Download uses Download01Icon; Copy
-  uses Copy01Icon. Use the shared header-icon-button styling. Download's right edge aligns to
-  the trailing control in the row below (Columns in the trace header).
+  uses Copy01Icon. Use the shared header-icon-button styling.
   Keep one record-level Copy action in the section header; do not add another
   Copy action inside the raw JSON toolbar. Field-level copy actions remain in
   Properties.
@@ -275,10 +275,14 @@
   complete-metric Copy/Download and the existing bounded preview behaviour.
   Details field cards place Copy at the top-right, aligned with the first heading
   line even when the heading wraps. Its tooltip opens left into the card.
-- Trace waterfall headers use two rows: title / Download, then service · span
-  count / centred error navigation / right-aligned view controls. Centre error
-  navigation horizontally within the row. The service/count replaces the
-  repeated time range; do not add a third row.
+- Trace waterfall headers use two rows: title · service · span count, then
+  centred error navigation and right-aligned view controls followed by Download.
+  Keep the control row in place even when counts or actions are unavailable.
+- Only the first header in each pane uses the shared two-row height (88px at
+  the default root size). Main, List and primary Details headers align. Lower
+  section headers, including Storage and Ingestion issues, stay single-row
+  (48px). Home's Services header is single-row too: Lulu's welcome is already
+  the first heading in that pane. Keep embedded picker toolbars single-row too.
 - Header spacing uses 0.75rem horizontal padding, 0.5rem vertical padding and
   0.5rem gaps, with 1.5 line-height. Header controls share a 2rem height; avoid per-component compact
   height or line-height overrides.

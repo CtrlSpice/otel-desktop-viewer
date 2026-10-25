@@ -347,6 +347,7 @@ export function createDetailStackState(storageKey: string) {
       }
     },
     previous,
+    isPrimary: (id: string) => primary()?.id === id,
     canClose,
     setOpen,
     ensureOpen() {
@@ -361,11 +362,11 @@ export function createDetailStackState(storageKey: string) {
       const preview = previewSizes?.get(id)
       if (preview !== undefined) return `0 0 ${preview}px`
       const section = sections.find(candidate => candidate.id === id)
-      if (!section?.expanded()) return '0 0 var(--pane-header-h)'
+      if (!section?.expanded()) return '0 0 var(--detail-header-h)'
       const total = sections
         .filter(candidate => candidate.available() && candidate.expanded())
         .reduce((sum, candidate) => sum + weight(candidate), 0)
-      return `${(100 * weight(section)) / total} 1 ${section.headerless ? '0px' : 'var(--pane-header-h)'}`
+      return `${(100 * weight(section)) / total} 1 ${section.headerless ? '0px' : 'var(--detail-header-h)'}`
     },
     start(id: string, event: PointerEvent, onDrag: () => void) {
       if (event.button !== 0) return

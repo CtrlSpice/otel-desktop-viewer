@@ -73,6 +73,13 @@ scrolls independently. The main pane's shared header shows the selected service
 and namespace. Collapse, expand and filter controls sit at the right of its
 second row. The attribute table fills the space below it. The file-drop control
 remains visible above the service list.
+Services uses a single-row header beneath Lulu's welcome.
+
+Service cards use three shared card rows: service name and right-aligned Error
+dot/count, then comma-separated trace, metric and log counts, then Last seen.
+The lower rows align with the service name. The error total adds
+error spans and error/fatal logs, with the breakdown on hover and in its accessible
+label. The colour control remains independent of card selection.
 Attribute queries, typed values, sorting, filtering and exact Copy retain their
 existing scope and behaviour. The header's filter icon opens and focuses the
 attribute-key filter. Escape collapses the field and restores icon focus without
@@ -104,11 +111,9 @@ Attributes offers 25, 50 or 100 entries per page, with each entry's expanded val
 kept together. Filtering and sorting apply to all matching entries, not only the
 current page. Changing pages preserves the selected attribute and expansion state.
 
-The right-hand Details pane contains matching Telemetry. Its header's filter
-menu chooses Traces, Metrics or Logs and shows each known matching-record count.
-The active signal and count remain visible in the closed trigger. Choices switch
-immediately; arrow, Home and End keys navigate available signals. Selecting a
-choice or pressing Escape closes the menu and restores trigger focus.
+The right-hand Details pane contains matching Telemetry. Its second header row
+offers shared Traces, Metrics and Logs tabs with known matching-record counts.
+Choices switch immediately; arrow, Home and End keys navigate available signals.
 Each signal retains independent pages and scroll positions. Attributes and
 Telemetry each remember their own 25/50/100 page-size preference, defaulting to 25.
 Selecting a service, attribute key or exact value updates the matching records;

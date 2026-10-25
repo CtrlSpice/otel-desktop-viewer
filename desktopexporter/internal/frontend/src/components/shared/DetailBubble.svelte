@@ -108,6 +108,7 @@
     disabled = false,
     contained = false,
     headerless = false,
+    compactHeader = false,
   }: {
     label: string
     /** Preserve stored section sizing when its visible heading changes. */
@@ -125,7 +126,12 @@
     contained?: boolean
     /** An always-open primary section whose content already supplies its heading. */
     headerless?: boolean
+    /** Use one row when the pane already has a heading above this stack. */
+    compactHeader?: boolean
   } = $props()
+  const twoRows = $derived(
+    !compactHeader && (stack?.isPrimary(stackID) ?? false)
+  )
   const unavailable = $derived(disabled || count === 0)
   let expanded = $state(untrack(() => initialOpen))
   let resizable = $derived(
@@ -148,17 +154,22 @@
 </script>
 
 {#snippet heading()}
-  {@render icon?.()}
-  <span>{label}</span>
-  {@render labelSuffix?.()}
-  {#if count !== undefined}
-    <span
-      class="badge-count ml-auto shrink-0"
-      aria-label={`${count.toLocaleString()} ${countLabel}`}
-      >[{count.toLocaleString()}]</span
-    >
-  {/if}
-  {#if trailing}<span class="ml-auto shrink-0">{@render trailing()}</span>{/if}
+  <span class="detail-bubble__title-row">
+    {@render icon?.()}
+    <span class="truncate" title={label}>{label}</span>
+    {@render labelSuffix?.()}
+    {#if count !== undefined}
+      <span
+        class="badge-count ml-auto shrink-0"
+        aria-label={`${count.toLocaleString()} ${countLabel}`}
+        >[{count.toLocaleString()}]</span
+      >
+    {/if}
+    {#if trailing}<span class="ml-auto shrink-0">{@render trailing()}</span
+      >{/if}
+  </span>
+  {#if twoRows}<span class="detail-bubble__controls-row" aria-hidden="true"
+    ></span>{/if}
 {/snippet}
 
 {#snippet bubble()}
@@ -189,7 +200,7 @@
       bind:this={disclosure}
       style:scroll-padding-block-start={headingHeight
         ? `${headingHeight}px`
-        : 'var(--pane-header-h)'}
+        : 'var(--detail-header-h, var(--pane-header-single-h))'}
       open={expanded}
       onscroll={rememberScroll}
       ontoggle={event => {
@@ -203,7 +214,7 @@
       <summary
         bind:clientHeight={headingHeight}
         class="collapse-title detail-bubble__heading"
-        class:detail-bubble__heading--action={Boolean(action)}
+        class:detail-bubble__heading--action={Boolean(action) && !twoRows}
         class:detail-bubble__heading--resizable={!!resizable}
         class:detail-bubble__heading--pointer-focus={pointerFocus}
         data-resize-before={resizable ? previousSection?.element.id : undefined}
@@ -232,12 +243,16 @@
   <div
     id={sectionID}
     class="detail-bubble"
+    class:detail-bubble--primary={twoRows}
     class:detail-bubble--resizable={Boolean(stack)}
     class:detail-bubble--unavailable={unavailable}
     class:detail-bubble--contained={contained && expanded && !unavailable}
     data-detail-section={stackID}
     data-detail-group={unavailable ? 'inactive' : expanded ? 'open' : 'closed'}
     style:flex={stack?.flex(stackID)}
+    style:--detail-header-h={twoRows
+      ? 'var(--pane-header-h)'
+      : 'var(--pane-header-single-h)'}
     style:--detail-action-width={actionWidth ? `${actionWidth}px` : undefined}
     style:--detail-heading-height={headerless
       ? '0px'
@@ -271,10 +286,18 @@
   }
 
   .detail-bubble__heading {
-    @apply sticky top-0 z-10 flex items-center gap-2 rounded-xl border-0 bg-base-200 text-sm font-normal text-(--color-subtle);
-    min-height: var(--pane-header-h);
+    @apply sticky top-0 z-10 flex flex-col items-stretch gap-2 rounded-xl border-0 bg-base-200 text-sm font-normal text-(--color-subtle);
+    min-height: var(--detail-header-h, var(--pane-header-single-h));
     padding: var(--header-padding) var(--header-padding-inline);
     line-height: 1.5;
+  }
+
+  .detail-bubble__title-row {
+    @apply flex min-w-0 items-center gap-2;
+    height: var(--pane-header-row-h);
+  }
+  .detail-bubble__controls-row {
+    height: var(--pane-header-row-h);
   }
 
   .detail-bubble__heading:focus:not(:focus-visible) {
@@ -297,7 +320,7 @@
   }
 
   .detail-bubble--resizable {
-    min-height: var(--pane-header-h);
+    min-height: var(--detail-header-h);
     min-width: 0;
     overflow: hidden;
   }
@@ -319,21 +342,26 @@
     user-select: none;
   }
 
+  .detail-bubble > .detail-bubble__disclosure {
+    @apply flex-1;
+  }
   .detail-bubble__heading--action {
     padding-inline-end: calc(
       var(--header-padding-inline) + var(--detail-action-width, 2rem) +
         var(--header-gap)
     );
   }
-  .detail-bubble > .detail-bubble__disclosure {
-    @apply flex-1;
-  }
   .detail-bubble__action {
     @apply absolute z-20 flex items-center;
-    top: calc(var(--pane-header-h) / 2);
-    transform: translateY(-50%);
+    top: var(--header-padding);
+    height: var(--pane-header-row-h);
     right: var(--header-padding-inline);
     gap: var(--header-gap);
+  }
+  .detail-bubble--primary > .detail-bubble__action {
+    top: calc(
+      var(--header-padding) + var(--pane-header-row-h) + var(--header-gap)
+    );
   }
   .detail-bubble__content {
     @apply px-0;
@@ -344,8 +372,9 @@
   }
   .detail-bubble--contained {
     min-height: calc(
-      var(--detail-heading-height, var(--pane-header-h)) +
-        var(--pane-header-h) + var(--app-footer-height) + var(--table-row-h)
+      var(--detail-heading-height, var(--detail-header-h)) +
+        var(--pane-header-single-h) + var(--app-footer-height) +
+        var(--table-row-h)
     );
   }
   .detail-bubble__disclosure--contained[open] {

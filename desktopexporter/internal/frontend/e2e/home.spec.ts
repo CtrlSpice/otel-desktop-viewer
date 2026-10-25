@@ -148,17 +148,18 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   const colourBox = (await colour.boundingBox())!
   expect(titleBox.x - dotBox.x - dotBox.width).toBeCloseTo(8, 0)
   expect(colourBox.x + colourBox.width).toBeLessThanOrEqual(titleBox.x)
-  const labelBox = (await card
-    .locator('.service-summary__label > span:last-child')
-    .first()
-    .boundingBox())!
-  const iconBox = (await card
-    .locator('.service-summary__icon svg')
-    .first()
-    .boundingBox())!
-  expect(labelBox.x).toBeCloseTo(titleBox.x, 0)
-  expect(iconBox.x + iconBox.width / 2).toBeCloseTo(
-    dotBox.x + dotBox.width / 2,
+  const dateBox = (await card.locator('.signal-date').boundingBox())!
+  expect(dateBox.x).toBeCloseTo(titleBox.x, 0)
+  await expect(card.locator('svg')).toHaveCount(0)
+  const cardBox = (await card.boundingBox())!
+  const countsBox = (await card.locator('.signal-row__badge').boundingBox())!
+  expect(countsBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width)
+  expect(countsBox.x + countsBox.width).toBeCloseTo(
+    cardBox.x + cardBox.width - 12,
+    0
+  )
+  expect(countsBox.y + countsBox.height / 2).toBeCloseTo(
+    titleBox.y + titleBox.height / 2,
     0
   )
   await expect(colour.locator('svg')).toHaveCount(0)
@@ -194,14 +195,14 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     .click()
   await expect(colourDot).toHaveCSS('background-color', automaticColour)
   await expect(colour).toBeFocused()
-  await expect(card.locator('.service-summary__row')).toHaveText([
-    /^\s*Traces:\s*42\s*·\s*248\s*spans\s*3\s*err\s*$/,
-    /^\s*Metrics:\s*8\s*·\s*640\s*pts\s*·\s*12\s*exemplars\s*$/,
-    /^\s*Logs:\s*36\s*2\s*err\s*$/,
-  ])
-  for (const text of ['248 spans', '640 pts', '12 exemplars']) {
-    await expect(card).toContainText(text)
-  }
+  await expect(card.locator('.signal-row__lead')).toHaveText(
+    '42 traces, 8 metrics, 36 logs'
+  )
+  await expect(card.locator('.signal-row__badge')).toHaveText('[5 err]')
+  await expect(
+    card.getByLabel('3 error spans · 2 error or fatal logs')
+  ).toBeVisible()
+  await expect(card.locator('.signal-row__meta-row')).toHaveCount(0)
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect(page.locator('.service-grid')).toHaveCSS('display', 'grid')
@@ -210,8 +211,6 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
       expect((await service.boundingBox())!.width).toBeCloseTo(list.width, 0)
     }
   }
-  for (const row of await page.locator('.service-summary__row').all())
-    await expect(row).toHaveCSS('border-width', '0px')
   await page.setViewportSize({ width: 1600, height: 1000 })
   const discovery = page.locator('.page-layout__main-chrome')
   const table = discovery.getByRole('grid', {

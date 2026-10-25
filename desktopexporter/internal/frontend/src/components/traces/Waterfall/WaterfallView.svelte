@@ -179,7 +179,6 @@
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
-  import ServiceDot from '@/components/shared/ServiceDot.svelte'
   import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
@@ -1052,21 +1051,15 @@
   data-unmatched-log-count={logPartition.unmatched.length}
   style:--tree-count-width={`max(var(--waterfall-gutter-col), calc(${countDigits + 2}ch + 0.5rem))`}
 >
-  <PaneHeader pill mode="title" title={headerName} ariaLabel="Trace waterfall">
-    {#snippet metaLeft()}
-      <div class="flex min-w-0 items-center gap-2 text-subtle">
-        {#if headerService.trim()}
-          <ServiceDot service={headerService} />
-          <span class="truncate">({headerService.trim()})</span>
-          <span aria-hidden="true">·</span>
-        {/if}
-        <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
-      </div>
-    {/snippet}
-    {#snippet right()}
-      {#key traceID}
-        <ExportButton signal="trace" id={traceID} />
-      {/key}
+  <PaneHeader
+    pill
+    mode="title"
+    title={headerName}
+    subtitle={headerService || undefined}
+    ariaLabel="Trace waterfall"
+  >
+    {#snippet badge()}
+      <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
     {/snippet}
     {#snippet metaCenter()}
       {#if errorSpans.length > 0}
@@ -1118,6 +1111,9 @@
         selected={selectedColumns}
         onchange={setColumns}
       />
+      {#key traceID}
+        <ExportButton signal="trace" id={traceID} />
+      {/key}
     {/snippet}
   </PaneHeader>
   <div class="waterfall-view__tree">

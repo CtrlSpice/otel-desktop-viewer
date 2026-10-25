@@ -404,6 +404,9 @@ One app-wide set of saved side-pane widths and open preferences applies across
 signals. An omitted pane gives its space to Main without changing its saved
 preference; responsive clamping changes only rendered geometry. Destination
 geometry applies immediately, including loading, empty and error states.
+The first header in List, Main and Details reserves two equal-height rows for
+identity and controls. Lower section headers retain their single-row height.
+Home's Services header is single-row beneath Lulu's welcome.
 
 `DetailStack.svelte` and `DetailBubble.svelte` share disclosure and sizing across
 Home and signal Details. The available primary section stays open. Open sections
@@ -415,9 +418,9 @@ space; drag-induced collapse commits on release.
 
 ### Home discovery and search
 
-`HomePage.svelte` presents setup in List, Services in Main, and Telemetry plus
-Attributes in Details. Lulu sits above the left section stack; Getting started
-is its primary open section, with Storage and Ingestion issues as siblings.
+`HomePage.svelte` presents Services in List, Attributes in Main, and matching
+Telemetry in Details. Lulu and the file-drop control sit above the left section
+stack; Services is its primary open section, with Storage and Ingestion issues as siblings.
 Issue links reveal that pane and section.
 
 `components/home/home-search.ts` projects the shared typed search tree onto each
@@ -437,10 +440,10 @@ same datapoint within a matching Metric. This follows the metric workspace's
 query-membership semantics rather than adding a separate datapoint query model.
 
 `AttributeTelemetry.svelte` combines signal summaries with exact attribute-record
-matches. Its Traces, Metrics and Logs tabs sit at the right of the section header
-with square-bracketed card counts. Each signal keeps its own 25-card page and
-scroll position. Only the active list scrolls; the footer keeps page controls and
-`25 per page` visible. Tabs switch immediately and support arrow/Home/End keys.
+matches. Tabs in the second header row offer Traces, Metrics
+and Logs with known matching counts. Each signal keeps its own page and scroll position. Only the
+active list scrolls; the footer offers 25, 50 or 100 cards per page and remembers
+the choice. Signal changes are immediate and support arrow/Home/End keys.
 Confirmed-empty or inapplicable signals are disabled; loading and failed signals
 remain accessible. Service, attribute/value, search, time-range and refreshed
 result changes reset paging and scroll without toggling other Home sections.

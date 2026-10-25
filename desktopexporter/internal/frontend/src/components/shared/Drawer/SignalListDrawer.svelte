@@ -6,6 +6,7 @@
   import { ArrowUp02Icon } from '@hugeicons/core-free-icons'
   import PanelToggle from '../PanelToggle.svelte'
   import PanelClip from '../PanelClip.svelte'
+  import PaneHeader from '../PaneHeader.svelte'
   import WorkspaceToolbar from '@/components/shared/Toolbar/WorkspaceToolbar.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
   import {
@@ -560,7 +561,14 @@
                   role="group"
                   aria-label={`${label} list controls`}
                 >
-                  {@render drawerControls()}
+                  <PaneHeader
+                    mode="title"
+                    title={label}
+                    ariaLabel={`${label} list header`}
+                    pill
+                  >
+                    {#snippet metaRight()}{@render drawerControls()}{/snippet}
+                  </PaneHeader>
                 </div>
               {/if}
               {#if !emptyDrawer}
@@ -706,9 +714,7 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 flex min-w-0 shrink-0 items-center rounded-xl border-0 bg-base-200;
-    min-height: var(--pane-header-h);
-    padding: var(--header-padding) var(--header-padding-inline);
+    @apply mx-3 min-w-0 shrink-0;
   }
 
   .signal-drawer__body {

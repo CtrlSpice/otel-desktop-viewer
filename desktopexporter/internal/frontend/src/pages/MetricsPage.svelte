@@ -842,7 +842,6 @@
 </script>
 
 <PageLayout
-  mainHeaderRows={2}
   mainSurface="base"
   items={page.sortedItems}
   selectedID={page.selectedID}
@@ -975,10 +974,10 @@
           ariaLabel="Metric chart"
           tabPanelID={METRIC_CHART_PANEL_ID}
           timeRange={showChartHistogramTabs ? undefined : chartHeaderTimeRange}
-          metaRight={showChartOverlayControls ? overlayControl : undefined}
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-          {#snippet right()}
+          {#snippet metaRight()}
+            {#if showChartOverlayControls}{@render overlayControl()}{/if}
             {#if showChartHistogramTabs}
               <CountPalettePicker label="Histogram count palette" />
             {/if}
@@ -997,10 +996,10 @@
           subtitle={selectedSummary.serviceName || undefined}
           ariaLabel="Metric chart"
           timeRange={chartHeaderTimeRange}
-          metaRight={showChartOverlayControls ? overlayControl : undefined}
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-          {#snippet right()}
+          {#snippet metaRight()}
+            {#if showChartOverlayControls}{@render overlayControl()}{/if}
             {#if selectedSummary}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />

@@ -331,7 +331,7 @@
 {/snippet}
 
 {#snippet serviceList()}
-  <DetailBubble label="Services" layoutKey="services" contained>
+  <DetailBubble label="Services" layoutKey="services" contained compactHeader>
     {#snippet trailing()}<span class="text-subtle"
         >{loaded
           ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
@@ -383,7 +383,6 @@
 
 <PageLayout
   mainTitle="Services"
-  mainHeaderRows={2}
   items={[]}
   emptyDrawer
   selectedID={null}

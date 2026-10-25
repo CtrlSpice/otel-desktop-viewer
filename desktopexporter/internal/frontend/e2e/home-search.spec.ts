@@ -164,26 +164,17 @@ test('Home selection, attributes, telemetry and workspace links share the submit
     .getByLabel('Traces', { exact: true })
   await expect(traces).toHaveAttribute('aria-disabled', 'true')
   await expect(traces).not.toHaveAttribute('href')
-  const telemetryFilter = page.getByRole('button', {
-    name: 'Filter telemetry: Logs [1]',
-    exact: true,
+  const telemetry = page.getByRole('tablist', { name: 'Telemetry signals' })
+  await expect(telemetry.getByRole('tab', { name: /^Traces/ })).toBeDisabled()
+  await expect(telemetry.getByRole('tab', { name: /^Metrics/ })).toBeDisabled()
+  const logsChoice = telemetry.getByRole('tab', {
+    name: /^Logs \[1\]/,
   })
-  await telemetryFilter.click()
-  const telemetry = page.getByRole('radiogroup', { name: 'Telemetry signals' })
-  await expect(telemetry.getByRole('radio', { name: /^Traces/ })).toBeDisabled()
-  await expect(
-    telemetry.getByRole('radio', { name: /^Metrics/ })
-  ).toBeDisabled()
-  const logsChoice = telemetry.getByRole('radio', {
-    name: 'Logs [1]',
-    exact: true,
-  })
+  await logsChoice.focus()
   await expect(logsChoice).toBeFocused()
   await logsChoice.press('Home')
   await expect(logsChoice).toBeFocused()
-  await expect(logsChoice).toHaveAttribute('aria-checked', 'true')
-  await logsChoice.press('Escape')
-  await expect(telemetryFilter).toBeFocused()
+  await expect(logsChoice).toHaveAttribute('aria-selected', 'true')
   await expect(serviceCards.getByRole('link')).toHaveCount(0)
   await input.fill('an unsubmitted draft')
   await page.getByRole('button', { name: /^Change time range,/ }).click()

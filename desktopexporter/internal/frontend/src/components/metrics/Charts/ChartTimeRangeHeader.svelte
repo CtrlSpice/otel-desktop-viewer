@@ -61,11 +61,12 @@
   @reference "../../../app.css";
 
   .time-range {
-    @apply flex min-w-0 flex-wrap items-center gap-2 text-xs leading-normal;
+    @apply flex min-w-0 items-center gap-2 overflow-x-auto text-xs leading-normal;
+    scrollbar-width: thin;
   }
 
   .time-range__bounds {
-    @apply flex min-w-0 flex-wrap items-center gap-2;
+    @apply flex shrink-0 items-center gap-2;
   }
 
   .time-range__endpoint {
@@ -78,7 +79,7 @@
   }
 
   time {
-    @apply inline-flex flex-wrap items-center gap-2 tabular-nums;
+    @apply inline-flex items-center gap-2 whitespace-nowrap tabular-nums;
   }
 
   .time-range__clock {

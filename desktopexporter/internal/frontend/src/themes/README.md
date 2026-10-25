@@ -14,7 +14,7 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 The theme picker and day/night button share one compact control group.
 The picker opens below its button, end-aligned and clamped to the viewport, with
 a compact swatch strip below the full-width live app-style sample preview.
-The shared section header shows `Preview: <original ink name>` at the left and four icon-only
+The shared section header shows the original ink name at the left and four icon-only
 season controls at the right. The shared sample trace summary and service breakdown sit above the JSON
 inspector in one narrow column, without a separate preview header or attributes
 section. Surfaces use shared rounded corners without nested borders. Sample
@@ -24,7 +24,7 @@ There is no separate season row or redundant Theme heading.
 Ink and season changes apply immediately and keep the
 picker open; Escape, clicking outside or the trigger dismisses it. There is no
 separate close button in the anchored dropdown.
-Its centred footer reads “Colours: Madoromi” with the attribution heart;
+Its centred footer reads “Colours by Madoromi” with the attribution heart;
 only Madoromi is the link.
 Ink choices show three vertically stacked colour dots, brightest at the top
 (official shades 7, 4, 1), in adjacent 24px-wide, 48px-high targets in one horizontal row,
@@ -33,7 +33,7 @@ original-name tooltips and accessible labels, without English translations.
 The chooser is at most 28rem wide. The ink row uses ordinary horizontal scrolling,
 with left/right caret buttons as a secondary way to scroll. Each caret is disabled
 at its end; scrolling does not change the ink selection. There is no snapping or
-auto-advance. Four icon-only season choices sit at the right of the Preview header.
+auto-advance. Four icon-only season choices sit at the right of the shared header.
 Section names
 remain accessible but visually hidden; there is no filter field. Flower, sun,
 leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
@@ -180,7 +180,7 @@ the preview immediately. The row scrolls horizontally when the window is narrowe
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
 The top-bar control shows three 8px dots in the selected ink's official shades
-1, 4 and 7, followed by a simple monitor. Its tooltip shows only the Japanese
+1, 4 and 7. Its tooltip shows only the Japanese
 ink name, which is also used in its accessible name and inside the picker.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
@@ -315,20 +315,25 @@ moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and on
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
 series cap is independent of the 224-colour capacity.
 
-Each Home service name has its assigned 8px colour dot in a 32px circular target.
+Each Home service name has its assigned 8px colour dot in a 24px circular target.
 The target stays transparent at rest, with shared Low hover and Medium open-state
 highlights and a visible keyboard focus ring. The dot opens
 the shared ink picker. It is a sibling of the card button, so changing colour does not select the card. Gauge
 and Sum series have the same control in their metric Details row; it does not
-toggle visibility or disclosure. Seven official shades per ink have 32px click
-targets around their 8px dots. Arrow keys move between shades and ink rows;
+toggle visibility or disclosure. Graph overrides fit all 224 choices into two
+stacked groups of 16 inks. Each ink is a vertical light-to-dark column of seven
+shades, with 24px targets around 8px dots.
+The hovered or focused ink name and shade appear once above the grid; full names,
+shade numbers and exact colours remain in tooltips and accessible labels.
+Unavailable dots use the darkest seasonal surface (`base-300`).
+Arrow keys follow the grid's visible rows and columns, skipping unavailable shades;
 Home/End move to the ends of a row (Control+Home/End reaches the entire list's
 ends). Enter/Space selects. Opening focuses and reveals the current shade;
 selection and Escape return focus to the trigger without moving the page.
-Both pickers measure the widest full ink name at the current font size and add
-room for their dots and controls. Filtering does not change that width. The
-viewport caps the width; on narrow screens shade buttons move below the name,
-while count-picker names wrap beside their seven aligned dots.
+The shade grid keeps its width while filtering and uses eight columns with native
+scrolling on narrow screens. Count and slider pickers measure their widest full
+ink name at the current font size; count-picker names wrap beside their seven
+aligned dots. Their shared footer reads “Colours by Madoromi”.
 
 Overrides are saved under `graph-colour-overrides:madoromi-inks-v1:<scope>` as
 identity/ink-shade pairs. Services share the `services` scope, keyed by service-name

@@ -363,7 +363,7 @@ test('Details pins enriched trace context above scrolling fields', async ({
   await expect(tabs).toBeVisible()
   await expect(header.getByLabel('Log timestamp')).toHaveCount(0)
   await expect(header.locator('.badge')).toHaveCount(0)
-  await expect(header.locator('.pane-header__meta-row')).toHaveCount(0)
+  await expect(header.locator('.pane-header__meta-row')).toHaveCount(1)
   const tabsBounds = (await tabs.boundingBox())!
   const headerBounds = (await header.boundingBox())!
   const exportBounds = (await exportButton.boundingBox())!
@@ -379,8 +379,10 @@ test('Details pins enriched trace context above scrolling fields', async ({
     .locator('.pane-header__title')
     .boundingBox())!
   expect(exportBounds.x).toBeGreaterThanOrEqual(tabsBounds.x + tabsBounds.width)
-  expect(tabsBounds.y).toBeLessThan(titleBounds.y + titleBounds.height)
-  expect(tabsBounds.y + tabsBounds.height).toBeGreaterThan(titleBounds.y)
+  expect(tabsBounds.y).toBeGreaterThanOrEqual(
+    titleBounds.y + titleBounds.height
+  )
+  await expect(header).toHaveCSS('height', '88px')
   const errorColour = await panel.evaluate(element => {
     const probe = document.createElement('span')
     probe.style.color = 'var(--color-error)'

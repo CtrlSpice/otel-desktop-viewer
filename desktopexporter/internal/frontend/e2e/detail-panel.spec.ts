@@ -1056,7 +1056,9 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     .locator(':scope > summary')
     .evaluate(element => element.getBoundingClientRect().height)
   const savedHeight =
-    originalHeight - 50 + (pairHeight - headerHeight * 2) * 0.05
+    originalHeight -
+    50 +
+    (pairHeight - headerHeight - (await resize.boundingBox())!.height) * 0.05
   await resize.focus()
   await resize.press('Shift+ArrowDown')
   await expect.poll(sectionHeight).toBeCloseTo(savedHeight, 0)

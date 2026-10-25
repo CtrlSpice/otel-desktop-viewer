@@ -486,7 +486,7 @@
 
 <div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
   <PaneHeader pill mode="title" title="Logs" ariaLabel="Log table summary">
-    {#snippet leading()}
+    {#snippet metaLeft()}
       <button
         type="button"
         class="header-icon-button item-state tooltip tooltip-right disabled:cursor-default disabled:text-(--color-muted)"
@@ -515,7 +515,7 @@
         {total === 1 ? 'record' : 'records'}</span
       >
     {/snippet}
-    {#snippet right()}
+    {#snippet metaRight()}
       {#if errorNavigation}<ErrorNavigationBadge
           count={errorNavigation.count}
           busy={errorNavigationLoading}

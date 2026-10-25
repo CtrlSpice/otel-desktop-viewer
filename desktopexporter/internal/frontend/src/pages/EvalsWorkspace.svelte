@@ -495,7 +495,6 @@
 
 <PageLayout
   mainTitle="Evals"
-  mainHeaderRows={2}
   mainHeaderInert={selectionPending}
   mainSurface="base"
   items={visibleExperiments}
@@ -662,7 +661,6 @@
           pill
           mode="title"
           title={storedExperimentSummary?.name ?? 'Evals'}
-          reserveMetaRow
         />
         <p class="p-3 text-sm text-subtle" role="status">Loading experiment…</p>
       {/if}
@@ -671,7 +669,6 @@
         pill
         mode="title"
         title={storedExperimentSummary?.name ?? 'Evals'}
-        reserveMetaRow
       />
       <p class="p-3 text-sm" role="alert">{storedExperimentError}</p>
     {:else if experimentListLoading}

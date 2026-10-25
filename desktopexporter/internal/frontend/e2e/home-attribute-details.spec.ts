@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('attribute value inspection scopes the counted Telemetry signal filter with independent 25-card pages', async ({
+test('attribute value inspection scopes the counted Telemetry tabs with independent 25-card pages', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
@@ -197,31 +197,24 @@ test('attribute value inspection scopes the counted Telemetry signal filter with
     guide.locator('[data-detail-section="storage"]')
   ).toHaveAttribute('data-detail-group', 'closed')
   await expect(foundOn.locator('summary')).toHaveText('Telemetry')
-  const filter = foundOn.getByRole('button', { name: /^Filter telemetry/ })
-  const signals = foundOn.locator('[role="radiogroup"]')
-  const tracesChoice = signals.locator('[data-signal="traces"]')
-  const metricsChoice = signals.locator('[data-signal="metrics"]')
-  const logsChoice = signals.locator('[data-signal="logs"]')
+  const signals = foundOn.getByRole('tablist', { name: 'Telemetry signals' })
+  const tracesChoice = signals.getByRole('tab', { name: /^Traces/ })
+  const metricsChoice = signals.getByRole('tab', { name: /^Metrics/ })
+  const logsChoice = signals.getByRole('tab', { name: /^Logs/ })
   async function selectSignal(signal: string) {
-    await filter.click()
-    await signals.locator(`[data-signal="${signal}"]`).click()
-    await expect(signals).toBeHidden()
-    await expect(filter).toBeFocused()
+    await signals
+      .getByRole('tab', { name: new RegExp(`^${signal}`, 'i') })
+      .click()
   }
   const traces = foundOn.getByRole('region', { name: 'Matching traces' })
   const metrics = foundOn.getByRole('region', { name: 'Matching metrics' })
   const logs = foundOn.getByRole('region', { name: 'Matching logs' })
   const navigation = foundOn.getByRole('group', { name: 'page navigation' })
-  await expect(filter).toHaveAccessibleName('Filter telemetry: Traces [1]')
-  await filter.click()
-  await expect(tracesChoice).toHaveAccessibleName('Traces [1]')
-  await expect(metricsChoice).toHaveAccessibleName('Metrics [1]')
-  await expect(logsChoice).toHaveAccessibleName('Logs [30]')
-  await expect(tracesChoice).toBeFocused()
-  await tracesChoice.press('Escape')
-  await expect(filter).toBeFocused()
+  await expect(tracesChoice).toHaveAccessibleName(/^Traces \[1\]/)
+  await expect(metricsChoice).toHaveAccessibleName(/^Metrics \[1\]/)
+  await expect(logsChoice).toHaveAccessibleName(/^Logs \[30\]/)
   const headerBox = (await foundOn.locator('summary').boundingBox())!
-  const filterBox = (await filter.boundingBox())!
+  const filterBox = (await signals.boundingBox())!
   expect(filterBox.x).toBeGreaterThan(headerBox.x)
   expect(filterBox.y).toBeGreaterThanOrEqual(headerBox.y)
   expect(filterBox.y + filterBox.height).toBeLessThanOrEqual(
@@ -237,18 +230,17 @@ test('attribute value inspection scopes the counted Telemetry signal filter with
   await expect(
     foundOn.getByRole('combobox', { name: 'Telemetry per page' })
   ).toHaveValue('25')
-  await filter.click()
+  await tracesChoice.focus()
   await expect(tracesChoice).toBeFocused()
-  await tracesChoice.press('ArrowDown')
+  await tracesChoice.press('ArrowRight')
   await expect(metricsChoice).toBeFocused()
-  await expect(metricsChoice).toHaveAttribute('aria-checked', 'true')
+  await expect(metricsChoice).toHaveAttribute('aria-selected', 'true')
   await expect(metrics.getByRole('link')).toHaveCount(1)
   await expect(metrics).toContainText('90 matching datapoints')
   await expect(navigation).toContainText('1 / 1 page')
   await metricsChoice.press('End')
   await expect(logsChoice).toBeFocused()
-  await expect(logsChoice).toHaveAttribute('aria-checked', 'true')
-  await logsChoice.press('Escape')
+  await expect(logsChoice).toHaveAttribute('aria-selected', 'true')
   await expect(logs.getByRole('link')).toHaveCount(25)
   await expect(logs.locator('.signal-row__description')).toHaveText(
     Array.from({ length: 25 }, (_, index) => `Matching log ${index}`)
@@ -258,12 +250,12 @@ test('attribute value inspection scopes the counted Telemetry signal filter with
     navigation.getByRole('button', { name: 'Previous page' })
   ).toBeDisabled()
   const footerBox = (await navigation.boundingBox())!
-  const filterBeforeScroll = (await filter.boundingBox())!
+  const filterBeforeScroll = (await signals.boundingBox())!
   await logs.evaluate(element => {
     element.scrollTop = 120
   })
   await expect.poll(() => logs.evaluate(element => element.scrollTop)).toBe(120)
-  expect((await filter.boundingBox())!.y).toBeCloseTo(filterBeforeScroll.y, 0)
+  expect((await signals.boundingBox())!.y).toBeCloseTo(filterBeforeScroll.y, 0)
   expect((await navigation.boundingBox())!.y).toBeCloseTo(footerBox.y, 0)
   await selectSignal('metrics')
   await expect(navigation).toContainText('1 / 1 page')
@@ -279,14 +271,13 @@ test('attribute value inspection scopes the counted Telemetry signal filter with
     navigation.getByRole('button', { name: 'Next page' })
   ).toBeDisabled()
   await expect.poll(() => logs.evaluate(element => element.scrollTop)).toBe(0)
-  await filter.click()
+  await logsChoice.focus()
   await expect(logsChoice).toBeFocused()
   await logsChoice.press('Home')
   await expect(tracesChoice).toBeFocused()
-  await expect(tracesChoice).toHaveAttribute('aria-checked', 'true')
+  await expect(tracesChoice).toHaveAttribute('aria-selected', 'true')
   await expect(navigation).toContainText('1 / 1 page')
   await tracesChoice.press('End')
-  await logsChoice.press('Escape')
   await expect(navigation).toContainText('2 / 2 pages')
   await expect(logs.getByRole('link')).toHaveCount(5)
   expect((await foundOn.boundingBox())!.x).toBeGreaterThanOrEqual(
