@@ -54,8 +54,6 @@
 </script>
 
 <script lang="ts" generics="T">
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { HeartIcon } from '@hugeicons/core-free-icons'
   import ResizablePanels from './ResizablePanels.svelte'
   import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
   import PanelToggle from './PanelToggle.svelte'
@@ -194,26 +192,6 @@
                 inert={mainHeaderInert}
               />
               {@render main()}
-              <footer
-                class="flex shrink-0 items-center justify-center gap-1 px-2 py-2 text-sm text-subtle"
-              >
-                <span>Colours by</span>
-                <a
-                  class="link inline-flex items-center gap-2"
-                  href="https://madoromi.moonwit.ch/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Madoromi
-                  <HugeiconsIcon
-                    icon={HeartIcon}
-                    size={16}
-                    strokeWidth={1.5}
-                    class="text-(--color-sakura)"
-                    aria-hidden="true"
-                  />
-                </a>
-              </footer>
             </div>
           {/snippet}
           {#snippet rightPanel()}

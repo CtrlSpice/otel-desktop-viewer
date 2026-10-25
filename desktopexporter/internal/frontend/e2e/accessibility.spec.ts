@@ -1084,10 +1084,8 @@ test.describe('home page accessibility', () => {
       page.getByText('Send a test trace', { exact: true })
     ).toBeVisible()
     await expect(
-      page
-        .locator('.page-layout__main-chrome > footer')
-        .getByRole('link', { name: 'Madoromi' })
-    ).toHaveAttribute('href', 'https://madoromi.moonwit.ch/')
+      page.locator('.page-layout__main-chrome > footer')
+    ).toHaveCount(0)
   })
 
   test('uses the approved 20% Winter Day surfaces and mapped foregrounds', async ({

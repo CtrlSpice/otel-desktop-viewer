@@ -395,9 +395,7 @@ for (const { id: theme } of THEMES) {
     )
     expect(new Set(original.map(line => line.colour)).size).toBe(2)
 
-    await expect(page.getByRole('button', { name: /^Colour for/ })).toHaveCount(
-      0
-    )
+    await expect(page.locator('input[type="color"]')).toHaveCount(2)
     const second = page.getByRole('checkbox', {
       name: 'Show route: /second in chart',
       exact: true,
@@ -417,6 +415,108 @@ for (const { id: theme } of THEMES) {
     await expect.poll(drawing).toEqual(original)
   })
 }
+
+test('native series colour overrides persist independently of visibility and disclosure and reset to automatic', async ({
+  page,
+}) => {
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON()
+    if (request.method !== 'getMetricView') return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          ...metric,
+          timeseries: timeseries.map(series => ({
+            ...series,
+            attributes: [
+              ...series.attributes,
+              {
+                key: 'session.id',
+                value: {
+                  kind: 'string',
+                  value: `long-session-identifier-${series.seriesRef}`,
+                },
+              },
+              { key: 'common', value: { kind: 'string', value: 'same' } },
+            ],
+          })),
+        },
+      },
+    })
+  })
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const first = page.locator('.metric-series-line[data-series-key="first"]')
+  const second = page.locator('.metric-series-line[data-series-key="second"]')
+  await expect(first).toBeVisible()
+  const original = await first.evaluate(
+    element => getComputedStyle(element).stroke
+  )
+  const other = await second.evaluate(
+    element => getComputedStyle(element).stroke
+  )
+  const picker = page.getByLabel('Colour for route: /first', { exact: true })
+  const disclosure = page.locator('.ts-panel details').first()
+  await expect(disclosure.locator('.ts-row__attrs')).toHaveText('route: /first')
+  await expect(disclosure.locator('.ts-row__attrs')).toHaveAttribute(
+    'title',
+    /session.id: long-session-identifier-first/
+  )
+  const wasOpen = await disclosure.evaluate(element =>
+    element.hasAttribute('open')
+  )
+  const title = (await disclosure.locator('.ts-row__attrs').boundingBox())!
+  const edit = (await picker.boundingBox())!
+  expect(edit.x).toBeGreaterThanOrEqual(title.x + title.width)
+  const editControls = disclosure.locator('.ts-row__colour-edit')
+  await page.mouse.move(0, 0)
+  await expect(editControls).toHaveCSS('opacity', '0')
+  await disclosure.locator('summary').hover()
+  await expect(editControls).toHaveCSS('opacity', '1')
+  await page.mouse.move(0, 0)
+  await picker.focus()
+  await expect(editControls).toHaveCSS('opacity', '1')
+  await picker.click()
+  await page.keyboard.press('Escape')
+  expect(
+    await disclosure.evaluate(element => element.hasAttribute('open'))
+  ).toBe(wasOpen)
+  const visible = page.getByRole('checkbox', {
+    name: 'Show route: /first in chart',
+    exact: true,
+  })
+  await picker.fill('#123abc')
+  await expect(first).toHaveCSS('stroke', rgb('#123abc'))
+  await expect(second).toHaveCSS('stroke', other)
+  await expect(visible).toBeChecked()
+  expect(
+    await disclosure.evaluate(element => element.hasAttribute('open'))
+  ).toBe(wasOpen)
+  await visible.uncheck()
+  await expect(picker).toHaveCount(0)
+  await expect(visible).not.toBeChecked()
+  await expect(disclosure.locator('.ts-row__attrs')).toHaveText('route: /first')
+  await visible.check()
+  await expect(first).toHaveCSS('stroke', rgb('#123abc'))
+  await picker.fill('#a234bc')
+  await expect(first).toHaveCSS('stroke', rgb('#a234bc'))
+  await page.reload()
+  await expect(picker).toHaveValue('#a234bc')
+  await expect(first).toHaveCSS('stroke', rgb('#a234bc'))
+  await disclosure.locator('summary').hover()
+  await page
+    .getByRole('button', {
+      name: 'Reset colour for route: /first to automatic',
+      exact: true,
+    })
+    .click()
+  await expect(first).toHaveCSS('stroke', original)
+  await expect(second).toHaveCSS('stroke', other)
+  await page.reload()
+  await expect(first).toHaveCSS('stroke', original)
+})
 
 test.describe('independent histogram aggregate loading', () => {
   const bucket: JsonAggregateBucket = {
@@ -2623,7 +2723,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   })
   expect(headerLayout.badgesAfterTitle).toBe(true)
   expect(headerLayout.badgesBeforeDownload).toBe(true)
-  expect(headerLayout.downloadInset).toBeCloseTo(12, 0)
+  expect(headerLayout.downloadInset).toBeCloseTo(16, 0)
   expect(headerLayout.tabsCenter).toBeCloseTo(headerLayout.titleCenter, 0)
   await expect(mainHeader).toHaveCSS('height', '48px')
   await expect(mainHeader).toHaveCSS(

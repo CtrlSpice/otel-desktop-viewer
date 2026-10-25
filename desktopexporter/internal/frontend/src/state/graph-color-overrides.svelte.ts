@@ -6,7 +6,8 @@ import {
 } from '@/themes/graph-inks'
 
 const PREFIX = `graph-colour-overrides:${GRAPH_PALETTE_VERSION}:`
-const scopes = new Map<string, Map<string, GraphColorId>>()
+type ColorOverrideId = GraphColorId | `#${string}`
+const scopes = new Map<string, Map<string, ColorOverrideId>>()
 // Allocate the reactive signal at module scope: a scope first read inside a
 // derived value must still notify that first reader when an override changes.
 let revision = $state(0)
@@ -20,7 +21,16 @@ function isSavedOverride(value: unknown): value is [string, string] {
   )
 }
 
-function readSaved(scope: string): [string, GraphColorId][] {
+function resolveOverride(value: string | undefined) {
+  if (value && /^#[0-9a-f]{6}$/i.test(value)) {
+    // SAFETY: the regex requires a leading # and exactly six hexadecimal digits.
+    const color = value.toLowerCase() as `#${string}`
+    return { id: color, color }
+  }
+  return graphSwatch(value)
+}
+
+function readSaved(scope: string): [string, ColorOverrideId][] {
   try {
     const raw: unknown = JSON.parse(
       localStorage.getItem(PREFIX + scope) ?? '[]'
@@ -28,9 +38,9 @@ function readSaved(scope: string): [string, GraphColorId][] {
     if (!Array.isArray(raw)) return []
     return raw
       .filter(isSavedOverride)
-      .flatMap((entry): [string, GraphColorId][] => {
-        // Browser storage is an external boundary; accept known ink/shade IDs only.
-        const swatch = graphSwatch(entry[1])
+      .flatMap((entry): [string, ColorOverrideId][] => {
+        // Accept native picker hex values and existing saved ink/shade IDs.
+        const swatch = resolveOverride(entry[1])
         return swatch ? [[entry[0], swatch.id]] : []
       })
   } catch {
@@ -38,7 +48,7 @@ function readSaved(scope: string): [string, GraphColorId][] {
   }
 }
 
-function forScope(scope: string): Map<string, GraphColorId> {
+function forScope(scope: string): Map<string, ColorOverrideId> {
   let values = scopes.get(scope)
   if (!values) {
     values = new Map(readSaved(scope))
@@ -50,19 +60,21 @@ function forScope(scope: string): Map<string, GraphColorId> {
 export const graphColorOverrides = {
   get(scope: string, identity: string) {
     void revision
-    return graphSwatch(forScope(scope).get(identity))
+    return resolveOverride(forScope(scope).get(identity))
   },
-  entries(scope: string): [string, GraphColorId][] {
+  entries(scope: string): [string, ColorOverrideId][] {
     void revision
     return [...forScope(scope)]
   },
-  set(scope: string, identity: string, value: GraphColorId | null) {
+  set(scope: string, identity: string, value: string | null) {
+    const resolved = value === null ? null : resolveOverride(value)
+    if (value !== null && !resolved) return
     const values = forScope(scope)
     for (const [key, id] of readSaved(scope)) {
       if (!values.has(key)) values.set(key, id)
     }
     if (value === null) values.delete(identity)
-    else values.set(identity, value)
+    else if (resolved) values.set(identity, resolved.id)
     revision++
     try {
       localStorage.setItem(PREFIX + scope, JSON.stringify([...values]))
@@ -73,7 +85,7 @@ export const graphColorOverrides = {
   reservedSlots(scope: string): ReadonlySet<number> {
     void revision
     const selected = new Set(
-      [...forScope(scope).values()].map(id => graphSwatch(id)!.color)
+      [...forScope(scope).values()].map(id => resolveOverride(id)!.color)
     )
     return new Set(
       GRAPH_SWATCHES.flatMap((swatch, slot) =>

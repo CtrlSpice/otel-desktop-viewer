@@ -16,14 +16,14 @@
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import { themeSignal } from '@/state/theme.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import GraphColorPicker from '@/components/shared/GraphColorPicker.svelte'
+  import Identifier from '@/components/shared/Identifier.svelte'
+  import { minimalSeriesLabels } from '@/components/metrics/utils/minimal-series-labels'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { detailPanel } from '@/state/detail-panel.svelte'
-  import {
-    attributeValueCanonical,
-    attributeValueLabel,
-  } from '@/components/shared/attribute-label'
+  import { attributeValueLabel } from '@/components/shared/attribute-label'
 
   const ctx = getMetricViewContext()
   let panel: HTMLDivElement
@@ -61,35 +61,7 @@
     !ctx.isHistogramKind && visibleKeys.size >= MAX_VISIBLE_TIMESERIES
   )
 
-  /** Attribute keys that differ across rows (stable regardless of checkbox). */
-  let differingAttrKeys = $derived.by((): Set<string> | null => {
-    if (rows.length < 2) return null
-
-    const allKeys = new Set<string>()
-    for (const row of rows) {
-      for (const a of dedupeAttributes(row.attributes)) allKeys.add(a.key)
-    }
-
-    const differing = new Set<string>()
-    for (const key of allKeys) {
-      const signatures = new Set<string>()
-      for (const row of rows) {
-        const a = dedupeAttributes(row.attributes).find(x => x.key === key)
-        signatures.add(a ? attributeValueCanonical(a.value) : '')
-      }
-      if (signatures.size > 1) differing.add(key)
-    }
-    if (differing.size === 0) return null
-    return differing
-  })
-
-  function headerAttrs(
-    attrs: PanelTimeseries['attributes']
-  ): PanelTimeseries['attributes'] {
-    const unique = dedupeAttributes(attrs)
-    if (!differingAttrKeys) return unique
-    return unique.filter(a => differingAttrKeys.has(a.key))
-  }
+  const labels = $derived(minimalSeriesLabels(rows))
 
   function toggle(key: string, checked: boolean) {
     ctx.toggleTimeseriesVisible(key, checked)
@@ -149,12 +121,11 @@
         : 'var(--color-neutral-content)'
       : chartNeutral()}
     {@const hasAttrs = dedupeAttributes(ts.attributes).length > 0}
-    {@const rowHeaderAttrs = headerAttrs(ts.attributes)}
+    {@const compactLabel = labels.get(ts.key)!}
     {@const tooltip = attrsTooltip(ts.attributes)}
-    {@const headerLabel =
-      hasAttrs && rowHeaderAttrs.length > 0
-        ? attrsTooltip(rowHeaderAttrs)
-        : 'default series'}
+    {@const headerLabel = compactLabel.needsIdentity
+      ? `${compactLabel.text} · ${ts.key}`
+      : compactLabel.text}
     {@const metricTs = timeseriesByKey.get(ts.key)}
     {@const expanded = ctx.expandedTimeseries.has(ts.key)}
     {@const sparklinePoints = ctx.sparklineByKey.get(ts.key) ?? []}
@@ -178,6 +149,7 @@
         <div
           class="ts-row__title-row"
           class:ts-row__title-row--preview={showSparkline}
+          style:--colour-column={seriesColor && ctx.metric ? 'auto' : ''}
         >
           <span
             class="ts-row__caret"
@@ -213,8 +185,13 @@
           <span
             class="ts-row__attrs ts-row__attrs-text"
             class:ts-row__default-label={!hasAttrs}
-            title={tooltip}>{headerLabel}</span
+            title={tooltip}
           >
+            {compactLabel.text}
+            {#if compactLabel.needsIdentity}
+              · <Identifier value={ts.key} />
+            {/if}
+          </span>
           {#if showSparkline}
             <span class="ts-row__sparkline">
               <Sparkline
@@ -223,6 +200,16 @@
                 width={SPARKLINE_WIDTH_PX}
               />
             </span>
+          {/if}
+          {#if seriesColor && ctx.metric}
+            <div class="ts-row__colour-edit">
+              <GraphColorPicker
+                scope={`metric:${ctx.metric.metricRef}`}
+                identity={ts.key}
+                label={`Colour for ${headerLabel}`}
+                color={seriesColor}
+              />
+            </div>
           {/if}
         </div>
       {/snippet}
@@ -267,7 +254,7 @@
 
   .ts-row__title-row {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-columns: auto auto minmax(0, 1fr) var(--colour-column,);
     align-items: center;
     gap: 0.5rem;
     min-height: var(--table-row-h);
@@ -280,12 +267,29 @@
   }
 
   .ts-row__title-row--preview {
-    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 96px);
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 96px) var(
+        --colour-column,
+      );
   }
 
   .ts-row__sparkline {
     @apply min-w-0 shrink-0 justify-self-end;
     max-width: 96px;
+  }
+
+  .ts-row__colour-edit {
+    @apply pointer-events-none opacity-0;
+  }
+
+  :global(.field-group__heading:hover) .ts-row__colour-edit,
+  .ts-row__title-row:focus-within .ts-row__colour-edit {
+    @apply pointer-events-auto opacity-100;
+  }
+
+  @media (hover: none) {
+    .ts-row__colour-edit {
+      @apply pointer-events-auto opacity-100;
+    }
   }
 
   .ts-row__sparkline :global(.sparkline) {
@@ -320,7 +324,8 @@
 
   .ts-row__attrs-text,
   .ts-row__default-label {
-    @apply block truncate text-lg font-normal;
+    @apply block text-lg font-normal;
+    overflow-wrap: anywhere;
   }
 
   .ts-row__default-label {
