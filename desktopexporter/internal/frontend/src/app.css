@@ -369,6 +369,30 @@ svg {
   outline-color: var(--focus-ring-color);
 }
 
+/* Page-size controls share pagination's quiet, unboxed treatment. */
+.select.page-size-select {
+  width: auto;
+  height: 2rem;
+  min-height: 2rem;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-subtle);
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  .select.page-size-select:hover:not(:disabled) {
+    background-color: var(--item-hover-bg);
+  }
+}
+
+.select.page-size-select:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
 /* Meaningful section/menu dividers use the same neutral boundary as fields. */
 .separator {
   @apply block h-px w-full shrink-0 border-0;

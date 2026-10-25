@@ -493,7 +493,7 @@
         <label class="dp-list__page-size">
           <span>Rows per page</span>
           <select
-            class="select select-xs"
+            class="select page-size-select"
             aria-label="Rows per page"
             value={pageSize}
             onchange={changePageSize}

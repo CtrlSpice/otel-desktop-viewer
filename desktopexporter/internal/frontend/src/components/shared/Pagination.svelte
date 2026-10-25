@@ -175,7 +175,7 @@
         <label class="flex items-center gap-2 text-xs text-subtle"
           >Rows
           <select
-            class="select select-ghost select-xs w-16 text-xs"
+            class="select page-size-select"
             aria-label="Logs per page"
             value={pageSize}
             disabled={loading}

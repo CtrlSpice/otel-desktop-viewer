@@ -15,7 +15,7 @@
 </script>
 
 <select
-  class="select select-xs w-auto text-sm font-normal text-subtle"
+  class="select page-size-select"
   aria-label={label}
   {value}
   {disabled}
