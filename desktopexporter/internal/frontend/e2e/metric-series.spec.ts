@@ -12,6 +12,7 @@ import {
   GRAPH_PALETTE_VERSION,
   GRAPH_SWATCHES,
 } from '../src/themes/graph-inks'
+import { serviceInkSlots } from '../src/themes/service-ink-slots'
 import type {
   JsonAggregateBucket,
   JsonDataPoint,
@@ -365,7 +366,7 @@ test('time-series axes use the shared rounded Muted border', async ({
 })
 
 for (const { id: theme } of THEMES) {
-  test(`categorical series retain 224 exact official shades independently of accent ink in ${theme}`, async ({
+  test(`categorical series follow ink rankings with 224 exact official shades in ${theme}`, async ({
     page,
   }) => {
     await page.addInitScript(
@@ -508,9 +509,18 @@ for (const { id: theme } of THEMES) {
       'data-accent-ink',
       'ajisai'
     )
-    await expect.poll(drawing).toEqual(original)
+    const cool = original.map((line, index) => ({
+      ...line,
+      colour: rgb(GRAPH_SWATCHES[serviceInkSlots('ajisai')[index]!]!.color),
+    }))
+    await expect.poll(drawing).toEqual(cool)
     await page.reload()
     await expect(lines).toHaveCount(2)
+    await expect.poll(drawing).toEqual(cool)
+    await page.getByRole('button', { name: /^Theme:/ }).click()
+    await page
+      .locator('.theme-picker-popover:popover-open [data-ink-choice="to-ro"]')
+      .click()
     await expect.poll(drawing).toEqual(original)
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
   })

@@ -116,6 +116,6 @@
 <style lang="postcss">
   @reference '../../app.css';
   .guide-scroll {
-    @apply flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-3;
+    @apply flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto py-3;
   }
 </style>

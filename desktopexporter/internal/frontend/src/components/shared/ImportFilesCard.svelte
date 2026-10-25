@@ -16,12 +16,12 @@
 
 <button
   type="button"
-  class="item-state relative flex min-h-28 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-primary px-8 py-6 text-center text-sm"
+  class="item-state flex min-h-20 w-full cursor-pointer items-center gap-3 rounded-xl border border-dashed border-primary p-3 text-left text-sm"
   aria-label="Import files"
   onclick={() => input?.click()}
 >
   <span
-    class="absolute top-2 right-3 flex size-7 items-center justify-center text-base-content"
+    class="flex size-7 shrink-0 items-center justify-center text-base-content"
   >
     <HugeiconsIcon
       icon={FileImportIcon}

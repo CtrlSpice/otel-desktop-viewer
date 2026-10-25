@@ -57,7 +57,15 @@ function loadWeights(key: string): Map<string, number> {
  * as open, closed available, then inactive.
  * Keys retain mounted content. Only open neighbours exchange space during drag;
  * disclosure/group changes commit on release. */
-export function createDetailStackState(storageKey: string) {
+export function createDetailStackState(
+  storageKey: string,
+  defaultWeights: Readonly<Record<string, number>> = {}
+) {
+  const defaults = new Map(
+    Object.entries(defaultWeights).filter(([, value]) =>
+      isPositiveWeight(value)
+    )
+  )
   let sections = $state<Section[]>([])
   let weights = $state(loadWeights(storageKey))
   let dragging = $state<string | null>(null)
@@ -137,6 +145,7 @@ export function createDetailStackState(storageKey: string) {
           : 0
       const remembered =
         weights.get(section.layoutKey ?? section.label) ??
+        defaults.get(section.layoutKey ?? section.label) ??
         1 / (current.length + 1)
       const desired = Math.min(
         1 - minimum * current.length,
@@ -188,6 +197,7 @@ export function createDetailStackState(storageKey: string) {
   function weight(section: Section) {
     return (
       weights.get(section.layoutKey ?? section.label) ??
+      defaults.get(section.layoutKey ?? section.label) ??
       1 / Math.max(1, opened().length)
     )
   }

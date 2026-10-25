@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import type { JsonTraceData } from '../src/types/wire-types'
 import { THEMES, themeRgb } from './theme-colours'
+import { GRAPH_SWATCHES } from '../src/themes/graph-inks'
+import { serviceInkSlots } from '../src/themes/service-ink-slots'
 
 const traceIDs = ['a'.repeat(32), 'b'.repeat(32)]
 const spanIDs = ['1', '2', '3', '4', '5'].map(id => id.repeat(16))
@@ -219,6 +221,36 @@ test('single-service waterfall dots and bars use span names while the singleton 
     rootColour
   )
   await root.locator('.waterfall-row__tree-toggle').click()
+  await expect(operation.locator('.span-bar')).toHaveCSS(
+    'background-color',
+    operationColour
+  )
+  await page.getByRole('button', { name: /^Theme:/ }).click()
+  await page
+    .locator('.theme-picker-popover:popover-open [data-ink-choice="ajisai"]')
+    .click()
+  await expect(root.locator('.span-bar')).not.toHaveCSS(
+    'background-color',
+    rootColour
+  )
+  const coolHex = GRAPH_SWATCHES[serviceInkSlots('ajisai')[1]!]!.color
+  const coolOperation = `rgb(${[1, 3, 5].map(i => parseInt(coolHex.slice(i, i + 2), 16)).join(', ')})`
+  expect(coolOperation).not.toBe(operationColour)
+  await expect(operation.locator('.span-bar')).toHaveCSS(
+    'background-color',
+    coolOperation
+  )
+  await expect(repeated.locator('.span-bar')).toHaveCSS(
+    'background-color',
+    coolOperation
+  )
+  await page
+    .locator('.theme-picker-popover:popover-open [data-ink-choice="to-ro"]')
+    .click()
+  await expect(root.locator('.span-bar')).toHaveCSS(
+    'background-color',
+    rootColour
+  )
   await expect(operation.locator('.span-bar')).toHaveCSS(
     'background-color',
     operationColour

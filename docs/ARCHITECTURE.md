@@ -428,6 +428,10 @@ default port. Joined terminal containers have one enclosing border and use
 Madoromi's Kami for code and Chitsu for their tab/tool bars, with Sumi text and
 the shared syntax colours. Header tabs switch their selected fill immediately,
 without a sliding indicator.
+The left pane uses a compact welcome and import target, with aligned guide edges.
+Without saved section sizing, the guide has the largest default weight and each
+utility section opens with a compact initial share. Closed headers stay compact;
+saved resizing takes precedence.
 Issue links reveal the left pane and section.
 
 Each service appears once as a three-row card: identity and errors, signal counts

@@ -54,6 +54,11 @@
   <DetailStack
     label="Home sections"
     storageKey="home-getting-started"
+    defaultWeights={{
+      'Getting started': 0.7,
+      Storage: 0.15,
+      'Ingestion issues': 0.15,
+    }}
     {sections}
   />
 </div>
@@ -61,10 +66,10 @@
 <style lang="postcss">
   @reference '../../app.css';
   .home-welcome {
-    @apply flex h-full min-h-0 min-w-0 flex-col p-3;
+    @apply flex h-full min-h-0 min-w-0 flex-col gap-3 p-3;
   }
   .welcome-banner {
-    grid-template-columns: minmax(0, min(40%, 10rem)) minmax(min-content, 1fr);
+    grid-template-columns: minmax(0, min(32%, 7rem)) minmax(min-content, 1fr);
   }
   .welcome-title {
     @apply whitespace-nowrap text-lg;
@@ -74,6 +79,6 @@
     color: var(--color-code-sora);
   }
   .home-import {
-    @apply shrink-0 py-3;
+    @apply shrink-0;
   }
 </style>

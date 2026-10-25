@@ -11,12 +11,16 @@
     label,
     sections,
     storageKey,
+    defaultWeights = {},
   }: {
     label: string
     sections: { id: string; content: Snippet }[]
     storageKey: string
+    defaultWeights?: Readonly<Record<string, number>>
   } = $props()
-  const stack = untrack(() => createDetailStackState(storageKey))
+  const stack = untrack(() =>
+    createDetailStackState(storageKey, defaultWeights)
+  )
   setContext(DETAIL_STACK, stack)
   $effect(() => {
     const order = sections.map(section => section.id)

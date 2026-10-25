@@ -200,9 +200,9 @@ values use To-ro. Changes propagate across tabs, and blocked storage retains
 the selection in memory. Selecting an accent ink also applies that ink to the
 histogram/heatmap count palette and its legend. The chart's count picker can then
 select a different ink. Startup restores both choices independently: loading the
-saved accent does not overwrite the saved count ink. Automatic service colours
-follow the selected accent ink; explicit service choices and metric-series colours
-retain their assignments. Navigation stays left-aligned; search fills the
+saved accent does not overwrite the saved count ink. Automatic service,
+metric-series and single-service span-name colours follow the selected accent ink;
+manual overrides remain fixed. Navigation stays left-aligned; search fills the
 available desktop space and appearance controls stay together at the right.
 Narrow screens place navigation above search and appearance controls; the
 smallest screens give search a full-width row.
@@ -310,15 +310,15 @@ Slot order visits every ink in Madoromi's pinned colour order at shade 1, then
 at shade 2, through shade 7. Ink/shade IDs, such as `rikka:4`, identify overrides.
 Assignments use the `madoromi-inks-v1` allocation namespace.
 
-Metric-series and span-name identities use FNV-1a with a 32-bit avalanche, then
-next-free-slot probing. They have separate saved scopes per `metricRef` and one
-exact-span-name scope. Service identity remains exact service-name text, shared
-viewer-wide, with automatic assignments saved per selected interface ink.
+Services, metric series and single-service span names share ink-ranked allocation.
+They retain separate scopes: exact service-name text viewer-wide, native series
+identity per `metricRef`, and exact span-name text. Automatic assignments in each
+scope are saved per selected interface ink.
 Filtering, ordering and paging do not release slots. New identities never move
 existing owners. Fresh assignments can depend on encounter order. Blocked/full
 storage falls back to in-memory stability.
 
-Automatic service colours use the actual selection rules of
+Automatic categorical colours use the actual selection rules of
 [Madoromi Mix](https://madoromi.moonwit.ch/#palettes/mix/), from the pinned
 `third_party/madoromi/mix.ts` revision above. `harmonyInks` measures chroma-weighted
 hue across each full ink curve, excludes low-chroma candidates, skips covered
@@ -329,21 +329,22 @@ analogous (−30°/+30°), complementary (180°), triadic (120°/240°) and tetr
 the generated selections. The Mix selection rules choose ink families; the
 viewer keeps exact official swatch hexes rather than generating mixed colours.
 
-The service ranking starts with the analogous family and its complementary
+The shared ink ranking starts with the analogous family and its complementary
 accent. It interleaves these inks at shade 4, then 2, then 6. Additional triadic
 and tetradic inks follow at those strengths, then the remaining catalogue in
 pinned order. Finally every ink contributes shades 1, 3, 5 and 7. Thus contrasting
 inks appear before a second shade of the same ink, and all 224 official swatches remain in the
-automatic pool and manual picker. Seasons and Day/Night never remap services.
+automatic pool and manual picker. Seasons and Day/Night never remap these colours.
 
-Each new service takes the first unoccupied ranked slot, skipping manual choices.
+Each new identity takes the first unoccupied ranked slot, skipping manual choices.
 Switching ink restores that ink's saved slots and assigns all known hidden owners
 before newly encountered identities. Switching back restores the same assignments.
-The keys are `graph-colour-slots:madoromi-inks-v1:224:services:ink:<ink>`.
-Existing unqualified `services` assignments seed the initially selected ink;
+The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:ink:<ink>`, where
+scope is `services`, `metric:<metricRef>` or `span-names`.
+Existing unqualified assignments in each scope seed the initially selected ink;
 their original storage remains intact. Other inks use the new ranking. Explicit
-overrides stay in the existing shared `services` scope and remain fixed across
-ink changes. Metric-series and single-service span-name colours stay independent.
+overrides stay in their existing ownership scopes and remain fixed across
+ink changes. An ink switch does not change selection, visibility or disclosure.
 
 After all slots are occupied, new identities reuse their hashed slot without
 moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and one
@@ -354,7 +355,7 @@ Each Home service name has its assigned 8px colour dot in a 24px circular target
 The target stays transparent at rest, with shared Low hover and Medium open-state
 highlights and a visible keyboard focus ring. The dot opens
 the shared ink picker. It is a sibling of the card button, so changing colour does not select the card. Gauge
-and Sum series have the same control in their metric Details row; it does not
+and Sum series use a pencil-edit control in their metric Details row; it does not
 toggle visibility or disclosure. Graph overrides fit all 224 choices into two
 stacked groups of 16 inks. Each ink is a vertical light-to-dark column of seven
 shades, with 24px targets around 8px dots.

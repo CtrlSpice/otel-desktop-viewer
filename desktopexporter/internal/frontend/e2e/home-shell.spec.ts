@@ -125,5 +125,18 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
   await expect(
     page.getByRole('region', { name: 'Service map', exact: true })
   ).toContainText('shell-service')
+  const storage = page.locator('[data-detail-section="storage"]')
+  const guide = page.locator('[data-detail-section="guide"]')
+  await storage.locator('summary').click()
+  await expect(storage).toHaveAttribute('data-detail-group', 'open')
+  expect((await guide.boundingBox())!.height).toBeGreaterThan(
+    (await storage.boundingBox())!.height * 2
+  )
+  await expect(
+    storage.getByRole('table', { name: 'Viewer storage' })
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Import files', exact: true })
+  ).toBeVisible()
   expect(errors).toEqual([])
 })

@@ -6,8 +6,8 @@ import { identityColorSlot } from '@/utils/color-slots'
 export type TimeseriesColorByKey = Map<string, string>
 
 /**
- * Restore saved slots, or hash and probe for a new identity in legend order.
- * Encounter order affects new collision winners, never existing assignments.
+ * Restore saved slots, or use the active ink's ranking in legend order.
+ * Encounter order affects new assignments, never existing owners.
  */
 export function seedColorAssignments(
   pool: readonly string[],
@@ -23,7 +23,7 @@ export function seedColorAssignments(
   return out
 }
 
-/** Saved hash/probe slot; after exhaustion reuse without moving any owner. */
+/** Saved colour slot; after exhaustion reuse without moving any owner. */
 export function acquireColor(
   pool: readonly string[],
   assigned: TimeseriesColorByKey,

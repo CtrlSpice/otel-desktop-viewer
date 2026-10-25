@@ -92,12 +92,20 @@ export class ColorSlotAllocator {
 
 const allocators = new Map<string, ColorSlotAllocator>()
 const reportedReuse = new Set<string>()
-let preparedServiceInk: AccentInkId | undefined
+const preparedInks = new Map<string, AccentInkId>()
+
+function usesInkRanking(scope: string, size: number): boolean {
+  return (
+    size === SERIES_COLOR_COUNT &&
+    (scope === 'services' ||
+      scope === 'span-names' ||
+      scope === 'metric-series' ||
+      scope.startsWith('metric:'))
+  )
+}
 
 function allocationScope(scope: string, size: number): string {
-  return scope === 'services' && size === SERIES_COLOR_COUNT
-    ? `services:ink:${accentInk.value}`
-    : scope
+  return usesInkRanking(scope, size) ? `${scope}:ink:${accentInk.value}` : scope
 }
 
 function storageKey(scope: string, size: number): string {
@@ -134,8 +142,12 @@ function loadSlots(key: string, size: number): [string, number][] {
 }
 
 function allocatorFor(scope: string, size: number): ColorSlotAllocator {
-  if (scope === 'services' && size === SERIES_COLOR_COUNT)
-    return serviceAllocator()
+  return usesInkRanking(scope, size)
+    ? inkAllocator(scope)
+    : storedAllocator(scope, size)
+}
+
+function storedAllocator(scope: string, size: number): ColorSlotAllocator {
   const key = storageKey(scope, size)
   let allocator = allocators.get(key)
   if (!allocator) {
@@ -154,14 +166,14 @@ function persistSlots(key: string, allocator: ColorSlotAllocator): void {
   }
 }
 
-function serviceAllocator(): ColorSlotAllocator {
+function inkAllocator(scope: string): ColorSlotAllocator {
   const ink = accentInk.value
-  const scope = allocationScope('services', SERIES_COLOR_COUNT)
-  const active = allocatorFor(scope, SERIES_COLOR_COUNT)
-  if (preparedServiceInk === ink) return active
+  const activeScope = allocationScope(scope, SERIES_COLOR_COUNT)
+  const active = storedAllocator(activeScope, SERIES_COLOR_COUNT)
+  if (preparedInks.get(scope) === ink) return active
   const saved = ACCENT_INKS.flatMap(candidate => {
-    const candidateScope = `services:ink:${candidate.id}`
-    const allocator = allocatorFor(candidateScope, SERIES_COLOR_COUNT)
+    const candidateScope = `${scope}:ink:${candidate.id}`
+    const allocator = storedAllocator(candidateScope, SERIES_COLOR_COUNT)
     allocator.restore(
       loadSlots(
         storageKey(candidateScope, SERIES_COLOR_COUNT),
@@ -171,21 +183,21 @@ function serviceAllocator(): ColorSlotAllocator {
     return allocator.snapshot()
   })
   const legacy = loadSlots(
-    storageKey('services', SERIES_COLOR_COUNT),
+    storageKey(scope, SERIES_COLOR_COUNT),
     SERIES_COLOR_COUNT
   )
   const before = active.snapshot().length
   // Adopt existing assignments for the initially selected ink, keeping the old
   // storage intact. Other inks replay all known owners, including hidden ones.
   if (saved.length === 0) active.restore(legacy)
-  const reserved = graphColorOverrides.reservedSlots('services')
+  const reserved = graphColorOverrides.reservedSlots(scope)
   const preferred = serviceInkSlots(ink)
   for (const [identity] of [...saved, ...legacy]) {
     active.assign(identity, reserved, preferred)
   }
-  preparedServiceInk = ink
+  preparedInks.set(scope, ink)
   if (active.snapshot().length !== before)
-    persistSlots(storageKey(scope, SERIES_COLOR_COUNT), active)
+    persistSlots(storageKey(activeScope, SERIES_COLOR_COUNT), active)
   return active
 }
 
@@ -197,9 +209,9 @@ export function identityColorSlot(
 ): number {
   let allocator = allocatorFor(scope, size)
   if (allocator.has(identity)) return allocator.assign(identity)
-  if (scope === 'services' && size === SERIES_COLOR_COUNT) {
-    preparedServiceInk = undefined
-    allocator = serviceAllocator()
+  if (usesInkRanking(scope, size)) {
+    preparedInks.delete(scope)
+    allocator = inkAllocator(scope)
   }
   const key = storageKey(allocationScope(scope, size), size)
   // Another tab may have assigned new identities since this registry was read.
@@ -210,9 +222,7 @@ export function identityColorSlot(
     size === SERIES_COLOR_COUNT
       ? graphColorOverrides.reservedSlots(scope)
       : undefined,
-    scope === 'services' && size === SERIES_COLOR_COUNT
-      ? serviceInkSlots(accentInk.value)
-      : undefined
+    usesInkRanking(scope, size) ? serviceInkSlots(accentInk.value) : undefined
   )
   persistSlots(key, allocator)
   if (!reportedReuse.has(key) && allocator.reuses().length > 0) {
@@ -229,7 +239,7 @@ export function colorSlotReuses(
   scope: string,
   size: number = SERIES_COLOR_COUNT
 ): ColorSlotReuse[] {
-  return allocatorFor(allocationScope(scope, size), size).reuses()
+  return storedAllocator(allocationScope(scope, size), size).reuses()
 }
 
 /** All saved owners, including hidden services/series and their reset slots. */
@@ -248,11 +258,11 @@ export function savedColorSlots(
       SERIES_COLOR_COUNT
     )
   )
-  if (scope === 'services' && includeInactiveInks) {
+  if (usesInkRanking(scope, SERIES_COLOR_COUNT) && includeInactiveInks) {
     return [
       ...allocator.snapshot(),
       ...ACCENT_INKS.filter(ink => ink.id !== accentInk.value).flatMap(ink =>
-        allocatorFor(`services:ink:${ink.id}`, SERIES_COLOR_COUNT).snapshot()
+        storedAllocator(`${scope}:ink:${ink.id}`, SERIES_COLOR_COUNT).snapshot()
       ),
     ]
   }
@@ -265,7 +275,7 @@ if (typeof window !== 'undefined') {
       event.key === null ||
       event.key.startsWith(`graph-colour-slots:${SERIES_PALETTE_VERSION}:`)
     ) {
-      preparedServiceInk = undefined
+      preparedInks.clear()
       colorSlotChanges.notify()
     }
   })
