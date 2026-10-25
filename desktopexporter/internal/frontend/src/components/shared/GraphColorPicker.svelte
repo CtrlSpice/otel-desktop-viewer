@@ -3,6 +3,7 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { RefreshIcon } from '@hugeicons/core-free-icons'
   import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+  import { graphInkFamily } from '@/utils/graph-ink-family'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
 
   let {
@@ -21,9 +22,9 @@
 
   const override = $derived(graphColorOverrides.get(scope, identity))
   const selected = $derived(override?.color ?? color)
+  const family = $derived(graphInkFamily(selected, override?.id))
   let hex = $state('')
   let input = $state<HTMLInputElement>()
-
   $effect(() => {
     hex = selected
   })
@@ -38,6 +39,7 @@
   compact
   role="dialog"
   showHeader={false}
+  popoverClass="graph-colour-popover"
   triggerClass={`series-colour-edit header-icon-button tooltip tooltip-left ${compact ? 'series-colour-edit--compact' : ''}`}
   onOpenChange={open => {
     if (open) {
@@ -68,7 +70,7 @@
           <input
             bind:this={input}
             class="input input-sm min-w-0 w-full"
-            aria-label={`Hex ${label.toLowerCase()}`}
+            aria-label="Colour value"
             type="text"
             spellcheck={false}
             maxlength={7}
@@ -102,19 +104,64 @@
           />
         </button>
       </div>
+      <span class="text-sm text-subtle" data-ink-family
+        >{family.exact ? '' : 'Closest ink · '}{family.ink.name}</span
+      >
+      <div
+        class="graph-colour-picker__swatches"
+        role="group"
+        aria-label={`${family.ink.name} ink shades`}
+      >
+        {#each family.ink.swatches as swatch (swatch.id)}
+          <button
+            type="button"
+            class="header-icon-button tooltip tooltip-top"
+            aria-label={`${family.ink.name} shade ${swatch.shade}`}
+            data-tip={`${family.ink.name} · ${swatch.shade}`}
+            aria-pressed={selected.toLowerCase() === swatch.color}
+            onclick={() => choose(swatch.id)}
+          >
+            <span
+              class="size-2 shrink-0 rounded-full"
+              style:background-color={swatch.color}
+              aria-hidden="true"
+            ></span>
+          </button>
+        {/each}
+      </div>
     </div>
   {/snippet}
 </FilterPopover>
 
 <style lang="postcss">
   @reference '../../app.css';
+  :global(.anchor-popover.graph-colour-popover) {
+    min-width: 0;
+    width: max-content;
+  }
   .graph-colour-picker {
     @apply flex flex-col gap-2;
-    width: min(14rem, calc(100vw - 3rem));
+    width: min(16rem, calc(100vw - 3rem));
+  }
+  .graph-colour-picker__swatches {
+    @apply flex justify-between;
   }
   hex-color-picker {
     width: 100%;
-    height: 12rem;
+    height: 11rem;
+  }
+  hex-color-picker::part(saturation) {
+    bottom: 24px;
+    border-radius: var(--radius-lg);
+  }
+  hex-color-picker::part(hue) {
+    height: 12px;
+    border-radius: var(--radius-full);
+  }
+  hex-color-picker::part(saturation-pointer),
+  hex-color-picker::part(hue-pointer) {
+    width: 16px;
+    height: 16px;
   }
   :global(.series-colour-edit--compact) {
     width: 24px;

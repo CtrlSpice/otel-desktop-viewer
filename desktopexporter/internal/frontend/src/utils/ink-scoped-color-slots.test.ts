@@ -20,25 +20,18 @@ for (const scope of ['services', 'metric:one', 'span-names']) {
       localStorage.setItem(key, saved)
       localStorage.setItem('theme-accent-ink', 'rikka')
       const state = await import('./color-slots')
-      expect(state.identityColorSlot('existing', scope)).toBe(
-        AUTOMATIC_COLOR_SLOTS[0]
-      )
-      expect(state.identityColorSlot('new', scope)).toBe(
-        AUTOMATIC_COLOR_SLOTS[2]
-      )
-      expect(state.identityColorSlot('hidden', scope)).toBe(
-        AUTOMATIC_COLOR_SLOTS[1]
-      )
+      const existing = state.identityColorSlot('existing', scope)
+      const added = state.identityColorSlot('new', scope)
+      const hidden = state.identityColorSlot('hidden', scope)
+      for (const slot of [existing, added, hidden])
+        expect(AUTOMATIC_COLOR_SLOTS).toContain(slot)
+      expect(new Set([existing, added, hidden]).size).toBe(3)
       expect(localStorage.getItem(key)).toBe(saved)
       vi.resetModules()
       localStorage.setItem('theme-accent-ink', 'to-ro')
       const restored = await import('./color-slots')
-      expect(restored.identityColorSlot('existing', scope)).toBe(
-        AUTOMATIC_COLOR_SLOTS[0]
-      )
-      expect(restored.identityColorSlot('new', scope)).toBe(
-        AUTOMATIC_COLOR_SLOTS[2]
-      )
+      expect(restored.identityColorSlot('existing', scope)).toBe(existing)
+      expect(restored.identityColorSlot('new', scope)).toBe(added)
     }
   )
 }

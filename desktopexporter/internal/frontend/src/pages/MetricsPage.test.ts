@@ -503,17 +503,16 @@ describe('MetricsPage raw series fetching', () => {
     renderWithContexts(MetricsPage)
     await vi.waitFor(() =>
       expect(
-        screen.getByText('default series', { exact: true }).closest('summary')
+        screen.getByText('default series', { exact: true }).closest('tr')
       ).toBeInTheDocument()
     )
     expect(rawSeriesCalls()).toHaveLength(0)
 
     vi.setSystemTime(requestNow)
-    const summary = screen
+    const seriesRow = screen
       .getByText('default series', { exact: true })
-      .closest('summary')!
-    await fireEvent.click(summary)
-    await fireEvent(summary.parentElement!, new Event('toggle'))
+      .closest('tr')!
+    await fireEvent.click(seriesRow)
     await tick()
 
     expect(rawSeriesCalls()).toHaveLength(1)
@@ -610,13 +609,11 @@ describe('MetricsPage raw series fetching', () => {
       )
 
       const user = userEvent.setup()
-      const summary = screen
+      const seriesRow = screen
         .getByText('default series', { exact: true })
-        .closest('summary')!
-      await user.click(summary)
-      await fireEvent(summary.parentElement!, new Event('toggle'))
-      await user.click(summary)
-      await fireEvent(summary.parentElement!, new Event('toggle'))
+        .closest('tr')!
+      await user.click(seriesRow)
+      await user.click(seriesRow)
       await tick()
       expect(rawSeriesCalls()).toHaveLength(1)
     }

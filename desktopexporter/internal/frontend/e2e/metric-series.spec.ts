@@ -459,7 +459,7 @@ test('series colour picker overrides persist independently of visibility and dis
   )
   const picker = page.getByLabel('Colour for route: /first', { exact: true })
   const hex = page.getByRole('textbox', {
-    name: 'Hex colour for route: /first',
+    name: 'Colour value',
     exact: true,
   })
   const disclosure = page.locator('.ts-row[data-series-key]').first()

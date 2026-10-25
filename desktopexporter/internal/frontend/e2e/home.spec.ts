@@ -140,7 +140,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await expect(colourDot).toHaveCSS('background-color', automaticColour)
   await picker.click()
   const hex = page.getByRole('textbox', {
-    name: 'Hex colour for checkout',
+    name: 'Colour value',
     exact: true,
   })
   await expect(hex).toBeFocused()
@@ -154,6 +154,35 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     name: 'Reset colour for checkout to automatic',
     exact: true,
   })
+  const dialog = page.getByRole('dialog', {
+    name: 'Colour for checkout options',
+    exact: true,
+  })
+  await expect(dialog.locator('[data-ink-family]')).toContainText(
+    'Closest ink · '
+  )
+  await expect(
+    dialog.getByRole('slider', { name: 'Alpha', exact: true })
+  ).toHaveCount(0)
+  const shades = dialog
+    .getByRole('group', { name: /ink shades$/ })
+    .getByRole('button')
+  await expect(shades).toHaveCount(7)
+  const shade = shades.nth(3)
+  await expect(shade.locator('span')).toHaveCSS('width', '8px')
+  const shadeColour = await shade
+    .locator('span')
+    .evaluate(element => getComputedStyle(element).backgroundColor)
+  await shade.focus()
+  await shade.press('Enter')
+  await expect(colourDot).toHaveCSS('background-color', shadeColour)
+  await expect(shade).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.locator('[data-ink-family]')).not.toContainText(
+    'Closest ink'
+  )
+  await page.keyboard.press('Escape')
+  await picker.click()
+  await expect(shade).toHaveAttribute('aria-pressed', 'true')
   await reset.focus()
   await reset.click()
   await expect(colourDot).toHaveCSS('background-color', automaticColour)

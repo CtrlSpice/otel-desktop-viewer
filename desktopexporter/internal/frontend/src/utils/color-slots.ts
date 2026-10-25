@@ -64,7 +64,7 @@ export class ColorSlotAllocator {
     let slot = preferred ? preferred[start]! : start
     for (let offset = 0; offset < count; offset++) {
       const candidate = preferred
-        ? preferred[offset]!
+        ? preferred[(start + offset) % count]!
         : (start + offset) % this.size
       if (!this.occupied.has(candidate) && !reserved.has(candidate)) {
         slot = candidate

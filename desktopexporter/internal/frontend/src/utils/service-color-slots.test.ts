@@ -36,11 +36,9 @@ it('keeps exact service colours across seasons, reordering and reloads', async (
   const state = await setup()
   const identities = ['', 'api', 'API', 'api ', '__proto__', '服務']
   const warm = identities.map(state.color)
-  expect(warm).toEqual(
-    AUTOMATIC_COLOR_SLOTS.slice(0, identities.length).map(
-      slot => GRAPH_SWATCHES[slot]!.color
-    )
-  )
+  const pool = AUTOMATIC_COLOR_SLOTS.map(slot => GRAPH_SWATCHES[slot]!.color)
+  for (const color of warm) expect(pool).toContain(color)
+  expect(new Set(warm).size).toBe(identities.length)
   const series = state.identityColorSlot('api', 'metric:one')
   const span = state.spanNameColor('request', 'madoromi-aki-hiru')
   const cool = identities.map(state.color)
@@ -95,12 +93,13 @@ it('recolours old automatic slots while retaining hidden owners and old storage'
   localStorage.setItem('theme-accent-ink', 'ajisai')
   const state = await setup()
   const opening = AUTOMATIC_COLOR_SLOTS.map(slot => GRAPH_SWATCHES[slot]!.color)
-  expect(state.color('api')).toBe(opening[0])
+  expect(opening).toContain(state.color('api'))
   expect(state.color('api')).not.toBe(GRAPH_SWATCHES[19]!.color)
   expect(state.savedColorSlots('services').map(([id]) => id)).toContain(
     'hidden'
   )
-  expect(state.color('hidden')).toBe(opening[1])
+  expect(opening).toContain(state.color('hidden'))
+  expect(state.color('hidden')).not.toBe(state.color('api'))
   expect(localStorage.getItem(key)).toBe(saved)
 })
 

@@ -39,7 +39,7 @@ function readSaved(scope: string): [string, ColorOverrideId][] {
     return raw
       .filter(isSavedOverride)
       .flatMap((entry): [string, ColorOverrideId][] => {
-        // Accept native picker hex values and existing saved ink/shade IDs.
+        // Accept picker hex values and existing saved ink/shade IDs.
         const swatch = resolveOverride(entry[1])
         return swatch ? [[entry[0], swatch.id]] : []
       })

@@ -330,7 +330,9 @@ already-used colours is greatest. There is no selected-ink restriction or 3:2
 ratio. `node scripts/generate-bright-ink-slots.mjs --check` verifies the generated
 sequence. This is a viewer ordering rule over unchanged Madoromi swatches.
 
-Each new identity takes the first unoccupied ranked slot, skipping manual choices.
+Each new identity hashes into the bright sequence using FNV-1a with a 32-bit
+avalanche, then probes forward past occupied slots and manual choices. Already
+saved assignments retain their slots; changing allocation does not recolour them.
 The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:fixed-bright-v1`, where
 scope is `services`, `metric:<metricRef>` or `span-names`.
 Prior automatic assignments retain their identities and encounter order while
@@ -349,7 +351,12 @@ Home service names retain their assigned 8px dots with an 8px gap before the nam
 Service dots open a shared colour popover independently of card selection.
 Gauge/Sum series with assigned colours have the same editable dot before their
 attribute values. The popover uses vanilla-colorful's dependency-free hex picker,
-with a hue slider, colour field, hex input and Reset to automatic. Checkboxes use
+with a hue slider, colour field, hex input and Reset to automatic. Its surrounding
+controls use the app's seasonal surfaces, regular Atkinson text and focus styles.
+Seven 8px dots offer the current ink's official shades. Named preset and curve
+overrides retain their ink identity; custom RGB values use the closest official
+shade in OKLab and show “Closest ink”. The picker has no opacity control.
+Checkboxes use
 the shared Primary checkmark on a transparent background, independent of series
 colour. Saved choices survive visibility changes. Reset restores the owner's
 saved automatic assignment without moving other owners.

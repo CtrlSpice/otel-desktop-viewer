@@ -12,6 +12,20 @@ import { AUTOMATIC_COLOR_VERSION } from '@/themes/service-ink-slots'
 const SIZE = SERIES_COLOR_COUNT
 
 describe('colour-slot allocation', () => {
+  it('hashes into the preferred bright pool and probes past saved and reserved colours', () => {
+    const preferred = [18, 3, 22, 7, 11]
+    const identity = 'new-service'
+    const start = colorIdentityHash(identity) % preferred.length
+    const expected = preferred[start]!
+    const fresh = new ColorSlotAllocator(SIZE)
+    expect(fresh.assign(identity, new Set(), preferred)).toBe(expected)
+    const saved = new ColorSlotAllocator(SIZE, [['existing', expected]])
+    const reserved = preferred[(start + 1) % preferred.length]!
+    expect(saved.assign(identity, new Set([reserved]), preferred)).toBe(
+      preferred[(start + 2) % preferred.length]
+    )
+    expect(saved.assign('existing', new Set(), preferred)).toBe(expected)
+  })
   it('starts at the stable hash and probes forward without moving owners', () => {
     const start = colorIdentityHash('new-service') % SIZE
     const slots = new ColorSlotAllocator(SIZE, [['existing-service', start]])
