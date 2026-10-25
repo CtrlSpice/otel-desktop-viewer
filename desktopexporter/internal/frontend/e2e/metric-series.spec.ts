@@ -366,7 +366,7 @@ test('time-series axes use the shared rounded Muted border', async ({
 })
 
 for (const { id: theme } of THEMES) {
-  test(`categorical series follow ink rankings with 224 exact official shades in ${theme}`, async ({
+  test(`categorical series follow bright ink rankings with 224 manual shades in ${theme}`, async ({
     page,
   }) => {
     await page.addInitScript(
@@ -402,7 +402,9 @@ for (const { id: theme } of THEMES) {
     const official = GRAPH_INKS.flatMap(ink => ink.swatches)
     expect(official).toHaveLength(224)
     expect(original.map(line => line.colour)).toEqual(
-      GRAPH_SWATCHES.slice(0, 2).map(shade => rgb(shade.color))
+      serviceInkSlots('to-ro')
+        .slice(0, 2)
+        .map(slot => rgb(GRAPH_SWATCHES[slot]!.color))
     )
     expect(new Set(original.map(line => line.colour)).size).toBe(2)
 
@@ -417,7 +419,7 @@ for (const { id: theme } of THEMES) {
     })
     await expect(picker).toHaveCSS('background-color', themeRgb(theme, 'panel'))
     await expect(picker).not.toHaveCSS('box-shadow', 'none')
-    await expect(picker).toHaveCSS('border-width', '0px')
+    await expect(picker).toHaveCSS('border-width', '1px')
     const shades = picker.locator('[data-ink-choice]')
     await expect(shades).toHaveCount(224)
     await expect(picker.locator('[aria-pressed="true"]')).toBeFocused()
@@ -434,7 +436,8 @@ for (const { id: theme } of THEMES) {
     expect(rendered).toEqual(
       GRAPH_INKS.flatMap(ink =>
         ink.swatches.map(swatch => {
-          const disabled = swatch.id === GRAPH_SWATCHES[1]!.id
+          const disabled =
+            swatch.id === GRAPH_SWATCHES[serviceInkSlots('to-ro')[1]!]!.id
           return {
             id: swatch.id,
             colour: disabled ? themeRgb(theme, 'chrome') : rgb(swatch.color),
@@ -478,7 +481,7 @@ for (const { id: theme } of THEMES) {
     const reserved = rendered
       .filter(shade => shade.disabled)
       .map(shade => shade.id)
-    expect(reserved).toEqual([GRAPH_SWATCHES[1]!.id])
+    expect(reserved).toEqual([GRAPH_SWATCHES[serviceInkSlots('to-ro')[1]!]!.id])
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
     const second = page.getByRole('checkbox', {

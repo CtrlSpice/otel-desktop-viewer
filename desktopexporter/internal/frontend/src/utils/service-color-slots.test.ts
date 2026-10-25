@@ -5,7 +5,10 @@ import {
   GRAPH_PALETTE_VERSION,
   graphInkCurve,
 } from '@/themes/graph-inks'
-import { serviceInkSlots } from '@/themes/service-ink-slots'
+import {
+  AUTOMATIC_COLOR_VERSION,
+  serviceInkSlots,
+} from '@/themes/service-ink-slots'
 
 beforeEach(() => {
   localStorage.clear()
@@ -97,7 +100,7 @@ it('retains manual presets and curve choices, hidden reservations and per-ink re
   expect(state.color('api')).toBe(coolReset)
 })
 
-it('adopts existing saved slots for the initial ink without erasing their storage or moving hidden owners', async () => {
+it('recolours old automatic slots while retaining hidden owners and old storage', async () => {
   const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services`
   const saved = JSON.stringify([
     ['api', 19],
@@ -106,35 +109,47 @@ it('adopts existing saved slots for the initial ink without erasing their storag
   localStorage.setItem(key, saved)
   localStorage.setItem('theme-accent-ink', 'ajisai')
   const state = await setup()
-  expect(state.color('api')).toBe(GRAPH_SWATCHES[19]!.color)
+  const opening = serviceInkSlots('ajisai').map(
+    slot => GRAPH_SWATCHES[slot]!.color
+  )
+  expect(state.color('api')).toBe(opening[0])
   state.accentInk.set('to-ro')
   expect(state.color('api')).not.toBe(GRAPH_SWATCHES[19]!.color)
   expect(state.savedColorSlots('services').map(([id]) => id)).toContain(
     'hidden'
   )
   state.accentInk.set('ajisai')
-  expect(state.color('hidden')).toBe(GRAPH_SWATCHES[21]!.color)
+  expect(state.color('hidden')).toBe(opening[1])
   expect(localStorage.getItem(key)).toBe(saved)
 })
 
-it('reaches every official swatch without reuse before exhaustion and retains slider fallback', async () => {
+it('exhausts only the bright pool, then reuses it without moving owners', async () => {
   const state = await setup()
-  const colors = Array.from({ length: 224 }, (_, index) =>
+  const preferred = serviceInkSlots('to-ro')
+  const colors = Array.from({ length: preferred.length }, (_, index) =>
     state.color(`service-${index}`)
   )
   expect(new Set(colors)).toEqual(
-    new Set(GRAPH_SWATCHES.map(swatch => swatch.color))
+    new Set(preferred.map(slot => GRAPH_SWATCHES[slot]!.color))
   )
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    for (let i = 0; i < 50; i++)
+      expect(colors).toContain(state.color(`overflow-${i}`))
+    expect(colors.map((_, i) => state.color(`service-${i}`))).toEqual(colors)
+  } finally {
+    warning.mockRestore()
+  }
   const availability = state.graphColorAvailability('services', 'service-0')
-  expect(availability.freePresets).toBe(0)
-  expect(availability.unavailable.size).toBe(223)
+  expect(availability.freePresets).toBe(224 - preferred.length)
+  expect(availability.unavailable.size).toBe(preferred.length - 1)
   expect(availability.unavailable.has(colors[0]!)).toBe(false)
 })
 
 it('merges cross-tab hidden owners before preparing another ink', async () => {
   const state = await setup()
   const existing = state.color('existing')
-  const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services:ink:to-ro`
+  const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services:ink:to-ro:${AUTOMATIC_COLOR_VERSION}`
   const hiddenSlot = serviceInkSlots('to-ro')[1]!
   const saved: [string, number][] = JSON.parse(localStorage.getItem(key)!)
   localStorage.setItem(

@@ -81,6 +81,7 @@ bottom row when a reading is available.
 - `graph-inks.ts`: shared seven-shade catalogue and stable ink/shade identities.
 - `service-ink-harmonies.json`: pinned Mix selections for automatic service colours.
 - `service-ink-slots.ts`: pure ink-led ordering of the official service swatches.
+- `bright-ink-slots.json`: generated bright-only automatic rankings.
 - `../utils/color-slots.ts`: saved service/series identity allocation.
 - `../state/graph-color-overrides.svelte.ts`: persisted, reactive per-identity overrides.
 - `../state/accent-ink.svelte.ts` / `../state/count-palette.svelte.ts`: independent saved ink choices.
@@ -93,6 +94,7 @@ Its original palette, conversion code and full MPL-2.0 licence are in
 ```sh
 node scripts/generate-madoromi.mjs
 node scripts/generate-service-ink-harmonies.mjs
+node scripts/generate-bright-ink-slots.mjs
 ```
 
 The licence, original inputs, generator and adapted theme JSON are distributed
@@ -325,10 +327,11 @@ hash of attribute source, key and typed value identity. Sorting, paging and them
 changes preserve each value's colour. Parent attribute rows remain plain; counts
 and percentages keep their record denominator, and Copy retains the full value.
 
-Services and metric series use the first seven official swatches from the same
-32 colourful Madoromi inks: 224 distinct colours. The original eighth (palest)
-shade remains in the distributed source but is omitted from the automatic pool
-and seven-dot override picker. UI and syntax shades are allowed. These are the
+The categorical catalogue contains the first seven official swatches from the same
+32 colourful Madoromi inks: 224 distinct colours. Automatic allocation uses its
+101 bright, colourful swatches; the manual picker retains all 224. The original
+eighth (palest) shade remains in the distributed source but is omitted from both.
+These are the
 upstream eight-step ramp's original colour values, not lightness-resampled count
 bands. Each colour retains its exact hex value across seasons and Day/Night.
 
@@ -355,27 +358,37 @@ analogous (−30°/+30°), complementary (180°), triadic (120°/240°) and tetr
 the generated selections. The Mix selection rules choose ink families; the
 viewer keeps exact official swatch hexes rather than generating mixed colours.
 
-The shared ink ranking starts with the analogous family and its complementary
-accent. It interleaves these inks at shade 4, then 2, then 6. Additional triadic
-and tetradic inks follow at those strengths, then the remaining catalogue in
-pinned order. Finally every ink contributes shades 1, 3, 5 and 7. Thus contrasting
-inks appear before a second shade of the same ink, and all 224 official swatches remain in the
-automatic pool and manual picker. Seasons and Day/Night never remap these colours.
+The shared ranking starts with three related colours and the two triadic companions.
+Related colours use fixed bright representatives of the analogous family; a family
+with only two inks contributes another bright shade. Composition and ordering are
+separate: the selected ink comes first, then adjacent OKLab distance orders the
+remaining colours, keeping the two contrasting colours apart when possible.
+Larger scopes use the remaining bright shades from those families, then bright
+representatives of other inks, then the rest of the bright catalogue. The opening
+3:2 mix is not a repeating sequence or a ratio guaranteed for larger scopes.
+
+`scripts/generate-bright-ink-slots.mjs` defines the fixed representatives and checks
+them against the source ramps. Automatic swatches have OKLab lightness 0.60–0.87
+and chroma at least 0.10. `node scripts/generate-bright-ink-slots.mjs --check`
+verifies the generated rankings. These are viewer ordering rules over unchanged
+Madoromi swatches, not upstream palette recommendations. Seasons and Day/Night
+never remap these colours. No minimum perceptual-distance guarantee is made.
 
 Each new identity takes the first unoccupied ranked slot, skipping manual choices.
 Switching ink restores that ink's saved slots and assigns all known hidden owners
 before newly encountered identities. Switching back restores the same assignments.
-The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:ink:<ink>`, where
+The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:ink:<ink>:bright-3-2-v1`, where
 scope is `services`, `metric:<metricRef>` or `span-names`.
-Existing unqualified assignments in each scope seed the initially selected ink;
-their original storage remains intact. Other inks use the new ranking. Explicit
+Prior automatic assignments retain their identities and encounter order while
+receiving bright-ranked reset slots; their original storage remains intact. Explicit
 overrides stay in their existing ownership scopes and remain fixed across
 ink changes. An ink switch does not change selection, visibility or disclosure.
 
-After all slots are occupied, new identities reuse their hashed slot without
+After all bright slots are occupied, new identities reuse a hashed bright slot without
 moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and one
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
-series cap is independent of the 224-colour capacity.
+series cap is independent of the 101-colour automatic capacity. Exhaustion does
+not introduce dark or pale automatic colours.
 
 Each Home service name has its assigned 8px colour dot in a 24px circular target.
 The target stays transparent at rest, with shared Low hover and Medium open-state

@@ -50,40 +50,44 @@ for (const scope of ['metric:one', 'span-names']) {
       )
     })
 
-    it('keeps saved assignments on the initial ink and reserves hidden/manual owners across inks', async () => {
-      const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:${scope}`
+    it('recolours prior ink assignments and reserves hidden/manual owners across inks', async () => {
+      const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:${scope}:ink:to-ro`
       const saved = JSON.stringify([
         ['existing', 19],
         ['hidden', 21],
       ])
       localStorage.setItem(key, saved)
       const state = await setup()
-      expect(state.identityColorSlot('existing', scope)).toBe(19)
+      const warm = serviceInkSlots('to-ro')
+      expect(state.identityColorSlot('existing', scope)).toBe(warm[0])
       const manual = GRAPH_SWATCHES[serviceInkSlots('ajisai')[0]!]!
       state.graphColorOverrides.set(scope, 'manual owner', manual.id)
       state.accentInk.set('ajisai')
       const cool = state.identityColorSlot('existing', scope)
       expect(cool).not.toBe(serviceInkSlots('ajisai')[0])
       expect(state.graphColorAvailability(scope, 'new').unavailable).toContain(
-        GRAPH_SWATCHES[21]!.color
+        GRAPH_SWATCHES[warm[1]!]!.color
       )
       expect(state.graphColorOverrides.get(scope, 'manual owner')?.color).toBe(
         manual.color
       )
       state.accentInk.set('to-ro')
-      expect(state.identityColorSlot('existing', scope)).toBe(19)
-      expect(state.identityColorSlot('hidden', scope)).toBe(21)
+      expect(state.identityColorSlot('existing', scope)).toBe(warm[0])
+      expect(state.identityColorSlot('hidden', scope)).toBe(warm[1])
       expect(localStorage.getItem(key)).toBe(saved)
     })
 
-    it('uses all 224 unique shades before reusing any slot', async () => {
+    it('uses every bright shade before reusing any slot', async () => {
       const state = await setup()
-      const assigned = Array.from({ length: 224 }, (_, i) =>
+      const preferred = serviceInkSlots('to-ro')
+      const assigned = Array.from({ length: preferred.length }, (_, i) =>
         state.identityColorSlot(`owner-${i}`, scope)
       )
       expect(assigned).toEqual(serviceInkSlots('to-ro'))
-      expect(new Set(assigned).size).toBe(224)
-      expect(state.graphColorAvailability(scope, 'owner-0').freePresets).toBe(0)
+      expect(new Set(assigned).size).toBe(preferred.length)
+      expect(state.graphColorAvailability(scope, 'owner-0').freePresets).toBe(
+        224 - preferred.length
+      )
       expect(state.colorSlotReuses(scope)).toEqual([])
     })
   })

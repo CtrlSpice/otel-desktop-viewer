@@ -4,36 +4,46 @@ import accentFamilies from './accent-inks.json' with { type: 'json' }
 import harmonies from './service-ink-harmonies.json' with { type: 'json' }
 import { GRAPH_SWATCHES } from './graph-inks'
 import { serviceInkSlots } from './service-ink-slots'
+import { ramps } from '../../../../../third_party/madoromi/ink-ramps.json'
 
 describe('Madoromi Mix service ranking', () => {
   for (const { id } of ACCENT_INKS) {
-    it(`${id}: starts with the upstream analogous family and an early complementary accent`, () => {
+    it(`${id}: starts with three related and two triadic bright colours`, () => {
       const family = harmonies.inks[id]
       expect(family.analogous).toEqual(accentFamilies.inks[id].family)
-      const core = [...new Set([...family.analogous, ...family.complementary])]
       const ranked = serviceInkSlots(id).map(slot => GRAPH_SWATCHES[slot]!)
-      expect(ranked.slice(0, core.length).map(swatch => swatch.ink)).toEqual(
-        core
-      )
-      expect(core.length).toBeGreaterThan(family.analogous.length)
+      expect(ranked[0]!.ink).toBe(id)
+      const opening = ranked.slice(0, 5)
       expect(
-        ranked.slice(0, core.length).every(swatch => swatch.shade === 4)
-      ).toBe(true)
+        opening.filter(s => family.analogous.includes(s.ink))
+      ).toHaveLength(3)
       expect(
-        new Set(ranked.slice(0, core.length).map(swatch => swatch.ink)).size
-      ).toBe(core.length)
-      expect(
-        ranked
-          .slice(0, core.length * 3)
-          .every(swatch => core.includes(swatch.ink))
-      ).toBe(true)
-      expect(ranked).toHaveLength(224)
+        opening
+          .filter(s => !family.analogous.includes(s.ink))
+          .map(s => s.ink)
+          .sort()
+      ).toEqual(family.triadic.filter(ink => ink !== id).sort())
+      const eligible = GRAPH_SWATCHES.filter(s => {
+        const [L, a, b] = ramps[s.ink][s.shade! - 1]!
+        return L! >= 0.6 && L! <= 0.87 && Math.hypot(a!, b!) >= 0.1
+      })
+      expect(ranked).toHaveLength(eligible.length)
       expect(new Set(ranked.map(swatch => swatch.id))).toEqual(
-        new Set(GRAPH_SWATCHES.map(swatch => swatch.id))
-      )
-      expect(new Set(ranked.map(swatch => swatch.color))).toEqual(
-        new Set(GRAPH_SWATCHES.map(swatch => swatch.color))
+        new Set(eligible.map(swatch => swatch.id))
       )
     })
   }
+  it('retains the approved Rikka opening', () => {
+    expect(
+      serviceInkSlots('rikka')
+        .slice(0, 5)
+        .map(slot => GRAPH_SWATCHES[slot]!.id)
+    ).toEqual([
+      'rikka:6',
+      'fuyu-gaki:2',
+      'ku-jaku:6',
+      'murasaki-shikibu:4',
+      'shin-ryoku:7',
+    ])
+  })
 })

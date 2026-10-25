@@ -3,7 +3,10 @@ import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { colorSlotChanges } from '@/state/color-slot-changes.svelte'
 import { accentInk } from '@/state/accent-ink.svelte'
 import { ACCENT_INKS, type AccentInkId } from '@/themes/accent-inks'
-import { serviceInkSlots } from '@/themes/service-ink-slots'
+import {
+  AUTOMATIC_COLOR_VERSION,
+  serviceInkSlots,
+} from '@/themes/service-ink-slots'
 
 export type ColorSlotReuse = { slot: number; identities: string[] }
 
@@ -55,9 +58,12 @@ export class ColorSlotAllocator {
   ): number {
     const existing = this.assigned.get(identity)
     if (existing !== undefined) return existing
-    const start = colorIdentityHash(identity) % this.size
-    let slot = start
-    for (let offset = 0; offset < this.size; offset++) {
+    if (preferred?.length === 0)
+      throw new RangeError('The preferred colour pool must not be empty')
+    const count = preferred?.length ?? this.size
+    const start = colorIdentityHash(identity) % count
+    let slot = preferred ? preferred[start]! : start
+    for (let offset = 0; offset < count; offset++) {
       const candidate = preferred
         ? preferred[offset]!
         : (start + offset) % this.size
@@ -105,7 +111,11 @@ function usesInkRanking(scope: string, size: number): boolean {
 }
 
 function allocationScope(scope: string, size: number): string {
-  return usesInkRanking(scope, size) ? `${scope}:ink:${accentInk.value}` : scope
+  return usesInkRanking(scope, size) ? inkScope(scope, accentInk.value) : scope
+}
+
+function inkScope(scope: string, ink: AccentInkId): string {
+  return `${scope}:ink:${ink}:${AUTOMATIC_COLOR_VERSION}`
 }
 
 function storageKey(scope: string, size: number): string {
@@ -172,7 +182,7 @@ function inkAllocator(scope: string): ColorSlotAllocator {
   const active = storedAllocator(activeScope, SERIES_COLOR_COUNT)
   if (preparedInks.get(scope) === ink) return active
   const saved = ACCENT_INKS.flatMap(candidate => {
-    const candidateScope = `${scope}:ink:${candidate.id}`
+    const candidateScope = inkScope(scope, candidate.id)
     const allocator = storedAllocator(candidateScope, SERIES_COLOR_COUNT)
     allocator.restore(
       loadSlots(
@@ -186,13 +196,22 @@ function inkAllocator(scope: string): ColorSlotAllocator {
     storageKey(scope, SERIES_COLOR_COUNT),
     SERIES_COLOR_COUNT
   )
+  // Recolour prior automatic assignments once under the new bright policy.
+  // Retain owner order (active ink first), hidden identities and manual choices.
+  // Old storage remains intact; only the new version owns new reset slots.
+  const previous = [
+    ink,
+    ...ACCENT_INKS.map(candidate => candidate.id).filter(id => id !== ink),
+  ].flatMap(id =>
+    loadSlots(
+      storageKey(`${scope}:ink:${id}`, SERIES_COLOR_COUNT),
+      SERIES_COLOR_COUNT
+    )
+  )
   const before = active.snapshot().length
-  // Adopt existing assignments for the initially selected ink, keeping the old
-  // storage intact. Other inks replay all known owners, including hidden ones.
-  if (saved.length === 0) active.restore(legacy)
   const reserved = graphColorOverrides.reservedSlots(scope)
   const preferred = serviceInkSlots(ink)
-  for (const [identity] of [...saved, ...legacy]) {
+  for (const [identity] of [...saved, ...previous, ...legacy]) {
     active.assign(identity, reserved, preferred)
   }
   preparedInks.set(scope, ink)
@@ -262,7 +281,7 @@ export function savedColorSlots(
     return [
       ...allocator.snapshot(),
       ...ACCENT_INKS.filter(ink => ink.id !== accentInk.value).flatMap(ink =>
-        storedAllocator(`${scope}:ink:${ink.id}`, SERIES_COLOR_COUNT).snapshot()
+        storedAllocator(inkScope(scope, ink.id), SERIES_COLOR_COUNT).snapshot()
       ),
     ]
   }
