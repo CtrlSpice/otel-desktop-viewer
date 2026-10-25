@@ -229,8 +229,14 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
     selectedAttribute: null,
     onSelectAttribute,
   })
+  // Keep control queries out of the attribute/value rows: computing every
+  // button's accessible name repeatedly is expensive for the expanded table.
+  const controls = within(getByRole('toolbar', { name: 'Attribute controls' }))
+  const footer = within(container.querySelector<HTMLElement>('.signal-footer')!)
   const headings = () => [
-    ...container.querySelectorAll('tr[data-attribute-heading]'),
+    ...container.querySelectorAll<HTMLTableRowElement>(
+      'tr[data-attribute-heading]'
+    ),
   ]
   await waitFor(() => expect(headings()).toHaveLength(25))
   await waitFor(() => expect(values).toHaveBeenCalledTimes(60))
@@ -245,7 +251,9 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
   )
   onSelectAttribute.mockClear()
   await fireEvent.click(
-    getByRole('button', { name: 'Expand key-000 · span values' })
+    within(firstHeading).getByRole('button', {
+      name: 'Expand key-000 · span values',
+    })
   )
   expect(
     container.querySelector('tr[data-attribute-key="key-000"]')
@@ -261,53 +269,63 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
     expect.objectContaining({ value: { kind: 'string', value: 'received' } })
   )
   onSelectAttribute.mockClear()
-  await fireEvent.click(getByRole('button', { name: 'Next page' }))
+  await fireEvent.click(footer.getByRole('button', { name: 'Next page' }))
   expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-025')
   expect(container.querySelector('tr[data-attribute-key="key-000"]')).toBeNull()
-  await fireEvent.click(getByRole('button', { name: 'Previous page' }))
+  await fireEvent.click(footer.getByRole('button', { name: 'Previous page' }))
   expect(
     container.querySelector('tr[data-attribute-key="key-000"]')
   ).not.toHaveAttribute('hidden')
   expect(values).toHaveBeenCalledTimes(60)
   expect(onSelectAttribute).not.toHaveBeenCalled()
-  await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
+  await fireEvent.click(
+    controls.getByRole('button', { name: 'Expand all attributes' })
+  )
   expect(
     container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
   ).toHaveLength(25)
-  await fireEvent.click(getByRole('button', { name: 'Next page' }))
+  await fireEvent.click(footer.getByRole('button', { name: 'Next page' }))
   expect(
     container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
   ).toHaveLength(25)
   await fireEvent.click(
-    getByRole('button', { name: 'Collapse key-025 · span values' })
+    within(headings()[0]).getByRole('button', {
+      name: 'Collapse key-025 · span values',
+    })
   )
   expect(
     container.querySelector('tr[data-attribute-key="key-025"]')
   ).toHaveAttribute('hidden')
-  await fireEvent.click(getByRole('button', { name: 'Previous page' }))
+  await fireEvent.click(footer.getByRole('button', { name: 'Previous page' }))
   expect(
     container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
   ).toHaveLength(25)
-  await fireEvent.click(getByRole('button', { name: 'Next page' }))
+  await fireEvent.click(footer.getByRole('button', { name: 'Next page' }))
   expect(
     container.querySelector('tr[data-attribute-key="key-025"]')
   ).toHaveAttribute('hidden')
-  await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
+  await fireEvent.click(
+    controls.getByRole('button', { name: 'Expand all attributes' })
+  )
   expect(
     container.querySelector('tr[data-attribute-key="key-025"]')
   ).not.toHaveAttribute('hidden')
   await fireEvent.click(
-    getByRole('button', { name: 'Collapse all attributes' })
+    controls.getByRole('button', { name: 'Collapse all attributes' })
   )
-  await fireEvent.click(getByRole('button', { name: 'Previous page' }))
+  await fireEvent.click(footer.getByRole('button', { name: 'Previous page' }))
   expect(
     container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
   ).toHaveLength(0)
   expect(values).toHaveBeenCalledTimes(60)
   expect(onSelectAttribute).not.toHaveBeenCalled()
-  await fireEvent.click(getByRole('button', { name: 'Sort by records' }))
+  await fireEvent.click(
+    within(container.querySelector('thead')!).getByRole('button', {
+      name: 'Sort by records',
+    })
+  )
   expect(headings()[0]).toHaveAttribute('data-attribute-heading', 'key-059')
-  const size = getByRole('combobox', { name: 'Attributes per page' })
+  const size = footer.getByRole('combobox', { name: 'Attributes per page' })
   await fireEvent.change(size, { target: { value: '50' } })
   expect(headings()).toHaveLength(50)
   await fireEvent.change(size, { target: { value: '100' } })

@@ -863,8 +863,13 @@ test('Copy span shares the section heading row and copies only the selected span
     Math.abs(iconBox.y + iconBox.height / 2 - copyBox.y - copyBox.height / 2)
   ).toBeLessThan(1)
   expect(headerBox.height).toBe(48)
+  // Copy shares the pane header's approved 1rem horizontal breathing room.
+  const headerInset = await summary.evaluate(element =>
+    parseFloat(getComputedStyle(element).paddingLeft)
+  )
+  expect(headerInset).toBe(16)
   expect(headerBox.x + headerBox.width - copyBox.x - copyBox.width).toBeCloseTo(
-    12,
+    headerInset,
     0
   )
   const valueBox = (await detail

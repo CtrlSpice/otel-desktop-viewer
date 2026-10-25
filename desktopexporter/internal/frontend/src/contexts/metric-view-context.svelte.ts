@@ -77,6 +77,7 @@ import {
 import { themeSignal } from '@/state/theme.svelte'
 import { SERIES_COLOR_COUNT } from '@/themes'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+import { savedColorSlots } from '@/utils/color-slots'
 import {
   minimalSeriesTable,
   type SeriesTable,
@@ -284,6 +285,7 @@ export interface MetricViewContext {
   /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
    *  have no entry; their checkbox uses neutral. */
   readonly timeseriesColorByKey: TimeseriesColorByKey
+  readonly savedTimeseriesColorByKey: TimeseriesColorByKey
   /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
   readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
@@ -1378,6 +1380,21 @@ export function createMetricViewContext(
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
 
+  const savedTimeseriesColors = $derived.by((): TimeseriesColorByKey => {
+    const scope = colorScope()
+    const saved = new Map(
+      savedColorSlots(scope).map(([key, slot]) => [
+        key,
+        timeseriesChartColors[slot]!,
+      ])
+    )
+    for (const [key] of graphColorOverrides.entries(scope)) {
+      const override = graphColorOverrides.get(scope, key)
+      if (override) saved.set(key, override.color)
+    }
+    return saved
+  })
+
   let assignedColorPool: readonly string[] = []
 
   function colorScope(metricRef = getMetric()?.metricRef): string {
@@ -2056,6 +2073,9 @@ export function createMetricViewContext(
     },
     get timeseriesChartColors() {
       return timeseriesChartColors
+    },
+    get savedTimeseriesColorByKey() {
+      return savedTimeseriesColors
     },
     get legendFilterActive() {
       return legendFilterActive

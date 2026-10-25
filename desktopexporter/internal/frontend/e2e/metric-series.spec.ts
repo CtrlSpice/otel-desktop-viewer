@@ -7,7 +7,6 @@ import {
   GRAPH_PALETTE_VERSION,
   GRAPH_SWATCHES,
 } from '../src/themes/graph-inks'
-import { AUTOMATIC_COLOR_SLOTS } from '../src/themes/service-ink-slots'
 import type {
   JsonAggregateBucket,
   JsonDataPoint,
@@ -353,7 +352,7 @@ test('time-series axes use the shared rounded Muted border', async ({
 })
 
 for (const { id: theme } of THEMES) {
-  test(`categorical series keep their bright colours across season changes and reloads in ${theme}`, async ({
+  test(`categorical series keep their saved colours across season changes and reloads in ${theme}`, async ({
     page,
   }) => {
     await page.addInitScript(
@@ -389,13 +388,13 @@ for (const { id: theme } of THEMES) {
     const official = GRAPH_INKS.flatMap(ink => ink.swatches)
     expect(official).toHaveLength(224)
     expect(original.map(line => line.colour)).toEqual(
-      AUTOMATIC_COLOR_SLOTS.slice(0, 2).map(slot =>
-        rgb(GRAPH_SWATCHES[slot]!.color)
-      )
+      [0, 1].map(slot => rgb(GRAPH_SWATCHES[slot]!.color))
     )
     expect(new Set(original.map(line => line.colour)).size).toBe(2)
 
-    await expect(page.locator('input[type="color"]')).toHaveCount(2)
+    await expect(
+      page.getByRole('button', { name: /^Colour for route:/ })
+    ).toHaveCount(2)
     const second = page.getByRole('checkbox', {
       name: 'Show route: /second in chart',
       exact: true,
@@ -512,9 +511,23 @@ test('series colour picker overrides persist independently of visibility and dis
   expect(await disclosure.getAttribute('aria-expanded')).toBe(wasOpen)
   await page.keyboard.press('Escape')
   await visible.uncheck()
-  await expect(picker).toHaveCount(0)
+  await expect(picker).toBeVisible()
   await expect(visible).not.toBeChecked()
   await expect(disclosure.locator('.ts-row__attrs')).toHaveText('/first')
+  await picker.click()
+  await hex.fill('#654321')
+  await expect(dot).toHaveCSS('background-color', rgb('#654321'))
+  await expect(first).toHaveCount(0)
+  await expect(visible).not.toBeChecked()
+  await page
+    .getByRole('button', {
+      name: 'Reset colour for route: /first to automatic',
+      exact: true,
+    })
+    .click()
+  await expect(dot).toHaveCSS('background-color', original)
+  await hex.fill('#123abc')
+  await page.keyboard.press('Escape')
   await visible.check()
   await expect(first).toHaveCSS('stroke', rgb('#123abc'))
   await picker.click()
@@ -1005,11 +1018,14 @@ test.describe('independent histogram aggregate loading', () => {
           name: 'Timeseries',
           exact: true,
         })
-        await series.locator('summary').first().click()
+        await series.locator('.ts-row').first().click()
         await expect(series.locator('.dp-list__range').first()).toContainText(
           '2 datapoints'
         )
-        const rows = series.locator('details').first().locator('tr[data-dp-id]')
+        const rows = series
+          .locator('[data-series-detail]')
+          .first()
+          .locator('tr[data-dp-id]')
         await expect(rows).toHaveCount(2)
         for (const row of await rows.all()) {
           await expect(row.locator('td').nth(1)).toHaveText('12')
@@ -3218,7 +3234,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
   ).toBeLessThan(1)
   expect(
     headingBox.x + headingBox.width - copyBox.x - copyBox.width
-  ).toBeCloseTo(12, 0)
+  ).toBeCloseTo(16, 0)
   await heading.getByText('Metric', { exact: true }).click()
   await expect(bubble.locator('details')).not.toHaveAttribute('open')
   await expect(copy).toBeVisible()

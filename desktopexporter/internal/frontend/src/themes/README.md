@@ -335,8 +335,8 @@ avalanche, then probes forward past occupied slots and manual choices. Already
 saved assignments retain their slots; changing allocation does not recolour them.
 The keys are `graph-colour-slots:madoromi-inks-v1:224:<scope>:fixed-bright-v1`, where
 scope is `services`, `metric:<metricRef>` or `span-names`.
-Prior automatic assignments retain their identities and encounter order while
-receiving bright-ranked reset slots; their original storage remains intact. Explicit
+Prior automatic assignments retain their exact slots, including hidden owners;
+their original storage remains intact. The bright-only rule applies to new owners. Explicit
 overrides stay in their existing ownership scopes and remain fixed. Previous
 per-ink owners are carried forward with the last active ink's encounter order
 first, including hidden identities. Old palette settings no longer control the UI.
@@ -359,7 +359,8 @@ shade in OKLab and show “Closest ink”. The picker has no opacity control.
 Checkboxes use
 the shared Primary checkmark on a transparent background, independent of series
 colour. Saved choices survive visibility changes. Reset restores the owner's
-saved automatic assignment without moving other owners.
+saved automatic assignment without moving other owners. Previously coloured series
+retain their editor while unchecked; editing them does not change chart visibility.
 
 The sortable Series table uses an exact minimum set of attribute columns that distinguishes
 all series in the metric, including hidden series. Equivalent choices favour

@@ -80,18 +80,31 @@ test.beforeEach(async ({ page }) => {
   await expect(
     page.getByRole('region', { name: 'Log record', exact: true })
   ).toHaveCSS('border-radius', '12px')
-  const downloadInset = await page
+  const downloadLayout = await page
     .getByRole('region', { name: 'Log record', exact: true })
     .evaluate(header => {
-      const top = header
-        .querySelector('.pane-header__top')!
-        .getBoundingClientRect()
+      const bounds = header.getBoundingClientRect()
       const download = header
         .querySelector('[aria-label="Download log"]')!
         .getBoundingClientRect()
-      return top.right - download.right
+      const copy = header
+        .querySelector('[aria-label="Copy log"]')!
+        .getBoundingClientRect()
+      return {
+        inset: bounds.right - download.right,
+        padding: parseFloat(getComputedStyle(header).paddingRight),
+        afterCopy: download.left >= copy.right,
+        centred:
+          Math.abs(
+            bounds.top + bounds.height / 2 - download.top - download.height / 2
+          ) < 1,
+      }
     })
-  expect(Math.abs(downloadInset)).toBeLessThan(1)
+  // The shared single-row header places actions beside the title sub-row.
+  expect(downloadLayout.padding).toBe(16)
+  expect(downloadLayout.inset).toBeCloseTo(downloadLayout.padding, 0)
+  expect(downloadLayout.afterCopy).toBe(true)
+  expect(downloadLayout.centred).toBe(true)
   await expect(
     page
       .getByRole('region', { name: 'Log record', exact: true })

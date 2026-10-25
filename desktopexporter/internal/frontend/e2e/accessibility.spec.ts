@@ -1892,12 +1892,12 @@ test.describe('home page accessibility', () => {
     }
   })
 
-  test('keeps search drafts and controls accessible above signal drawers', async ({
-    page,
-  }) => {
-    for (const width of [1440, 390]) {
-      await page.setViewportSize({ width, height: 900 })
-      for (const signal of ['traces', 'metrics', 'logs']) {
+  for (const width of [1440, 390]) {
+    for (const signal of ['traces', 'metrics', 'logs']) {
+      test(`keeps search drafts and controls accessible above ${signal} drawers at ${width}px`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 900 })
         await page.evaluate(() =>
           localStorage.setItem('signal-drawer:open', 'true')
         )
@@ -2017,14 +2017,14 @@ test.describe('home page accessibility', () => {
         })
         await page.getByRole('button', { name: 'Refresh', exact: true }).click()
         await expect(editor).toHaveText('service.name = "checkout"')
-      }
+      })
     }
-  })
+  }
 
-  test('keeps workspace tooltips inward, visible and unclipped at desktop and mobile widths', async ({
-    page,
-  }) => {
-    for (const width of [1440, 390]) {
+  for (const width of [1440, 390]) {
+    test(`keeps workspace tooltips inward, visible and unclipped at ${width}px`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 900 })
       await page.goto('/traces')
       const header = page.getByRole('toolbar', {
@@ -2169,8 +2169,8 @@ test.describe('home page accessibility', () => {
           () => document.documentElement.scrollWidth <= innerWidth
         )
       ).toBe(true)
-    }
-  })
+    })
+  }
 
   test('gives workspace search one field boundary and one focus ring at desktop and mobile widths', async ({
     page,
@@ -2359,10 +2359,10 @@ test.describe('home page accessibility', () => {
     expect(alignment.tabs).toHaveLength(8)
   })
 
-  test('time-range menu has room for dates and uses Next throughout at every viewport width', async ({
-    page,
-  }) => {
-    for (const width of [1920, 900, 390, 320]) {
+  for (const width of [1920, 900, 390, 320]) {
+    test(`time-range menu has room for dates and uses Next throughout at ${width}px`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 1000 })
       await page.goto('/traces')
       await page.getByRole('button', { name: /Change time range/i }).click()
@@ -2414,8 +2414,8 @@ test.describe('home page accessibility', () => {
         expect(row.scroll).toBeLessThanOrEqual(row.width)
       await expect(popup).not.toHaveCSS('box-shadow', 'none')
       await page.keyboard.press('Escape')
-    }
-  })
+    })
+  }
 
   for (const signal of ['traces', 'logs', 'metrics']) {
     test(`${signal} service filter uses the shared header icon without clearing on collapse`, async ({

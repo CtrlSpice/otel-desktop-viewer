@@ -184,7 +184,7 @@ function brightAllocator(scope: string): ColorSlotAllocator {
     storageKey(scope, SERIES_COLOR_COUNT),
     SERIES_COLOR_COUNT
   )
-  // Carry owner order and hidden identities into the single palette once.
+  // Carry saved slots and hidden identities into the single palette once.
   // Prefer the previously active ink; leave old storage and manual choices intact.
   let previousInk: string | null = null
   try {
@@ -210,10 +210,7 @@ function brightAllocator(scope: string): ColorSlotAllocator {
     )
   )
   const before = active.snapshot().length
-  const reserved = graphColorOverrides.reservedSlots(scope)
-  for (const [identity] of [...previous, ...legacy]) {
-    active.assign(identity, reserved, AUTOMATIC_COLOR_SLOTS)
-  }
+  active.restore([...previous, ...legacy])
   preparedScopes.add(scope)
   if (active.snapshot().length !== before)
     persistSlots(storageKey(activeScope, SERIES_COLOR_COUNT), active)

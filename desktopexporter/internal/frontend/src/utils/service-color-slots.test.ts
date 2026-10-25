@@ -83,7 +83,7 @@ it('retains saved manual presets, curve choices and hidden reservations', async 
   expect(state.color('api')).toBe(coolReset)
 })
 
-it('recolours old automatic slots while retaining hidden owners and old storage', async () => {
+it('retains old automatic slots, hidden owners and original storage', async () => {
   const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services`
   const saved = JSON.stringify([
     ['api', 19],
@@ -92,13 +92,11 @@ it('recolours old automatic slots while retaining hidden owners and old storage'
   localStorage.setItem(key, saved)
   localStorage.setItem('theme-accent-ink', 'ajisai')
   const state = await setup()
-  const opening = AUTOMATIC_COLOR_SLOTS.map(slot => GRAPH_SWATCHES[slot]!.color)
-  expect(opening).toContain(state.color('api'))
-  expect(state.color('api')).not.toBe(GRAPH_SWATCHES[19]!.color)
+  expect(state.color('api')).toBe(GRAPH_SWATCHES[19]!.color)
   expect(state.savedColorSlots('services').map(([id]) => id)).toContain(
     'hidden'
   )
-  expect(opening).toContain(state.color('hidden'))
+  expect(state.color('hidden')).toBe(GRAPH_SWATCHES[21]!.color)
   expect(state.color('hidden')).not.toBe(state.color('api'))
   expect(localStorage.getItem(key)).toBe(saved)
 })

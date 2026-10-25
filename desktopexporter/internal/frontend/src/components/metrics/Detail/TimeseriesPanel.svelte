@@ -204,7 +204,7 @@
         {@const checked = checkedKeys.has(ts.key)}
         {@const seriesColor = ctx.isHistogramKind
           ? undefined
-          : ctx.timeseriesColorByKey.get(ts.key)}
+          : ctx.savedTimeseriesColorByKey.get(ts.key)}
         {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
         {@const label = table.labels.get(ts.key)!}
         {@const headerLabel = label.needsIdentity
