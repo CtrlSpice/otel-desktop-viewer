@@ -711,12 +711,26 @@ test('associated logs reuse summary cards and open the full log without losing t
   )
   await expect(card).toHaveClass(/signal-row/)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
-  await expect(card).toContainText('checkout-api')
+  await expect(card.locator('.signal-row__title-cluster')).toHaveAttribute(
+    'title',
+    'order.delayed · checkout-api'
+  )
   await expect(card).toContainText('WARN (13)')
   await expect(card.locator('.signal-row__badge')).toHaveText('WARN (13)')
   await expect(card.locator('.signal-row__title')).toHaveText(
-    'checkout-api · Log'
+    'order.delayed · Log event'
   )
+  await expect(associated.locator(':scope > div')).toHaveCount(0)
+  const titleRows = await card
+    .locator('.signal-row__title > span')
+    .evaluate(element =>
+      [...element.children].map(child => {
+        const box = child.getBoundingClientRect()
+        return box.y + box.height / 2
+      })
+    )
+  expect(Math.max(...titleRows) - Math.min(...titleRows)).toBeLessThan(1)
+  await expect(card.locator('.signal-row__date > .signal-date')).toHaveCount(1)
   await expect(card).toContainText('Associated warning')
   const fields = page.getByRole('table', { name: 'Span fields' })
   const key = fields.locator('.detail-property__key').first()

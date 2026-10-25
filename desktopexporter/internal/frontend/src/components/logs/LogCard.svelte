@@ -12,6 +12,12 @@
     offset?: string
     onclick?: (id: string) => void
     href?: string
+    activity?: {
+      name: string
+      source?: string
+      description?: string
+      toolError?: boolean
+    }
   }
 
   let {
@@ -21,17 +27,21 @@
     offset,
     onclick,
     href,
+    activity,
   }: Props = $props()
 
   let serviceTitle = $derived(log.serviceName?.trim() || '(unknown service)')
   let bodyPreview = $derived((log.bodyPreview ?? '').trim())
+  let displayTitle = $derived(activity?.name || serviceTitle)
 </script>
 
 <SignalCard
   id={log.logRef}
   {selected}
-  title={serviceTitle}
-  description={bodyPreview || undefined}
+  title={activity ? `${displayTitle} · ${serviceTitle}` : serviceTitle}
+  description={bodyPreview && bodyPreview !== activity?.name
+    ? bodyPreview
+    : undefined}
   singleLineDescription
   {onclick}
   {href}
@@ -42,10 +52,26 @@
       suffix={offset ? `(${offset})` : undefined}
     />{/snippet}
   {#snippet titleContent()}
-    <ServiceDot service={log.serviceName ?? ''} />
-    {serviceTitle}{#if showLogBadge}<span class="text-xs text-subtle"
-        >{` · Log`}</span
-      >{/if}
+    <span
+      class="inline-flex max-w-full flex-wrap items-center gap-x-2 text-base-content"
+    >
+      <ServiceDot service={log.serviceName ?? ''} />
+      <span class="truncate">{displayTitle}</span>
+      {#if showLogBadge}<span class="shrink-0 text-sm text-secondary"
+          ><span class="text-subtle" aria-hidden="true">{'· '}</span><span
+            >{activity && log.eventName ? 'Log event' : 'Log'}</span
+          ></span
+        >{/if}
+      {#if activity?.source}
+        <span class="shrink-0 text-sm text-subtle" aria-hidden="true">·</span>
+        <span
+          class="shrink-0 text-sm text-secondary"
+          title={activity.description}>{activity.source}</span
+        >
+      {/if}
+      {#if activity?.toolError}<span class="shrink-0 text-sm">· Tool error</span
+        >{/if}
+    </span>
   {/snippet}
   {#snippet badge()}
     <SignalBadges
