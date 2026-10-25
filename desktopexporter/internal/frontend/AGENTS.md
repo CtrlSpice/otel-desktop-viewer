@@ -347,8 +347,12 @@
   including query entry and editor Find fields. Preserve transparent query
   editors inside the shared search bar. Composite fields have one outer boundary
   and one focus ring, without inner editor borders or duplicate outlines.
-  List and Details bodies, pane/section headers and pagination strips use Hyoshi.
-  Outer navigation and code toolbars use Chitsu. Main workspace and code use Kami.
+  Preserve the uniform Kami background across the workspace, List and Details
+  bodies, outer navigation and pagination. Resting signal-list and Details cards
+  are transparent; only hover and selection add fills. Service-map nodes retain
+  their existing Panel surface. Do not add
+  contrasting pane or card backgrounds as part of a theme audit.
+  Pane/section headers use Hyoshi; code toolbars use Chitsu.
   Keep Subtle-labelled headers on Hyoshi: Autumn Day's native Usuzumi 1 falls
   just below 4.5:1 on Chitsu.
   Pane and section headers, flat code panels and outer pane surfaces

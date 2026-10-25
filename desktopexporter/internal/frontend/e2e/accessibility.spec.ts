@@ -1388,7 +1388,6 @@ test.describe('home page accessibility', () => {
   for (const { id: theme } of THEMES) {
     const canvas = themeRgb(theme, 'canvas')
     const panel = themeRgb(theme, 'panel')
-    const chrome = themeRgb(theme, 'chrome')
     test(`uses Madoromi paper roles for fields and panes in ${theme}`, async ({
       page,
     }) => {
@@ -1404,11 +1403,11 @@ test.describe('home page accessibility', () => {
       ).toHaveCSS('background-color', panel)
       await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
         'background-color',
-        panel
+        canvas
       )
       await expect(
         page.locator('header[aria-label="Workspace navigation and search"]')
-      ).toHaveCSS('background-color', chrome)
+      ).toHaveCSS('background-color', canvas)
       await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
         'background-color',
         canvas
@@ -1444,7 +1443,7 @@ test.describe('home page accessibility', () => {
     )
     await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
       'background-color',
-      'rgb(231, 232, 234)'
+      'rgb(241, 242, 243)'
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',

@@ -113,8 +113,11 @@ in both Day and Night:
 | Panel / bg-200         | Hyoshi          | Hyoshi          |
 | Chrome / bg-300        | Chitsu, darkest | Chitsu, darkest |
 
-The workspace and code use Kami; List and Details bodies, pane/section headings
-and pagination strips use Hyoshi. Outer navigation and code toolbars use Chitsu.
+The workspace, List and Details bodies, outer navigation and pagination share
+one uniform Kami background. Resting signal-list and Details cards are
+transparent; only hover and selection add a fill. Service-map nodes retain
+their existing Panel surface. Pane/section headings use
+Hyoshi, and code toolbars use Chitsu.
 The upstream VS Code port also places sidebar section headings on Hyoshi. This
 keeps the viewer's original Subtle labels readable: Autumn Day's native Usuzumi 1
 falls just below 4.5:1 on Chitsu. Data-column headings stay on the data canvas.
