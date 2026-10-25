@@ -2754,9 +2754,21 @@ test('dense pinned legends scroll by wheel and keyboard at the 280px chart floor
     .poll(() => card.evaluate(element => element.scrollTop))
     .toBeGreaterThan(0)
   await card.focus()
-  await card.press('Home')
+  // Chromium can round scrollTop to zero before its Home animation finishes.
+  // Wait for native completion before sending the opposite scroll command.
+  const scrollKey = async (key: 'Home' | 'End') => {
+    const finished = card.evaluate(
+      element =>
+        new Promise<void>(resolve => {
+          element.addEventListener('scrollend', () => resolve(), { once: true })
+        })
+    )
+    await card.press(key)
+    await finished
+  }
+  await scrollKey('Home')
   await expect.poll(() => card.evaluate(element => element.scrollTop)).toBe(0)
-  await card.press('End')
+  await scrollKey('End')
   await expect
     .poll(() =>
       card.evaluate(
