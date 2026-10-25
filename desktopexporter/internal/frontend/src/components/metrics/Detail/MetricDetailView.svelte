@@ -91,6 +91,7 @@
 {#snippet datapointsSection()}
   <DetailBubble
     label="Datapoints"
+    contained
     icon={seriesIcon}
     disabled={!selectedSeries}
     count={selectedSeries?.datapointCount}

@@ -485,11 +485,12 @@
   }
 
   .dp-list__container {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
     container-type: inline-size;
   }
 
   .dp-list__table-wrap {
-    @apply overflow-x-auto;
+    @apply min-h-0 min-w-0 flex-1 overflow-auto;
   }
 
   .dp-list {
@@ -551,7 +552,7 @@
   }
 
   .dp-list__pagination {
-    @apply sticky bottom-0 z-10 grid items-center gap-2 bg-base-100 px-3 py-2;
+    @apply grid shrink-0 items-center gap-2 bg-base-100 px-3 py-2;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     border-top: 1px solid
       color-mix(in oklab, var(--color-base-300) 30%, transparent);

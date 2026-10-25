@@ -30,7 +30,12 @@
   })
 </script>
 
-<div bind:this={panel} role="region" aria-label="Selected series datapoints">
+<div
+  bind:this={panel}
+  class="flex min-h-0 min-w-0 flex-1 flex-col"
+  role="region"
+  aria-label="Selected series datapoints"
+>
   {#if series}
     {#if error}
       <p role="alert" class="px-3 py-2 text-sm text-papaya">{error}</p>
