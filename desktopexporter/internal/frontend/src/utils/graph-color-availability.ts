@@ -6,7 +6,7 @@ export function graphColorAvailability(scope: string, identity: string) {
   const taken = new Set<string>()
   const unavailable = new Set<string>()
   let selected = graphColorOverrides.get(scope, identity)
-  for (const [owner, slot] of savedColorSlots(scope)) {
+  for (const [owner, slot] of savedColorSlots(scope, true)) {
     const swatch = GRAPH_SWATCHES[slot]!
     taken.add(swatch.color)
     if (owner !== identity) unavailable.add(swatch.color)

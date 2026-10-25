@@ -363,7 +363,10 @@ describe('TraceDetailView detail bubbles', () => {
       'true'
     )
     const fields = screen
-      .getByText('Span', { exact: true, selector: '.collapse-title > span' })
+      .getByText('Span', {
+        exact: true,
+        selector: '.detail-bubble__title-row > [title]',
+      })
       .closest('details')!
     const activity = screen
       .getByText('Events', { exact: true })

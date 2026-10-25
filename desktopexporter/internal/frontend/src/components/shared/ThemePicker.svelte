@@ -162,7 +162,7 @@
           </fieldset>
         {/snippet}
       </PaneHeader>
-      {#if open}<ThemePreview />{/if}
+      {#if open}<ThemePreview ink={accentInk.value} />{/if}
       <fieldset class="m-0 min-w-0 border-0 p-0">
         <legend class="sr-only">Ink</legend>
         <div class="theme-picker__ink-strip">

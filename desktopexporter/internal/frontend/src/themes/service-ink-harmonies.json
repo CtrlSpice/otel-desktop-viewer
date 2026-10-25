@@ -1,0 +1,217 @@
+{
+  "source": "f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695",
+  "inks": {
+    "shimbashi-iro": {
+      "analogous": ["shimbashi-iro", "fukurokuju", "ama-iro"],
+      "complementary": ["shimbashi-iro", "fuyu-gaki"],
+      "triadic": ["shimbashi-iro", "yama-budo", "ina-ho"],
+      "tetradic": [
+        "shimbashi-iro",
+        "murasaki-shikibu",
+        "fuyu-gaki",
+        "hotaru-bi"
+      ]
+    },
+    "ebisu": {
+      "analogous": ["ebisu", "sui-gyoku", "kon-peki"],
+      "complementary": ["ebisu", "yu-yake"],
+      "triadic": ["ebisu", "yama-budo", "hotaru-bi"],
+      "tetradic": ["ebisu", "murasaki-shikibu", "yu-yake", "chiku-rin"]
+    },
+    "ama-iro": {
+      "analogous": ["ama-iro", "shimbashi-iro", "ajisai"],
+      "complementary": ["ama-iro", "to-ro"],
+      "triadic": ["ama-iro", "bishamonten", "chiku-rin"],
+      "tetradic": ["ama-iro", "yama-budo", "to-ro", "shin-ryoku"]
+    },
+    "kon-peki": {
+      "analogous": ["kon-peki", "ebisu", "jurojin"],
+      "complementary": ["kon-peki", "to-ro"],
+      "triadic": ["kon-peki", "momiji", "chiku-rin"],
+      "tetradic": ["kon-peki", "yama-budo", "to-ro", "fukurokuju"]
+    },
+    "ajisai": {
+      "analogous": ["ajisai", "ama-iro", "murasaki-shikibu"],
+      "complementary": ["ajisai", "daikokuten"],
+      "triadic": ["ajisai", "fuyu-gaki", "shin-ryoku"],
+      "tetradic": ["ajisai", "bishamonten", "daikokuten", "sui-gyoku"]
+    },
+    "jurojin": {
+      "analogous": ["jurojin", "kon-peki", "murasaki-shikibu"],
+      "complementary": ["jurojin", "daikokuten"],
+      "triadic": ["jurojin", "yu-yake", "fukurokuju"],
+      "tetradic": ["jurojin", "momiji", "daikokuten", "sui-gyoku"]
+    },
+    "murasaki-shikibu": {
+      "analogous": ["murasaki-shikibu", "ajisai", "yama-budo"],
+      "complementary": ["murasaki-shikibu", "chiku-rin"],
+      "triadic": ["murasaki-shikibu", "to-ro", "sui-gyoku"],
+      "tetradic": [
+        "murasaki-shikibu",
+        "fuyu-gaki",
+        "chiku-rin",
+        "shimbashi-iro"
+      ]
+    },
+    "asa-gao": {
+      "analogous": ["asa-gao", "ama-iro", "murasaki-shikibu"],
+      "complementary": ["asa-gao", "daikokuten"],
+      "triadic": ["asa-gao", "fuyu-gaki", "shin-ryoku"],
+      "tetradic": ["asa-gao", "bishamonten", "daikokuten", "sui-gyoku"]
+    },
+    "tsuyu-kusa": {
+      "analogous": ["tsuyu-kusa", "ku-jaku", "jurojin"],
+      "complementary": ["tsuyu-kusa", "ina-ho"],
+      "triadic": ["tsuyu-kusa", "fuyu-gaki", "shin-ryoku"],
+      "tetradic": ["tsuyu-kusa", "hana-ikada", "ina-ho", "fukurokuju"]
+    },
+    "shin-kai": {
+      "analogous": ["shin-kai", "ama-iro"],
+      "complementary": ["shin-kai", "daikokuten"],
+      "triadic": ["shin-kai", "fuyu-gaki", "shin-ryoku"],
+      "tetradic": ["shin-kai", "bishamonten", "daikokuten", "sui-gyoku"]
+    },
+    "tsuki-yo": {
+      "analogous": ["tsuki-yo", "ebisu", "jurojin"],
+      "complementary": ["tsuki-yo", "to-ro"],
+      "triadic": ["tsuki-yo", "momiji", "chiku-rin"],
+      "tetradic": ["tsuki-yo", "yama-budo", "to-ro", "fukurokuju"]
+    },
+    "rikka": {
+      "analogous": ["rikka", "ku-jaku", "murasaki-shikibu"],
+      "complementary": ["rikka", "ina-ho"],
+      "triadic": ["rikka", "fuyu-gaki", "shin-ryoku"],
+      "tetradic": ["rikka", "tsutsuji", "ina-ho", "fukurokuju"]
+    },
+    "ku-jaku": {
+      "analogous": ["ku-jaku", "syo-ro"],
+      "complementary": ["ku-jaku", "to-ro"],
+      "triadic": ["ku-jaku", "tsutsuji", "hotaru-bi"],
+      "tetradic": ["ku-jaku", "yama-budo", "to-ro", "shin-ryoku"]
+    },
+    "sui-gyoku": {
+      "analogous": ["sui-gyoku", "fukurokuju", "ebisu"],
+      "complementary": ["sui-gyoku", "momiji"],
+      "triadic": ["sui-gyoku", "murasaki-shikibu", "to-ro"],
+      "tetradic": ["sui-gyoku", "jurojin", "momiji", "daikokuten"]
+    },
+    "shin-ryoku": {
+      "analogous": ["shin-ryoku", "chiku-rin", "sui-gyoku"],
+      "complementary": ["shin-ryoku", "yama-budo"],
+      "triadic": ["shin-ryoku", "ajisai", "fuyu-gaki"],
+      "tetradic": ["shin-ryoku", "ama-iro", "yama-budo", "to-ro"]
+    },
+    "ina-ho": {
+      "analogous": ["ina-ho", "to-ro", "hotaru-bi"],
+      "complementary": ["ina-ho", "tsuyu-kusa"],
+      "triadic": ["ina-ho", "syo-ro", "yama-budo"],
+      "tetradic": ["ina-ho", "fukurokuju", "tsuyu-kusa", "tsutsuji"]
+    },
+    "edo-murasaki": {
+      "analogous": ["edo-murasaki", "murasaki-shikibu", "benzaiten"],
+      "complementary": ["edo-murasaki", "fukurokuju"],
+      "triadic": ["edo-murasaki", "hotaru-bi", "ebisu"],
+      "tetradic": ["edo-murasaki", "ina-ho", "fukurokuju", "tsuyu-kusa"]
+    },
+    "yama-budo": {
+      "analogous": ["yama-budo", "murasaki-shikibu", "momiji"],
+      "complementary": ["yama-budo", "fukurokuju"],
+      "triadic": ["yama-budo", "daikokuten", "ebisu"],
+      "tetradic": ["yama-budo", "to-ro", "fukurokuju", "kon-peki"]
+    },
+    "tsutsuji": {
+      "analogous": ["tsutsuji", "yama-budo", "fuyu-gaki"],
+      "complementary": ["tsutsuji", "fukurokuju"],
+      "triadic": ["tsutsuji", "hotaru-bi", "ku-jaku"],
+      "tetradic": ["tsutsuji", "ina-ho", "fukurokuju", "asa-gao"]
+    },
+    "bishamonten": {
+      "analogous": ["bishamonten", "yama-budo", "fuyu-gaki"],
+      "complementary": ["bishamonten", "sui-gyoku"],
+      "triadic": ["bishamonten", "chiku-rin", "ama-iro"],
+      "tetradic": ["bishamonten", "daikokuten", "sui-gyoku", "asa-gao"]
+    },
+    "hana-ikada": {
+      "analogous": ["hana-ikada", "murasaki-shikibu", "benzaiten"],
+      "complementary": ["hana-ikada", "fukurokuju"],
+      "triadic": ["hana-ikada", "hotaru-bi", "ku-jaku"],
+      "tetradic": ["hana-ikada", "ina-ho", "fukurokuju", "tsuyu-kusa"]
+    },
+    "kosumosu": {
+      "analogous": ["kosumosu", "yama-budo", "fuyu-gaki"],
+      "complementary": ["kosumosu", "fukurokuju"],
+      "triadic": ["kosumosu", "hotaru-bi", "ku-jaku"],
+      "tetradic": ["kosumosu", "ina-ho", "fukurokuju", "asa-gao"]
+    },
+    "momiji": {
+      "analogous": ["momiji", "yama-budo", "yu-yake"],
+      "complementary": ["momiji", "sui-gyoku"],
+      "triadic": ["momiji", "chiku-rin", "kon-peki"],
+      "tetradic": ["momiji", "daikokuten", "sui-gyoku", "jurojin"]
+    },
+    "benzaiten": {
+      "analogous": ["benzaiten", "yama-budo", "yu-yake"],
+      "complementary": ["benzaiten", "sui-gyoku"],
+      "triadic": ["benzaiten", "chiku-rin", "kon-peki"],
+      "tetradic": ["benzaiten", "hotaru-bi", "sui-gyoku", "jurojin"]
+    },
+    "fuyu-gaki": {
+      "analogous": ["fuyu-gaki", "kosumosu", "to-ro"],
+      "complementary": ["fuyu-gaki", "shimbashi-iro"],
+      "triadic": ["fuyu-gaki", "shin-ryoku", "asa-gao"],
+      "tetradic": [
+        "fuyu-gaki",
+        "chiku-rin",
+        "shimbashi-iro",
+        "murasaki-shikibu"
+      ]
+    },
+    "yu-yake": {
+      "analogous": ["yu-yake", "benzaiten", "ina-ho"],
+      "complementary": ["yu-yake", "ebisu"],
+      "triadic": ["yu-yake", "fukurokuju", "jurojin"],
+      "tetradic": ["yu-yake", "chiku-rin", "ebisu", "murasaki-shikibu"]
+    },
+    "to-ro": {
+      "analogous": ["to-ro", "fuyu-gaki", "daikokuten"],
+      "complementary": ["to-ro", "ama-iro"],
+      "triadic": ["to-ro", "sui-gyoku", "murasaki-shikibu"],
+      "tetradic": ["to-ro", "shin-ryoku", "ama-iro", "yama-budo"]
+    },
+    "daikokuten": {
+      "analogous": ["daikokuten", "to-ro", "chiku-rin"],
+      "complementary": ["daikokuten", "ajisai"],
+      "triadic": ["daikokuten", "shimbashi-iro", "yama-budo"],
+      "tetradic": ["daikokuten", "sui-gyoku", "ajisai", "bishamonten"]
+    },
+    "hotaru-bi": {
+      "analogous": ["hotaru-bi", "ina-ho", "shin-ryoku"],
+      "complementary": ["hotaru-bi", "jurojin"],
+      "triadic": ["hotaru-bi", "ku-jaku", "hana-ikada"],
+      "tetradic": ["hotaru-bi", "syo-ro", "jurojin", "benzaiten"]
+    },
+    "chiku-rin": {
+      "analogous": ["chiku-rin", "daikokuten", "shin-ryoku"],
+      "complementary": ["chiku-rin", "murasaki-shikibu"],
+      "triadic": ["chiku-rin", "ama-iro", "bishamonten"],
+      "tetradic": [
+        "chiku-rin",
+        "shimbashi-iro",
+        "murasaki-shikibu",
+        "fuyu-gaki"
+      ]
+    },
+    "fukurokuju": {
+      "analogous": ["fukurokuju", "chiku-rin", "sui-gyoku"],
+      "complementary": ["fukurokuju", "yama-budo"],
+      "triadic": ["fukurokuju", "jurojin", "yu-yake"],
+      "tetradic": ["fukurokuju", "kon-peki", "yama-budo", "to-ro"]
+    },
+    "syo-ro": {
+      "analogous": ["syo-ro", "fukurokuju"],
+      "complementary": ["syo-ro", "fuyu-gaki"],
+      "triadic": ["syo-ro", "yama-budo", "ina-ho"],
+      "tetradic": ["syo-ro", "murasaki-shikibu", "fuyu-gaki", "hotaru-bi"]
+    }
+  }
+}

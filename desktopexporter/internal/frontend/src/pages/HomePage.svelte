@@ -26,6 +26,9 @@
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
+  import ServiceMap from '@/components/home/ServiceMap.svelte'
+  import ServiceConnectionDetails from '@/components/home/ServiceConnectionDetails.svelte'
+  import type { MapSelection } from '@/components/home/service-map'
   import type {
     CoverageValue,
     DiscoveredAttribute,
@@ -73,6 +76,10 @@
   let initialized = false
   let services = $state<ServiceSummary[]>([])
   let selected = $state<ServiceSummary | null>(null)
+  let mapSelection = $state<MapSelection | null>(null)
+  const inspectedService = $derived(
+    mapSelection?.kind === 'service' ? mapSelection.service : null
+  )
   let stats = $state<Stats | null>(null)
   let statsError = $state('')
   let error = $state('')
@@ -91,6 +98,13 @@
   )
   $effect(() => {
     void selectedServiceIdentity
+    mapSelection = selected ? { kind: 'service', service: selected } : null
+  })
+  const inspectedIdentity = $derived(
+    inspectedService ? serviceIdentity(inspectedService) : null
+  )
+  $effect(() => {
+    void inspectedIdentity
     selectedAttribute = null
     selectedValue = undefined
   })
@@ -102,10 +116,19 @@
     selectedValue = value
     detailPanel.setOpen(true)
   }
+  function inspect(selection: MapSelection) {
+    mapSelection = selection
+    detailPanel.setOpen(true)
+  }
+  function centre(service: ServiceSummary) {
+    selected = service
+    inspect({ kind: 'service', service })
+  }
   let range = $state<Pick<DiscoveryOptions, 'startTime' | 'endTime'>>({
     startTime: null,
     endTime: null,
   })
+  const discoveryScope = $derived({ ...range, queries })
   let request: AbortController | undefined
   const rejections = $derived(stats?.rejections ?? [])
   const issueCount = $derived(
@@ -151,8 +174,10 @@
       )
       if (controller.signal.aborted) return
       services = page.items
-      range = nextRange
-      queries = options.queries
+      if (refresh || !loaded) {
+        range = nextRange
+        queries = options.queries
+      }
       totalServices = page.totals?.home
       navigation?.setHomeCounts(
         page.totals ?? {},
@@ -174,14 +199,14 @@
       more = page.truncated
       offset = pageOffset
       loaded = true
-      if (selected)
+      if (selected && refresh)
         selected =
           services.find(
             service => serviceIdentity(service) === serviceIdentity(selected!)
           ) ??
           services[0] ??
           null
-      else selected = services[0] ?? null
+      else if (!selected) selected = services[0] ?? null
       if (refresh) {
         revision++
       }
@@ -258,24 +283,79 @@
 </script>
 
 {#snippet attributes()}
-  <AttributeDiscovery
-    service={selected}
-    {range}
-    {queries}
-    {revision}
-    {selectedAttribute}
-    selectedValue={selectedValue?.identity}
-    onSelectAttribute={selectAttribute}
-  />
+  <DetailBubble
+    label="Attributes"
+    layoutKey="attributes"
+    initialOpen={false}
+    disabled={!inspectedService}
+    contained
+  >
+    <AttributeDiscovery
+      service={inspectedService}
+      {range}
+      {queries}
+      {revision}
+      {selectedAttribute}
+      selectedValue={selectedValue?.identity}
+      onSelectAttribute={selectAttribute}
+    />
+  </DetailBubble>
 {/snippet}
 {#snippet foundOn()}
   <AttributeTelemetry
     attribute={selectedAttribute}
     valueIdentity={selectedValue?.identity}
-    service={selected}
-    options={{ ...range, queries }}
+    service={inspectedService}
+    options={discoveryScope}
     {revision}
   />
+{/snippet}
+{#snippet selectionDetails()}
+  {#if mapSelection?.kind === 'connection'}
+    <ServiceConnectionDetails
+      connection={mapSelection.connection}
+      options={discoveryScope}
+      {revision}
+    />
+  {:else}
+    <DetailBubble
+      label={inspectedService?.serviceName || 'Service'}
+      layoutKey="service-selection"
+      disabled={!inspectedService}
+    >
+      {#if inspectedService}
+        <table class="detail-fields w-full" aria-label="Service details">
+          <tbody>
+            <DetailProperty
+              fieldName="service.name"
+              fieldType={inspectedService.serviceNameKind ?? 'string'}
+              fieldValue={inspectedService.serviceName}
+            />
+            <DetailProperty
+              fieldName="service.namespace"
+              fieldType={inspectedService.serviceNamespaceKind ?? 'string'}
+              fieldValue={inspectedService.serviceNamespace}
+            />
+            <DetailProperty
+              fieldName="Traces"
+              fieldType="number"
+              fieldValue={String(inspectedService.traceCount)}
+            />
+            <DetailProperty
+              fieldName="Metrics"
+              fieldType="number"
+              fieldValue={String(inspectedService.metricCount)}
+            />
+            <DetailProperty
+              fieldName="Logs"
+              fieldType="number"
+              fieldValue={String(inspectedService.logCount)}
+            />
+          </tbody>
+        </table>
+      {/if}
+    </DetailBubble>
+  {/if}
 {/snippet}
 {#snippet storage()}
   <DetailBubble label="Storage" initialOpen={false}>
@@ -356,10 +436,7 @@
             selected={selected !== null &&
               serviceIdentity(selected) === serviceIdentity(service)}
             onSelect={() => {
-              selected = service
-              selectedAttribute = null
-              selectedValue = undefined
-              detailPanel.setOpen(true)
+              centre(service)
             }}
           />
         {/each}
@@ -382,7 +459,7 @@
 {/snippet}
 
 <PageLayout
-  mainTitle="Services"
+  mainTitle="Service map"
   items={[]}
   emptyDrawer
   selectedID={null}
@@ -436,13 +513,25 @@
     />
   {/snippet}
   {#snippet main()}
-    {@render attributes()}
+    <ServiceMap
+      service={selected}
+      options={discoveryScope}
+      {revision}
+      selection={mapSelection}
+      onSelect={inspect}
+    />
   {/snippet}
   {#snippet detail()}
     <DetailStack
       label="Home details"
       storageKey="home-details"
-      sections={[{ id: 'found-on', content: foundOn }]}
+      sections={mapSelection?.kind === 'connection'
+        ? [{ id: 'selection', content: selectionDetails }]
+        : [
+            { id: 'selection', content: selectionDetails },
+            { id: 'found-on', content: foundOn },
+            { id: 'attributes', content: attributes },
+          ]}
     />
   {/snippet}
 </PageLayout>

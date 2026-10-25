@@ -54,6 +54,8 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
         }
       if (method === 'discoverTelemetry') {
         const options = params.options
+        if (options.kind === 'connections')
+          return { rows: [], truncated: false }
         const foundOn = [
           { signal: options.signal, ownerType: options.ownerType },
         ]
@@ -212,7 +214,10 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     }
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
-  const discovery = page.locator('.page-layout__main-chrome')
+  const discovery = page.locator(
+    '#signal-drawer-detail [data-detail-section="attributes"]'
+  )
+  await discovery.locator('summary').click()
   const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,
@@ -237,21 +242,18 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     expect(size.scroll).toBeLessThanOrEqual(size.client)
   }
   await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
-  const serviceHeader = discovery.getByRole('region', {
-    name: 'Attributes',
+  const serviceHeader = page.getByRole('region', {
+    name: 'Service map',
     exact: true,
   })
   await expect(serviceHeader).toContainText('checkout')
-  await expect(serviceHeader).toContainText('storefront')
   await expect(
-    serviceHeader.locator(
-      '.pane-header__leading > span[style*="background-color"]'
-    )
-  ).toHaveCSS('background-color', automaticColour)
+    page.getByRole('table', { name: 'Service details' })
+  ).toContainText('storefront')
   const details = page.getByRole('region', { name: 'Home details' })
   await expect(
     details.getByRole('grid', { name: 'Attributes', exact: true })
-  ).toHaveCount(0)
+  ).toHaveCount(1)
   const left = page.locator('#signal-drawer-panel')
   const serviceSection = left.locator('[data-detail-section="services"]')
   const serviceScroll = serviceSection.locator('.service-scroll')

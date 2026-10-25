@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const command = `# recorded command\nprintf "%s\\n" "$HOME" | head -1\n./bin/otel-desktop-viewer query --endpoint http://127.0.0.1:8000 --limit 200 "SELECT '${'long value '.repeat(12)}'"`
 
-test('Home keeps Services below file drop in the left pane, Attributes in Main and Telemetry in Details', async ({
+test('Home keeps the radial map in Main and exact attribute inspection in Details', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
@@ -104,6 +104,10 @@ test('Home keeps Services below file drop in the left pane, Attributes in Main a
       .locator('.service-grid')
       .getByRole('button', { name: /^shell-service/ })
   ).toBeVisible()
+  const discovery = page.locator(
+    '#signal-drawer-detail [data-detail-section="attributes"]'
+  )
+  await discovery.locator('summary').click()
   const filterToggle = page.getByRole('button', {
     name: 'Filter attribute keys',
     exact: true,
@@ -141,10 +145,12 @@ test('Home keeps Services below file drop in the left pane, Attributes in Main a
       name: 'Attributes',
       exact: true,
     })
-  ).toHaveCount(1)
-  await expect(
-    page.locator('#signal-drawer-detail').getByRole('table')
   ).toHaveCount(0)
+  await expect(
+    page
+      .locator('#signal-drawer-detail')
+      .getByRole('grid', { name: 'Attributes', exact: true })
+  ).toHaveCount(1)
   await expect(page.locator('.page-layout__footer')).toHaveCount(0)
   await expect(
     page
@@ -177,25 +183,13 @@ test('Home keeps Services below file drop in the left pane, Attributes in Main a
       .locator('.home-welcome')
       .getByRole('button', { name: 'Import files', includeHidden: true })
   ).toBeAttached()
-  const discovery = page.locator('.page-layout__main-chrome')
-  const overview = discovery.getByRole('region', {
-    name: 'Attributes',
-    exact: true,
+  await expect(
+    page.getByRole('region', { name: 'Service map', exact: true })
+  ).toContainText('shell-service')
+  const controls = discovery.getByRole('toolbar', {
+    name: 'Attribute controls',
   })
-  await expect(overview).toContainText('shell-service')
-  await expect(overview.locator('.pane-header__title')).toHaveText(
-    'shell-service'
-  )
-  await expect(overview).not.toContainText('Last seen')
-  const controls = overview.locator('.pane-header__meta-controls')
   await expect(controls.getByRole('button')).toHaveCount(3)
-  const titleBox = (await overview.locator('.pane-header__top').boundingBox())!
-  const controlsBox = (await controls.boundingBox())!
-  expect(controlsBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height)
-  expect(controlsBox.x + controlsBox.width).toBeCloseTo(
-    titleBox.x + titleBox.width,
-    0
-  )
   const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,

@@ -51,6 +51,8 @@ test('attribute value inspection scopes the counted Telemetry tabs with independ
         }
       if (method === 'discoverTelemetry') {
         const options = params.options
+        if (options.kind === 'connections')
+          return { rows: [], truncated: false }
         if (options.kind === 'services')
           return {
             rows: [
@@ -180,7 +182,8 @@ test('attribute value inspection scopes the counted Telemetry tabs with independ
   })
   await page.goto('/?time=all&q=needle')
   const details = page.getByRole('region', { name: 'Home details' })
-  const discovery = page.locator('.page-layout__main-chrome')
+  const discovery = details.locator('[data-detail-section="attributes"]')
+  await discovery.locator('summary').click()
   const table = discovery.getByRole('grid', {
     name: 'Attributes',
     exact: true,
@@ -280,9 +283,9 @@ test('attribute value inspection scopes the counted Telemetry tabs with independ
   await tracesChoice.press('End')
   await expect(navigation).toContainText('2 / 2 pages')
   await expect(logs.getByRole('link')).toHaveCount(5)
-  expect((await foundOn.boundingBox())!.x).toBeGreaterThanOrEqual(
-    (await attributes.boundingBox())!.x +
-      (await attributes.boundingBox())!.width
+  expect((await foundOn.boundingBox())!.x).toBeCloseTo(
+    (await attributes.boundingBox())!.x,
+    0
   )
   const pageSize = foundOn.getByRole('combobox', { name: 'Telemetry per page' })
   await pageSize.selectOption('50')
@@ -347,18 +350,18 @@ test('attribute value inspection scopes the counted Telemetry tabs with independ
   await expect(traces).toContainText('1 matching span')
   await selectSignal('metrics')
   await expect(metrics).toContainText('9 matching datapoints')
-  expect((await foundOn.boundingBox())!.x).toBeGreaterThanOrEqual(
-    (await attributes.boundingBox())!.x +
-      (await attributes.boundingBox())!.width
+  expect((await foundOn.boundingBox())!.x).toBeCloseTo(
+    (await attributes.boundingBox())!.x,
+    0
   )
-  await expect(details.locator('[data-detail-section]')).toHaveCount(1)
+  await expect(details.locator('[data-detail-section]')).toHaveCount(3)
   expect(
     await details
       .locator('[data-detail-section]')
       .evaluateAll(elements =>
         elements.map(element => element.getAttribute('data-detail-section'))
       )
-  ).toEqual(['found-on'])
+  ).toEqual(['selection', 'found-on', 'attributes'])
   expect(
     await discovery
       .locator('[data-detail-section]')

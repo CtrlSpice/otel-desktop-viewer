@@ -434,7 +434,7 @@ for (const { id: theme, scheme, name } of THEMES) {
         height: '8px',
       }))
     )
-    await expect(ink.locator('svg')).toHaveCSS('width', '18px')
+    await expect(ink.locator('svg')).toHaveCount(0)
     await expect(ink).toHaveText('')
     await expect(ink).toHaveAttribute('data-tip', 'To-ro')
     const geometry = await appearance.evaluate(element => {
@@ -1437,10 +1437,9 @@ test.describe('home page accessibility', () => {
       'background-color',
       'rgb(221, 222, 224)'
     )
-    await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
-      'background-color',
-      'rgb(231, 232, 234)'
-    )
+    await expect(
+      page.locator('.signal-drawer__controls .pane-header')
+    ).toHaveCSS('background-color', 'rgb(231, 232, 234)')
     await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
       'background-color',
       'rgb(241, 242, 243)'

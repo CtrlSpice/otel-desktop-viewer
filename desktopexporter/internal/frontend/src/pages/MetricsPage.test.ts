@@ -332,14 +332,14 @@ describe('Metric main-header export', () => {
         title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
       expect(
-        within(button.closest<HTMLElement>('.pane-header__right')!)
+        within(button.closest<HTMLElement>('.header-controls')!)
           .getAllByRole('button')
           .at(-1)
       ).toBe(button)
       const chartTabs = within(header).queryByRole('tablist')
       if (chartTabs) {
         expect(
-          button.compareDocumentPosition(chartTabs) &
+          chartTabs.compareDocumentPosition(button) &
             Node.DOCUMENT_POSITION_FOLLOWING
         ).not.toBe(0)
       }

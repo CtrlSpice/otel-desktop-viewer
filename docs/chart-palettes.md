@@ -7,18 +7,28 @@ Charts use [Madoromi](https://madoromi.moonwit.ch/) inks.
   take priority. The eight interface themes use 20% of source background chroma;
   categorical graph colours remain fixed.
 - Services and metric series use seven official shades from each of 32 inks:
-  224 categorical colours, omitting the palest eighth shade. The brush beside a
+  224 categorical colours, omitting the palest eighth shade. The colour dot beside a
   Home service name or a Gauge/Sum series in Details opens its override picker.
   Service colours are saved by service-name text; series colours by `metricRef`
   and `seriesRef`. Reset restores the saved automatic assignment. Other owners'
   reserved colours are disabled; crowded scopes offer curve sliders.
+- Automatic service colours follow the selected interface ink's pinned
+  [Madoromi Mix](https://madoromi.moonwit.ch/#palettes/mix/) relationships:
+  analogous families first, an early complementary accent, then broader
+  harmonies and the full catalogue. Families interleave before repeating shades.
+  Switching inks repaints automatic colours; switching back restores that ink's
+  saved assignments. Manual overrides stay fixed. Existing assignments seed the
+  initially selected ink, and visited inks retain their saved reset slots.
+  The theme preview uses the same ranking for sample bars without allocating
+  sample services or changing saved assignments.
 - Histogram and heatmap counts share one app-wide ink, defaulting to To-ro.
   Adaptive ramps contain 1–12 bands; Day reverses Night's exact shades for 2–12
   bands, while a single band uses its mode's high-count endpoint. Seasons retain
   the selected ink. Selecting the top-bar ink updates the count ramp and
   legend; the chart picker can then choose a different count ink. Reloading
-  restores both saved ink choices independently. Service/series colours are
-  unaffected by either control.
+  restores both saved ink choices independently. The chart count-ink control
+  leaves service and series colours unchanged; the interface ink repaints only
+  automatic service colours, not metric-series assignments.
 - Error markers use the seasonal theme's original Beni colour, including on
   otherwise overridden service bars. Internal viewer faults use Papaya.
 

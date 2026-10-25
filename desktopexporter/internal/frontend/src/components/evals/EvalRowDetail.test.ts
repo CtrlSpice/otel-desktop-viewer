@@ -117,7 +117,9 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   ]
   expect(
     sections.map(
-      section => section.querySelector('summary > span')?.textContent
+      section =>
+        section.querySelector('.detail-bubble__title-row > [title]')
+          ?.textContent
     )
   ).toEqual(['Result', 'Assessments', 'Telemetry'])
   expect(screen.getByText('Recorded answer')).toBeVisible()

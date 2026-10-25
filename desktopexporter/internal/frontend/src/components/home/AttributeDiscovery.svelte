@@ -2,8 +2,7 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
   import AttributeKey from './AttributeKey.svelte'
-  import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
-  import ServiceDot from '@/components/shared/ServiceDot.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import ListFilter from '@/components/shared/Search/ListFilter.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
@@ -185,17 +184,8 @@
 
 <ListFilter label="Filter attribute keys" bind:value={filter}>
   {#snippet children(filterToggle, filterField)}
-    <WorkspaceHeader
-      mode="title"
-      pill
-      title={service ? service.serviceName || 'Unnamed service' : 'Services'}
-      ariaLabel="Attributes"
-      badge={service?.serviceNamespace ? namespaceBadge : undefined}
-    >
-      {#snippet leading()}{#if service}<ServiceDot
-            service={service.serviceName}
-          />{/if}{/snippet}
-      {#snippet metaRight()}
+    <PaneHeader mode="toolbar" ariaLabel="Attribute controls">
+      {#snippet right()}
         <button
           type="button"
           class="btn btn-xs chart-header-control tooltip tooltip-left"
@@ -230,7 +220,7 @@
         </button>
         {#if service}{@render filterToggle()}{/if}
       {/snippet}
-    </WorkspaceHeader>
+    </PaneHeader>
     <div class="attribute-discovery">
       {#if service}
         {@render filterField()}
@@ -389,13 +379,6 @@
     </div>
   {/snippet}
 </ListFilter>
-
-{#snippet namespaceBadge()}
-  <span
-    class="max-w-48 truncate text-sm text-subtle"
-    title={service?.serviceNamespace}>{service?.serviceNamespace}</span
-  >
-{/snippet}
 
 <style lang="postcss">
   @reference '../../app.css';

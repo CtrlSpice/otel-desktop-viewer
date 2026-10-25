@@ -91,7 +91,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     })
     await page.goto('/?time=all')
     await expect(
-      page.getByRole('region', { name: 'Attributes', exact: true })
+      page.getByRole('region', { name: 'Service map', exact: true })
     ).toBeVisible()
     const nodes = await page.evaluateHandle(
       selectors => selectors.map(selector => document.querySelector(selector)),
@@ -237,7 +237,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 
     await nav.getByRole('link', { name: 'Home', exact: true }).click()
     await expect(
-      page.getByRole('region', { name: 'Attributes', exact: true })
+      page.getByRole('region', { name: 'Service map', exact: true })
     ).toBeVisible()
     await assertShell()
     await expect.poll(async () => (await list.boundingBox())?.width).toBe(384)

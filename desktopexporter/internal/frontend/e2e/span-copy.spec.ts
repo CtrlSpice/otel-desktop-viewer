@@ -765,7 +765,7 @@ test('selected-span Copy and Download preserve schema URLs and exact numeric tex
     .toBe(source)
 })
 
-test('Copy span sits opposite the span icon and copies only the selected span with context', async ({
+test('Copy span sits in the second header row and copies only the selected span with context', async ({
   page,
   context,
 }) => {
@@ -857,11 +857,17 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await expect(copy).toBeVisible()
   await expect(copy).toHaveCSS('opacity', '1')
   const iconBox = (await summary.locator('svg').boundingBox())!
+  const controlsBox = (await summary
+    .locator('.detail-bubble__controls-row')
+    .boundingBox())!
   const copyBox = (await copy.boundingBox())!
   const headerBox = (await summary.boundingBox())!
   expect(
-    Math.abs(iconBox.y + iconBox.height / 2 - copyBox.y - copyBox.height / 2)
+    Math.abs(
+      controlsBox.y + controlsBox.height / 2 - copyBox.y - copyBox.height / 2
+    )
   ).toBeLessThan(1)
+  expect(copyBox.y).toBeGreaterThan(iconBox.y + iconBox.height)
   expect(headerBox.x + headerBox.width - copyBox.x - copyBox.width).toBeCloseTo(
     12,
     0
@@ -1012,7 +1018,9 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await editor.press('Escape')
   await editor.press('Enter')
   await expect(page.locator('.waterfall-row--matched')).toHaveCount(2)
-  await page.locator('.pane-header--pill').hover()
+  await page
+    .getByRole('region', { name: 'Trace waterfall', exact: true })
+    .hover()
   const match = page.locator('.waterfall-row--matched[aria-selected="false"]')
   await expect(match.locator('td').first()).toHaveCSS(
     'background-color',

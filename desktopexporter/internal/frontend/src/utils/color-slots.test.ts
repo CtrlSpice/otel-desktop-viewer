@@ -103,7 +103,9 @@ describe('saved colour slots', () => {
     const { identityColorSlot } = await import('./color-slots')
     expect(identityColorSlot('kept', 'services')).toBe(7)
     identityColorSlot('new', 'services')
-    expect(JSON.parse(localStorage.getItem(key)!)).toHaveLength(2)
+    expect(JSON.parse(localStorage.getItem(`${key}:ink:to-ro`)!)).toHaveLength(
+      2
+    )
   })
 
   it('retains in-memory assignments when storage is blocked', async () => {
@@ -124,7 +126,7 @@ describe('saved colour slots', () => {
 
   it('merges newly saved owners before assigning another identity', async () => {
     const { identityColorSlot } = await import('./color-slots')
-    const key = `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services`
+    const key = `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services:ink:to-ro`
     const existing = identityColorSlot('existing', 'services')
     const target = colorIdentityHash('new') % SIZE
     const otherSlot = target === existing ? (target + 1) % SIZE : target

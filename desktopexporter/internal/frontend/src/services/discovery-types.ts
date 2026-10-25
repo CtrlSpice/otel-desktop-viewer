@@ -14,12 +14,13 @@ export type DiscoveryOwner =
   | 'exemplar'
   | 'metadata'
 export type DiscoveryOptions = {
-  kind: 'services' | 'keys' | 'values'
+  kind: 'services' | 'keys' | 'values' | 'connections' | 'connection-spans'
   signal?: DiscoverySignal
   ownerType?: DiscoveryOwner
   serviceName?: string
   namespace?: string
   serviceIdentity?: string
+  targetIdentity?: string
   key?: string
   term?: string
   startTime?: string | null
@@ -54,6 +55,23 @@ export type AttributeKey = {
   key: string
   kind: string
   foundOn: { signal: DiscoverySignal; ownerType: DiscoveryOwner }[]
+}
+
+export type ServiceConnection = {
+  source: ServiceSummary
+  target: ServiceSummary
+  spanCount: number
+  traceCount: number
+  errorSpanCount: number
+}
+
+export type ServiceConnectionSpan = {
+  traceID: string
+  spanID: string
+  name: string
+  startTime: string
+  endTime: string
+  statusCode: number
 }
 export type AttributeFrequency = {
   identity: string

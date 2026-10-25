@@ -299,7 +299,7 @@ so the Vite development server can call `/rpc`.
 | `rpc.discover` | OpenRPC description of the JSON-RPC interface |
 | `getImportConfig` | Configured OTLP HTTP import port |
 | `query` | Read-only SQL rows |
-| `discoverTelemetry` | Typed service groups, attribute keys and value frequencies |
+| `discoverTelemetry` | Typed service groups, directed service connections, child-span evidence, attribute keys and value frequencies |
 | `searchTraceSummaries` | Trace list summaries |
 | `getTraceOverview` | Compact spans and trace-linked log summaries |
 | `getTraceView` | Full trace display data |
@@ -373,7 +373,7 @@ Routes are:
 
 | Route | Page |
 | --- | --- |
-| `/` | Service and typed attribute discovery, connection help, storage and ingestion issues |
+| `/` | Radial service map, contextual telemetry and typed attribute discovery, file import, storage and ingestion issues |
 | `/traces`, `/traces/{traceID}` | Trace list and detail |
 | `/logs`, `/logs/{logRef}` | Log list and detail |
 | `/metrics`, `/metrics/{metricRef}` | Metric list and detail |
@@ -418,10 +418,38 @@ space; drag-induced collapse commits on release.
 
 ### Home discovery and search
 
-`HomePage.svelte` presents Services in List, Attributes in Main, and matching
-Telemetry in Details. Lulu and the file-drop control sit above the left section
+`HomePage.svelte` presents Services in List, a radial service map in Main, and
+contextual inspection in Details. Lulu and the file-drop control sit above the left section
 stack; Services is its primary open section, with Storage and Ingestion issues as siblings.
 Issue links reveal that pane and section.
+
+Service cards choose the map centre. Selecting a map node inspects that service
+without recentering. Switching
+to a discovered service pans the view while preserving node positions, zoom and
+expanded connections. New neighbours occupy free space without moving existing
+nodes. A new search/time scope, refresh or an undiscovered disconnected service
+starts a new layout. Reset view centres the chosen service at the default zoom. Service
+Details retains matching Telemetry and optional Attributes. Selecting a directed
+connection shows its counts and 25-item pages of recorded child spans, each
+linking to its exact trace and span.
+
+The map uses LayerChart's radial Tree for placement and draws all directed edges
+separately, retaining cycles, reverse edges and shared dependencies without
+duplicating service nodes. **Expand connections** loads neighbours of the inspected
+service in 100-edge pages; **More connections** continues a truncated result.
+Drag or use arrow keys on focused items to pan; use the wheel or header buttons
+to zoom. Exact typed service
+identities, including namespaces, distinguish nodes.
+
+`discoverTelemetry` kinds `connections` and `connection-spans` follow recorded
+parent span IDs within the same trace. Both endpoints must exist and satisfy the
+trace search and time window. Names, timestamps, same-service references and
+missing parents do not establish cross-service edges. `connections` requires
+`serviceIdentity` and returns incoming and outgoing directed aggregates with
+source/target service summaries, child-span count, distinct trace count and error
+child-span count. `connection-spans` also requires `targetIdentity` and returns
+the exact child spans for that source-to-target direction. Both use the shared
+bounded `limit`/`offset` contract; nanosecond timestamps remain decimal strings.
 
 `components/home/home-search.ts` projects the shared typed search tree onto each
 signal. An inapplicable condition is false for that signal, retaining AND/OR

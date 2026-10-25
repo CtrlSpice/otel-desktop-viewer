@@ -4,24 +4,39 @@
   import SignalBadges from './SignalBadges.svelte'
   import SignalDate from './SignalDate.svelte'
   import BubbleBreakdown from './BubbleBreakdown.svelte'
-  import { GRAPH_INKS } from '@/themes/graph-inks'
+  import { GRAPH_SWATCHES } from '@/themes/graph-inks'
+  import { serviceInkSlots } from '@/themes/service-ink-slots'
+  import type { AccentInkId } from '@/themes/accent-inks'
 
-  // Fixed sample colours must not allocate service identities in saved palettes.
-  const services = [
+  let { ink }: { ink: AccentInkId } = $props()
+  // Fixed sample slots share the real ranking without registering service owners.
+  const slots = $derived(serviceInkSlots(ink))
+  const services = $derived([
     {
       key: 'checkout-api',
       label: 'checkout-api',
-      count: 9,
-      color: GRAPH_INKS.find(ink => ink.id === 'kon-peki')!.swatches[3]!.color,
+      count: 6,
+      color: GRAPH_SWATCHES[slots[0]!]!.color,
     },
     {
       key: 'postgres',
       label: 'postgres',
       count: 3,
-      color: GRAPH_INKS.find(ink => ink.id === 'murasaki-shikibu')!.swatches[3]!
-        .color,
+      color: GRAPH_SWATCHES[slots[1]!]!.color,
     },
-  ]
+    {
+      key: 'cache',
+      label: 'cache',
+      count: 2,
+      color: GRAPH_SWATCHES[slots[2]!]!.color,
+    },
+    {
+      key: 'payments',
+      label: 'payments',
+      count: 1,
+      color: GRAPH_SWATCHES[slots[3]!]!.color,
+    },
+  ])
   let selected = $state(true)
 </script>
 

@@ -141,7 +141,7 @@ describe('LogDetailView trace correlation', () => {
     const header = screen.getByRole('region', { name: 'Log record' })
     const button = within(header).getByRole('button', { name: 'Download log' })
     expect(
-      within(button.closest<HTMLElement>('.pane-header__right')!)
+      within(button.closest<HTMLElement>('.pane-header__meta-controls')!)
         .getAllByRole('button')
         .at(-1)
     ).toBe(button)
@@ -150,8 +150,8 @@ describe('LogDetailView trace correlation', () => {
     expect(button).toHaveTextContent('')
     const tabs = within(header).getByRole('tablist', { name: 'Detail view' })
     expect(within(header).queryByLabelText('Log timestamp')).toBeNull()
-    expect(tabs.closest('.pane-header__top')).not.toBeNull()
-    expect(header.querySelector('.pane-header__meta-row')).toBeNull()
+    expect(tabs.closest('.pane-header__meta-row')).not.toBeNull()
+    expect(tabs.closest('.pane-header__top')).toBeNull()
     expect(header.querySelector('.badge')).toBeNull()
     expect(
       within(tabs).getByRole('tab', { name: 'Properties' })

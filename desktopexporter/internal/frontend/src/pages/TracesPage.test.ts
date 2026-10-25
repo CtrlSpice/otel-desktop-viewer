@@ -226,7 +226,7 @@ describe('TracesPage unplaced spans banner', () => {
     expect(button).toBeEnabled()
     const title = header.querySelector('.pane-header__title')!
     expect(
-      within(button.closest<HTMLElement>('.pane-header__right')!)
+      within(button.closest<HTMLElement>('.pane-header__meta-controls')!)
         .getAllByRole('button')
         .at(-1)
     ).toBe(button)

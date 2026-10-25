@@ -60,6 +60,8 @@ import type {
   DiscoveryOptions,
   DiscoveryPage,
   ServiceSummary,
+  ServiceConnection,
+  ServiceConnectionSpan,
   AttributeKey,
   AttributeFrequency,
 } from './discovery-types'
@@ -860,6 +862,18 @@ async function discover<T>(
 }
 
 export let telemetryAPI = {
+  discoverServiceConnections: (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ) => discover<ServiceConnection>({ ...options, kind: 'connections' }, signal),
+  discoverServiceConnectionSpans: (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ) =>
+    discover<ServiceConnectionSpan>(
+      { ...options, kind: 'connection-spans' },
+      signal
+    ),
   getAttributeRecordMatches: async (
     options: AttributeMatchOptions,
     signal?: AbortSignal

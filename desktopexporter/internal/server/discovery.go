@@ -25,6 +25,7 @@ type discoveryOptions struct {
 	ServiceName     *string           `json:"serviceName"`
 	Namespace       *string           `json:"namespace"`
 	ServiceIdentity *string           `json:"serviceIdentity"`
+	TargetIdentity  *string           `json:"targetIdentity"`
 	Key             *string           `json:"key"`
 	StartTime       *string           `json:"startTime"`
 	EndTime         *string           `json:"endTime"`
@@ -75,6 +76,14 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	query := discovery.Query{StartTime: options.StartTime, EndTime: options.EndTime, ServiceName: options.ServiceName, Namespace: options.Namespace, ServiceIdentity: options.ServiceIdentity}
+	if options.Kind == "connections" || options.Kind == "connection-spans" {
+		if options.ServiceIdentity == nil || (options.Kind == "connection-spans" && options.TargetIdentity == nil) {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if options.Queries == nil {
+			options.Queries = &discoveryQueries{}
+		}
+	}
 	var prefix string
 	var args []any
 	if options.Queries != nil {
@@ -87,6 +96,14 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 	}
 	var statement, search, order string
 	switch options.Kind {
+	case "connections":
+		statement = discovery.ServiceConnections(query)
+		search = "entry::VARCHAR"
+		order = "json_extract_string(entry, '$.source.serviceIdentity'), json_extract_string(entry, '$.target.serviceIdentity')"
+	case "connection-spans":
+		statement = discovery.ServiceConnectionSpans(query, *options.TargetIdentity)
+		search = "json_extract_string(entry, '$.name')"
+		order = "json_extract_string(entry, '$.startTime')::UBIGINT, json_extract_string(entry, '$.traceID'), json_extract_string(entry, '$.spanID')"
 	case "services":
 		statement = discovery.Services(query)
 		search = "concat(json_extract_string(entry, '$.serviceNamespace'), ' ', json_extract_string(entry, '$.serviceName'))"
