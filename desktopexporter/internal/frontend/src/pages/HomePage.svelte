@@ -24,15 +24,10 @@
   } from '@/components/shared/IngestionIssues.svelte'
   import HomeWelcome from '@/components/home/HomeWelcome.svelte'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
-  import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
   import ServiceMap from '@/components/home/ServiceMap.svelte'
   import ServiceConnectionDetails from '@/components/home/ServiceConnectionDetails.svelte'
   import type { MapSelection } from '@/components/home/service-map'
-  import type {
-    CoverageValue,
-    DiscoveredAttribute,
-  } from '@/components/home/attribute-coverage'
   import {
     homeFields,
     homeQueries,
@@ -91,8 +86,6 @@
   let more = $state(false)
   let loaded = $state(false)
   let revision = $state(0)
-  let selectedAttribute = $state<DiscoveredAttribute | null>(null)
-  let selectedValue = $state<CoverageValue>()
   const selectedServiceIdentity = $derived(
     selected ? serviceIdentity(selected) : null
   )
@@ -100,22 +93,6 @@
     void selectedServiceIdentity
     mapSelection = selected ? { kind: 'service', service: selected } : null
   })
-  const inspectedIdentity = $derived(
-    inspectedService ? serviceIdentity(inspectedService) : null
-  )
-  $effect(() => {
-    void inspectedIdentity
-    selectedAttribute = null
-    selectedValue = undefined
-  })
-  function selectAttribute(
-    attribute: DiscoveredAttribute,
-    value?: CoverageValue
-  ) {
-    selectedAttribute = attribute
-    selectedValue = value
-    detailPanel.setOpen(true)
-  }
   function inspect(selection: MapSelection) {
     mapSelection = selection
     detailPanel.setOpen(true)
@@ -282,29 +259,9 @@
   }
 </script>
 
-{#snippet attributes()}
-  <DetailBubble
-    label="Attributes"
-    layoutKey="attributes"
-    initialOpen={false}
-    disabled={!inspectedService}
-    contained
-  >
-    <AttributeDiscovery
-      service={inspectedService}
-      {range}
-      {queries}
-      {revision}
-      {selectedAttribute}
-      selectedValue={selectedValue?.identity}
-      onSelectAttribute={selectAttribute}
-    />
-  </DetailBubble>
-{/snippet}
 {#snippet foundOn()}
   <AttributeTelemetry
-    attribute={selectedAttribute}
-    valueIdentity={selectedValue?.identity}
+    attribute={null}
     service={inspectedService}
     options={discoveryScope}
     {revision}
@@ -530,7 +487,6 @@
         : [
             { id: 'selection', content: selectionDetails },
             { id: 'found-on', content: foundOn },
-            { id: 'attributes', content: attributes },
           ]}
     />
   {/snippet}

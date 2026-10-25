@@ -429,7 +429,7 @@ to a discovered service pans the view while preserving node positions, zoom and
 expanded connections. New neighbours occupy free space without moving existing
 nodes. A new search/time scope, refresh or an undiscovered disconnected service
 starts a new layout. Reset view centres the chosen service at the default zoom. Service
-Details retains matching Telemetry and optional Attributes. Selecting a directed
+Details shows service properties and matching Telemetry. Selecting a directed
 connection shows its counts and 25-item pages of recorded child spans, each
 linking to its exact trace and span.
 
@@ -455,25 +455,23 @@ bounded `limit`/`offset` contract; nanosecond timestamps remain decimal strings.
 signal. An inapplicable condition is false for that signal, retaining AND/OR
 semantics. `discoverTelemetry` applies predicates and the time window before
 grouping and paging; matching navigation totals cover all pages. Services use
-100-item pages. Attribute identity is key, stored kind and owner scope. Value
+100-item pages. The discovery API identifies attributes by key, stored kind and owner scope. Value
 coverage pools distinct span, log and datapoint counts across applicable signals.
 The denominator counts records carrying the key in that owner scope, across
 stored kinds; percentages use the pooled counts rather than averaging percentages.
 Each typed attribute heading counts distinct records carrying that key and kind;
 multiple values of the same kind on one record do not inflate its heading count.
 
-Metric search selects Metric identities. Home intersects attribute matches with
-those identities; the submitted query and selected attribute need not match the
-same datapoint within a matching Metric. This follows the metric workspace's
-query-membership semantics rather than adding a separate datapoint query model.
+Home Telemetry shows signal summaries scoped to the inspected service, search
+and time range. Metric search selects Metric identities, following the metric
+workspace's query-membership semantics.
 
-`AttributeTelemetry.svelte` combines signal summaries with exact attribute-record
-matches. Tabs in the second header row offer Traces, Metrics
+Tabs in the second header row offer Traces, Metrics
 and Logs with known matching counts. Each signal keeps its own page and scroll position. Only the
 active list scrolls; the footer offers 25, 50 or 100 cards per page and remembers
 the choice. Signal changes are immediate and support arrow/Home/End keys.
 Confirmed-empty or inapplicable signals are disabled; loading and failed signals
-remain accessible. Service, attribute/value, search, time-range and refreshed
+remain accessible. Service, search, time-range and refreshed
 result changes reset paging and scroll without toggling other Home sections.
 
 ### Themes and data presentation

@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { themeRgb } from './theme-colours'
 
-test('Home reflows services, discovers exact values, and keeps incoming imports out of the current reading', async ({
+test('Home reflows services and keeps incoming imports out of the current reading', async ({
   page,
 }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   let serviceReads = 0
-  const attributeScopes: Record<string, unknown>[] = []
   const services = Array.from({ length: 8 }, (_, index) => ({
     serviceName: index === 0 ? 'checkout' : `worker-${index}`,
     serviceNamespace: 'storefront',
@@ -56,9 +55,6 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
         const options = params.options
         if (options.kind === 'connections')
           return { rows: [], truncated: false }
-        const foundOn = [
-          { signal: options.signal, ownerType: options.ownerType },
-        ]
         if (options.kind === 'services') {
           serviceReads++
           return {
@@ -66,38 +62,8 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
             truncated: false,
             totals: { home: services.length, traces: 42, metrics: 8, logs: 36 },
           }
-        } else if (options.kind === 'keys') {
-          attributeScopes.push(options)
-          return {
-            rows: [[{ key: 'exact.number', kind: 'int64', foundOn }]],
-            truncated: false,
-          }
-        } else
-          return {
-            rows: [
-              [
-                {
-                  value: { kind: 'int64', value: '9007199254740993' },
-                  foundOn,
-                  count: 2,
-                  kindCount: 3,
-                  denominator: 3,
-                  relativeFrequency: 2 / 3,
-                },
-              ],
-              [
-                {
-                  value: { kind: 'int64', value: '2' },
-                  foundOn,
-                  count: 1,
-                  kindCount: 3,
-                  denominator: 3,
-                  relativeFrequency: 1 / 3,
-                },
-              ],
-            ],
-            truncated: false,
-          }
+        }
+        return { rows: [], truncated: false }
       }
       return []
     })()
@@ -214,34 +180,6 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     }
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
-  const discovery = page.locator(
-    '#signal-drawer-detail [data-detail-section="attributes"]'
-  )
-  await discovery.locator('summary').click()
-  const table = discovery.getByRole('grid', {
-    name: 'Attributes',
-    exact: true,
-  })
-  const tableNode = await table.elementHandle()
-  const countSort = table.getByRole('button', {
-    name: 'Sort by records',
-    exact: true,
-  })
-  for (const direction of ['descending', 'ascending']) {
-    await countSort.click()
-    await expect(countSort.locator('..')).toHaveAttribute(
-      'aria-sort',
-      direction
-    )
-    const heading = countSort.locator('.table-column-heading__title')
-    await expect(heading).toHaveText('Records')
-    const size = await heading.evaluate(element => ({
-      client: element.clientWidth,
-      scroll: element.scrollWidth,
-    }))
-    expect(size.scroll).toBeLessThanOrEqual(size.client)
-  }
-  await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
   const serviceHeader = page.getByRole('region', {
     name: 'Service map',
     exact: true,
@@ -253,13 +191,12 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   const details = page.getByRole('region', { name: 'Home details' })
   await expect(
     details.getByRole('grid', { name: 'Attributes', exact: true })
-  ).toHaveCount(1)
+  ).toHaveCount(0)
   const left = page.locator('#signal-drawer-panel')
   const serviceSection = left.locator('[data-detail-section="services"]')
   const serviceScroll = serviceSection.locator('.service-scroll')
   const servicesBox = (await serviceSection.boundingBox())!
-  const attributesBox = (await discovery.boundingBox())!
-  const detailsBox = await details.boundingBox()
+  const detailsBox = (await details.boundingBox())!
   const drop = (await left
     .getByRole('button', { name: 'Import files', exact: true })
     .boundingBox())!
@@ -268,8 +205,8 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     .boundingBox())!
   expect(drop.y + drop.height).toBeLessThanOrEqual(servicesBox.y)
   expect(servicesBox.y + servicesBox.height).toBeLessThanOrEqual(storage.y)
-  expect(servicesBox.x + servicesBox.width).toBeLessThanOrEqual(attributesBox.x)
-  await expect(discovery.locator('.service-grid')).toHaveCount(0)
+  expect(servicesBox.x + servicesBox.width).toBeLessThanOrEqual(detailsBox.x)
+  await expect(details.locator('.service-grid')).toHaveCount(0)
   await expect(serviceScroll).toHaveCSS('overflow-y', 'auto')
   const headerY = (await serviceHeader.boundingBox())!.y
   await serviceScroll.evaluate(element => {
@@ -282,75 +219,16 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await serviceScroll.evaluate(element => {
     element.scrollTop = 0
   })
-  expect(await discovery.boundingBox()).toEqual(attributesBox)
   expect(await details.boundingBox()).toEqual(detailsBox)
-  expect(await tableNode!.evaluate(node => node.isConnected)).toBe(true)
-  const filter = discovery.getByRole('searchbox', {
-    name: 'Filter attribute keys',
-  })
-  await discovery
-    .getByRole('button', { name: 'Filter attribute keys', exact: true })
-    .click()
-  await expect(filter).toHaveCSS('border-width', '0px')
   await expect(serviceHeader).toHaveCSS('border-width', '0px')
-  await filter.focus()
-  await expect(filter).toHaveCSS('outline-style', 'solid')
-  await expect(filter).toHaveCSS('outline-color', themeRgb(theme, 'primary'))
-  const attribute = table.locator(
-    'tr[data-attribute-heading="exact.number"][data-attribute-source="resource"]'
-  )
-  const values = table.locator(
-    'tr[data-attribute-key="exact.number"][data-attribute-source="resource"]'
-  )
-  await expect(attribute).toHaveCount(1)
-  expect(attributeScopes.length).toBeGreaterThan(0)
-  for (const scope of attributeScopes) {
-    expect(scope.serviceName).toBe('checkout')
-    expect(scope.namespace).toBe('storefront')
-  }
-  await expect(values.first()).toBeHidden()
-  await expect(attribute.locator('.attribute-frequency-bar')).toHaveCount(0)
-  await attribute
-    .getByRole('button', { name: 'Expand exact.number · resource values' })
-    .click()
-  await expect(values.first()).toContainText('33.3%')
-  const exactValue = values.filter({ hasText: '9007199254740993' })
-  await expect(exactValue).toContainText('66.7%')
-  await expect(exactValue.locator('.attribute-frequency-bar')).toBeVisible()
-  await expect(
-    exactValue.locator('.table-value-cell__inspect')
-  ).toHaveAttribute('title', '9007199254740993')
-  await expect(
-    exactValue.getByTitle(
-      '2 / 3 spans · 2 / 3 datapoints · 2 / 3 logs · Of records carrying this attribute'
-    )
-  ).toBeVisible()
-  await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
-  await expect(
-    table.getByRole('columnheader', { name: 'Sort by name' })
-  ).toHaveAttribute('aria-sort', 'descending')
-  await expect(values.first()).toContainText('9007199254740993')
-  await table.getByRole('button', { name: 'Sort by name', exact: true }).click()
-  await expect(
-    table.getByRole('columnheader', { name: 'Sort by name' })
-  ).toHaveAttribute('aria-sort', 'ascending')
-  await expect(values.first()).toContainText('33.3%')
-  await table.getByRole('button', { name: 'Sort by percentage' }).click()
-  await expect(
-    table.getByRole('columnheader', { name: 'Sort by percentage' })
-  ).toHaveAttribute('aria-sort', 'descending')
-  await table.getByRole('button', { name: 'Sort by percentage' }).click()
-  await expect(
-    table.getByRole('columnheader', { name: 'Sort by percentage' })
-  ).toHaveAttribute('aria-sort', 'ascending')
   await page
     .locator('.service-grid')
     .getByRole('button', { name: /^worker-1(?:\s|·)/ })
     .click()
   await expect(serviceHeader).toContainText('worker-1')
-  await expect
-    .poll(() => attributeScopes.some(scope => scope.serviceName === 'worker-1'))
-    .toBe(true)
+  await expect(
+    details.getByRole('table', { name: 'Service details' })
+  ).toContainText('worker-1')
   await card.click()
   await expect(serviceHeader).toContainText('checkout')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
