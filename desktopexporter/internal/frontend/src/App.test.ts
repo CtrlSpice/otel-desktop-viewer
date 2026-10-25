@@ -245,11 +245,13 @@ describe('App real-page composition', () => {
     const importFiles = vi.fn()
     render(App, { importFiles })
     expect(
-      screen.getByRole('button', { name: 'Import files' })
+      screen.getByRole('button', { name: 'Browse files to import' })
     ).toBeInTheDocument()
     navigate('/logs')
     await screen.findByText('No logs match this search and time range.')
-    expect(screen.queryByRole('button', { name: 'Import files' })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Browse files to import' })
+    ).toBeNull()
     const file = new File(['{"resourceLogs":[]}'], 'renamed.json')
     const dataTransfer = { types: ['Files'], files: [file] }
     await fireEvent.dragEnter(window, { dataTransfer })

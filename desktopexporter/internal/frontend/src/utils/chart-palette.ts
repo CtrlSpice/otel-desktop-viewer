@@ -3,32 +3,27 @@
 //   - `metricSeriesPalette()` -- one type-independent sequence for plotted series.
 //   - `traceSpanPalette()` -- the same theme-specific identity slots.
 //
-//   - `countSwatches()` -- selected Madoromi ink in Day/Night count order.
+//   - `countSwatches()` -- perceptually spaced ink spectrum in count order.
 //
 // Error spans use `var(--color-error)` directly.
 
 import { getSeriesPalette, getTheme } from '@/themes'
-import {
-  countPaletteRamps,
-  DEFAULT_COUNT_PALETTE,
-  type CountPaletteId,
-} from '@/themes/count-palettes'
+import heatmapPalette from '@/themes/heatmap-palette.json' with { type: 'json' }
+
+const countRamps: Record<number, { day: string[]; night: string[] }> =
+  heatmapPalette.ramps
 
 /**
- * Full pinned ink curve at 1–12 equally spaced OKLab lightness samples.
+ * Ink-derived sequential spectrum at 1–12 perceptually spaced samples.
  * Day reverses Night's exact shades; a singleton uses its mode's high-count end.
  */
-export function countSwatches(
-  steps: number,
-  theme: string = '',
-  palette: CountPaletteId = DEFAULT_COUNT_PALETTE
-): string[] {
+export function countSwatches(steps: number, theme: string = ''): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
   if (!Number.isFinite(safeSteps) || safeSteps > 12) {
     throw new RangeError('steps must produce a count ramp length from 1 to 12')
   }
   const mode = getTheme(theme).scheme === 'light' ? 'day' : 'night'
-  return [...countPaletteRamps[palette][safeSteps]![mode]]
+  return [...countRamps[safeSteps]![mode]]
 }
 
 /** Stable prefixes: visibility and theme changes never shuffle colour identities. */

@@ -1,14 +1,12 @@
-import ramps from './count-palettes.json' with { type: 'json' }
 import englishNames from './count-palette-names.json' with { type: 'json' }
 
-export type CountPaletteId = keyof typeof ramps
-export const DEFAULT_COUNT_PALETTE: CountPaletteId = 'shin-kai'
-// The generated ramp keys retain the pinned Madoromi full-ramp colour order.
+export type CountPaletteId = keyof typeof englishNames
+// The generated catalogue retains the pinned Madoromi full-ramp colour order.
 function isCountPaletteId(id: string): id is CountPaletteId {
-  return Object.hasOwn(ramps, id)
+  return Object.hasOwn(englishNames, id)
 }
 
-export const COUNT_PALETTES = Object.keys(ramps).map(id => {
+export const COUNT_PALETTES = Object.keys(englishNames).map(id => {
   if (!isCountPaletteId(id)) throw new Error(`Unknown count palette: ${id}`)
   return {
     id,
@@ -16,8 +14,3 @@ export const COUNT_PALETTES = Object.keys(ramps).map(id => {
     english: englishNames[id],
   }
 })
-
-export const countPaletteRamps: Record<
-  CountPaletteId,
-  Record<number, { day: string[]; night: string[] }>
-> = ramps

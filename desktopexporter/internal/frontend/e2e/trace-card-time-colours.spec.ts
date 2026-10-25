@@ -224,7 +224,7 @@ test('single-service waterfall dots and bars use span names while the singleton 
     operationColour
   )
   await page.getByRole('button', { name: /^Season:/ }).click()
-  await page.getByRole('radio', { name: 'Fuyu' }).click()
+  await page.getByRole('radio', { name: 'Winter' }).click()
   await page.keyboard.press('Escape')
   await expect(root.locator('.span-bar')).toHaveCSS(
     'background-color',

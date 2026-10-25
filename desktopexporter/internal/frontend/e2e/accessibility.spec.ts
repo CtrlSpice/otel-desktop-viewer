@@ -407,8 +407,8 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(control).toHaveCSS('font-size', '14px')
       await expect(control).toHaveCSS('font-weight', '400')
     }
-    await expect(ink.locator('svg')).toHaveCount(1)
-    await expect(ink).toHaveText('')
+    await expect(ink.locator('svg')).toHaveCount(2)
+    await expect(ink).toHaveText(name.split(' ')[0]!)
     const geometry = await appearance.evaluate(element => {
       const buttons = [...element.children].filter(
         child => child.tagName === 'BUTTON'
@@ -450,7 +450,7 @@ for (const { id: theme, scheme, name } of THEMES) {
     )!
     await expect(
       seasons.getByRole('radio', { checked: true })
-    ).toHaveAccessibleName(selectedSeason.japanese)
+    ).toHaveAccessibleName(selectedSeason.name)
     await expect(seasons.getByRole('radio')).toHaveCount(4)
     for (const choice of await seasons.getByRole('radio').all()) {
       await expect(choice.locator('svg')).toHaveCount(1)
@@ -546,7 +546,7 @@ test('season picker stays compact and viewport-clamped without swatch controls',
     })
     await page.goto('/')
     const trigger = page.getByRole('button', { name: /^Season:/ })
-    await expect(trigger.locator('svg')).toHaveCount(1)
+    await expect(trigger.locator('svg')).toHaveCount(2)
     const savedAssignments = await page.evaluate(() =>
       Object.entries(localStorage).filter(([key]) =>
         key.startsWith('graph-colour-')
@@ -573,7 +573,7 @@ test('season picker stays compact and viewport-clamped without swatch controls',
     await expect(seasons.getByRole('radio')).toHaveCount(4)
     await expect(seasons.locator('svg')).toHaveCount(4)
     await expect(picker.locator('[data-ink-choice]')).toHaveCount(0)
-    const selected = seasons.getByRole('radio', { name: 'Aki' })
+    const selected = seasons.getByRole('radio', { name: 'Autumn' })
     await expect(selected).toBeFocused()
     const selectedBox = (await selected.boundingBox())!
     await expect(seasons.locator('[tabindex="0"]')).toHaveCount(1)
@@ -614,11 +614,11 @@ test('persists season and Day/Night with one fixed interface palette', async ({
   await page.goto('/')
   const ink = page.getByRole('button', { name: /^Season:/ })
   await ink.click()
-  await expect(page.getByRole('radio', { name: 'Aki' })).toBeFocused()
+  await expect(page.getByRole('radio', { name: 'Autumn' })).toBeFocused()
   await expect(ink).toHaveAttribute('aria-expanded', 'true')
   const winter = page
     .getByRole('radiogroup', { name: 'Season', exact: true })
-    .getByRole('radio', { name: 'Fuyu', exact: true })
+    .getByRole('radio', { name: 'Winter', exact: true })
   await winter.focus()
   await page.keyboard.press('Enter')
   await expect(winter).toBeFocused()
@@ -1070,14 +1070,14 @@ test.describe('home page accessibility', () => {
   test('keeps Home welcome, import and setup guide accessible', async ({
     page,
   }) => {
-    const imports = page.getByRole('region', {
-      name: 'Import telemetry',
-      exact: true,
-    })
+    const imports = page.getByRole('button', { name: 'Browse files to import' })
     await expect(imports).toBeVisible()
+    await expect(imports).toHaveAccessibleDescription(
+      'Drop JSON files anywhere'
+    )
     await expect(
-      imports.locator('summary, .detail-bubble__heading')
-    ).toHaveCount(0)
+      page.getByText('Drop JSON files anywhere', { exact: true })
+    ).toBeVisible()
     await expect(
       page.getByRole('heading', { name: 'Getting started', exact: true })
     ).toHaveCount(0)
@@ -1088,8 +1088,10 @@ test.describe('home page accessibility', () => {
       page.getByText('Send a test trace', { exact: true })
     ).toBeVisible()
     await expect(
-      imports.getByRole('button', { name: 'Import files' })
-    ).toBeVisible()
+      page
+        .locator('.page-layout__main-chrome > footer')
+        .getByRole('link', { name: 'Madoromi' })
+    ).toHaveAttribute('href', 'https://madoromi.moonwit.ch/')
     const welcome = page.getByRole('heading', {
       name: 'otel-desktop-viewer',
       exact: true,
@@ -1181,8 +1183,8 @@ test.describe('home page accessibility', () => {
       '--color-muted': '#8d91a4',
       '--color-subtle': '#5e6277',
       '--color-sakura': '#aa6e89',
-      '--color-primary': '#57518d',
-      '--color-secondary': '#764d58',
+      '--color-primary': '#694d80',
+      '--color-secondary': '#71504e',
       '--color-accent': '#18644a',
       '--color-neutral': '#8d91a4',
       '--color-neutral-content': '#4a4e63',

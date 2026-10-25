@@ -11,13 +11,9 @@ it('offers four seasons without changing graph assignments', async () => {
   const assignments = savedColorSlots('services')
   const onSeasonChange = vi.fn()
   renderWithContexts(ThemePicker, { theme: THEMES[0]!, onSeasonChange })
-  await fireEvent.click(screen.getByRole('button', { name: 'Season: Haru' }))
+  await fireEvent.click(screen.getByRole('button', { name: 'Season: Spring' }))
   expect(screen.getAllByRole('radio')).toHaveLength(4)
-  await fireEvent.click(screen.getByRole('radio', { name: 'Fuyu' }))
+  await fireEvent.click(screen.getByRole('radio', { name: 'Winter' }))
   expect(onSeasonChange).toHaveBeenCalledWith('fuyu')
   expect(savedColorSlots('services')).toEqual(assignments)
-  expect(screen.getByRole('link', { name: 'Madoromi' })).toHaveAttribute(
-    'href',
-    'https://madoromi.moonwit.ch/'
-  )
 })

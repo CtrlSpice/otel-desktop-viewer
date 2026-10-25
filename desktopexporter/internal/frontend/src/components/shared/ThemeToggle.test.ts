@@ -23,19 +23,19 @@ describe('ThemeToggle', () => {
     const user = userEvent.setup()
     render(ThemeToggle)
     await user.click(screen.getByRole('button', { name: /^Season:/ }))
-    const autumn = screen.getByRole('radio', { name: 'Aki' })
+    const autumn = screen.getByRole('radio', { name: 'Autumn' })
     await user.keyboard('{ArrowRight}')
-    expect(screen.getByRole('radio', { name: 'Fuyu' })).toHaveFocus()
+    expect(screen.getByRole('radio', { name: 'Winter' })).toHaveFocus()
     await user.keyboard('{ArrowLeft}')
     expect(autumn).toHaveFocus()
     expect(autumn).toHaveAttribute('aria-checked', 'true')
     await user.keyboard('{Home}')
-    expect(screen.getByRole('radio', { name: 'Haru' })).toHaveAttribute(
+    expect(screen.getByRole('radio', { name: 'Spring' })).toHaveAttribute(
       'aria-checked',
       'true'
     )
     await user.keyboard('{End}')
-    expect(screen.getByRole('radio', { name: 'Fuyu' })).toHaveAttribute(
+    expect(screen.getByRole('radio', { name: 'Winter' })).toHaveAttribute(
       'aria-checked',
       'true'
     )
@@ -89,7 +89,7 @@ describe('ThemeToggle', () => {
     localStorage.setItem('theme', 'madoromi-aki-yoru')
     const view = render(ThemeToggle)
     await userEvent.click(screen.getByRole('button', { name: /^Season:/ }))
-    await userEvent.click(screen.getByRole('radio', { name: 'Natsu' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Summer' }))
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'madoromi-natsu-yoru'
     )
@@ -97,7 +97,7 @@ describe('ThemeToggle', () => {
     view.unmount()
     render(ThemeToggle)
     await userEvent.click(screen.getByRole('button', { name: /^Season:/ }))
-    expect(screen.getByRole('radio', { name: 'Natsu' })).toHaveAttribute(
+    expect(screen.getByRole('radio', { name: 'Summer' })).toHaveAttribute(
       'aria-checked',
       'true'
     )

@@ -36,7 +36,6 @@
 
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
-  import { DEFAULT_COUNT_PALETTE } from '@/themes/count-palettes'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import {
     formatMetricValue,
@@ -414,11 +413,7 @@
 
   // Use the heatmap legend's palette, scaled to the counts in this distribution.
   let barColorScale = $derived.by(() => {
-    const palette = computeHistogramBarColorScale(
-      datapoint,
-      themeSignal.value,
-      DEFAULT_COUNT_PALETTE
-    )
+    const palette = computeHistogramBarColorScale(datapoint, themeSignal.value)
     return scaleThreshold<number, string>()
       .domain(palette.thresholds)
       .range(palette.range)

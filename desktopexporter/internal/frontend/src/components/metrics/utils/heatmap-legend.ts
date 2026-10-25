@@ -1,5 +1,4 @@
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
-import type { CountPaletteId } from '@/themes/count-palettes'
 import {
   computeHeatmapColorScale,
   type HeatmapLegendEntry,
@@ -33,8 +32,7 @@ export function collectHeatmapCounts(points: HistogramSlicePoint[]): number[] {
 
 export function computeHeatmapLegendEntries(
   points: HistogramSlicePoint[],
-  theme: string,
-  palette?: CountPaletteId
+  theme: string
 ): HeatmapLegendEntry[] {
   const counts = collectHeatmapCounts(points)
   let maxCount = 0
@@ -48,6 +46,5 @@ export function computeHeatmapLegendEntries(
     maxCount,
     distinctNonZeroCount: distinctNonZero.size,
     theme,
-    palette,
   }).legendEntries
 }

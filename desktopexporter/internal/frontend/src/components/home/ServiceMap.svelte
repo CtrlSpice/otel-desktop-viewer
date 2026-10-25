@@ -283,6 +283,13 @@
       >
     </div>{/each}
   {#if nodes.length && layoutReady}
+    <p class="p-3 text-subtle">
+      Scroll to move. Pinch to zoom.
+      <span class="sr-only"
+        >You can also drag empty space to move the map, or use arrow keys with a
+        service or connection focused. Control and scroll zooms.</span
+      >
+    </p>
     <div class="service-map__canvas">
       {#key graphRevision}
         <Chart
@@ -395,13 +402,6 @@
         </Chart>
       {/key}
     </div>
-    <p class="p-3 text-subtle">
-      Scroll to move. Pinch to zoom.
-      <span class="sr-only"
-        >You can also drag empty space to move the map, or use arrow keys with a
-        service or connection focused. Control and scroll zooms.</span
-      >
-    </p>
   {:else}<p class="p-3 text-subtle">
       {loadingServices || busy
         ? 'Loading service map…'

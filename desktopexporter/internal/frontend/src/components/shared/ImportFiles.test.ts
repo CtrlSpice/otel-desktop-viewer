@@ -2,14 +2,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
-import ImportFilesCard from './ImportFilesCard.svelte'
+import ImportFiles from './ImportFiles.svelte'
 
-describe('ImportFilesCard', () => {
+describe('ImportFiles', () => {
   it('opens the file picker from its keyboard-accessible button', async () => {
-    render(ImportFilesCard, { onFiles: vi.fn() })
+    render(ImportFiles, { onFiles: vi.fn() })
     const input = screen.getByLabelText('Choose telemetry JSON files')
     const open = vi.spyOn(input, 'click')
-    const button = screen.getByRole('button', { name: 'Import files' })
+    const button = screen.getByRole('button', {
+      name: 'Browse files to import',
+    })
     button.focus()
     await userEvent.keyboard('{Enter}')
     expect(open).toHaveBeenCalledOnce()
@@ -18,7 +20,7 @@ describe('ImportFilesCard', () => {
 
   it('hands off files immediately and supports choosing the same file again', async () => {
     const onFiles = vi.fn()
-    render(ImportFilesCard, { onFiles })
+    render(ImportFiles, { onFiles })
     const input = screen.getByLabelText('Choose telemetry JSON files')
     const file = new File(['{"resourceMetrics":[]}'], 'metric.json')
     await fireEvent.change(input, { target: { files: [file] } })

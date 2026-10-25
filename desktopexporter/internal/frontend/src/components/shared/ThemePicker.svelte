@@ -2,8 +2,8 @@
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
+    ArrowDown01Icon,
     FlowerIcon,
-    HeartIcon,
     Leaf02Icon,
     SnowflakeIcon,
     Sun03Icon,
@@ -58,8 +58,8 @@
 </script>
 
 <FilterPopover
-  label={`Season: ${chosen.japanese}`}
-  tooltip={chosen.japanese}
+  label={`Season: ${chosen.name}`}
+  tooltip={chosen.name}
   anchor="below-end"
   role="dialog"
   compact
@@ -72,6 +72,13 @@
     <HugeiconsIcon
       icon={seasonIcons[theme.season]}
       size={18}
+      strokeWidth={1.5}
+      aria-hidden="true"
+    />
+    <span>{chosen.name}</span>
+    <HugeiconsIcon
+      icon={ArrowDown01Icon}
+      size={14}
       strokeWidth={1.5}
       aria-hidden="true"
     />
@@ -89,7 +96,7 @@
           role="radio"
           class="theme-picker__season item-state item-state--menu"
           data-season={season.id}
-          aria-label={season.japanese}
+          aria-label={season.name}
           aria-checked={theme.season === season.id}
           tabindex={theme.season === season.id ? 0 : -1}
           onkeydown={event => selectSeason(event, index)}
@@ -101,31 +108,9 @@
             strokeWidth={1.5}
             aria-hidden="true"
           />
-          <span>{season.japanese}</span>
+          <span>{season.name}</span>
         </button>
       {/each}
-    </div>
-  {/snippet}
-  {#snippet footer()}
-    <div
-      class="flex w-full items-center justify-center gap-1 text-sm text-subtle"
-    >
-      <span>Colours by</span>
-      <a
-        class="link inline-flex items-center gap-2"
-        href="https://madoromi.moonwit.ch/"
-        target="_blank"
-        rel="noreferrer"
-      >
-        Madoromi
-        <HugeiconsIcon
-          icon={HeartIcon}
-          size={16}
-          strokeWidth={1.5}
-          class="text-(--color-sakura)"
-          aria-hidden="true"
-        />
-      </a>
     </div>
   {/snippet}
 </FilterPopover>
@@ -134,13 +119,13 @@
   @reference '../../app.css';
 
   :global(.filter-popover.theme-picker-popover) {
-    width: 18rem;
-    padding: 0.75rem;
+    width: 12rem;
+    padding: 0.5rem;
   }
   .theme-picker__seasons {
-    @apply grid grid-cols-4 gap-1;
+    @apply grid gap-1;
   }
   .theme-picker__season {
-    @apply flex flex-col items-center justify-center gap-2 p-2;
+    @apply flex min-h-8 items-center gap-2 px-2 py-1 text-left;
   }
 </style>

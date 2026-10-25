@@ -38,7 +38,7 @@ async function upstreamModule(file, dependencies = {}) {
   return `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`
 }
 const colorModule = await upstreamModule('color.ts')
-const { oklabToHex, oklabToOklch } = await import(colorModule)
+const { oklabToHex, oklabToOklch, toSrgbGamut } = await import(colorModule)
 
 const TINT = 0.2
 const TEXT_CONTRAST = 4.5
@@ -214,11 +214,17 @@ const countInks = inkOrder.filter(id => !neutralInks.has(id))
 // Sample each source once to retain its hue in both modes, then soften chroma.
 // Pine is deep blue (Tsuki-yo); Foam is mint green (Shin-ryoku).
 const interfaceInks = {
-  iris: { ink: 'jurojin', at: 0.8, strength: 0.9, day: 0.51, night: 0.79 },
+  iris: {
+    ink: 'murasaki-shikibu',
+    at: 0.8,
+    strength: 0.65,
+    day: 0.51,
+    night: 0.79,
+  },
   pine: { ink: 'tsuki-yo', at: 0.63, strength: 0.85, day: 0.47, night: 0.7 },
   foam: { ink: 'shin-ryoku', at: 0.67, strength: 0.65, day: 0.51, night: 0.81 },
   gold: { ink: 'to-ro', at: 0.81, strength: 0.7, day: 0.53, night: 0.81 },
-  rose: { ink: 'benzaiten', at: 0.84, strength: 0.6, day: 0.53, night: 0.84 },
+  rose: { ink: 'fuyu-gaki', at: 0.84, strength: 0.5, day: 0.53, night: 0.84 },
   love: { ink: 'momiji', at: 0.7, strength: 0.7, day: 0.5, night: 0.7 },
 }
 const syntaxRoles = {
@@ -289,6 +295,76 @@ const interfaceJson = JSON.stringify(interfacePalette, null, 2) + '\n'
 await writeFile(
   new URL('src/themes/interface-palette.json', frontend),
   interfaceJson
+)
+
+// Sequential counts follow a restrained violet → blue → green → gold path.
+// Bound lightness away from both black and paper-white. Interpolate in OKLab,
+// gamut-map, then resample equal perceptual arc length for each adaptive size.
+// The original ink curves supply the anchor hues/chroma, not RGB gradients.
+const heatmapAnchors = [
+  { role: 'iris', lightness: 0.48, strength: 0.8 },
+  { role: 'pine', lightness: 0.61, strength: 0.9 },
+  { role: 'foam', lightness: 0.74, strength: 0.8 },
+  { role: 'gold', lightness: 0.87, strength: 0.6 },
+].map(({ role, lightness, strength }) => ({
+  ink: interfaceInks[role].ink,
+  sourceLightness: interfaceInks[role].at,
+  lightness,
+  strength,
+}))
+const heatmapStops = heatmapAnchors.map(source => {
+  const [, a, b] = inkLabAt(source.ink, source.sourceLightness)
+  return [source.lightness, a * source.strength, b * source.strength]
+})
+const mixLab = (a, b, t) =>
+  a.map((value, index) => value + (b[index] - value) * t)
+const deltaE = (a, b) =>
+  Math.hypot(...a.map((value, index) => value - b[index]))
+const heatmapPath = heatmapStops
+  .slice(1)
+  .flatMap((stop, index) =>
+    Array.from({ length: 256 }, (_, step) =>
+      toSrgbGamut(mixLab(heatmapStops[index], stop, step / 256))
+    )
+  )
+heatmapPath.push(toSrgbGamut(heatmapStops.at(-1)))
+const arc = [0]
+for (let i = 1; i < heatmapPath.length; i++)
+  arc.push(arc[i - 1] + deltaE(heatmapPath[i - 1], heatmapPath[i]))
+function heatmapAt(t) {
+  const target = t * arc.at(-1)
+  let index = 1
+  while (index < arc.length - 1 && arc[index] < target) index++
+  const fraction = (target - arc[index - 1]) / (arc[index] - arc[index - 1])
+  return oklabToHex(
+    mixLab(heatmapPath[index - 1], heatmapPath[index], fraction)
+  )
+}
+const heatmapRamps = Object.fromEntries(
+  Array.from({ length: 12 }, (_, index) => {
+    const steps = index + 1
+    const night = Array.from({ length: steps }, (_, i) =>
+      heatmapAt(steps === 1 ? 1 : i / (steps - 1))
+    )
+    return [
+      steps,
+      { night, day: steps === 1 ? [heatmapAt(0)] : [...night].reverse() },
+    ]
+  })
+)
+const heatmapJson =
+  JSON.stringify(
+    {
+      version: 'ink-spectrum-v1',
+      anchors: heatmapAnchors,
+      ramps: heatmapRamps,
+    },
+    null,
+    2
+  ) + '\n'
+await writeFile(
+  new URL('src/themes/heatmap-palette.json', frontend),
+  heatmapJson
 )
 const countRamps = Object.fromEntries(
   countInks.map(id => {
@@ -396,6 +472,7 @@ await writeFile(
 await writeFile(new URL('graph-inks.json', publicSource), graphJson)
 await writeFile(new URL('graph-ink-curves.json', publicSource), graphCurveJson)
 await writeFile(new URL('interface-palette.json', publicSource), interfaceJson)
+await writeFile(new URL('heatmap-palette.json', publicSource), heatmapJson)
 for (const file of [
   'LICENSE',
   'NOTICE',

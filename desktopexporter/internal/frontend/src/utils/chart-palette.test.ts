@@ -4,6 +4,10 @@ import { GRAPH_INKS, GRAPH_SWATCHES } from '@/themes/graph-inks'
 import graphInks from '@/themes/graph-inks.json'
 import { COUNT_PALETTES } from '@/themes/count-palettes'
 import {
+  linearToOklab,
+  srgb8ToLinear,
+} from '../../../../../third_party/madoromi/color'
+import {
   countSwatches,
   metricSeriesPalette,
   readableTextColor,
@@ -12,34 +16,63 @@ import {
 
 describe('countSwatches', () => {
   it.each(THEMES)(
-    'uses the fixed Shin-kai high-count endpoint in $name',
+    'uses the spectrum high-count endpoint for a single band in $name',
     theme => {
       expect(countSwatches(1, theme.id)).toEqual([
-        theme.scheme === 'light' ? '#0d124f' : '#c5d6ff',
+        countSwatches(12, theme.id).at(-1),
       ])
       expect(countSwatches(12, theme.id)).toHaveLength(12)
     }
   )
 
-  it.each(COUNT_PALETTES)(
-    'keeps $name season-independent and reverses every full-curve adaptive ramp by day',
-    ({ id }) => {
-      const full = countSwatches(12, 'madoromi-fuyu-yoru', id)
-      for (let size = 2; size <= 12; size++) {
-        const night = countSwatches(size, 'madoromi-fuyu-yoru', id)
-        expect(night[0]).toBe(full[0])
-        expect(night.at(-1)).toBe(full.at(-1))
-        for (const theme of THEMES) {
-          expect(countSwatches(size, theme.id, id)).toEqual(
-            theme.scheme === 'light' ? [...night].reverse() : night
-          )
-          expect(countSwatches(1, theme.id, id)).toEqual([
-            theme.scheme === 'light' ? full[0] : full.at(-1),
-          ])
-        }
+  it('keeps the spectrum season-independent and reverses every adaptive ramp by day', () => {
+    const full = countSwatches(12, 'madoromi-fuyu-yoru')
+    for (let size = 2; size <= 12; size++) {
+      const night = countSwatches(size, 'madoromi-fuyu-yoru')
+      expect(night[0]).toBe(full[0])
+      expect(night.at(-1)).toBe(full.at(-1))
+      for (const theme of THEMES) {
+        expect(countSwatches(size, theme.id)).toEqual(
+          theme.scheme === 'light' ? [...night].reverse() : night
+        )
+        expect(countSwatches(1, theme.id)).toEqual([
+          theme.scheme === 'light' ? full[0] : full.at(-1),
+        ])
       }
     }
-  )
+  })
+
+  it('keeps perceived lightness and grayscale luminance ordered with distinguishable count bands', () => {
+    for (let size = 2; size <= 12; size++) {
+      const colors = countSwatches(size, 'madoromi-aki-yoru').map(hex => {
+        const [r, g, b] = [1, 3, 5].map(at =>
+          srgb8ToLinear(parseInt(hex.slice(at, at + 2), 16))
+        )
+        return {
+          lab: linearToOklab(r!, g!, b!),
+          luminance: 0.2126 * r! + 0.7152 * g! + 0.0722 * b!,
+        }
+      })
+      const differences: number[] = []
+      for (let i = 1; i < colors.length; i++) {
+        const current = colors[i]!,
+          previous = colors[i - 1]!
+        expect(current.lab[0]).toBeGreaterThan(previous.lab[0])
+        expect(current.luminance).toBeGreaterThan(previous.luminance)
+        differences.push(
+          Math.hypot(
+            ...current.lab.map((value, index) => value - previous.lab[index]!)
+          )
+        )
+      }
+      expect(colors[0]!.lab[0]).toBeGreaterThan(0.47)
+      expect(colors.at(-1)!.lab[0]).toBeLessThan(0.88)
+      expect(Math.min(...differences)).toBeGreaterThan(0.035)
+      expect(Math.max(...differences) / Math.min(...differences)).toBeLessThan(
+        1.25
+      )
+    }
+  })
 
   it('normalizes step counts and falls back safely', () => {
     expect(countSwatches(2.9)).toHaveLength(2)

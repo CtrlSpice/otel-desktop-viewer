@@ -22,8 +22,10 @@ tagline or decorative prompt.
 
 ## Discovery layout
 
-Home's left pane contains the welcome, file-drop control, Getting started,
-Storage and Ingestion issues. Getting started is the primary open section of the
+Home's left pane contains the welcome, the inline hint “Drop JSON files anywhere,
+or browse”, Getting started, Storage and Ingestion issues. Browse opens the
+multi-file JSON/JSONL picker; file dropping works across the app.
+Getting started is the primary open section of the
 shared resizable stack. The main pane contains the Service map, with each service
 represented once and recorded cross-service parent/child connections drawn as
 edges. Selecting a node keeps the map layout stable and shows matching records

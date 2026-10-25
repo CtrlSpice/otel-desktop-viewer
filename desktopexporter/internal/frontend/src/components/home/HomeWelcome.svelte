@@ -20,9 +20,7 @@
     </h2>
   </div>
   {#if importContent}
-    <section class="home-import" aria-label="Import telemetry">
-      {@render importContent()}
-    </section>
+    {@render importContent()}
   {/if}
   <DetailStack
     label="Home sections"
@@ -55,8 +53,5 @@
   .welcome-title {
     @apply whitespace-nowrap text-lg;
     line-height: var(--text-lg--line-height);
-  }
-  .home-import {
-    @apply shrink-0;
   }
 </style>

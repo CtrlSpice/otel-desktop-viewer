@@ -7,7 +7,7 @@
   import TracesPage from '@/pages/TracesPage.svelte'
   import EvalsPage from '@/pages/EvalsPage.svelte'
   import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
-  import ImportFilesCard from '@/components/shared/ImportFilesCard.svelte'
+  import ImportFiles from '@/components/shared/ImportFiles.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import { isPlainLeftClick, navigate } from '@/route'
@@ -125,7 +125,7 @@
   {#if Page === HomePage}
     <HomePage importFailures={allImportFailures}>
       {#snippet importContent()}
-        <ImportFilesCard onFiles={handleImportFiles} />
+        <ImportFiles onFiles={handleImportFiles} />
       {/snippet}
     </HomePage>
   {:else}

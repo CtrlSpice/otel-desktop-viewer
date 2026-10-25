@@ -3,7 +3,6 @@
   import { computeHeatmapLegendEntries } from '@/components/metrics/utils/heatmap-legend'
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
-  import { DEFAULT_COUNT_PALETTE } from '@/themes/count-palettes'
   import LegendRows from '@/components/shared/LegendRows.svelte'
 
   const ctx = getMetricViewContext()
@@ -12,20 +11,13 @@
     if (ctx.activeHistogramTab === 'histogram') {
       const datapoint = ctx.histogramChartDatapoint
       return datapoint
-        ? computeHistogramBarColorScale(
-            datapoint,
-            themeSignal.value,
-            DEFAULT_COUNT_PALETTE
-          ).legendEntries
+        ? computeHistogramBarColorScale(datapoint, themeSignal.value)
+            .legendEntries
         : []
     }
     const points = ctx.heatmapBucketSeries
     if (!points || points.length === 0) return []
-    return computeHeatmapLegendEntries(
-      points,
-      themeSignal.value,
-      DEFAULT_COUNT_PALETTE
-    )
+    return computeHeatmapLegendEntries(points, themeSignal.value)
   })
 </script>
 

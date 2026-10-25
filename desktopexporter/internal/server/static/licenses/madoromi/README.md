@@ -39,7 +39,8 @@ Apache-2.0 licence does not replace those terms.
 `desktopexporter/internal/frontend/scripts/generate-madoromi.mjs` generates
 `src/themes/madoromi.json`, `src/themes/count-palettes.json`,
 `src/themes/count-palette-names.json`, `src/themes/graph-inks.json`,
-`src/themes/graph-ink-curves.json` and `src/themes/interface-palette.json` from these files.
+`src/themes/graph-ink-curves.json`, `src/themes/interface-palette.json` and
+`src/themes/heatmap-palette.json` from these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
 ```sh
@@ -61,8 +62,8 @@ and the Sakura attribution heart retain their original colours without contrast
 adjustments.
 
 The interface uses a six-role arrangement inspired by Rosé Pine, with colours
-derived from Madoromi's measured curves: Jurojin for lavender Iris, Tsuki-yo for
-blue Pine, Shin-ryoku for mint-green Foam, To-ro for Gold, Benzaiten for blush Rose
+derived from Madoromi's measured curves: Murasaki-shikibu for soft violet Iris,
+Tsuki-yo for blue Pine, Shin-ryoku for mint-green Foam, To-ro for Gold, Fuyu-gaki for warm Rose
 and Momiji for berry Love. Each source has one fixed sample hue and softened
 chroma, with separate Day/Night lightness. The generator checks all four seasons'
 five surfaces together, keeping identical accents across seasons within a mode.
@@ -71,7 +72,7 @@ Primary uses Iris, metadata uses Rose, information uses Pine, success and accent
 use Foam, warnings use Gold and errors use Love. Seasonal paper, neutral text and
 highlights retain their existing roles. Appearance
 controls select only season and Day/Night. Graph colours are independent of those
-controls, and the season popover retains visible Madoromi attribution.
+controls, and the main pane's footer retains visible Madoromi attribution.
 
 The generated syntax palette follows the upstream code guide's role slots and
 contains all fourteen named slots plus Sumi, Kasure 2 and Usuzumi 0. Slot names
@@ -84,12 +85,21 @@ and Love respectively. Functions and annotations use Rose; types use Gold.
 Built-ins and invalid syntax share Love.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
-Histogram and heatmap counts use the fixed Shin-kai ramp. The source catalogue
+Histogram and heatmap counts use one sequential violet → blue → green → gold
+spectrum. Murasaki-shikibu, Tsuki-yo, Shin-ryoku and To-ro supply hue/chroma
+anchors at OKLab lightness 0.48, 0.61, 0.74 and 0.87. The generator interpolates
+in OKLab, maps into sRGB gamut and samples equal perceptual arc-length intervals
+for each adaptive size from 2–12. Night orders shades dark to light; Day uses
+the exact same shades reversed. A one-step ramp uses its mode's high-count
+endpoint. Both perceived lightness and grayscale luminance remain ordered.
+Seasons do not change the ramp.
+
+The source catalogue
 retains 32 colourful inks, excluding the four seasonal neutral sources
 (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
 plus Take-sumi, Hoteison, Syun-gyo and Tsukushi: the black, muted-green and
 brown-dominant ramps. All 40 curves remain in the source distribution.
-Each adaptive size from 2 to 12 samples the full measured lightness interval at equally spaced
+The source-only single-ink ramps sample the full measured lightness interval at equally spaced
 OKLab L values, including both endpoints, interpolating a/b at each L and using
 the pinned `oklabToHex` conversion. Night orders shades dark to light; Day uses
 the exact same shades reversed. A one-step ramp uses the high-count endpoint
@@ -124,6 +134,7 @@ the directory URL itself is not a file index.
 - `generate-madoromi.mjs`: viewer adaptation generator.
 - `themes.json`: generated `src/themes/madoromi.json`.
 - `interface-palette.json`: the fixed interface palette across eight themes.
+- `heatmap-palette.json`: ink-derived count spectrum anchors and adaptive ramps.
 - `count-palettes.json`, `count-palette-names.json`: generated adaptive count
   ramps of sizes 1–12 and pinned English names.
 - `graph-inks.json`, `graph-ink-curves.json`: official graph swatches, 224

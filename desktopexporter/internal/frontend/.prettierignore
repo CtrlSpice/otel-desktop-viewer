@@ -6,4 +6,5 @@ public/licenses/madoromi/
 # JSON emitted by generate-madoromi.mjs; retain deterministic generator output.
 src/themes/accent-inks.json
 src/themes/count-palettes.json
+src/themes/heatmap-palette.json
 src/themes/graph-ink-curves.json

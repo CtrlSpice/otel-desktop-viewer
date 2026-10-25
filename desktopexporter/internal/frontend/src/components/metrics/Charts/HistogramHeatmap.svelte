@@ -37,7 +37,6 @@
   } from '@/components/metrics/utils/histogram-bucket'
   import { computeHeatmapColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
-  import { DEFAULT_COUNT_PALETTE } from '@/themes/count-palettes'
   import {
     heatmapQuantilePaths,
     histogramQuantileColor,
@@ -211,7 +210,6 @@
       maxCount,
       distinctNonZeroCount: distinctNonZeroCounts,
       theme: themeSignal.value,
-      palette: DEFAULT_COUNT_PALETTE,
     })
   )
 

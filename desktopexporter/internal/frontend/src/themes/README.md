@@ -12,11 +12,11 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
 The season picker and Day/Night button share one compact control group. The
-picker opens below its seasonal icon, end-aligned and viewport-clamped. Four
-labelled icon controls select Haru, Natsu, Aki or Fuyu. The radio group has one Tab
+picker opens below its icon and season name, end-aligned and viewport-clamped.
+Four dropdown rows select Spring, Summer, Autumn or Winter. The radio group has one Tab
 stop and supports arrow keys and Home/End. Opening focuses the selected season.
 Changes keep the picker open; Escape, the trigger or clicking outside dismisses
-it. Its footer retains “Colours by Madoromi” and the Sakura attribution heart.
+it. The main pane's footer shows “Colours by Madoromi” and the Sakura attribution heart.
 There are no ink or swatch controls.
 
 One six-role ink palette supplies accents across all four seasons.
@@ -50,9 +50,10 @@ bottom row when a reading is available.
 
 - `madoromi.json`: generated interface colours for all eight variants.
 - `interface-palette.json`: the fixed Iris, Pine, Foam, Gold, Rose and Love accents.
-- `count-palettes.json`: generated Madoromi histogram count ramps, sizes 1–12.
+- `heatmap-palette.json`: generated sequential ink spectrum, sizes 1–12.
+- `count-palettes.json`: source ink curves sampled at sizes 1–12.
 - `count-palette-names.json`: generated English ink names from the pinned source.
-- `count-palettes.ts`: source ramp catalogue and fixed Shin-kai count ink.
+- `count-palettes.ts`: source ink names and identities for the graph catalogue.
 - `index.ts`: catalogue, seasonal selection and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
 - `graph-inks.json`: official ink swatches and 224 categorical slots.
@@ -115,8 +116,9 @@ do not enclose every visual group. Pane bodies, headers and ordinary signal
 cards stay borderless. Code is flat unless it is part of an explicitly joined
 terminal, which has one enclosing boundary. Unchecked checkbox outlines use
 Nijimi 1; checked controls use Primary. Cards use shared hover/selection fills
-without acquiring shadows. Chart axes, tree connectors, keyboard focus rings
-and the dashed file-drop affordance retain their distinct meanings.
+without acquiring shadows. Chart axes, tree connectors and keyboard focus rings
+retain their distinct meanings. Import uses an inline Browse action in a
+drop-anywhere hint.
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
@@ -177,14 +179,14 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 The interface uses six complementary roles inspired by Rosé Pine's balance, with
 colours derived from the pinned Madoromi ink curves:
 
-| Role | Ink        | Character and use                                      |
-| ---- | ---------- | ------------------------------------------------------ |
-| Iris | Jurojin    | Lavender controls, focus and keywords                  |
-| Pine | Tsuki-yo   | Definite blue for information, code keys and operators |
-| Foam | Shin-ryoku | Mint green for success and accents                     |
-| Gold | To-ro      | Honey-gold warnings and code types                     |
-| Rose | Benzaiten  | Soft blush metadata, functions and cursors             |
-| Love | Momiji     | Berry-rose errors, built-ins and escapes               |
+| Role | Ink              | Character and use                                      |
+| ---- | ---------------- | ------------------------------------------------------ |
+| Iris | Murasaki-shikibu | Soft violet controls, focus and keywords               |
+| Pine | Tsuki-yo         | Definite blue for information, code keys and operators |
+| Foam | Shin-ryoku       | Mint green for success and accents                     |
+| Gold | To-ro            | Honey-gold warnings and code types                     |
+| Rose | Fuyu-gaki        | Warm rose metadata, functions and cursors              |
+| Love | Momiji           | Berry-rose errors, built-ins and escapes               |
 
 Pine is deeper and bluer; Foam is lighter and greener. Each source is sampled at
 a fixed point on its curve, with softened chroma and a stable hue for Day/Night.
@@ -358,17 +360,20 @@ service colours. Error spans and exception events retain the semantic Error over
 This follows [Honeycomb's default waterfall colour basis](https://docs.honeycomb.io/investigate/analyze/explore-traces/#change-color-in-waterfall-representation).
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
-legends share the fixed Shin-kai ramp. Counts remain sequential rather than using
-categorical hues. Legacy count-palette preferences are left in storage but no
+legends share one ink-derived violet → blue → green → gold spectrum. Counts remain
+sequential: perceived lightness and grayscale luminance increase steadily at Night.
+Legacy count-palette preferences are left in storage but no
 longer select a different ramp.
 
-The generator samples each full pinned measured curve at equally spaced OKLab
-lightness values, including its endpoints, interpolates a/b at that lightness,
-then uses upstream `oklabToHex`. Every adaptive ramp size from 1–12 is generated
-separately. Night uses dark-to-light count order; Day uses the exact same shades
-reversed. A singleton uses its mode's high-count endpoint. Season changes do
-not change the ink. `themes/count-palettes.ts` owns the source catalogue and fixed
-default; `utils/chart-palette.ts` provides the pure sampler.
+The generator takes hue/chroma anchors from Murasaki-shikibu, Tsuki-yo,
+Shin-ryoku and To-ro. Their OKLab lightnesses are 0.48, 0.61, 0.74 and 0.87,
+avoiding near-black and paper-white endpoints. It interpolates in OKLab,
+maps into sRGB gamut, and samples at equal perceptual arc-length intervals.
+Each adaptive ramp size from 1–12 is generated separately. Night uses
+dark-to-light count order; Day uses the exact same shades reversed. A singleton
+uses its mode's high-count endpoint. Seasons do not change the ramp.
+`themes/heatmap-palette.json` records the source anchors and generated ramps;
+`utils/chart-palette.ts` provides the pure sampler.
 
 Count thresholds, source zero/empty buckets and categorical identity assignments
 retain their existing treatment. Semantic error overrides and chart guides use

@@ -1,11 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { ThemeName } from '../src/themes'
-import {
-  DEFAULT_COUNT_PALETTE,
-  countPaletteRamps,
-  type CountPaletteId,
-} from '../src/themes/count-palettes'
+import heatmapPalette from '../src/themes/heatmap-palette.json' with { type: 'json' }
 import {
   GRAPH_INKS,
   GRAPH_PALETTE_VERSION,
@@ -32,14 +28,10 @@ function accentRgb(theme: ThemeName) {
   return themeRgb(theme, 'primary')
 }
 
-function countRamp(
-  theme: ThemeName,
-  steps: number,
-  ink: CountPaletteId = DEFAULT_COUNT_PALETTE
-) {
-  return countPaletteRamps[ink][steps]![
-    theme.endsWith('-hiru') ? 'day' : 'night'
-  ]
+const countRamps: Record<number, { day: string[]; night: string[] }> =
+  heatmapPalette.ramps
+function countRamp(theme: ThemeName, steps: number) {
+  return countRamps[steps]![theme.endsWith('-hiru') ? 'day' : 'night']
 }
 
 // Chromium serializes OKLab mixes differently from hex colours. Resolve the
@@ -416,7 +408,7 @@ for (const { id: theme } of THEMES) {
     await expect(lines).toHaveCount(2)
 
     await page.getByRole('button', { name: /^Season:/ }).click()
-    await page.getByRole('radio', { name: 'Fuyu' }).click()
+    await page.getByRole('radio', { name: 'Winter' }).click()
     await page.keyboard.press('Escape')
     await expect.poll(drawing).toEqual(original)
     await page.reload()
@@ -610,10 +602,10 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(page.locator('.heatmap-cell')).toHaveCount(3)
     await expect(page.locator('.heatmap-cell').first()).toBeVisible()
     const original = await geometry()
-    const assertCountInk = async (ink: CountPaletteId) => {
+    const assertCountInk = async () => {
       // Closing a picker can leave the pointer over a cell's hover highlight.
       await page.mouse.move(0, 0)
-      const ramp = countRamp('madoromi-aki-hiru', 4, ink)
+      const ramp = countRamp('madoromi-aki-hiru', 4)
       await expect
         .poll(() =>
           page
@@ -635,7 +627,7 @@ test.describe('independent histogram aggregate loading', () => {
         .toEqual([fills[0], fills[1], fills[3]].sort())
       expect(await geometry()).toEqual(original)
     }
-    await assertCountInk('shin-kai')
+    await assertCountInk()
     await expect(
       page.getByRole('button', { name: 'Histogram count palette', exact: true })
     ).toHaveCount(0)
@@ -652,7 +644,7 @@ test.describe('independent histogram aggregate loading', () => {
             dots.map(dot => getComputedStyle(dot).backgroundColor)
           )
       )
-      .toEqual(countRamp('madoromi-aki-yoru', 4, 'shin-kai').map(rgb))
+      .toEqual(countRamp('madoromi-aki-yoru', 4).map(rgb))
     await page.locator('.theme-toggle').click()
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
@@ -661,14 +653,14 @@ test.describe('independent histogram aggregate loading', () => {
     const themeTrigger = page.getByRole('button', { name: /^Season:/ })
     await themeTrigger.click()
     const themePicker = page.locator('.theme-picker-popover:popover-open')
-    await themePicker.getByRole('radio', { name: 'Fuyu' }).click()
-    await assertCountInk('shin-kai')
+    await themePicker.getByRole('radio', { name: 'Winter' }).click()
+    await assertCountInk()
     await expect(themePicker).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(themeTrigger).toBeFocused()
     await expect(themePicker).not.toBeVisible()
     await page.reload()
-    await assertCountInk('shin-kai')
+    await assertCountInk()
     await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
     await expect
       .poll(() =>
@@ -677,9 +669,7 @@ test.describe('independent histogram aggregate loading', () => {
           .evaluateAll(bars => bars.map(bar => getComputedStyle(bar).fill))
       )
       .toEqual(
-        [0, 3, 1].map(index =>
-          rgb(countRamp('madoromi-aki-hiru', 4, 'shin-kai')[index]!)
-        )
+        [0, 3, 1].map(index => rgb(countRamp('madoromi-aki-hiru', 4)[index]!))
       )
   })
 

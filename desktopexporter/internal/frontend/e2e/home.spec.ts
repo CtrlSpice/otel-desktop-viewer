@@ -128,7 +128,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     element => getComputedStyle(element).backgroundColor
   )
   await page.getByRole('button', { name: /^Season:/ }).click()
-  await page.getByRole('radio', { name: 'Fuyu' }).click()
+  await page.getByRole('radio', { name: 'Winter' }).click()
   await page.keyboard.press('Escape')
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(colourDot).toHaveCSS('background-color', automaticColour)
@@ -165,7 +165,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const guideBox = (await guide.boundingBox())!
   const detailsBox = (await details.boundingBox())!
   const drop = (await left
-    .getByRole('button', { name: 'Import files', exact: true })
+    .getByRole('button', { name: 'Browse files to import', exact: true })
     .boundingBox())!
   const storage = (await left
     .locator('[data-detail-section="storage"]')

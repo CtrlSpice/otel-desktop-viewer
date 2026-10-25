@@ -99,12 +99,12 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
   await expect(
     page.getByRole('region', { name: 'Home sections' })
   ).toContainText('Storage')
-  const imports = page.getByRole('region', {
-    name: 'Import telemetry',
+  const imports = page.getByRole('button', {
+    name: 'Browse files to import',
     exact: true,
   })
   await expect(imports).toBeVisible()
-  await expect(imports.locator('summary')).toHaveCount(0)
+  await expect(imports).toHaveAccessibleDescription('Drop JSON files anywhere')
   await expect(
     page.locator('[data-detail-section="guide"] summary')
   ).toHaveCount(0)
@@ -118,9 +118,10 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     'Ingestion issues'
   )
   await expect(
-    page
-      .locator('.home-welcome')
-      .getByRole('button', { name: 'Import files', includeHidden: true })
+    page.locator('.home-welcome').getByRole('button', {
+      name: 'Browse files to import',
+      includeHidden: true,
+    })
   ).toBeAttached()
   await expect(
     page.getByRole('region', { name: 'Service map', exact: true })
@@ -136,7 +137,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     storage.getByRole('table', { name: 'Viewer storage' })
   ).toBeVisible()
   await expect(
-    page.getByRole('button', { name: 'Import files', exact: true })
+    page.getByRole('button', { name: 'Browse files to import', exact: true })
   ).toBeVisible()
   expect(errors).toEqual([])
 })
