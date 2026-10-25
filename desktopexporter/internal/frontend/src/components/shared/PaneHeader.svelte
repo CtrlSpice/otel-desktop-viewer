@@ -4,12 +4,12 @@
    * unified layout. Four modes, one visual contract.
    *
    * Modes
-   *   • title       — regular title above a reserved control row, no tabs.
+   *   • title       — regular title beside its controls, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
    *   • tabs        — compact tab strip with an immediate selected fill. Use
    *                   when the pane has 2+ views or route destinations.
-   *   • title-tabs  — title and badges above a compact segmented view switch.
+   *   • title-tabs  — title and badges beside a compact segmented view switch.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
    *   • toolbar     — chrome strip with no title or tabs. Use the
@@ -20,7 +20,7 @@
    *   • 'left'   — the tab group packs to the start, leaving space for
    *                the header's right-aligned actions.
    *   • 'right'  — the tab group packs to the end.
-   *                Default for the second row in `title-tabs`.
+   *                Default for `title-tabs`.
    *   • 'equal'  — tabs share the row evenly, each taking 1fr of the
    *                tablist. Use for inspector tab strips (Fields /
    *                Events / Links) so labels line up across panes.
@@ -95,15 +95,13 @@
     rounded?: boolean
     /** Main signal headers share the base-300 pill surface of detail headings. */
     pill?: boolean
-    /** Optional single timestamp (ms) on its own line below the title
-     *  or tab strip (e.g. log record time). */
+    /** Optional timestamp (ms) beside the title or tabs (e.g. log record time). */
     timestampMs?: number
-    /** Custom content at the left of the lower row. */
+    /** Metadata after the title and before the controls. */
     metaLeft?: Snippet
-    /** Controls centred horizontally in the second header row. */
+    /** Controls between metadata and the trailing actions. */
     metaCenter?: Snippet
-    /** Optional right-aligned controls on the second header row (below
-     *  the title). Renders beside the timestamp or custom metadata when set. */
+    /** Optional controls after metadata and tabs, before the final actions. */
     metaRight?: Snippet
   }
 
@@ -161,22 +159,38 @@
   import ServiceDot from './ServiceDot.svelte'
   import { handleTablistKeydown } from './utils/tablist-keyboard'
   let props: PaneHeaderProps = $props()
+
+  // Keep tooltips outside the header at normal widths. If the controls cannot
+  // fit on one row, expose native scrolling instead of overlapping another pane.
+  function headerOverflow(element: HTMLDivElement) {
+    const measure = () =>
+      element.classList.toggle(
+        'pane-header--overflow',
+        element.scrollWidth > element.clientWidth + 1
+      )
+    const resize = new ResizeObserver(measure)
+    const observe = () => {
+      resize.disconnect()
+      resize.observe(element)
+      for (const child of element.children) resize.observe(child)
+      measure()
+    }
+    const children = new MutationObserver(observe)
+    children.observe(element, { childList: true })
+    observe()
+    return {
+      destroy() {
+        resize.disconnect()
+        children.disconnect()
+      },
+    }
+  }
   let roundedClass = $derived(
     props.pill
       ? 'pane-header--pill'
       : props.rounded !== false
         ? 'pane-header--rounded'
         : 'pane-header--flush'
-  )
-  let stackedClass = $derived(
-    props.mode === 'title' ||
-      props.mode === 'title-tabs' ||
-      props.timestampMs !== undefined ||
-      props.metaLeft !== undefined ||
-      props.metaCenter !== undefined ||
-      props.metaRight !== undefined
-      ? 'pane-header--stacked'
-      : ''
   )
 
   function tabbableTabID(
@@ -190,26 +204,27 @@
 </script>
 
 {#snippet metaRow(showControls = true)}
-  <div
-    class="pane-header__meta-row"
-    class:pane-header__meta-row--centered={!!props.metaCenter}
-  >
-    <div class="pane-header__time-range">
-      {#if props.metaLeft}
-        {@render props.metaLeft()}
-      {:else if props.timestampMs !== undefined}
-        <PaneTimestampHeader timestampMs={props.timestampMs} />
+  {#if props.metaLeft || props.timestampMs !== undefined || props.metaCenter || (showControls && props.metaRight)}
+    <div class="pane-header__meta-row">
+      {#if props.metaLeft || props.timestampMs !== undefined}<div
+          class="pane-header__metadata"
+        >
+          {#if props.metaLeft}
+            {@render props.metaLeft()}
+          {:else if props.timestampMs !== undefined}
+            <PaneTimestampHeader timestampMs={props.timestampMs} />
+          {/if}
+        </div>{/if}
+      {#if props.metaCenter}
+        <div class="pane-header__meta-center">{@render props.metaCenter()}</div>
+      {/if}
+      {#if showControls && props.metaRight}
+        <div class="header-controls pane-header__meta-controls">
+          {@render props.metaRight()}
+        </div>
       {/if}
     </div>
-    {#if props.metaCenter}
-      <div class="pane-header__meta-center">{@render props.metaCenter()}</div>
-    {/if}
-    {#if showControls && props.metaRight}
-      <div class="header-controls pane-header__meta-controls">
-        {@render props.metaRight()}
-      </div>
-    {/if}
-  </div>
+  {/if}
 {/snippet}
 
 {#snippet badgeStrip(badges: PaneBadge[])}
@@ -335,7 +350,8 @@
 
 {#if props.mode === 'title' || props.mode === 'title-tabs'}
   <div
-    class="pane-header pane-header--{props.mode} {roundedClass} {stackedClass}"
+    class="pane-header pane-header--{props.mode} {roundedClass}"
+    use:headerOverflow
     inert={props.inert}
     role="region"
     aria-label={props.ariaLabel ?? props.title}
@@ -345,42 +361,40 @@
         {#if props.leading}
           <div class="pane-header__leading">{@render props.leading()}</div>
         {/if}
-        <span class="pane-header__title">{props.title}</span>
+        {#if props.subtitle?.trim()}
+          <ServiceDot service={props.subtitleService ?? props.subtitle} />
+        {/if}
+        <span class="pane-header__title" title={props.title}>{props.title}</span
+        >
         {#if props.subtitle?.trim()}
           <span class="pane-header__separator" aria-hidden="true">·</span>
-          <ServiceDot service={props.subtitleService ?? props.subtitle} /><span
-            class="pane-header__subtitle">({props.subtitle.trim()})</span
-          >
+          <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
         {/if}
         {#if props.badge || props.badges?.length}
           <span class="pane-header__separator" aria-hidden="true">·</span>
           {@render badgeBlock(props.badges, props.badge)}
         {/if}
       </div>
-      {#if props.right}
-        <div class="header-controls pane-header__right">
-          {@render props.right()}
-        </div>
-      {/if}
     </div>
     {#if props.mode === 'title-tabs'}
-      <div class="pane-header__tabs-row">
-        {#if props.timestampMs !== undefined || props.metaLeft || props.metaRight}
-          {@render metaRow(false)}
-        {/if}
-        {@render tabStrip(
-          props.tabs,
-          props.activeID,
-          props.onSelect,
-          props.ariaLabel ?? `${props.title} tabs`,
-          props.tabLayout ?? 'right',
-          false,
-          props.tabPanelID,
-          true
-        )}
-      </div>
+      {@render metaRow(false)}
+      {@render tabStrip(
+        props.tabs,
+        props.activeID,
+        props.onSelect,
+        props.ariaLabel ?? `${props.title} tabs`,
+        props.tabLayout ?? 'right',
+        false,
+        props.tabPanelID,
+        true
+      )}
     {:else}
       {@render metaRow()}
+    {/if}
+    {#if props.right}
+      <div class="header-controls pane-header__right">
+        {@render props.right()}
+      </div>
     {/if}
   </div>
 {:else if props.mode === 'tabs' && props.bare}
@@ -394,7 +408,7 @@
     props.tabPanelID
   )}
 {:else if props.mode === 'tabs'}
-  <div class="pane-header pane-header--tabs {roundedClass} {stackedClass}">
+  <div class="pane-header pane-header--tabs {roundedClass}" use:headerOverflow>
     <div class="pane-header__top">
       {@render tabStrip(
         props.tabs,
@@ -405,14 +419,12 @@
         props.navigation ?? false,
         props.tabPanelID
       )}
-      {#if props.right}
-        <div class="header-controls pane-header__right">
-          {@render props.right()}
-        </div>
-      {/if}
     </div>
-    {#if props.timestampMs !== undefined || props.metaLeft || props.metaRight}
-      {@render metaRow()}
+    {@render metaRow()}
+    {#if props.right}
+      <div class="header-controls pane-header__right">
+        {@render props.right()}
+      </div>
     {/if}
   </div>
 {:else if props.mode === 'toolbar'}
@@ -432,7 +444,8 @@
 
   /* Shared theme surface; the workspace toolbar can override the fill. */
   .pane-header {
-    @apply flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden border-0;
+    @apply flex min-w-0 shrink-0 flex-nowrap items-center border-0;
+    min-height: var(--pane-header-single-h);
     gap: var(--header-gap);
     padding: var(--header-padding) var(--header-padding-inline);
     line-height: 1.5;
@@ -444,6 +457,10 @@
     @apply rounded-t-xl;
   }
 
+  .pane-header:global(.pane-header--overflow) {
+    overflow-x: auto;
+  }
+
   .pane-header--pill {
     @apply rounded-xl;
     min-height: var(--pane-header-single-h);
@@ -453,32 +470,22 @@
     border-radius: 0;
   }
 
-  .pane-header--stacked {
-    @apply flex-col items-stretch;
-    min-height: var(--pane-header-h);
-  }
-
   .pane-header__top {
-    @apply flex min-w-0 w-full flex-nowrap items-center gap-2;
+    @apply flex min-w-24 flex-1 flex-nowrap items-center gap-2;
     min-height: var(--pane-header-row-h);
   }
 
   .pane-header__meta-row {
-    @apply flex w-full min-w-0 items-center justify-between gap-2;
+    @apply flex shrink-0 items-center gap-2;
     min-height: var(--pane-header-row-h);
-  }
-
-  .pane-header__meta-row--centered {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
   }
 
   .pane-header__meta-center {
     @apply flex items-center justify-center;
   }
 
-  .pane-header__time-range {
-    @apply min-w-0 flex-1 text-xs;
+  .pane-header__metadata {
+    @apply min-w-0 whitespace-nowrap text-sm;
   }
 
   .pane-header--toolbar {
@@ -487,11 +494,6 @@
 
   .pane-header__toolbar {
     @apply flex min-w-0 w-full flex-1 items-center;
-  }
-
-  .pane-header--tabs,
-  .pane-header--title-tabs {
-    @apply min-w-0 flex-nowrap overflow-hidden;
   }
 
   .pane-header__title-row {
@@ -514,22 +516,6 @@
   /* The title shrinks before the trailing badge group and any actions. */
   .pane-header__badges {
     @apply flex shrink-0 items-center gap-2;
-  }
-
-  /* Tooltip controls must escape the header; title/subtitle truncate themselves
-     and the tab strip retains its own scroll container. */
-  .pane-header:has(:global(.tooltip[data-tip])),
-  .pane-header__title-row:has(:global(.tooltip[data-tip])) {
-    overflow: visible;
-  }
-
-  .pane-header__tabs-row {
-    @apply flex min-w-0 w-full items-center gap-2;
-    min-height: var(--pane-header-row-h);
-  }
-
-  .pane-header__tabs-row .pane-header__meta-row {
-    @apply w-auto flex-1 pb-0;
   }
 
   .pane-header__meta-controls {

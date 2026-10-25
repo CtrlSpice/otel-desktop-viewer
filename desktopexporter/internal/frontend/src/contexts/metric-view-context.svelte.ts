@@ -151,6 +151,7 @@ type HistogramTimeseriesGroup = {
 }
 
 type MetricViewState = {
+  previewSeriesKey: string | null
   selectedRateBucket: { seriesKey: string; timestampNs: bigint } | null
   selectedDatapointID: string | null
   selectedSeriesKey: string | null
@@ -181,6 +182,8 @@ type HistogramAggregationResult = {
 }
 
 export interface MetricViewContext {
+  /** Transient series-header emphasis; does not select a datapoint or persist. */
+  previewSeriesKey: string | null
   readonly metric: MetricViewData | undefined
   readonly metricType: MetricType
   readonly temporality: string
@@ -393,6 +396,7 @@ export function createMetricViewContext(
 ): MetricViewContext {
   // The only mutable per-metric state cell.
   const view = $state<MetricViewState>({
+    previewSeriesKey: null,
     selectedRateBucket: null,
     selectedDatapointID: null,
     // Explicitly chosen series, independent of any datapoint selection.
@@ -1409,6 +1413,7 @@ export function createMetricViewContext(
 
   /** Reset and seed every per-metric choice synchronously before rendering. */
   function seedForMetric(m: MetricViewData | undefined) {
+    view.previewSeriesKey = null
     view.selectedRateBucket = null
     const metricRef = m?.metricRef
 
@@ -1853,6 +1858,12 @@ export function createMetricViewContext(
   }
 
   const ctx: MetricViewContext = {
+    get previewSeriesKey() {
+      return view.previewSeriesKey
+    },
+    set previewSeriesKey(key) {
+      view.previewSeriesKey = key
+    },
     get histogramContribution() {
       const contribution = getHistogramContribution()
       return view.selectionSource === 'detail' &&

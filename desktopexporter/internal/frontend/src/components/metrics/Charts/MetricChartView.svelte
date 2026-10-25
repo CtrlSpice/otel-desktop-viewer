@@ -143,6 +143,7 @@
         highlightedTimestamp={ctx.highlightedTimestamp}
         highlightedPointID={ctx.selectedDatapointID}
         selectedSeriesKey={ctx.selectedSeriesKey}
+        previewSeriesKey={ctx.previewSeriesKey}
         unit={ctx.metric!.unit}
         height={plotHeight}
         colorByKey={ctx.timeseriesColorByKey}

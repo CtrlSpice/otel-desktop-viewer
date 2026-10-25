@@ -28,6 +28,22 @@
 
   const ctx = getMetricViewContext()
   let panel: HTMLDivElement
+  let hoveredSeriesKey = $state<string | null>(null)
+  let focusedSeriesKey = $state<string | null>(null)
+
+  $effect.pre(() => {
+    void ctx.metric?.metricRef
+    hoveredSeriesKey = null
+    focusedSeriesKey = null
+  })
+  $effect(() => {
+    ctx.previewSeriesKey = ctx.isHistogramKind
+      ? null
+      : (hoveredSeriesKey ?? focusedSeriesKey)
+    return () => {
+      ctx.previewSeriesKey = null
+    }
+  })
 
   let rows = $derived<PanelTimeseries[]>(
     ctx.isHistogramKind
@@ -156,6 +172,8 @@
       name="metric-series"
       open={expanded}
       onOpenChange={open => setTimeseriesOpen(ts.key, open)}
+      onHeaderHover={active => (hoveredSeriesKey = active ? ts.key : null)}
+      onHeaderFocus={active => (focusedSeriesKey = active ? ts.key : null)}
     >
       {#snippet headerAction()}
         <div
@@ -214,6 +232,7 @@
                 identity={ts.key}
                 label={`Colour for ${headerLabel}`}
                 color={seriesColor}
+                editTrigger
               />
             {/if}
           </div>

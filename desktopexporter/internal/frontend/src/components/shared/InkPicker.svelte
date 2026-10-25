@@ -13,6 +13,7 @@
   import {
     HeartIcon,
     PaintBrush01Icon,
+    PencilEdit02Icon,
     RefreshIcon,
     Tick02Icon,
   } from '@hugeicons/core-free-icons'
@@ -29,6 +30,7 @@
     automatic = false,
     triggerColor,
     compactTrigger = false,
+    editTrigger = false,
     unavailable = new Set<string>(),
     shadeControls,
     onOpenChange,
@@ -42,6 +44,7 @@
     automatic?: boolean
     triggerColor?: string
     compactTrigger?: boolean
+    editTrigger?: boolean
     unavailable?: ReadonlySet<string>
     shadeControls?: Snippet<[option: InkPickerOption, close: () => void]>
     onOpenChange?: (open: boolean) => void
@@ -177,7 +180,7 @@
 <FilterPopover
   {label}
   compact
-  triggerClass={triggerColor
+  triggerClass={triggerColor && !editTrigger
     ? `ink-picker-trigger--dot ${compactTrigger ? 'ink-picker-trigger--compact' : ''} item-state tooltip tooltip-right`
     : 'header-icon-button tooltip tooltip-left'}
   popoverClass={`ink-picker-popover ${dotGrid ? 'ink-picker--grid' : ''}`}
@@ -185,7 +188,14 @@
   onOpenChange={handleOpenChange}
 >
   {#snippet icon()}
-    {#if triggerColor}
+    {#if editTrigger}
+      <HugeiconsIcon
+        icon={PencilEdit02Icon}
+        size={16}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+    {:else if triggerColor}
       <span
         class="size-2 shrink-0 rounded-full"
         style:background-color={triggerColor}

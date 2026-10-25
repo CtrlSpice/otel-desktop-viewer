@@ -140,6 +140,8 @@
      *  always get dots too -- the selected series is the one we'd
      *  otherwise not be able to identify just from x-position. */
     selectedSeriesKey?: string | null
+    /** Transient emphasis from a visible series header. */
+    previewSeriesKey?: string | null
     /** Metric unit for the y-axis label (e.g. "ms", "bytes"). */
     unit?: string
     /** Per-timeseries color lookup keyed by `ChartTimeseries.key`. The
@@ -175,6 +177,7 @@
     highlightedTimestamp = null,
     highlightedPointID = null,
     selectedSeriesKey = null,
+    previewSeriesKey = null,
     unit = '',
     colorByKey,
     emptyMessage = 'No datapoints to chart',
@@ -436,7 +439,11 @@
   })
 
   let emphasizedSeriesKey = $derived(
-    keyboardFocused ? keyboardSeries?.key : hoveredPoint?.key
+    chartSeries.some(series => series.key === previewSeriesKey)
+      ? previewSeriesKey
+      : keyboardFocused
+        ? keyboardSeries?.key
+        : hoveredPoint?.key
   )
   /** The plot uses the full chart height; pinned cards do not reserve a row. */
   let plotAreaHeight = $state(0)

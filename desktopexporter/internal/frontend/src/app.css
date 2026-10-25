@@ -1217,8 +1217,7 @@ button:focus-visible:not(.btn) {
   --app-footer-height: 2.75rem;
 
   /*
-   * Top-level pane headings share two rows: identity, then controls.
-   * Embedded toolbars retain the single-row rhythm.
+   * Pane and section headings share one row for identity and controls.
    */
   --header-gap: 0.5rem;
   --header-counter-min-width: 1rem;
@@ -1227,9 +1226,6 @@ button:focus-visible:not(.btn) {
   --header-padding-inline: 0.75rem;
   --pane-header-single-h: calc(
     var(--pane-header-row-h) + 2 * var(--header-padding)
-  );
-  --pane-header-h: calc(
-    2 * var(--pane-header-row-h) + var(--header-gap) + 2 * var(--header-padding)
   );
   --pane-inline-inset: 1rem;
   --pane-header-row-h: 2rem;

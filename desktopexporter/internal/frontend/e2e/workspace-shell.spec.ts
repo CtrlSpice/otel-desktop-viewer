@@ -120,7 +120,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await expect(page.locator('.workspace-shell')).toHaveCount(1)
       await expect(main.locator(':scope > .pane-header')).toHaveCSS(
         'height',
-        '88px'
+        '48px'
       )
       if (await list.isVisible()) {
         expect((await list.boundingBox())!.y).toBeCloseTo(
@@ -131,7 +131,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         if (await controls.isVisible()) {
           await expect(controls.locator('.pane-header')).toHaveCSS(
             'height',
-            '88px'
+            '48px'
           )
           expect((await controls.boundingBox())!.y).toBeCloseTo(
             (await main.boundingBox())!.y,

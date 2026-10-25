@@ -27,6 +27,8 @@
     open?: boolean
     /** When set, parent owns `open` (e.g. a Set membership). */
     onOpenChange?: (open: boolean) => void
+    onHeaderHover?: (hovered: boolean) => void
+    onHeaderFocus?: (focused: boolean) => void
     children: Snippet
   }
 
@@ -44,6 +46,8 @@
     card = false,
     open = $bindable(true),
     onOpenChange,
+    onHeaderHover,
+    onHeaderFocus,
     children,
   }: Props = $props()
 
@@ -80,7 +84,20 @@
   {open}
   ontoggle={e => setOpen(e.currentTarget.open)}
 >
-  <summary class="field-group__heading" class:item-state={card || detail}>
+  <summary
+    class="field-group__heading"
+    class:item-state={card || detail}
+    onpointerenter={() => onHeaderHover?.(true)}
+    onpointerleave={() => onHeaderHover?.(false)}
+    onfocusin={() => onHeaderFocus?.(true)}
+    onfocusout={event => {
+      if (
+        !(event.relatedTarget instanceof Node) ||
+        !event.currentTarget.contains(event.relatedTarget)
+      )
+        onHeaderFocus?.(false)
+    }}
+  >
     {#if detail}
       <span class="field-group__caret" aria-hidden="true">
         <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={1.5} />

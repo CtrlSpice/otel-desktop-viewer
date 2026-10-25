@@ -379,10 +379,11 @@ test('Details pins enriched trace context above scrolling fields', async ({
     .locator('.pane-header__title')
     .boundingBox())!
   expect(exportBounds.x).toBeGreaterThanOrEqual(tabsBounds.x + tabsBounds.width)
-  expect(tabsBounds.y).toBeGreaterThanOrEqual(
-    titleBounds.y + titleBounds.height
+  expect(tabsBounds.y + tabsBounds.height / 2).toBeCloseTo(
+    titleBounds.y + titleBounds.height / 2,
+    0
   )
-  await expect(header).toHaveCSS('height', '88px')
+  await expect(header).toHaveCSS('height', '48px')
   const errorColour = await panel.evaluate(element => {
     const probe = document.createElement('span')
     probe.style.color = 'var(--color-error)'

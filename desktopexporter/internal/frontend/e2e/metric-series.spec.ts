@@ -315,6 +315,44 @@ test('metric descriptions stay in Details rather than summary cards', async ({
   ).toBeVisible()
 })
 
+test('series header hover and keyboard focus emphasize only the corresponding visible line', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const headers = page.locator('details[name="metric-series"] > summary')
+  const first = page.locator('.metric-series-line[data-series-key="first"]')
+  const second = page.locator('.metric-series-line[data-series-key="second"]')
+  await expect(first).toBeVisible()
+  const url = page.url()
+  const path = await first.getAttribute('d')
+  await headers.first().hover()
+  await expect(first).toHaveAttribute('data-emphasized', 'true')
+  await expect(second).toHaveAttribute('data-emphasized', 'false')
+  await expect(headers.first().locator('..')).not.toHaveAttribute('open')
+  await page.getByRole('region', { name: 'Metric chart', exact: true }).hover()
+  await expect(first).toHaveAttribute('data-emphasized', 'false')
+  await headers.nth(1).focus()
+  await expect(second).toHaveAttribute('data-emphasized', 'true')
+  await expect(first).toHaveAttribute('data-emphasized', 'false')
+  const edit = headers
+    .nth(1)
+    .getByRole('button', { name: 'Colour for route: /second', exact: true })
+  await edit.focus()
+  await expect(edit.locator('svg')).toHaveCount(1)
+  await expect(second).toHaveAttribute('data-emphasized', 'true')
+  await page
+    .getByRole('button', { name: 'Download metric', exact: true })
+    .focus()
+  await expect(second).toHaveAttribute('data-emphasized', 'false')
+  await expect(first).toHaveAttribute('d', path!)
+  expect(page.url()).toBe(url)
+  await headers.first().getByRole('checkbox').uncheck()
+  await expect(first).toHaveCount(0)
+  await headers.first().hover()
+  await expect(second).toHaveAttribute('data-emphasized', 'false')
+})
+
 test('time-series axes use the shared rounded Muted border', async ({
   page,
 }) => {
@@ -2766,15 +2804,16 @@ test('series open by their headers, one at a time, with one combined table', asy
     return {
       badgesAfterTitle: badges.left >= title.right,
       badgesBeforeDownload: badges.right <= download.left,
-      downloadInset: top.right - download.right,
-      topBottom: top.bottom,
-      tabsTop: tabs.top,
+      downloadInset: header.getBoundingClientRect().right - download.right,
+      titleCenter: top.top + top.height / 2,
+      tabsCenter: tabs.top + tabs.height / 2,
     }
   })
   expect(headerLayout.badgesAfterTitle).toBe(true)
   expect(headerLayout.badgesBeforeDownload).toBe(true)
-  expect(Math.abs(headerLayout.downloadInset)).toBeLessThan(1)
-  expect(headerLayout.tabsTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
+  expect(headerLayout.downloadInset).toBeCloseTo(12, 0)
+  expect(headerLayout.tabsCenter).toBeCloseTo(headerLayout.titleCenter, 0)
+  await expect(mainHeader).toHaveCSS('height', '48px')
   await expect(mainHeader).toHaveCSS(
     'background-color',
     await fieldsBubble

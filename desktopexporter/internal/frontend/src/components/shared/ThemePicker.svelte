@@ -276,7 +276,7 @@
   }
 
   .theme-picker__inks {
-    @apply mx-auto grid max-w-full grid-flow-col overflow-x-auto py-1;
+    @apply mx-auto grid max-w-full grid-flow-col gap-1 overflow-x-auto py-1;
     width: max-content;
     grid-auto-columns: 1.5rem;
   }

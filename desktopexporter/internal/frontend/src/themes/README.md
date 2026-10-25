@@ -29,7 +29,7 @@ separate close button in the anchored dropdown.
 Its centred footer reads “Colours by Madoromi” with the attribution heart;
 only Madoromi is the link.
 Ink choices show three vertically stacked colour dots, brightest at the top
-(official shades 7, 4, 1), in adjacent 24px-wide, 48px-high targets in one horizontal row,
+(official shades 7, 4, 1), in 24px-wide, 48px-high targets with 4px gaps in one horizontal row,
 with the selected original ink name shown once above them. All choices retain
 original-name tooltips and accessible labels, without English translations.
 The chooser is at most 28rem wide. The ink row uses ordinary horizontal scrolling,

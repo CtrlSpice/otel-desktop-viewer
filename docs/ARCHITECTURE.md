@@ -404,9 +404,9 @@ One app-wide set of saved side-pane widths and open preferences applies across
 signals. An omitted pane gives its space to Main without changing its saved
 preference; responsive clamping changes only rendered geometry. Destination
 geometry applies immediately, including loading, empty and error states.
-Workspace headers reserve two equal-height rows for identity and controls.
-Collapsible section headers use one row throughout, including the primary
-Details section, with actions beside the title. Metric chart headers omit the
+All pane and section headers use one row, with controls beside the title and
+the service-colour dot before it. Headers expose horizontal scrolling when
+their controls cannot fit. Metric chart headers omit the
 repeated Start/End range; the global time selector and chart axes supply time context.
 
 `DetailStack.svelte` and `DetailBubble.svelte` share disclosure and sizing across
@@ -486,7 +486,7 @@ workspace's query-membership semantics.
 Log cards keep body previews on one ellipsized line, with the preview on hover
 and the complete received body available in Details.
 
-Tabs in the second header row offer Traces, Metrics
+Tabs beside the Telemetry title offer Traces, Metrics
 and Logs with known matching counts. Each signal keeps its own page and scroll position. Only the
 active list scrolls; the footer offers 25, 50 or 100 cards per page and remembers
 the choice. Signal changes are immediate and support arrow/Home/End keys.

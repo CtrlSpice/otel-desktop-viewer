@@ -8,7 +8,9 @@ Charts use [Madoromi](https://madoromi.moonwit.ch/) inks.
   categorical graph colours remain fixed.
 - Services and metric series use seven official shades from each of 32 inks:
   224 categorical colours, omitting the palest eighth shade. The colour dot beside a
-  Home service name or a Gauge/Sum series in Details opens its override picker.
+  Home service name opens its override picker; Gauge/Sum series in Details use an
+  edit icon. Hovering or focusing a series header emphasizes its visible chart line
+  without changing selection, visibility or saved colours.
   Service colours are saved by service-name text; series colours by `metricRef`
   and `seriesRef`. Reset restores the saved automatic assignment. Other owners'
   reserved colours are disabled; crowded scopes offer curve sliders.

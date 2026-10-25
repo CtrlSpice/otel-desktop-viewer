@@ -16,12 +16,14 @@
     label,
     color,
     compactTrigger = false,
+    editTrigger = false,
   }: {
     scope: string
     identity: string
     label: string
     color?: string
     compactTrigger?: boolean
+    editTrigger?: boolean
   } = $props()
   const override = $derived(graphColorOverrides.get(scope, identity))
   const availability = $derived(graphColorAvailability(scope, identity))
@@ -61,6 +63,7 @@
   {value}
   triggerColor={color}
   {compactTrigger}
+  {editTrigger}
   mode="shade"
   automatic={!override}
   unavailable={availability.unavailable}
