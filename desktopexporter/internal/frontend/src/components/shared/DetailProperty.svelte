@@ -263,7 +263,6 @@
     --item-idle-bg: var(--color-highlight-low);
   }
   .detail-property__card {
-    --item-idle-bg: var(--color-base-100);
     --json-editor-background: transparent;
     @apply min-w-0 rounded-xl py-2;
     padding-inline: var(--pane-inline-inset);

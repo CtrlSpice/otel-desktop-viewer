@@ -44,7 +44,11 @@ const HIGHLIGHT_THEMES = THEMES.map(theme => ({
 async function expectDropdownSurface(surface: Locator, theme: string) {
   await expect(surface).toHaveCSS('background-color', themeRgb(theme, 'panel'))
   await expect(surface).toHaveCSS('color', themeRgb(theme, 'text'))
-  await expect(surface).toHaveCSS('border-width', '0px')
+  await expect(surface).toHaveCSS('border-width', '1px')
+  await expect(surface).toHaveCSS(
+    'border-color',
+    themeRgb(theme, 'highlightLow')
+  )
   await expect(surface).toHaveCSS('border-radius', '12px')
   const shadow = await surface.evaluate(element => {
     const probe = document.createElement('span')
@@ -482,7 +486,7 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(choice).toHaveText('')
     }
     const themePicker = page.locator('.theme-picker-popover:popover-open')
-    await expect(themePicker).toHaveCSS('border-width', '0px')
+    await expect(themePicker).toHaveCSS('border-width', '1px')
     await expect(themePicker).toHaveRole('dialog')
     await expect(
       themePicker.getByRole('region', {
@@ -1254,7 +1258,7 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
-  test('keeps Home welcome and import accessible without the deferred setup blocks', async ({
+  test('keeps Home welcome, import and setup guide accessible', async ({
     page,
   }) => {
     const imports = page.getByRole('region', {
@@ -1270,10 +1274,10 @@ test.describe('home page accessibility', () => {
     ).toHaveCount(0)
     await expect(
       page.getByText('Connect an exporter', { exact: true })
-    ).toHaveCount(0)
+    ).toBeVisible()
     await expect(
       page.getByText('Send a test trace', { exact: true })
-    ).toHaveCount(0)
+    ).toBeVisible()
     await expect(
       imports.getByRole('button', { name: 'Import files' })
     ).toBeVisible()
@@ -1381,20 +1385,30 @@ test.describe('home page accessibility', () => {
     expect(actual).toEqual(expected)
   })
 
-  for (const { id: theme } of THEMES.filter(theme => theme.scheme === 'dark')) {
+  for (const { id: theme } of THEMES) {
     const canvas = themeRgb(theme, 'canvas')
     const panel = themeRgb(theme, 'panel')
-    test(`preserves ${theme} surfaces after CSS cleanup`, async ({ page }) => {
+    const chrome = themeRgb(theme, 'chrome')
+    test(`uses Madoromi paper roles for fields and panes in ${theme}`, async ({
+      page,
+    }) => {
       await page.evaluate(theme => localStorage.setItem('theme', theme), theme)
       await page.goto('/traces')
       await expect(page.getByRole('main')).toHaveCSS('background-color', canvas)
       await expect(page.locator('.search-bar')).toHaveCSS(
         'background-color',
-        themeRgb(theme, 'chrome')
+        panel
       )
       await expect(
         page.locator('.signal-drawer__controls > .pane-header')
       ).toHaveCSS('background-color', panel)
+      await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
+        'background-color',
+        panel
+      )
+      await expect(
+        page.locator('header[aria-label="Workspace navigation and search"]')
+      ).toHaveCSS('background-color', chrome)
       await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
         'background-color',
         canvas
@@ -1430,11 +1444,11 @@ test.describe('home page accessibility', () => {
     )
     await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
       'background-color',
-      'rgb(241, 242, 243)'
+      'rgb(231, 232, 234)'
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(221, 222, 224)'
+      'rgb(231, 232, 234)'
     )
     await expect(
       page.locator('.signal-drawer__controls .pane-header')
@@ -1575,7 +1589,7 @@ test.describe('home page accessibility', () => {
       await page.getByRole('button', { name: /Change time range/i }).click()
       await expect(
         page.locator('.preset-time-ranges [aria-pressed="true"]')
-      ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      ).toHaveCSS('background-color', selectedColor)
       await page.getByText('Timezone:', { exact: true }).click()
       const timezone = page.locator('.tz-option[aria-pressed="true"]')
       await expect(timezone).toHaveCSS('border-radius', '12px')
@@ -2412,7 +2426,7 @@ test.describe('home page accessibility', () => {
     }
   })
 
-  test('keeps the search bar visible without an active outline or collapse control', async ({
+  test('gives workspace search one field boundary and one focus ring at desktop and mobile widths', async ({
     page,
   }) => {
     for (const width of [1440, 390]) {
@@ -2427,15 +2441,31 @@ test.describe('home page accessibility', () => {
         element => getComputedStyle(element).backgroundColor
       )
       await expect(bar).toHaveCSS('background-color', background)
+      await expect(bar).toHaveCSS('border-width', '1px')
+      await expect(bar).toHaveCSS('outline-style', 'none')
       const editor = bar.locator('.cm-content[contenteditable="true"]')
       await editor.pressSequentially('service.name = "checkout"')
       await expect(bar).toHaveCSS('background-color', background)
       await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await expect(surface).toHaveCSS('outline-style', 'none')
+      await expect(bar).toHaveCSS('outline-style', 'solid')
+      await expect(bar.locator('.typed-field')).toHaveCSS('border-width', '0px')
+      await expect(bar.locator('.typed-field')).toHaveCSS(
+        'outline-style',
+        'none'
+      )
       await expect(editor).toHaveText('service.name = "checkout"')
       await bar.getByRole('button', { name: 'Clear search' }).click()
+      const bounds = (await bar.boundingBox())!
+      const fieldBounds = (await bar.locator('.typed-field').boundingBox())!
+      expect(fieldBounds.y).toBeGreaterThanOrEqual(bounds.y)
+      expect(fieldBounds.y + fieldBounds.height).toBeLessThanOrEqual(
+        bounds.y + bounds.height
+      )
       await expect(editor).toBeVisible()
       await expect(editor.locator('.cm-placeholder')).toBeVisible()
+      await page.getByRole('button', { name: /^Theme:/ }).focus()
+      await expect(bar).toHaveCSS('outline-style', 'none')
     }
   })
 
@@ -2533,8 +2563,8 @@ test.describe('home page accessibility', () => {
     expect(presetColors.inactive).toBe(presetColors.navInactive)
     expect(presetColors.inactive).toBe(presetColors.baseContent)
     expect(presetColors.active).toBe(presetColors.baseContent)
-    expect(presetColors.highlight).toBe(presetColors.selected)
-    expect(presetColors.background).toBe('rgba(0, 0, 0, 0)')
+    expect(presetColors.highlight).toBe('rgba(0, 0, 0, 0)')
+    expect(presetColors.background).toBe(presetColors.selected)
   })
 
   test('balances preset label spacing and outer edges', async ({ page }) => {
@@ -2679,7 +2709,7 @@ test.describe('home page accessibility', () => {
     })
   }
 
-  test('keeps custom range controls circular and focus treatment inset', async ({
+  test('keeps custom range controls circular with one shared field focus ring', async ({
     page,
   }) => {
     await page.goto('/traces')
@@ -2704,8 +2734,9 @@ test.describe('home page accessibility', () => {
           outlineStyle: styles.outlineStyle,
         }
       })
-    expect(focusTreatment.boxShadow).toContain('inset')
-    expect(focusTreatment.outlineStyle).toBe('none')
+    expect(focusTreatment.boxShadow).toBe('none')
+    expect(focusTreatment.outlineStyle).toBe('solid')
+    await expect(startDate).toHaveCSS('outline-style', 'none')
 
     await startCalendar.hover()
     const triggerMetrics = await startCalendar.evaluate(element => {

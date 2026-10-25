@@ -125,7 +125,7 @@
   }
 
   .issues-section + .issues-section {
-    @apply mt-3 border-t border-base-300 pt-3;
+    @apply mt-3 border-t border-(--color-border) pt-3;
   }
 
   .issues-heading {

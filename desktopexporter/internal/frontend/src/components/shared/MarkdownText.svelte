@@ -134,7 +134,7 @@
     padding-inline-start: 1.5rem;
   }
   blockquote {
-    @apply border-l border-base-300 pl-3;
+    @apply border-l border-(--color-border) pl-3;
   }
   a {
     @apply text-secondary underline;

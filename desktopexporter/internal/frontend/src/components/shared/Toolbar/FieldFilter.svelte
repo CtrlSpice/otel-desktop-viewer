@@ -250,12 +250,13 @@
 
   .field-filter__checkbox {
     @apply flex h-4 w-4 shrink-0 items-center justify-center rounded;
-    @apply border border-base-300/70;
+    border: 1px solid var(--color-highlight-high);
+    background-color: var(--color-input);
     @apply transition-colors duration-150;
   }
 
   .field-filter__checkbox--checked {
-    @apply border-primary/50 bg-primary/15 text-primary;
+    @apply border-primary bg-primary text-primary-content;
   }
 
   .field-filter__field-name {

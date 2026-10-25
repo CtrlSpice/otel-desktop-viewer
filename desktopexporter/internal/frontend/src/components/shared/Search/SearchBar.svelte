@@ -25,7 +25,7 @@
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'border-0 bg-(--color-input)'
+    ? 'search-bar--editable bg-(--color-input)'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
@@ -73,6 +73,20 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
+  .search-bar--editable {
+    border: 1px solid var(--color-border);
+  }
+
+  .search-bar--editable:has(.search-bar__field :global(:focus)) {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  .search-bar--editable:has(:global(.search-editor-container--error)) {
+    border-color: var(--color-error);
+    outline-color: var(--color-error);
+  }
+
   .search-bar__refresh--fresh {
     background-color: var(--color-input);
   }
@@ -105,6 +119,7 @@
   }
 
   .search-bar__field {
+    --search-editor-row-height: 2rem;
     display: flex;
     align-items: center;
     width: 0;
@@ -122,19 +137,11 @@
     max-width: min(20rem, calc(100vw - 2rem));
   }
 
-  .search-bar__query:has(
-      :global(.search-editor-container--error)
-    ):focus-within {
-    outline: var(--focus-ring-width) solid var(--color-error);
-    outline-offset: var(--focus-ring-offset);
-  }
-
-  .search-bar__field
-    :global(.typed-field:not(.search-editor-container--error)) {
-    border-color: transparent;
-  }
-
   .search-bar__query .search-bar__field :global(.typed-field) {
+    border: 0;
+    height: 2rem;
+    min-height: 2rem;
+    padding-block: 0;
     padding-left: 0.5rem;
   }
 

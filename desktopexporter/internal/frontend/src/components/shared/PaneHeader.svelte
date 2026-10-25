@@ -31,7 +31,7 @@
    *   right-aligned via the bar's own flex layout.
    *
    * Consumer contract
-   *   The header is bg-base-200. Selection is drawn inside each tab without
+   *   The header is Hyoshi (bg-base-200). Selection is drawn inside each tab without
    *   manufacturing borders around or between the header and pane body.
    */
   import type { Snippet } from 'svelte'

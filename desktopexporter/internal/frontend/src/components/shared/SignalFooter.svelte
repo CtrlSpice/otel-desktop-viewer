@@ -76,7 +76,7 @@
 
   /* Share the drawer footer's height and inset for a continuous bottom strip. */
   .signal-footer {
-    @apply grid shrink-0 items-center gap-2 bg-base-100 px-4 py-1.5;
+    @apply grid shrink-0 items-center gap-2 bg-base-200 px-4 py-1.5;
     grid-template-columns: 1fr auto 1fr;
     min-height: var(--app-footer-height);
   }

@@ -221,7 +221,8 @@
   Swatch glyphs choose between the active theme's light/dark foregrounds using
   linear-sRGB contrast ratios, recalculating on theme changes.
   Tooltips use the seasonal Panel surface with regular-weight neutral Text.
-  Dropdowns and popovers share that opaque Panel surface, rounded corners,
+  Dropdowns, popovers and query-help dialogs share that opaque Panel surface, a
+  1px Nijimi 0 boundary (`--color-border`), rounded corners,
   regular text and the approved soft --popover-shadow through app.css. Do not add per-picker shadows, translucent
   backgrounds, blur or per-picker surface colours. Keep CodeMirror completion
   menus in the shared stylesheet rather than injecting CSS at runtime.
@@ -338,13 +339,22 @@
   escape accents are display decorations over the intact document; decoded
   Properties values use neutral Text. Code surfaces use bg-base-100: Madoromi's
   Kami background in both Day and Night. Apply this to JSON, shell examples,
-  code snippets and compact JSON. Search and filter inputs, including editor
-  Find fields, use the darker Chitsu fill without decorative borders.
+  code snippets and compact JSON. Search and filter inputs, selects, grouped
+  date/time fields and editor Find fields use Hyoshi through `--color-input`
+  and a 1px Nijimi 0 boundary through `--color-border`, following the pinned
+  upstream editor ports. Focus uses Primary and validation uses Error.
   Use Atkinson Hyperlegible Next for search/filter text and placeholders,
   including query entry and editor Find fields. Preserve transparent query
-  editors inside the shared search bar.
-  Inputs, pane and section headers, code panels, popovers and outer pane surfaces
-  have no decorative borders. Preserve keyboard focus rings, chart axes, tree
+  editors inside the shared search bar. Composite fields have one outer boundary
+  and one focus ring, without inner editor borders or duplicate outlines.
+  List and Details bodies, pane/section headers and pagination strips use Hyoshi.
+  Outer navigation and code toolbars use Chitsu. Main workspace and code use Kami.
+  Keep Subtle-labelled headers on Hyoshi: Autumn Day's native Usuzumi 1 falls
+  just below 4.5:1 on Chitsu.
+  Pane and section headers, flat code panels and outer pane surfaces
+  have no decorative borders. Cards use shared highlights without hover shadows.
+  Meaningful dividers use Nijimi 0. Unchecked checkboxes use Nijimi 1 outlines;
+  checked controls use Primary. Preserve keyboard focus rings, chart axes, tree
   connectors, meaningful dividers, checkbox outlines and the file-drop affordance.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.

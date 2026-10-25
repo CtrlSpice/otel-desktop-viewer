@@ -1151,7 +1151,7 @@
         <table
           class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
         >
-          <thead class="header-surface waterfall-view__thead">
+          <thead class="waterfall-view__thead">
             <WaterfallTimeAxisHeader
               traceDurationNs={bounds.duration}
               {targetTickCount}
@@ -1249,16 +1249,12 @@
     @apply relative flex min-h-0 flex-1 flex-col;
   }
 
-  /* Local override on top of `.header-surface`: drop the warm
-     primary-tinted fill so the thead inherits the panel's
-     bg-base-100, and remove the inset top highlight + primary-mix
-     bottom border that were tuned for a brighter body. Let the header
-     grow with its labels so provenance never overlaps the first span. */
+  /* Column labels remain on the data canvas and can grow with provenance. */
   .waterfall-view__thead {
+    box-sizing: border-box;
+    min-height: var(--table-header-h);
     height: auto;
     background-color: transparent;
-    box-shadow: none;
-    border-bottom: 0;
     border-radius: 0;
   }
 

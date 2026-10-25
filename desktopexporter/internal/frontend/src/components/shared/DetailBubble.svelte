@@ -187,7 +187,7 @@
     </section>
   {:else}
     <details
-      class="collapse detail-bubble__disclosure min-h-0 overflow-y-auto bg-base-100"
+      class="collapse detail-bubble__disclosure min-h-0 overflow-y-auto bg-base-200"
       class:detail-bubble__disclosure--contained={contained}
       bind:this={disclosure}
       style:scroll-padding-block-start={headingHeight

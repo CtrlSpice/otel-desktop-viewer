@@ -15,7 +15,7 @@
 </script>
 
 <select
-  class="select select-ghost select-xs w-auto border-0 bg-transparent text-sm font-normal text-subtle"
+  class="select select-xs w-auto text-sm font-normal text-subtle"
   aria-label={label}
   {value}
   {disabled}

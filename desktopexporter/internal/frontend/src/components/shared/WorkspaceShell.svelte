@@ -248,7 +248,7 @@
 
   /* Keep the footer surface continuous across custom page content. */
   .page-layout__footer {
-    @apply shrink-0 min-w-0 bg-base-100;
+    @apply shrink-0 min-w-0 bg-base-200;
   }
 
   .page-layout__main-chrome {

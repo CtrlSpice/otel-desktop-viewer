@@ -68,14 +68,10 @@ export const jsonEditorExtensions = [
       color: 'var(--color-subtle)',
     },
     '.cm-panels': {
-      backgroundColor: 'var(--color-base-100)',
+      backgroundColor: 'var(--color-base-300)',
       color: 'var(--color-base-content)',
     },
     '.cm-textfield': {
-      fontFamily: 'var(--font-sans)',
-      backgroundColor: 'var(--color-input)',
-      border: 'none',
-      color: 'var(--color-base-content)',
       caretColor: c.cursor,
     },
     '.cm-searchMatch': { backgroundColor: c.searchMatch },

@@ -46,7 +46,8 @@
   @reference "../../../app.css";
 
   .filter-input {
-    @apply h-8 min-w-0 w-full rounded-full border-0 pl-9 pr-3.5 py-0 font-sans text-sm text-base-content;
+    @apply h-8 min-w-0 w-full rounded-full pl-9 pr-3.5 py-0 font-sans text-sm text-base-content;
+    border: 1px solid var(--color-border);
     background-color: var(--color-input);
   }
 

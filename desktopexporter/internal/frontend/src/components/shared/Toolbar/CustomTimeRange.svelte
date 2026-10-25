@@ -591,14 +591,20 @@
 
   .range-editor-row {
     @apply grid grid-cols-[max-content_minmax(0,1fr)_auto] items-center gap-x-2;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-field);
+    background-color: var(--color-input);
+    margin-block: 0.25rem;
   }
 
   .range-editor-row:has(input:focus) {
-    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
   }
 
-  .range-editor-row:has(input.input-error:focus) {
-    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--color-error);
+  .range-editor-row:has(input.input-error) {
+    border-color: var(--color-error);
+    outline-color: var(--color-error);
   }
 
   .endpoint-label {
@@ -610,7 +616,11 @@
     @apply min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 text-left font-sans text-sm tabular-nums shadow-none outline-none;
     field-sizing: content;
     height: calc(var(--table-row-h) + 0.5rem);
-    line-height: calc(var(--table-row-h) + 0.5rem);
+    line-height: var(--text-base--line-height);
+  }
+
+  .endpoint-input:focus-visible {
+    outline: none;
   }
 
   .endpoint-input::placeholder {

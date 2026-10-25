@@ -113,27 +113,50 @@ in both Day and Night:
 | Panel / bg-200         | Hyoshi          | Hyoshi          |
 | Chrome / bg-300        | Chitsu, darkest | Chitsu, darkest |
 
-Search and filter inputs use the darker Chitsu for their fill through
-`--color-input`, without decorative borders. This includes
-query entry, picker filters and editor Find fields. Query editors inside the
-shared search bar remain transparent so the input surface stays continuous.
-Pane and section headers, code panels, popovers and outer pane surfaces are
-borderless too. Keyboard focus rings, chart axes, tree connectors, meaningful
-dividers, checkbox outlines and the file-drop affordance remain intact.
+The workspace and code use Kami; List and Details bodies, pane/section headings
+and pagination strips use Hyoshi. Outer navigation and code toolbars use Chitsu.
+The upstream VS Code port also places sidebar section headings on Hyoshi. This
+keeps the viewer's original Subtle labels readable: Autumn Day's native Usuzumi 1
+falls just below 4.5:1 on Chitsu. Data-column headings stay on the data canvas.
+
+Search, filters, selects, date/time groups and editor Find fields use Hyoshi
+through `--color-input`, with a 1px Nijimi 0 boundary (`--color-border`). The
+pinned [VS Code port](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/src/ports/vscode.ts)
+explicitly assigns these input roles; the
+[Zed port](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/src/ports/zed.ts)
+also uses Hyoshi surfaces and Nijimi 0 boundaries. Focus uses the selected
+ink's Primary; validation uses Error. Composite fields have one outer boundary
+and one focus ring, with transparent, borderless inner editors. Text and carets
+use the working line-height, not the full control height.
+
+Borders mark an editable control, floating surface or meaningful divider; they
+do not enclose every visual group. Pane bodies, headers and ordinary signal
+cards stay borderless. Code is flat unless it is part of an explicitly joined
+terminal, which has one enclosing boundary. Unchecked checkbox outlines use
+Nijimi 1; checked controls use Primary. Cards use shared hover/selection fills
+without acquiring shadows. Chart axes, tree connectors, keyboard focus rings
+and the dashed file-drop affordance retain their distinct meanings.
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
 nijimi 1. Hover takes precedence over selection while the pointer is present.
 Ghost buttons use the same hover and active/selected surfaces. Tooltips use
 Panel with regular-weight neutral Text. Dropdowns, colour pickers, filter
-popovers and search completions share the same opaque Panel surface, rounded
-corners and soft `--popover-shadow` in `app.css`, without translucent fills or blur.
+popovers, query-help dialogs and search completions share the same opaque Panel
+surface, Nijimi 0 boundary, rounded corners and soft `--popover-shadow` in
+`app.css`, without translucent fills or blur.
 Picker-specific styles control layout rather than adding another surface theme.
 CodeMirror's portaled completion menu uses the shared stylesheet too; the editor
 does not inject a separate dropdown stylesheet at runtime. Timeline activity markers retain their
 assigned ink or Error colour without brightening. Swatch glyphs choose the
 higher-contrast seasonal light/dark foreground using linear-sRGB luminance,
 recalculating when the theme changes.
+
+These are viewer mappings of upstream roles, not a claim that the guide specifies
+every component's geometry. The viewer retains its approved 20% paper chroma,
+regular Atkinson typography, readable Subtle placeholders and neutral telemetry
+values. Existing selection opacity, fixed status colours and per-ink categorical
+assignments remain the viewer's documented adaptations.
 
 List filters use `ListFilter.svelte`: a header icon reveals and focuses the shared
 32px filter field. The icon marks a nonempty query even while collapsed. Escape

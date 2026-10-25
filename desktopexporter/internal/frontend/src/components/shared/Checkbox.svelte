@@ -57,7 +57,8 @@
   .selection-checkbox__circle {
     display: grid;
     place-items: center;
-    border: 1px solid currentColor;
+    border: 1px solid var(--color-highlight-high);
+    background: var(--color-input);
     border-radius: 50%;
     box-shadow: none;
     pointer-events: none;
@@ -65,6 +66,15 @@
   .selection-checkbox:has(input:focus-visible) {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+  }
+  .selection-checkbox:has(
+      input:checked:not(:disabled),
+      input:indeterminate:not(:disabled)
+    )
+    .selection-checkbox__circle {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: var(--color-primary-content);
   }
   .selection-checkbox--disabled {
     color: var(--color-muted);

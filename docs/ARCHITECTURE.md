@@ -432,6 +432,13 @@ The left pane uses a compact welcome and import target, with aligned guide edges
 Without saved section sizing, the guide has the largest default weight and each
 utility section opens with a compact initial share. Closed headers stay compact;
 saved resizing takes precedence.
+
+Shared UI surfaces follow Madoromi's paper roles: Kami for the workspace and
+code, Hyoshi for List/Details bodies, labelled headings, pagination and input
+fields, and Chitsu for outer navigation and code toolbars. Inputs and floating menus have quiet Nijimi
+boundaries; composite search/date fields have one outer boundary and focus ring.
+Cards use flat hover/selection fills, without hover shadows. See the frontend's
+[theme mappings and upstream sources](../desktopexporter/internal/frontend/src/themes/README.md#surfaces-and-readable-text).
 Issue links reveal the left pane and section.
 
 Each service appears once as a three-row card: identity and errors, signal counts

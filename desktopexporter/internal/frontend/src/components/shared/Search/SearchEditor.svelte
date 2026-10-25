@@ -560,7 +560,7 @@
 <!-- Help dialog: rendered OUTSIDE .search-editor-container to avoid clipping -->
 <dialog
   bind:this={helpDialogElement}
-  class="help-dialog"
+  class="help-dialog popover-surface"
   closedby="any"
   tabindex="-1"
 >
@@ -785,9 +785,9 @@
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
-    height: var(--table-row-h);
-    min-height: var(--table-row-h);
-    max-height: var(--table-row-h);
+    height: var(--search-editor-row-height, var(--table-row-h));
+    min-height: var(--search-editor-row-height, var(--table-row-h));
+    max-height: var(--search-editor-row-height, var(--table-row-h));
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
@@ -798,12 +798,15 @@
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
     padding-block: calc(
-      (var(--table-row-h) - var(--text-base) * var(--text-base--line-height)) /
+      (
+          var(--search-editor-row-height, var(--table-row-h)) -
+            var(--text-base) * var(--text-base--line-height)
+        ) /
         2
     );
     padding-left: 0;
     padding-right: 0.5rem;
-    min-height: var(--table-row-h);
+    min-height: var(--search-editor-row-height, var(--table-row-h));
     line-height: var(--text-base--line-height);
     white-space: nowrap;
   }
@@ -811,7 +814,7 @@
   .search-editor-wrapper--drawer .search-editor__footer-actions {
     @apply static ml-auto flex shrink-0 items-center gap-2;
     inset: auto;
-    height: var(--table-row-h);
+    height: var(--search-editor-row-height, var(--table-row-h));
     align-self: center;
   }
 
@@ -896,7 +899,7 @@
     max-height: min(85vh, calc(100vh - 2rem));
     overflow: hidden;
 
-    @apply rounded-lg border-0 bg-base-100 p-0 text-base-content shadow-xl;
+    padding: 0;
     overscroll-behavior: contain;
   }
 
@@ -907,11 +910,10 @@
 
   .help-dialog::backdrop {
     background-color: rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(6px);
   }
 
   .help-dialog-header {
-    @apply flex shrink-0 items-center justify-between gap-3 border-b border-base-300 px-4 py-3;
+    @apply flex shrink-0 items-center justify-between gap-3 bg-base-300 px-4 py-3;
   }
 
   .help-dialog-title {

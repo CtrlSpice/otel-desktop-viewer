@@ -683,7 +683,7 @@
   }
 
   .signal-drawer__panel {
-    @apply relative bg-base-100;
+    @apply relative bg-base-200;
     max-width: calc(100vw - var(--layout-gap));
     transition: width var(--panel-motion-duration) var(--panel-motion-easing);
   }
@@ -770,7 +770,7 @@
 
   /* Align with the page footer, including its compact padding. */
   .signal-drawer__footer {
-    @apply flex shrink-0 items-center gap-2 bg-base-100 px-4 py-1;
+    @apply flex shrink-0 items-center gap-2 bg-base-200 px-4 py-1;
     min-height: var(--app-footer-height);
   }
 </style>

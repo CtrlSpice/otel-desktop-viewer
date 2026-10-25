@@ -28,8 +28,8 @@
 </script>
 
 <header
-  class="relative z-30 shrink-0 bg-base-100 text-sm"
-  style="--pane-header-bg: var(--color-base-100)"
+  class="relative z-30 shrink-0 bg-base-300 text-sm"
+  style="--pane-header-bg: var(--color-base-300)"
   aria-label="Workspace navigation and search"
 >
   <PaneHeader mode="toolbar" rounded={false} ariaLabel="Workspace controls">
