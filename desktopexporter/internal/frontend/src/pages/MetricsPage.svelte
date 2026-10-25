@@ -287,6 +287,8 @@
   let seriesDatapointsKey = ''
   let seriesDatapointsScopeKey = ''
   let inspectedSeriesSnapshot: string | null = null
+  let seriesRetry = $state(0)
+  let seriesRetrySnapshot = 0
   let seriesDatapointsMetricID = $derived.by(() => {
     const summaryID = selectedSummary?.metricRef
     return summaryID && selectedMetric?.metricRef === summaryID
@@ -489,6 +491,8 @@
   $effect(() => {
     const metricRef = seriesDatapointsMetricID
     const selectedSeries = metricCtx.selectedSeriesKey
+    const retryChanged = seriesRetry !== seriesRetrySnapshot
+    seriesRetrySnapshot = seriesRetry
     const selection = timeContext.selection
     const timezone = timeContext.tz
     // Presets keep their duration here; requests resolve their moving bounds.
@@ -505,7 +509,7 @@
     const selectionChanged = selectedSeries !== inspectedSeriesSnapshot
     inspectedSeriesSnapshot = selectedSeries
     if (!metricRef || !selectedSeries) return
-    if (!scopeChanged && !selectionChanged) return
+    if (!scopeChanged && !selectionChanged && !retryChanged) return
 
     const now = Date.now()
     const { startTime, endTime } = selectionToQueryRangeNs(selection, now)
@@ -1042,6 +1046,7 @@
 
   {#snippet detail()}
     <MetricDetailView
+      retryDatapoints={() => seriesRetry++}
       datapointsError={metricCtx.selectedSeriesKey
         ? seriesDatapointErrors.get(metricCtx.selectedSeriesKey)
         : undefined}

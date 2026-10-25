@@ -365,8 +365,9 @@ retain their editor while unchecked; editing them does not change chart visibili
 The sortable Series table uses an exact minimum set of attribute columns that distinguishes
 all series in the metric, including hidden series. Equivalent choices favour
 shorter labels, with deterministic key ordering. Full attributes remain on hover
-and in the expanded fields. Selected labels wrap in narrow panes instead of
-truncating the distinguishing values. Missing values, received types and duplicate keys
+and in the expanded fields. Ordinary labels wrap in narrow panes; single string
+values in `id`/`uuid` fields use the shared one-line, middle-truncated Identifier
+with the full value on hover and for accessibility. Missing values, received types and duplicate keys
 remain distinct. If attributes alone cannot distinguish rows, the heading adds
 the native series identifier; this never changes grouping or colour ownership.
 Sorting cycles ascending, descending and received order without changing visibility
@@ -376,7 +377,7 @@ Metric Details has separate Metric, Series and Datapoints sections. Selecting a
 series loads its received datapoints in Datapoints; changing series clears the
 selected datapoint. The left caret reveals series attributes independently, and
 the rightmost Show checkbox controls chart visibility. The editable colour dot
-sits directly before the first distinguishing value. Inspection, including URL
+has its own narrow column directly before the first distinguishing value. Inspection, including URL
 restoration, does not change saved visibility or colours.
 
 Selecting a datapoint reveals its fields and its existing chart highlight or

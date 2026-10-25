@@ -31,7 +31,10 @@
   import { readOTLPText } from '@/services/export-service'
 
   const ctx = getMetricViewContext()
-  let { datapointsError }: { datapointsError?: string } = $props()
+  let {
+    datapointsError,
+    retryDatapoints,
+  }: { datapointsError?: string; retryDatapoints?: () => void } = $props()
   const selectedSeries = $derived(
     ctx.metric?.timeseries.find(
       series => series.seriesRef === ctx.selectedSeriesKey
@@ -92,7 +95,7 @@
     disabled={!selectedSeries}
     count={selectedSeries?.datapointCount}
   >
-    <DatapointsPanel error={datapointsError} />
+    <DatapointsPanel error={datapointsError} onretry={retryDatapoints} />
   </DetailBubble>
 {/snippet}
 {#snippet metricSection()}

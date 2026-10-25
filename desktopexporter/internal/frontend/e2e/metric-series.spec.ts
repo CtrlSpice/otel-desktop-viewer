@@ -169,6 +169,78 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('series IDs stay on one line beside a separate compact colour column', async ({
+  page,
+}) => {
+  const ids = [
+    '888d17a7-2d32-4945-bc9c-2f4bd2aab16f',
+    '47801e24-eb28-4964-b691-79ca4638f84e',
+  ]
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON()
+    if (request.method !== 'getMetricView') return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          ...metric,
+          timeseries: timeseries.map((series, index) => ({
+            ...series,
+            attributes: [
+              {
+                key: 'session.id',
+                value: { kind: 'string', value: ids[index] },
+              },
+            ],
+          })),
+        },
+      },
+    })
+  })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const row = page.locator('.ts-row[data-series-key]').first()
+  const identifier = row.locator('.ts-row__attrs .identifier')
+  await expect(identifier).toHaveAttribute('title', ids[0]!)
+  await expect(identifier.locator('[aria-hidden="true"]')).toHaveText(
+    '888d17a7…d2aab16f'
+  )
+  await expect(identifier).toHaveCSS('white-space', 'nowrap')
+  const spacing = await row.evaluate(row => {
+    const picker = row.querySelector('.series-colour-edit')!
+    const dot = picker.querySelector('.rounded-full')!
+    const identifier = row.querySelector('.identifier')!
+    return {
+      separate: picker.closest('td') !== identifier.closest('td'),
+      gap:
+        identifier.getBoundingClientRect().left -
+        dot.getBoundingClientRect().right,
+    }
+  })
+  expect(spacing.separate).toBe(true)
+  expect(spacing.gap).toBeGreaterThanOrEqual(8)
+  expect(spacing.gap).toBeLessThanOrEqual(16)
+  await row
+    .getByRole('button', { name: `Select session.id: ${ids[0]}` })
+    .click()
+  await expect(
+    page
+      .getByRole('region', { name: 'Selected series datapoints' })
+      .locator('tr[data-dp-id]')
+  ).toHaveCount(25)
+  await row
+    .getByRole('button', {
+      name: `Expand attributes for session.id: ${ids[0]}`,
+    })
+    .click()
+  await expect(
+    page.locator(
+      '[data-series-attributes="first"] [data-field="session.id"] .detail-property__body'
+    )
+  ).toHaveText(ids[0]!)
+})
+
 async function expectRoundedAxes(page: Page, colour: string) {
   const axes = page.locator('.metric-axes')
   await expect(axes).toHaveCount(1)
@@ -467,7 +539,8 @@ test('series colour picker overrides persist independently of visibility and dis
     'title',
     /session.id: long-session-identifier-first/
   )
-  const wasOpen = await disclosure.evaluate(element =>
+  const attributeDisclosure = disclosure.locator('.ts-row__caret')
+  const wasOpen = await attributeDisclosure.evaluate(element =>
     element.getAttribute('aria-expanded')
   )
   const title = (await disclosure.locator('.ts-row__attrs').boundingBox())!
@@ -487,7 +560,8 @@ test('series colour picker overrides persist independently of visibility and dis
   await expect(first).not.toHaveCSS('stroke', original)
   await page.keyboard.press('Escape')
   await expect(picker).toBeFocused()
-  expect(await disclosure.getAttribute('aria-expanded')).toBe(wasOpen)
+  expect(await attributeDisclosure.getAttribute('aria-expanded')).toBe(wasOpen)
+  await expect(disclosure).toHaveAttribute('aria-selected', 'false')
   const visible = page.getByRole('checkbox', {
     name: 'Show route: /first in chart',
     exact: true,
@@ -508,7 +582,7 @@ test('series colour picker overrides persist independently of visibility and dis
   )
   await expect(visible).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(visible).toBeChecked()
-  expect(await disclosure.getAttribute('aria-expanded')).toBe(wasOpen)
+  expect(await attributeDisclosure.getAttribute('aria-expanded')).toBe(wasOpen)
   await page.keyboard.press('Escape')
   await visible.uncheck()
   await expect(picker).toBeVisible()

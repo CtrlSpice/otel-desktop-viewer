@@ -3,7 +3,7 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import SeriesDatapointList from './SeriesDatapointList.svelte'
 
-  let { error }: { error?: string } = $props()
+  let { error, onretry }: { error?: string; onretry?: () => void } = $props()
   const ctx = getMetricViewContext()
   let panel: HTMLDivElement
   const series = $derived(
@@ -34,6 +34,11 @@
   {#if series}
     {#if error}
       <p role="alert" class="px-3 py-2 text-sm text-papaya">{error}</p>
+      {#if onretry}<button
+          type="button"
+          class="btn btn-ghost mx-3"
+          onclick={onretry}>Retry datapoints</button
+        >{/if}
     {:else if datapoints === undefined}
       <p role="status" class="px-3 py-2 text-sm text-subtle">
         Loading datapoints…

@@ -205,6 +205,21 @@ it('keeps collapsed series attributes separate from selection and datapoints', a
       .querySelector('[data-field="route"]')
   ).toBeNull()
   expect(series.querySelectorAll('table')).toHaveLength(1)
+  await view.rerender({
+    componentProps: { metric: { ...metric }, showDetail: true },
+  })
+  expect(
+    view.container.querySelector('[data-series-attributes="route=/a"]')
+  ).not.toBeNull()
+  await view.rerender({
+    componentProps: {
+      metric: { ...metric, metricRef: 'different-metric' },
+      showDetail: true,
+    },
+  })
+  expect(
+    view.container.querySelector('[data-series-attributes="route=/a"]')
+  ).toBeNull()
 })
 
 const EMPTY_RESOURCE: ResourceData = {

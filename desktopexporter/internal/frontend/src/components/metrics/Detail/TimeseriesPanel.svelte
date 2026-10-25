@@ -16,11 +16,15 @@
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import { selectableTableRow } from '@/components/shared/utils/selectable-table-row'
-  import { compareSeriesCells } from '@/components/metrics/utils/minimal-series-labels'
+  import {
+    compareSeriesCells,
+    type SeriesCell,
+  } from '@/components/metrics/utils/minimal-series-labels'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
 
   const ctx = getMetricViewContext()
+  const metricRef = $derived(ctx.metric?.metricRef)
   const id = $props.id()
   const expandedAttributes = new SvelteSet<string>()
   let hoveredSeriesKey = $state<string | null>(null)
@@ -28,7 +32,7 @@
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
 
   $effect.pre(() => {
-    void ctx.metric?.metricRef
+    void metricRef
     hoveredSeriesKey = null
     focusedSeriesKey = null
     sort = null
@@ -74,10 +78,17 @@
   )
   const columns = $derived([
     { id: 'controls', label: 'Attributes', min: 32, width: 32, fixed: true },
+    ...(!ctx.isHistogramKind
+      ? [{ id: 'colour', label: 'Colour', min: 32, width: 32, fixed: true }]
+      : []),
     ...table.columns.map(column => ({
       id: `attr:${column.key}`,
       label: column.key,
-      min: 112,
+      min: [...column.cells.values()].some(
+        cell => identifierValue(column.key, cell) !== undefined
+      )
+        ? 160
+        : 112,
       width: 176,
     })),
     ...(identityColumn
@@ -117,7 +128,22 @@
       'default series'
     )
   }
+  function identifierValue(key: string, cell: SeriesCell): string | undefined {
+    const value = cell.values[0]
+    return cell.values.length === 1 &&
+      value?.kind === 'string' &&
+      /(?:^|[._])(?:id|uuid)$/i.test(key)
+      ? value.value
+      : undefined
+  }
 </script>
+
+{#snippet cellContent(key: string, cell: SeriesCell)}
+  {@const identifier = identifierValue(key, cell)}
+  {#if identifier !== undefined}<Identifier
+      value={identifier}
+    />{:else}{cell.label}{/if}
+{/snippet}
 
 {#snippet colour(key: string, label: string)}
   {@const color = ctx.savedTimeseriesColorByKey.get(key)}
@@ -136,7 +162,7 @@
     {columns}
     caption="Metric series"
     storageKey="metric-series-table:widths"
-    pinnedCount={2}
+    pinnedCount={ctx.isHistogramKind ? 2 : 3}
     selectable
   >
     {#snippet header(layout)}
@@ -148,10 +174,19 @@
           style:left="{layout.pinned.controls}px"
           ><span class="sr-only">Attributes</span></th
         >
+        {#if !ctx.isHistogramKind}<th
+            scope="col"
+            class="table-cell ts-row__colour"
+            class:table-cell--pinned={layout.pinned.colour !== undefined}
+            style:left="{layout.pinned.colour}px"
+            ><span class="sr-only">Colour</span></th
+          >{/if}
         {#each table.columns as column (column.key)}
           <th
             scope="col"
             class="table-cell"
+            class:ts-row__first-value={!ctx.isHistogramKind &&
+              column === table.columns[0]}
             class:table-cell--pinned={layout.pinned[`attr:${column.key}`] !==
               undefined}
             style:left="{layout.pinned[`attr:${column.key}`]}px"
@@ -175,7 +210,11 @@
             </div>
           </th>
         {/each}
-        {#if identityColumn}<th scope="col">Series identity</th>{/if}
+        {#if identityColumn}<th
+            scope="col"
+            class:ts-row__first-value={!ctx.isHistogramKind &&
+              table.columns.length === 0}>Series identity</th
+          >{/if}
         {#if previewColumn}<th scope="col">Preview</th>{/if}
         <th scope="col" class="text-right">Show</th>
       </tr>
@@ -231,45 +270,52 @@
               </button>
             </div>
           </td>
+          {#if !ctx.isHistogramKind}<td
+              class="table-cell ts-row__colour"
+              class:table-cell--pinned={layout.pinned.colour !== undefined}
+              style:left="{layout.pinned.colour}px"
+              >{@render colour(ts.key, headerLabel)}</td
+            >{/if}
           {#each table.columns as column (column.key)}
             <td
               class="table-cell ts-row__attrs"
+              class:ts-row__first-value={!ctx.isHistogramKind &&
+                column === table.columns[0]}
               class:table-cell--pinned={layout.pinned[`attr:${column.key}`] !==
                 undefined}
               style:left="{layout.pinned[`attr:${column.key}`]}px"
               title={attrsTooltip(ts.attributes)}
-              >{#if column === table.columns[0]}<div
-                  class="flex min-w-0 items-center"
+              >{#if column === table.columns[0]}<button
+                  type="button"
+                  class="block max-w-full text-left"
+                  aria-label={`Select ${headerLabel}`}
+                  onclick={() => ctx.selectSeries(ts.key)}
+                  >{@render cellContent(
+                    column.key,
+                    column.cells.get(ts.key)!
+                  )}</button
                 >
-                  {@render colour(ts.key, headerLabel)}<button
-                    type="button"
-                    class="min-w-0 text-left"
-                    aria-label={`Select ${headerLabel}`}
-                    onclick={() => ctx.selectSeries(ts.key)}
-                    >{column.cells.get(ts.key)!.label}</button
-                  >
-                </div>{:else}{column.cells.get(ts.key)!.label}{/if}</td
+              {:else}{@render cellContent(
+                  column.key,
+                  column.cells.get(ts.key)!
+                )}{/if}</td
             >
           {/each}
           {#if identityColumn}<td
               class="table-cell"
+              class:ts-row__first-value={!ctx.isHistogramKind &&
+                table.columns.length === 0}
               title={attrsTooltip(ts.attributes)}
             >
-              <div class="flex min-w-0 items-center">
-                {#if table.columns.length === 0}{@render colour(
-                    ts.key,
-                    headerLabel
-                  )}{/if}
-                <button
-                  type="button"
-                  class="max-w-full text-left"
-                  aria-label={`Select ${headerLabel}`}
-                  onclick={() => ctx.selectSeries(ts.key)}
-                  >{#if label.needsIdentity}<Identifier
-                      value={ts.key}
-                    />{:else}{label.text}{/if}</button
-                >
-              </div>
+              <button
+                type="button"
+                class="max-w-full text-left"
+                aria-label={`Select ${headerLabel}`}
+                onclick={() => ctx.selectSeries(ts.key)}
+                >{#if label.needsIdentity}<Identifier
+                    value={ts.key}
+                  />{:else}{label.text}{/if}</button
+              >
             </td>{/if}
           {#if previewColumn}<td
               ><span class="ts-row__sparkline">
@@ -337,6 +383,12 @@
   .ts-row__attrs {
     @apply text-sm;
     overflow-wrap: anywhere;
+  }
+  .ts-row__colour {
+    padding-inline: 0;
+  }
+  .ts-row__first-value {
+    padding-inline-start: 0;
   }
   .ts-row__sparkline {
     @apply block w-24;

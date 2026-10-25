@@ -479,6 +479,35 @@ describe('MetricsPage raw series fetching', () => {
     })
   }
 
+  it('retries a failed raw request without changing series or visibility', async () => {
+    prepareRawSeriesTest()
+    let rawRequest = 0
+    getMetricView.mockImplementation((...args: unknown[]) => {
+      if (args[3] !== 0) return Promise.resolve(makeMetric('Sum', [reduced]))
+      return ++rawRequest === 1
+        ? Promise.reject(new Error('temporary failure'))
+        : Promise.resolve(makeMetric('Sum', [reduced]))
+    })
+    setTestUrl('/metrics/metric-1?start=100&end=200&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await screen.findByText('Could not load datapoints.')
+    const selection = window.location.search
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Show default series in chart',
+    })
+    expect(checkbox).toBeChecked()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Retry datapoints' })
+    )
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    )
+    expect(rawSeriesCalls()).toHaveLength(2)
+    expect(window.location.search).toBe(selection)
+    expect(checkbox).toBeChecked()
+    expect(screen.queryByText('Could not load datapoints.')).toBeNull()
+  })
+
   it('anchors a preset window when the series request is triggered', async () => {
     const initialNow = 1_700_000_000_000
     const requestNow = initialNow + 5 * 60_000
