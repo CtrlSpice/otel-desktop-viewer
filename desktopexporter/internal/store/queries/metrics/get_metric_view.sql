@@ -4,8 +4,7 @@
 				list_extract(?::ubigint[], 1) as time_start,
 				list_extract(?::ubigint[], 1) as time_end,
 				?::bigint as target_buckets,
-				-- NULL means all series; [] means none. Bind as text because the
-				-- driver corrupts bound []duckdb.UUID values.
+				-- NULL means all series; [] means none. API IDs arrive as text.
 				?::varchar[] as series_ids,
 				-- Histogram quantiles; [] skips quantile computation.
 				?::double[] as quantiles,
@@ -970,7 +969,9 @@
 			group by p.bucket_start
 		),
 		-- Fold buckets below the merged zero threshold into zero_count.
-		agg_folds as (
+		-- Materialize folded vectors before repeated JSON macro expansion to
+		-- bound DuckDB 2's correlated-subquery planning work.
+		agg_folds as materialized (
 			select m.*,
 				zero_fold(m.positive_bucket_counts, m.positive_bucket_offset,
 					m.zero_threshold, m.scale) as pos_fold,
@@ -1055,7 +1056,8 @@
 			join agg_folds a using (bucket_start)
 			where a.distinct_bounds <= 1
 		),
-		contribution_folded as (
+		-- The contribution projection repeats the same folded vectors too.
+		contribution_folded as materialized (
 			select p.*,
 				zero_fold(p.contribution_pos.counts, p.contribution_pos.offset,
 					p.aggregate_zero_threshold, p.aggregate_scale) as final_pos,

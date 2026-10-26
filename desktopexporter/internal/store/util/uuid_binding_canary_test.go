@@ -10,10 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// UUIDList casts twice -- bind as varchar[], convert to uuid in SQL -- because
-// the driver cannot bind a uuid list directly. If this canary fails, verify the
-// driver now supports `select unnest(?::uuid[])` and remove the workaround.
-func TestDriverStillCannotBindUUIDLists(t *testing.T) {
+// API identifiers arrive as strings, which still need the varchar[] cast.
+// DuckDB 2 also fixes native UUID list binding; retain coverage of both forms.
+func TestDriverUUIDListBinding(t *testing.T) {
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
 	defer db.Close()
@@ -29,26 +28,20 @@ func TestDriverStillCannotBindUUIDLists(t *testing.T) {
 		err := db.QueryRow(`select count(*) from t where id in (select unnest(?::uuid[]))`,
 			[]string{id}).Scan(&n)
 		require.Error(t, err,
-			"driver now binds []string as uuid[]: UUIDList can drop the varchar hop")
+			"driver now binds []string as uuid[]: callers can drop the varchar hop")
 	})
 
-	t.Run("duckdb.UUID binds but matches nothing", func(t *testing.T) {
+	t.Run("native UUIDs retain their value", func(t *testing.T) {
 		u := duckdb.UUID(uuid.MustParse(id))
 		var n int
 		err := db.QueryRow(`select count(*) from t where id in (select unnest(?::uuid[]))`,
 			[]duckdb.UUID{u}).Scan(&n)
 		require.NoError(t, err, "this form has always bound without error")
-		assert.Equal(t, 0, n,
-			"driver now round-trips duckdb.UUID as a parameter correctly: "+
-				"UUIDList can bind []duckdb.UUID directly and drop both casts")
-
-		// The silent part, stated outright: the value arrives altered, which is
-		// why the failure is zero rows rather than an error.
+		assert.Equal(t, 1, n)
 		var got string
 		require.NoError(t, db.QueryRow(`select unnest(?::uuid[])::varchar`,
 			[]duckdb.UUID{u}).Scan(&got))
-		assert.NotEqual(t, id, got,
-			"duckdb.UUID now survives parameter binding intact; see above")
+		assert.Equal(t, id, got)
 	})
 
 	t.Run("the form we ship works", func(t *testing.T) {
