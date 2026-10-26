@@ -89,16 +89,16 @@
           {#if theme.scheme === 'light'}
             <HugeiconsIcon
               icon={Sun03Icon}
-              size="1em"
+              size={18}
               strokeWidth={1.5}
-              class="h-[17px] w-[17px] shrink-0"
+              class="shrink-0"
             />
           {:else}
             <HugeiconsIcon
               icon={Moon02Icon}
-              size="1em"
+              size={18}
               strokeWidth={1.5}
-              class="h-[17px] w-[17px] shrink-0"
+              class="shrink-0"
             />
           {/if}
         </span>
@@ -115,11 +115,11 @@
   }
 
   .theme-controls :global(.theme-season) {
-    @apply gap-2 rounded-l-full rounded-r-none;
+    @apply gap-2 rounded-l-full rounded-r-none pl-3 pr-2;
   }
 
   .theme-toggle {
-    @apply rounded-l-none rounded-r-full font-normal;
+    @apply w-auto gap-0 rounded-l-none rounded-r-full pl-2 pr-3 font-normal;
   }
 
   .theme-toggle__icon {

@@ -2,7 +2,6 @@
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
-    ArrowDown01Icon,
     FlowerIcon,
     Leaf02Icon,
     SnowflakeIcon,
@@ -76,12 +75,6 @@
       aria-hidden="true"
     />
     <span>{chosen.name}</span>
-    <HugeiconsIcon
-      icon={ArrowDown01Icon}
-      size={14}
-      strokeWidth={1.5}
-      aria-hidden="true"
-    />
   {/snippet}
   {#snippet children()}
     <div

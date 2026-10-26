@@ -407,7 +407,7 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(control).toHaveCSS('font-size', '14px')
       await expect(control).toHaveCSS('font-weight', '400')
     }
-    await expect(ink.locator('svg')).toHaveCount(2)
+    await expect(ink.locator('svg')).toHaveCount(1)
     await expect(ink).toHaveText(name.split(' ')[0]!)
     const geometry = await appearance.evaluate(element => {
       const buttons = [...element.children].filter(
