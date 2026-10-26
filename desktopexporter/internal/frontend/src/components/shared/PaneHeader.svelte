@@ -103,6 +103,8 @@
     metaCenter?: Snippet
     /** Optional controls after metadata and tabs, before the final actions. */
     metaRight?: Snippet
+    /** Controls before the tab strip in title-tabs mode. */
+    tabsLeading?: Snippet
   }
 
   type TitleProps = CommonProps & {
@@ -265,6 +267,7 @@
     class="header-controls pane-header__tab-group pane-header__tab-group--{layout}"
     class:pane-header__tab-group--controls={withControls}
   >
+    {#if withControls && props.tabsLeading}{@render props.tabsLeading()}{/if}
     <div
       role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}

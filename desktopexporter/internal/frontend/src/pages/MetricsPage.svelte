@@ -930,7 +930,7 @@
       {/snippet}
 
       {#snippet overlayControl()}
-        <ChartStatOverlaysToggle />
+        <ChartStatOverlaysToggle ctx={metricCtx} />
       {/snippet}
 
       {#snippet heatmapIcon()}
@@ -977,8 +977,10 @@
           tabPanelID={METRIC_CHART_PANEL_ID}
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-          {#snippet metaRight()}
+          {#snippet tabsLeading()}
             {#if showChartOverlayControls}{@render overlayControl()}{/if}
+          {/snippet}
+          {#snippet metaRight()}
             {#if selectedSummary}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />

@@ -3,9 +3,9 @@
    * Master toggle for selection stat annotations.
    * Lives in the metric header.
    */
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
 
-  const ctx = getMetricViewContext()
+  let { ctx }: { ctx: MetricViewContext } = $props()
   const overlayLabel = $derived(
     ctx.isHistogramKind ? 'Percentiles' : 'Statistics'
   )

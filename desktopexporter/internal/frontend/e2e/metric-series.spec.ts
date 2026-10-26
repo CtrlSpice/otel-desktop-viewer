@@ -3048,7 +3048,12 @@ test('series selection drives a separate datapoint section with independent attr
     const download = header
       .querySelector('[aria-label="Download metric"]')!
       .getBoundingClientRect()
+    const statistics = header
+      .querySelector('.chart-stat-overlays-toggle')!
+      .getBoundingClientRect()
     return {
+      statisticsBeforeTabs: statistics.right <= tabs.left,
+      tabsBeforeDownload: tabs.right <= download.left,
       badgesAfterTitle: badges.left >= title.right,
       badgesBeforeDownload: badges.right <= download.left,
       downloadInset: header.getBoundingClientRect().right - download.right,
@@ -3057,6 +3062,8 @@ test('series selection drives a separate datapoint section with independent attr
     }
   })
   expect(headerLayout.badgesAfterTitle).toBe(true)
+  expect(headerLayout.statisticsBeforeTabs).toBe(true)
+  expect(headerLayout.tabsBeforeDownload).toBe(true)
   expect(headerLayout.badgesBeforeDownload).toBe(true)
   expect(headerLayout.downloadInset).toBeCloseTo(16, 0)
   expect(headerLayout.tabsCenter).toBeCloseTo(headerLayout.titleCenter, 0)
