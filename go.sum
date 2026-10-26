@@ -233,8 +233,8 @@ github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza v0.163.0 h1
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza v0.163.0/go.mod h1:Dlm/JYSRRJ4GToN29UAEQhP1Pj39BRb07sraqzt+f6g=
 github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor v0.162.0 h1:RdcmY1QWdgFSDG5L4NjjQ31rMZ5u8L9bKtjJPosrmBc=
 github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor v0.162.0/go.mod h1:vENUDBE6VRsj533KDEfe0yEucCFOLFofNKOjWFh+8rg=
-github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.162.0 h1:KbtOhlwCqGgxxBm8rkIyUjAclsdeWo5okdPmkAveu2g=
-github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.162.0/go.mod h1:MzWu6+NYJFbhH36LyJK6wJTRSsXcAFrv9reaaW81Cos=
+github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.163.0 h1:GsHFptqT/bLmoDKrs6pl60m2k89K9kA+Dd4x2TjKfio=
+github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.163.0/go.mod h1:tJQvyZuRo9lXHT48D1xhAMr0z+mjR3mObxabeF7gtHI=
 github.com/outcaste-io/ristretto v0.2.3 h1:AK4zt/fJ76kjlYObOeNwh4T3asEuaCmp26pOvUOL9w0=
 github.com/outcaste-io/ristretto v0.2.3/go.mod h1:W8HywhmtlopSB1jeMg3JtdIhf+DYkLAr0VN/s4+MHac=
 github.com/pierrec/lz4/v4 v4.1.30 h1:cchX8N2DVP668WkElI9QMwVyoNabLkq1LofDHFeIrdg=
