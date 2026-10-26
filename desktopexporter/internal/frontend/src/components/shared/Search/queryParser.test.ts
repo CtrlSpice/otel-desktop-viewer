@@ -373,7 +373,7 @@ describe('explicit attribute identity', () => {
     expect(() =>
       parseQuery('same.key = 42', mixedKindFields, 'traces')
     ).toThrow(
-      'Ambiguous field: same.key. Select an explicit attribute scope and kind.'
+      'Ambiguous field: same.key. Choose a suggestion to select its scope and type.'
     )
   })
 

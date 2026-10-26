@@ -43,6 +43,7 @@
   import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
   import SearchHelpDialog from './SearchHelpDialog.svelte'
+  import { attributeTokens } from './codemirror/attribute-tokens'
   import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchEditorAPI } from './search-editor-api'
@@ -354,6 +355,7 @@
       doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
+        attributeTokens(signal),
         autocompletion({
           // Key-first runs first and wins where it applies; value-first only
           // fires on bare text at the top level, where the other has nothing to

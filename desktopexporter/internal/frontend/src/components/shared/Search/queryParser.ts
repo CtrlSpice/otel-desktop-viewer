@@ -349,7 +349,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
       fieldNode.from,
       fieldNode.to,
       fieldResolutionIsAmbiguous(fieldName, ctx.availableFields)
-        ? `Ambiguous field: ${fieldName}. Select an explicit attribute scope and kind.`
+        ? `Ambiguous field: ${fieldName}. Choose a suggestion to select its scope and type.`
         : `Unknown field: ${fieldName}`
     )
   }

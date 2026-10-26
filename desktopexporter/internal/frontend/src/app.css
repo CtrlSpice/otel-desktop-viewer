@@ -441,6 +441,28 @@ html[data-theme] .cm-tooltip {
 }
 
 /* CodeMirror menus are portaled outside .cm-editor. Keep their styles here. */
+.cm-attribute-token {
+  display: inline-flex;
+  align-items: baseline;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-field);
+  padding: 0 0.375rem;
+  font: inherit;
+  color: var(--color-base-content);
+  background: transparent;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cm-attribute-token:hover {
+  background: var(--item-hover-bg);
+}
+
+.cm-attribute-token__metadata {
+  white-space: pre;
+  color: var(--color-subtle);
+}
+
 html[data-theme] .cm-tooltip-autocomplete > ul {
   font-family: var(--font-sans);
   font-size: var(--text-base);

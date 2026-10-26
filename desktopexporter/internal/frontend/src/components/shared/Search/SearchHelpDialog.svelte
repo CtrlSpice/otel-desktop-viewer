@@ -1,6 +1,6 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { ArrowRight01Icon, Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import type { SearchSignal } from '@/search/model'
 
   let {
@@ -37,9 +37,6 @@
             },
           ]
   )
-  const attributeScope = $derived(
-    signal === 'logs' ? 'log' : signal === 'traces' ? 'span' : 'datapoint'
-  )
 </script>
 
 <dialog
@@ -67,96 +64,113 @@
     </button>
   </header>
   <div class="help-dialog__body">
-    <p>
-      Search text across fields, attributes and values, or narrow the results
-      with a query.
-    </p>
-    <dl class="help-examples">
-      <div>
-        <dt>Find text</dt>
-        <dd><pre><code>checkout</code></pre></dd>
-      </div>
-      {#each examples as example (example.label)}
-        <div>
-          <dt>{example.label}</dt>
-          <dd><pre><code>{example.query}</code></pre></dd>
-        </div>
-      {/each}
-    </dl>
-    <details class="help-reference">
-      <summary>
-        <HugeiconsIcon
-          icon={ArrowRight01Icon}
-          size={16}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-        Query reference
-      </summary>
-      <div class="help-reference__body">
-        <ul>
-          <li>
-            Join conditions with <code>and</code> or <code>or</code>.
-            <code>and</code> is evaluated first; use parentheses to group conditions.
-          </li>
-          <li>Quote values with spaces: <code>"checkout service"</code>.</li>
-          <li>
-            Mix text search and filters with <code>search("checkout")</code>.
-          </li>
-          <li>Limit results by adding <code>| limit 100</code>.</li>
-          <li>
-            Attribute suggestions include scope and received type, such as <code
-              >attr({attributeScope}, "attempts", int64)</code
-            >. This matches integers without converting other types.
-          </li>
-        </ul>
-        <table>
-          <caption class="sr-only">Query operators</caption>
-          <tbody>
-            <tr
-              ><th scope="row">Equal</th><td><code>=</code>, <code>!=</code></td
-              ></tr
-            >
-            <tr
-              ><th scope="row">Compare</th><td
-                ><code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>,
-                <code>&lt;=</code></td
-              ></tr
-            >
-            <tr
-              ><th scope="row">Text</th><td
-                ><code>contains</code>, <code>not contains</code>,
-                <code>^</code>
-                (starts with), <code>$</code> (ends with)</td
-              ></tr
-            >
-            <tr
-              ><th scope="row">Pattern</th><td
-                ><code>=~</code>, <code>!~</code>, <code>regexp</code><span
-                  >Matches the full value. Use <code>.*checkout.*</code> for a substring.</span
-                ></td
-              ></tr
-            >
-            <tr
-              ><th scope="row">List</th><td
-                ><code>in</code>, <code>not in</code><span
-                  >Use square brackets: <code>["checkout", "payments"]</code
-                  >.</span
-                ></td
-              ></tr
-            >
-            <tr
-              ><th scope="row">Missing</th><td
-                ><code>= null</code>, <code>!= null</code><span
-                  ><code>null</code> or <code>nil</code> checks absence. Quoted
-                  <code>"null"</code> matches literal text.</span
-                ></td
-              ></tr
-            >
-          </tbody>
-        </table>
-      </div>
-    </details>
+    <section class="help-reference" aria-label="Query reference">
+      <table>
+        <caption>Query reference</caption>
+        <tbody>
+          <tr
+            ><th scope="row">Find text</th><td
+              ><code>checkout</code><span
+                >Search fields, attributes and values.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Attribute</th><td
+              >Type its name and select a suggestion.<span
+                >Scope and type appear beside the name.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Equal</th><td><code>=</code>, <code>!=</code></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Compare</th><td
+              ><code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>,
+              <code>&lt;=</code></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Text</th><td
+              ><code>contains</code>, <code>not contains</code>,
+              <code>^</code>
+              (starts with), <code>$</code> (ends with)</td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Pattern</th><td
+              ><code>=~</code>, <code>!~</code>, <code>regexp</code><span
+                >Matches the full value. Use <code>.*checkout.*</code> for a substring.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">List</th><td
+              ><code>in</code>, <code>not in</code><span
+                >Use square brackets: <code>["checkout", "payments"]</code
+                >.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Missing</th><td
+              ><code>= null</code>, <code>!= null</code><span
+                ><code>null</code> or <code>nil</code> checks absence. Quoted
+                <code>"null"</code> matches literal text.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Combine</th><td
+              ><code>and</code>, <code>or</code><span
+                ><code>and</code> is evaluated first.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Group</th><td
+              ><code>( … )</code><span
+                >Parentheses set the evaluation order.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Quotes</th><td
+              ><code>"checkout service"</code><span
+                >Quote values containing spaces.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Text with filters</th><td
+              ><code>search("checkout")</code><span
+                >Combine text search with a condition using <code>and</code> or
+                <code>or</code>.</span
+              ></td
+            ></tr
+          >
+          <tr
+            ><th scope="row">Limit</th><td
+              ><code>| limit 100</code><span>Add at the end of the query.</span
+              ></td
+            ></tr
+          >
+        </tbody>
+      </table>
+    </section>
+    <section aria-label="Examples">
+      <h3>Examples</h3>
+      <dl class="help-examples">
+        {#each examples as example (example.label)}
+          <div>
+            <dt>{example.label}</dt>
+            <dd><pre><code>{example.query}</code></pre></dd>
+          </div>
+        {/each}
+      </dl>
+    </section>
   </div>
   <footer class="help-dialog__footer">
     <span><kbd>Enter</kbd> Run query</span>
@@ -216,23 +230,9 @@
   code {
     @apply font-mono text-sm text-base-content;
   }
-  .help-reference summary {
-    @apply flex cursor-pointer list-none items-center gap-2 rounded-lg py-2 text-subtle;
-  }
-  .help-reference summary::-webkit-details-marker {
-    display: none;
-  }
-  .help-reference summary:hover {
-    background: var(--item-hover-bg);
-  }
-  .help-reference[open] summary :global(svg) {
-    rotate: 90deg;
-  }
-  .help-reference__body {
-    @apply flex flex-col gap-4 pt-3;
-  }
-  .help-reference ul {
-    @apply space-y-2;
+  caption,
+  h3 {
+    @apply pb-2 text-left font-normal text-subtle;
   }
   .help-reference table {
     @apply w-full border-collapse text-left;

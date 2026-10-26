@@ -8,6 +8,7 @@ import type { FieldDefinition } from '@/search/model'
 import type { FieldValueCache } from './field-value-cache'
 import {
   attributeFieldIdentity,
+  attributeMetadata,
   createAttributeFieldReference,
   formatAttributeFieldReference,
   type AttributeField,
@@ -67,13 +68,20 @@ export function matchToQuery(
  * like there are only three.
  */
 function optionsForMatch(match: JsonAttributeMatch): Completion[] {
+  const field = createAttributeFieldReference(
+    match.attributeScope,
+    match.name,
+    match.type
+  )
+  if (!field) return []
   return match.sampleValues.map(value => ({
-    label: matchToQuery(match, value),
+    label: `${match.name} = ${JSON.stringify(sampleValueToQueryValue(value))}`,
+    apply: matchToQuery(match, value),
     type: 'text',
     detail:
       match.matchCount > match.sampleValues.length
-        ? `${match.attributeScope} · ${match.matchCount} values`
-        : match.attributeScope,
+        ? `${attributeMetadata(field)} · ${match.matchCount} values`
+        : attributeMetadata(field),
     // Sort by how specific the key is: a term matching one value of a key is a
     // stronger signal than one matching fifty.
     boost: match.matchCount === 1 ? 1 : 0,
@@ -208,7 +216,7 @@ export function createValueDiscoverySource(
       ...new Map(
         searchable
           .flatMap(optionsForMatch)
-          .map(option => [option.label, option])
+          .map(option => [option.apply, option])
       ).values(),
     ]
     const quotas: [Completion[], number][] = [

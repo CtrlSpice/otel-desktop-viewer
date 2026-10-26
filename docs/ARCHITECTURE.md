@@ -250,6 +250,14 @@ stored kind, for example:
 attr(span, "attempts", int64) > 2
 ```
 
+In the signal search editor, explicit attribute references appear as editable
+name-first tokens with scope and type metadata. Selecting a token opens the
+matching attribute choices; comparators and values remain ordinary query text.
+Autocomplete uses the same name-first presentation for attribute and value
+matches. The underlying query, clipboard text, and URL retain the exact explicit
+reference, so copying or reopening a search preserves its identity. Cursor
+navigation and deletion treat each attribute token as one unit.
+
 Attribute equality can calculate the dictionary ID before querying and use
 `list_contains(attribute_ids, ?::uuid)`. Other operators join the dictionary and
 compare the stored value.

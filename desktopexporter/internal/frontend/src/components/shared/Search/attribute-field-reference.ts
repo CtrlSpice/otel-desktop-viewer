@@ -11,6 +11,20 @@ export type AttributeField = Extract<
   { searchScope: 'attribute' }
 >
 
+export function attributeMetadata(field: AttributeField): string {
+  const scope =
+    field.attributeScope === 'scope'
+      ? 'Instrumentation scope'
+      : field.attributeScope[0].toUpperCase() + field.attributeScope.slice(1)
+  const type =
+    field.type === 'int64'
+      ? 'Integer'
+      : field.type === 'float64'
+        ? 'Float'
+        : field.type[0].toUpperCase() + field.type.slice(1)
+  return `${scope} · ${type}`
+}
+
 const SCOPES_BY_SIGNAL: Record<SearchSignal, ReadonlySet<AttributeScope>> = {
   traces: new Set(['resource', 'scope', 'span', 'event', 'link']),
   logs: new Set(['resource', 'scope', 'log']),

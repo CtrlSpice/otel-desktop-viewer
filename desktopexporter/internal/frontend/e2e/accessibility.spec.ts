@@ -2230,8 +2230,6 @@ test.describe('home page accessibility', () => {
         expect(bounds.width).toBeCloseTo(Math.min(768, width - 32), 0)
         expect(bounds.x + bounds.width / 2).toBeCloseTo(width / 2, 0)
         expect(bounds.y + bounds.height / 2).toBeCloseTo(450, 0)
-        await expect(dialog.locator('table')).not.toBeVisible()
-        await dialog.getByText('Query reference', { exact: true }).click()
         await expect(dialog.locator('table')).toBeVisible()
         expect(
           await dialog.evaluate(
