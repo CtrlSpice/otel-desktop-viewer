@@ -646,7 +646,7 @@
         verticalAnchor: 'end' as const,
       },
     },
-    yAxis: axisCount(chartPadding.left),
+    yAxis: axisCount(),
   })
 </script>
 

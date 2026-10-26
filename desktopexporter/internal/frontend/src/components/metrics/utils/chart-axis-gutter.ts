@@ -3,7 +3,7 @@ import type { Action } from 'svelte/action'
 const LABEL_GAP = 12
 const X_LABEL_GAP = 4
 
-/** Reserve room for left-aligned values and the first angled X-axis label. */
+/** Reserve room for values beside the Y-axis and the first angled X-axis label. */
 export function chartAxisGutter(
   yLabelWidth: number,
   xLabelWidth: number

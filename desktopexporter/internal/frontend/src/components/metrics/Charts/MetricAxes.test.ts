@@ -41,15 +41,20 @@ describe('MetricAxes', () => {
     expect(axisTime('UTC').format(new Date(0))).toBeTruthy()
   })
 
-  it('anchors Y-axis values at the container edge using the actual plot inset', () => {
+  it('anchors Y-axis values beside the rule and units above it', () => {
     for (const axis of [
-      axisValue('tokens', 184),
-      axisCount(184),
-      axisBucketBounds('ms', 184),
+      axisValue('tokens'),
+      axisCount(),
+      axisBucketBounds('ms'),
     ]) {
-      expect(axis.tickLabelProps).toEqual({ dx: -184, textAnchor: 'start' })
-      expect(axis.labelProps).not.toHaveProperty('x')
-      expect(axis.labelProps.textAnchor).toBe('start')
+      expect(axis.tickLabelProps).toEqual({ dx: -8, textAnchor: 'end' })
+      expect(axis.labelProps).toEqual({
+        x: 0,
+        y: 0,
+        dy: -8,
+        textAnchor: 'start',
+        verticalAnchor: 'end',
+      })
     }
   })
 })

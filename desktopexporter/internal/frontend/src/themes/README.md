@@ -285,10 +285,12 @@ ordinary values remain selectable text.
 
 ## Graph palettes
 
-Metric Y-axis tick values and horizontal unit headings start at the chart's left
-edge. The gutter is measured from rendered Y labels and angled X labels, with
-space between labels and the plot. It updates after label, font and size changes;
-fixed chart insets are only pre-measurement fallbacks.
+Metric Y-axis tick values are right-aligned 8px before the axis. Horizontal unit
+headings start above the axis, with a 32px top inset that accommodates larger text.
+The left gutter is measured from rendered Y labels and angled X labels. It updates
+after label, font and size changes; fixed left insets are only pre-measurement
+fallbacks. Metric chart headers keep the service-colour dot without repeating the
+service name beside the metric title.
 
 Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
 Copy has its own far-right column, with its tooltip opening left.

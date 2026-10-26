@@ -615,7 +615,7 @@
       format: formatTimeTick,
     },
     yAxis: {
-      ...axisBucketBounds(unit, heatmapPlotPadding.left),
+      ...axisBucketBounds(unit),
       tickSpacing: 50,
       format: formatBucketTick,
     },

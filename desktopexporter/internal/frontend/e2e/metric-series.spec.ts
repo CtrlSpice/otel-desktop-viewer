@@ -280,11 +280,13 @@ async function expectMeasuredAxisGutter(page: Page) {
           labelsPresent: labels.length > 0,
           aligned: labels.every(
             label =>
-              Math.abs(label.getBoundingClientRect().left - bounds.left) < 1
+              Math.abs(axis.left - label.getBoundingClientRect().right - 7.5) <
+              1
           ),
-          unitAligned: Math.abs(unit.left - bounds.left) < 1,
+          unitAligned: Math.abs(unit.left - axis.left) < 1,
+          unitAbove: unit.bottom < axis.top && unit.top >= bounds.top - 1,
           valuesFit: labels.every(
-            label => label.getBoundingClientRect().right <= axis.left - 11
+            label => label.getBoundingClientRect().left >= bounds.left - 1
           ),
           xFit: xLabels.every(
             label => label.getBoundingClientRect().left >= bounds.left - 1
@@ -296,16 +298,20 @@ async function expectMeasuredAxisGutter(page: Page) {
       labelsPresent: true,
       aligned: true,
       unitAligned: true,
+      unitAbove: true,
       valuesFit: true,
       xFit: true,
     })
 }
 
-test('time-series Y-axis labels use the container edge and remeasure after resize and larger text', async ({
+test('time-series Y-axis labels sit beside the axis and remeasure after resize and larger text', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.goto(`/metrics/${metric.metricRef}?time=all&agg=raw`)
+  const header = page.getByRole('region', { name: 'Metric chart', exact: true })
+  await expect(header.locator('.pane-header__subtitle')).toHaveCount(0)
+  await expect(header.getByRole('img', { name: 'checkout-api' })).toBeVisible()
   await expectMeasuredAxisGutter(page)
   for (const width of [1200, 900, 1920]) {
     await page.setViewportSize({ width, height: 1000 })

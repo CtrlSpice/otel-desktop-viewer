@@ -9,8 +9,15 @@
   const rotatedX = { rotate: 315, textAnchor: 'end' } as const
   const aboveYAxis = {
     labelPlacement: 'start' as const,
-    labelProps: { dy: 8, textAnchor: 'start' as const },
+    labelProps: {
+      x: 0,
+      y: 0,
+      dy: -8,
+      textAnchor: 'start' as const,
+      verticalAnchor: 'end' as const,
+    },
   }
+  const besideYAxis = { dx: -8, textAnchor: 'end' as const }
 
   const rotatedXBand = {
     ...rotatedX,
@@ -26,7 +33,7 @@
 
   /** Fallback insets before rendered axis labels can be measured. */
   export const chartPadding = {
-    top: 24,
+    top: 32,
     bottom: 96,
     left: 136,
     right: 72,
@@ -39,12 +46,12 @@
     right: 80,
   } as const
 
-  function valueYAxis(label: string, left: number) {
+  function valueYAxis(label: string) {
     return {
       label: label.trim() || 'value',
       ...aboveYAxis,
       rule: false as const,
-      tickLabelProps: { dx: -left, textAnchor: 'start' as const },
+      tickLabelProps: besideYAxis,
       format: (value: number) => formatMetricValue(value),
     }
   }
@@ -69,26 +76,23 @@
   }
 
   /** Bucket bound rows on the heatmap y-axis (color encodes count). */
-  export function axisBucketBounds(
-    unit: string,
-    left: number = chartPadding.left
-  ) {
+  export function axisBucketBounds(unit: string) {
     const trimmed = unit.trim()
     return {
       label: trimmed ? `value (${trimmed})` : 'value',
       ...aboveYAxis,
       rule: false as const,
-      tickLabelProps: { dx: -left, textAnchor: 'start' as const },
+      tickLabelProps: besideYAxis,
     }
   }
 
   /** Unit or fixed label on the y-axis. */
-  export function axisValue(label: string, left: number = chartPadding.left) {
-    return valueYAxis(label, left)
+  export function axisValue(label: string) {
+    return valueYAxis(label)
   }
 
-  export function axisCount(left: number = chartPadding.left) {
-    return { ...valueYAxis('count', left), format: formatMetricCount }
+  export function axisCount() {
+    return { ...valueYAxis('count'), format: formatMetricCount }
   }
 </script>
 

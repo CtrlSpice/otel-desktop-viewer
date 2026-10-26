@@ -110,7 +110,7 @@
     title: string
     /** Optional service name shown as "(service)" after the title. */
     subtitle?: string
-    /** Exact colour owner when the subtitle also includes namespace text. */
+    /** Service dot owner, independent of visible subtitle text. */
     subtitleService?: string
   }
 
@@ -136,7 +136,7 @@
     title: string
     /** Optional service name shown as "(service)" after the title. */
     subtitle?: string
-    /** Exact colour owner when the subtitle also includes namespace text. */
+    /** Service dot owner, independent of visible subtitle text. */
     subtitleService?: string
     tabs: PaneTab[]
     activeID: string
@@ -349,6 +349,7 @@
 {/snippet}
 
 {#if props.mode === 'title' || props.mode === 'title-tabs'}
+  {@const service = props.subtitleService ?? props.subtitle}
   <div
     class="pane-header pane-header--{props.mode} {roundedClass}"
     use:headerOverflow
@@ -361,8 +362,13 @@
         {#if props.leading}
           <div class="pane-header__leading">{@render props.leading()}</div>
         {/if}
-        {#if props.subtitle?.trim()}
-          <ServiceDot service={props.subtitleService ?? props.subtitle} />
+        {#if service?.trim()}
+          <span
+            class="tooltip tooltip-bottom inline-flex shrink-0"
+            data-tip={service}
+            role="img"
+            aria-label={service}><ServiceDot {service} /></span
+          >
         {/if}
         <span class="pane-header__title" title={props.title}>{props.title}</span
         >

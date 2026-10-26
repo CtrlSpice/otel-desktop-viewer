@@ -959,7 +959,7 @@
           pill
           mode="title-tabs"
           title={selectedSummary.name}
-          subtitle={selectedSummary.serviceName || undefined}
+          subtitleService={selectedSummary.serviceName || undefined}
           tabs={showChartAggregationTabs
             ? chartAggregationTabs
             : histogramChartTabs}
@@ -991,7 +991,7 @@
           pill
           mode="title"
           title={selectedSummary.name}
-          subtitle={selectedSummary.serviceName || undefined}
+          subtitleService={selectedSummary.serviceName || undefined}
           ariaLabel="Metric chart"
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}

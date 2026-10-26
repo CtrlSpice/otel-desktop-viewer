@@ -731,7 +731,7 @@
   let chartProps = $derived({
     xAxis: axisTime(timeContext.tz),
     yAxis: {
-      ...axisValue(yAxisLabel, chartPadding.left),
+      ...axisValue(yAxisLabel),
       ticks: lineChartContext?.yScale
         .ticks?.(Math.round(lineChartContext.height / 50))
         .filter(
