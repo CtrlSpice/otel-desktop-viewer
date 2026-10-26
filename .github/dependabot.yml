@@ -8,6 +8,7 @@ updates:
       opentelemetry:
         patterns:
           - "go.opentelemetry.io/*"
+          - "github.com/open-telemetry/opentelemetry-collector-contrib/*"
 
   - package-ecosystem: npm
     directory: /desktopexporter/internal/frontend
