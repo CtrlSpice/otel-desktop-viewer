@@ -813,17 +813,21 @@
     slopeTo?: ChartPoint
   }
 
-  let statLabelHeights = $state<
-    Partial<Record<SeriesStatMark['kind'], number>>
+  let statLabelSizes = $state<
+    Partial<Record<SeriesStatMark['kind'], { width: number; height: number }>>
   >({})
   function measureStatLabel(
     element: HTMLElement,
     kind: SeriesStatMark['kind']
   ) {
     const measure = () => {
-      const height = element.getBoundingClientRect().height
-      if (height > 0 && statLabelHeights[kind] !== height)
-        statLabelHeights[kind] = height
+      const { width, height } = element.getBoundingClientRect()
+      const previous = statLabelSizes[kind]
+      if (
+        height > 0 &&
+        (previous?.width !== width || previous?.height !== height)
+      )
+        statLabelSizes[kind] = { width, height }
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -936,7 +940,8 @@
 
       const placement = atRight
         ? 'right'
-        : mark.kind === 'min' || top < (statLabelHeights[mark.kind] ?? 0) + 8
+        : mark.kind === 'min' ||
+            top < (statLabelSizes[mark.kind]?.height ?? 0) + 8
           ? 'below'
           : 'above'
 
@@ -1006,6 +1011,40 @@
       x: context.padding.left + context.xScale(highlightDate),
       y: context.padding.top + context.yScale(dot.value),
     }
+  })
+
+  const selectionObstacles = $derived.by(() => {
+    const context = lineChartContext
+    if (!context) return []
+    const labels = seriesStatTooltipPlacements.flatMap(mark => {
+      const size = statLabelSizes[mark.kind]
+      if (!size) return []
+      // Match the stat label's CSS translation, in the sticky's coordinates.
+      return [
+        {
+          left:
+            mark.placement === 'right'
+              ? mark.left + 8
+              : mark.left - size.width / 2,
+          top:
+            mark.placement === 'right'
+              ? mark.top - size.height / 2
+              : mark.placement === 'below'
+                ? mark.top + 8
+                : mark.top - size.height - 8,
+          ...size,
+        },
+      ]
+    })
+    const markers = highlightDate
+      ? selectionDots.map(dot => ({
+          left: context.padding.left + context.xScale(highlightDate) - 7,
+          top: context.padding.top + context.yScale(dot.value) - 7,
+          width: 14,
+          height: 14,
+        }))
+      : []
+    return [...labels, ...markers]
   })
 </script>
 
@@ -1286,7 +1325,7 @@
           {/snippet}
         </LineChart>
         {#if selectionLegendRows.length > 0 || selectionAggregateRows.length > 0}
-          <ChartSticky anchor={selectionAnchor}>
+          <ChartSticky anchor={selectionAnchor} obstacles={selectionObstacles}>
             <div class="metric-time-series-chart__selection-legend">
               <ChartSelectionLegend
                 timestamp={selectionTimestampText}

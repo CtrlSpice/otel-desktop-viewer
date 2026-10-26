@@ -426,6 +426,8 @@ svg {
 /* One Panel surface and soft elevation for dropdowns and portaled editor menus. */
 .popover-surface,
 .anchor-popover,
+.metric-chart-view :where(.chart-selection-legend),
+.chart-hover-card,
 html[data-theme] .cm-tooltip {
   @apply overflow-hidden rounded-xl bg-base-200 text-sm font-normal text-base-content;
   border: 1px solid var(--color-border);

@@ -166,25 +166,18 @@
   stroke-width: var(--overlay-backing-width, 4);
 }
 
-/* Pinned labels rest on the plot; cursor readouts use the shared floating surface. */
+/* Pinned and cursor readouts use the shared floating surface in app.css. */
 .metric-chart-view :where(.chart-selection-legend),
 .chart-hover-card {
   pointer-events: none;
-  @apply rounded-md border-0 text-base-content;
   padding: 0.4rem 0.55rem;
   font-size: var(--text-base);
   line-height: 1.25;
   min-width: 10rem;
   max-width: 18rem;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.04),
-    0 2px 6px rgb(0 0 0 / 0.06);
-  background-color: var(--color-base-100);
 }
 .chart-hover-card {
-  backdrop-filter: none;
   max-width: min(30rem, calc(100vw - 2rem));
-  box-shadow: var(--popover-shadow);
 }
 .chart-hover-card :where(.lc-tooltip-header) {
   border-bottom: none;
@@ -233,12 +226,6 @@ html[data-color-scheme='light']
   .metric-chart-view
   :where(.lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-neutral);
-}
-html[data-color-scheme='light']
-  .metric-chart-view
-  :where(.chart-selection-legend),
-html[data-color-scheme='light'] .chart-hover-card {
-  background-color: var(--color-base-300);
 }
 .metric-chart-view :where(.chart-selection-legend--columns) {
   width: 100%;

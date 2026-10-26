@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { chartStickyPosition } from './chart-sticky-position'
+import {
+  chartStickyPosition,
+  type ChartObstacle,
+} from './chart-sticky-position'
+
+function overlap(a: ChartObstacle, b: ChartObstacle) {
+  return (
+    Math.max(
+      0,
+      Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left)
+    ) *
+    Math.max(
+      0,
+      Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top)
+    )
+  )
+}
 
 describe('chartStickyPosition', () => {
   it('puts the card beside the selected value when there is room', () => {
@@ -50,5 +66,79 @@ describe('chartStickyPosition', () => {
       left: 8,
       top: 8,
     })
+  })
+
+  it.each([180, 260])(
+    'avoids a measured minimum label and selected marker with a %ipx card',
+    cardWidth => {
+      const obstacles = [
+        { left: 150, top: 188, width: 170, height: 28 },
+        { left: 193, top: 173, width: 14, height: 14 },
+      ]
+      const preferred = chartStickyPosition(
+        { x: 200, y: 180 },
+        800,
+        500,
+        cardWidth,
+        80
+      )
+      expect(
+        overlap({ ...preferred, width: cardWidth, height: 80 }, obstacles[0]!)
+      ).toBeGreaterThan(0)
+      const placed = chartStickyPosition(
+        { x: 200, y: 180 },
+        800,
+        500,
+        cardWidth,
+        80,
+        obstacles
+      )
+      for (const obstacle of obstacles)
+        expect(
+          overlap({ ...placed, width: cardWidth, height: 80 }, obstacle)
+        ).toBe(0)
+      expect(placed.left).toBeGreaterThanOrEqual(8)
+      expect(placed.left + cardWidth).toBeLessThanOrEqual(792)
+      expect(placed.top).toBeGreaterThanOrEqual(8)
+      expect(placed.top + 80).toBeLessThanOrEqual(492)
+    }
+  )
+
+  it('retains its preferred position when nearby labels do not overlap', () => {
+    const anchor = { x: 200, y: 180 }
+    expect(
+      chartStickyPosition(anchor, 800, 500, 180, 80, [
+        { left: 400, top: 300, width: 80, height: 24 },
+      ])
+    ).toEqual(chartStickyPosition(anchor, 800, 500, 180, 80))
+  })
+
+  it('accepts local overlap instead of escaping across a crowded chart', () => {
+    const anchor = { x: 400, y: 250 }
+    const obstacle = { left: 150, top: 100, width: 500, height: 300 }
+    const placed = chartStickyPosition(anchor, 1000, 700, 180, 80, [obstacle])
+    expect(
+      overlap({ ...placed, width: 180, height: 80 }, obstacle)
+    ).toBeGreaterThan(0)
+    expect(
+      Math.hypot(
+        Math.max(placed.left - anchor.x, anchor.x - placed.left - 180, 0),
+        Math.max(placed.top - anchor.y, anchor.y - placed.top - 80, 0)
+      )
+    ).toBeLessThanOrEqual(48)
+  })
+
+  it('minimizes overlap deterministically when no clear position fits', () => {
+    const obstacle = { left: 8, top: 8, width: 250, height: 284 }
+    const anchor = { x: 68, y: 150 }
+    const preferred = chartStickyPosition(anchor, 300, 300, 180, 80)
+    const placed = chartStickyPosition(anchor, 300, 300, 180, 80, [obstacle])
+    expect(
+      overlap({ ...placed, width: 180, height: 80 }, obstacle)
+    ).toBeLessThan(overlap({ ...preferred, width: 180, height: 80 }, obstacle))
+    expect(placed).toEqual(
+      chartStickyPosition(anchor, 300, 300, 180, 80, [obstacle])
+    )
+    expect(placed.left + 180).toBeLessThanOrEqual(292)
   })
 })

@@ -132,7 +132,7 @@ over the panel, blended in sRGB. Stronger reveal highlights use tinted
 nijimi 1. Hover takes precedence over selection while the pointer is present.
 Ghost buttons use the same hover and active/selected surfaces. Tooltips use
 Panel with regular-weight neutral Text. Dropdowns, colour pickers, filter
-popovers, query-help dialogs and search completions share the same opaque Panel
+popovers, pinned chart readouts, query-help dialogs and search completions share the same opaque Panel
 surface, Nijimi 0 boundary, rounded corners and soft `--popover-shadow` in
 `app.css`, without translucent fills or blur.
 Picker-specific styles control layout rather than adding another surface theme.

@@ -2323,6 +2323,97 @@ for (const { id: theme } of THEMES) {
   }
 }
 
+test('line stickies stay near their marker and avoid measured stat labels after resizing', async ({
+  page,
+}) => {
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    if (request.method !== 'getMetricView') return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          ...metric,
+          timeseries: metric.timeseries.map(series => ({
+            ...series,
+            stats: { count: 40, min: 1, max: 40, sum: 820, avg: 20.5 },
+          })),
+        },
+      },
+    })
+  })
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(
+    `/metrics/${metric.metricRef}?agg=raw&series=first&dp=first-0`
+  )
+  const card = page.locator('.chart-sticky__card')
+  await expect(card).toBeVisible()
+  await expect(
+    page.locator('.series-stat-tooltip[title^="min "]')
+  ).toBeVisible()
+  for (const width of [1920, 1280]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const card = document
+            .querySelector('.chart-sticky__card')!
+            .getBoundingClientRect()
+          const marker = document
+            .querySelector('.selection-dot--selected')!
+            .getBoundingClientRect()
+          const x = marker.left + marker.width / 2
+          const y = marker.top + marker.height / 2
+          const overlaps = (rect: DOMRect) =>
+            card.left < rect.right &&
+            card.right > rect.left &&
+            card.top < rect.bottom &&
+            card.bottom > rect.top
+          return {
+            labelOverlap: [
+              ...document.querySelectorAll('.series-stat-tooltip'),
+            ].some(label => overlaps(label.getBoundingClientRect())),
+            markerOverlap: overlaps(marker),
+            nearby:
+              Math.hypot(
+                Math.max(card.left - x, x - card.right, 0),
+                Math.max(card.top - y, y - card.bottom, 0)
+              ) <= 48,
+          }
+        })
+      )
+      .toEqual({ labelOverlap: false, markerOverlap: false, nearby: true })
+  }
+  for (const theme of ['madoromi-aki-hiru', 'madoromi-aki-yoru']) {
+    await page.evaluate(theme => {
+      document.documentElement.setAttribute('data-theme', theme)
+      document.documentElement.setAttribute(
+        'data-color-scheme',
+        theme.endsWith('hiru') ? 'light' : 'dark'
+      )
+    }, theme)
+    expect(
+      await card.locator('.chart-selection-legend').evaluate(element => {
+        const probe = document.createElement('div')
+        probe.className = 'popover-surface'
+        document.body.append(probe)
+        const actual = getComputedStyle(element)
+        const expected = getComputedStyle(probe)
+        const matches =
+          actual.backgroundColor === expected.backgroundColor &&
+          actual.border === expected.border &&
+          actual.boxShadow === expected.boxShadow
+        probe.remove()
+        return matches
+      })
+    ).toBe(true)
+  }
+})
+
 test('extrema use the series colour and the backed average stays behind the series without a data dot', async ({
   page,
 }) => {
