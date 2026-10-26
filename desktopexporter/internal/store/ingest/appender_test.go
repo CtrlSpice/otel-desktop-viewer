@@ -180,3 +180,59 @@ func TestFlushAppenders_CloseAppenders_NilEmptySafe(t *testing.T) {
 	assert.NotPanics(t, func() { ingest.CloseAppenders(nil, []string{"x"}) })
 	assert.NotPanics(t, func() { ingest.CloseAppenders(map[string]*duckdb.Appender{}, []string{}) })
 }
+
+// DuckDB 2 drops the buffered rows of a failed flush. The transaction must also
+// discard an earlier successful flush, and a fresh batch must still succeed on
+// the same dedicated connection.
+func TestFlushFailureRollsBackEarlierTablesAndAllowsRetry(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `
+			create table flush_first (id integer primary key);
+			create table flush_second (id integer primary key)`)
+		return err
+	}))
+	tables := []string{"flush_second", "flush_first"}
+	batch := func(duplicate bool) error {
+		return s.WithConn(func(conn driver.Conn) error {
+			return ingest.InTransaction(ctx, conn, func() (err error) {
+				appenders, err := ingest.NewAppenders(conn, tables)
+				if err != nil {
+					return err
+				}
+				defer func() {
+					err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+				}()
+				if err := appenders["flush_first"].AppendRow(int32(7)); err != nil {
+					return err
+				}
+				if err := appenders["flush_second"].AppendRow(int32(11)); err != nil {
+					return err
+				}
+				if duplicate {
+					if err := appenders["flush_second"].AppendRow(int32(11)); err != nil {
+						return err
+					}
+				}
+				return ingest.FlushAppenders(appenders, tables)
+			})
+		})
+	}
+	counts := func() []int {
+		t.Helper()
+		var first, second int
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRowContext(ctx, `select
+				(select count(*) from flush_first),
+				(select count(*) from flush_second)`).Scan(&first, &second)
+		}))
+		return []int{first, second}
+	}
+	err := batch(true)
+	require.ErrorIs(t, err, ingest.ErrIngestInternal)
+	require.Contains(t, err.Error(), "FlushAppenders")
+	require.Equal(t, []int{0, 0}, counts())
+	require.NoError(t, batch(false))
+	require.Equal(t, []int{1, 1}, counts())
+}

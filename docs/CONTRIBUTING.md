@@ -55,6 +55,9 @@ Ask when the boundary is unclear. Maintainers may defer or close substantial pul
 | CGO                                  | Required; DuckDB bindings need a compatible C toolchain                                |
 | Windows                              | MinGW64 GCC compatible with DuckDB's prebuilt static library; CI pins `C:\mingw64\bin` |
 
+DuckDB's prebuilt native libraries are Go modules hosted at `go.duckdb.org`.
+Restricted module proxies must allow that module path.
+
 Clone the repo:
 
 ```bash
