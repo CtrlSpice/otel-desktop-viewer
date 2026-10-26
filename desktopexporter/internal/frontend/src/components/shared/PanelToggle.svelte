@@ -37,8 +37,8 @@
 >
   <span class="inline-flex" class:panel-toggle__mirror={side === 'right'}>
     <HugeiconsIcon
-      icon={PanelLeftCloseIcon}
-      altIcon={PanelLeftOpenIcon}
+      icon={PanelLeftOpenIcon}
+      altIcon={PanelLeftCloseIcon}
       showAlt={!open}
       size={17}
       strokeWidth={1.5}
