@@ -170,6 +170,8 @@
     letter-spacing: -0.02em;
   }
   .guide-subtitle {
-    @apply text-balance text-sm text-subtle;
+    @apply text-balance text-subtle;
+    font-size: 0.75rem;
+    line-height: 1rem;
   }
 </style>
