@@ -114,8 +114,8 @@ datapoint_documents as materialized (
 					'startTimeUnixNano', d.start_time::varchar,
 					'timeUnixNano', d.timestamp::varchar,
 					'count', d.count::varchar,
-					'bucketCounts', list_transform(d.bucket_counts, count -> count::varchar),
-					'explicitBounds', list_transform(hb.bounds, bound -> otlp_double_json(
+					'bucketCounts', list_transform(d.bucket_counts, lambda count: count::varchar),
+					'explicitBounds', list_transform(hb.bounds, lambda bound: otlp_double_json(
 						json_object('kind', 'double', 'value', double_wire_json(bound)))),
 					'exemplars', coalesce(e.documents, []::json[]),
 					'flags', d.flags),
@@ -130,8 +130,8 @@ datapoint_documents as materialized (
 					'count', d.count::varchar,
 					'scale', d.scale,
 					'zeroCount', d.zero_count::varchar,
-					'positive', json_object('offset', d.positive_bucket_offset, 'bucketCounts', list_transform(d.positive_bucket_counts, count -> count::varchar)),
-					'negative', json_object('offset', d.negative_bucket_offset, 'bucketCounts', list_transform(d.negative_bucket_counts, count -> count::varchar)),
+					'positive', json_object('offset', d.positive_bucket_offset, 'bucketCounts', list_transform(d.positive_bucket_counts, lambda count: count::varchar)),
+					'negative', json_object('offset', d.negative_bucket_offset, 'bucketCounts', list_transform(d.negative_bucket_counts, lambda count: count::varchar)),
 					'zeroThreshold', otlp_double_json(json_object('kind', 'double', 'value', double_wire_json(d.zero_threshold))),
 					'exemplars', coalesce(e.documents, []::json[]),
 					'flags', d.flags),

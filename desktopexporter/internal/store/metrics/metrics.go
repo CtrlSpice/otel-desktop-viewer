@@ -543,7 +543,7 @@ func insertSeries(
 		 select uuid(), w.metric_id, w.attribute_ids
 		 from (
 			select unnest(?::varchar[])::uuid as metric_id,
-			       list_transform(unnest(?::varchar[][]), x -> x::uuid) as attribute_ids
+			       list_transform(unnest(?::varchar[][]), lambda x: x::uuid) as attribute_ids
 		 ) w
 		 where not exists (
 			select 1 from metric_series s
@@ -556,7 +556,7 @@ func insertSeries(
 	const resolve = `select w.ordinal::bigint, s.id::varchar from metric_series s join (
 		select unnest(?::integer[]) as ordinal,
 		       unnest(?::varchar[])::uuid as metric_id,
-		       list_transform(unnest(?::varchar[][]), x -> x::uuid) as attribute_ids
+		       list_transform(unnest(?::varchar[][]), lambda x: x::uuid) as attribute_ids
 	) w on s.metric_id = w.metric_id and s.attribute_ids = w.attribute_ids`
 	resolveRows := func(markExisting, requireAll bool) error {
 		checkRows, err := dconn.QueryContext(ctx, resolve, selectArgs)
@@ -756,7 +756,7 @@ func resolveMetricIDs(
 			       unnest(?::varchar[]) as metric_type, unnest(?::integer[]) as aggregation_temporality,
 			       unnest(?::boolean[]) as is_monotonic,
 			       unnest(?::varchar[]) as description,
-			       list_transform(unnest(?::varchar[][]), x -> x::uuid) as metadata_ids,
+			       list_transform(unnest(?::varchar[][]), lambda x: x::uuid) as metadata_ids,
 			       unnest(?::varchar[]) as service_name
 		 ) w
 		 where not exists (
@@ -791,7 +791,7 @@ func resolveMetricIDs(
 		select unnest(?::varchar[])::uuid as id,
 		       unnest(?::varchar[])::uuid as resource_id,
 		       unnest(?::varchar[]) as description,
-		       list_transform(unnest(?::varchar[][]), x -> x::uuid) as metadata_ids,
+		       list_transform(unnest(?::varchar[][]), lambda x: x::uuid) as metadata_ids,
 		       unnest(?::varchar[]) as service_name
 	) w where s.id = w.id`
 	if _, err := dconn.ExecContext(ctx, updateSQL, updateArgs); err != nil {
@@ -822,7 +822,7 @@ func cleanupProvisionalIdentities(
 		}
 		_, err = dconn.ExecContext(ctx, `delete from metric_series s
 			where s.metric_id = ?::uuid
-			  and s.attribute_ids = list_transform(?::varchar[], x -> x::uuid)
+			  and s.attribute_ids = list_transform(?::varchar[], lambda x: x::uuid)
 			  and not exists (select 1 from metric_datapoints d where d.series_id = s.id)`, args)
 		if err != nil {
 			cleanupErr = errors.Join(cleanupErr,
