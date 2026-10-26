@@ -25,6 +25,7 @@
     SERVICE_CARD_WIDTH,
     SERVICE_CARD_HEIGHT,
     type ServiceSizes,
+    type ServicePoint,
   } from './service-map'
 
   let {
@@ -61,6 +62,17 @@
     Record<string, { service: ServiceSummary; message: string }>
   >({})
   let chart = $state<ChartState>()
+  let layoutController = $state<ServiceMapLayout>()
+  function constrainView(view: { scale: number; translate: ServicePoint }) {
+    return layoutController?.constrain(view) ?? view
+  }
+  // LayerChart's wheel-translation path applies processTranslate directly.
+  function panView(x: number, y: number, deltaX: number, deltaY: number) {
+    return constrainView({
+      scale: chart?.transform.scale ?? 1,
+      translate: { x: x + deltaX, y: y + deltaY },
+    }).translate
+  }
   const transform = $derived(chart?.transform)
   const requests = new Map<string, AbortController>()
   let sizes = $state<ServiceSizes>(new Map())
@@ -265,7 +277,7 @@
       <button
         class="header-icon-button tooltip tooltip-left"
         aria-label="Reset service map view"
-        data-tip="Reset view"
+        data-tip="Fit graph"
         disabled={!layoutReady || nodes.length === 0}
         onclick={() => viewRevision++}
         ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
@@ -305,7 +317,8 @@
             mode: 'canvas',
             scrollMode: 'translate',
             motion: 'none',
-            scaleExtent: [0.1, 6],
+            constrain: constrainView,
+            processTranslate: panView,
           }}
         >
           <Svg title="Service connections">
@@ -320,6 +333,7 @@
                 ><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker
               >{/snippet}
             <ServiceMapLayout
+              bind:this={layoutController}
               services={nodes}
               {connections}
               {viewRevision}

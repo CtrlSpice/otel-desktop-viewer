@@ -22,6 +22,9 @@ describe('Home service discovery', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('scopes telemetry by typed service identity and refreshes only on request', async () => {
+    // Responsive graph layout needs a viewport; jsdom has no layout engine.
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
     vi.spyOn(telemetryAPI, 'getTraceAttributeDefinitions').mockResolvedValue([])
     vi.spyOn(telemetryAPI, 'getMetricAttributeDefinitions').mockResolvedValue(
       []
