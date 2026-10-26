@@ -27,10 +27,11 @@
   class="panel-toggle item-state btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip"
   class:tooltip-right={side === 'left'}
   class:tooltip-left={side === 'right'}
+  class:text-base-content={open}
+  class:text-subtle={!open}
   aria-label={label}
   data-tip={label}
   aria-expanded={open}
-  data-selected={open ? '' : undefined}
   aria-controls={controls}
   {onclick}
 >
@@ -50,7 +51,7 @@
   @reference "../../app.css";
 
   .panel-toggle {
-    @apply rounded-full text-base-content;
+    @apply rounded-full;
   }
 
   .panel-toggle__mirror {

@@ -1370,7 +1370,7 @@ test.describe('home page accessibility', () => {
     ).toBeFocused()
   })
 
-  test('keeps the sidebar toggle neutral when the drawer is dragged closed', async ({
+  test('keeps the sidebar toggle transparent and distinguishes its state with icon colour', async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -1381,10 +1381,7 @@ test.describe('home page accessibility', () => {
     )
     const theme = (await page.locator('html').getAttribute('data-theme'))!
     expect(activeColour).toBe(themeRgb(theme, 'text'))
-    await expect(toggle).toHaveCSS(
-      'background-color',
-      themeRgb(theme, 'highlightMedium')
-    )
+    await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     const handle = await page
       .getByRole('separator', { name: 'Resize the list' })
       .boundingBox()
@@ -1394,17 +1391,22 @@ test.describe('home page accessibility', () => {
     await page.mouse.up()
     const reopen = page.getByRole('button', { name: 'Open sidebar' })
     await expect(reopen).toHaveAttribute('aria-expanded', 'false')
-    await expect(reopen).toHaveCSS('color', activeColour)
-    await expect(reopen.locator('svg')).toHaveCSS('color', activeColour)
+    await expect(reopen).toHaveCSS('color', themeRgb(theme, 'subtle'))
+    await expect(reopen.locator('svg')).toHaveCSS(
+      'color',
+      themeRgb(theme, 'subtle')
+    )
     await expect(reopen).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await reopen.focus()
     await page.keyboard.press('Enter')
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await toggle.blur()
     await expect(toggle).toHaveCSS('color', activeColour)
+    await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    await toggle.hover()
     await expect(toggle).toHaveCSS(
       'background-color',
-      themeRgb(theme, 'highlightMedium')
+      themeRgb(theme, 'highlightLow')
     )
   })
 
@@ -1414,6 +1416,9 @@ test.describe('home page accessibility', () => {
     for (const width of [1440, 700]) {
       await page.setViewportSize({ width, height: 900 })
       const toggle = page.getByRole('button', { name: 'Collapse details' })
+      const theme = (await page.locator('html').getAttribute('data-theme'))!
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await expect(toggle).toHaveCSS('color', themeRgb(theme, 'text'))
       const detail = page.locator('#signal-drawer-detail')
       const main = page.locator('.page-layout__main-chrome')
       const separator = page.getByRole('separator', {
@@ -1437,6 +1442,9 @@ test.describe('home page accessibility', () => {
       await page.keyboard.press('Enter')
       const reopen = page.getByRole('button', { name: 'Open details' })
       await expect(reopen).toBeFocused()
+      await expect(reopen).toHaveCSS('color', themeRgb(theme, 'subtle'))
+      await expect(reopen).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await expect(reopen).toHaveCSS('outline-style', 'solid')
       await expect(detail).toBeHidden()
       await expect(separator).toBeHidden()
       await expect
