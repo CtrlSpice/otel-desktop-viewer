@@ -32,9 +32,13 @@ jobs:
     timeout-minutes: 20
     env: ${{ matrix.env }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         include:
+          - os: ubuntu-latest
+            env:
+              CGO_ENABLED: 1
           - os: windows-latest
             env:
               CGO_ENABLED: 1
