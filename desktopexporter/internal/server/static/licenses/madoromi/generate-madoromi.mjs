@@ -297,7 +297,7 @@ await writeFile(
   interfaceJson
 )
 
-// Sequential counts interpolate directly from the Primary/Iris ink to Rose.
+// Sequential counts move from Primary/Iris through Love to Rose.
 // Bound lightness away from both black and paper-white. Interpolate in OKLab,
 // gamut-map, then resample equal perceptual arc length for each adaptive size.
 // The original ink curves supply the anchor hues/chroma, not RGB gradients.
@@ -308,6 +308,7 @@ const heatmapAnchors = [
     lightness: 0.48,
     strength: 0.8,
   },
+  { ink: 'momiji', sourceLightness: 0.7, lightness: 0.68, strength: 0.7 },
   { ink: 'fuyu-gaki', sourceLightness: 0.84, lightness: 0.87, strength: 0.6 },
 ]
 const heatmapStops = heatmapAnchors.map(source => {

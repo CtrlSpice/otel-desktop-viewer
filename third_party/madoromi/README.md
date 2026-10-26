@@ -85,8 +85,8 @@ and Love respectively. Functions and annotations use Rose; types use Gold.
 Built-ins and invalid syntax share Love.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
-Histogram and heatmap counts interpolate directly from Murasaki-shikibu
-(Primary/Iris) at OKLab lightness 0.48 to Fuyu-gaki (Rose) at 0.87.
+Histogram and heatmap counts interpolate from Murasaki-shikibu (Primary/Iris)
+at OKLab lightness 0.48 through Momiji (Love) at 0.68 to Fuyu-gaki (Rose) at 0.87.
 The generator interpolates
 in OKLab, maps into sRGB gamut and samples equal perceptual arc-length intervals
 for each adaptive size from 2–12. Night orders shades dark to light; Day uses

@@ -1452,6 +1452,71 @@ test.describe('independent histogram aggregate loading', () => {
     expect(page.url()).toBe(url)
   })
 
+  test('resizing Details preserves visible heatmap end labels without overriding a scrolled position', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 2400, height: 1000 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const pending = await holdAggregates(page)
+    const aggregate = Array.from({ length: 100 }, (_, column) => ({
+      ...bucket,
+      timestamp: String(BigInt(startMs + column * 1000) * 1_000_000n),
+    }))
+    for (const { route } of pending)
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: route.request().postDataJSON().id,
+          result: { aggregate, scalarAggregate: null },
+        },
+      })
+    const viewport = page.locator('.heatmap-scroll')
+    const labels = page.locator('.heatmap-quantile-label')
+    await expect(labels).toHaveCount(3)
+    await expect
+      .poll(() => viewport.evaluate(e => e.scrollWidth - e.clientWidth))
+      .toBe(0)
+    const url = page.url()
+    const resize = page
+      .getByRole('separator', { name: 'Resize the panels', exact: true })
+      .last()
+    const handle = (await resize.boundingBox())!
+    await page.mouse.move(
+      handle.x + handle.width / 2,
+      handle.y + handle.height / 2
+    )
+    await page.mouse.down()
+    await page.mouse.move(handle.x - 700, handle.y + handle.height / 2, {
+      steps: 20,
+    })
+    await page.mouse.up()
+    await expect
+      .poll(() => viewport.evaluate(e => e.scrollLeft))
+      .toBeGreaterThan(100)
+    await expect
+      .poll(() =>
+        viewport.evaluate(e => e.scrollWidth - e.clientWidth - e.scrollLeft)
+      )
+      .toBeLessThanOrEqual(1)
+    const bounds = (await viewport.boundingBox())!
+    for (const label of await labels.all()) {
+      const box = (await label.boundingBox())!
+      expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width)
+    }
+    await expect(viewport).toHaveClass(/chart-scroll-discoverable/)
+    await viewport.evaluate(e => {
+      e.scrollLeft = 30
+    })
+    await expect.poll(() => viewport.evaluate(e => e.scrollLeft)).toBe(30)
+    await page.setViewportSize({ width: 1800, height: 1000 })
+    await expect
+      .poll(() => viewport.evaluate(e => e.clientWidth))
+      .toBeLessThan(bounds.width)
+    expect(await viewport.evaluate(e => e.scrollLeft)).toBe(30)
+    expect(page.url()).toBe(url)
+    await expect(page.locator('.heatmap-cell')).toHaveCount(300)
+  })
+
   test('dense heatmaps join colours without changing cells or adding dot grids', async ({
     page,
   }) => {

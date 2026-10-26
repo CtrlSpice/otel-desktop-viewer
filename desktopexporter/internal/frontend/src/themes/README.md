@@ -407,7 +407,7 @@ service colours. Error spans and exception events retain the semantic Error over
 This follows [Honeycomb's default waterfall colour basis](https://docs.honeycomb.io/investigate/analyze/explore-traces/#change-color-in-waterfall-representation).
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
-legends share a direct Murasaki-shikibu (Primary/Iris) → Fuyu-gaki (Rose) ramp.
+legends share a Murasaki-shikibu (Primary/Iris) → Momiji (Love) → Fuyu-gaki (Rose) ramp.
 Counts remain sequential: perceived lightness and grayscale luminance increase
 steadily at Night.
 Legacy count-palette preferences are left in storage but no

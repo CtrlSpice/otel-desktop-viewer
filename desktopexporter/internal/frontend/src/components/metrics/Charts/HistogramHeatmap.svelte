@@ -65,6 +65,7 @@
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
+  import { preserveChartScrollEnd } from '@/components/metrics/utils/chart-scroll-end'
 
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
@@ -635,6 +636,7 @@
         class="heatmap-scroll"
         class:heatmap-scroll--active={heatmapScrolls}
         bind:this={heatmapScrollElement}
+        use:preserveChartScrollEnd
         use:chartScrollDiscovery={{
           visit: ctx.metric?.metricRef,
           overflows:
