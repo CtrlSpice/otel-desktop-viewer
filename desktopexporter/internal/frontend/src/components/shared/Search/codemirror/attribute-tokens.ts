@@ -49,7 +49,12 @@ class AttributeToken extends WidgetType {
     button.addEventListener('mousedown', event => event.preventDefault())
     button.addEventListener('click', () => {
       const from = view.posAtDOM(button)
-      view.dispatch({ selection: { anchor: from, head: from + this.length } })
+      view.dispatch({
+        selection: { anchor: from, head: from + this.length },
+        // Completion anchors at the token start, which selection can scroll
+        // out of a narrow single-line editor even while the token is visible.
+        effects: EditorView.scrollIntoView(from, { x: 'start' }),
+      })
       view.focus()
       startCompletion(view)
     })

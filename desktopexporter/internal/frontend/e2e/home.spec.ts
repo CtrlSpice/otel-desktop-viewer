@@ -225,7 +225,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     .locator('section')
     .first()
     .boundingBox())!
-  expect(connectBox.y).toBeCloseTo(drop.y + drop.height + 24, 0)
+  expect(connectBox.y).toBeCloseTo(drop.y + drop.height + 32, 0)
   const terminal = guide.getByRole('tabpanel', { name: 'HTTP' }).locator('..')
   const terminalBox = (await terminal.boundingBox())!
   expect(drop.x).toBeCloseTo(terminalBox.x, 0)
@@ -307,8 +307,11 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     '"service.namespace", string) = "storefront"'
   )
   await logs.click()
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('q'))
+    .toBe(destination.searchParams.get('q'))
   await expect(page.locator('.cm-content[contenteditable="true"]')).toHaveText(
-    destination.searchParams.get('q')!
+    'service.namespace · Resource · String = "storefront"'
   )
   await page.getByRole('button', { name: 'Clear search', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()

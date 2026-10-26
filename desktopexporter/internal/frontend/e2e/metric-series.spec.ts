@@ -1111,9 +1111,9 @@ test.describe('independent histogram aggregate loading', () => {
         const datapoints = page.getByRole('region', {
           name: 'Selected series datapoints',
         })
-        await expect(
-          datapoints.locator('.dp-list__range').first()
-        ).toContainText('2 datapoints')
+        await expect(datapoints.locator('.dp-list__range').first()).toHaveCount(
+          0
+        )
         const rows = datapoints.locator('tr[data-dp-id]')
         await expect(rows).toHaveCount(2)
         for (const row of await rows.all()) {

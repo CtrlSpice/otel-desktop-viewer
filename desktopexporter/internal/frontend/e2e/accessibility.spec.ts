@@ -546,7 +546,7 @@ test('season picker stays compact and viewport-clamped without swatch controls',
     })
     await page.goto('/')
     const trigger = page.getByRole('button', { name: /^Season:/ })
-    await expect(trigger.locator('svg')).toHaveCount(2)
+    await expect(trigger.locator('svg')).toHaveCount(1)
     const savedAssignments = await page.evaluate(() =>
       Object.entries(localStorage).filter(([key]) =>
         key.startsWith('graph-colour-')
@@ -1075,8 +1075,9 @@ test.describe('home page accessibility', () => {
     )
     await expect(imports).toHaveCSS('border-style', 'dotted')
     await expect(
-      page.locator('[data-detail-section="guide"] summary')
-    ).toHaveText('Getting started')
+      page.getByRole('region', { name: 'Getting started', exact: true })
+    ).toBeVisible()
+    await expect(page.locator('.guide-name')).toHaveText('OTel Desktop Viewer')
     await expect(
       page.getByText('Connect an exporter', { exact: true })
     ).toBeVisible()
