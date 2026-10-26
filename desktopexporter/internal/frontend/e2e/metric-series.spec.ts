@@ -2643,6 +2643,94 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
   ).toHaveCount(0)
 })
 
+test('combined average labels avoid source statistics while staying near their endpoints', async ({
+  page,
+}) => {
+  const buckets = [0, 20, 39].map(index => ({
+    bucketStart: String(BigInt(startMs + index * 1000) * 1_000_000n),
+    sampleCount: 2,
+    sum: 20,
+    avg: 10,
+    rate: null,
+    slope: null,
+    hasReset: false,
+  }))
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    const result =
+      method === 'getMetricView'
+        ? {
+            ...metric,
+            timeseries: timeseries.map(series => ({
+              ...series,
+              datapoints: series.datapoints.map(point => ({
+                ...point,
+                doubleValue: 10,
+              })),
+              stats: { count: 40, min: 10, max: 10, sum: 400, avg: 10 },
+            })),
+          }
+        : method === 'getMetricAggregateView'
+          ? {
+              aggregate: null,
+              scalarAggregate: { all: buckets, selected: buckets },
+            }
+          : undefined
+    if (result === undefined) await route.fallback()
+    else await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+  })
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?agg=avg&series=first`)
+  const average = page.locator('[data-aggregate-label="__agg:avg:total__"]')
+  await expect(average).toBeVisible()
+  for (const width of [1920, 1280]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect
+      .poll(() =>
+        average.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          const stat = document
+            .querySelector('.series-stat-tooltip[title^="avg "]')!
+            .getBoundingClientRect()
+          return {
+            overlap:
+              rect.left < stat.right &&
+              rect.right > stat.left &&
+              rect.top < stat.bottom &&
+              rect.bottom > stat.top,
+            nearby:
+              Math.hypot(
+                Math.max(
+                  rect.left - (stat.left - 8),
+                  stat.left - 8 - rect.right,
+                  0
+                ),
+                Math.max(
+                  rect.top - (stat.top + stat.height / 2),
+                  stat.top + stat.height / 2 - rect.bottom,
+                  0
+                )
+              ) <= 48,
+          }
+        })
+      )
+      .toEqual({ overlap: false, nearby: true })
+  }
+  await average.getByRole('button').click()
+  await expect(average.getByRole('button')).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  )
+  const sourceLabel = page
+    .locator('.series-stat-tooltip[title^="avg "]')
+    .getByRole('button')
+  await expect(sourceLabel).toHaveAttribute('aria-pressed', 'false')
+  await sourceLabel.click()
+  await expect(sourceLabel).toHaveAttribute('aria-pressed', 'true')
+  expect(new URL(page.url()).searchParams.get('series')).toBe('first')
+  expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+})
+
 test('combined sum and average toggle independently and labels emphasize without changing inspection', async ({
   page,
 }) => {

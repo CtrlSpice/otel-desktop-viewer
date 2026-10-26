@@ -830,6 +830,28 @@
   let statLabelSizes = $state<
     Partial<Record<string, { width: number; height: number }>>
   >({})
+  type StatLabelPlacement = {
+    kind: string
+    left: number
+    top: number
+    placement: 'right' | 'above' | 'below'
+  }
+  function statLabelBounds(mark: StatLabelPlacement) {
+    const size = statLabelSizes[mark.kind]
+    if (!size) return undefined
+    // Match the rendered label's CSS translation in chart coordinates.
+    return {
+      left:
+        mark.placement === 'right' ? mark.left + 8 : mark.left - size.width / 2,
+      top:
+        mark.placement === 'right'
+          ? mark.top - size.height / 2
+          : mark.placement === 'below'
+            ? mark.top + 8
+            : mark.top - size.height - 8,
+      ...size,
+    }
+  }
   function measureStatLabel(element: HTMLElement, kind: string) {
     const measure = () => {
       const { width, height } = element.getBoundingClientRect()
@@ -949,7 +971,7 @@
         (atRight ? ctx.xRange[1] : ctx.xScale(mark.dotDate)) + plotLeft
       const top = ctx.yScale(mark.y) + plotTop
 
-      const placement = atRight
+      const placement: StatLabelPlacement['placement'] = atRight
         ? 'right'
         : mark.kind === 'min' ||
             top < (statLabelSizes[mark.kind]?.height ?? 0) + 8
@@ -979,11 +1001,52 @@
         },
       ]
     })
-    // Separate nearby endpoint labels locally, without moving either far from its line.
-    if (labels.length === 2 && Math.abs(labels[0].top - labels[1].top) < 24) {
-      const direction = labels[0].top <= labels[1].top ? -1 : 1
-      labels[0].top += direction * 12
-      labels[1].top -= direction * 12
+    const obstacles = seriesStatTooltipPlacements.flatMap(mark => {
+      const bounds = statLabelBounds(mark)
+      return bounds ? [bounds] : []
+    })
+    // Use measured labels, including source statistics. Only move vertically
+    // near the endpoint; accept overlap when there is no local free position.
+    const clearance = 4
+    const maxAnchorDistance = 48
+    for (const label of labels) {
+      const bounds = statLabelBounds(label)
+      if (!bounds) continue
+      const neighbors = obstacles.filter(
+        obstacle =>
+          bounds.left < obstacle.left + obstacle.width + clearance &&
+          bounds.left + bounds.width + clearance > obstacle.left
+      )
+      const candidates = [
+        label.top,
+        ...neighbors.flatMap(obstacle => [
+          obstacle.top - clearance - bounds.height / 2,
+          obstacle.top + obstacle.height + clearance + bounds.height / 2,
+        ]),
+      ]
+        .filter(
+          top =>
+            Math.hypot(
+              bounds.left - label.left,
+              Math.max(Math.abs(top - label.top) - bounds.height / 2, 0)
+            ) <= maxAnchorDistance
+        )
+        .sort((a, b) => Math.abs(a - label.top) - Math.abs(b - label.top))
+      const top = candidates.find(center => {
+        const upper = center - bounds.height / 2
+        const lower = center + bounds.height / 2
+        return (
+          upper >= 0 &&
+          lower <= (plotAreaHeight || height) &&
+          neighbors.every(
+            obstacle =>
+              lower + clearance <= obstacle.top ||
+              upper >= obstacle.top + obstacle.height + clearance
+          )
+        )
+      })
+      if (top !== undefined) label.top = top
+      obstacles.push({ ...bounds, top: label.top - bounds.height / 2 })
     }
     return labels
   })
@@ -1059,24 +1122,8 @@
       ...seriesStatTooltipPlacements,
       ...aggregateLabelPlacements,
     ].flatMap(mark => {
-      const size = statLabelSizes[mark.kind]
-      if (!size) return []
-      // Match the stat label's CSS translation, in the sticky's coordinates.
-      return [
-        {
-          left:
-            mark.placement === 'right'
-              ? mark.left + 8
-              : mark.left - size.width / 2,
-          top:
-            mark.placement === 'right'
-              ? mark.top - size.height / 2
-              : mark.placement === 'below'
-                ? mark.top + 8
-                : mark.top - size.height - 8,
-          ...size,
-        },
-      ]
+      const bounds = statLabelBounds(mark)
+      return bounds ? [bounds] : []
     })
     const markers = highlightDate
       ? selectionDots.map(dot => ({
