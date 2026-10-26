@@ -169,7 +169,7 @@ it('resizes only open neighbours and never reopens a closed section during resiz
   )
 })
 
-it('groups open, closed and inactive cards in real DOM order, retaining nodes and one open section', async () => {
+it('keeps fixed section order across disclosure changes, retaining nodes and one open section', async () => {
   const view = render(DetailStackHarness, {
     storageKey: 'layout',
     label: 'Details',
@@ -194,19 +194,19 @@ it('groups open, closed and inactive cards in real DOM order, retaining nodes an
   expect(keys()).toEqual([
     'details',
     'assessments',
+    'unavailable',
     'telemetry',
     'configuration',
-    'unavailable',
   ])
   const header = assessments.querySelector('summary')!
   header.focus()
   await userEvent.click(header)
   expect(keys()).toEqual([
     'details',
-    'telemetry',
     'assessments',
-    'configuration',
     'unavailable',
+    'telemetry',
+    'configuration',
   ])
   expect(
     view.getByText('Assessments', { exact: true }).closest('details')
@@ -227,9 +227,9 @@ it('groups open, closed and inactive cards in real DOM order, retaining nodes an
   expect(keys()).toEqual([
     'details',
     'assessments',
+    'unavailable',
     'telemetry',
     'configuration',
-    'unavailable',
   ])
   await userEvent.click(header)
   expect(assessments.open).toBe(true)

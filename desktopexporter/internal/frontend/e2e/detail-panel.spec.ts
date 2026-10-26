@@ -227,7 +227,7 @@ for (const kind of ['event', 'log'] as const) {
   })
 }
 
-test('detail headers regroup and resize only open neighbours while retaining mounted state', async ({
+test('detail headers keep fixed order and resize without collapsing while retaining mounted state', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -329,6 +329,11 @@ test('detail headers regroup and resize only open neighbours while retaining mou
     expect(
       await stack.locator('.detail-bubble__disclosure[open]').count()
     ).toBeGreaterThan(0)
+    expect(
+      await sections.evaluateAll(nodes =>
+        nodes.map(node => (node as HTMLElement).dataset.detailSection)
+      )
+    ).toEqual(['span', 'events', 'links'])
   }
   await expect(sections).toHaveCount(3)
   await expect(stack.getByRole('separator')).toHaveCount(0)
@@ -397,8 +402,8 @@ test('detail headers regroup and resize only open neighbours while retaining mou
     await page.mouse.up()
   }
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  // A long drag only takes space from Events. Disclosure/order stay fixed until
-  // release, and reversing within the same gesture restores the original sizes.
+  // A long drag only takes space from Events. Reversing within the same
+  // gesture restores the original sizes; release never changes disclosure.
   const cascadeHeights = await Promise.all([
     height(span),
     height(events),
@@ -422,8 +427,7 @@ test('detail headers regroup and resize only open neighbours while retaining mou
   for (const [index, section] of [span, events, links].entries()) {
     expect(await height(section)).toBeCloseTo(cascadeHeights[index]!, 0)
   }
-  // Growing Span first compresses Events through its resistance region.
-  // Links must not also shrink while Events still has content space.
+  // Growing Span clamps Events at its minimum. Links must not also shrink.
   const lowerHeight = await height(links)
   const eventHeight = await height(events)
   const topRect = (await top.boundingBox())!
@@ -440,9 +444,9 @@ test('detail headers regroup and resize only open neighbours while retaining mou
   expect(await height(events)).toBeGreaterThan(40)
   expect(await height(links)).toBeCloseTo(lowerHeight, 0)
   await page.mouse.up()
-  await expect(open(events)).not.toHaveAttribute('open')
+  await expect(open(events)).toHaveAttribute('open')
   expect(await height(links)).toBeCloseTo(lowerHeight, 0)
-  await heading(events).click()
+  await top.press('0')
   await expect(events).toHaveAttribute('data-detail-group', 'open')
   const initial = await height(span)
   await drag(top, -initial - 80, true)
@@ -455,6 +459,10 @@ test('detail headers regroup and resize only open neighbours while retaining mou
   })
   expect(beforeDragScroll).toBeGreaterThan(0)
   await drag(bottom, -(await height(events)) - 80)
+  await expect(open(events)).toHaveAttribute('open')
+  await expect(top).toHaveAttribute('data-resize-before')
+  await anchored()
+  await heading(events).click()
   await expect(open(events)).not.toHaveAttribute('open')
   await expect(open(span)).toHaveAttribute('open')
   await expect(top).not.toHaveAttribute('data-resize-before')
@@ -485,9 +493,11 @@ test('detail headers regroup and resize only open neighbours while retaining mou
   await top.focus()
   await top.press('End')
   await expect(open(links)).toHaveAttribute('open')
-  await expect(open(events)).not.toHaveAttribute('open')
+  await expect(open(events)).toHaveAttribute('open')
   await expect(top).toBeFocused()
   await anchored()
+  await top.press('Enter')
+  await expect(open(events)).not.toHaveAttribute('open')
   const retained = await open(span).elementHandle()
   // Collapse gives space to the nearest open section above and leaves one open.
   await heading(links).click()
@@ -510,7 +520,7 @@ test('detail headers regroup and resize only open neighbours while retaining mou
     await sections.evaluateAll(nodes =>
       nodes.map(node => (node as HTMLElement).dataset.detailSection)
     )
-  ).toEqual(['span', 'links', 'events'])
+  ).toEqual(['span', 'events', 'links'])
   await anchored()
   await heading(events).click()
   await expect(open(events)).toHaveAttribute('open')
@@ -520,9 +530,9 @@ test('detail headers regroup and resize only open neighbours while retaining mou
   await anchored()
   await bottom.focus()
   await bottom.press('End')
-  await expect(open(links)).not.toHaveAttribute('open')
+  await expect(open(links)).toHaveAttribute('open')
   await bottom.press('ArrowUp')
-  await expect(open(links)).not.toHaveAttribute('open')
+  await expect(open(links)).toHaveAttribute('open')
   await expect(bottom).toHaveCSS('outline-style', 'solid')
   await expect(bottom).toHaveCSS('outline-offset', '-3px')
   await expect(open(links)).toHaveCSS('outline-style', 'none')

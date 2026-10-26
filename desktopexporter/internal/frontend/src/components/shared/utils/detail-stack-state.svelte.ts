@@ -53,10 +53,8 @@ function loadWeights(key: string): Map<string, number> {
   }
 }
 
-/** One layout owner: the primary section stays open; remaining sections group
- * as open, closed available, then inactive.
- * Keys retain mounted content. Only open neighbours exchange space during drag;
- * disclosure/group changes commit on release. */
+/** Fixed-order accordion: the primary stays open and only open neighbours
+ * exchange space. Resizing clamps at minimum sizes without changing disclosure. */
 export function createDetailStackState(
   storageKey: string,
   defaultWeights: Readonly<Record<string, number>> = {}
@@ -77,8 +75,6 @@ export function createDetailStackState(
     sections.filter(section => section.available() && section.expanded())
   const primary = () =>
     sections.find(section => section.id === order[0]) ?? sections[0]
-  const group = (section?: Section) =>
-    !section ? 0 : !section.available() ? 2 : section.expanded() ? 0 : 1
   function preserveFocus() {
     const focused =
       document.activeElement instanceof HTMLElement &&
@@ -217,7 +213,7 @@ export function createDetailStackState(
     const groups = sides(id)
     if (!groups) return
     const { above, below } = groups
-    // Group/order stays fixed until release. Only open content crosses the boundary.
+    // Only open content crosses the boundary; headers retain their order.
     const headers = new Map(
       sections.map(section => [
         section.id,
@@ -280,7 +276,6 @@ export function createDetailStackState(
         const height = sizes.get(section.id) ?? 0
         // Keep the last useful size for reopening with the heading.
         if (height > 0) updated.set(layoutKeys.get(section.id)!, height / total)
-        if (settle) section.setExpanded(height > 0)
       }
       if (settle) {
         weights = updated
@@ -302,14 +297,7 @@ export function createDetailStackState(
         total,
         remToPx(PANEL_CLOSE_OVERSHOOT_REM)
       )
-      const nextHeight =
-        donor.id === primary()?.id
-          ? resized.size
-          : settle
-            ? resized.collapsed
-              ? 0
-              : resized.size
-            : resized.preview
+      const nextHeight = resized.size
       sizes.set(donor.id, nextHeight)
       sizes.set(receiver.id, initial.get(receiver.id)! + height - nextHeight)
       commit(sizes, settle)
@@ -327,13 +315,6 @@ export function createDetailStackState(
       order = keys
       sections = [...sections].sort(
         (a, b) => order.indexOf(a.id) - order.indexOf(b.id)
-      )
-    },
-    ordered<T extends { id: string }>(slots: T[]) {
-      return [...slots].sort(
-        (a, b) =>
-          group(sections.find(section => section.id === a.id)) -
-          group(sections.find(section => section.id === b.id))
       )
     },
     setStorageKey(key: string) {

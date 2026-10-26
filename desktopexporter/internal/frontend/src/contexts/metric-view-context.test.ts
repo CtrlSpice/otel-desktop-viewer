@@ -731,6 +731,18 @@ describe('metric view context visibility seeding', () => {
     expect(
       ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
     ).toEqual(['route=/a', 'route=/b', '__agg:selected__'])
+    ctx.setAggregationView('raw')
+    await tick()
+    const rawSeries = ctx.transformedGaugeSumChartTimeseries
+    for (const mode of ['sum', 'avg'] as const) {
+      ctx.setAggregationView(mode)
+      await tick()
+      // Aggregate bucket boundaries must not move or discard source samples,
+      // nor fill gaps with synthetic zeros carrying no source identity.
+      expect(ctx.transformedGaugeSumChartTimeseries.slice(0, 2)).toEqual(
+        rawSeries
+      )
+    }
     ctx.visibleSeries.clear()
     await tick()
     expect(ctx.transformedGaugeSumChartTimeseries).toEqual([])
@@ -971,9 +983,10 @@ describe('metric view context datapoint URL sync', () => {
       seriesDatapoints: { 'route=/b': [raw] },
     })
 
-    ctx.selectSeries('route=/b')
+    ctx.selectSeries('route=/a')
     ctx.onChartPointClick('route=/b', 'dp-b2')
     await tick()
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
     expect(reportedSelectedDatapointID()).toBe('dp-b2')
     expect(reportedResolvedDatapointID()).toBe('dp-b2')
     expect(ctx.selectionSource).toBe('chart')
@@ -1008,7 +1021,7 @@ describe('metric view context datapoint URL sync', () => {
   it('pins an exact Rate bucket directly without inventing a raw datapoint or URL id', async () => {
     const { metric, selectedBucketStart } = makeRateSelectionMetric()
     const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
-    ctx.selectSeries('route=/a')
+    ctx.selectSeries('route=/b')
     ctx.onRateChartPointClick('route=/a', selectedBucketStart)
     await tick()
     expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
@@ -1085,7 +1098,7 @@ describe('metric view context datapoint URL sync', () => {
     expect(ctx.selectedRateSlope).toBeUndefined()
   })
 
-  it('ignores chart picks in other series while a URL datapoint loads', async () => {
+  it('keeps a new chart pick when a previous series URL datapoint finishes loading', async () => {
     const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
     const view = renderProbeView('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
 
@@ -1093,10 +1106,10 @@ describe('metric view context datapoint URL sync', () => {
     await view.setSeriesDatapoints({ 'route=/b': [raw] })
     await tick()
 
-    expect(reportedSelectedDatapointID()).toBe('dp-raw-b')
-    expect(reportedResolvedDatapointID()).toBe('dp-raw-b')
-    expect(reportedSelectedSeriesKey()).toBe('route=/b')
-    expect(view.context.selectionSource).toBe('detail')
+    expect(reportedSelectedDatapointID()).toBe('dp-a1')
+    expect(reportedResolvedDatapointID()).toBe('dp-a1')
+    expect(reportedSelectedSeriesKey()).toBe('route=/a')
+    expect(view.context.selectionSource).toBe('chart')
   })
 
   it('reuses the raw selection index across repeated lookups and URL sync', async () => {

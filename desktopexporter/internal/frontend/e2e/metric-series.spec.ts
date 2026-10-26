@@ -2827,6 +2827,12 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
   await page
+    .getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+    .uncheck()
+  await page
     .getByRole('button', { name: 'Select route: /first', exact: true })
     .click()
   const graph = page.getByRole('application', {
@@ -2852,6 +2858,67 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
   await expect
     .poll(() => new URL(page.url()).searchParams.get('dp'))
     .toBe(selectedID)
+})
+
+test('line clicks and series rows share selection without changing visibility or disclosure', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const lines = page.locator('.metric-series-line')
+  await expect(lines).toHaveCount(2)
+  const second = page.locator('.metric-series-line[data-series-key="second"]')
+  // The two fixture series overlap exactly. A direct hit belongs to the
+  // topmost line, not the first series found at the nearest sample.
+  const point = await second.evaluate(element => {
+    const path = element as SVGPathElement
+    const position = path.getPointAtLength(path.getTotalLength() * 0.4)
+    const screen = new DOMPoint(position.x, position.y).matrixTransform(
+      path.getScreenCTM()!
+    )
+    return { x: screen.x, y: screen.y }
+  })
+  await page.mouse.click(point.x, point.y)
+  const rows = page.locator('.ts-row')
+  await expect(
+    rows.filter({
+      has: page.getByRole('button', {
+        name: 'Select route: /second',
+        exact: true,
+      }),
+    })
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect(second).toHaveAttribute('data-emphasized', 'true')
+  await expect(page).toHaveURL(/series=second/)
+  await page
+    .getByRole('button', { name: 'Select route: /first', exact: true })
+    .click()
+  await page.mouse.move(0, 0)
+  await expect(
+    rows.filter({
+      has: page.getByRole('button', {
+        name: 'Select route: /first',
+        exact: true,
+      }),
+    })
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect(
+    page.locator('.metric-series-line[data-series-key="first"]')
+  ).toHaveAttribute('data-emphasized', 'true')
+  await expect(second).toHaveAttribute('data-emphasized', 'false')
+  await expect(lines).toHaveCount(2)
+  await expect(
+    page.getByRole('checkbox', {
+      name: 'Show route: /first in chart',
+      exact: true,
+    })
+  ).toBeChecked()
+  await expect(
+    page.getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+  ).toBeChecked()
 })
 
 test('chart selection preserves section disclosure and the inspected series', async ({

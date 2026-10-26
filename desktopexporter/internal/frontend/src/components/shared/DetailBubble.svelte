@@ -203,7 +203,7 @@
       onscroll={rememberScroll}
       ontoggle={event => {
         // Native disclosure owns clicks, keyboard activation and field reveals.
-        // Resizing also writes `open`; ignore those already-synchronized toggles.
+        // Ignore already-synchronized programmatic disclosure changes.
         if (event.currentTarget.open === expanded) return
         if (stack) stack.setOpen(stackID, event.currentTarget.open)
         else setExpanded(event.currentTarget.open)
@@ -259,8 +259,8 @@
     {@render bubble()}
     {#if resizable}<span class="sr-only" id={`${sectionID}-resize-help`}
         >Drag to resize open sections. Up and Down arrows resize; Shift
-        increases the step. Home and End shrink either side; the top stays open.
-        Press 0 to reset sizes.</span
+        increases the step. Home and End shrink either side to its minimum.
+        Resizing keeps sections open. Press 0 to reset sizes.</span
       >{/if}
     {#if action && !unavailable}<div
         class="detail-bubble__action"

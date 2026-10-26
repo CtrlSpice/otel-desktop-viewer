@@ -224,64 +224,6 @@ export type AggregateResult = {
   presentKeys: AggregateLineKey[]
 }
 
-/**
- * Resample one series onto fixed bucket-center dates so it shares the
- * same x-grid as cross-timeseries aggregate lines. Each window is the
- * half-open interval between adjacent center midpoints; we take the
- * **last** raw point in the window (typical scrape cadence).
- *
- * Used when raw + aggregate overlay is on — without this, layerchart
- * tooltips hunt between mismatched timestamps (native scrape vs bucket
- * centers) and flicker between per-series and totals rows.
- */
-export function resampleSeriesToBucketCenters(
-  series: ChartTimeseries,
-  centers: readonly Date[]
-): ChartTimeseries {
-  if (centers.length === 0) return series
-  const points = [...series.points].sort(
-    (a, b) => a.date.getTime() - b.date.getTime()
-  )
-  const step =
-    centers.length > 1
-      ? (centers[centers.length - 1]!.getTime() - centers[0]!.getTime()) /
-        (centers.length - 1)
-      : 60_000
-
-  const resampled: ChartPoint[] = []
-  let lastWithData = -1
-  for (let i = 0; i < centers.length; i++) {
-    const center = centers[i]!
-    const lo =
-      i === 0
-        ? center.getTime() - step / 2
-        : (centers[i - 1]!.getTime() + center.getTime()) / 2
-    const hi =
-      i === centers.length - 1
-        ? center.getTime() + step / 2
-        : (center.getTime() + centers[i + 1]!.getTime()) / 2
-    let last: ChartPoint | undefined
-    for (const p of points) {
-      const t = p.date.getTime()
-      if (t >= lo && t < hi) last = p
-    }
-    if (last !== undefined) lastWithData = resampled.length
-    // The source point moved to the center, not a fresh one: the store's
-    // per-point fields (slope for the tangent, delta for resets) must survive
-    // the move. The filler for an empty window is synthetic and carries none.
-    resampled.push(
-      last !== undefined
-        ? { ...last, date: center }
-        : { date: center, value: 0 }
-    )
-  }
-
-  return {
-    ...series,
-    points: lastWithData >= 0 ? resampled.slice(0, lastWithData + 1) : [],
-  }
-}
-
 /** Which stat badges to show on a single series row. */
 export type SeriesStat = 'min' | 'max' | 'avg' | 'total'
 

@@ -39,7 +39,7 @@
   role="region"
   aria-label={label}
 >
-  {#each stack.ordered(sections) as section (section.id)}
+  {#each sections as section (section.id)}
     <DetailStackItem id={section.id} content={section.content} />
   {/each}
 </div>
@@ -51,7 +51,7 @@
     gap: calc(var(--header-gap) / 2);
   }
 
-  .detail-stack > :global(:nth-child(1 of [data-detail-group='inactive'])) {
+  .detail-stack > :global(:last-child:not(:first-child)) {
     margin-block-start: auto;
   }
 
@@ -59,7 +59,7 @@
     cursor: grabbing;
   }
 
-  /* Grouping and resizing are immediate; DaisyUI must not delay native disclosure. */
+  /* Disclosure and resizing are immediate; section order never changes. */
   .detail-stack :global(.detail-bubble--resizable),
   .detail-stack :global(details),
   .detail-stack :global(details)::details-content,

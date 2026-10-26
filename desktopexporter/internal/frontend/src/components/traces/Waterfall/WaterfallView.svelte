@@ -1055,7 +1055,7 @@
     pill
     mode="title"
     title={headerName}
-    subtitle={headerService || undefined}
+    subtitleService={headerService || undefined}
     ariaLabel="Trace waterfall"
   >
     {#snippet badge()}

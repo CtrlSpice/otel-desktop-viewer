@@ -464,6 +464,12 @@
 
   /** Pick the raw series whose value at `date` is closest to click y. */
   function seriesKeyAtPointerY(e: MouseEvent, date: Date): string | null {
+    const lineKey =
+      e.target instanceof Element
+        ? e.target.closest<SVGPathElement>('.metric-series-line')?.dataset
+            .seriesKey
+        : undefined
+    if (lineKey) return lineKey
     const clickY = pointerYDataValue(e)
     if (clickY === undefined) return null
 
@@ -648,6 +654,9 @@
     const context = lineChartContext
     const target = event.target
     if (!context || !(target instanceof Element)) return
+    const lineKey = target.closest<SVGPathElement>('.metric-series-line')
+      ?.dataset.seriesKey
+    if (lineKey && isAggregateLineKey(lineKey)) return
     const root = target.closest('.lc-root-container')
     if (!root) return
     const bounds = root.getBoundingClientRect()
@@ -665,6 +674,7 @@
     } | null = null
     for (const series of chartSeries) {
       if (isAggregateLineKey(series.key)) continue
+      if (lineKey && series.key !== lineKey) continue
       for (const point of series.data) {
         const selectable =
           aggregationView === 'rate'
@@ -1094,6 +1104,7 @@
                 class="metric-series-line"
                 data-series-key={series.key}
                 data-emphasized={emphasized}
+                onclick={handlePlotClick}
                 strokeWidth={emphasized ? 2.5 : 1.75}
                 style="--metric-series-line-opacity: {emphasized
                   ? 1

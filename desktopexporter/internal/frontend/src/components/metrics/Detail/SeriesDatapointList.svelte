@@ -439,7 +439,7 @@
       </table>
     </div>
 
-    {#if datapoints.length > 0}<div class="dp-list__pagination">
+    {#if datapoints.length >= PAGE_SIZES[0]}<div class="dp-list__pagination">
         <span
           class="dp-list__range tabular-nums"
           aria-live="polite"

@@ -55,7 +55,6 @@ import {
   isAggregateLineKey,
   rateSlopeBucketSegment,
   availableRateSlopeOverlay,
-  resampleSeriesToBucketCenters,
   type AggregateLineKey,
   type AggregateResult,
   type AggregationView,
@@ -925,7 +924,7 @@ export function createMetricViewContext(
     }
   )
 
-  /** Display series with raw lines first and aggregates aligned to their bucket grid. */
+  /** Source lines retain their timestamps; aggregates use their own bucket grid. */
   const transformedGaugeSumChartTimeseries = $derived.by(
     (): ChartTimeseries[] => {
       if (view.aggregationView === 'raw') return rawTransformed.series
@@ -937,11 +936,7 @@ export function createMetricViewContext(
       }
       if (aggLines.length === 0) return rawTransformed.series
 
-      const centers = aggLines[0]!.points.map(p => p.date)
-      const alignedRaw = rawTransformed.series.map(s =>
-        resampleSeriesToBucketCenters(s, centers)
-      )
-      return [...alignedRaw, ...aggLines]
+      return [...rawTransformed.series, ...aggLines]
     }
   )
 
@@ -1670,12 +1665,14 @@ export function createMetricViewContext(
   }
 
   function onChartPointClick(seriesKey: string, datapointID: string) {
-    if (isAggregateLineKey(seriesKey) || seriesKey !== selectedSeriesKey) return
+    if (isAggregateLineKey(seriesKey) || !view.visibleSeries.has(seriesKey))
+      return
     const m = getMetric()
     if (!m) return
     const ts = m.timeseries.find(t => t.seriesRef === seriesKey)
     if (!ts?.datapoints.some(datapoint => datapoint.id === datapointID)) return
 
+    view.selectedSeriesKey = seriesKey
     view.selectedRateBucket = null
 
     pendingUrlDatapoint = null
@@ -1686,16 +1683,12 @@ export function createMetricViewContext(
   }
 
   function onRateChartPointClick(seriesKey: string, timestampNs: bigint) {
-    if (
-      view.aggregationView !== 'rate' ||
-      isAggregateLineKey(seriesKey) ||
-      seriesKey !== selectedSeriesKey
-    )
-      return
+    if (view.aggregationView !== 'rate' || isAggregateLineKey(seriesKey)) return
     const series = transformedGaugeSumChartTimeseries.find(
       series => series.key === seriesKey
     )
     if (!series?.points.some(point => point.timestampNs === timestampNs)) return
+    selectSeries(seriesKey)
     view.selectedRateBucket = { seriesKey, timestampNs }
     view.selectionSource = 'chart'
   }
