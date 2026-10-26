@@ -62,8 +62,8 @@ func TestServicesCountsAcrossSignalsAndNamespaces(t *testing.T) {
 		ss := rs.ScopeSpans().AppendEmpty()
 		for i, code := range []ptrace.StatusCode{ptrace.StatusCodeError, ptrace.StatusCodeUnset} {
 			span := ss.Spans().AppendEmpty()
-			span.SetTraceID(pcommon.TraceID{14: byte(group + 1), 15: byte(i + 1)})
-			span.SetSpanID(pcommon.SpanID{7: 1}) // Same span ID in different traces counts separately.
+			span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})  // A trace can cross resources and namespaces.
+			span.SetSpanID(pcommon.SpanID{7: byte(group + 1)}) // Same span ID in different traces counts separately.
 			span.SetStartTimestamp(8000000000000)
 			span.SetEndTimestamp(8000000000001)
 			span.Status().SetCode(code)
@@ -87,6 +87,13 @@ func TestServicesCountsAcrossSignalsAndNamespaces(t *testing.T) {
 				dp.SetTimestamp(9000000000000 + pcommon.Timestamp(i))
 				dp.SetIntValue(int64(i))
 				dp.Attributes().PutStr("route", fmt.Sprintf("/%d", i))
+				if i == 0 {
+					for j := range 2 {
+						exemplar := dp.Exemplars().AppendEmpty()
+						exemplar.SetTimestamp(pcommon.Timestamp(j + 1)) // Count exemplars of selected datapoints, not a separate time window.
+						exemplar.SetIntValue(int64(j))
+					}
+				}
 			}
 		}
 		histMetric := rm.ScopeMetrics().At(0).Metrics().AppendEmpty()
@@ -126,12 +133,12 @@ func TestServicesCountsAcrossSignalsAndNamespaces(t *testing.T) {
 	assert.Equal(t, "6400000000000", *result.StartTime)
 	assert.Equal(t, "10000000000000", *result.EndTime)
 	assert.False(t, result.Truncated)
-	assert.Equal(t, []serviceSummary{
-		{ServiceName: "logs-only", LogCount: 1, LastSeen: "8500000000001"},
+	assert.Equal(t, stringServiceSummaries([]serviceSummary{
+		{ServiceName: "logs-only", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8500000000001"},
 		{ServiceName: "metrics-only", MetricCount: 1, DataPointCount: 1, LastSeen: "8500000000002"},
-		{ServiceNamespace: "internal", ServiceName: "payments", SpanCount: 2, ErrorSpanCount: 1, LogCount: 3, ErrorLogCount: 2, MetricCount: 3, DataPointCount: 5, LastSeen: "9000000000002"},
-		{ServiceNamespace: "shop", ServiceName: "payments", SpanCount: 4, ErrorSpanCount: 2, LogCount: 6, ErrorLogCount: 4, MetricCount: 6, DataPointCount: 10, LastSeen: "9000000000002"},
-	}, result.Services)
+		{ServiceNamespace: "internal", ServiceName: "payments", TraceCount: 2, SpanCount: 2, ErrorSpanCount: 1, LogCount: 3, ErrorLogCount: 2, LogSeverityCounts: logSeverityCounts{Warn: 1, Error: 1, Fatal: 1}, MetricCount: 3, DataPointCount: 5, ExemplarCount: 4, LastSeen: "9000000000002"},
+		{ServiceNamespace: "shop", ServiceName: "payments", TraceCount: 2, SpanCount: 4, ErrorSpanCount: 2, LogCount: 6, ErrorLogCount: 4, LogSeverityCounts: logSeverityCounts{Warn: 2, Error: 2, Fatal: 2}, MetricCount: 6, DataPointCount: 10, ExemplarCount: 8, LastSeen: "9000000000002"},
+	}), result.Services)
 	filtered := servicesTestResult(t, endpoint, "--service", "payments")
 	assert.Equal(t, result.Services[2:], filtered.Services, "name-only filtering must retain separate namespaces")
 	assert.Empty(t, servicesTestResult(t, endpoint, "--service", "pay").Services, "the existing service filter is exact, not substring matching")
@@ -163,14 +170,14 @@ func TestServicesNamespacePresenceAndQuotedNames(t *testing.T) {
 	unnamed.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(8000000000004)
 	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
 	result := servicesTestResult(t, endpoint, "--service", name)
-	assert.Equal(t, []serviceSummary{
-		{ServiceName: name, LogCount: 2, LastSeen: "8000000000001"},
-		{ServiceNamespace: "internal", ServiceName: name, LogCount: 1, LastSeen: "8000000000003"},
-		{ServiceNamespace: "shop", ServiceName: name, LogCount: 1, LastSeen: "8000000000002"},
-	}, result.Services)
+	assert.Equal(t, stringServiceSummaries([]serviceSummary{
+		{ServiceName: name, LogCount: 2, LogSeverityCounts: logSeverityCounts{Other: 2}, LastSeen: "8000000000001"},
+		{ServiceNamespace: "internal", ServiceName: name, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000003"},
+		{ServiceNamespace: "shop", ServiceName: name, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000002"},
+	}), result.Services)
 	all := servicesTestResult(t, endpoint)
 	require.Len(t, all.Services, 4)
-	assert.Equal(t, serviceSummary{LogCount: 1, LastSeen: "8000000000004"}, all.Services[0])
+	assert.Equal(t, serviceSummary{ServiceIdentity: `[null,{"kind":"string","value":""}]`, ServiceNameKind: "missing", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000004"}, all.Services[0])
 	output, err := servicesTestRun(t, endpoint, "--service", name)
 	require.NoError(t, err)
 	assert.NotContains(t, output, "\x1b")
@@ -230,19 +237,20 @@ func TestServicesTimeBoundsSeverityAndExactTimestamps(t *testing.T) {
 		dp := gauge.DataPoints().AppendEmpty()
 		dp.SetTimestamp(pcommon.Timestamp(timestamp))
 		dp.SetIntValue(1)
+		dp.Exemplars().AppendEmpty().SetIntValue(1)
 	}
 	require.NoError(t, te.ConsumeTraces(context.Background(), traces))
 	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
 	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
-	assert.Equal(t, []serviceSummary{{ServiceName: "time-test", SpanCount: 2, ErrorSpanCount: 1, LogCount: 6, ErrorLogCount: 2, MetricCount: 1, DataPointCount: 2, LastSeen: "10000000000000"}}, servicesTestResult(t, endpoint).Services)
+	assert.Equal(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", TraceCount: 2, SpanCount: 2, ErrorSpanCount: 1, LogCount: 6, ErrorLogCount: 2, LogSeverityCounts: logSeverityCounts{Warn: 1, Error: 1, Fatal: 1, Other: 3}, MetricCount: 1, DataPointCount: 2, ExemplarCount: 2, LastSeen: "10000000000000"}}), servicesTestResult(t, endpoint).Services)
 	maxTime := "2554-07-21T23:34:33.709551615Z"
-	assert.Equal(t, []serviceSummary{{ServiceName: "time-test", LogCount: 1, ErrorLogCount: 1, LastSeen: "18446744073709551615"}}, servicesTestResult(t, endpoint, "--start", maxTime, "--end", maxTime).Services)
+	assert.Equal(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", LogCount: 1, ErrorLogCount: 1, LogSeverityCounts: logSeverityCounts{Error: 1}, LastSeen: "18446744073709551615"}}), servicesTestResult(t, endpoint, "--start", maxTime, "--end", maxTime).Services)
 	openEnd := servicesTestResult(t, endpoint, "--start", maxTime)
 	assert.Nil(t, openEnd.EndTime)
 	assert.Equal(t, "18446744073709551615", openEnd.Services[0].LastSeen)
 	zero := servicesTestResult(t, endpoint, "--end", "1970-01-01T00:00:00Z")
 	assert.Nil(t, zero.StartTime)
-	assert.Equal(t, []serviceSummary{{ServiceName: "time-test", LogCount: 1, LastSeen: "0"}}, zero.Services)
+	assert.Equal(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "0"}}), zero.Services)
 }
 
 func TestServicesDefaultLimitAndEmptyStore(t *testing.T) {
@@ -267,7 +275,47 @@ func TestServicesDefaultLimitAndEmptyStore(t *testing.T) {
 	assert.False(t, full.Truncated)
 }
 
-func TestServicesGroupTextLabelsAndPreserveReceivedIdentityTypes(t *testing.T) {
+func stringServiceSummaries(services []serviceSummary) []serviceSummary {
+	for i := range services {
+		services[i].ServiceNameKind = "string"
+		services[i].ServiceNamespaceKind = "string"
+		services[i].ServiceIdentity = expectedServiceIdentity(services[i])
+	}
+	return services
+}
+
+func expectedServiceIdentity(service serviceSummary) string {
+	name, _ := json.Marshal(service.ServiceName)
+	namespace, _ := json.Marshal(service.ServiceNamespace)
+	// DuckDB uses uppercase hex for the ESC in the quoted-name fixture.
+	return strings.ReplaceAll(fmt.Sprintf(`[{"kind":%q,"value":%s},{"kind":%q,"value":%s}]`, service.ServiceNameKind, name, service.ServiceNamespaceKind, namespace), `\u001b`, `\u001B`)
+}
+
+func TestServicesPreserveSameKindDisplayCollisionIdentities(t *testing.T) {
+	endpoint, _, le, _ := startAttributeIntegration(t)
+	data := plog.NewLogs()
+	for _, number := range []any{int64(1), float64(1)} {
+		resource := data.ResourceLogs().AppendEmpty()
+		require.NoError(t, resource.Resource().Attributes().PutEmpty("service.name").FromRaw([]any{number}))
+		resource.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(8000000000000)
+	}
+	require.NoError(t, le.ConsumeLogs(context.Background(), data))
+	result := servicesTestResult(t, endpoint)
+	require.Len(t, result.Services, 2)
+	left, right := result.Services[0], result.Services[1]
+	require.Equal(t, left.ServiceName, right.ServiceName)
+	require.Equal(t, "array", left.ServiceNameKind)
+	require.Equal(t, left.ServiceNameKind, right.ServiceNameKind)
+	require.NotEmpty(t, left.ServiceIdentity)
+	require.NotEqual(t, left.ServiceIdentity, right.ServiceIdentity)
+	identities := []string{left.ServiceIdentity, right.ServiceIdentity}
+	require.ElementsMatch(t, []string{
+		`[{"kind":"array","value":[{"kind":"int64","value":"1"}]},{"kind":"string","value":""}]`,
+		`[{"kind":"array","value":[{"kind":"double","value":1}]},{"kind":"string","value":""}]`,
+	}, identities)
+}
+
+func TestServicesSeparateReceivedIdentityTypes(t *testing.T) {
 	for _, key := range []string{"service.name", "service.namespace"} {
 		t.Run(key, func(t *testing.T) {
 			endpoint, te, le, me := startAttributeIntegration(t)
@@ -301,14 +349,22 @@ func TestServicesGroupTextLabelsAndPreserveReceivedIdentityTypes(t *testing.T) {
 			require.NoError(t, le.ConsumeLogs(context.Background(), logs))
 			require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
 			result := servicesTestResult(t, endpoint)
-			assert.Equal(t, []serviceSummary{
-				{ServiceName: "42", ServiceNamespace: "42", SpanCount: 2, LogCount: 2, MetricCount: 2, DataPointCount: 2, LastSeen: "8000000000001"},
-				{ServiceName: "healthy", ServiceNamespace: "shop", SpanCount: 1, LogCount: 1, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000002"},
-			}, result.Services)
+			expected := stringServiceSummaries([]serviceSummary{
+				{ServiceName: "42", ServiceNamespace: "42", TraceCount: 1, SpanCount: 1, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000001"},
+				{ServiceName: "42", ServiceNamespace: "42", TraceCount: 1, SpanCount: 1, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000000"},
+				{ServiceName: "healthy", ServiceNamespace: "shop", TraceCount: 1, SpanCount: 1, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000002"},
+			})
+			if key == "service.name" {
+				expected[0].ServiceNameKind = "int64"
+			} else {
+				expected[0].ServiceNamespaceKind = "int64"
+			}
+			expected[0].ServiceIdentity = expectedServiceIdentity(expected[0])
+			assert.Equal(t, expected, result.Services)
 			filtered := servicesTestResult(t, endpoint, "--service", "42")
-			assert.Equal(t, result.Services[:1], filtered.Services)
+			assert.Equal(t, result.Services[:2], filtered.Services)
 			limited := servicesTestResult(t, endpoint, "--limit", "1")
-			assert.Equal(t, result.Services[:1], limited.Services, "limit applies after merging labels")
+			assert.Equal(t, result.Services[:1], limited.Services, "limit applies after grouping typed identities")
 			assert.True(t, limited.Truncated)
 			for _, signal := range []string{"traces", "logs", "metrics"} {
 				var attributes attributeValuesResult

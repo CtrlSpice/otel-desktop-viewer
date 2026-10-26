@@ -1,24 +1,32 @@
 # Chart Palettes
 
-The chart palette has six families with five approved swatches each. Charts interleave families and levels so neighbouring series begin far apart in both hue and lightness.
+Charts use [Madoromi](https://madoromi.moonwit.ch/) inks.
 
-![Rose Pine chart palette](images/chart-palettes/rose-pine.svg)
+- The top-bar **Season · Day/Night** controls default to Autumn and the system's
+  Day/Night preference. Saved choices take priority. The eight interface themes
+  use 20% of source background chroma and one shared six-role accent palette.
+  Appearance changes do not reassign graph colours.
+- The categorical catalogue has seven official shades from each of 32 inks:
+  224 colours, omitting the palest eighth shade. New automatic assignments hash
+  identities into 118 bright swatches, avoiding occupied slots where possible.
+  Existing assignments and manual overrides retain their colours.
+- Services, each metric's native series identities and single-service trace span
+  names have separate saved ownership scopes. Filtering, sorting and visibility
+  changes do not reassign their colours. Hovering or focusing a series header
+  emphasizes its visible line independently of inspection and visibility.
+- The colour dot beside a Home service name or a Gauge/Sum series opens the shared
+  picker. It offers a colour field, hue strip, Hex input, seven ink-shade dots and
+  Reset. Reset restores that owner's saved automatic assignment.
+- Histogram and heatmap counts share a Murasaki-shikibu (Primary/Iris) → Momiji
+  (Love) → Fuyu-gaki (Rose) ramp. Adaptive ramps contain 1–12 bands; Day reverses Night's
+  exact shades for 2–12 bands, while a singleton uses its mode's high-count endpoint. Seasons
+  do not change the ramp.
+- Percentile guides use Shin-ryoku shade 6 for p50, Daikokuten shade 2 for p95 and
+  Benzaiten shade 2 for p99: green, amber-yellow and red. These chart swatches stay
+  fixed across Day/Night and seasons; their labels use neutral text.
+- Error markers retain the interface Error role, including on otherwise
+  overridden service bars. Internal viewer faults use Papaya.
 
-![Rose Pine Moon chart palette](images/chart-palettes/rose-pine-moon.svg)
-
-![Rose Pine Dawn chart palette](images/chart-palettes/rose-pine-dawn.svg)
-
-<details>
-<summary>How the ramps were constructed</summary>
-
-The shipped swatch table is authoritative. The palette uses OKLab distance: `sqrt((dL)^2 + (da)^2 + (db)^2)`. Each ramp samples a fitted OKLab line. Out-of-gamut endpoints lose chroma while keeping their lightness and hue direction. The recipe does not reproduce every retained hex exactly.
-
-| Adjustment | Applied recipe |
-| --- | --- |
-| Initial ramps | Four positions from `Deep + i * step * unit(anchor - Deep)`, with `i = 0..3`; the proportional anchor step is `0.033` for Rose Pine and Moon, `0.034` for Dawn. |
-| Wider endpoints | Extend both measured ramp ends by `0.040` OKLab along the row direction before endpoint-first gamut fitting. Foam's deep end additionally shifts `[0, -0.024, +0.046]` toward sea-green. |
-| Gold | Rose Pine and Moon use deep `[0.775000, 0.051303, 0.140954]` and light `[0.899603, 0.030191, 0.061682]`, with a warmer approximately 70 degree OKLCH direction. Dawn uses deep `[0.730000, 0.051303, 0.140954]`; its final light target is `[0.870000, 0.030000, 0.095000]`. |
-| Five positions | A fifth equal light-side sample was added after fitted endpoints. Dawn Gold was redistributed across all five points to retain even spacing under its final light cap. |
-| Mulberry | Rose Pine and Moon use a dark-end OKLCH hue target of 345 degrees before gamut fitting. |
-
-</details>
+The generated palette data, source revision, role mappings and picker behaviour
+are documented in the [theme reference](../desktopexporter/internal/frontend/src/themes/README.md).
+Madoromi's source and full MPL-2.0 licence are distributed with the viewer.

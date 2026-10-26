@@ -48,6 +48,37 @@ function stubRpcResult<T>(result: T) {
   stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
+it('retains distinct discovery identities for signed zero and nested NaN payloads', async () => {
+  const values = [
+    { kind: 'double', value: 0 },
+    { kind: 'double', value: '0x8000000000000000' },
+    { kind: 'array', value: [{ kind: 'double', value: '0x7ff8000000000001' }] },
+    { kind: 'array', value: [{ kind: 'double', value: '0x7ff8000000000002' }] },
+  ]
+  stubRpcResult({
+    rows: values.map(value => [
+      {
+        value,
+        foundOn: [],
+        count: 1,
+        kindCount: 2,
+        denominator: 4,
+        relativeFrequency: 0.25,
+      },
+    ]),
+    truncated: false,
+  })
+  const page = await telemetryAPI.discoverAttributeValues({
+    signal: 'traces',
+    ownerType: 'span',
+    key: 'number',
+  })
+  expect(new Set(page.items.map(item => item.identity)).size).toBe(4)
+  expect(page.items[0].value.value).toBe(0)
+  expect(Object.is(page.items[1].value.value, -0)).toBe(true)
+  expect(page.items.map(item => item.kindCount)).toEqual([2, 2, 2, 2])
+})
+
 function metricResult(
   overrides: Partial<JsonMetricViewData> = {}
 ): JsonMetricViewData {
@@ -90,9 +121,10 @@ afterEach(() => {
 
 describe('file-import endpoint discovery', () => {
   it('reads the configured OTLP port through RPC', async () => {
-    stubRpcResult({ otlpHttpPort: 54318 })
+    stubRpcResult({ otlpHttpPort: 54318, otlpGrpcPort: 54317 })
     expect(await telemetryAPI.getImportConfig()).toEqual({
       otlpHttpPort: 54318,
+      otlpGrpcPort: 54317,
     })
     expect(
       JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).method
@@ -111,6 +143,16 @@ describe('file-import endpoint discovery', () => {
       'invalid OTLP HTTP port'
     )
   })
+
+  it.each([0, '4317', 65536, null])(
+    'rejects invalid gRPC port %j',
+    async otlpGrpcPort => {
+      stubRpcResult({ otlpHttpPort: 4318, otlpGrpcPort })
+      await expect(telemetryAPI.getImportConfig()).rejects.toThrow(
+        'invalid OTLP gRPC port'
+      )
+    }
+  )
 })
 
 describe('JSON-RPC response identity', () => {
@@ -237,6 +279,20 @@ describe('telemetryAPI.getLog', () => {
       kind: 'int64',
       value: 9_223_372_036_854_775_807n,
     })
+    stubRpcResult({ status: 'found', logs: [result] })
+    const traceID = 'a'.repeat(32)
+    const spanID = 'b'.repeat(16)
+    const controller = new AbortController()
+    expect(
+      (await telemetryAPI.getSpanLogs(traceID, spanID, controller.signal))[0]
+        .body
+    ).toEqual(log.body)
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]!.body))
+    expect(request).toMatchObject({
+      method: 'getSpan',
+      params: { traceID, spanID },
+    })
+    expect(vi.mocked(fetch).mock.calls[0][1]!.signal).toBe(controller.signal)
   })
 })
 
@@ -678,6 +734,78 @@ describe('telemetryAPI.getMetricView', () => {
     expect(absent).toMatchObject({ sum: null, min: null, max: null })
     expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
   })
+
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'loads received %s counts when optional quantiles were not computed',
+    async metricType => {
+      stubRpcResult(
+        metricResult({
+          metricType,
+          timeseries: [
+            {
+              seriesRef: 'series-1',
+              attributes: [],
+              resource: { attributes: [], droppedAttributesCount: 0 },
+              datapointCount: 1,
+              lastSeenNs: '2',
+              stats: null,
+              views: null,
+              rateStats: null,
+              sparkline: null,
+              datapoints: [
+                {
+                  id: 'received',
+                  timestamp: '2',
+                  timestampMs: 0,
+                  startTime: '1',
+                  flags: 0,
+                  exemplars: [],
+                  count: '9007199254740993',
+                  sum: null,
+                  min: 0,
+                  max: null,
+                  aggregationTemporalityCode: 2,
+                  aggregationTemporality: 'Cumulative',
+                  ...(metricType === 'Histogram'
+                    ? {
+                        metricType,
+                        explicitBounds: [],
+                        bucketCounts: ['9007199254740993'],
+                      }
+                    : {
+                        metricType,
+                        scale: 0,
+                        zeroCount: '9007199254740993',
+                        zeroThreshold: 0,
+                        positiveBucketOffset: 0,
+                        positiveBucketCounts: [],
+                        negativeBucketOffset: 0,
+                        negativeBucketCounts: [],
+                      }),
+                },
+              ],
+            },
+          ],
+        })
+      )
+      const metric = await telemetryAPI.getMetricView(
+        'some-metric',
+        null,
+        null,
+        0
+      )
+      expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
+        id: 'received',
+        metricType,
+        timestamp: 2n,
+        count: 9007199254740993n,
+        sum: null,
+        min: 0,
+        max: null,
+        quantiles: null,
+      })
+    }
+  )
 
   it('decodes recursive attribute int64 values and exceptional double bits once', async () => {
     stubRpcResult(
@@ -1225,6 +1353,266 @@ describe('telemetryAPI.searchTraceSummaries', () => {
   })
 })
 
+describe('telemetryAPI.getSpanTimings', () => {
+  const reference = {
+    traceID: '00000000000000000000000000000011',
+    spanID: 'ffffffffffffffff',
+  }
+
+  it('reads exact span pairs without whole traces, preserves nanoseconds and deduplicates requests', async () => {
+    stubRpcResult({
+      rows: [
+        [
+          reference.traceID,
+          reference.spanID,
+          'question',
+          'agent',
+          '1700000000000000001',
+          '1700000000000000023',
+          2,
+        ],
+      ],
+      truncated: false,
+    })
+    const controller = new AbortController()
+    const result = await telemetryAPI.getSpanTimings(
+      [reference, reference],
+      controller.signal
+    )
+    expect(result[0]).toMatchObject({
+      ...reference,
+      startTime: 1700000000000000001n,
+      endTime: 1700000000000000023n,
+      statusCodeValue: 2,
+    })
+    const call = vi.mocked(fetch).mock.calls[0]!
+    const request = JSON.parse(String(call[1]!.body))
+    expect(request.method).toBe('query')
+    expect(request.params.limit).toBe(1)
+    expect(request.params.sql).toContain("'0xffffffffffffffff'::UBIGINT")
+    expect(request.params.sql).toContain(
+      's.trace_id = r.trace_id AND s.span_id = r.span_id'
+    )
+    expect(call[1]!.signal).toBe(controller.signal)
+  })
+
+  it('bounds each projection to 64 references, keeps identical span IDs in different traces and reports absent spans as absent', async () => {
+    stubRpcResult({ rows: [], truncated: false })
+    const references = Array.from({ length: 65 }, (_, index) => ({
+      ...reference,
+      traceID: (index + 1).toString(16).padStart(32, '0'),
+    }))
+    expect(await telemetryAPI.getSpanTimings(references)).toEqual([])
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.map(
+          ([, init]) => JSON.parse(String(init!.body)).params.limit
+        )
+    ).toEqual([64, 1])
+  })
+
+  it('rejects non-hex references before querying and skips empty lookups', async () => {
+    stubRpcResult({ rows: [], truncated: false })
+    await expect(
+      telemetryAPI.getSpanTimings([
+        { ...reference, spanID: "'); DROP TABLE spans;--" },
+      ])
+    ).rejects.toThrow('32-hex trace ID and a 16-hex span ID')
+    expect(await telemetryAPI.getSpanTimings([])).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('telemetryAPI.getReferencedTraceViews', () => {
+  it('discovers a bounded complete selection for trace-only references and coalesces exact references', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+        const request = JSON.parse(String(init.body))
+        return {
+          ok: true,
+          json: async () => ({
+            jsonrpc: '2.0',
+            id: request.id,
+            result:
+              request.method === 'query'
+                ? {
+                    rows: [['1'.repeat(16)], ['2'.repeat(16)]],
+                    truncated: false,
+                  }
+                : {
+                    traceID: request.params.traceID,
+                    traceStart: '0',
+                    resources: {},
+                    scopes: {},
+                    spans: [],
+                    unplacedSpanCount: 0,
+                  },
+          }),
+        }
+      })
+    )
+    const traceID = 'a'.repeat(32)
+    const result = await telemetryAPI.getReferencedTraceViews([
+      { traceID },
+      { traceID, spanID: '1'.repeat(16) },
+      { traceID },
+    ])
+    expect(result.unavailableTraceIDs).toEqual([])
+    const calls = vi
+      .mocked(fetch)
+      .mock.calls.map(([, init]) => JSON.parse(String(init!.body)))
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toMatchObject({ method: 'query', params: { limit: 257 } })
+    expect(calls[1]).toMatchObject({
+      method: 'getTraceView',
+      params: { traceID, spanIDs: ['1'.repeat(16), '2'.repeat(16)] },
+    })
+  })
+
+  it('does not present oversized trace-only selections as complete trees', async () => {
+    stubRpcResult({
+      rows: Array.from({ length: 257 }, (_, i) => [
+        i.toString(16).padStart(16, '0'),
+      ]),
+      truncated: false,
+    })
+    const traceID = 'a'.repeat(32)
+    expect(await telemetryAPI.getReferencedTraceViews([{ traceID }])).toEqual({
+      traces: [],
+      unavailableTraceIDs: [traceID],
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates exact selections, keeps traces separate and retains successful groups when another fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+        const request = JSON.parse(String(init.body))
+        return {
+          ok: true,
+          json: async () => ({
+            jsonrpc: '2.0',
+            id: request.id,
+            ...(request.params.traceID === 'b'.repeat(32)
+              ? { error: { code: -1, message: 'missing' } }
+              : {
+                  result: {
+                    traceID: request.params.traceID,
+                    traceStart: '0',
+                    resources: {},
+                    scopes: {},
+                    spans: [],
+                    unplacedSpanCount: 0,
+                  },
+                }),
+          }),
+        }
+      })
+    )
+    const reference = { traceID: 'a'.repeat(32), spanID: 'f'.repeat(16) }
+    const controller = new AbortController()
+    const result = await telemetryAPI.getReferencedTraceViews(
+      [reference, reference, { ...reference, traceID: 'b'.repeat(32) }],
+      controller.signal
+    )
+    expect(result.traces.map(trace => trace.traceID)).toEqual([
+      reference.traceID,
+    ])
+    expect(result.unavailableTraceIDs).toEqual(['b'.repeat(32)])
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.map(([, init]) => JSON.parse(String(init!.body)))
+    ).toEqual([
+      expect.objectContaining({
+        method: 'getTraceView',
+        params: { traceID: reference.traceID, spanIDs: [reference.spanID] },
+      }),
+      expect.objectContaining({
+        method: 'getTraceView',
+        params: { traceID: 'b'.repeat(32), spanIDs: [reference.spanID] },
+      }),
+    ])
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(([, init]) => init!.signal === controller.signal)
+    ).toBe(true)
+  })
+
+  it('does not silently split or fetch an unbounded trace when a selection exceeds the limit', async () => {
+    stubRpcResult({})
+    const result = await telemetryAPI.getReferencedTraceViews(
+      Array.from({ length: 257 }, (_, id) => ({
+        traceID: 'a'.repeat(32),
+        spanID: id.toString(16).padStart(16, '0'),
+      }))
+    )
+    expect(result).toEqual({
+      traces: [],
+      unavailableTraceIDs: ['a'.repeat(32)],
+    })
+    expect(await telemetryAPI.getReferencedTraceViews([])).toEqual({
+      traces: [],
+      unavailableTraceIDs: [],
+    })
+    await expect(
+      telemetryAPI.getReferencedTraceViews([{ traceID: 'bad', spanID: '1' }])
+    ).rejects.toThrow('32-hex trace ID')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('telemetryAPI.getTraceSummary', () => {
+  it('looks up one exact trace independently of the Logs time range and preserves exact times', async () => {
+    stubRpcResult([
+      {
+        traceID: '00000000000000000000000000000011',
+        hasRootSpan: true,
+        rootSpan: { name: 'checkout', serviceName: 'api' },
+        startTime: '1700000000000000001',
+        durationNs: '9007199254740993',
+        spanCount: 5,
+        errorCount: 2,
+      },
+    ] satisfies JsonTraceSummary[])
+    const result = await telemetryAPI.getTraceSummary(
+      '00000000000000000000000000000011'
+    )
+    expect(result).toMatchObject({
+      startTime: 1700000000000000001n,
+      durationNs: 9007199254740993n,
+    })
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))
+    expect(request).toMatchObject({
+      method: 'searchTraceSummaries',
+      params: {
+        startTime: null,
+        endTime: null,
+        limit: 1,
+        query: {
+          type: 'condition',
+          query: {
+            field: { name: 'traceID', searchScope: 'field' },
+            fieldOperator: '=',
+            value: '00000000000000000000000000000011',
+          },
+        },
+      },
+    })
+  })
+
+  it('reports no stored trace without fabricating a summary', async () => {
+    stubRpcResult([])
+    expect(
+      await telemetryAPI.getTraceSummary('00000000000000000000000000000011')
+    ).toBeNull()
+  })
+})
+
 describe('telemetryAPI.getTraceView rehydration', () => {
   const wire = {
     traceID: 'abc123',
@@ -1281,7 +1669,19 @@ describe('telemetryAPI.getTraceView rehydration', () => {
               attributes: [],
             },
           ],
-          links: [],
+          links: [
+            {
+              traceID: 'linked-trace',
+              spanID: 'linked-span',
+              traceState: '',
+              flags: 0,
+              droppedAttributesCount: 0,
+              attributes: [],
+              summary: {
+                target: { name: 'consume', serviceName: 'worker' },
+              },
+            },
+          ],
           r: 7,
           s: 3,
           droppedAttributesCount: 0,
@@ -1327,6 +1727,45 @@ describe('telemetryAPI.getTraceView rehydration', () => {
     stubRpcResult<JsonTraceData>(wire)
     return telemetryAPI.getTraceView('abc123')
   }
+
+  it('rehydrates referenced spans with exact timing, ancestry and full shared Details payloads', async () => {
+    const traceID = 'a'.repeat(32)
+    const spanID = 'b'.repeat(16)
+    stubRpcResult({
+      ...wire,
+      traceID,
+      spans: [
+        { ...wire.spans[0], spanData: { ...wire.spans[0].spanData, spanID } },
+      ],
+    })
+    const result = await telemetryAPI.getReferencedTraceViews([
+      { traceID, spanID },
+    ])
+    expect(result.traces[0]!.spans[0]!.spanData).toMatchObject({
+      traceID,
+      spanID,
+      startTime: 1700000000000000000n,
+      endTime: 1700000000005000000n,
+      resource: {
+        attributes: [
+          { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
+        ],
+      },
+      events: [{ timestamp: 1700000000000000123n }],
+    })
+  })
+
+  it('retains derived link names separately from received link attributes', async () => {
+    const trace = await fetchTrace()
+    expect(trace.spans[0].spanData.links[0]).toMatchObject({
+      traceID: 'linked-trace',
+      spanID: 'linked-span',
+      attributes: [],
+      summary: {
+        target: { name: 'consume', serviceName: 'worker' },
+      },
+    })
+  })
 
   it('resolves each span against its own resource, not the first one', async () => {
     const trace = await fetchTrace()
@@ -1780,6 +2219,11 @@ describe('request parameters', () => {
       'deleteLogsByRefs',
       () => telemetryAPI.deleteLogsByRefs('log-1'),
       ['log-1'],
+    ],
+    [
+      'deleteLogsByRefs',
+      () => telemetryAPI.deleteLogsByRefs('log-1', 'log-2'),
+      ['log-1', 'log-2'],
     ],
   ])(
     '%s stays positional, because its params are the ids',

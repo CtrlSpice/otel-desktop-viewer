@@ -6,7 +6,6 @@
     setupAnchorPopover,
     type PopoverAnchor,
   } from '@/components/shared/utils/anchor-popover'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import PresetTimeRanges from './PresetTimeRanges.svelte'
   import TimeRangeFilterBody from './TimeRangeFilterBody.svelte'
 
@@ -66,7 +65,8 @@
   })
 
   let {
-    class: className = '',
+    class:
+      className = 'btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content',
     popoverAnchor = 'below-end',
   }: {
     class?: string
@@ -78,11 +78,11 @@
 <button
   bind:this={triggerEl}
   type="button"
-  class={className}
+  class="time-filter-trigger tooltip tooltip-bottom {className}"
   popovertarget={popoverID}
   aria-expanded={popoverOpen}
   aria-label={ariaLabel}
-  data-tip="Time range"
+  data-tip={popoverOpen ? '' : 'Time range'}
 >
   <svg
     class="h-[17px] w-[17px] shrink-0"
@@ -92,6 +92,7 @@
     stroke-width="1.5"
     stroke-linecap="round"
     stroke-linejoin="round"
+    aria-hidden="true"
   >
     <circle cx="12" cy="12" r="10" />
     <path d="M12 8v4l2 2" />
@@ -102,14 +103,26 @@
   bind:this={popoverEl}
   popover="auto"
   id={popoverID}
-  class="anchor-popover anchor-popover--anchored anchor-popover--wide"
+  class="anchor-popover anchor-popover--anchored anchor-popover--form datetime-popover gap-2"
 >
-  <PaneHeader mode="toolbar" ariaLabel="Time range presets">
-    {#snippet right()}
-      <PresetTimeRanges />
-    {/snippet}
-  </PaneHeader>
+  <div class="min-w-0 shrink-0" role="toolbar" aria-label="Time range presets">
+    <PresetTimeRanges />
+  </div>
   <div class="anchor-popover__body">
     <TimeRangeFilterBody />
   </div>
 </div>
+
+<style>
+  .datetime-popover {
+    width: 32rem;
+    font-family: var(--font-sans);
+    container-type: inline-size;
+  }
+
+  .time-filter-trigger::before {
+    left: auto;
+    right: 0;
+    --tt-trans: 0%;
+  }
+</style>

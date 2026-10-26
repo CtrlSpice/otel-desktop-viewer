@@ -29,7 +29,7 @@ func attributeTestViewer(t *testing.T) (*sql.DB, *httptest.Server) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	_, err = db.Exec(`CREATE TABLE attributes (id UUID PRIMARY KEY, key VARCHAR, value JSON);
 CREATE TABLE spans (trace_id UUID, span_id UBIGINT, start_time UBIGINT,
-    service_name VARCHAR, attribute_ids UUID[], PRIMARY KEY (trace_id, span_id))`)
+    service_name VARCHAR, attribute_ids UUID[], resource_id UUID, PRIMARY KEY (trace_id, span_id))`)
 	require.NoError(t, err)
 	viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -100,7 +100,7 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
  ('00000000-0000-0000-0000-000000000003', 'method', '{"kind":"int64","value":"9007199254740993"}'),
  ('00000000-0000-0000-0000-000000000004', 'method', '{"kind":"string","value":"9007199254740993"}'),
  ('00000000-0000-0000-0000-000000000005', 'unowned', '{"kind":"bool","value":true}');
-INSERT INTO spans VALUES
+INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) VALUES
  ('00000000-0000-0000-0000-000000000001', 1, 6400000000000, 'checkout', ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001']),
  ('00000000-0000-0000-0000-000000000002', 1, 10000000000000, 'checkout', ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002']),
  ('00000000-0000-0000-0000-000000000002', 2, 7000000000000, 'checkout', ['00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000004']),
@@ -169,7 +169,7 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 		id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
 		_, err := db.Exec("INSERT INTO attributes VALUES (?::UUID, ?, ?::JSON)", id, key, value)
 		require.NoError(t, err)
-		_, err = db.Exec("INSERT INTO spans VALUES (?::UUID, ?, 8000000000000, ?, [?::UUID])", id, i+1, service, id)
+		_, err = db.Exec("INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) VALUES (?::UUID, ?, 8000000000000, ?, [?::UUID])", id, i+1, service, id)
 		require.NoError(t, err)
 	}
 	var result attributeValuesResult

@@ -1,8 +1,12 @@
 import type {
   TraceData,
   TraceSummary,
+  SpanTiming,
   LogData,
   LogSummary,
+  LogColumn,
+  LogTableRow,
+  LogErrorNavigation,
   TraceLogSummary,
   MetricViewData,
   MetricSeriesViewData,
@@ -27,6 +31,7 @@ import type {
   JsonExemplar,
   JsonLogData,
   JsonLogSummary,
+  JsonLogTableRow,
   JsonTraceLogSummary,
   JsonMetricViewData,
   JsonMetricSummary,
@@ -51,6 +56,20 @@ import type {
   JsonDouble,
 } from '@/types/wire-types'
 import type { Attribute, AttributeValue } from '@/types/api-types'
+import type {
+  DiscoveryOptions,
+  DiscoveryPage,
+  ServiceSummary,
+  ServiceConnection,
+  ServiceConnectionSpan,
+  AttributeKey,
+  AttributeFrequency,
+} from './discovery-types'
+import {
+  attributeMatchesSQL,
+  type AttributeMatchOptions,
+  type AttributeRecordMatch,
+} from './attribute-matches'
 import {
   getOperatorsForFieldType,
   type FieldDefinition,
@@ -67,6 +86,13 @@ type JsonRpcParamValue =
   | SearchSort
   | readonly string[]
   | readonly number[]
+  | readonly LogColumn[]
+  | (Omit<DiscoveryOptions, 'queries'> & {
+      queries?: Record<
+        'traces' | 'metrics' | 'logs',
+        JsonQueryNode | false | null
+      >
+    })
 
 type JsonRpcNamedParams = Record<string, JsonRpcParamValue | undefined>
 type JsonRpcParams = JsonRpcNamedParams | readonly string[]
@@ -155,9 +181,9 @@ function scalarDeltaFromWire(
 }
 
 function doubleRecordFromJSON(
-  values: Record<string, JsonDouble | null> | null
+  values: Record<string, JsonDouble | null> | null | undefined
 ): Record<string, number | null> | null {
-  if (values === null) return null
+  if (values === null || values === undefined) return null
   return Object.fromEntries(
     Object.entries(values).map(([key, value]) => [
       key,
@@ -745,22 +771,14 @@ function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
   switch (json.metricType) {
     case 'Gauge':
     case 'Sum':
-      datapoints = json.datapoints.map(point =>
-        receivedNumberDataPointFromJSON(point as JsonReceivedNumberDataPoint)
-      )
+      datapoints = json.datapoints.map(receivedNumberDataPointFromJSON)
       break
     case 'Histogram':
-      datapoints = json.datapoints.map(point =>
-        receivedHistogramDataPointFromJSON(
-          point as JsonReceivedHistogramDataPoint
-        )
-      )
+      datapoints = json.datapoints.map(receivedHistogramDataPointFromJSON)
       break
     case 'ExponentialHistogram':
-      datapoints = json.datapoints.map(point =>
-        receivedExponentialHistogramDataPointFromJSON(
-          point as JsonReceivedExponentialHistogramDataPoint
-        )
+      datapoints = json.datapoints.map(
+        receivedExponentialHistogramDataPointFromJSON
       )
       break
   }
@@ -792,6 +810,7 @@ function metricSummariesFromJSON(json: JsonMetricSummary[]): MetricSummary[] {
 
 function statsFromJSON(json: JsonStats): Stats {
   return {
+    storage: json.storage,
     traces: {
       ...json.traces,
       lastReceived: nullableBigintFromWire(json.traces.lastReceived),
@@ -813,7 +832,104 @@ function statsFromJSON(json: JsonStats): Stats {
   }
 }
 
+async function discover<T>(
+  options: DiscoveryOptions,
+  signal?: AbortSignal
+): Promise<DiscoveryPage<T>> {
+  const convert = (query: QueryNode | false | null) =>
+    query ? convertQueryTreeForBackend(query) : query
+  const { queries, ...plainOptions } = options
+  const wireOptions = queries
+    ? {
+        ...plainOptions,
+        queries: {
+          traces: convert(queries.traces),
+          metrics: convert(queries.metrics),
+          logs: convert(queries.logs),
+        },
+      }
+    : plainOptions
+  const result = await callRPC<{
+    rows: [T][]
+    truncated: boolean
+    totals?: DiscoveryPage<T>['totals']
+  }>('discoverTelemetry', named({ options: wireOptions }), signal)
+  return {
+    items: result.rows.map(row => row[0]),
+    truncated: result.truncated,
+    totals: result.totals,
+  }
+}
+
 export let telemetryAPI = {
+  discoverServiceConnections: (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ) => discover<ServiceConnection>({ ...options, kind: 'connections' }, signal),
+  discoverServiceConnectionSpans: (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ) =>
+    discover<ServiceConnectionSpan>(
+      { ...options, kind: 'connection-spans' },
+      signal
+    ),
+  getAttributeRecordMatches: async (
+    options: AttributeMatchOptions,
+    signal?: AbortSignal
+  ): Promise<AttributeRecordMatch[]> => {
+    const matches: AttributeRecordMatch[] = []
+    let more = true
+    while (more) {
+      signal?.throwIfAborted()
+      const result = await callRPC<{
+        rows: [string, string[], number][]
+        truncated: boolean
+      }>(
+        'query',
+        named({
+          sql: attributeMatchesSQL(options, matches.length),
+          limit: 500,
+        }),
+        signal
+      )
+      matches.push(
+        ...result.rows.map(([itemRef, spanIDs, count]) => ({
+          itemRef,
+          spanIDs,
+          count,
+        }))
+      )
+      more = result.truncated
+    }
+    return matches
+  },
+  discoverServices: (
+    options: Omit<DiscoveryOptions, 'kind'> = {},
+    signal?: AbortSignal
+  ) => discover<ServiceSummary>({ ...options, kind: 'services' }, signal),
+  discoverAttributeKeys: (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ) => discover<AttributeKey>({ ...options, kind: 'keys' }, signal),
+  discoverAttributeValues: async (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ): Promise<DiscoveryPage<AttributeFrequency>> => {
+    const page = await discover<
+      Omit<AttributeFrequency, 'value' | 'identity'> & {
+        value: JsonAttributeValue
+      }
+    >({ ...options, kind: 'values' }, signal)
+    return {
+      ...page,
+      items: page.items.map(item => ({
+        ...item,
+        identity: JSON.stringify(item.value),
+        value: attributeValueFromJSON(item.value),
+      })),
+    }
+  },
   // Value-first discovery: given text the user can see, which attribute keys
   // hold it. Cross-signal by nature -- the dictionary it reads is shared by
   // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
@@ -902,7 +1018,8 @@ export let telemetryAPI = {
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
+    sort?: SearchSort,
+    signal?: AbortSignal
   ): Promise<TraceSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -915,9 +1032,183 @@ export let telemetryAPI = {
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
         sort,
-      })
+      }),
+      signal
     )
     return traceSummariesFromJSON(rawData)
+  },
+
+  /** Fetch only timing fields for exact span references, in bounded batches. */
+  getSpanTimings: async (
+    references: readonly Pick<SpanTiming, 'traceID' | 'spanID'>[],
+    signal?: AbortSignal
+  ): Promise<SpanTiming[]> => {
+    const unique = new Map<string, { traceID: string; spanID: string }>()
+    for (const reference of references) {
+      if (
+        !/^[a-f0-9]{32}$/i.test(reference.traceID) ||
+        !/^[a-f0-9]{16}$/i.test(reference.spanID)
+      ) {
+        throw new Error(
+          'Span timing references require a 32-hex trace ID and a 16-hex span ID.'
+        )
+      }
+      const traceID = reference.traceID.toLowerCase()
+      const spanID = reference.spanID.toLowerCase()
+      unique.set(`${traceID}/${spanID}`, { traceID, spanID })
+    }
+    const pairs = [...unique.values()]
+    const timings: SpanTiming[] = []
+    for (let offset = 0; offset < pairs.length; offset += 64) {
+      const batch = pairs.slice(offset, offset + 64)
+      // Only validated hex identifiers enter SQL; project exact timestamps as
+      // strings so JSON number parsing cannot lose nanoseconds.
+      const values = batch
+        .map(({ traceID, spanID }) => {
+          const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
+          return `('${uuid}'::UUID, '0x${spanID}'::UBIGINT)`
+        })
+        .join(', ')
+      const result = await callRPC<{
+        rows: [string, string, string, string | null, string, string, number][]
+        truncated: boolean
+      }>(
+        'query',
+        named({
+          sql: `WITH requested(trace_id, span_id) AS (VALUES ${values})
+SELECT trace_id_wire(s.trace_id), span_id_wire(s.span_id), s.name,
+s.service_name, s.start_time::VARCHAR, s.end_time::VARCHAR, s.status_code
+FROM spans s JOIN requested r ON s.trace_id = r.trace_id AND s.span_id = r.span_id
+LIMIT ${batch.length}`,
+          limit: batch.length,
+        }),
+        signal
+      )
+      if (result.truncated)
+        throw new Error('Span timing lookup returned more rows than requested.')
+      timings.push(
+        ...result.rows.map(
+          ([
+            traceID,
+            spanID,
+            name,
+            serviceName,
+            startTime,
+            endTime,
+            statusCodeValue,
+          ]) => ({
+            traceID,
+            spanID,
+            name,
+            serviceName: serviceName ?? '',
+            startTime: BigInt(startTime),
+            endTime: BigInt(endTime),
+            statusCodeValue,
+          })
+        )
+      )
+    }
+    return timings
+  },
+
+  /** Resolve trace-only references to a bounded span selection; retain exact selections. */
+  getReferencedTraceViews: async (
+    references: readonly { traceID: string; spanID?: string }[],
+    signal?: AbortSignal
+  ): Promise<{ traces: TraceData[]; unavailableTraceIDs: string[] }> => {
+    const groups = new Map<string, Set<string> | null>()
+    for (const reference of references) {
+      if (
+        !/^[a-f0-9]{32}$/i.test(reference.traceID) ||
+        (reference.spanID !== undefined &&
+          !/^[a-f0-9]{16}$/i.test(reference.spanID))
+      ) {
+        throw new Error(
+          'Trace references require a 32-hex trace ID and a 16-hex span ID.'
+        )
+      }
+      const traceID = reference.traceID.toLowerCase()
+      if (reference.spanID === undefined) groups.set(traceID, null)
+      else if (groups.get(traceID) !== null) {
+        const ids = groups.get(traceID) ?? new Set<string>()
+        ids.add(reference.spanID.toLowerCase())
+        groups.set(traceID, ids)
+      }
+    }
+    const traces: TraceData[] = []
+    const unavailableTraceIDs: string[] = []
+    const entries = [...groups]
+    // Never split a trace's selection: that would lose ancestry across batches.
+    // Four concurrent trace queries, each with at most 256 exact span identities.
+    for (let offset = 0; offset < entries.length; offset += 4) {
+      if (signal?.aborted) throw new RequestAbortedError()
+      const batch = entries.slice(offset, offset + 4)
+      const results = await Promise.allSettled(
+        batch.map(async ([traceID, ids]) => {
+          if (ids === null) {
+            const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
+            const selection = await callRPC<{
+              rows: [string][]
+              truncated: boolean
+            }>(
+              'query',
+              named({
+                sql: `SELECT span_id_wire(span_id) FROM spans WHERE trace_id = '${uuid}'::UUID ORDER BY start_time, span_id LIMIT 257`,
+                limit: 257,
+              }),
+              signal
+            )
+            if (selection.truncated || selection.rows.length > 256)
+              throw new Error(
+                'Referenced trace exceeds the 256-span view limit.'
+              )
+            if (!selection.rows.length)
+              return { traceID, spans: [], unplacedSpanCount: 0 }
+            ids = new Set(selection.rows.map(([id]) => id))
+          }
+          if (ids.size > 256)
+            throw new Error('Referenced trace exceeds the 256-span view limit.')
+          const raw = await callRPC<JsonTraceData>(
+            'getTraceView',
+            named({ traceID, spanIDs: [...ids] }),
+            signal
+          )
+          return traceDataFromJSON(raw)
+        })
+      )
+      if (signal?.aborted) throw new RequestAbortedError()
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') traces.push(result.value)
+        else unavailableTraceIDs.push(batch[index]![0])
+      })
+    }
+    return { traces, unavailableTraceIDs }
+  },
+
+  /** Look up the associated trace without the Logs time/query filters or a waterfall fetch. */
+  getTraceSummary: async (
+    traceID: string,
+    signal?: AbortSignal
+  ): Promise<TraceSummary | null> => {
+    const result = await callRPC<JsonTraceSummary[]>(
+      'searchTraceSummaries',
+      named({
+        startTime: null,
+        endTime: null,
+        limit: 1,
+        query: {
+          id: 'associated-trace',
+          type: 'condition',
+          query: {
+            field: { name: 'traceID', searchScope: 'field', type: 'string' },
+            fieldOperator: '=',
+            value: traceID,
+          },
+        },
+      }),
+      signal
+    )
+    return traceSummariesFromJSON(result)[0] ?? null
   },
 
   getTraceView: async (
@@ -948,6 +1239,22 @@ export let telemetryAPI = {
     return traceLogSummariesFromJSON(rawData)
   },
 
+  /** Full logs for one exact received trace/span pair. No trace-wide association. */
+  getSpanLogs: async (
+    traceID: string,
+    spanID: string,
+    signal?: AbortSignal
+  ): Promise<LogData[]> => {
+    const result = await callRPC<
+      | { status: 'found'; logs: JsonLogData[] }
+      | { status: 'notFound' | 'ambiguous' }
+    >('getSpan', named({ traceID, spanID }), signal)
+    if (result.status === 'notFound') return []
+    if (result.status !== 'found')
+      throw new Error('Span identity is ambiguous.')
+    return result.logs.map(logDataFromJSON)
+  },
+
   clearTraces: () => callRPC<string>('clearTraces', undefined),
   deleteTraces: (traceIDs: string[]) =>
     callRPC<JsonDeleteResult>('deleteSpansByTraceID', traceIDs),
@@ -957,7 +1264,8 @@ export let telemetryAPI = {
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
+    sort?: SearchSort,
+    signal?: AbortSignal
   ): Promise<LogSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -969,18 +1277,78 @@ export let telemetryAPI = {
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
         sort,
-      })
+      }),
+      signal
     )
     return logSummariesFromJSON(rawData)
   },
+
+  searchLogPage: async (
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
+    pageSize: number,
+    offset: number,
+    queryTree?: QueryNode,
+    limit?: number,
+    sort?: SearchSort,
+    columns?: LogColumn[],
+    signal?: AbortSignal
+  ): Promise<{ logs: LogTableRow[]; total: number }> => {
+    const data = await callRPC<{ logs: JsonLogTableRow[]; total: number }>(
+      'searchLogPage',
+      named({
+        startTime: serializeNanoseconds(startTime),
+        endTime: serializeNanoseconds(endTime),
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
+        sort,
+        pageSize,
+        offset,
+        columns: columns?.length ? columns : undefined,
+      }),
+      signal
+    )
+    return {
+      logs: data.logs.map(log => ({
+        ...logSummaryFromJSON(log),
+        columnValues: log.columnValues?.map(column => ({
+          ...column,
+          values: column.values.map(attributeValueFromJSON),
+        })),
+      })),
+      total: data.total,
+    }
+  },
+
+  getLogErrorNavigation: async (
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
+    selectedLogRef: string | null,
+    queryTree?: QueryNode,
+    limit?: number,
+    sort?: SearchSort,
+    signal?: AbortSignal
+  ): Promise<LogErrorNavigation> =>
+    callRPC<LogErrorNavigation>(
+      'getLogErrorNavigation',
+      named({
+        startTime: serializeNanoseconds(startTime),
+        endTime: serializeNanoseconds(endTime),
+        selectedLogRef,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
+        sort,
+      }),
+      signal
+    ),
 
   getLog: async (logRef: string): Promise<LogData> => {
     const rawData = await callRPC<JsonLogData>('getLog', named({ logRef }))
     return logDataFromJSON(rawData)
   },
 
-  deleteLogsByRefs: (logRef: string) =>
-    callRPC<JsonDeleteResult>('deleteLogsByRefs', [logRef]),
+  deleteLogsByRefs: (...logRefs: string[]) =>
+    callRPC<JsonDeleteResult>('deleteLogsByRefs', logRefs),
   clearLogs: () => callRPC<string>('clearLogs', undefined),
 
   searchMetricSummaries: async (
@@ -988,7 +1356,8 @@ export let telemetryAPI = {
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
+    sort?: SearchSort,
+    signal?: AbortSignal
   ): Promise<MetricSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -1000,7 +1369,8 @@ export let telemetryAPI = {
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
         sort,
-      })
+      }),
+      signal
     )
     return metricSummariesFromJSON(rawData)
   },
@@ -1130,7 +1500,9 @@ export let telemetryAPI = {
     /** Series included in the scalar Selected pool without narrowing All. */
     selectedSeriesRefs?: string[],
     /** Bucket time zone. It must match the per-series view. */
-    tzName?: string
+    tzName?: string,
+    /** Highlight this source's interval activity inside the aggregate. */
+    datapointRef?: string
   ): Promise<MetricAggregateViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -1148,13 +1520,18 @@ export let telemetryAPI = {
           viewBuckets,
           selectedSeriesRefs: selectedSeriesRefs ?? null,
           tzName,
+          datapointRef,
         })
       )
       if (!raw) return null
-      return {
+      const result: MetricAggregateViewData = {
         aggregate: aggregateBucketsFromJSON(raw.aggregate),
         scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
       }
+      if (raw.contribution !== undefined) {
+        result.contribution = aggregateBucketsFromJSON(raw.contribution)
+      }
+      return result
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1189,18 +1566,25 @@ export let telemetryAPI = {
   // Stats methods
   getImportConfig: async (
     signal?: AbortSignal
-  ): Promise<{ otlpHttpPort: number }> => {
-    const config = await callRPC<{ otlpHttpPort: number }>(
-      'getImportConfig',
-      undefined,
-      signal
-    )
+  ): Promise<{ otlpHttpPort: number; otlpGrpcPort?: number }> => {
+    const config = await callRPC<{
+      otlpHttpPort: number
+      otlpGrpcPort?: number
+    }>('getImportConfig', undefined, signal)
     if (
       !Number.isInteger(config?.otlpHttpPort) ||
       config.otlpHttpPort < 1 ||
       config.otlpHttpPort > 65535
     ) {
       throw new Error('The viewer returned an invalid OTLP HTTP port')
+    }
+    if (
+      config.otlpGrpcPort !== undefined &&
+      (!Number.isInteger(config.otlpGrpcPort) ||
+        config.otlpGrpcPort < 1 ||
+        config.otlpGrpcPort > 65535)
+    ) {
+      throw new Error('The viewer returned an invalid OTLP gRPC port')
     }
     return config
   },

@@ -1,12 +1,18 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { CircleIcon } from '@hugeicons/core-free-icons'
+  import { CircleIcon, PlusSignIcon } from '@hugeicons/core-free-icons'
   import {
     createPopoverID,
     setupAnchorPopover,
   } from '@/components/shared/utils/anchor-popover'
-  import { severityBadgeClass } from '@/components/logs/log-severity'
+  import LogSeverity from '@/components/logs/LogSeverity.svelte'
+  import { severityLabel } from '@/components/logs/log-severity'
   import { formatSignedDuration } from '@/utils/time'
+  import {
+    toolEventProvenance,
+    toolEventError,
+    toolEventName,
+  } from '@/utils/tool-event'
   import {
     MARKER_GLYPH_REM,
     MARKER_HIT_AREA_REM,
@@ -46,34 +52,36 @@
   }
 
   function recordName(record: TimelineRecord): string {
-    return record.kind === 'event' ? record.event.name : record.log.eventName
+    return record.kind === 'event'
+      ? toolEventName(record.event)
+      : record.log.eventName || record.log.bodyPreview
   }
 
   function buttonTitle(): string {
     const placement = marker.position.placement
     const suffix =
       placement === 'before'
-        ? ' before trace'
+        ? ' before timeline'
         : placement === 'after'
-          ? ' after trace'
+          ? ' after timeline'
           : placement === 'outside'
-            ? ' outside trace axis'
+            ? ' outside timeline'
             : ''
     return `${markerLabel(marker)}${suffix}`
   }
 
   function showPreview() {
-    if (restoringTriggerFocus || !singleton || !popover?.showPopover) return
+    if (restoringTriggerFocus || !popover?.showPopover) return
     cancelClose()
     closeOtherActivityPopovers()
     popover.showPopover()
   }
 
-  function closeAndRestoreTriggerFocus() {
+  function closePopover(restoreFocus = false) {
     restoringTriggerFocus = true
     try {
       popover?.hidePopover()
-      trigger?.focus()
+      if (restoreFocus) trigger?.focus()
     } finally {
       restoringTriggerFocus = false
     }
@@ -88,7 +96,7 @@
   }
 
   function scheduleClose() {
-    if (!singleton || pinned) return
+    if (pinned) return
     cancelClose()
     closeTimer = setTimeout(() => {
       closeTimer = null
@@ -122,12 +130,12 @@
   }
 
   function hidePreviewIfUnowned() {
-    if (!singleton || pinned || previewHasOwner()) return
-    popover?.hidePopover()
+    if (pinned || previewHasOwner()) return
+    closePopover()
   }
 
   function handleFocusOut() {
-    if (!singleton || pinned) return
+    if (pinned) return
     setTimeout(hidePreviewIfUnowned)
   }
 
@@ -136,8 +144,7 @@
       event?.detail === 0 &&
       document.activeElement instanceof Node &&
       popover?.contains(document.activeElement)
-    if (restoreFocus) closeAndRestoreTriggerFocus()
-    else popover?.hidePopover()
+    closePopover(restoreFocus === true)
     onSelectRecord(record)
   }
 
@@ -148,9 +155,14 @@
       if (record) select(record)
       return
     }
-    pinned = true
-    closeOtherActivityPopovers()
-    popover?.togglePopover()
+    if (pinned) {
+      closePopover(true)
+    } else {
+      pinned = true
+      cancelClose()
+      closeOtherActivityPopovers()
+      popover?.showPopover()
+    }
   }
 
   $effect(() => {
@@ -175,7 +187,7 @@
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
-      closeAndRestoreTriggerFocus()
+      closePopover(true)
     }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
@@ -210,7 +222,13 @@
     aria-hidden="true"
   />
   {#if marker.members.length > 1}
-    <span class="timeline-marker__count">{marker.members.length}</span>
+    <HugeiconsIcon
+      icon={PlusSignIcon}
+      size={8}
+      strokeWidth={2}
+      class="timeline-marker__plus"
+      aria-hidden="true"
+    />
   {/if}
 </button>
 
@@ -232,26 +250,64 @@
       <div role="listitem">
         <button
           type="button"
-          class="activity-popover__row"
+          class="activity-popover__row item-state item-state--menu"
           onclick={event => {
             event.stopPropagation()
             select(record, event)
           }}
         >
-          {#if record.kind === 'event'}
-            <span
-              class="badge badge-xs badge-soft activity-popover__event-badge"
-              style:--activity-color={spanColor}>Event</span
-            >
-          {:else}
-            <span class={severityBadgeClass(record.log.severityNumber)}
-              >Log</span
-            >
-          {/if}
-          <span class="activity-popover__offset">{offsetLabel(record)}</span>
-          {#if name}
-            <span class="activity-popover__name">{name}</span>
-          {/if}
+          <span class="activity-popover__heading">
+            {#if record.kind !== 'log'}
+              <span class="activity-popover__name">
+                {#if record.kind === 'event' && name === 'exception'}
+                  <span
+                    class="size-2 shrink-0 rounded-full bg-error"
+                    aria-hidden="true"
+                  ></span>
+                {/if}
+                <span class="min-w-0 truncate" title={name}>{name}</span>
+                {#if record.kind === 'event' && toolEventError(record.event)}
+                  <span class="shrink-0"> · Tool error</span>
+                {/if}
+              </span>
+            {:else if name}
+              <LogSeverity
+                number={record.log.severityNumber}
+                text={record.log.severityText}
+              >
+                {name}<span class="sr-only">
+                  · {severityLabel(
+                    record.log.severityText,
+                    record.log.severityNumber
+                  )} ({record.log.severityNumber})</span
+                >
+              </LogSeverity>
+            {:else}
+              <LogSeverity
+                number={record.log.severityNumber}
+                text={record.log.severityText}
+              />
+            {/if}
+            <span class="activity-popover__offset">{offsetLabel(record)}</span>
+          </span>
+          <span
+            class="activity-popover__metadata text-subtle"
+            class:activity-popover__metadata--with-dot={record.kind === 'log' ||
+              name === 'exception'}
+          >
+            {#if record.kind === 'event'}
+              {@const provenance = toolEventProvenance(record.event)}
+              <span
+                >Span event{#if provenance}<span aria-hidden="true"
+                    >{' · '}</span
+                  ><span class="text-secondary" title={provenance.description}
+                    >{provenance.source}</span
+                  >{/if}</span
+              >
+            {:else}
+              <span>Log</span>
+            {/if}
+          </span>
         </button>
       </div>
     {/each}
@@ -275,16 +331,12 @@
   .timeline-marker :global(.timeline-marker__circle) {
     width: var(--marker-glyph);
     height: var(--marker-glyph);
-    fill: color-mix(
-      in oklab,
-      var(--marker-color),
-      var(--waterfall-marker-mix-target) var(--waterfall-marker-mix-strength)
-    );
+    fill: var(--marker-color);
     color: var(--color-base-200);
   }
 
-  .timeline-marker__count {
-    @apply pointer-events-none absolute inset-0 flex items-center justify-center text-[9px] font-bold leading-none;
+  .timeline-marker :global(.timeline-marker__plus) {
+    @apply pointer-events-none absolute;
     color: var(--color-base-200);
   }
 
@@ -298,20 +350,27 @@
   }
 
   .activity-popover__row {
-    @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-base-content/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary;
+    @apply flex w-full cursor-pointer flex-col gap-0 px-3 py-2 text-left text-sm font-normal;
   }
 
-  .activity-popover__event-badge {
-    color: var(--activity-color);
-    border-color: color-mix(in oklab, var(--activity-color) 45%, transparent);
-    background: color-mix(in oklab, var(--activity-color) 14%, transparent);
+  .activity-popover__heading {
+    @apply flex w-full min-w-0 items-center gap-2;
   }
 
   .activity-popover__offset {
-    @apply whitespace-nowrap font-mono tabular-nums text-base-content/70;
+    @apply ml-auto shrink-0 whitespace-nowrap text-right font-sans tabular-nums;
+    color: var(--color-subtle);
   }
 
   .activity-popover__name {
-    @apply truncate text-base-content;
+    @apply flex min-w-0 items-center gap-2 text-base-content;
+  }
+
+  .activity-popover__metadata {
+    @apply flex w-full min-w-0 items-center gap-2 whitespace-nowrap;
+  }
+
+  .activity-popover__metadata--with-dot {
+    padding-left: 1rem;
   }
 </style>

@@ -13,7 +13,7 @@ import (
 
 func TestImportConfigRPC(t *testing.T) {
 	for _, port := range []int{4318, 54318, 0} {
-		s, err := NewServer("127.0.0.1:0", port, nil, zap.NewNop(), nil)
+		s, err := NewServer("127.0.0.1:0", port, nil, zap.NewNop(), nil, WithOTLPGRPCPort(54317))
 		require.NoError(t, err)
 		request := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewBufferString(`{"jsonrpc":"2.0","id":7,"method":"getImportConfig"}`))
 		response := httptest.NewRecorder()
@@ -21,7 +21,8 @@ func TestImportConfigRPC(t *testing.T) {
 		var reply struct {
 			ID     int `json:"id"`
 			Result struct {
-				Port int `json:"otlpHttpPort"`
+				Port     int `json:"otlpHttpPort"`
+				GRPCPort int `json:"otlpGrpcPort"`
 			} `json:"result"`
 			Error *struct {
 				Message string `json:"message"`
@@ -35,6 +36,7 @@ func TestImportConfigRPC(t *testing.T) {
 		} else {
 			require.Nil(t, reply.Error)
 			require.Equal(t, port, reply.Result.Port)
+			require.Equal(t, 54317, reply.Result.GRPCPort)
 		}
 	}
 }

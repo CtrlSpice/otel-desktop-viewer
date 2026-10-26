@@ -44,7 +44,7 @@ describe('Svelte transition fallback', () => {
     }
 
     render(ThemeToggle)
-    const button = screen.getByRole('button')
+    const button = screen.getByRole('button', { name: /theme active/ })
 
     await fireEvent.click(button)
     await Promise.resolve()

@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { screen } from '@testing-library/svelte'
+import { tick } from 'svelte'
+import userEvent from '@testing-library/user-event'
 import EventsPanel from './EventsPanel.svelte'
 import type { EventData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -19,25 +22,82 @@ describe('EventsPanel selected event', () => {
     Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('opens the first event by default', () => {
+  it('starts collapsed and expands each event independently with click or keyboard', async () => {
     const { container } = renderWithContexts(EventsPanel, {
       events: [makeEvent('first', 0n), makeEvent('second', 100n)],
       spanStartTime: 1_000n,
     })
-    const details = container.querySelectorAll('details')
-    expect(details).toHaveLength(2)
-    expect(details[0]?.open).toBe(true)
-    expect(details[1]?.open).toBe(false)
+    expect(container.querySelectorAll('details, summary')).toHaveLength(0)
+    const cards = screen.getAllByRole('button', { expanded: false })
+    expect(cards).toHaveLength(2)
+    expect(screen.queryByRole('table')).toBeNull()
+    await userEvent.click(cards[0]!)
+    expect(screen.getByRole('table', { name: 'Event first' })).toBeVisible()
+    expect(cards[1]).toHaveAttribute('aria-expanded', 'false')
+    cards[1]!.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByRole('table', { name: 'Event second' })).toBeVisible()
+    expect(cards[0]).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.keyboard(' ')
+    expect(cards[1]).toHaveAttribute('aria-expanded', 'false')
+    expect(cards[0]!.querySelector('a, button')).toBeNull()
+    expect(screen.getAllByText('Span event', { exact: true })).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'API deprecation' })).toBeNull()
   })
 
-  it('opens the selected event index', () => {
+  it('reveals and scrolls to the selected event while other cards remain available', async () => {
     const { container } = renderWithContexts(EventsPanel, {
       events: [makeEvent('first', 0n), makeEvent('second', 100n)],
       spanStartTime: 1_000n,
       selectedEventIndex: 1,
     })
-    const details = container.querySelectorAll('details')
-    expect(details[0]?.open).toBe(false)
-    expect(details[1]?.open).toBe(true)
+    await tick()
+    expect(container.querySelectorAll('details, summary')).toHaveLength(0)
+    expect(screen.queryByRole('table', { name: 'Event first' })).toBeNull()
+    expect(screen.getByRole('table', { name: 'Event second' })).toBeVisible()
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+      block: 'start',
+    })
+  })
+
+  it('retains disclosure on refresh but starts closed on another span without remounting', async () => {
+    const props = {
+      events: [makeEvent('tool.output', 0n)],
+      spanStartTime: 1_000n,
+      spanKey: 'trace/first',
+    }
+    const { rerender } = renderWithContexts(EventsPanel, props)
+    const card = screen.getByRole('button', { expanded: false })
+    await userEvent.click(card)
+    const table = screen.getByRole('table')
+    await rerender({ componentProps: { ...props, events: [...props.events] } })
+    expect(card).toHaveAttribute('aria-expanded', 'true')
+    await rerender({ componentProps: { ...props, spanKey: 'trace/second' } })
+    expect(card).toHaveAttribute('aria-expanded', 'false')
+    expect(table.isConnected).toBe(true)
+    expect(table).not.toBeVisible()
+    await rerender({
+      componentProps: {
+        ...props,
+        spanKey: 'trace/third',
+        selectedEventIndex: 0,
+      },
+    })
+    expect(card).toHaveAttribute('aria-expanded', 'true')
+    expect(table).toBeVisible()
+  })
+
+  it('marks only exception events with a Love dot and keeps their title neutral', () => {
+    const { container } = renderWithContexts(EventsPanel, {
+      events: [makeEvent('exception', 0n), makeEvent('checkpoint', 1n)],
+      spanStartTime: 1_000n,
+    })
+    const title = screen.getByText('exception')
+    expect(title.parentElement).toHaveClass('text-base-content')
+    expect(title.previousElementSibling).toHaveClass('bg-error', 'size-2')
+    expect(title.previousElementSibling).toHaveAttribute('aria-hidden', 'true')
+    expect(container.querySelectorAll('.bg-error')).toHaveLength(1)
+    expect(container.querySelector('.text-error, .badge-error')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'API deprecation' })).toBeNull()
   })
 })

@@ -34,11 +34,14 @@ import (
 // named call to them is refused with a message saying so, which is the honest
 // answer.
 var methodParamNames = map[string][]string{
+	"discoverTelemetry":     {"options"},
 	"searchTraceSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
-	"getTraceView":          {"traceID", "query"},
+	"getTraceView":          {"traceID", "query", "spanIDs"},
 	"getTraceOverview":      {"traceID"},
 	"getSpan":               {"spanID", "traceID", "limit"},
 	"searchLogSummaries":    {"startTime", "endTime", "query", "limit", "sort"},
+	"searchLogPage":         {"startTime", "endTime", "query", "limit", "sort", "pageSize", "offset", "columns"},
+	"getLogErrorNavigation": {"startTime", "endTime", "query", "limit", "sort", "selectedLogRef"},
 	"getTraceLogSummaries":  {"traceID"},
 	"getLog":                {"logRef"},
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
@@ -53,7 +56,7 @@ var methodParamNames = map[string][]string{
 	"getMetricAggregateView": {
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
-		"selectedSeriesRefs", "tzName",
+		"selectedSeriesRefs", "tzName", "datapointRef",
 	},
 	"searchAttributeMatches":                {"term"},
 	"getFieldValueCompletions":              {"signal", "field", "term", "limit"},
@@ -198,6 +201,10 @@ func parseSearchParams(raw json.RawMessage) (searchParams, error) {
 	if err != nil {
 		return searchParams{}, err
 	}
+	return searchParamsFromValues(params)
+}
+
+func searchParamsFromValues(params []any) (searchParams, error) {
 	timeRange, err := parseTimeRange(params[0], params[1])
 	if err != nil {
 		return searchParams{}, err
@@ -264,6 +271,7 @@ type getMetricViewParams struct {
 	selectedSeriesRefs   []string
 	datapointSeriesRefs  []string
 	datapointSeriesLimit int64
+	datapointRef         string
 	tzName               string
 }
 
@@ -349,7 +357,7 @@ func parseOptionalString(params []any, index int) (string, error) {
 func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetricViewParams, error) {
 	maxParams := 13
 	if aggregateOnly {
-		maxParams = 10
+		maxParams = 11
 	}
 	params, err := decodePositionalParams(raw, 3, maxParams)
 	if err != nil {
@@ -416,12 +424,19 @@ func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetri
 		}
 	}
 
+	var datapointRef string
+	if aggregateOnly && len(params) > 10 && params[10] != nil {
+		datapointRef, err = parseIDParam(params[10], jsonrpc2.ErrInvalidParams, normalizeUUID)
+		if err != nil {
+			return getMetricViewParams{}, err
+		}
+	}
 	return getMetricViewParams{
 		metricRef: metricRef, timeRange: timeRange, targetBuckets: targetBuckets,
 		seriesRefs: seriesRefs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
 		viewBuckets: viewBuckets, sparklineBuckets: sparklineBuckets,
 		selectedSeriesRefs: selectedSeriesRefs, datapointSeriesRefs: datapointSeriesRefs,
-		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName,
+		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName, datapointRef: datapointRef,
 	}, nil
 }
 

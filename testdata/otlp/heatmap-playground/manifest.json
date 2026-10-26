@@ -1,0 +1,36 @@
+{
+  "description": "Paired synthetic histogram and exponential-histogram distributions for heatmap design and performance work.",
+  "startTimeUnixNano": "1792354970000000000",
+  "endTimeUnixNano": "1792356570000000000",
+  "requests": [
+    {
+      "signal": "metrics",
+      "file": "metrics-moving_peak.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-two_peaks.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-long_tail.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-bursts_and_gaps.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-sparse_spikes.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-busy_mixture.json"
+    }
+  ],
+  "storedCounts": {
+    "spans": 0,
+    "logs": 0,
+    "datapoints": 3858
+  }
+}

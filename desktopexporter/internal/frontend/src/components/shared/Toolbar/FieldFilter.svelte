@@ -127,7 +127,9 @@
       <span class="toolbar-filter-trigger__label">{label}</span>
     {/if}
     {#if activeCount > 0}
-      <span class="toolbar-filter-trigger__badge">{activeCount}</span>
+      <span class="toolbar-filter-trigger__badge"
+        >{activeCount} {activeCount === 1 ? 'field' : 'fields'}</span
+      >
     {/if}
     {#if label}
       <span class="toolbar-filter-trigger__dropdown-circle" aria-hidden="true">
@@ -149,12 +151,9 @@
   </button>
 
   {#if popoverOpen}
-    <div bind:this={popoverEl} class="field-filter__popover">
-      <div class="field-filter__popover-header header-surface">
-        <span
-          class="text-xs font-semibold uppercase tracking-wide text-base-content/55"
-          >Columns</span
-        >
+    <div bind:this={popoverEl} class="popover-surface field-filter__popover">
+      <div class="field-filter__popover-header">
+        <span class="text-sm font-normal text-subtle">Columns</span>
       </div>
       <div class="field-filter__popover-list">
         {#each filterableFields as field (field.name + ':' + field.searchScope)}
@@ -163,8 +162,8 @@
           {@const pinned = category === 'pinned'}
           <button
             type="button"
-            class="field-filter__option"
-            class:field-filter__option--selected={checked}
+            class="field-filter__option item-state item-state--menu"
+            aria-pressed={checked}
             class:field-filter__option--pinned={pinned}
             disabled={pinned}
             onclick={() => onToggleField(field)}
@@ -206,7 +205,8 @@
             {/if}
             <span class="field-filter__field-name">{field.name}</span>
             {#if field.searchScope === 'attribute' && 'attributeScope' in field}
-              <span class="badge-origin">{field.attributeScope}</span>
+              <span class="text-subtle" aria-hidden="true">·</span>
+              <span class="text-secondary">{field.attributeScope}</span>
             {/if}
           </button>
         {/each}
@@ -225,12 +225,10 @@
   .field-filter__popover {
     @apply absolute right-0 top-full z-50 mt-1;
     @apply min-w-[14rem] max-w-[20rem];
-    @apply rounded-lg border border-base-300/70 bg-base-100 shadow-lg;
-    @apply overflow-hidden;
   }
 
   .field-filter__popover-header {
-    @apply px-3 py-2 border-b border-base-300/50;
+    @apply px-3 py-2;
   }
 
   .field-filter__popover-list {
@@ -240,12 +238,6 @@
 
   .field-filter__option {
     @apply flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm;
-    @apply transition-colors duration-150;
-    @apply hover:bg-base-200/60;
-  }
-
-  .field-filter__option--selected {
-    @apply bg-primary/5;
   }
 
   .field-filter__option--pinned {
@@ -258,15 +250,16 @@
 
   .field-filter__checkbox {
     @apply flex h-4 w-4 shrink-0 items-center justify-center rounded;
-    @apply border border-base-300/70;
+    border: 1px solid var(--color-highlight-high);
+    background-color: var(--color-input);
     @apply transition-colors duration-150;
   }
 
   .field-filter__checkbox--checked {
-    @apply border-primary/50 bg-primary/15 text-primary;
+    @apply border-primary bg-primary text-primary-content;
   }
 
   .field-filter__field-name {
-    @apply min-w-0 truncate font-mono text-xs text-base-content/80;
+    @apply min-w-0 truncate font-sans text-sm text-(--color-subtle);
   }
 </style>

@@ -1,27 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import {
-  metricTypeBadgeTone,
-  metricTypeSeriesColor,
-  metricTypeStem,
-} from './metric-type'
+import { metricTypeSummary } from './metric-type'
 
-describe('metric type lookups', () => {
-  it('returns the configured metric stems and badge tones', () => {
-    expect(metricTypeStem('Gauge')).toBe('foam')
-    expect(metricTypeBadgeTone('Gauge')).toBe('badge-info')
-    expect(metricTypeStem('Sum')).toBe('pine')
-    expect(metricTypeBadgeTone('Sum')).toBe('badge-secondary')
-    expect(metricTypeStem('Histogram')).toBe('rose')
-    expect(metricTypeBadgeTone('Histogram')).toBe('badge-rose')
-    expect(metricTypeStem('ExponentialHistogram')).toBe('gold')
-    expect(metricTypeBadgeTone('ExponentialHistogram')).toBe('badge-warning')
+describe('metric type summaries', () => {
+  it.each([
+    ['Gauge', 'Gauge'],
+    ['Sum', 'Sum'],
+    ['Histogram', 'Histogram'],
+    ['ExponentialHistogram', 'ExpHist'],
+    ['Empty', 'Empty'],
+    ['Unknown', 'Unknown'],
+    ['constructor', 'constructor'],
+  ])('labels %s as %s', (metricType, label) => {
+    expect(metricTypeSummary(metricType, null, false)).toEqual({
+      label,
+      title: metricType,
+    })
   })
 
-  it('uses neutral fallbacks for unknown and prototype-named types', () => {
-    for (const metricType of ['Empty', 'love', 'toString', 'constructor']) {
-      expect(metricTypeStem(metricType)).toBe('foam')
-      expect(metricTypeBadgeTone(metricType)).toBe('badge-neutral')
-      expect(metricTypeSeriesColor(metricType)).toBe('var(--color-neutral)')
-    }
+  it('retains unspecified temporality and monotonicity', () => {
+    const summary = metricTypeSummary('Sum', 'Unspecified', true)
+    expect(summary.title).toContain('aggregationTemporality = Unspecified')
+    expect(summary.label).toBe('Sum Unspecified ↗')
+  })
+
+  it('retains received type and temporality labels', () => {
+    expect(
+      metricTypeSummary('ExponentialHistogram', 'Delta', false)
+    ).toMatchObject({
+      label: 'ExpHist Δ',
+      title: 'ExponentialHistogram · Delta',
+    })
   })
 })

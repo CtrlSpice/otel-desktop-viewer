@@ -13,7 +13,12 @@ import type {
   SumDataPoint,
 } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
+import {
+  navigateCurrentRoute,
+  navigateToItem,
+  readRoute,
+  withQueryPatch,
+} from '@/route'
 import { downloadOTLP } from '@/services/export-service'
 
 vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
@@ -24,14 +29,18 @@ const {
   searchMetricSummaries,
   getStats,
   getMetricView,
+  getMetric,
   getMetricAggregateView,
   getMetricAttributeDefinitions,
+  clearMetrics,
 } = vi.hoisted(() => ({
   searchMetricSummaries: vi.fn(),
   getStats: vi.fn(),
   getMetricView: vi.fn(),
+  getMetric: vi.fn(),
   getMetricAggregateView: vi.fn(),
   getMetricAttributeDefinitions: vi.fn(),
+  clearMetrics: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -44,8 +53,10 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       searchMetricSummaries,
       getStats,
       getMetricView,
+      getMetric,
       getMetricAggregateView,
       getMetricAttributeDefinitions,
+      clearMetrics,
     },
   }
 })
@@ -173,11 +184,15 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
+  clearMetrics.mockReset()
+  clearMetrics.mockResolvedValue(undefined)
   vi.mocked(downloadOTLP).mockReset()
   vi.mocked(downloadOTLP).mockResolvedValue()
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetricView.mockReset()
+  getMetric.mockReset()
+  getMetric.mockResolvedValue(null)
   getMetricAggregateView.mockReset()
   getMetricAttributeDefinitions.mockReset()
   getMetricAttributeDefinitions.mockResolvedValue([])
@@ -201,10 +216,170 @@ async function renderSelected(metricType: MetricType) {
   renderWithContexts(MetricsPage)
   // The aggregate fetch is debounced until after detail loading.
   await waitFor(() => expect(getMetricView).toHaveBeenCalled())
-  await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
-    timeout: 3000,
-  })
+  if (metricType === 'Histogram' || metricType === 'ExponentialHistogram')
+    await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
+      timeout: 3000,
+    })
 }
+
+describe('Metric main-header range', () => {
+  it.each(['failure', 'missing'] as const)(
+    'reports an out-of-list metric lookup %s and retries without changing the URL',
+    async outcome => {
+      searchMetricSummaries.mockResolvedValue([])
+      getStats.mockResolvedValue(makeStats())
+      if (outcome === 'failure')
+        getMetric.mockRejectedValueOnce(new Error('lookup failed'))
+      else getMetric.mockResolvedValueOnce(null)
+      getMetric.mockResolvedValueOnce(makeMetric('Gauge'))
+      getMetricView.mockResolvedValue(makeMetric('Gauge'))
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      setTestUrl('/metrics/metric-1?q=name%20%3D%20%22excluded%22')
+      renderWithContexts(MetricsPage)
+      const message =
+        outcome === 'failure'
+          ? 'Could not load the selected metric.'
+          : 'The selected metric was not found.'
+      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      expect(screen.queryByText('No metrics in this time range')).toBeNull()
+      expect(getMetricView).not.toHaveBeenCalled()
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+      expect(
+        await screen.findByRole('table', { name: 'Metric fields' })
+      ).toHaveTextContent('demo.metric')
+      expect(getMetric).toHaveBeenCalledTimes(2)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(window.location.pathname).toBe('/metrics/metric-1')
+      expect(new URLSearchParams(window.location.search).get('q')).toBe(
+        'name = "excluded"'
+      )
+      consoleError.mockRestore()
+    }
+  )
+
+  it('retains the displayed metric while an out-of-list identity loads and ignores its late response after navigation', async () => {
+    await renderSelected('Gauge')
+    const fields = await screen.findByRole('table', { name: 'Metric fields' })
+    const header = screen.getByRole('region', { name: 'Metric chart' })
+    const pending = deferred<ReturnType<typeof makeMetric> | null>()
+    getMetric.mockReturnValueOnce(pending.promise)
+    navigateToItem('metrics', 'outside-list')
+    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('outside-list'))
+    expect(fields.isConnected).toBe(true)
+    expect(header).toHaveTextContent('demo.metric')
+    expect(await screen.findByText('Loading selected metric…')).toBeVisible()
+    await fireEvent.click(
+      within(header).getByRole('button', { name: 'Download metric' })
+    )
+    expect(downloadOTLP).toHaveBeenCalledWith(
+      'metric',
+      'metric-1',
+      expect.any(AbortSignal)
+    )
+    navigateToItem('metrics', 'metric-1')
+    await tick()
+    pending.resolve({
+      ...makeMetric('Gauge'),
+      metricRef: 'outside-list',
+      name: 'late.metric',
+    })
+    await tick()
+    await waitFor(() =>
+      expect(screen.queryByText('Loading selected metric…')).toBeNull()
+    )
+    expect(header).toHaveTextContent('demo.metric')
+    expect(fields.isConnected).toBe(true)
+    expect(screen.queryByText('late.metric')).toBeNull()
+    expect(getMetricView.mock.calls.every(call => call[0] === 'metric-1')).toBe(
+      true
+    )
+  })
+
+  it('opens an exact route-selected metric outside the filtered list on a fresh mount', async () => {
+    searchMetricSummaries.mockResolvedValue([])
+    getStats.mockResolvedValue(makeStats())
+    getMetric.mockResolvedValue({
+      metricRef: 'metric-1',
+      name: 'demo.metric',
+      description: '',
+      unit: 'ms',
+      metricType: 'Gauge',
+      metadata: [],
+      series: [],
+      resource: {
+        ...EMPTY_RESOURCE,
+        schemaUrl: '',
+        attributes: [
+          {
+            key: 'service.name',
+            value: { kind: 'string', value: 'checkout-api' },
+          },
+        ],
+      },
+      scope: { ...EMPTY_SCOPE, schemaUrl: '' },
+    })
+    getMetricView.mockResolvedValue(makeMetric('Gauge'))
+    getMetricAggregateView.mockResolvedValue({
+      aggregate: null,
+      scalarAggregate: null,
+    })
+    setTestUrl('/metrics/metric-1?q=name%20%3D%20%22excluded%22')
+    renderWithContexts(MetricsPage)
+    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('metric-1'))
+    await waitFor(() => expect(getMetricView).toHaveBeenCalled())
+    expect(
+      await screen.findByRole('region', { name: 'Metric chart' })
+    ).toHaveTextContent('demo.metric')
+    expect(window.location.pathname).toBe('/metrics/metric-1')
+    expect(screen.queryByText('No metrics in this time range')).toBeNull()
+    expect(document.querySelector('.metrics-page__chart')).not.toBeNull()
+    expect(new URLSearchParams(window.location.search).get('q')).toBe(
+      'name = "excluded"'
+    )
+  })
+  it('requires confirmation before deleting all stored metrics', async () => {
+    await renderSelected('Gauge')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const button = screen.getByRole('button', { name: 'Delete all metrics' })
+    await fireEvent.click(button)
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('including those outside the current filters')
+    )
+    expect(clearMetrics).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/metrics/metric-1')
+    confirm.mockReturnValue(true)
+    await fireEvent.click(button)
+    await waitFor(() => expect(clearMetrics).toHaveBeenCalledTimes(1))
+    confirm.mockRestore()
+  })
+  it.each(['Gauge', 'Sum'] as const)(
+    'omits the duplicate %s time range from the compact header and plot',
+    async metricType => {
+      await renderSelected(metricType)
+      const header = screen.getByRole('region', {
+        name: 'Metric chart',
+      })
+      expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
+      expect(
+        document.querySelectorAll('[aria-label="Chart time range"]')
+      ).toHaveLength(0)
+    }
+  )
+
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'removes the redundant %s time range from the count-legend header',
+    async metricType => {
+      await renderSelected(metricType)
+      const header = await screen.findByRole('region', { name: 'Metric chart' })
+      expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
+      expect(
+        document.querySelector('.metric-chart-view .heatmap-legend')
+      ).toBeNull()
+    }
+  )
+})
 
 describe('Metric main-header export', () => {
   it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
@@ -219,25 +394,30 @@ describe('Metric main-header export', () => {
       })
       setTestUrl('/metrics/metric-1')
       renderWithContexts(MetricsPage)
-      await screen.findByRole('tablist', { name: 'Metric detail tabs' })
+      await screen.findByRole('region', { name: 'Metric details' })
 
-      const header = screen.getByRole('region', { name: 'Metric chart' })
+      const header = await screen.findByRole('region', { name: 'Metric chart' })
       const button = within(header).getByRole('button', {
-        name: 'Export metric',
+        name: 'Download metric',
       })
       const title = within(header).getByText('demo.metric', { exact: true })
       expect(
-        button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+        title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
+      expect(
+        within(button.closest<HTMLElement>('.header-controls')!)
+          .getAllByRole('button')
+          .at(-1)
+      ).toBe(button)
       const chartTabs = within(header).queryByRole('tablist')
       if (chartTabs) {
         expect(
-          button.compareDocumentPosition(chartTabs) &
+          chartTabs.compareDocumentPosition(button) &
             Node.DOCUMENT_POSITION_FOLLOWING
         ).not.toBe(0)
       }
       expect(
-        screen.getAllByRole('button', { name: 'Export metric' })
+        screen.getAllByRole('button', { name: 'Download metric' })
       ).toHaveLength(1)
       await userEvent.click(button)
       expect(downloadOTLP).toHaveBeenCalledWith(
@@ -306,8 +486,7 @@ describe('MetricsPage aggregate fetching', () => {
     // Let any debounced follow-up land before asserting absence.
     await new Promise(r => setTimeout(r, 400))
     expect(wholeWindowCalls()).toHaveLength(0)
-    // Scalar aggregates use the bucketed call.
-    expect(getMetricAggregateView.mock.calls.length).toBeGreaterThan(0)
+    expect(getMetricAggregateView).not.toHaveBeenCalled()
   })
 
   it('does not ask a Sum either', async () => {
@@ -318,7 +497,7 @@ describe('MetricsPage aggregate fetching', () => {
 })
 
 describe('MetricsPage chart control keyboard navigation', () => {
-  it('toggles rate and overlays with Space while retaining focus', async () => {
+  it('keeps Rate separate and restores the combined line after switching back to Values', async () => {
     const user = userEvent.setup()
     const datapoints = [
       makeSumDatapoint('dp-1', 1_700_000_000_000, 10),
@@ -340,29 +519,48 @@ describe('MetricsPage chart control keyboard navigation', () => {
       aggregate: null,
       scalarAggregate: null,
     })
-    setTestUrl('/metrics/metric-1')
+    setTestUrl('/metrics/metric-1?agg=sum')
     renderWithContexts(MetricsPage)
 
-    const rate = await screen.findByRole('checkbox', {
-      name: 'Show rate across all series',
+    const sum = await screen.findByRole('checkbox', {
+      name: 'Show combined sum',
     })
-    const overlays = screen.getByRole('checkbox', {
-      name: 'Show chart stat overlays',
+    const average = screen.getByRole('checkbox', {
+      name: 'Show combined average',
     })
-
-    rate.focus()
-    expect(rate).toHaveFocus()
-    expect(rate).not.toBeChecked()
+    expect(sum).toBeChecked()
+    expect(average).not.toBeChecked()
+    average.focus()
+    expect(average.closest('.pane-header')).not.toBeNull()
     await user.keyboard(' ')
-    expect(rate).toBeChecked()
-    expect(rate).toHaveFocus()
-
-    await user.tab()
-    expect(overlays).toHaveFocus()
-    expect(overlays).toBeChecked()
-    await user.keyboard(' ')
-    expect(overlays).not.toBeChecked()
-    expect(overlays).toHaveFocus()
+    expect(average).toBeChecked()
+    expect(average).toHaveFocus()
+    expect(sum).toBeChecked()
+    expect(window.location.search).toContain('agg=sum-avg')
+    const rate = screen.getByRole('tab', { name: 'Rate' })
+    await user.click(rate)
+    expect(rate).toHaveAttribute('aria-selected', 'true')
+    await user.click(screen.getByRole('tab', { name: 'Values' }))
+    expect(
+      screen.getByRole('checkbox', { name: 'Show combined sum' })
+    ).toBeChecked()
+    expect(
+      screen.getByRole('checkbox', { name: 'Show combined average' })
+    ).toBeChecked()
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Show combined sum' })
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'Show combined average' })
+    ).toBeChecked()
+    expect(window.location.search).toContain('agg=avg')
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Show combined average' })
+    )
+    expect(window.location.search).toContain('agg=raw')
+    expect(screen.queryByRole('tab', { name: 'Raw' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Sum' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Average' })).toBeNull()
   })
 })
 
@@ -377,6 +575,68 @@ describe('MetricsPage raw series fetching', () => {
       scalarAggregate: null,
     })
   }
+
+  it('retries a failed raw request without changing series or visibility', async () => {
+    prepareRawSeriesTest()
+    let rawRequest = 0
+    getMetricView.mockImplementation((...args: unknown[]) => {
+      if (args[3] !== 0) return Promise.resolve(makeMetric('Sum', [reduced]))
+      return ++rawRequest === 1
+        ? Promise.reject(new Error('temporary failure'))
+        : Promise.resolve(makeMetric('Sum', [reduced]))
+    })
+    setTestUrl('/metrics/metric-1?start=100&end=200&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await screen.findByText('Could not load datapoints.')
+    const selection = window.location.search
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Show default series in chart',
+    })
+    expect(checkbox).toBeChecked()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Retry datapoints' })
+    )
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    )
+    expect(rawSeriesCalls()).toHaveLength(2)
+    expect(window.location.search).toBe(selection)
+    expect(checkbox).toBeChecked()
+    expect(screen.queryByText('Could not load datapoints.')).toBeNull()
+  })
+
+  it('keeps inspected datapoints while another metric is pending and after it fails', async () => {
+    prepareRawSeriesTest()
+    searchMetricSummaries.mockResolvedValue([
+      makeSummary('Sum'),
+      { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
+    ])
+    let reject!: (error: Error) => void
+    const pending = new Promise<MetricViewData>((_, fail) => {
+      reject = fail
+    })
+    getMetricView.mockImplementation((id: string) =>
+      id === 'next' ? pending : Promise.resolve(makeMetric('Sum', [reduced]))
+    )
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    )
+    navigateToItem('metrics', 'next')
+    await waitFor(() =>
+      expect(getMetricView.mock.calls.some(call => call[0] === 'next')).toBe(
+        true
+      )
+    )
+    expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    reject(new Error('replacement unavailable'))
+    await screen.findByText('Could not load the selected metric.')
+    expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    expect(rawSeriesCalls()).toHaveLength(1)
+    error.mockRestore()
+  })
 
   it('anchors a preset window when the series request is triggered', async () => {
     const initialNow = 1_700_000_000_000
@@ -402,15 +662,16 @@ describe('MetricsPage raw series fetching', () => {
     renderWithContexts(MetricsPage)
     await vi.waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Expand default series' })
+        screen.getByText('default series', { exact: true }).closest('tr')
       ).toBeInTheDocument()
     )
     expect(rawSeriesCalls()).toHaveLength(0)
 
     vi.setSystemTime(requestNow)
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Expand default series' })
-    )
+    const seriesRow = screen
+      .getByText('default series', { exact: true })
+      .closest('tr')!
+    await fireEvent.click(seriesRow)
     await tick()
 
     expect(rawSeriesCalls()).toHaveLength(1)
@@ -496,9 +757,8 @@ describe('MetricsPage raw series fetching', () => {
 
       renderWithContexts(MetricsPage)
       await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
-      expect(
-        document.querySelector('tr[data-dp-id="dp-reduced"]')
-      ).not.toBeNull()
+      expect(document.querySelector('tr[data-dp-id="dp-reduced"]')).toBeNull()
+      expect(screen.getByText('Loading datapoints…')).toBeVisible()
 
       raw.resolve(response())
       await raw.promise
@@ -507,12 +767,11 @@ describe('MetricsPage raw series fetching', () => {
       )
 
       const user = userEvent.setup()
-      await user.click(
-        screen.getByRole('button', { name: 'Collapse default series' })
-      )
-      await user.click(
-        screen.getByRole('button', { name: 'Expand default series' })
-      )
+      const seriesRow = screen
+        .getByRole('button', { name: 'Select default series' })
+        .closest('tr')!
+      await user.click(seriesRow)
+      await user.click(seriesRow)
       await tick()
       expect(rawSeriesCalls()).toHaveLength(1)
     }

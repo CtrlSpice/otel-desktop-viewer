@@ -7,7 +7,6 @@ export const HISTOGRAM_VIEW_TAB_OPTIONS: ReadonlyArray<{
   label: string
 }> = [
   { id: 'heatmap', label: 'Heatmap' },
-  { id: 'quantiles', label: 'Quantiles' },
   { id: 'histogram', label: 'Histogram' },
 ]
 

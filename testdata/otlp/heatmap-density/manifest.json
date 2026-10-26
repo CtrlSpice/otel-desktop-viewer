@@ -1,0 +1,28 @@
+{
+  "description": "Paired explicit and exponential histograms sampling the same multicolour pattern at four densities.",
+  "startTimeUnixNano": "1792354800000000000",
+  "endTimeUnixNano": "1792364400000000000",
+  "requests": [
+    {
+      "signal": "metrics",
+      "file": "metrics-01_roomy.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-02_medium.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-03_dense.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-04_very_dense.json"
+    }
+  ],
+  "storedCounts": {
+    "spans": 0,
+    "logs": 0,
+    "datapoints": 768
+  }
+}

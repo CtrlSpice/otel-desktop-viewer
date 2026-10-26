@@ -14,10 +14,9 @@ package schema
 // `create table if not exists` silently leaves an old table in place and the
 // mismatch first surfaces as a duckdb appender column-count error during ingest,
 // or as an index creation failure against a column that does not exist.
-// Version 22 requires last-occurrence selection per attribute collection and
-// nested map before identity hashing. Earlier files can retain conflicting keys
-// whose received order is no longer available.
-const Version = 22
+// Version 24 makes Evals a projection of retained Collector-processed logs.
+// Older databases are incompatible; select a new database or recreate the file.
+const Version = 24
 
 // VersionTableQuery creates the version table.
 //

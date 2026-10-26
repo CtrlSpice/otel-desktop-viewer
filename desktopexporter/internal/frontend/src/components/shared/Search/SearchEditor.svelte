@@ -11,7 +11,11 @@
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
-  import type { FieldDefinition, SearchSignal } from '@/search/model'
+  import type {
+    FieldDefinition,
+    SearchSignal,
+    ParsedSearchRequest,
+  } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -32,11 +36,16 @@
   import { createFieldValueSource } from '@/components/shared/Search/codemirror/field-value-completions'
   import { createValueDiscoverySource } from './codemirror/value-completions'
   import { createQueryLinter } from './codemirror/linter'
-  import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
+  import { queryTheme } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon, HelpCircleIcon } from '@hugeicons/core-free-icons'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import SearchHelpDialog from './SearchHelpDialog.svelte'
+  import { attributeTokens } from './codemirror/attribute-tokens'
+  import { multilineQueryPaste } from './codemirror/paste'
+  import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchEditorAPI } from './search-editor-api'
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
@@ -54,11 +63,13 @@
     onReady?: (api: SearchEditorAPI) => void
     /** Called whenever the search error state changes. */
     onSearchError?: (error: string | null) => void
+    onQueryChange?: (text: string, fields: FieldDefinition[]) => void
+    onQuerySubmit?: (text: string) => void
+    /** A paged caller owns fetching after the editor validates the query. */
+    onSearchRequest?: (request: ParsedSearchRequest | null) => void
     /** Actions pinned top-right inside the editor container (drawer variant only). */
     headerActions?: Snippet
   }
-
-  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
   let {
     signal,
@@ -69,6 +80,9 @@
     variant = 'default',
     onReady,
     onSearchError,
+    onQueryChange,
+    onQuerySubmit,
+    onSearchRequest,
     headerActions,
     filters = [],
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
@@ -100,8 +114,12 @@
   const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
 
   let availableFields = $state<FieldDefinition[]>([])
+  let queryText = $state('')
+  let definitionsLoaded = false
+  let pendingRestoration: string | undefined
 
-  let signalLabel = $derived(capitalize(signal))
+  $effect(() => onQueryChange?.(queryText, availableFields))
+
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
   let placeholderText = $derived(`search ${signal}...`)
 
@@ -116,17 +134,28 @@
   /** Fetch dynamic attributes from the shared dictionary. */
   $effect(() => {
     const base = [...staticFieldsList]
+    const requestedSignal = signal
+    definitionsLoaded = false
     availableFields = base
 
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
         void selectionToQueryRangeMs(timeContext.selection, Date.now())
-        const dynamicAttrs = await getDynamicAttributes(signal)
+        const dynamicAttrs = await getDynamicAttributes(requestedSignal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
       } catch (error) {
         console.warn('Failed to load dynamic attributes:', error)
+      } finally {
+        if (!cancelled) {
+          definitionsLoaded = true
+          if (
+            pendingRestoration !== undefined &&
+            pendingRestoration === editorView?.state.doc.toString()
+          )
+            onSubmit()
+        }
       }
     }, 250)
 
@@ -214,11 +243,29 @@
       })
   }
 
+  let routeQuery = ''
+  function rememberQuery(text: string) {
+    const route = readRoute()
+    const next = text.trim() ? text : ''
+    routeQuery = next
+    if ((route.query.q ?? '') !== next)
+      navigateCurrentRoute({ ...route.query, q: next || undefined }, 'replace')
+  }
+
   function onSubmit() {
+    pendingRestoration = undefined
     const text = editorView?.state.doc.toString() ?? ''
+    // Initial URL submission can precede the reactive change notification.
+    onQueryChange?.(text, availableFields)
 
     if (!text.trim()) {
       searchError = null
+      rememberQuery(text)
+      onQuerySubmit?.(text)
+      if (onSearchRequest) {
+        onSearchRequest(null)
+        return
+      }
       fetchClean(beginListUpdate(signal))
       return
     }
@@ -226,6 +273,12 @@
     try {
       const request = parseSearchRequest(text, availableFields, signal)
       searchError = null
+      rememberQuery(text)
+      onQuerySubmit?.(text)
+      if (onSearchRequest) {
+        onSearchRequest(request)
+        return
+      }
       if (!request) {
         fetchClean(beginListUpdate(signal))
         return
@@ -252,6 +305,19 @@
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }
+  }
+
+  function restoreQuery() {
+    const text = editorView?.state.doc.toString() ?? ''
+    if (!definitionsLoaded && text.trim()) {
+      try {
+        parseSearchRequest(text, [...staticFieldsList], signal)
+      } catch {
+        pendingRestoration = text
+        return
+      }
+    }
+    onSubmit()
   }
 
   function openHelp() {
@@ -301,8 +367,6 @@
   })
 
   onMount(() => {
-    ensureTooltipStyles()
-
     const mountEl = editorContainer
     if (!mountEl) return
 
@@ -312,10 +376,15 @@
       signal
     )
 
+    const initialQuery = readRoute().query.q ?? ''
+    routeQuery = initialQuery
+    queryText = initialQuery
     const state = EditorState.create({
-      doc: '',
+      doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
+        attributeTokens(signal),
+        multilineQueryPaste,
         autocompletion({
           // Key-first runs first and wins where it applies; value-first only
           // fires on bare text at the top level, where the other has nothing to
@@ -340,6 +409,12 @@
         tooltips({ position: 'fixed' }),
         closeBrackets(),
         history(),
+        EditorView.updateListener.of(update => {
+          if (update.docChanged) {
+            pendingRestoration = undefined
+            queryText = update.state.doc.toString()
+          }
+        }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
         // Single-line input: no soft-wrap, swallow Enter (we map it to submit
@@ -360,6 +435,26 @@
     onReady?.({
       submit: onSubmit,
       clear: clearSearch,
+      setQuery: text => {
+        if (!editorView) return
+        editorView.dispatch({
+          changes: { from: 0, to: editorView.state.doc.length, insert: text },
+        })
+        onSubmit()
+      },
+    })
+    if (initialQuery) restoreQuery()
+    return subscribeToRoute(() => {
+      const route = readRoute()
+      if (route.path !== `/${signal}` && !route.path.startsWith(`/${signal}/`))
+        return
+      const next = route.query.q ?? ''
+      if (next === routeQuery || !editorView) return
+      routeQuery = next
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: next },
+      })
+      restoreQuery()
     })
   })
 
@@ -381,20 +476,6 @@
           {@render headerActions()}
         </div>
       {/if}
-      <span class="search-editor__leading-icon" aria-hidden="true">
-        <svg
-          class="h-3.5 w-3.5 shrink-0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-        </svg>
-      </span>
       <div class="editor-mount" bind:this={editorContainer}></div>
       <div
         class="search-editor__footer-actions"
@@ -405,34 +486,31 @@
             <FieldErrorMessage message={searchError} />
           </div>
         {/if}
-        <div class="join join-horizontal shrink-0 rounded-full">
+        <div class="header-icon-controls shrink-0">
           <button
             type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
-            onclick={openHelp}
-            aria-label="Search query help"
-            data-tip="Query help"
-          >
-            <HugeiconsIcon
-              icon={HelpCircleIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
-              aria-hidden="true"
-            />
-          </button>
-          <button
-            type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
             onclick={clearSearch}
             aria-label="Clear search"
             data-tip="Clear search"
           >
             <HugeiconsIcon
               icon={Cancel01Icon}
-              size="1em"
+              size={17}
               strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
+              class="shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+            onclick={openHelp}
+            aria-label="Search query help"
+            data-tip="Query help"
+          >
+            <QuestionMarkIcon
+              class="h-[17px] w-[17px] shrink-0"
               aria-hidden="true"
             />
           </button>
@@ -459,13 +537,7 @@
           aria-label="Search query help"
           data-tip="Query help"
         >
-          <HugeiconsIcon
-            icon={HelpCircleIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
+          <QuestionMarkIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -507,202 +579,17 @@
     </div>
 
     {#if activeFilter && !inToolbar}
-      <div bind:this={filterPopoverEl} class="search-filter-popover">
+      <div
+        bind:this={filterPopoverEl}
+        class="popover-surface search-filter-popover"
+      >
         {@render activeFilter.content()}
       </div>
     {/if}
   </div>
 {/if}
 
-<!-- Help dialog: rendered OUTSIDE .search-editor-container to avoid clipping -->
-<dialog
-  bind:this={helpDialogElement}
-  class="help-dialog"
-  closedby="any"
-  tabindex="-1"
->
-  <header class="help-dialog-header">
-    <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
-    <button
-      type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content tooltip tooltip-left"
-      onclick={() => helpDialogElement?.close()}
-      aria-label="Close"
-      data-tip="Close"
-    >
-      <svg
-        class="h-5 w-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M18 6L6 18M6 6l12 12" />
-      </svg>
-    </button>
-  </header>
-
-  <div class="help-dialog-body">
-    <div class="help-query-lines">
-      <p>
-        Type plain words to search everything — fields, attributes, and values
-        alike
-      </p>
-      <p>
-        Or filter precisely with <code class="q-field">field</code>
-        <code class="q-operator">operator</code>
-        <code class="q-value">value</code>
-      </p>
-      <p>
-        Combine filters with <code class="q-logic">AND</code> or
-        <code class="q-logic">OR</code> — <code class="q-logic">AND</code> binds
-        tighter, parentheses <code class="q-paren">( )</code> override
-      </p>
-      <p>
-        Quote values containing spaces:
-        <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
-      </p>
-      <p>
-        Attribute suggestions include their exact scope and stored kind, for
-        example <code class="q-field">attr(span, "attempts", int64)</code>. This
-        selects received integer values; it does not convert other values.
-      </p>
-      <p>
-        Cap the returned results by appending
-        <code class="q-logic">| LIMIT 100</code>
-      </p>
-    </div>
-
-    <h3 class="help-section-heading">Operators</h3>
-    <table class="help-op-table">
-      <thead>
-        <tr>
-          <th scope="col">Category</th>
-          <th scope="col">Operators</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th scope="row">Equality</th>
-          <td>
-            <code class="help-op-code">=</code>,
-            <code class="help-op-code">!=</code>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Comparison</th>
-          <td>
-            <code class="help-op-code">&gt;</code>,
-            <code class="help-op-code">&lt;</code>,
-            <code class="help-op-code">&gt;=</code>,
-            <code class="help-op-code">&lt;=</code>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Text</th>
-          <td>
-            <code class="help-op-code">CONTAINS</code>,
-            <code class="help-op-code">NOT CONTAINS</code>
-            <span class="help-op-note">
-              <code class="help-op-code">^</code> (starts with)
-              <code class="help-op-code">$</code> (ends with)
-            </span>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Pattern</th>
-          <td>
-            <code class="help-op-code">=~</code>,
-            <code class="help-op-code">!~</code>,
-            <code class="help-op-code">REGEXP</code>
-            <span class="help-op-note">
-              full match — wrap substrings: <code class="help-op-code"
-                >.*checkout.*</code
-              ></span
-            >
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">List</th>
-          <td>
-            <code class="help-op-code">IN</code>,
-            <code class="help-op-code">NOT IN</code>
-            <span class="help-op-note">
-              <code class="help-op-code">kind IN [Server, Client]</code></span
-            >
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Null</th>
-          <td>
-            <code class="help-op-code">= NULL</code>,
-            <code class="help-op-code">!= NULL</code>
-            <span class="help-op-note">
-              bare <code class="help-op-code">NULL</code> or
-              <code class="help-op-code">nil</code> checks for absence; quoted
-              <code class="help-op-code">"NULL"</code> is the literal text</span
-            >
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h3 class="help-section-heading">Examples</h3>
-
-    {#if signal === 'traces'}
-      <pre class="help-example"><code class="q-field">name</code> <code
-          class="q-operator">CONTAINS</code
-        > <code class="q-value">http</code> <code class="q-logic"
-          >| LIMIT 100</code
-        ></pre>
-      <pre class="help-example"><code class="q-field">kind</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">Server</code> <code class="q-logic">AND</code
-        > <code class="q-field">statusCode</code> <code class="q-operator"
-          >=</code
-        > <code class="q-value">Error</code> <code class="q-logic">AND</code
-        > <code class="q-field">name</code> <code class="q-operator"
-          >CONTAINS</code
-        > <code class="q-value">checkout</code></pre>
-    {:else if signal === 'logs'}
-      <pre class="help-example"><code class="q-field">severityText</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">ERROR</code></pre>
-      <pre class="help-example"><code class="q-field">severityText</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">WARN</code> <code class="q-logic">AND</code
-        > <code class="q-field">body</code> <code class="q-operator"
-          >CONTAINS</code
-        > <code class="q-value">disk</code> <code class="q-logic">AND</code
-        > <code class="q-field">traceID</code> <code class="q-operator">=</code
-        > <code class="q-value">4af9f2c…</code></pre>
-    {:else}
-      <pre class="help-example"><code class="q-field">name</code> <code
-          class="q-operator">CONTAINS</code
-        > <code class="q-value">requests</code> <code class="q-logic">AND</code
-        > <code class="q-field">type</code> <code class="q-operator">=</code
-        > <code class="q-value">Gauge</code></pre>
-    {/if}
-
-    <h3 class="help-section-heading">Keyboard shortcuts</h3>
-    <ul class="help-shortcut-list">
-      <li>
-        <kbd class="kbd kbd-sm">Enter</kbd>
-        <span class="help-shortcut-sep">—</span>
-        run query
-      </li>
-      <li>
-        <kbd class="kbd kbd-sm">Ctrl</kbd>
-        <kbd class="kbd kbd-sm">Space</kbd>
-        <span class="help-shortcut-sep">—</span>
-        open autocomplete
-      </li>
-    </ul>
-  </div>
-</dialog>
+<SearchHelpDialog bind:element={helpDialogElement} {signal} />
 
 <style lang="postcss">
   @reference "../../../app.css";
@@ -710,7 +597,7 @@
   .search-editor-wrapper {
     @apply relative w-full;
     min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
   }
 
   .search-editor-wrapper--drawer {
@@ -725,22 +612,9 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply items-center gap-1.5 py-1 pl-4 pr-2;
+    @apply items-center py-1 pl-4 pr-0;
+    gap: var(--control-icon-gap);
     height: auto;
-  }
-
-  .search-editor-wrapper--drawer .search-editor__leading-icon {
-    @apply flex shrink-0 items-center;
-    color: var(--color-subtle);
-  }
-
-  .search-editor-wrapper--drawer
-    .search-editor-container:hover:not(:focus-within) {
-    background-color: var(--color-base-100);
-  }
-
-  .search-editor-wrapper--drawer .search-editor-container:focus-within {
-    background-color: var(--color-base-100);
   }
 
   .search-editor__header-actions {
@@ -752,39 +626,36 @@
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
-    height: var(--table-row-h);
-    min-height: var(--table-row-h);
-    max-height: var(--table-row-h);
+    height: var(--search-editor-row-height, var(--table-row-h));
+    min-height: var(--search-editor-row-height, var(--table-row-h));
+    max-height: var(--search-editor-row-height, var(--table-row-h));
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
     overflow-x: auto;
     overflow-y: hidden;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
-    padding-top: 0;
-    padding-bottom: 0;
+    padding-block: calc(
+      (
+          var(--search-editor-row-height, var(--table-row-h)) -
+            var(--text-base) * var(--text-base--line-height)
+        ) /
+        2
+    );
     padding-left: 0;
     padding-right: 0.5rem;
-    min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    min-height: var(--search-editor-row-height, var(--table-row-h));
+    line-height: var(--text-base--line-height);
     white-space: nowrap;
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-line) {
-    line-height: var(--table-row-h);
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-placeholder) {
-    line-height: var(--table-row-h);
   }
 
   .search-editor-wrapper--drawer .search-editor__footer-actions {
     @apply static ml-auto flex shrink-0 items-center gap-2;
     inset: auto;
-    height: var(--table-row-h);
+    height: var(--search-editor-row-height, var(--table-row-h));
     align-self: center;
   }
 
@@ -855,124 +726,6 @@
   }
 
   .search-filter-popover {
-    @apply border-t border-base-300/70 bg-base-100/80 backdrop-blur-sm;
     @apply px-3 py-2;
-  }
-
-  .help-dialog {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    translate: -50% -50%;
-    margin: 0;
-    box-sizing: border-box;
-    width: min(32rem, calc(100vw - 2rem));
-    max-height: min(85vh, calc(100vh - 2rem));
-    overflow: hidden;
-
-    @apply rounded-lg border border-base-300 bg-base-100 p-0 text-base-content shadow-xl;
-    overscroll-behavior: contain;
-  }
-
-  .help-dialog[open] {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .help-dialog::backdrop {
-    background-color: rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(6px);
-  }
-
-  .help-dialog-header {
-    @apply flex shrink-0 items-center justify-between gap-3 border-b border-base-300 px-4 py-3;
-  }
-
-  .help-dialog-title {
-    @apply min-w-0 flex-1 text-lg font-semibold leading-snug tracking-tight;
-  }
-
-  .help-dialog-body {
-    @apply overflow-y-auto px-4 pb-4 pt-3;
-    min-height: 0;
-    overscroll-behavior: contain;
-  }
-
-  .help-section-heading {
-    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-base-content/70;
-  }
-
-  .help-query-lines {
-    @apply mt-1 space-y-1 text-sm text-base-content/80;
-  }
-
-  .help-op-table {
-    @apply mt-2 w-full border-collapse text-left text-sm text-base-content/80;
-  }
-
-  .help-op-table thead th {
-    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-base-content/70;
-  }
-
-  .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-base-content/80;
-  }
-
-  .help-op-table tbody td {
-    @apply py-2 align-top;
-  }
-
-  .help-op-code {
-    @apply rounded bg-base-200/80 px-1 py-0.5 font-mono text-xs text-base-content;
-  }
-
-  .help-op-note {
-    @apply mt-1 block text-xs text-base-content/75;
-  }
-
-  .help-op-note .help-op-code {
-    @apply mx-0.5;
-  }
-
-  .help-shortcut-list {
-    @apply mt-2 space-y-2 text-sm text-base-content/80;
-  }
-
-  .help-shortcut-list li {
-    @apply flex flex-wrap items-center gap-1.5;
-  }
-
-  .help-shortcut-sep {
-    @apply mx-0.5 text-base-content/50;
-  }
-
-  .help-example {
-    @apply mt-2 overflow-x-auto rounded-md bg-base-200 p-3 font-mono text-xs leading-relaxed text-base-content;
-  }
-
-  .help-example :global(code) {
-    @apply whitespace-pre-wrap break-all bg-transparent p-0;
-  }
-
-  /* Match CodeMirror query token colors (see lang/theme.ts + app.css --color-*) */
-  .q-field {
-    color: var(--color-accent);
-  }
-
-  .q-operator {
-    color: var(--color-subtle);
-  }
-
-  .q-logic {
-    color: var(--color-primary);
-    font-weight: 600;
-  }
-
-  .q-value {
-    color: var(--color-warning);
-  }
-
-  .q-paren {
-    color: var(--color-subtle);
   }
 </style>

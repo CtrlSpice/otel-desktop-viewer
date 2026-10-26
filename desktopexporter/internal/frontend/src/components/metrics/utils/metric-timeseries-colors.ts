@@ -1,49 +1,39 @@
-// Colour-slot assignment for metric timeseries. Given a stem-rotated palette
-// (from `categoricalPalette`) and the current visible/legend sets, these pure
-// helpers decide which key gets which colour. They hold no reactive state —
-// metric-view-context owns the `$state` map and calls these to mutate a copy.
+// The context owns the visible colour map. The saved, metric-scoped registry
+// retains logical slots even while a series is hidden or a metric is closed.
+import { identityColorSlot } from '@/utils/color-slots'
 
-/** Checked timeseries key → assigned colour from the rotated pool. */
+/** Checked native series identity → current theme's assigned colour. */
 export type TimeseriesColorByKey = Map<string, string>
 
 /**
- * Assign colours from a stem-rotated pool (from `categoricalPalette`)
- * to an initial visible set. Walks `legendOrder` so slot-filling
- * follows list order; the first assigned key gets `pool[0]`, the requested
- * family’s approved starting swatch.
+ * Restore saved slots, or use the active ink's ranking in legend order.
+ * Encounter order affects new assignments, never existing owners.
  */
 export function seedColorAssignments(
   pool: readonly string[],
   visibleKeys: ReadonlySet<string>,
-  legendOrder: readonly string[]
+  legendOrder: readonly string[],
+  scope: string = 'metric-series'
 ): TimeseriesColorByKey {
   const out: TimeseriesColorByKey = new Map()
-  let i = 0
   for (const key of legendOrder) {
     if (!visibleKeys.has(key)) continue
-    if (i >= pool.length) break
-    out.set(key, pool[i++]!)
+    acquireColor(pool, out, key, scope)
   }
   return out
 }
 
-/** First unused colour in `pool` order, then deterministic reuse when finite. */
+/** Saved colour slot; after exhaustion reuse without moving any owner. */
 export function acquireColor(
   pool: readonly string[],
   assigned: TimeseriesColorByKey,
-  key: string
+  key: string,
+  scope: string = 'metric-series'
 ): string | null {
   const existing = assigned.get(key)
   if (existing !== undefined) return existing
-  const used = new Set(assigned.values())
-  for (const color of pool) {
-    if (!used.has(color)) {
-      assigned.set(key, color)
-      return color
-    }
-  }
   if (pool.length === 0) return null
-  const color = pool[assigned.size % pool.length]!
+  const color = pool[identityColorSlot(key, scope, pool.length)]!
   assigned.set(key, color)
   return color
 }
@@ -70,18 +60,19 @@ export function releaseColor(
   assigned.delete(key)
 }
 
-/** Drop unchecked keys; acquire for newly visible keys in legend order. */
+/** Drop hidden render entries, but keep their saved slots for later restoration. */
 export function syncColorAssignments(
   pool: readonly string[],
   assigned: TimeseriesColorByKey,
   visibleKeys: ReadonlySet<string>,
-  legendOrder: readonly string[]
+  legendOrder: readonly string[],
+  scope: string = 'metric-series'
 ): void {
   for (const key of Array.from(assigned.keys())) {
     if (!visibleKeys.has(key)) assigned.delete(key)
   }
   for (const key of legendOrder) {
     if (!visibleKeys.has(key)) continue
-    acquireColor(pool, assigned, key)
+    acquireColor(pool, assigned, key, scope)
   }
 }

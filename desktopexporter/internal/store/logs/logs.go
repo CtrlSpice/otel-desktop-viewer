@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -270,6 +271,34 @@ func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timer
 }
 
 func searchLogSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchLogResults(ctx, db, timeRange, criteria, options, nil, nil)
+}
+
+// PageOptions bounds a page inside the sorted, optionally limited search result.
+type PageOptions struct {
+	Size    int64
+	Offset  int64
+	Columns []Column
+}
+
+// SearchPage computes the count and page in one database statement.
+func SearchPage(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page PageOptions) (json.RawMessage, error) {
+	if page.Size < 1 || page.Size > 250 || page.Offset < 0 {
+		return nil, fmt.Errorf("page size must be 1..250 and offset must be non-negative: %w", ErrInvalidLogLimit)
+	}
+	if err := ValidateColumns(page.Columns); err != nil {
+		return nil, err
+	}
+	return searchLogResults(ctx, db, timeRange, criteria, options, &page, nil)
+}
+
+// GetErrorNavigation reports neighbours in the complete sorted and limited result,
+// not only the currently loaded page. Offsets let the UI load the target page.
+func GetErrorNavigation(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, selectedID string) (json.RawMessage, error) {
+	return searchLogResults(ctx, db, timeRange, criteria, options, nil, &selectedID)
+}
+
+func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page *PageOptions, selectedID *string) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -298,12 +327,29 @@ func searchLogSummaries(ctx context.Context, db *sql.DB, timeRange timerange.Tim
 		limitClause = "\n\t\t\tlimit ?"
 		args = append(args, *options.Limit)
 	}
-	finalQuery, err := queries.Render(queries.SearchLogSummaries, searchLogSummariesParams{
-		CTEs:  cteSQL,
-		From:  logSearchFrom,
-		Where: whereWithTime,
-		Order: orderBy,
-		Limit: limitClause,
+	queryName := queries.SearchLogSummaries
+	if page != nil {
+		queryName = queries.SearchLogPage
+		args = append(args, page.Size, page.Offset)
+		if len(page.Columns) > 0 {
+			columns, err := json.Marshal(page.Columns)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, string(columns))
+		}
+	}
+	if selectedID != nil {
+		queryName = queries.GetLogErrorNavigation
+		args = append(args, *selectedID)
+	}
+	finalQuery, err := queries.Render(queryName, searchLogSummariesParams{
+		CTEs:    cteSQL,
+		From:    logSearchFrom,
+		Where:   whereWithTime,
+		Order:   orderBy,
+		Limit:   limitClause,
+		Columns: page != nil && len(page.Columns) > 0,
 	})
 	if err != nil {
 		return nil, err
@@ -327,6 +373,7 @@ func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
 		"timestamp": "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)",
 		"severity":  "coalesce(l.severity_number, 0)",
 		"service":   "coalesce(l.service_name, '')",
+		"name":      "coalesce(l.event_name, '')",
 		"body":      "coalesce(body_preview(l.body), '')",
 	}
 	expression, ok := expressions[sortOption.Field]
@@ -456,13 +503,8 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	// cannot know whether the ones it just abandoned are still in use.
 	// ingest.SweepOrphans collects them; the store runs it once for all three
 	// signals rather than three times here.
-	childQueries := []string{
-		`truncate table logs`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
-		}
+	if err := ingest.DeleteLogs(ctx, db, `truncate table logs`); err != nil {
+		return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
 	}
 	return nil
 }
@@ -473,13 +515,8 @@ func DeleteLogsByRefs(ctx context.Context, db *sql.DB, logRefs []any) error {
 		return nil
 	}
 	ids := util.ToStringList(logRefs)
-	childQueries := []string{
-		`delete from logs where id in (select id from uuid_list(?))`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, ids); err != nil {
-			return fmt.Errorf("DeleteLogsByRefs: %w: %w", ErrLogsStoreInternal, err)
-		}
+	if err := ingest.DeleteLogs(ctx, db, `delete from logs where id in (select id from uuid_list(?))`, ids); err != nil {
+		return fmt.Errorf("DeleteLogsByRefs: %w: %w", ErrLogsStoreInternal, err)
 	}
 	return nil
 }
@@ -487,6 +524,13 @@ func DeleteLogsByRefs(ctx context.Context, db *sql.DB, logRefs []any) error {
 func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("l.log_time", timeRange.Start, timeRange.End)
 	return search.BuildSearchSQL(queryNode, logFieldMapper(), timeCondition, timeParams)
+}
+
+// MatchingRowsSQL shares log search's exact predicate and timestamp fallback.
+func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
+	cte, where, args, err := buildLogSQL(queryNode, timeRange)
+	where = strings.ReplaceAll(where, "l.log_time", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)")
+	return cte + " SELECT l.* " + logSearchFrom + " WHERE " + where, args, err
 }
 
 // logSearchFrom is the FROM clause log search predicates are written against.
@@ -531,6 +575,9 @@ func logFieldMapper() search.FieldMapper {
 }
 
 func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
+	if field.Name == "serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("r")), nil
+	}
 	name := field.Name
 	if name == "" {
 		return search.ResolvedExpression{}, fmt.Errorf("empty field name: %w", ErrInvalidLogQuery)
@@ -601,6 +648,11 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
 	valueExpression := search.AttributeValueExpression(kind)
+	if mode != search.OTelArrayOperand {
+		if expression, ok := search.OwnerNullExpression(field, query, keyParam, kindPredicate, valueExpression); ok {
+			return []search.ResolvedExpression{expression}, nil
+		}
+	}
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
@@ -675,11 +727,12 @@ func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
 // searchLogSummariesParams are the fragments Search assembles into
 // queries/logs/search_log_summaries.sql.
 //
-// Every field is a SQL fragment; values travel as bound arguments.
+// SQL fragments and projection switches; values travel as bound arguments.
 type searchLogSummariesParams struct {
-	CTEs  string
-	From  string
-	Where string
-	Order string
-	Limit string
+	CTEs    string
+	From    string
+	Where   string
+	Order   string
+	Limit   string
+	Columns bool
 }

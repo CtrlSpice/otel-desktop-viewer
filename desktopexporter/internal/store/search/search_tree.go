@@ -153,6 +153,27 @@ func AttributeKindPredicate(kindParam string) string {
 	return " and json_extract_string(a.value, '$.kind') = " + kindParam
 }
 
+// A resource or scope has one attribute set. A scalar null check includes an
+// absent key/kind, unlike EXISTS predicates over events or datapoints.
+func OwnerNullExpression(field *FieldDefinition, query *Query, keyParam, kindPredicate, valueExpression string) (ResolvedExpression, bool) {
+	if query.FieldOperator != "IS NULL" {
+		return ResolvedExpression{}, false
+	}
+	var ids string
+	switch field.AttributeScope {
+	case "resource":
+		ids = "r.attribute_ids"
+	case "scope":
+		ids = "sc.attribute_ids"
+	default:
+		return ResolvedExpression{}, false
+	}
+	return Complete(fmt.Sprintf(`not exists (
+		select 1 from unnest(%s) t(aid) join attributes a on a.id = t.aid
+		where a.key = %s%s and %s IS NOT NULL
+	)`, ids, keyParam, kindPredicate, valueExpression)), true
+}
+
 // FieldMapper maps a FieldDefinition to one or more resolved SQL expressions.
 // Signal-specific code provides this to the generic tree walker.
 // The params slice is provided so mappers can add their own CTE parameters

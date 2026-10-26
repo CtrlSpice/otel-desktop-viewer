@@ -9,6 +9,7 @@ import {
 
 const staticFieldNames = {
   traces: [
+    'serviceIdentity',
     'resource.droppedAttributesCount',
     'scope.name',
     'scope.version',
@@ -40,6 +41,7 @@ const staticFieldNames = {
     'link.droppedAttributesCount',
   ],
   logs: [
+    'serviceIdentity',
     'resource.droppedAttributesCount',
     'scope.name',
     'scope.version',
@@ -56,6 +58,7 @@ const staticFieldNames = {
     'eventName',
   ],
   metrics: [
+    'serviceIdentity',
     'resource.droppedAttributesCount',
     'scope.name',
     'scope.version',

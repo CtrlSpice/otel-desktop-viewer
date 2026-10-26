@@ -110,7 +110,7 @@
 		link_data as (
 			select l.trace_id, l.span_id,
 				json_group_array(link_json(l, la.attrs)) as links
-			from links l
+			from span_link_summaries((select trace_id from search_params)) l
 			left join link_attrs la on la.id = l.id
 			where exists (select 1 from tree t
 					where t.trace_id = l.trace_id and t.span_id = l.span_id)

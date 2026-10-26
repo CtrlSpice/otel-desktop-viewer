@@ -7,9 +7,19 @@ import WaterfallView, {
   getTraceBounds,
 } from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
+import { spanNameColor, traceServiceColor } from '@/utils/trace-service-color'
+import { savedColorSlots } from '@/utils/color-slots'
+import { THEMES } from '@/themes'
 import { renderWithContexts } from '@/test/render-helpers'
 import { resetCollapseStoreForTests } from './waterfall-collapse-store'
 import { scrollMock } from '@/test/mock-virtual-list'
+import {
+  columnCell,
+  columnOptions,
+  columnID,
+  loadColumns,
+  saveColumns,
+} from './waterfall-columns'
 
 vi.mock('@humanspeak/svelte-virtual-list', async () => {
   const { default: MockVirtualList } =
@@ -56,6 +66,146 @@ function spanNode(
   }
 }
 
+describe('Waterfall direct-child counts', () => {
+  it('counts children separately from deeper descendants in the rendered tree', () => {
+    const spans = [
+      spanNode('root', null, 0),
+      spanNode('a', 'root', 1),
+      spanNode('a1', 'a', 2),
+      spanNode('a2', 'a', 2),
+      spanNode('b', 'root', 1),
+      spanNode('orphan', 'missing', 0),
+      spanNode('recovered', 'wrong-parent', 1),
+    ]
+    const rows = buildWaterfallRows(
+      spans,
+      getTraceBounds(spans),
+      'madoromi-aki-yoru'
+    )
+    expect(rows.map(row => row.tree.childrenCount)).toEqual([
+      2, 2, 0, 0, 0, 1, 0,
+    ])
+    expect(rows.map(row => row.tree.brokenParent)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+    ])
+  })
+})
+
+describe('Waterfall attribute values', () => {
+  it('keeps built-in fields separate from identically named attributes and preserves precision', () => {
+    const span = spanNode('first', null, 0).spanData
+    span.startTime = 18446744073709551614n
+    span.endTime = 18446744073709551615n
+    span.kindCode = 99
+    span.kind = 'Unknown (99)'
+    span.attributes = [
+      { key: 'kind', value: { kind: 'string', value: 'received attribute' } },
+    ]
+    const field = { source: 'span', key: 'kind', field: true } as const
+    const attribute = { source: 'span', key: 'kind' } as const
+    expect(columnID(field)).not.toBe(columnID(attribute))
+    expect(columnCell(span, field).text).toBe('99 (Unknown (99))')
+    expect(columnCell(span, attribute).text).toBe('received attribute')
+    expect(
+      columnCell(span, {
+        source: 'span',
+        key: 'startTimeUnixNano',
+        field: true,
+      })
+    ).toMatchObject({ text: '18446744073709551614', numeric: true })
+    expect(
+      columnCell(span, { source: 'span', key: 'duration', field: true }).title
+    ).toContain('1 ns')
+    expect(
+      columnCell(span, { source: 'span', key: 'parentSpanId', field: true })
+        .missing
+    ).toBe(true)
+    expect(
+      columnCell(span, { source: 'span', key: 'flags', field: true })
+    ).toMatchObject({ text: '0', missing: false })
+    expect(
+      columnCell(span, { source: 'scope', key: 'name', field: true })
+    ).toMatchObject({ text: '""', missing: false })
+  })
+
+  it('defaults service.name on while remembering empty layouts and field identities', () => {
+    localStorage.clear()
+    expect(loadColumns()).toEqual([{ source: 'resource', key: 'service.name' }])
+    saveColumns([])
+    expect(loadColumns()).toEqual([])
+    const columns = [
+      { source: 'scope', key: 'name', field: true },
+      { source: 'scope', key: 'name' },
+    ] as const
+    saveColumns(columns)
+    expect(loadColumns()).toEqual(columns)
+    localStorage.clear()
+  })
+
+  it('keeps owners separate, counts spans once, and retains selected absent keys', () => {
+    const span = spanNode('first', null, 0)
+    span.spanData.attributes = [
+      { key: 'same', value: { kind: 'int64', value: 9223372036854775807n } },
+      { key: 'same', value: { kind: 'bool', value: false } },
+    ]
+    span.spanData.resource.attributes = [
+      { key: 'same', value: { kind: 'string', value: 'resource value' } },
+    ]
+    expect(
+      columnOptions([span], [{ source: 'scope', key: 'absent' }]).filter(
+        column => !column.field
+      )
+    ).toMatchObject([
+      { source: 'span', key: 'same', count: 1 },
+      { source: 'resource', key: 'same', count: 1 },
+      { source: 'scope', key: 'absent', count: 0 },
+    ])
+    expect(
+      columnCell(span.spanData, { source: 'span', key: 'same' }).text
+    ).toBe('9223372036854775807 | false')
+    expect(
+      columnCell(span.spanData, { source: 'resource', key: 'same' }).text
+    ).toBe('resource value')
+    expect(
+      columnCell(span.spanData, { source: 'scope', key: 'absent' }).missing
+    ).toBe(true)
+  })
+
+  it('distinguishes absent, empty, null, zero and negative zero without losing nested values', () => {
+    const span = spanNode('first', null, 0).spanData
+    span.attributes = [
+      { key: 'empty string', value: { kind: 'string', value: '' } },
+      { key: 'null', value: { kind: 'empty', value: null } },
+      { key: 'zero', value: { kind: 'int64', value: 0n } },
+      { key: 'negative zero', value: { kind: 'double', value: -0 } },
+      {
+        key: 'map',
+        value: {
+          kind: 'map',
+          value: [
+            { key: 'a', value: { kind: 'int64', value: 9223372036854775807n } },
+            { key: 'a', value: { kind: 'string', value: 'two  spaces' } },
+          ],
+        },
+      },
+    ]
+    const cell = (key: string) => columnCell(span, { source: 'span', key })
+    expect(cell('absent')).toMatchObject({ text: '—', missing: true })
+    expect(cell('empty string')).toMatchObject({ text: '""', missing: false })
+    expect(cell('null').text).toBe('null')
+    expect(cell('zero').text).toBe('0')
+    expect(cell('negative zero').text).toBe('-0')
+    expect(cell('map').text).toContain('"a": 9223372036854775807,')
+    expect(cell('map').text).toContain('"a": "two  spaces"')
+  })
+})
+
 describe('WaterfallView bigint domain geometry', () => {
   it('uses domain bigint span and event times without reparsing', () => {
     const spans = [spanNode('first', null, 0), spanNode('second', null, 0)]
@@ -84,25 +234,105 @@ describe('WaterfallView bigint domain geometry', () => {
     expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
   })
 
-  it('uses the active Iris-first palette while preserving error semantics', () => {
+  it.each([undefined, 'one-service'])(
+    'colours a single %s service by exact span name while preserving errors',
+    service => {
+      const spans = [
+        spanNode('first', null, 0),
+        spanNode('second', null, 0),
+        spanNode('repeated', null, 0),
+        spanNode('error', null, 0),
+        spanNode('exception', null, 0),
+      ]
+      spans[2]!.spanData.name = 'first'
+      spans[3]!.spanData.statusCodeValue = 2
+      spans[4]!.spanData.events = [
+        {
+          name: 'exception',
+          timestamp: 0n,
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      ]
+      if (service !== undefined) {
+        for (const span of spans)
+          span.spanData.resource.attributes = [
+            { key: 'service.name', value: { kind: 'string', value: service } },
+          ]
+      }
+      const servicesBefore = savedColorSlots('services')
+
+      const rows = buildWaterfallRows(
+        spans,
+        getTraceBounds(spans),
+        'madoromi-fuyu-hiru'
+      )
+
+      expect(rows.map(row => row.color)).toEqual([
+        spanNameColor('first', 'madoromi-fuyu-hiru'),
+        spanNameColor('second', 'madoromi-fuyu-hiru'),
+        spanNameColor('first', 'madoromi-fuyu-hiru'),
+        'var(--color-error)',
+        'var(--color-error)',
+      ])
+      expect(rows[0].color).not.toBe(rows[1].color)
+      expect(savedColorSlots('services')).toEqual(servicesBefore)
+      const reordered = buildWaterfallRows(
+        [...spans].reverse(),
+        getTraceBounds(spans),
+        'madoromi-fuyu-hiru'
+      )
+      expect(reordered.map(row => row.color)).toEqual(
+        rows.map(row => row.color).reverse()
+      )
+    }
+  )
+
+  it('uses service colours for multi-service traces, including unmatched services', () => {
     const spans = [
       spanNode('first', null, 0),
       spanNode('second', null, 0),
       spanNode('error', null, 0),
     ]
+    for (const [index, span] of spans.entries())
+      span.spanData.resource.attributes = [
+        {
+          key: 'service.name',
+          value: {
+            kind: 'string',
+            value: index === 2 ? 'other-service' : 'one-service',
+          },
+        },
+      ]
+    spans[2]!.matched = false
     spans[2]!.spanData.statusCodeValue = 2
-
     const rows = buildWaterfallRows(
       spans,
       getTraceBounds(spans),
-      'rose-pine-dawn'
+      'madoromi-fuyu-hiru'
     )
+    expect(rows[0].color).toBe(
+      traceServiceColor('one-service', 'madoromi-fuyu-hiru')
+    )
+    expect(rows[1].color).toBe(rows[0].color)
+    expect(rows[2].color).toBe('var(--color-error)')
+    spans[2]!.spanData.statusCodeValue = 1
+    expect(
+      buildWaterfallRows(spans, getTraceBounds(spans), 'madoromi-fuyu-hiru')[2]
+        .color
+    ).toBe(traceServiceColor('other-service', 'madoromi-fuyu-hiru'))
+  })
 
-    expect(rows.map(row => row.color)).toEqual([
-      '#917cab',
-      '#aa546a',
-      'var(--color-error)',
-    ])
+  it('keeps exact span names distinct and their colours stable across all themes', () => {
+    const spans = [spanNode('first', null, 0), spanNode('second', null, 0)]
+    spans[1].spanData.name = 'first '
+    const colours = new Set<string>()
+    for (const theme of THEMES) {
+      const rows = buildWaterfallRows(spans, getTraceBounds(spans), theme.id)
+      expect(rows[0].color).not.toBe(rows[1].color)
+      colours.add(rows[0].color)
+    }
+    expect(colours.size).toBe(1)
   })
 })
 
@@ -129,11 +359,11 @@ function renderTree(overrides: Record<string, unknown> = {}) {
   })
 }
 
-type PersistedColumnWidths = {
-  span: number
-  service: number
-  timeline: number
-}
+const SERVICE_COLUMN_ID = '["resource","service.name"]'
+type PersistedColumnWidths = Record<
+  'span' | 'timeline' | typeof SERVICE_COLUMN_ID,
+  number
+>
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -146,10 +376,10 @@ function isPersistedColumnWidths(
     value !== null &&
     typeof value === 'object' &&
     'span' in value &&
-    'service' in value &&
+    SERVICE_COLUMN_ID in value &&
     'timeline' in value &&
     isFiniteNumber(value.span) &&
-    isFiniteNumber(value.service) &&
+    isFiniteNumber(value[SERVICE_COLUMN_ID]) &&
     isFiniteNumber(value.timeline)
   )
 }
@@ -229,6 +459,8 @@ describe('WaterfallView error navigation', () => {
     const onSelectSpan = vi.fn()
     const view = renderTree({ spans, onSelectSpan })
     await tick()
+    const badge = view.getByRole('group', { name: 'Error navigation' })
+    expect(badge).toHaveTextContent(/^\[2 err\]$/)
 
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
@@ -236,14 +468,27 @@ describe('WaterfallView error navigation', () => {
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
     })
+    expect(badge).toHaveTextContent(/^\[1\/2 err\]$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
 
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
     })
+    expect(badge).toHaveTextContent(/^\[2\/2 err\]$/)
     buttonByLabel('Previous error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
+    })
+    expect(badge).toHaveTextContent(/^\[1\/2 err\]$/)
+    for (const selectedSpanID of ['healthy-middle', 'exception-only', null]) {
+      await view.rerender({
+        componentProps: { spans, selectedSpanID, onSelectSpan },
+      })
+      expect(badge).toHaveTextContent(/^\[2 err\]$/)
+    }
   })
 
   it('chooses the nearest directional status error from a healthy span', async () => {
@@ -323,7 +568,9 @@ describe('WaterfallView error navigation', () => {
     })
     await tick()
 
-    expect(document.body).toHaveTextContent('2 err')
+    expect(
+      document.querySelector('[role="group"][aria-label="Error navigation"]')
+    ).toHaveTextContent(/^\[1\/2 err\]$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenCalledWith('error-2')
     expect(onSelectSpan).not.toHaveBeenCalledWith('exception-only')
@@ -350,6 +597,51 @@ describe('WaterfallView error navigation', () => {
     })
     await waitFor(() => expect(scrollMock).toHaveBeenCalled())
     expect(rowIDs()).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('WaterfallView scroll to top', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('scrolls without changing selection or collapsed branches and retains keyboard focus', async () => {
+    resetCollapseStoreForTests()
+    const onSelectSpan = vi.fn()
+    const view = renderTree({ selectedSpanID: 'b', onSelectSpan })
+    await tick()
+    await collapseRow('c')
+    const visible = rowIDs()
+    const viewport = view.container.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )!
+    const label = 'Scroll span tree to top'
+    expect(view.queryByRole('button', { name: label })).not.toBeInTheDocument()
+    viewport.scrollTop = 200
+    viewport.dispatchEvent(new Event('scroll'))
+    await tick()
+    const button = view.getByRole('button', { name: label })
+    button.focus()
+    await tick()
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: true })
+    scrollMock.mockClear()
+    button.click()
+    await tick()
+    expect(scrollMock).toHaveBeenCalledWith({
+      index: 0,
+      align: 'top',
+      smoothScroll: false,
+      shouldThrowOnBounds: false,
+    })
+    expect(onSelectSpan).not.toHaveBeenCalled()
+    expect(rowIDs()).toEqual(visible)
+    expect(spanRow('b')).toHaveAttribute('aria-selected', 'true')
+    viewport.scrollTop = 0
+    viewport.dispatchEvent(new Event('scroll'))
+    await tick()
+    expect(button).toHaveFocus()
+    button.blur()
+    await tick()
+    expect(view.queryByRole('button', { name: label })).not.toBeInTheDocument()
   })
 })
 
@@ -508,7 +800,8 @@ describe('WaterfallView collapse ownership', () => {
     const during = rowIDs()
     expect(during).toContain('c')
     expect(during).not.toContain('f')
-    expect(spanRow('c')).toHaveTextContent('Match')
+    expect(spanRow('c')).toHaveClass('waterfall-row--matched')
+    expect(spanRow('c')).not.toHaveTextContent('Match')
     expect(spanRow('b')).not.toHaveTextContent('Match')
 
     // Clearing the search puts back exactly what the reader had: 'e' still
@@ -529,12 +822,18 @@ describe('WaterfallView collapse ownership', () => {
     renderTree({ searchActive: true })
     await tick()
 
-    expect(document.querySelectorAll('.waterfall-row__match')).toHaveLength(
+    expect(document.querySelectorAll('.waterfall-row--matched')).toHaveLength(
       ALL_IDS.length
     )
+    expect(spanRow('a')).not.toHaveClass('waterfall-row--joined-before')
+    expect(spanRow('b')).toHaveClass(
+      'waterfall-row--joined-before',
+      'waterfall-row--joined-after'
+    )
+    expect(spanRow('f')).not.toHaveClass('waterfall-row--joined-after')
   })
 
-  it('center-scrolls a newly selected visible span', async () => {
+  it('reveals a newly selected span without centering a visible row', async () => {
     const { rerender } = renderTree()
     await tick()
     scrollMock.mockClear()
@@ -550,7 +849,7 @@ describe('WaterfallView collapse ownership', () => {
       expect(scrollMock).toHaveBeenCalledWith(
         expect.objectContaining({
           index: expect.any(Number),
-          align: 'center',
+          align: 'nearest',
           smoothScroll: true,
           shouldThrowOnBounds: false,
         })
@@ -748,7 +1047,7 @@ describe('WaterfallView row keyboard navigation', () => {
     const first = spanRow('a')
     first.focus()
     const traceIDText = first.querySelector<HTMLElement>(
-      '.waterfall-row__title'
+      '.waterfall-row__title .table-value-cell__inspect'
     )
     expect(traceIDText).toHaveTextContent(traceID)
     const selection = window.getSelection()!
@@ -869,18 +1168,17 @@ describe('WaterfallView column separators', () => {
       )
     }
 
-    expect(
-      document.querySelectorAll('.resize-handle[role="separator"]')
-    ).toHaveLength(0)
-    expect(
-      document.querySelectorAll('.resize-handle[aria-hidden="true"]')
-    ).toHaveLength(2)
+    expect(document.querySelectorAll('.resize-handle')).toHaveLength(0)
     expect(
       document.querySelector('[role="treegrid"][aria-label="Span waterfall"]')
     ).toBeInTheDocument()
   })
 
   it('nudges through the shared cascade and persists each keyboard change', async () => {
+    localStorage.setItem(
+      'waterfall-column-widths',
+      JSON.stringify({ span: 200, [SERVICE_COLUMN_ID]: 100, timeline: 500 })
+    )
     renderTree()
     await tick()
 
@@ -907,6 +1205,29 @@ describe('WaterfallView column separators', () => {
     expect(Number.parseFloat(spanBar.style.left)).toBe(start - 48)
   })
 
+  it.each([
+    { span: 200, service: 200, timeline: 400 },
+    { span: 200, service: 300, [SERVICE_COLUMN_ID]: 200, timeline: 400 },
+  ])(
+    'preserves upgraded service widths without overriding newer widths: %j',
+    async stored => {
+      containerWidth = 800
+      localStorage.setItem('waterfall-column-widths', JSON.stringify(stored))
+      renderTree()
+      await tick()
+
+      expect(Number.parseFloat(separators()[0]!.style.left)).toBe(200)
+      expect(Number.parseFloat(separators()[1]!.style.left)).toBe(400)
+      press(separators()[0]!, 'ArrowRight')
+      await tick()
+      expect(readPersistedColumnWidths()).toEqual({
+        span: 216,
+        [SERVICE_COLUMN_ID]: 184,
+        timeline: 400,
+      })
+    }
+  )
+
   it('uses Home to restore and persist the current-container default', async () => {
     containerWidth = 600
     renderTree()
@@ -924,16 +1245,18 @@ describe('WaterfallView column separators', () => {
     expect(spanBar).toHaveAttribute('aria-valuenow', defaultPosition)
 
     const stored = readPersistedColumnWidths()
-    expect(stored.span + stored.service + stored.timeline).toBeCloseTo(600, 6)
+    expect(
+      stored.span + stored[SERVICE_COLUMN_ID] + stored.timeline
+    ).toBeCloseTo(600, 6)
     expect(stored.span).toBeGreaterThanOrEqual(140)
-    expect(stored.service).toBeGreaterThanOrEqual(100)
+    expect(stored[SERVICE_COLUMN_ID]).toBeGreaterThanOrEqual(100)
     expect(stored.timeline).toBeGreaterThanOrEqual(240)
   })
 
   it('salvages finite widths while ignoring malformed entries', async () => {
     const stored = {
       span: 400,
-      service: 'wide',
+      [SERVICE_COLUMN_ID]: 'wide',
       timeline: null,
       removedColumn: 123,
     }
@@ -954,10 +1277,8 @@ describe('WaterfallView column separators', () => {
     expect(() => renderTree()).not.toThrow()
     await tick()
 
-    expect(Number.parseFloat(separators()[0]!.style.left)).toBeCloseTo(
-      (800 * 2) / 7,
-      5
-    )
+    expect(Number.parseFloat(separators()[0]!.style.left)).toBe(140)
+    expect(Number.parseFloat(separators()[1]!.style.left)).toBe(240)
   })
 
   it('rejects extreme finite widths before layout arithmetic overflows', async () => {
@@ -965,7 +1286,7 @@ describe('WaterfallView column separators', () => {
       'waterfall-column-widths',
       JSON.stringify({
         span: Number.MAX_VALUE,
-        service: Number.MAX_VALUE,
+        [SERVICE_COLUMN_ID]: Number.MAX_VALUE,
         timeline: Number.MAX_VALUE,
       })
     )

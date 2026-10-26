@@ -3,6 +3,7 @@
 -- traceID and spanID go out in OTLP wire form (dash-less lowercase hex) via
 -- trace_id_wire / span_id_wire; linked_trace_id / linked_span_id are the context pointed *at*, as
 -- distinct from the owning trace_id / span_id.
+-- l comes from span_link_summaries; summary is read-time UI metadata, not OTLP.
 create or replace macro link_json(l, attrs) as (
     json_object(
         'traceID', trace_id_wire(l.linked_trace_id),
@@ -10,6 +11,7 @@ create or replace macro link_json(l, attrs) as (
         'traceState', l.trace_state,
         'droppedAttributesCount', l.dropped_attributes_count,
         'flags', l.flags,
-        'attributes', coalesce(attrs, json('[]'))
+        'attributes', coalesce(attrs, json('[]')),
+        'summary', l.summary
     )
 )

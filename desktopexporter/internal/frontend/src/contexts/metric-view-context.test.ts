@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
-import { fireEvent, screen } from '@testing-library/svelte'
+import { fireEvent, screen, within } from '@testing-library/svelte'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 import {
   aggregateToSlices,
@@ -17,32 +17,209 @@ import type {
 import MetricViewProbe from '@/test/MetricViewProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { metricViewStorageKey } from '@/components/metrics/utils/metric-timeseries-visible'
+import { detailPanel } from '@/state/detail-panel.svelte'
+import { getSeriesPalette } from '@/themes'
+import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+import { GRAPH_SWATCHES } from '@/themes/graph-inks'
 
 const BASE_TIMESTAMP_MS = 1_700_000_000_000
 
-it('resets nested datapoint expansion when the metric changes with shared series keys', async () => {
+it('retains saved overrides and datapoint selection across seasonal changes', async () => {
+  const previousTheme = document.documentElement.getAttribute('data-theme')
+  const scope = 'metric:ink-switch-test'
+  setTestUrl('/metrics/ink-switch-test')
+  let ctx!: MetricViewContext
+  const manual = GRAPH_SWATCHES[100]!
+  const view = renderWithContexts(MetricViewProbe, {
+    metric: { ...makeCumulativeSumMetric(), metricRef: 'ink-switch-test' },
+    oncontext: context => (ctx = context),
+  })
+  try {
+    await tick()
+    const original = new Map(ctx.timeseriesColorByKey)
+    graphColorOverrides.set(scope, 'route=/a', manual.id)
+    ctx.selectSeries('route=/a')
+    ctx.onChartPointClick('route=/a', 'dp-a1')
+    await tick()
+    const url = window.location.href
+    const visible = [...ctx.visibleSeries]
+    document.documentElement.setAttribute('data-theme', 'madoromi-fuyu-hiru')
+    await tick()
+    expect(ctx.timeseriesColorByKey.get('route=/a')).toBe(manual.color)
+    expect(ctx.timeseriesColorByKey.get('route=/b')).toBe(
+      original.get('route=/b')
+    )
+    expect(ctx.selectedDatapointID).toBe('dp-a1')
+    expect([...ctx.visibleSeries]).toEqual(visible)
+    expect(window.location.href).toBe(url)
+    graphColorOverrides.set(scope, 'route=/a', null)
+    await tick()
+    expect(ctx.timeseriesColorByKey).toEqual(original)
+  } finally {
+    view.unmount()
+    graphColorOverrides.set(scope, 'route=/a', null)
+    if (previousTheme)
+      document.documentElement.setAttribute('data-theme', previousTheme)
+    else document.documentElement.removeAttribute('data-theme')
+  }
+})
+
+it('keeps chart selection and native disclosures independent', async () => {
+  setTestUrl('/metrics/m1')
+  let context!: MetricViewContext
+  const scroll = vi.fn()
+  const original = Element.prototype.scrollIntoView
+  Element.prototype.scrollIntoView = scroll
+  try {
+    const metric = makeCumulativeSumMetric()
+    const view = renderWithContexts(MetricViewProbe, {
+      metric,
+      seriesDatapoints: Object.fromEntries(
+        metric.timeseries.map(ts => [ts.seriesRef, ts.datapoints])
+      ),
+      showDetail: true,
+      oncontext: ctx => (context = ctx),
+    })
+    const series = screen
+      .getByText('Series', { exact: true })
+      .closest('details')!
+    const fields = screen
+      .getByText('Metric', { exact: true })
+      .closest('details')!
+    expect(series.open).toBe(true)
+    expect(fields.open).toBe(true)
+    expect(
+      fields.compareDocumentPosition(series) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(
+      screen.getByRole('tablist', { name: 'Detail view' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Properties' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    const metadata = screen.getByRole('table', { name: 'Metric fields' })
+    for (const [key, value] of [
+      ['name', 'test-scope'],
+      ['version', '1.0.0'],
+    ]) {
+      const row = within(metadata)
+        .getByRole('button', { name: `Copy ${key} (scope)` })
+        .closest('tr')!
+      expect(row.querySelector('.detail-property__key')).toHaveTextContent(key!)
+      expect(row.querySelector('.detail-property__origin')).toHaveTextContent(
+        'scope'
+      )
+      expect(row.querySelector('.detail-property__type')).toHaveTextContent(
+        'string'
+      )
+      expect(row.querySelector('.detail-property__body')).toHaveTextContent(
+        value!
+      )
+    }
+    expect(fields.querySelectorAll('details')).toHaveLength(0)
+    context.selectSeries('route=/a')
+    await tick()
+    for (let selection = 0; selection < 2; selection++) {
+      detailPanel.setOpen(false)
+      context.onChartPointClick('route=/a', 'dp-a1')
+      await tick()
+      await tick()
+      expect(detailPanel.open).toBe(false)
+      expect(series.open).toBe(true)
+      expect(fields.open).toBe(true)
+      expect(document.querySelector('[data-dp-id="dp-a1"]')).toBeVisible()
+      expect(context.selectedSeriesKey).toBe('route=/a')
+    }
+    expect(scroll).not.toHaveBeenCalled()
+    await fireEvent.click(series.querySelector('summary')!)
+    expect(series.open).toBe(false)
+    await fireEvent.click(fields.querySelector('summary')!)
+    detailPanel.setOpen(false)
+    await tick()
+    detailPanel.setOpen(true)
+    await tick()
+    expect(series.open).toBe(false)
+    expect(fields.open).toBe(true)
+    detailPanel.setOpen(false)
+    await view.rerender({
+      componentProps: { metric: { ...metric }, showDetail: true },
+    })
+    await tick()
+    expect(detailPanel.open).toBe(false)
+  } finally {
+    Element.prototype.scrollIntoView = original
+  }
+})
+
+it('keeps collapsed series attributes separate from selection and datapoints', async () => {
   setTestUrl('/metrics/m1')
   const metric = makeCumulativeSumMetric()
   const view = renderWithContexts(MetricViewProbe, {
     metric,
-    showTimeseries: true,
-    oncontext: ctx => ctx.expandedTimeseries.add('route=/a'),
+    showDetail: true,
+    seriesDatapoints: Object.fromEntries(
+      metric.timeseries.map(ts => [ts.seriesRef, ts.datapoints])
+    ),
   })
   await tick()
-  const datapoints = screen.getByText('Datapoints').closest('details')
-  if (!datapoints) throw new Error('Missing datapoints disclosure')
-  expect(datapoints.open).toBe(false)
-  datapoints.open = true
-  await fireEvent(datapoints, new Event('toggle'))
-  expect(datapoints.open).toBe(true)
-
-  await view.rerender({
-    componentProps: { metric: { ...metric, id: 'm2' }, showTimeseries: true },
-  })
-  await tick()
-  expect(screen.getByText('Datapoints').closest('details')).not.toHaveAttribute(
-    'open'
+  expect(
+    view.container.querySelector('[data-series-attributes="route=/a"]')
+  ).toBeNull()
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Expand attributes for route: /a' })
   )
+  const series = view.container.querySelector<HTMLTableRowElement>(
+    '[data-series-attributes="route=/a"]'
+  )!
+  const table = within(series).getByRole('table', {
+    name: 'Attributes for route: /a',
+  })
+  expect(series.querySelectorAll('table')).toHaveLength(1)
+  expect(series.querySelectorAll('details')).toHaveLength(0)
+  const attribute = table.querySelector('[data-field="route"]')!
+  expect(attribute.querySelector('.detail-property__key')).toHaveTextContent(
+    'route'
+  )
+  expect(attribute.querySelector('.detail-property__type')).toHaveTextContent(
+    'string'
+  )
+  expect(table).toHaveTextContent('/a')
+  expect(within(series).queryByRole('table', { name: 'Datapoints' })).toBeNull()
+  expect(series.querySelector('.field-group__caret')).toBeNull()
+  expect(
+    view.container.querySelector('[data-series-key="route=/a"]')
+  ).toHaveClass('item-state')
+  expect(series).not.toHaveAttribute('hidden')
+  expect(screen.queryByText('Resource attributes')).toBeNull()
+
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Select route: /a' })
+  )
+  expect(screen.getByRole('table', { name: 'Datapoints' })).toHaveTextContent(
+    'Time'
+  )
+  expect(
+    screen
+      .getByRole('table', { name: 'Datapoints' })
+      .querySelector('[data-field="route"]')
+  ).toBeNull()
+  expect(series.querySelectorAll('table')).toHaveLength(1)
+  await view.rerender({
+    componentProps: { metric: { ...metric }, showDetail: true },
+  })
+  expect(
+    view.container.querySelector('[data-series-attributes="route=/a"]')
+  ).not.toBeNull()
+  await view.rerender({
+    componentProps: {
+      metric: { ...metric, metricRef: 'different-metric' },
+      showDetail: true,
+    },
+  })
+  expect(
+    view.container.querySelector('[data-series-attributes="route=/a"]')
+  ).toBeNull()
 })
 
 const EMPTY_RESOURCE: ResourceData = {
@@ -89,9 +266,8 @@ function makeSumDatapointAt(
 }
 
 /**
- * Cumulative monotonic Sum with two timeseries: 'rate' is allowed (and is the
- * smart default), and the second series unlocks 'sum' / 'avg' so tests have an
- * allowed value that is NOT the default to deep-link to.
+ * Cumulative monotonic Sum with two timeseries: 'rate' is an explicit option,
+ * and the second series unlocks 'sum' / 'avg'. Raw remains the default.
  */
 function makeCumulativeSumMetric(): MetricViewData {
   return {
@@ -319,39 +495,126 @@ function externalNavigationTo(url: string): void {
 }
 
 describe('metric view context aggregation URL sync', () => {
+  it('remembers histogram mode across both histogram kinds and intervening gauges without overriding links', () => {
+    const storageKey = 'metrics:histogram-view'
+    const previous = localStorage.getItem(storageKey)
+    localStorage.removeItem(storageKey)
+    try {
+      const visits = [
+        {
+          type: 'Histogram',
+          query: '',
+          expected: 'heatmap',
+          choose: 'histogram',
+        },
+        { type: 'ExponentialHistogram', query: '', expected: 'histogram' },
+        { type: 'Gauge', query: '', expected: null },
+        { type: 'Histogram', query: '', expected: 'histogram' },
+        {
+          type: 'ExponentialHistogram',
+          query: '?htab=heatmap',
+          expected: 'heatmap',
+        },
+        { type: 'Histogram', query: '', expected: 'histogram' },
+      ] as const
+      for (const [index, visit] of visits.entries()) {
+        const metric: MetricViewData = {
+          ...makeCumulativeSumMetric(),
+          metricRef: `shared-view-${index}`,
+          metricType: visit.type,
+          timeseries: [],
+          datapointCount: 0,
+        }
+        setTestUrl(`/metrics/${metric.metricRef}${visit.query}`)
+        let context: MetricViewContext | undefined
+        const view = renderWithContexts(MetricViewProbe, {
+          metric,
+          oncontext: (ctx: MetricViewContext) => (context = ctx),
+        })
+        if (!context)
+          throw new Error('probe did not report a metric view context')
+        if (visit.expected)
+          expect(context.activeHistogramTab).toBe(visit.expected)
+        else expect(context.aggregationView).toBe('raw')
+        if ('choose' in visit) context.setActiveHistogramTab(visit.choose)
+        view.unmount()
+      }
+    } finally {
+      if (previous === null) localStorage.removeItem(storageKey)
+      else localStorage.setItem(storageKey, previous)
+    }
+  })
+
   it('offers rate for a cumulative monotonic sum with two series', () => {
     renderProbe('/metrics/m1')
     expect(reportedAvailableAggregationViews()).toEqual([
       'raw',
       'sum',
       'avg',
+      'sum-avg',
       'rate',
     ])
   })
 
-  it('uses the smart default when the URL carries no aggregation', () => {
+  it('uses Raw when the URL carries no aggregation or saved preference', () => {
     renderProbe('/metrics/m1')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
+
+  it('shows a single counter reading in Raw rather than deriving an empty rate', () => {
+    const metric = makeCumulativeSumMetric()
+    const series = metric.timeseries[0]!
+    series.datapoints = [series.datapoints[0]!]
+    series.datapointCount = 1
+    metric.timeseries = [series]
+    metric.datapointCount = 1
+    const ctx = renderProbe('/metrics/m1', { metric })
+    expect(reportedAggregationView()).toBe('raw')
+    expect(ctx.transformedGaugeSumChartTimeseries[0]!.points).toHaveLength(1)
+    expect(ctx.transformedGaugeSumChartTimeseries[0]!.points[0]!.value).toBe(10)
+    expect(reportedAvailableAggregationViews()).toEqual(['raw', 'rate'])
+  })
+
+  it.each([
+    ['/metrics/m1', 'rate'],
+    ['/metrics/m1?agg=bogus', 'rate'],
+    ['/metrics/m1?agg=raw', 'raw'],
+    ['/metrics/m1?agg=sum', 'sum'],
+    ['/metrics/m1?agg=rate', 'rate'],
+  ])(
+    'respects an applicable saved preference or explicit URL at %s',
+    (url, expected) => {
+      const key = metricViewStorageKey('m1')
+      const preference = JSON.stringify({ aggregationView: 'rate' })
+      localStorage.setItem(key, preference)
+      try {
+        renderProbe(url)
+        expect(reportedAggregationView()).toBe(expected)
+        expect(localStorage.getItem(key)).toBe(preference)
+      } finally {
+        localStorage.removeItem(key)
+      }
+    }
+  )
 
   it('applies an aggregation deep link on load', () => {
     renderProbe('/metrics/m1?agg=sum')
     expect(reportedAggregationView()).toBe('sum')
   })
 
-  it('falls back to the smart default when the URL aggregation is invalid', () => {
+  it('falls back to Raw when the URL aggregation is invalid', () => {
     renderProbe('/metrics/m1?agg=bogus')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
-  it('keeps the smart default when the browser goes back to a URL without an aggregation', async () => {
+  it('keeps Raw when the browser goes back to a URL without an aggregation', async () => {
     renderProbe('/metrics/m1?agg=sum')
     expect(reportedAggregationView()).toBe('sum')
 
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
   it('ignores an aggregation dropped from the URL behind its back', async () => {
@@ -363,9 +626,9 @@ describe('metric view context aggregation URL sync', () => {
     expect(reportedAggregationView()).toBe('rate')
   })
 
-  it('keeps the smart default when an unrelated query param is written', async () => {
+  it('keeps Raw when an unrelated query param is written', async () => {
     renderProbe('/metrics/m1')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
 
     navigateCurrentRoute(
       withQueryPatch(readRoute().query, { start: '1000', end: '2000' }),
@@ -374,7 +637,7 @@ describe('metric view context aggregation URL sync', () => {
     await tick()
 
     expect(window.location.search).toContain('start=1000')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
   it('writes its own aggregation choice to the URL', async () => {
@@ -406,7 +669,7 @@ describe('metric view context aggregation URL sync', () => {
     }
   })
 
-  it('returns to the smart default when the browser goes back past its own write', async () => {
+  it('returns to Raw when the browser goes back past its own write', async () => {
     const ctx = renderProbe('/metrics/m1')
 
     ctx.setAggregationView('sum')
@@ -416,7 +679,7 @@ describe('metric view context aggregation URL sync', () => {
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
   it('spells out raw rather than omitting it', async () => {
@@ -436,7 +699,7 @@ describe('metric view context visibility seeding', () => {
     expect([...ctx.visibleSeries].sort()).toEqual(['route=/a', 'route=/b'])
   })
 
-  it('keeps the aggregate producer order through the chart series', async () => {
+  it('keeps the checked-series aggregate after source lines without an all-series overlay', async () => {
     const metric = makeCumulativeSumMetric()
     metric.timeseries.push({
       ...metric.timeseries[1]!,
@@ -464,15 +727,41 @@ describe('metric view context visibility seeding', () => {
     })
 
     ctx.visibleSeries.delete('route=/c')
-    ctx.setShowAllSeriesAggregate(true)
     await tick()
 
     expect(
       ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
-    ).toEqual(['route=/a', 'route=/b', '__agg:selected__', '__agg:all__'])
+    ).toEqual(['route=/a', 'route=/b', '__agg:selected__'])
+    ctx.setAggregationView('raw')
+    await tick()
+    const rawSeries = ctx.transformedGaugeSumChartTimeseries
+    for (const mode of ['sum', 'avg', 'sum-avg'] as const) {
+      ctx.setAggregationView(mode)
+      await tick()
+      // Aggregate bucket boundaries must not move or discard source samples,
+      // nor fill gaps with synthetic zeros carrying no source identity.
+      expect(ctx.transformedGaugeSumChartTimeseries.slice(0, 2)).toEqual(
+        rawSeries
+      )
+    }
+    const combined = ctx.transformedGaugeSumChartTimeseries.slice(2)
+    expect(combined.map(series => series.key)).toEqual([
+      '__agg:selected__',
+      '__agg:avg:selected__',
+    ])
+    expect(combined.map(series => series.points[0]?.value)).toEqual([14, 7])
+    expect(readRoute().query.agg).toBe('sum-avg')
+    externalNavigationTo('/metrics/m1?agg=raw')
+    await tick()
+    externalNavigationTo('/metrics/m1?agg=sum-avg')
+    await tick()
+    expect(ctx.transformedGaugeSumChartTimeseries.slice(2)).toEqual(combined)
+    ctx.visibleSeries.clear()
+    await tick()
+    expect(ctx.transformedGaugeSumChartTimeseries).toEqual([])
   })
 
-  it('replaces the last full scalar selection for a linked series without saving it', async () => {
+  it('restores linked inspection without changing the full visible set or saved colours', async () => {
     const metric = makeCumulativeSumMetric()
     const template = metric.timeseries[0]!
     metric.timeseries = Array.from({ length: 23 }, (_, index) => ({
@@ -493,42 +782,42 @@ describe('metric view context visibility seeding', () => {
       await tick()
 
       const visible = [...ctx.visibleSeries]
-      expect(visible).toEqual([...persistedKeys.slice(0, -1), 'series-022'])
+      expect(visible).toEqual(persistedKeys)
       expect(visible).toHaveLength(22)
-      expect(ctx.timeseriesColorByKey.get('series-021')).toBeUndefined()
-      expect(ctx.timeseriesColorByKey.get('series-022')).toBe(
-        colorsBeforeReveal.get('series-021')
-      )
-      for (const key of persistedKeys.slice(0, -1)) {
+      expect(ctx.selectedSeriesKey).toBe('series-022')
+      expect(ctx.timeseriesColorByKey.get('series-022')).toBeUndefined()
+      for (const key of persistedKeys) {
         expect(ctx.timeseriesColorByKey.get(key)).toBe(
           colorsBeforeReveal.get(key)
         )
       }
       expect(
         ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
-      ).toContain('series-022')
+      ).not.toContain('series-022')
       expect(localStorage.getItem(storageKey)).toBe(persisted)
     } finally {
       localStorage.removeItem(storageKey)
     }
   })
 
-  it('keeps visible key slots while changing to the current theme palette', async () => {
+  it('keeps visible key slots and colour identities across theme changes', async () => {
     const previousTheme = document.documentElement.getAttribute('data-theme')
-    document.documentElement.setAttribute('data-theme', 'rose-pine')
+    document.documentElement.setAttribute('data-theme', 'madoromi-aki-yoru')
     try {
       const ctx = renderProbe('/metrics/m1')
       const before = new Map(ctx.timeseriesColorByKey)
-      document.documentElement.setAttribute('data-theme', 'rose-pine-dawn')
+      document.documentElement.setAttribute('data-theme', 'madoromi-fuyu-hiru')
       await tick()
       await tick()
 
       expect([...ctx.timeseriesColorByKey.keys()]).toEqual([...before.keys()])
-      expect([...ctx.timeseriesColorByKey.values()]).not.toEqual([
-        ...before.values(),
-      ])
-      expect(ctx.timeseriesColorByKey.get('route=/a')).toBe('#2b6c85')
-      expect(ctx.timeseriesColorByKey.get('route=/b')).toBe('#559695')
+      const previous = getSeriesPalette('madoromi-aki-yoru')
+      const next = getSeriesPalette('madoromi-fuyu-hiru')
+      for (const [key, color] of before) {
+        expect(ctx.timeseriesColorByKey.get(key)).toBe(
+          next[previous.indexOf(color)]
+        )
+      }
     } finally {
       if (previousTheme === null)
         document.documentElement.removeAttribute('data-theme')
@@ -538,6 +827,43 @@ describe('metric view context visibility seeding', () => {
 })
 
 describe('metric view context datapoint URL sync', () => {
+  it('keeps inspection independent of visibility and clears the point when switching series', async () => {
+    const metric = makeCumulativeSumMetric()
+    const ctx = renderProbe('/metrics/m1', { metric })
+    const visible = [...ctx.visibleSeries]
+    ctx.selectSeries('route=/a')
+    ctx.onDatapointClick(metric.timeseries[0]!.datapoints[0]!)
+    await tick()
+    const selected = ctx.selectedDatapointID
+    expect(selected).not.toBeNull()
+    expect([...ctx.visibleSeries]).toEqual(visible)
+    ctx.toggleTimeseriesVisible('route=/a', false)
+    await tick()
+    expect(ctx.selectedDatapointID).toBe(selected)
+    expect(ctx.selectedSeriesKey).toBe('route=/a')
+    ctx.selectSeries('route=/b')
+    await tick()
+    expect(ctx.selectedDatapointID).toBeNull()
+    expect(ctx.selectedSeriesKey).toBe('route=/b')
+    expect(ctx.visibleSeries.has('route=/a')).toBe(false)
+    expect(new URLSearchParams(window.location.search).has('dp')).toBe(false)
+    ctx.onChartPointClick('route=/a', 'dp-a1')
+    await tick()
+    expect(ctx.selectedSeriesKey).toBe('route=/b')
+    expect(ctx.selectedDatapointID).toBeNull()
+  })
+
+  it('cancels a pending URL datapoint when the user selects another series', async () => {
+    const view = renderProbeView('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
+    view.context.selectSeries('route=/a')
+    await view.setSeriesDatapoints({
+      'route=/b': [makeSumDatapoint('dp-raw-b', 30_000, 7)],
+    })
+    await tick()
+    expect(view.context.selectedSeriesKey).toBe('route=/a')
+    expect(view.context.selectedDatapointID).toBeNull()
+  })
+
   it('selects the datapoint named in the URL on load', () => {
     renderProbe('/metrics/m1?dp=dp-b2')
     expect(reportedSelectedDatapointID()).toBe('dp-b2')
@@ -553,7 +879,7 @@ describe('metric view context datapoint URL sync', () => {
     const view = renderProbeView('/metrics/m1?dp=dp-raw-b')
 
     expect(reportedSelectedDatapointID()).toBe('')
-    expect(view.context.expandedTimeseries.size).toBe(0)
+    expect(view.context.selectedSeriesKey).toBeNull()
 
     await view.setSeriesDatapoints({ 'route=/b': [raw] })
     await tick()
@@ -599,7 +925,7 @@ describe('metric view context datapoint URL sync', () => {
     expect(reportedSelectedDatapointID()).toBe('')
     expect(reportedResolvedDatapointID()).toBe('')
     expect(reportedSelectedSeriesKey()).toBe('route=/b')
-    expect(view.context.expandedTimeseries.has('route=/b')).toBe(true)
+    expect(view.context.selectedSeriesKey).toBe('route=/b')
     expect(new URLSearchParams(window.location.search).get('dp')).toBe(
       'dp-raw-b'
     )
@@ -621,7 +947,7 @@ describe('metric view context datapoint URL sync', () => {
     await tick()
 
     expect(reportedSelectedDatapointID()).toBe('')
-    expect(view.context.expandedTimeseries.has('route=/b')).toBe(true)
+    expect(view.context.selectedSeriesKey).toBe('route=/b')
 
     await view.setSeriesDatapoints({ 'route=/b': [raw] })
     await tick()
@@ -670,8 +996,10 @@ describe('metric view context datapoint URL sync', () => {
       seriesDatapoints: { 'route=/b': [raw] },
     })
 
+    ctx.selectSeries('route=/a')
     ctx.onChartPointClick('route=/b', 'dp-b2')
     await tick()
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
     expect(reportedSelectedDatapointID()).toBe('dp-b2')
     expect(reportedResolvedDatapointID()).toBe('dp-b2')
     expect(ctx.selectionSource).toBe('chart')
@@ -703,6 +1031,69 @@ describe('metric view context datapoint URL sync', () => {
     ).toBe(4)
   })
 
+  it('pins an exact Rate bucket directly without inventing a raw datapoint or URL id', async () => {
+    const { metric, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+    ctx.selectSeries('route=/b')
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectedSeriesKey).toBe('route=/a')
+    expect(ctx.selectedRateSlope).toBe(6)
+    expect(ctx.selectedDatapointID).toBeNull()
+    expect(ctx.selectionSource).toBe('chart')
+    expect(new URLSearchParams(window.location.search).has('dp')).toBe(false)
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart + 1n)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    ctx.clearChartSelection()
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+  })
+
+  it('keeps raw detail selection underneath a Rate pick and lets the list take over again', async () => {
+    const { metric, later, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+    ctx.onDatapointClick(later)
+    await tick()
+    const before = window.location.search
+    const earlierBucket = selectedBucketStart - 300n
+    ctx.onRateChartPointClick('route=/a', earlierBucket)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(earlierBucket)
+    expect(ctx.selectedDatapointID).toBe(later.id)
+    expect(window.location.search).toBe(before)
+    ctx.clearChartSelection()
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectionSource).toBe('detail')
+    ctx.onRateChartPointClick('route=/a', earlierBucket)
+    ctx.onDatapointClick(later)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectedDatapointID).toBe(later.id)
+  })
+
+  it('rejects unknown or aggregate Rate buckets and clears a pick when its series is hidden', async () => {
+    const { metric, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+    ctx.selectSeries('route=/a')
+    ctx.onRateChartPointClick('__agg:selected__', selectedBucketStart)
+    ctx.onRateChartPointClick('missing', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    ctx.visibleSeries.delete('route=/a')
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+    ctx.setAggregationView('raw')
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+  })
+
   it('does not map a raw-only same-time selection onto a reduced rate bucket', async () => {
     const { metric, later } = makeRateSelectionMetric()
     const rawOnly = makeSumDatapointAt('rate-raw-only', later.timestamp, 99)
@@ -720,7 +1111,7 @@ describe('metric view context datapoint URL sync', () => {
     expect(ctx.selectedRateSlope).toBeUndefined()
   })
 
-  it('lets an exact chart selection supersede a pending URL datapoint', async () => {
+  it('keeps a new chart pick when a previous series URL datapoint finishes loading', async () => {
     const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
     const view = renderProbeView('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
 
@@ -762,6 +1153,7 @@ describe('metric view context datapoint URL sync', () => {
 
   it('clears a chart-owned datapoint selection and its URL state', async () => {
     const ctx = renderProbe('/metrics/m1')
+    ctx.selectSeries('route=/a')
 
     ctx.onChartPointClick('route=/a', 'dp-a1')
     await tick()
@@ -774,26 +1166,44 @@ describe('metric view context datapoint URL sync', () => {
     expect(new URLSearchParams(window.location.search).get('dp')).toBeNull()
   })
 
+  it('keeps details closed when selecting the same chart datapoint again', async () => {
+    const ctx = renderProbe('/metrics/m1')
+    ctx.selectSeries('route=/a')
+    for (let selection = 0; selection < 2; selection++) {
+      detailPanel.setOpen(false)
+      ctx.onChartPointClick('route=/a', 'dp-a1')
+      await tick()
+      expect(detailPanel.open).toBe(false)
+      expect(reportedSelectedDatapointID()).toBe('dp-a1')
+    }
+  })
+
   it('does not select a neighboring datapoint for an unknown source id', () => {
     const ctx = renderProbe('/metrics/m1')
+    ctx.selectSeries('route=/a')
+    detailPanel.setOpen(false)
 
     ctx.onChartPointClick('route=/a', 'missing-datapoint')
 
     expect(reportedSelectedDatapointID()).toBe('')
+    expect(detailPanel.open).toBe(false)
   })
 
   it('does not change selection or URL for an aggregate chart point', async () => {
     const ctx = renderProbe('/metrics/m1')
+    ctx.selectSeries('route=/a')
 
     ctx.onChartPointClick('route=/a', 'dp-a1')
     await tick()
     const selectionUrl = window.location.href
+    detailPanel.setOpen(false)
 
     ctx.onChartPointClick('__agg:selected__', 'dp-a1')
     await tick()
 
     expect(reportedSelectedDatapointID()).toBe('dp-a1')
     expect(window.location.href).toBe(selectionUrl)
+    expect(detailPanel.open).toBe(false)
   })
 
   it('does not clear a raw datapoint selected from the detail pane', async () => {

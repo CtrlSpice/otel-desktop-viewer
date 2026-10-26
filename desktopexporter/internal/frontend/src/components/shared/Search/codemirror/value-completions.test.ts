@@ -112,6 +112,11 @@ describe('value discovery completions', () => {
     const { result } = await complete('checkout')
     expect(result).not.toBeNull()
     expect(result!.options.map(o => o.label)).toEqual([
+      'service.name = "checkout-api"',
+      'http.route = "/checkout"',
+      'http.route = "/checkout/confirm"',
+    ])
+    expect(result!.options.map(o => o.apply)).toEqual([
       'attr(resource, "service.name", string) = "checkout-api"',
       'attr(span, "http.route", string) = "/checkout"',
       'attr(span, "http.route", string) = "/checkout/confirm"',
@@ -149,7 +154,7 @@ describe('value discovery completions', () => {
       variantFields
     )
 
-    expect(result?.options.map(option => option.label)).toEqual([
+    expect(result?.options.map(option => option.apply)).toEqual([
       'attr(span, "attempts", string) = "42"',
       'attr(span, "attempts", int64) = "42"',
     ])
@@ -165,9 +170,9 @@ describe('value discovery completions', () => {
   it('boosts keys where the term is specific', async () => {
     const { result } = await complete('checkout')
     const specific = result!.options.find(o =>
-      o.label.includes('"service.name"')
+      o.label.startsWith('service.name =')
     )
-    const broad = result!.options.find(o => o.label.includes('"http.route"'))
+    const broad = result!.options.find(o => o.label.startsWith('http.route ='))
     expect(specific!.boost).toBeGreaterThan(broad!.boost ?? 0)
   })
 
@@ -175,9 +180,9 @@ describe('value discovery completions', () => {
     const { result } = await complete('checkout')
     expect(
       result!.options.find(o => o.label.includes('/checkout"'))!.detail
-    ).toBe('span · 6 values')
-    // Fully sampled keys show just the scope -- no misleading count.
-    expect(result!.options[0].detail).toBe('resource')
+    ).toBe('Span · String · 6 values')
+    // Fully sampled keys show scope and type without a misleading count.
+    expect(result!.options[0].detail).toBe('Resource · String')
   })
 
   it('does not query for terms too short to discriminate', async () => {
@@ -243,7 +248,7 @@ describe('only suggests fields this editor can search', () => {
       'Merce',
       vi.fn().mockResolvedValue(crossSignal)
     )
-    expect(result!.options.map(o => o.label)).toEqual([
+    expect(result!.options.map(o => o.apply)).toEqual([
       'attr(resource, "service.name", string) = "Mercedes"',
     ])
   })
@@ -298,7 +303,7 @@ describe('only suggests fields this editor can search', () => {
       [attrField('Env', 'span'), attrField('env', 'resource')]
     )
 
-    expect(result?.options.map(option => option.label)).toEqual([
+    expect(result?.options.map(option => option.apply)).toEqual([
       'attr(resource, "env", string) = "production"',
       'attr(span, "Env", string) = "staging"',
     ])
@@ -326,7 +331,7 @@ describe('only suggests fields this editor can search', () => {
       [attribute, native]
     )
 
-    expect(result?.options.map(option => option.label)).toEqual([
+    expect(result?.options.map(option => option.apply)).toEqual([
       'attr(span, "Name", string) = "staging"',
     ])
   })

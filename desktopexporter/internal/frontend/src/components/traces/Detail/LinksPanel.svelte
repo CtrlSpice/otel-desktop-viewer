@@ -1,18 +1,22 @@
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
+  import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import type { LinkData } from '@/types/api-types'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import SpanField from './SpanField.svelte'
-  import { itemHref, navigateToItem } from '@/route'
+  import DisclosureSignalCard from '@/components/shared/DisclosureSignalCard.svelte'
+  import SpanField from '@/components/shared/DetailProperty.svelte'
+  import { isPlainLeftClick, itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Alert02Icon } from '@hugeicons/core-free-icons'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
 
   type Props = {
     links: LinkData[]
+    spanKey?: string
   }
 
-  let { links }: Props = $props()
+  let { links, spanKey }: Props = $props()
 
   function linkFieldCount(link: LinkData): number {
     let n = 3
@@ -22,13 +26,38 @@
     return n
   }
 
+  function spanLabel(
+    name: string,
+    serviceName: string,
+    fallback: string
+  ): string {
+    const label = name.trim() || fallback
+    return serviceName.trim() ? `${label} (${serviceName})` : label
+  }
+
+  function linkLabel(link: LinkData): string {
+    if (!link.summary) return link.traceID ?? 'Invalid link target'
+    const { target } = link.summary
+    return target
+      ? spanLabel(
+          target.name,
+          target.serviceName,
+          link.spanID ?? 'Unnamed span'
+        )
+      : link.spanID && link.traceID
+        ? `${link.traceID} / ${link.spanID}`
+        : 'Invalid link target'
+  }
+
   function spanPatch(link: LinkData) {
     return link.spanID ? { [SPAN_PARAM]: link.spanID } : undefined
   }
 
   function goToLink(e: MouseEvent, link: LinkData) {
+    if (!isPlainLeftClick(e)) return
     e.preventDefault()
     if (!link.traceID) return
+    detailPanel.reveal()
     navigateToItem('traces', link.traceID, 'push', spanPatch(link))
   }
 </script>
@@ -47,64 +76,89 @@
   {@const patch = spanPatch(link)}
   {@const href = link.traceID ? itemHref('traces', link.traceID, patch) : null}
   {@const invalid = !link.traceID || !link.spanID}
-  <FieldGroup
-    label={link.traceID ?? 'Invalid link target'}
-    icon={invalid ? invalidLinkIcon : undefined}
-    count={linkFieldCount(link)}
-    detail
-    open={index === 0}
+  <DisclosureSignalCard
+    identity={JSON.stringify([spanKey, index, link.traceID, link.spanID])}
+    wrapTitle
+    title={linkLabel(link)}
+    description={link.summary ? undefined : (link.spanID ?? 'Missing span ID')}
+    descriptionIsID={!link.summary && !!link.spanID}
   >
+    {#snippet titleContent()}
+      {#if !link.summary}
+        {#if link.traceID}<Identifier value={link.traceID} />{:else}Invalid link
+          target{/if}
+      {:else if link.summary.target}
+        {#if link.summary.target.name.trim()}{link.summary.target.name.trim()}
+        {:else if link.spanID}<Identifier value={link.spanID} />{:else}Unnamed
+          span{/if}
+        {#if link.summary.target.serviceName.trim()}
+          ({link.summary.target.serviceName.trim()}){/if}
+      {:else if link.spanID && link.traceID}
+        <UnavailableTelemetryReference
+          traceID={link.traceID}
+          spanID={link.spanID}
+        />
+      {:else}Invalid link target{/if}
+      <span class="text-sm text-subtle">{' · Link'}</span>
+    {/snippet}
+    {#snippet badge()}
+      {#if invalid}{@render invalidLinkIcon()}{/if}
+      <span class="badge-count">{linkFieldCount(link)} fields</span>
+    {/snippet}
     <table
       class="detail-fields w-full"
       aria-label="Link {link.traceID ?? 'invalid target'}"
     >
       <tbody>
-        <tr class="table-row">
-          <td class="detail-cell">
-            <span class="detail-cell__key">
-              trace id <span class="detail-cell__type">(string | null)</span>:
-            </span>
-            <div class="detail-cell__stacked-value">
-              {#if href}
-                <a
-                  class="detail-cell__value link link-primary font-mono"
-                  {href}
-                  onclick={e => goToLink(e, link)}>{link.traceID}</a
-                >
-              {:else}
-                <span class="detail-cell__value font-mono">null</span>
-              {/if}
-            </div>
-          </td>
-        </tr>
-        <tr class="table-row">
-          <td class="detail-cell">
-            <span class="detail-cell__key">
-              span id <span class="detail-cell__type">(string | null)</span>:
-            </span>
-            <div class="detail-cell__stacked-value">
-              {#if href && link.spanID}
-                <a
-                  class="detail-cell__value link link-primary font-mono"
-                  {href}
-                  onclick={e => goToLink(e, link)}>{link.spanID}</a
-                >
-              {:else}
-                <span class="detail-cell__value font-mono"
-                  >{link.spanID ?? 'null'}</span
-                >
-              {/if}
-            </div>
-          </td>
-        </tr>
         <SpanField
-          fieldName="trace state"
+          fieldName="traceId"
+          fieldType="bytes | null"
+          fieldValue={link.traceID ?? 'null'}
+        >
+          {#snippet value()}
+            {#if href}
+              <a
+                class="detail-cell__value link link-primary"
+                {href}
+                onclick={e => goToLink(e, link)}
+                ><Identifier value={link.traceID!} /></a
+              >
+            {:else}
+              <span class="detail-cell__value">null</span>
+            {/if}
+          {/snippet}
+        </SpanField>
+        <SpanField
+          fieldName="spanId"
+          fieldType="bytes | null"
+          fieldValue={link.spanID ?? 'null'}
+        >
+          {#snippet value()}
+            {#if href && link.spanID}
+              <a
+                class="detail-cell__value link link-primary"
+                {href}
+                onclick={e => goToLink(e, link)}
+                ><Identifier value={link.spanID} /></a
+              >
+            {:else}
+              <span class="detail-cell__value"
+                >{#if link.spanID}<Identifier
+                    value={link.spanID}
+                  />{:else}null{/if}</span
+              >
+            {/if}
+          {/snippet}
+        </SpanField>
+        <SpanField
+          fieldName="traceState"
           fieldValue={link.traceState}
           fieldType="string"
         />
         <AttributeRows
           attributes={link.attributes}
           owner={`link ${index + 1}`}
+          source="link"
         />
         {#if link.flags > 0}
           <SpanField
@@ -115,23 +169,18 @@
         {/if}
         {#if link.droppedAttributesCount > 0}
           <SpanField
-            fieldName="dropped attributes count"
+            fieldName="droppedAttributesCount"
             fieldValue={link.droppedAttributesCount.toString()}
             fieldType="uint32"
           />
         {/if}
       </tbody>
     </table>
-  </FieldGroup>
+  </DisclosureSignalCard>
 {/each}
 
 <style lang="postcss">
   @reference "../../../app.css";
-
-  .detail-cell__type {
-    color: var(--color-subtle);
-    @apply font-normal;
-  }
 
   .links-panel__warning {
     @apply text-warning inline-flex flex-none text-sm;

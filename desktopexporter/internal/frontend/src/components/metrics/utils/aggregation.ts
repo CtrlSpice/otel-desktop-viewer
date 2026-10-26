@@ -25,7 +25,24 @@ import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
  * aggregation across series, not the metric type — those collide
  * naming-wise but the value 'sum' is genuinely about summation.
  */
-export type AggregationView = 'raw' | 'sum' | 'avg' | 'rate'
+export type AggregationView = 'raw' | 'sum' | 'avg' | 'sum-avg' | 'rate'
+
+export function combinedLineEnabled(
+  view: AggregationView,
+  line: 'sum' | 'avg'
+): boolean {
+  return view === line || view === 'sum-avg'
+}
+
+export function withCombinedLine(
+  view: AggregationView,
+  line: 'sum' | 'avg',
+  enabled: boolean
+): AggregationView {
+  const sum = line === 'sum' ? enabled : combinedLineEnabled(view, 'sum')
+  const avg = line === 'avg' ? enabled : combinedLineEnabled(view, 'avg')
+  return sum && avg ? 'sum-avg' : sum ? 'sum' : avg ? 'avg' : 'raw'
+}
 
 /** Compact glyph beside aggregate labels (tooltip, etc.). */
 export function aggregateViewSymbol(view: AggregationView): string | null {
@@ -87,47 +104,17 @@ export function isCumulativeTemporality(temporality: string): boolean {
   return temporality === 'Cumulative'
 }
 
-/**
- * Default view for a metric on first open (no persisted choice).
- *
- *   - Cumulative *monotonic* Sum metrics → 'rate'. The raw chart is a
- *     featureless climbing staircase; rate (Δvalue / Δt) is what an
- *     operator is almost always looking for.
- *   - Everything else → 'raw'. Delta Sums, Gauges, and Sums of unknown
- *     temporality all look meaningful as-is, and the user can opt
- *     into aggregation from the menu.
- *
- * Monotonicity is part of the test, and must stay in step with
- * {@link availableAggregationViews}, which applies the same condition.
- * Rate differences consecutive readings and reads a fall as a counter
- * restart; a non-monotonic cumulative Sum is allowed to fall for real,
- * so every decrease would be reported as a reset and the rate would be
- * fiction.
- */
-export function defaultAggregationViewFor(
-  metricType: string,
-  temporality: string,
-  isMonotonic: boolean | null,
-  _seriesCount: number = 2
-): AggregationView {
-  if (
-    metricType === 'Sum' &&
-    isCumulativeTemporality(temporality) &&
-    isMonotonic === true
-  ) {
-    return 'rate'
-  }
-  return 'raw'
-}
+/** Show received values unless a valid URL or saved preference chooses a view. */
+export const DEFAULT_AGGREGATION_VIEW: AggregationView = 'raw'
 
 /**
- * Which AggregationView options the dropdown should offer for the
+ * Which AggregationView combinations the chart supports for the
  * current metric. Rules (intersected):
  *
  *   - 'raw' is always available.
  *   - 'sum' / 'avg' require seriesCount >= 2: aggregating one series
  *     produces the same shape as raw (just bucketed), which is not
- *     useful enough to clutter the menu.
+ *     useful enough to offer a combined line.
  *   - 'rate' requires the source to be cumulative-monotonic. This
  *     constraint is shape-driven, not count-driven: rate of a single
  *     cumulative-monotonic counter is the natural per-second view
@@ -151,6 +138,7 @@ export function availableAggregationViews(
   if (seriesCount >= 2) {
     if (metricType === 'Sum') out.push('sum')
     out.push('avg')
+    if (metricType === 'Sum') out.push('sum-avg')
   }
   if (
     metricType === 'Sum' &&
@@ -166,25 +154,27 @@ export function availableAggregationViews(
 export const AGG_KEY_SELECTED = '__agg:selected__'
 export const AGG_KEY_ALL = '__agg:all__'
 export const AGG_KEY_TOTAL = '__agg:total__'
+export const AGG_KEY_AVG_SELECTED = '__agg:avg:selected__'
+export const AGG_KEY_AVG_TOTAL = '__agg:avg:total__'
 
 export type AggregateLineKey =
-  typeof AGG_KEY_SELECTED | typeof AGG_KEY_ALL | typeof AGG_KEY_TOTAL
+  | typeof AGG_KEY_SELECTED
+  | typeof AGG_KEY_ALL
+  | typeof AGG_KEY_TOTAL
+  | typeof AGG_KEY_AVG_SELECTED
+  | typeof AGG_KEY_AVG_TOTAL
 
 export function isAggregateLineKey(key: string): key is AggregateLineKey {
   switch (key) {
     case AGG_KEY_SELECTED:
     case AGG_KEY_ALL:
     case AGG_KEY_TOTAL:
+    case AGG_KEY_AVG_SELECTED:
+    case AGG_KEY_AVG_TOTAL:
       return true
     default:
       return false
   }
-}
-
-/** Checkbox label for the optional all-series aggregate toggle. */
-export function aggregateAllToggleLabel(view: AggregationView): string {
-  if (view === 'raw') return 'Show aggregate across all series'
-  return aggregateScopeLabelTitle(view, 'all')
 }
 
 /** Label for a synthetic aggregate line key in tooltips / legend. */
@@ -193,9 +183,15 @@ export function aggregateLineLabel(
   view: AggregationView
 ): string {
   switch (key) {
+    case AGG_KEY_AVG_SELECTED:
+    case AGG_KEY_AVG_TOTAL:
+      return aggregateScopeLabel('avg', 'checked')!
     case AGG_KEY_SELECTED:
     case AGG_KEY_TOTAL:
-      return aggregateScopeLabel(view, 'checked') ?? 'checked'
+      return (
+        aggregateScopeLabel(view === 'sum-avg' ? 'sum' : view, 'checked') ??
+        'checked'
+      )
     case AGG_KEY_ALL:
       return aggregateScopeLabel(view, 'all') ?? 'all'
   }
@@ -208,6 +204,8 @@ export function aggregateSummaryScopeLabel(key: AggregateLineKey): string {
       return 'all series'
     case AGG_KEY_SELECTED:
     case AGG_KEY_TOTAL:
+    case AGG_KEY_AVG_SELECTED:
+    case AGG_KEY_AVG_TOTAL:
       return 'selected series'
   }
 }
@@ -218,7 +216,13 @@ export function aggregateSummaryRowLabel(
   view: AggregationView
 ): string {
   const scope = aggregateSummaryScopeLabel(key)
-  const glyph = aggregateViewSymbol(view)
+  const glyph = aggregateViewSymbol(
+    key === AGG_KEY_AVG_SELECTED || key === AGG_KEY_AVG_TOTAL
+      ? 'avg'
+      : view === 'sum-avg'
+        ? 'sum'
+        : view
+  )
   return glyph ? `${scope} ${glyph}` : scope
 }
 
@@ -243,7 +247,12 @@ export function buildAggregateSummaryRows(
     if (value === undefined || !Number.isFinite(value)) continue
     rows.push({
       key,
-      variant: key === AGG_KEY_ALL ? 'secondary' : 'primary',
+      variant:
+        key === AGG_KEY_ALL ||
+        key === AGG_KEY_AVG_SELECTED ||
+        key === AGG_KEY_AVG_TOTAL
+          ? 'secondary'
+          : 'primary',
       label: aggregateSummaryRowLabel(key, view),
       valueText: formatValue(value),
     })
@@ -258,64 +267,6 @@ export type AggregateResult = {
   lines: ChartTimeseries[]
   /** Which aggregate keys are present (for legend rendering). */
   presentKeys: AggregateLineKey[]
-}
-
-/**
- * Resample one series onto fixed bucket-center dates so it shares the
- * same x-grid as cross-timeseries aggregate lines. Each window is the
- * half-open interval between adjacent center midpoints; we take the
- * **last** raw point in the window (typical scrape cadence).
- *
- * Used when raw + aggregate overlay is on — without this, layerchart
- * tooltips hunt between mismatched timestamps (native scrape vs bucket
- * centers) and flicker between per-series and totals rows.
- */
-export function resampleSeriesToBucketCenters(
-  series: ChartTimeseries,
-  centers: readonly Date[]
-): ChartTimeseries {
-  if (centers.length === 0) return series
-  const points = [...series.points].sort(
-    (a, b) => a.date.getTime() - b.date.getTime()
-  )
-  const step =
-    centers.length > 1
-      ? (centers[centers.length - 1]!.getTime() - centers[0]!.getTime()) /
-        (centers.length - 1)
-      : 60_000
-
-  const resampled: ChartPoint[] = []
-  let lastWithData = -1
-  for (let i = 0; i < centers.length; i++) {
-    const center = centers[i]!
-    const lo =
-      i === 0
-        ? center.getTime() - step / 2
-        : (centers[i - 1]!.getTime() + center.getTime()) / 2
-    const hi =
-      i === centers.length - 1
-        ? center.getTime() + step / 2
-        : (center.getTime() + centers[i + 1]!.getTime()) / 2
-    let last: ChartPoint | undefined
-    for (const p of points) {
-      const t = p.date.getTime()
-      if (t >= lo && t < hi) last = p
-    }
-    if (last !== undefined) lastWithData = resampled.length
-    // The source point moved to the center, not a fresh one: the store's
-    // per-point fields (slope for the tangent, delta for resets) must survive
-    // the move. The filler for an empty window is synthetic and carries none.
-    resampled.push(
-      last !== undefined
-        ? { ...last, date: center }
-        : { date: center, value: 0 }
-    )
-  }
-
-  return {
-    ...series,
-    points: lastWithData >= 0 ? resampled.slice(0, lastWithData + 1) : [],
-  }
 }
 
 /** Which stat badges to show on a single series row. */

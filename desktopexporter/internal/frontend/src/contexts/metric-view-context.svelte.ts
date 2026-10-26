@@ -29,9 +29,7 @@ import {
 import {
   seriesBucketsToSlices,
   buildVisibleSeriesQuantileChartTimeseries,
-  DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
-  histogramDatapointToChartDatapoint,
   histogramSliceToChartDatapoint,
   parseQuantileSeriesKey,
   quantileKeyFromValue,
@@ -49,16 +47,16 @@ import {
   type QuantilePointSelection,
 } from '@/components/metrics/utils/quantile-point-selection'
 import {
-  AGG_KEY_ALL,
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
+  AGG_KEY_AVG_SELECTED,
+  AGG_KEY_AVG_TOTAL,
   availableAggregationViews,
-  defaultAggregationViewFor,
+  DEFAULT_AGGREGATION_VIEW,
   availableSeriesStatBadges,
   isAggregateLineKey,
   rateSlopeBucketSegment,
   availableRateSlopeOverlay,
-  resampleSeriesToBucketCenters,
   type AggregateLineKey,
   type AggregateResult,
   type AggregationView,
@@ -72,24 +70,33 @@ import type {
   LegendTimeseries,
 } from '@/types/metric-chart-types'
 import {
-  AGG_COLOR_ALL,
   AGG_COLOR_SELECTED,
-  categoricalPalette,
+  AGG_COLOR_ALL,
+  metricSeriesPalette,
 } from '@/utils/chart-palette'
-import { metricTypeStem } from '@/components/metrics/utils/metric-type'
 import { themeSignal } from '@/state/theme.svelte'
+import { SERIES_COLOR_COUNT } from '@/themes'
+import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+import { savedColorSlots } from '@/utils/color-slots'
+import {
+  minimalSeriesTable,
+  type SeriesTable,
+} from '@/components/metrics/utils/minimal-series-labels'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
   MAX_VISIBLE_TIMESERIES,
   loadPersistedAggregationView,
-  loadPersistedShowAllSeriesAggregate,
   reconcileTimeseriesVisible,
   resolveTimeseriesVisible,
   savePersistedAggregationView,
-  savePersistedShowAllSeriesAggregate,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/components/metrics/utils/metric-timeseries-visible'
+import {
+  loadHistogramViewPreference,
+  saveHistogramViewPreference,
+  type HistogramViewPreference,
+} from '@/components/metrics/utils/histogram-view-preference'
 import {
   acquireColor,
   remapColorAssignments,
@@ -104,6 +111,7 @@ import {
   readRoute,
   setMetricViewQuery,
   subscribeToRoute,
+  signalIdFromPath,
   type HistoryMode,
   type MetricViewParseContext,
   type MetricViewQuery,
@@ -128,7 +136,11 @@ export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
 
-export type HistogramScope = 'window' | 'bucket'
+export type HistogramContributionSelection = {
+  datapointID: string
+  /** Null means the source has no activity in this aggregate (e.g. a baseline). */
+  point: HistogramSlicePoint | null
+}
 
 export type BucketSeriesError =
   | { kind: 'unspecified'; message: string }
@@ -142,21 +154,18 @@ type HistogramTimeseriesGroup = {
 }
 
 type MetricViewState = {
+  previewSeriesKey: string | null
+  selectedRateBucket: { seriesKey: string; timestampNs: bigint } | null
   selectedDatapointID: string | null
   selectedSeriesKey: string | null
   selectionSource: 'chart' | 'detail' | null
-  expandedDatapoints: SvelteSet<string>
-  expandedTimeseries: SvelteSet<string>
   activeHistogramTab: HistogramTab
-  histogramScope: HistogramScope
   selectedHistogramBucketStart: bigint | null
   selectedQuantileKey: string | null
   visibleSeries: SvelteSet<string>
   timeseriesColorByKey: TimeseriesColorByKey
   aggregationView: AggregationView
-  showAllSeriesAggregate: boolean
   showSelectionStatOverlays: boolean
-  activeQuantileOverlays: SvelteSet<string>
 }
 
 type TransformedSeries = {
@@ -173,6 +182,8 @@ type HistogramAggregationResult = {
 }
 
 export interface MetricViewContext {
+  /** Transient series-header emphasis; does not select a datapoint or persist. */
+  previewSeriesKey: string | null
   readonly metric: MetricViewData | undefined
   readonly metricType: MetricType
   readonly temporality: string
@@ -183,18 +194,11 @@ export interface MetricViewContext {
   readonly totalDatapointCount: number
 
   readonly selectedDatapointID: string | null
-  /** Where the current datapoint selection came from. Chart clicks
-   *  drive the plot overlay only; detail-pane scroll/expand waits for
-   *  unified routing. */
+  /** Where the current datapoint selection came from. */
   readonly selectionSource: 'chart' | 'detail' | null
-  readonly expandedDatapoints: SvelteSet<string>
-  /** Per-timeseries expansion (keyed by seriesRef). Used by the
-   * TimeseriesPanel to reveal an inline datapoints table under a
-   * row. Independent of expandedDatapoints (which keys per-datapoint
-   * exemplar expansion within SeriesDatapointList). */
-  readonly expandedTimeseries: SvelteSet<string>
+  /** Rows belonging to the chart's selected point or time bucket in the inspected series. */
+  readonly chartRelatedDatapointIDs: ReadonlySet<string>
   readonly activeHistogramTab: HistogramTab
-  readonly histogramScope: HistogramScope
   readonly selectedDatapoint: DataPoint | undefined
 
   /** Series keys in store order, without chart-point projection. */
@@ -221,10 +225,6 @@ export interface MetricViewContext {
   /** Which aggregate line keys are present (for legend rendering).
    *  Empty when aggregationView === 'raw'. */
   readonly aggregatePresentKeys: AggregateLineKey[]
-  /** Whether the optional all-series aggregate line is shown. */
-  readonly showAllSeriesAggregate: boolean
-  /** Show the all-series aggregate toggle in the chart control bar. */
-  readonly showAllSeriesAggregateToggleVisible: boolean
   /** Whether min / max / avg selection overlays render on the chart. */
   readonly showSelectionStatOverlays: boolean
   /** Show the stat overlay toggle in the chart control bar. */
@@ -243,6 +243,7 @@ export interface MetricViewContext {
   readonly histogramTimeseriesCount: number
   /** Series checked in the legend. Empty means none for filterable metrics. */
   readonly visibleSeries: SvelteSet<string>
+  readonly seriesTable: SeriesTable
   /** Resets and seeds view state before the metric renders. */
   seedForMetric(metric: MetricViewData | undefined): void
   /** Received series datapoints, or undefined until fetched. */
@@ -253,6 +254,7 @@ export interface MetricViewContext {
   readonly aggregatedError: BucketSeriesError | null
   readonly histogramChartDatapoint: HistogramChartDataPoint | undefined
   readonly histogramChartError: BucketSeriesError | null
+  readonly histogramContribution: HistogramContributionSelection | null
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
   /** Selected column bounds. End is one nanosecond before the next column. */
@@ -264,12 +266,13 @@ export interface MetricViewContext {
   readonly quantilePointSelection: QuantilePointSelection | null
   readonly quantileChartTimeseries: ChartTimeseries[]
   readonly quantileColorByKey: TimeseriesColorByKey
-  readonly activeQuantileOverlays: SvelteSet<string>
+  readonly activeQuantileOverlays: ReadonlySet<string>
 
   readonly filteredTimeseries: MetricViewData['timeseries']
   /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
    *  have no entry; their checkbox uses neutral. */
   readonly timeseriesColorByKey: TimeseriesColorByKey
+  readonly savedTimeseriesColorByKey: TimeseriesColorByKey
   /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
   readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
@@ -287,12 +290,10 @@ export interface MetricViewContext {
   /** Which stat badges TimeseriesPanel should render for this metric/view. */
   readonly availableSeriesStatBadges: readonly SeriesStat[]
 
-  /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
-  toggleTimeseriesExpanded(key: string): void
+  /** Inspect one series independently of chart visibility. Clears its prior datapoint. */
+  selectSeries(key: string): void
   setActiveHistogramTab(tab: HistogramTab): void
-  setHistogramScope(scope: HistogramScope): void
   setAggregationView(next: AggregationView): void
-  setShowAllSeriesAggregate(next: boolean): void
   setShowSelectionStatOverlays(next: boolean): void
   /** Replace the visible-set for the Gauge/Sum legend. The legend
    * keeps a `bind:visibleKeys` model; we expose a setter so the
@@ -308,6 +309,8 @@ export interface MetricViewContext {
   onHeatmapSelect(timestampNs: bigint): void
   /** Time-series chart point click: select one exact source datapoint. */
   onChartPointClick(seriesKey: string, datapointID: string): void
+  /** Transient selection of an exact derived Rate bucket, not a raw datapoint. */
+  onRateChartPointClick(seriesKey: string, timestampNs: bigint): void
   /** Quantiles tab: toggle sticky bucket selection at the clicked x. */
   onQuantileChartPointClick(
     seriesKey: string,
@@ -317,7 +320,6 @@ export interface MetricViewContext {
   /** Clear only selection owned by a chart interaction. Detail-pane datapoint
    * selection remains intact when a histogram cursor clears its transient cell. */
   clearChartSelection(): void
-  setActiveQuantileOverlay(quantileKey: string): void
 }
 
 /**
@@ -381,29 +383,34 @@ export function createMetricViewContext(
   getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
     undefined,
   /** Per-series merges over the selected heatmap column, once fetched. */
-  getColumnDistribution: () => MetricViewData | undefined = () => undefined
+  getColumnDistribution: () => MetricViewData | undefined = () => undefined,
+  getHistogramContribution: () => HistogramContributionSelection | null = () =>
+    null
 ): MetricViewContext {
   // The only mutable per-metric state cell.
   const view = $state<MetricViewState>({
+    previewSeriesKey: null,
+    selectedRateBucket: null,
     selectedDatapointID: null,
     // Explicitly chosen series, independent of any datapoint selection.
     selectedSeriesKey: null,
     selectionSource: null,
-    expandedDatapoints: new SvelteSet<string>(),
-    expandedTimeseries: new SvelteSet<string>(),
     activeHistogramTab: 'heatmap',
-    histogramScope: 'window',
     selectedHistogramBucketStart: null,
     selectedQuantileKey: null,
     visibleSeries: new SvelteSet<string>(),
     timeseriesColorByKey: new Map<string, string>(),
     aggregationView: 'raw',
-    showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
-    activeQuantileOverlays: new SvelteSet([
-      DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
-    ]),
   })
+
+  const activeQuantileOverlays = $derived(
+    new Set(
+      view.showSelectionStatOverlays
+        ? DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
+        : []
+    )
+  )
 
   // The route stores stable sub-view choices; heatmap column selection is transient.
   // Compare route changes with this snapshot because defaults need not be in the URL.
@@ -412,6 +419,7 @@ export function createMetricViewContext(
 
   // An absent `agg` restores the seeded aggregation.
   let seededAggregationView: AggregationView = 'raw'
+  let seededHistogramTab: HistogramViewPreference = 'heatmap'
 
   type PendingUrlDatapoint = { id: string; seriesKey: string }
 
@@ -431,6 +439,7 @@ export function createMetricViewContext(
       allowedAggs: availableAggregationViewsList,
       datapointIDs: index.datapointIDs,
       seriesKeys: index.seriesKeys,
+      defaultHistogramTab: seededHistogramTab,
     }
   }
 
@@ -498,7 +507,7 @@ export function createMetricViewContext(
       return {
         kind: 'histogram',
         htab: view.activeHistogramTab,
-        hscope: view.histogramScope,
+        hscope: 'window',
         dp: datapointID,
         series: selectedSeriesKey,
       }
@@ -514,6 +523,7 @@ export function createMetricViewContext(
 
   /** Applies the validated route sub-view; absent `agg` restores the seeded value. */
   function applyMetricUrlToView(parsed = parseMetricUrl()): void {
+    view.selectedRateBucket = null
     const q = parsed.query
     urlMetricViewSnapshot = q
     pendingUrlDatapoint = parsed.pending
@@ -522,7 +532,6 @@ export function createMetricViewContext(
       view.aggregationView = q.agg ?? seededAggregationView
     } else {
       view.activeHistogramTab = q.htab
-      view.histogramScope = q.hscope
     }
 
     if (q.dp && selectableDatapointIndex.datapointByID.has(q.dp)) {
@@ -538,44 +547,6 @@ export function createMetricViewContext(
     // it was built from has been pruned, so restoring it is what keeps a
     // shared link meaningful rather than silently empty.
     view.selectedSeriesKey = q.series
-
-    // A named series has to be *drawn*, or the link is worse than useless: the
-    // default visible set is the first MAX_VISIBLE_TIMESERIES, so a link to
-    // series 40 of 63 would otherwise land on a chart that does not contain
-    // it. At the scalar cap, bounded reveal replaces the last current series.
-    if (q.series) revealSeries(q.series)
-
-    // This is the fetch trigger for a raw-only URL datapoint. TimeseriesPanel
-    // opens the nested datapoint section after the exact id resolves.
-    if (parsed.pending) view.expandedTimeseries.add(parsed.pending.seriesKey)
-  }
-
-  /**
-   * Ensures a series is in the visible set for its metric kind.
-   *
-   * @param key - series id
-   *
-   * @remarks
-   * Adds when there is capacity. At the scalar cap, replaces the last current
-   * series so a shared link remains drawable without changing saved choices.
-   */
-  function revealSeries(key: string): void {
-    if (view.visibleSeries.has(key)) return
-
-    const visible = new SvelteSet(view.visibleSeries)
-    const assigned = new Map(view.timeseriesColorByKey)
-    if (!isHistogramKind && visible.size >= MAX_VISIBLE_TIMESERIES) {
-      const evicted = [...visible].at(-1)
-      if (evicted) {
-        visible.delete(evicted)
-        releaseColor(assigned, evicted)
-      }
-    }
-
-    if (acquireColor(timeseriesChartColors, assigned, key) === null) return
-    visible.add(key)
-    view.visibleSeries = visible
-    replaceColorAssignments(assigned)
   }
 
   function writeMetricUrl(mode: HistoryMode): void {
@@ -703,9 +674,15 @@ export function createMetricViewContext(
     const scalar = metricType === 'Gauge' || metricType === 'Sum'
     const source = m && scalar ? m.timeseries : []
 
-    const labelByKey = seriesLabelsByKey(source)
-    const labelFor = (ts: MetricSeriesViewData) =>
-      labelByKey.get(ts.seriesRef) ?? ts.seriesRef
+    // Use the same all-series identity as the table, even when siblings are
+    // hidden. Labels are presentation only; seriesRef still owns selection/colour.
+    const labelFor = (ts: MetricSeriesViewData) => {
+      const label = seriesTable.labels.get(ts.seriesRef)
+      if (!label) return ts.seriesRef
+      return label.needsIdentity
+        ? `${label.text} · ${ts.seriesRef}`
+        : label.text
+    }
 
     return {
       timeseries: source,
@@ -886,41 +863,38 @@ export function createMetricViewContext(
     })
   })
 
-  /** Store-folded Selected and All lines. Equal pools render once as Total. */
+  /** The aggregate request is narrowed to checked series; its whole pool is
+   * their combined line. Keep the existing Selected/Total graph identities. */
   const aggregatedTransformed = $derived.by((): AggregateResult => {
     const pools = getScalarAggregate()
     if (!pools) return { lines: [], presentKeys: [] }
     const v = view.aggregationView
     if (v === 'raw') return { lines: [], presentKeys: [] }
-    const allPoints = viewPoints(pools.all, v)
-    if (allPoints.length === 0) return { lines: [], presentKeys: [] }
-
     const checkedCount = view.visibleSeries.size
     const total = gaugeSumGroups.keys.length
-    // Empty selection shows All; full selection shows the same pool as Total.
-    if (checkedCount === 0 || checkedCount === total) {
-      const key = checkedCount === 0 ? AGG_KEY_ALL : AGG_KEY_TOTAL
-      const label = checkedCount === 0 ? 'All' : 'Total'
-      return {
-        lines: [{ key, label, points: allPoints }],
-        presentKeys: [key],
-      }
-    }
-
-    const lines: ChartTimeseries[] = []
-    const presentKeys: AggregateLineKey[] = []
-    const selectedPoints = viewPoints(pools.selected, v)
-    if (selectedPoints.length > 0) {
-      lines.push({
-        key: AGG_KEY_SELECTED,
-        label: 'Selected',
-        points: selectedPoints,
+    if (checkedCount < 2) return { lines: [], presentKeys: [] }
+    const modes: ('sum' | 'avg' | 'rate')[] =
+      v === 'sum-avg' ? ['sum', 'avg'] : [v]
+    const result: AggregateResult = { lines: [], presentKeys: [] }
+    for (const mode of modes) {
+      const points = viewPoints(pools.all, mode)
+      if (points.length === 0) continue
+      const key =
+        mode === 'avg'
+          ? checkedCount === total
+            ? AGG_KEY_AVG_TOTAL
+            : AGG_KEY_AVG_SELECTED
+          : checkedCount === total
+            ? AGG_KEY_TOTAL
+            : AGG_KEY_SELECTED
+      result.lines.push({
+        key,
+        label: mode === 'sum' ? 'Sum' : mode === 'avg' ? 'Average' : 'Rate',
+        points,
       })
-      presentKeys.push(AGG_KEY_SELECTED)
+      result.presentKeys.push(key)
     }
-    lines.push({ key: AGG_KEY_ALL, label: 'All', points: allPoints })
-    presentKeys.push(AGG_KEY_ALL)
-    return { lines, presentKeys }
+    return result
   })
 
   /** Aggregate legend keys after duplicate-line and visibility rules. */
@@ -931,26 +905,17 @@ export function createMetricViewContext(
     if (rawTransformed.series.length < 2) {
       keys = keys.filter(k => k !== AGG_KEY_SELECTED)
     }
-    if (!view.showAllSeriesAggregate) {
-      keys = keys.filter(k => k !== AGG_KEY_ALL)
-    }
     return keys
   })
 
-  /** Show the optional all-series aggregate toggle in the chart control bar. */
-  const showAllSeriesAggregateToggleVisible = $derived.by((): boolean => {
-    if (view.aggregationView === 'raw') return false
-    const keys = gaugeSumGroups.keys
-    if (keys.length < 2) return false
-    let selectedCount = 0
-    for (const key of keys) {
-      if (view.visibleSeries.has(key)) selectedCount++
-    }
-    return selectedCount !== keys.length
-  })
-
   const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
-    return metricType === 'Gauge' || metricType === 'Sum'
+    return (
+      (view.aggregationView !== 'rate' &&
+        availableAggregationViewsList.some(
+          mode => mode === 'sum' || mode === 'avg'
+        )) ||
+      (isHistogramKind && !isUnsafeTemporality)
+    )
   })
 
   const rateSlopeOverlayAvailable = $derived.by((): boolean => {
@@ -981,7 +946,7 @@ export function createMetricViewContext(
     }
   )
 
-  /** Display series with raw lines first and aggregates aligned to their bucket grid. */
+  /** Source lines retain their timestamps; aggregates use their own bucket grid. */
   const transformedGaugeSumChartTimeseries = $derived.by(
     (): ChartTimeseries[] => {
       if (view.aggregationView === 'raw') return rawTransformed.series
@@ -991,16 +956,9 @@ export function createMetricViewContext(
       if (selectedCount < 2) {
         aggLines = aggLines.filter(l => l.key !== AGG_KEY_SELECTED)
       }
-      if (!view.showAllSeriesAggregate) {
-        aggLines = aggLines.filter(l => l.key !== AGG_KEY_ALL)
-      }
       if (aggLines.length === 0) return rawTransformed.series
 
-      const centers = aggLines[0]!.points.map(p => p.date)
-      const alignedRaw = rawTransformed.series.map(s =>
-        resampleSeriesToBucketCenters(s, centers)
-      )
-      return [...alignedRaw, ...aggLines]
+      return [...rawTransformed.series, ...aggLines]
     }
   )
 
@@ -1031,6 +989,9 @@ export function createMetricViewContext(
   })
 
   const highlightedTimestamp = $derived.by((): bigint | null => {
+    if (view.aggregationView === 'rate' && view.selectedRateBucket) {
+      return view.selectedRateBucket.timestampNs
+    }
     const dp = selectedDatapoint
     if (!dp || (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum')) {
       return null
@@ -1175,6 +1136,11 @@ export function createMetricViewContext(
     }))
   })
 
+  const seriesRows = $derived(
+    isHistogramKind ? histogramLegendTimeseries : gaugeSumLegendTimeseries
+  )
+  const seriesTable = $derived(minimalSeriesTable(seriesRows))
+
   const heatmapBucketSeries = $derived.by((): HistogramSlicePoint[] | null => {
     if (!isHistogramKind) return null
     if (histogramAggregation.error) return []
@@ -1212,17 +1178,9 @@ export function createMetricViewContext(
     }
   )
 
-  const histogramChartDatapoint = $derived.by(
-    (): HistogramChartDataPoint | undefined => {
-      if (view.histogramScope === 'window') return aggregatedDatapoint
-      return histogramBucketDatapoint
-        ? histogramDatapointToChartDatapoint(histogramBucketDatapoint)
-        : undefined
-    }
-  )
+  const histogramChartDatapoint = $derived(aggregatedDatapoint)
 
   const histogramChartError = $derived.by((): BucketSeriesError | null => {
-    if (view.histogramScope !== 'window') return null
     return histogramAggregation.aggregatedError
   })
 
@@ -1287,7 +1245,7 @@ export function createMetricViewContext(
     if (!Array.isArray(perAttribute) || perAttribute.length === 0) return []
 
     const activeQuantiles = DEFAULT_HISTOGRAM_QUANTILES.filter(q =>
-      view.activeQuantileOverlays.has(quantileKeyFromValue(q))
+      activeQuantileOverlays.has(quantileKeyFromValue(q))
     )
     if (activeQuantiles.length === 0) return []
 
@@ -1304,7 +1262,7 @@ export function createMetricViewContext(
     for (const ts of quantileChartTimeseries) {
       const parsed = parseQuantileSeriesKey(ts.key)
       if (!parsed) continue
-      const color = view.timeseriesColorByKey.get(parsed.seriesKey)
+      const color = resolvedTimeseriesColors.get(parsed.seriesKey)
       if (color) map.set(ts.key, color)
     }
     return map
@@ -1327,29 +1285,43 @@ export function createMetricViewContext(
     return m.timeseries.filter(ts => filter.has(ts.seriesRef))
   })
 
-  const legendOrderKeys = $derived.by((): string[] => {
-    if (metricType === 'Gauge' || metricType === 'Sum') {
-      return gaugeSumLegendTimeseries.map(ts => ts.key)
-    }
-    if (isHistogramKind) {
-      return histogramTimeseriesGroups.map(g => g.key)
-    }
-    return []
-  })
+  // Palette capacity is separate from the existing scalar visibility cap.
+  const timeseriesChartColors = $derived(
+    metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
+  )
 
-  const timeseriesChartColors = $derived.by(() => {
-    const stem = metricTypeStem(metricType)
-    const theme = themeSignal.value
-    if (isHistogramKind) {
-      const n = Math.max(legendOrderKeys.length, view.visibleSeries.size, 1)
-      return categoricalPalette(n, stem, theme)
-    }
-    return categoricalPalette(MAX_VISIBLE_TIMESERIES, stem, theme)
+  const resolvedTimeseriesColors = $derived.by((): TimeseriesColorByKey => {
+    const scope = colorScope()
+    return new Map(
+      [...view.timeseriesColorByKey].map(([key, color]) => [
+        key,
+        graphColorOverrides.get(scope, key)?.color ?? color,
+      ])
+    )
   })
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
 
+  const savedTimeseriesColors = $derived.by((): TimeseriesColorByKey => {
+    const scope = colorScope()
+    const saved = new Map(
+      savedColorSlots(scope).map(([key, slot]) => [
+        key,
+        timeseriesChartColors[slot]!,
+      ])
+    )
+    for (const [key] of graphColorOverrides.entries(scope)) {
+      const override = graphColorOverrides.get(scope, key)
+      if (override) saved.set(key, override.color)
+    }
+    return saved
+  })
+
   let assignedColorPool: readonly string[] = []
+
+  function colorScope(metricRef = getMetric()?.metricRef): string {
+    return `metric:${metricRef ?? ''}`
+  }
 
   function replaceColorAssignments(
     next: TimeseriesColorByKey,
@@ -1379,12 +1351,19 @@ export function createMetricViewContext(
     if (allAssigned) return
     // Use the same shape-specific pool as every other assignment path.
     replaceColorAssignments(
-      seedColorAssignments(timeseriesChartColors, visible, legendKeys)
+      seedColorAssignments(
+        timeseriesChartColors,
+        visible,
+        legendKeys,
+        colorScope()
+      )
     )
   }
 
   /** Reset and seed every per-metric choice synchronously before rendering. */
   function seedForMetric(m: MetricViewData | undefined) {
+    view.previewSeriesKey = null
+    view.selectedRateBucket = null
     const metricRef = m?.metricRef
 
     pendingUrlDatapoint = null
@@ -1393,35 +1372,16 @@ export function createMetricViewContext(
     view.selectionSource = null
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
-    view.expandedDatapoints.clear()
-    view.expandedTimeseries.clear()
-    view.activeHistogramTab = 'heatmap'
-    view.histogramScope = 'window'
+    seededHistogramTab = loadHistogramViewPreference()
+    view.activeHistogramTab = seededHistogramTab
 
-    // Use an allowed persisted view, otherwise the metric's default.
+    // An applicable saved preference wins over the Raw default; URLs apply below.
     const persistedAggregationView = metricRef
       ? loadPersistedAggregationView(metricRef, availableAggregationViewsList)
       : null
-    const defaultAggregation = defaultAggregationViewFor(
-      metricType,
-      temporality,
-      isMonotonic,
-      gaugeSumKeys.length
-    )
-    // `raw` is always available when the computed default is not.
-    seededAggregationView =
-      persistedAggregationView ??
-      (availableAggregationViewsList.includes(defaultAggregation)
-        ? defaultAggregation
-        : 'raw')
+    seededAggregationView = persistedAggregationView ?? DEFAULT_AGGREGATION_VIEW
     view.aggregationView = seededAggregationView
     view.showSelectionStatOverlays = true
-    view.showAllSeriesAggregate = metricRef
-      ? loadPersistedShowAllSeriesAggregate(metricRef)
-      : false
-    view.activeQuantileOverlays = new SvelteSet([
-      DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
-    ])
 
     // Scalars cap visible series; histogram selection remains uncapped.
     const histIsHistogram =
@@ -1439,13 +1399,17 @@ export function createMetricViewContext(
           : []
       )
       view.visibleSeries = histVisible
-      const histPool = categoricalPalette(
-        Math.max(histKeys.length, 1),
-        metricTypeStem(metricType),
+      const histPool = metricSeriesPalette(
+        SERIES_COLOR_COUNT,
         themeSignal.value
       )
       replaceColorAssignments(
-        seedColorAssignments(histPool, histVisible, histKeys)
+        seedColorAssignments(
+          histPool,
+          histVisible,
+          histKeys,
+          colorScope(metricRef)
+        )
       )
     } else {
       const gsKeys = gaugeSumKeys
@@ -1455,12 +1419,10 @@ export function createMetricViewContext(
           : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
       )
       view.visibleSeries = gsVisible
-      const pool = categoricalPalette(
-        MAX_VISIBLE_TIMESERIES,
-        metricTypeStem(metricType),
-        themeSignal.value
+      const pool = metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
+      replaceColorAssignments(
+        seedColorAssignments(pool, gsVisible, gsKeys, colorScope(metricRef))
       )
-      replaceColorAssignments(seedColorAssignments(pool, gsVisible, gsKeys))
     }
 
     // A valid route sub-view overrides seeded defaults.
@@ -1472,6 +1434,9 @@ export function createMetricViewContext(
     const unsubscribe = subscribeToRoute(() => {
       // Registration invokes synchronously; keep callback reads untracked.
       untrack(() => {
+        const requested = signalIdFromPath('metrics', readRoute().path)
+        const displayed = getMetric()?.metricRef
+        if (requested && displayed && requested !== displayed) return
         const parsed = parseMetricUrl()
         const fromUrl = parsed.query
         if (
@@ -1523,7 +1488,13 @@ export function createMetricViewContext(
         const visible = new SvelteSet(next)
         view.visibleSeries = visible
         const assigned = new Map(view.timeseriesColorByKey)
-        syncColorAssignments(timeseriesChartColors, assigned, visible, keys)
+        syncColorAssignments(
+          timeseriesChartColors,
+          assigned,
+          visible,
+          keys,
+          colorScope()
+        )
         replaceColorAssignments(assigned)
       } else {
         ensureColorAssignments(view.visibleSeries, keys)
@@ -1545,7 +1516,13 @@ export function createMetricViewContext(
       const visible = new SvelteSet(next)
       view.visibleSeries = visible
       const assigned = new Map(view.timeseriesColorByKey)
-      syncColorAssignments(timeseriesChartColors, assigned, visible, keys)
+      syncColorAssignments(
+        timeseriesChartColors,
+        assigned,
+        visible,
+        keys,
+        colorScope()
+      )
       replaceColorAssignments(assigned)
     } else {
       ensureColorAssignments(view.visibleSeries, keys)
@@ -1564,9 +1541,7 @@ export function createMetricViewContext(
     const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(
       pending.id
     )
-    const ownerVisible =
-      !hasSeriesFilter || view.visibleSeries.has(pending.seriesKey)
-    if (owner !== pending.seriesKey || !ownerVisible) {
+    if (owner !== pending.seriesKey) {
       rejectedUrlDatapoint = pending
       if (
         urlMetricViewSnapshot?.dp === pending.id &&
@@ -1590,7 +1565,7 @@ export function createMetricViewContext(
     if (view.selectionSource !== 'chart') view.selectionSource = 'detail'
   })
 
-  // Clear an exact selection when its datapoint disappears or its series is hidden.
+  // Inspection survives visibility changes; only a missing datapoint clears it.
   $effect(() => {
     const id = view.selectedDatapointID
     if (id === null) return
@@ -1604,66 +1579,46 @@ export function createMetricViewContext(
       view.selectionSource = null
       return
     }
-
-    // Shapes with no legend filter never seed a selection, and an unseeded
-    // empty set would read as "nothing is checked" and clear the selection.
-    if (!hasSeriesFilter) return
-    if (!view.visibleSeries.has(owner)) {
-      view.selectedDatapointID = null
-      view.selectionSource = null
-    }
   })
 
   // Replace an aggregation choice that the current metric no longer supports.
   $effect(() => {
     const allowed = availableAggregationViewsList
     if (allowed.includes(view.aggregationView)) return
-    const next = defaultAggregationViewFor(
-      metricType,
-      temporality,
-      isMonotonic,
-      gaugeSumGroups.keys.length
-    )
+    const next = DEFAULT_AGGREGATION_VIEW
     view.aggregationView = next
-    // Persist the replacement so the invalid choice is not restored.
     const metricRef = getMetric()?.metricRef
     if (metricRef) savePersistedAggregationView(metricRef, next)
   })
 
-  function toggleTimeseriesExpanded(key: string) {
-    if (view.expandedTimeseries.has(key)) {
-      view.expandedTimeseries.delete(key)
-    } else {
-      view.expandedTimeseries.add(key)
-    }
+  function selectSeries(key: string) {
+    if (!getMetric()?.timeseries.some(series => series.seriesRef === key))
+      return
+    if (selectedSeriesKey === key) return
+    view.selectedSeriesKey = key
+    view.selectedDatapointID = null
+    view.selectedRateBucket = null
+    view.selectedHistogramBucketStart = null
+    view.selectedQuantileKey = null
+    view.selectionSource = null
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
+    writeMetricUrl('push')
   }
 
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
+    saveHistogramViewPreference(tab === 'quantiles' ? 'heatmap' : tab)
     // Back returns to the prior tab.
     writeMetricUrl('push')
   }
 
-  function setHistogramScope(scope: HistogramScope) {
-    view.histogramScope = scope
-    writeMetricUrl('replace')
-  }
-
   function setAggregationView(next: AggregationView) {
+    view.selectedRateBucket = null
     view.aggregationView = next
     const metricRef = getMetric()?.metricRef
     if (metricRef) savePersistedAggregationView(metricRef, next)
     writeMetricUrl('replace')
-  }
-
-  function setShowAllSeriesAggregate(next: boolean) {
-    view.showAllSeriesAggregate = next
-    const metricRef = getMetric()?.metricRef
-    if (metricRef) savePersistedShowAllSeriesAggregate(metricRef, next)
-  }
-
-  function setActiveQuantileOverlay(quantileKey: string) {
-    view.activeQuantileOverlays = new SvelteSet([quantileKey])
   }
 
   function setShowSelectionStatOverlays(next: boolean) {
@@ -1672,18 +1627,13 @@ export function createMetricViewContext(
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
     const metricRef = getMetric()?.metricRef
-    let pool = timeseriesChartColors
     const assigned = new Map(view.timeseriesColorByKey)
     if (checked) {
-      if (acquireColor(pool, assigned, key) === null) {
-        if (!isHistogramKind) return
-        pool = categoricalPalette(
-          Math.max(pool.length, assigned.size + 1, legendOrderKeys.length),
-          metricTypeStem(metricType),
-          themeSignal.value
-        )
-        if (acquireColor(pool, assigned, key) === null) return
-      }
+      if (
+        acquireColor(timeseriesChartColors, assigned, key, colorScope()) ===
+        null
+      )
+        return
     } else {
       releaseColor(assigned, key)
     }
@@ -1704,30 +1654,26 @@ export function createMetricViewContext(
   }
 
   function onDatapointClick(dp: DataPoint) {
+    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(dp.id)
+    if (!owner || (selectedSeriesKey !== null && owner !== selectedSeriesKey))
+      return
+    view.selectedSeriesKey = owner
+    const nextDatapointID = view.selectedRateBucket
+      ? dp.id
+      : view.selectedDatapointID === dp.id
+        ? null
+        : dp.id
+    view.selectedRateBucket = null
     pendingUrlDatapoint = null
     rejectedUrlDatapoint = null
     view.selectionSource = 'detail'
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
-    view.selectedDatapointID = view.selectedDatapointID === dp.id ? null : dp.id
+    view.selectedDatapointID = nextDatapointID
     if (view.selectedDatapointID === null) {
       view.selectionSource = null
     }
-    if (isHistogramKind && view.selectedDatapointID !== null) {
-      view.activeHistogramTab = 'histogram'
-      view.histogramScope = 'bucket'
-    } else if (isHistogramKind && view.selectedDatapointID === null) {
-      view.histogramScope = 'window'
-    }
-    if (dp.flags > 0 || dp.exemplars.length > 0) {
-      if (view.expandedDatapoints.has(dp.id)) {
-        view.expandedDatapoints.delete(dp.id)
-      } else {
-        view.expandedDatapoints.add(dp.id)
-      }
-    }
-    // Back returns to the prior selection. For histograms the pick also
-    // moves the tab/scope, so carry those in the same history entry.
+    // Back returns to the prior selection.
     writeMetricUrl('push')
   }
 
@@ -1744,11 +1690,15 @@ export function createMetricViewContext(
   }
 
   function onChartPointClick(seriesKey: string, datapointID: string) {
-    if (isAggregateLineKey(seriesKey)) return
+    if (isAggregateLineKey(seriesKey) || !view.visibleSeries.has(seriesKey))
+      return
     const m = getMetric()
     if (!m) return
     const ts = m.timeseries.find(t => t.seriesRef === seriesKey)
     if (!ts?.datapoints.some(datapoint => datapoint.id === datapointID)) return
+
+    view.selectedSeriesKey = seriesKey
+    view.selectedRateBucket = null
 
     pendingUrlDatapoint = null
     rejectedUrlDatapoint = null
@@ -1756,6 +1706,34 @@ export function createMetricViewContext(
     view.selectedDatapointID = datapointID
     writeMetricUrl('push')
   }
+
+  function onRateChartPointClick(seriesKey: string, timestampNs: bigint) {
+    if (view.aggregationView !== 'rate' || isAggregateLineKey(seriesKey)) return
+    const series = transformedGaugeSumChartTimeseries.find(
+      series => series.key === seriesKey
+    )
+    if (!series?.points.some(point => point.timestampNs === timestampNs)) return
+    selectSeries(seriesKey)
+    view.selectedRateBucket = { seriesKey, timestampNs }
+    view.selectionSource = 'chart'
+  }
+
+  $effect(() => {
+    const selection = view.selectedRateBucket
+    if (!selection) return
+    const stillDrawn =
+      view.aggregationView === 'rate' &&
+      transformedGaugeSumChartTimeseries.some(
+        series =>
+          series.key === selection.seriesKey &&
+          series.points.some(
+            point => point.timestampNs === selection.timestampNs
+          )
+      )
+    if (stillDrawn) return
+    view.selectedRateBucket = null
+    restoreDetailSelectionSource()
+  })
 
   function onQuantileChartPointClick(
     _seriesKey: string,
@@ -1785,6 +1763,11 @@ export function createMetricViewContext(
   }
 
   function clearChartSelection() {
+    if (view.selectedRateBucket) {
+      view.selectedRateBucket = null
+      restoreDetailSelectionSource()
+      return
+    }
     const hadHistogramSelection =
       view.selectedHistogramBucketStart !== null ||
       view.selectedQuantileKey !== null
@@ -1800,7 +1783,7 @@ export function createMetricViewContext(
       return
     }
 
-    if (view.selectionSource !== 'chart') return
+    if (view.selectionSource !== 'chart' && !isHistogramKind) return
     const hadDatapointSelection = view.selectedDatapointID !== null
     view.selectedDatapointID = null
     view.selectionSource = null
@@ -1811,7 +1794,59 @@ export function createMetricViewContext(
     view.selectionSource = view.selectedDatapointID === null ? null : 'detail'
   }
 
+  const chartRelatedDatapointIDs = $derived.by(() => {
+    const key = selectedSeriesKey
+    if (
+      view.selectionSource !== 'chart' ||
+      !key ||
+      !view.visibleSeries.has(key)
+    )
+      return new Set<string>()
+    const series = getMetric()?.timeseries.find(ts => ts.seriesRef === key)
+    if (!series) return new Set<string>()
+    const points = getSeriesDatapoints(key) ?? series.datapoints
+    const rateBucket = view.selectedRateBucket
+    if (rateBucket) {
+      return new Set(
+        points
+          .filter(
+            dp =>
+              rateBucketStartForSourceDatapoint(
+                { ...series, datapoints: [dp] },
+                dp.id
+              ) === rateBucket.timestampNs
+          )
+          .map(dp => dp.id)
+      )
+    }
+    const start = heatmapColumnStartNs
+    const end = heatmapColumnEndNs
+    if (start !== null && end !== null) {
+      return new Set(
+        points
+          .filter(dp => dp.timestamp >= start && dp.timestamp <= end)
+          .map(dp => dp.id)
+      )
+    }
+    return new Set(view.selectedDatapointID ? [view.selectedDatapointID] : [])
+  })
+
   const ctx: MetricViewContext = {
+    get previewSeriesKey() {
+      return view.previewSeriesKey
+    },
+    set previewSeriesKey(key) {
+      view.previewSeriesKey = key
+    },
+    get histogramContribution() {
+      const contribution = getHistogramContribution()
+      return view.selectionSource === 'detail' &&
+        contribution?.datapointID === view.selectedDatapointID &&
+        selectedSeriesKey !== null &&
+        view.visibleSeries.has(selectedSeriesKey)
+        ? contribution
+        : null
+    },
     get metric() {
       return getMetric()
     },
@@ -1843,17 +1878,15 @@ export function createMetricViewContext(
     get selectionSource() {
       return view.selectionSource
     },
-    get expandedDatapoints() {
-      return view.expandedDatapoints
-    },
-    get expandedTimeseries() {
-      return view.expandedTimeseries
+    get chartRelatedDatapointIDs() {
+      return chartRelatedDatapointIDs
     },
     get activeHistogramTab() {
-      return view.activeHistogramTab
-    },
-    get histogramScope() {
-      return view.histogramScope
+      // Old shared links now open the combined heatmap without dropping
+      // their raw datapoint, series, or history state.
+      return view.activeHistogramTab === 'quantiles'
+        ? 'heatmap'
+        : view.activeHistogramTab
     },
     get selectedDatapoint() {
       return selectedDatapoint
@@ -1884,12 +1917,6 @@ export function createMetricViewContext(
     get aggregatePresentKeys() {
       return aggregatePresentKeys
     },
-    get showAllSeriesAggregate() {
-      return view.showAllSeriesAggregate
-    },
-    get showAllSeriesAggregateToggleVisible() {
-      return showAllSeriesAggregateToggleVisible
-    },
     get showSelectionStatOverlays() {
       return view.showSelectionStatOverlays
     },
@@ -1917,6 +1944,9 @@ export function createMetricViewContext(
     },
     get visibleSeries() {
       return view.visibleSeries
+    },
+    get seriesTable() {
+      return seriesTable
     },
     seedForMetric,
     seriesDatapoints(seriesKey: string) {
@@ -1965,22 +1995,26 @@ export function createMetricViewContext(
       return quantileColorByKey
     },
     get activeQuantileOverlays() {
-      return view.activeQuantileOverlays
+      return activeQuantileOverlays
     },
 
     get filteredTimeseries() {
       return filteredTimeseries
     },
     get timeseriesColorByKey() {
-      if (view.aggregationView === 'raw') return view.timeseriesColorByKey
-      const merged = new Map(view.timeseriesColorByKey)
+      if (view.aggregationView === 'raw') return resolvedTimeseriesColors
+      const merged = new Map(resolvedTimeseriesColors)
       merged.set(AGG_KEY_SELECTED, AGG_COLOR_SELECTED)
-      merged.set(AGG_KEY_ALL, AGG_COLOR_ALL)
       merged.set(AGG_KEY_TOTAL, AGG_COLOR_SELECTED)
+      merged.set(AGG_KEY_AVG_SELECTED, AGG_COLOR_ALL)
+      merged.set(AGG_KEY_AVG_TOTAL, AGG_COLOR_ALL)
       return merged
     },
     get timeseriesChartColors() {
       return timeseriesChartColors
+    },
+    get savedTimeseriesColorByKey() {
+      return savedTimeseriesColors
     },
     get legendFilterActive() {
       return legendFilterActive
@@ -1995,20 +2029,18 @@ export function createMetricViewContext(
       return availableSeriesStatBadgesList
     },
 
-    toggleTimeseriesExpanded,
+    selectSeries,
     setActiveHistogramTab,
-    setHistogramScope,
     setAggregationView,
-    setShowAllSeriesAggregate,
     setShowSelectionStatOverlays,
     toggleTimeseriesVisible,
     clearAllTimeseriesVisible,
     onDatapointClick,
     onHeatmapSelect,
     onChartPointClick,
+    onRateChartPointClick,
     onQuantileChartPointClick,
     clearChartSelection,
-    setActiveQuantileOverlay,
   }
 
   setMetricViewContext(ctx)

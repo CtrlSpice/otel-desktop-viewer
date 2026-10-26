@@ -1,5 +1,4 @@
 import type { EventData, SpanNode, TraceLogSummary } from '@/types/api-types'
-import { severityBand } from '@/components/logs/log-severity'
 
 export const WATERFALL_BAR_HEIGHT_REM = 0.875
 export const MARKER_GLYPH_REM = WATERFALL_BAR_HEIGHT_REM
@@ -8,7 +7,7 @@ export const MARKER_CLUSTER_DISTANCE_REM = 1
 export const TIMELINE_LEFT_INSET_REM = 1.25
 export const DURATION_GUTTER_REM = 5
 export const OUTSIDE_RECORD_SLOT_REM = 2
-export const BAR_LABEL_GAP_REM = 0.625
+export const BAR_LABEL_GAP_REM = 1
 
 export type TimelineRecord =
   | {
@@ -88,7 +87,10 @@ export function compareTimelineRecords(
 ): number {
   if (left.timestamp !== right.timestamp)
     return left.timestamp < right.timestamp ? -1 : 1
-  if (left.kind !== right.kind) return left.kind === 'event' ? -1 : 1
+  if (left.kind !== right.kind) {
+    const order = { event: 0, log: 1 }
+    return order[left.kind] - order[right.kind]
+  }
   if (left.kind === 'event' && right.kind === 'event')
     return left.eventIndex - right.eventIndex
   return left.id.localeCompare(right.id)
@@ -160,31 +162,12 @@ export function clusterTimelineRecords(
 
 export function markerComposition(
   marker: TimelineMarker
-): 'event' | 'log' | 'mixed' {
-  const events = marker.members.some(member => member.kind === 'event')
-  const logs = marker.members.some(member => member.kind === 'log')
-  return events && logs ? 'mixed' : events ? 'event' : 'log'
+): TimelineRecord['kind'] | 'mixed' {
+  const kinds = new Set(marker.members.map(member => member.kind))
+  return kinds.size === 1 ? marker.members[0]!.kind : 'mixed'
 }
 
 export function markerColor(marker: TimelineMarker, spanColor: string): string {
-  const logs = marker.members.filter(
-    (member): member is Extract<TimelineRecord, { kind: 'log' }> =>
-      member.kind === 'log'
-  )
-  if (logs.length > 0) {
-    const highest = logs.reduce((current, member) =>
-      member.log.severityNumber > current.log.severityNumber ? member : current
-    )
-    const colors = {
-      trace: 'var(--color-base-content)',
-      debug: 'var(--color-success)',
-      info: 'var(--color-info)',
-      warn: 'var(--color-warning)',
-      error: 'var(--color-error)',
-      fatal: 'var(--color-error)',
-    } as const
-    return colors[severityBand(highest.log.severityNumber)]
-  }
   return marker.members.some(
     member => member.kind === 'event' && member.event.name === 'exception'
   )
@@ -196,7 +179,7 @@ export function markerLabel(marker: TimelineMarker): string {
   const eventCount = marker.members.filter(
     member => member.kind === 'event'
   ).length
-  const logCount = marker.members.length - eventCount
+  const logCount = marker.members.filter(member => member.kind === 'log').length
   const parts = [
     eventCount > 0 ? `${eventCount} event${eventCount === 1 ? '' : 's'}` : '',
     logCount > 0 ? `${logCount} log${logCount === 1 ? '' : 's'}` : '',

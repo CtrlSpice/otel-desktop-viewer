@@ -14,14 +14,14 @@ import {
 } from '@/route'
 
 export const TIME_RANGE_PRESETS = [
-  { label: 'All', durationMs: undefined },
-  { label: '5m', durationMs: 300_000 },
-  { label: '15m', durationMs: 900_000 },
-  { label: '30m', durationMs: 1_800_000 },
-  { label: '1h', durationMs: 3_600_000 },
-  { label: '6h', durationMs: 21_600_000 },
-  { label: '24h', durationMs: 86_400_000 },
-  { label: '7d', durationMs: 604_800_000 },
+  { label: 'All', shortLabel: 'All', durationMs: undefined },
+  { label: '5 min', shortLabel: '5m', durationMs: 300_000 },
+  { label: '15 min', shortLabel: '15m', durationMs: 900_000 },
+  { label: '30 min', shortLabel: '30m', durationMs: 1_800_000 },
+  { label: '1 hr', shortLabel: '1h', durationMs: 3_600_000 },
+  { label: '6 hr', shortLabel: '6h', durationMs: 21_600_000 },
+  { label: '24 hr', shortLabel: '24h', durationMs: 86_400_000 },
+  { label: '7 days', shortLabel: '7d', durationMs: 604_800_000 },
 ] as const
 
 const [getTimeContext, setTimeContext] = createContext<TimeContext>()
@@ -80,6 +80,7 @@ interface TimeContext {
   selection: TimeSelection
   tz: Timezone
   setSelection: (selection: TimeSelection) => void
+  adoptUrlWindow: (query: RouteQuery) => void
   setTz: (tz: Timezone) => void
 }
 
@@ -245,20 +246,27 @@ function createTimeContext(): TimeContext {
     localStorage.setItem('time-tz', newTz)
   }
 
-  // Adopt the window from the URL on external changes only. An external change
-  // is one whose absolute bounds differ from what we last wrote, so item
-  // navigation (which leaves the time query untouched) and our own writes are
-  // both ignored — no feedback loop, no clobbering live presets.
+  // Reading links explicitly adopt their bounds, including a reading that
+  // happens to equal the picker's snapshot. Do not persist a new preference.
+  function adoptUrlWindow(query: RouteQuery) {
+    const fromUrl = parseTimeQuery(query)
+    if (!fromUrl) return
+    urlWindowSnapshot = fromUrl
+    selection =
+      fromUrl.type === 'all'
+        ? { type: 'all' }
+        : { type: 'custom', start: fromUrl.start, end: fromUrl.end }
+  }
+
+  // Ordinary navigation carries the picker snapshot without freezing a live
+  // preset. Changed URL bounds still select the explicit destination window.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
-      const fromUrl = parseTimeQuery(readRoute().query)
+      const route = readRoute()
+      const fromUrl = parseTimeQuery(route.query)
       if (!fromUrl) return
       if (sameRouteTime(fromUrl, urlWindowSnapshot)) return
-      urlWindowSnapshot = fromUrl
-      selection =
-        fromUrl.type === 'all'
-          ? { type: 'all' }
-          : { type: 'custom', start: fromUrl.start, end: fromUrl.end }
+      adoptUrlWindow(route.query)
     })
     return unsubscribe
   })
@@ -271,6 +279,7 @@ function createTimeContext(): TimeContext {
       return tz
     },
     setSelection,
+    adoptUrlWindow,
     setTz,
   }
 

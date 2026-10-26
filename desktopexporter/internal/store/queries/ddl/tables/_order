@@ -20,3 +20,5 @@ histogram_bounds.sql
 metric_datapoints.sql
 exemplars.sql
 ingest_rejections.sql
+eval_ingestion.sql
+eval_experiments.sql

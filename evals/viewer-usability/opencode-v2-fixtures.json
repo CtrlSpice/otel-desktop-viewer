@@ -1,0 +1,24 @@
+{
+  "tools": [
+    { "name": "streaming empty input", "state": { "status": "streaming", "input": "" }, "expected": { "tool.status": "streaming", "tool.input": "\"\"" } },
+    { "name": "running empty input", "state": { "status": "running", "input": {}, "metadata": {} }, "expected": { "tool.status": "running", "tool.input": "{}" } },
+    { "name": "completed empty content", "state": { "status": "completed", "input": {}, "content": [] }, "expected": { "tool.status": "completed", "tool.input": "{}", "tool.output": "[]", "tool.is_error": false } },
+    { "name": "completed empty text", "state": { "status": "completed", "input": { "command": "true" }, "content": [{ "type": "text", "text": "" }] }, "expected": { "tool.status": "completed", "tool.input": "{\"command\":\"true\"}", "tool.output": "[{\"type\":\"text\",\"text\":\"\"}]", "tool.is_error": false } },
+    { "name": "completed absent output", "state": { "status": "completed", "input": {} }, "expected": { "tool.status": "completed", "tool.input": "{}", "tool.is_error": false } },
+    { "name": "error without content", "state": { "status": "error", "input": {}, "error": { "type": "tool.error", "message": "" } }, "expected": { "tool.status": "error", "tool.input": "{}", "tool.output": "{\"type\":\"tool.error\",\"message\":\"\"}", "tool.is_error": true } },
+    { "name": "error empty content takes precedence", "state": { "status": "error", "input": {}, "content": [], "error": { "type": "tool.error", "message": "received failure" } }, "expected": { "tool.status": "error", "tool.input": "{}", "tool.output": "[]", "tool.is_error": true } },
+    { "name": "error absent output", "state": { "status": "error", "input": {} }, "expected": { "tool.status": "error", "tool.input": "{}", "tool.is_error": true } },
+    { "name": "streaming missing required input", "state": { "status": "streaming" }, "malformed": true, "expected": { "tool.status": "streaming" } },
+    { "name": "running missing required input", "state": { "status": "running", "metadata": {} }, "malformed": true, "expected": { "tool.status": "running" } },
+    { "name": "completed missing required input", "state": { "status": "completed", "content": [] }, "malformed": true, "expected": { "tool.status": "completed", "tool.output": "[]", "tool.is_error": false } },
+    { "name": "error missing required input", "state": { "status": "error", "error": {} }, "malformed": true, "expected": { "tool.status": "error", "tool.output": "{}", "tool.is_error": true } }
+  ],
+  "usage": [
+    { "name": "no assistants", "assistants": [], "usage": {}, "status": "unavailable" },
+    { "name": "failed assistant without tokens", "assistants": [{ "error": { "type": "provider.auth", "message": "401" } }], "usage": {}, "status": "unavailable" },
+    { "name": "recorded zeros", "assistants": [{ "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } } }], "usage": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }, "status": "complete", "tokenUsage": { "prompt": 0, "completion": 0, "cached": 0, "completionDetails": { "reasoning": 0, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0 } } },
+    { "name": "one missing assistant is partial not zero", "assistants": [{ "tokens": { "input": 4, "output": 2, "reasoning": 1, "cache": { "read": 3, "write": 5 } } }, {}], "usage": {}, "status": "partial" },
+    { "name": "individual missing fields", "assistants": [{ "tokens": { "input": 0, "output": 2 } }, { "tokens": { "input": 0 } }], "usage": { "input": 0 }, "status": "partial", "tokenUsage": { "prompt": 0 } },
+    { "name": "cache writes are retained without invented total", "assistants": [{ "tokens": { "input": 4, "output": 2, "reasoning": 1, "cache": { "read": 3, "write": 5 } } }, { "tokens": { "input": 6, "output": 1, "reasoning": 0, "cache": { "read": 0, "write": 7 } } }], "usage": { "input": 10, "output": 3, "reasoning": 1, "cache": { "read": 3, "write": 12 } }, "status": "complete", "tokenUsage": { "prompt": 10, "completion": 3, "cached": 3, "completionDetails": { "reasoning": 1, "cacheReadInputTokens": 3, "cacheCreationInputTokens": 12 } } }
+  ]
+}

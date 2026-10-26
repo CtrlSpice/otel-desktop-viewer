@@ -1,4 +1,4 @@
-// Reactive view of the current theme. The ThemeToggle component flips
+// Reactive view of the current theme. The ThemeToggle component updates
 // `data-theme` on <html> to switch palettes -- anything that needs to
 // re-derive when that happens (chart palettes, computed swatches, etc.)
 // can read `themeSignal.value` inside a $derived and Svelte will
@@ -27,7 +27,7 @@ const subscribe = createSubscriber(update => {
 })
 
 /**
- * `themeSignal.value` returns the current `data-theme` string and
+ * `themeSignal.value` returns the current theme identity and
  * registers the calling reactive scope as a dependency, so it will
  * re-run when the theme changes.
  */

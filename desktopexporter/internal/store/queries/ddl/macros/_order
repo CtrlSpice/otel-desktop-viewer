@@ -33,6 +33,7 @@ sum_bucket_vectors.sql
 uuid_list.sql
 body_preview.sql
 log_data_json.sql
+log_column_values.sql
 zero_fold.sql
 attribute_int64.sql
 attribute_double.sql
@@ -49,6 +50,7 @@ exemplar_json.sql
 metric_series_view_json.sql
 series_stats_json.sql
 event_json.sql
+span_link_summaries.sql
 link_json.sql
 span_data_json.sql
 exp_zero_cutoff.sql

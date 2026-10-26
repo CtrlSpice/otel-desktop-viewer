@@ -30,9 +30,12 @@ describe('DateTimeFilter', () => {
     expect(
       screen.getByRole('button', { name: /Change time range/i })
     ).toBeInTheDocument()
+    expect(
+      screen.queryByText('Time range', { exact: true })
+    ).not.toBeInTheDocument()
   })
 
-  it('renders the popover body with presets, custom range, timezone, and recents', async () => {
+  it('renders presets, custom range, and timezone without recent ranges', async () => {
     renderComponent()
     await tick()
     const popover = getPopover()
@@ -41,9 +44,11 @@ describe('DateTimeFilter', () => {
     expect(
       screen.getByRole('toolbar', { name: 'Time range presets' })
     ).toBeInTheDocument()
-    expect(popover).toHaveTextContent('Custom Range')
+    expect(popover).not.toHaveTextContent('Custom Range')
+    expect(screen.getByLabelText('Start')).toBeVisible()
+    expect(screen.getByLabelText('End')).toBeVisible()
     expect(popover).toHaveTextContent('Timezone')
-    expect(popover).toHaveTextContent('Recent')
+    expect(popover).not.toHaveTextContent('Recent')
   })
 
   it('opens the popover and applies a preset selection end-to-end', async () => {
@@ -60,7 +65,7 @@ describe('DateTimeFilter', () => {
       expect(trigger).toHaveAttribute('aria-expanded', 'true')
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 5m' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Last 5 min' }))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toEqual({

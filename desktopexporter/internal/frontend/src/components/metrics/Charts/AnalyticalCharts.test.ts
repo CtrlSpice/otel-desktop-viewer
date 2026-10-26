@@ -3,15 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/svelte'
 import { tick, type Component } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HistogramChart from './HistogramChart.svelte'
+import { chartPadding } from './MetricChartPlot.svelte'
 import HistogramHeatmap from './HistogramHeatmap.svelte'
-import MetricQuantileAreaChart from './MetricQuantileAreaChart.svelte'
 import MetricTimeSeriesChart from './MetricTimeSeriesChart.svelte'
 import MetricChartHarness from '@/test/MetricChartHarness.svelte'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
-import {
-  histogramDatapointToChartDatapoint,
-  quantileSeriesKey,
-} from '@/components/metrics/utils/histogram-aggregation'
+import { histogramDatapointToChartDatapoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { ChartTimeseries } from '@/types/metric-chart-types'
 import type {
   ExponentialHistogramDataPoint,
@@ -200,6 +197,255 @@ afterEach(() => {
 })
 
 describe('MetricTimeSeriesChart keyboard model', () => {
+  it.each([
+    { values: [2, 8], ruleCount: 0 },
+    { values: [-2, 8], ruleCount: 1 },
+    { values: [-8, -2], ruleCount: 1 },
+  ])(
+    'keeps only zero rules that do not duplicate the rounded bottom axis: $values',
+    async ({ values, ruleCount }) => {
+      const datapoints = values.map((value, index) =>
+        gaugeDatapoint(
+          `point-${index}`,
+          BASE_NS + BigInt(index) * 1_000_000_000n,
+          value
+        )
+      )
+      renderChart(
+        MetricTimeSeriesChart,
+        {
+          timeseries: [
+            {
+              key: 'series-a',
+              label: 'Series A',
+              points: datapoints.map(point => ({
+                date: new Date(point.timestampMs),
+                value: point.doubleValue,
+                timestampNs: point.timestamp,
+              })),
+            },
+          ],
+          colorByKey: new Map([['series-a', '#123456']]),
+        },
+        metricWithDatapoints('Gauge', datapoints)
+      )
+      await tick()
+      expect(document.querySelectorAll('.lc-rule-y-line')).toHaveLength(
+        ruleCount
+      )
+      const zeroLabels = [
+        ...document.querySelectorAll('.lc-axis-tick-label'),
+      ].filter(label => label.textContent === '0')
+      expect(zeroLabels).toHaveLength(ruleCount)
+      expect(document.querySelector('.metric-axes')).toBeInTheDocument()
+    }
+  )
+
+  it('draws aggregate buckets as step-after geometry while preserving raw sample interpolation', async () => {
+    const datapoints = [2, 8, 4].map((value, index) =>
+      gaugeDatapoint(
+        `point-${index}`,
+        BASE_NS + BigInt(index) * 1_000_000_000n,
+        value
+      )
+    )
+    const keys = [
+      'series-a',
+      '__agg:selected__',
+      '__agg:all__',
+      '__agg:total__',
+    ]
+    renderChart(
+      MetricTimeSeriesChart,
+      {
+        timeseries: keys.map(key => ({
+          key,
+          label: key,
+          points: datapoints.map(point => ({
+            date: new Date(point.timestampMs),
+            value: point.doubleValue,
+            timestampNs: point.timestamp,
+          })),
+        })),
+        colorByKey: new Map(keys.map(key => [key, '#123456'])),
+      },
+      metricWithDatapoints('Gauge', datapoints)
+    )
+    await tick()
+
+    for (const key of keys) {
+      const path = document.querySelector(`path[data-series-key="${key}"]`)!
+      const d = path.getAttribute('d')!
+      expect(d).toBeTruthy()
+      if (key === 'series-a') {
+        const samples = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)]
+        expect(samples).toHaveLength(3)
+        expect(samples[1]![1]).not.toBe(samples[0]![1])
+        expect(samples[1]![2]).not.toBe(samples[0]![2])
+        continue
+      }
+      expect(path).toHaveAttribute('stroke-dasharray', '6 4')
+      expect(d).not.toMatch(/[CQ]/)
+      const vertices = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map(
+        match => [Number(match[1]), Number(match[2])]
+      )
+      expect(vertices).toHaveLength(5)
+      for (let i = 1; i < vertices.length; i++) {
+        const previous = vertices[i - 1]!
+        const current = vertices[i]!
+        // Hold the previous bucket value until the next bucket's X, then jump.
+        expect(current[i % 2 === 1 ? 1 : 0]).toBe(previous[i % 2 === 1 ? 1 : 0])
+        expect(current[i % 2 === 1 ? 0 : 1]).not.toBe(
+          previous[i % 2 === 1 ? 0 : 1]
+        )
+      }
+    }
+  })
+
+  it.each(['raw', 'rate'] as const)(
+    'uses the selected series colour for min/max dots in %s, but the primary tone for derived annotations',
+    async aggregationView => {
+      const first = gaugeDatapoint('first', BASE_NS, 2)
+      const second = gaugeDatapoint('second', BASE_NS + 1_000_000_000n, 4)
+      const metric = metricWithDatapoints('Gauge', [first, second])
+      const props = {
+        timeseries: ['series-a', 'series-b'].map(key => ({
+          key,
+          label: key,
+          points: [
+            {
+              date: new Date(BASE_MS),
+              timestampNs: first.timestamp,
+              sourceDatapointID: first.id,
+              value: 2,
+            },
+            {
+              date: new Date(BASE_MS + 1000),
+              timestampNs: second.timestamp,
+              sourceDatapointID: second.id,
+              value: 4,
+              slope: 2,
+            },
+          ],
+        })),
+        colorByKey: new Map([
+          ['series-a', '#123456'],
+          ['series-b', '#abcdef'],
+        ]),
+        highlightedTimestamp: second.timestamp,
+        highlightedPointID: second.id,
+        selectedSeriesKey: 'series-a',
+        aggregationView,
+        seriesStats: new Map(
+          ['series-a', 'series-b'].map(key => [key, { min: 2, max: 4, avg: 3 }])
+        ),
+      }
+      const view = renderChart(MetricTimeSeriesChart, props, metric)
+      function expectMarkerColours(seriesColour: string) {
+        const markers = [...document.querySelectorAll('.series-stat-marker')]
+        for (const kind of ['min', 'max']) {
+          const marker = markers.find(marker =>
+            marker.querySelector('title')?.textContent?.startsWith(`${kind} `)
+          )
+          expect(marker?.querySelector('.series-stat-dot')).toHaveAttribute(
+            'fill',
+            seriesColour
+          )
+        }
+        const derived = markers.find(marker =>
+          marker
+            .querySelector('title')
+            ?.textContent?.startsWith(
+              aggregationView === 'rate' ? 'rate slope ' : 'Series avg '
+            )
+        )
+        if (aggregationView === 'rate') {
+          expect(derived?.querySelector('.series-stat-dot')).toHaveAttribute(
+            'fill',
+            'var(--color-primary)'
+          )
+          expect(document.querySelector('.series-average-marker')).toBeNull()
+        } else {
+          expect(derived?.querySelector('.series-stat-dot')).toBeNull()
+          const averageLabel = document.querySelector(
+            '.series-stat-tooltip--right'
+          )
+          expect(
+            averageLabel?.querySelector('.chart-selection-legend__label')
+          ).toHaveTextContent('Series avg')
+          expect(averageLabel).toHaveAttribute('title', 'Series avg 3')
+          const line = derived?.querySelector('.series-average-line')
+          expect(line).not.toBeNull()
+          expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'))
+          expect(line?.getAttribute('x1')).not.toBe(line?.getAttribute('x2'))
+          expect(
+            document.querySelectorAll('.series-stat-tooltip')
+          ).toHaveLength(3)
+        }
+      }
+      expectMarkerColours('#123456')
+      await view.rerender({
+        component: MetricTimeSeriesChart,
+        componentProps: { ...props, selectedSeriesKey: 'series-b' },
+        metric,
+      })
+      expectMarkerColours('#abcdef')
+    }
+  )
+
+  it('shows window statistics without a point selection and requires a series choice when several are visible', async () => {
+    const datapoints = [2, 4].map((value, index) =>
+      gaugeDatapoint(
+        `point-${index}`,
+        BASE_NS + BigInt(index) * 1_000_000_000n,
+        value
+      )
+    )
+    const metric = metricWithDatapoints('Gauge', datapoints)
+    const series = {
+      key: 'series-a',
+      label: 'Series A',
+      points: datapoints.map(point => ({
+        date: new Date(point.timestampMs),
+        value: point.doubleValue,
+        timestampNs: point.timestamp,
+      })),
+    }
+    const props = {
+      timeseries: [series],
+      colorByKey: new Map([
+        ['series-a', '#123456'],
+        ['series-b', '#abcdef'],
+      ]),
+      seriesStats: new Map([['series-a', { min: 2, max: 4, avg: 3 }]]),
+    }
+    const view = renderChart(MetricTimeSeriesChart, props, metric)
+    await tick()
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(3)
+    await view.rerender({
+      component: MetricTimeSeriesChart,
+      componentProps: { ...props, showStatOverlays: false },
+      metric,
+    })
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(0)
+    const multiple = {
+      ...props,
+      timeseries: [series, { ...series, key: 'series-b' }],
+    }
+    await view.rerender({
+      component: MetricTimeSeriesChart,
+      componentProps: multiple,
+      metric,
+    })
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(0)
+    await view.rerender({
+      component: MetricTimeSeriesChart,
+      componentProps: { ...multiple, selectedSeriesKey: 'series-a' },
+      metric,
+    })
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(3)
+  })
+
   it('distinguishes sub-millisecond source points, follows external selection on focus, and activates the exact id', async () => {
     const first = gaugeDatapoint('first', BASE_NS + 100n, 10)
     const second = gaugeDatapoint('second', BASE_NS + 900n, 20)
@@ -317,7 +563,6 @@ describe('MetricTimeSeriesChart keyboard model', () => {
         selectedSeriesKey: 'series-a',
         aggregationView: 'rate',
         unit: 'requests',
-        selectedRateSlope: 6,
         seriesStats: new Map([['series-a', { min: 2, max: 4, avg: 3 }]]),
       },
       metric
@@ -335,10 +580,79 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       document.querySelector('.metric-time-series-chart__selection-legend')
     ).toHaveTextContent('4')
     expect(
+      document.querySelector('.series-stat-tooltip--right')
+    ).toHaveTextContent('slope')
+    expect(
+      [...document.querySelectorAll('.series-stat-tooltip')].some(tooltip =>
+        tooltip.textContent?.includes('slope')
+      )
+    ).toBe(true)
+    expect(
       [...document.querySelectorAll('.series-stat-marker title')].some(title =>
         title.textContent?.startsWith('rate slope')
       )
     ).toBe(true)
+    expect(
+      document.querySelector('.selection-overlay .highlight-rule')
+    ).toBeNull()
+    expect(document.querySelector('.series-stat-hitbox')).toBeNull()
+    expect(
+      document
+        .querySelector(
+          '.series-stat-tooltip--right .chart-selection-legend__dot'
+        )
+        ?.getAttribute('style')
+    ).toContain('--color: var(--color-primary)')
+  })
+
+  it('activates exact Rate buckets with keyboard without fabricating raw identities', async () => {
+    const onRateChartPointClick = vi.fn()
+    const onChartPointClick = vi.fn()
+    const metric = metricWithDatapoints('Gauge', [
+      gaugeDatapoint('source', BASE_NS, 10),
+    ])
+    renderChart(
+      MetricTimeSeriesChart,
+      {
+        timeseries: [
+          {
+            key: 'series-a',
+            label: 'series A',
+            points: [
+              {
+                date: new Date(BASE_MS),
+                timestampNs: BASE_NS + 300n,
+                value: 2,
+              },
+              {
+                date: new Date(BASE_MS),
+                timestampNs: BASE_NS + 600n,
+                value: 4,
+                slope: 6,
+              },
+            ],
+          },
+        ],
+        aggregationView: 'rate',
+        onRateChartPointClick,
+        onChartPointClick,
+        colorByKey: new Map([['series-a', '#123456']]),
+      },
+      metric
+    )
+    const surface = screen.getByRole('application', {
+      name: 'Metric time series chart',
+    })
+    await fireEvent.focus(surface)
+    await fireEvent.keyDown(surface, { key: 'Home' })
+    await fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    await fireEvent.keyDown(surface, { key: 'Enter' })
+    expect(onRateChartPointClick).toHaveBeenCalledWith(
+      'series-a',
+      BASE_NS + 600n
+    )
+    expect(onChartPointClick).not.toHaveBeenCalled()
+    expect(readout()).not.toContain('Read-only synthetic point')
   })
 
   it('does not advertise or perform activation for a synthetic point', async () => {
@@ -462,74 +776,11 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       metric
     )
 
-    expect(document.querySelector('.highlight-rule')).not.toBeNull()
+    expect(document.querySelector('.highlight-rule')).toBeNull()
     expect(document.querySelector('.selection-dot')).toBeNull()
     expect(
       document.querySelector('.metric-time-series-chart__selection-legend')
     ).toBeNull()
-  })
-})
-
-describe('MetricQuantileAreaChart keyboard model', () => {
-  it('keeps same-millisecond quantile columns distinct and activates exact nanoseconds', async () => {
-    const firstNs = BASE_NS + 100n
-    const secondNs = BASE_NS + 900n
-    const metric = metricWithDatapoints('Histogram', [
-      histogramDatapoint('hist', [], [2]),
-    ])
-    const timeseries: ChartTimeseries[] = [
-      {
-        key: quantileSeriesKey('series-a', '0.95'),
-        label: 'series A · p95',
-        points: [
-          { date: new Date(BASE_MS), value: 1, timestampNs: firstNs },
-          { date: new Date(BASE_MS), value: 2, timestampNs: secondNs },
-        ],
-      },
-    ]
-    const onChartPointClick = vi.fn()
-    let context: MetricViewContext | undefined
-    renderChart(
-      MetricQuantileAreaChart,
-      {
-        timeseries,
-        activeQuantileKeys: ['0.95'],
-        colorByKey: new Map([['series-a', '#123456']]),
-        onChartPointClick,
-      },
-      metric,
-      next => (context = next)
-    )
-    if (!context) throw new Error('metric context was not captured')
-    context.onQuantileChartPointClick('series-a', secondNs, '0.95')
-    await tick()
-    const secondSelectionY = document
-      .querySelector('.metric-quantile-area-chart .selection-dot')
-      ?.getAttribute('cy')
-    const surface = screen.getByRole('application', {
-      name: 'Histogram quantile chart',
-    })
-
-    expect(document.querySelector('.chart-keyboard-cursor')).toBeNull()
-    await fireEvent.focus(surface)
-    await tick()
-    expect(document.querySelector('.chart-keyboard-cursor')).not.toBeNull()
-    expect(readout()).toContain('Point 2 of 2')
-    await fireEvent.keyDown(surface, { key: 'Enter' })
-    expect(onChartPointClick).toHaveBeenCalledWith('series-a', secondNs, '0.95')
-
-    context.onQuantileChartPointClick('series-a', firstNs, '0.95')
-    await tick()
-    expect(readout()).toContain('Point 1 of 2')
-    const firstSelectionY = document
-      .querySelector('.metric-quantile-area-chart .selection-dot')
-      ?.getAttribute('cy')
-    expect(secondSelectionY).toBeTruthy()
-    expect(firstSelectionY).toBeTruthy()
-    expect(firstSelectionY).not.toBe(secondSelectionY)
-    await fireEvent.blur(surface)
-    await tick()
-    expect(document.querySelector('.chart-keyboard-cursor')).toBeNull()
   })
 })
 
@@ -545,7 +796,6 @@ describe('HistogramChart keyboard model', () => {
       HistogramChart,
       {
         datapoint: histogramDatapointToChartDatapoint(duplicateBounds),
-        enableValueBucketPin: true,
       },
       metric
     )
@@ -577,15 +827,16 @@ describe('HistogramChart keyboard model', () => {
       { datapoint: histogramDatapointToChartDatapoint(catchAll) },
       metricWithDatapoints('Histogram', [catchAll])
     )
-    const snapshot = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+    const catchAllSurface = screen.getByRole('application', {
+      name: 'Histogram distribution chart',
     })
-    expect(snapshot.getAttribute('aria-keyshortcuts')).not.toContain('Enter')
-    await fireEvent.focus(snapshot)
+    expect(catchAllSurface.getAttribute('aria-keyshortcuts')).toContain('Enter')
+    await fireEvent.focus(catchAllSurface)
     expect(readout()).toContain('all values')
   })
 
   it('syncs a pointer-pinned bucket and does not auto-scroll it before focus', async () => {
+    clientWidthSpy!.mockReturnValue(630)
     const bounds = Array.from({ length: 20 }, (_, index) => index)
     const datapoint = histogramDatapoint(
       'scrolling-histogram',
@@ -597,7 +848,6 @@ describe('HistogramChart keyboard model', () => {
       HistogramChart,
       {
         datapoint: histogramDatapointToChartDatapoint(datapoint),
-        enableValueBucketPin: true,
       },
       metric
     )
@@ -614,13 +864,23 @@ describe('HistogramChart keyboard model', () => {
     })
     scroller.scrollLeft = 17
 
-    await fireEvent.click(wrapper, { clientX: 160, clientY: 100 })
+    const selectedBar = wrapper.querySelectorAll('.histogram-bar__fill')[19]!
+    const clientX =
+      chartPadding.left +
+      Number(selectedBar.getAttribute('x')) +
+      Number(selectedBar.getAttribute('width')) / 2
+    const clientY =
+      chartPadding.top +
+      Number(selectedBar.getAttribute('y')) +
+      Number(selectedBar.getAttribute('height')) / 2
+    await fireEvent.click(wrapper, { clientX, clientY })
     await tick()
     expect(scroller.scrollLeft).toBe(17)
-    expect(readout()).toMatch(/Bucket (19|20|21) of 21/)
+    expect(readout()).toContain('Bucket 20 of 21, 18 – 19. Count 20.')
 
     await fireEvent.focus(surface)
     await tick()
+    expect(readout()).toContain('Bucket 20 of 21, 18 – 19. Count 20.')
     expect(scroller.scrollLeft).toBeGreaterThan(17)
   })
 
@@ -635,11 +895,11 @@ describe('HistogramChart keyboard model', () => {
       metric
     )
     const rangedSurface = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+      name: 'Histogram distribution chart',
     })
 
     await fireEvent.focus(rangedSurface)
-    expect(readout()).toContain('[-1.0e-3, +1.0e-3]')
+    expect(readout()).toContain('[-0.001, +0.001]')
     unmount()
 
     const exact = exponentialHistogramDatapoint('exact-zero', 0)
@@ -649,7 +909,7 @@ describe('HistogramChart keyboard model', () => {
       metric
     )
     const exactSurface = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+      name: 'Histogram distribution chart',
     })
     await fireEvent.focus(exactSurface)
     expect(readout()).toContain('= 0')
@@ -668,6 +928,9 @@ describe('HistogramChart keyboard model', () => {
     )
     if (!context) throw new Error('metric context was not captured')
     context.onDatapointClick(datapoint)
+    expect(context.activeHistogramTab).toBe('heatmap')
+    // A detail selection cannot substitute its raw snapshot for the window summary.
+    expect(context.histogramChartDatapoint).toBeUndefined()
     context.onHeatmapSelect(BASE_NS + 500n)
     expect(context.selectionSource).toBe('chart')
     context.onHeatmapSelect(BASE_NS + 500n)
@@ -682,7 +945,7 @@ describe('HistogramChart keyboard model', () => {
     await tick()
 
     const surface = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+      name: 'Histogram distribution chart',
     })
     await fireEvent.focus(surface)
     await fireEvent.keyDown(surface, { key: 'Escape' })
@@ -691,6 +954,118 @@ describe('HistogramChart keyboard model', () => {
     expect(context.selectedDatapointID).toBe(datapoint.id)
     expect(context.heatmapColumnStartNs).toBeNull()
     expect(context.selectionSource).toBe('detail')
+  })
+})
+
+describe('histogram source contributions', () => {
+  it.each(['heatmap', 'histogram'] as const)(
+    'highlights activity on the existing %s and clears on repeat selection',
+    async chart => {
+      const source = histogramDatapoint('source', [1, 2], [40, 30, 20])
+      const aggregate = histogramDatapoint('aggregate', [1, 2], [10, 12, 8])
+      aggregate.quantiles = { '0.5': 1.5 }
+      const metric = metricWithDatapoints('Histogram', [source])
+      const point: HistogramSlicePoint = {
+        kind: 'histogram',
+        timestamp: BASE_NS,
+        seriesRef: '',
+        bounds: [1, 2],
+        counts: [2, 0, 3],
+        quantiles: { '0.5': 1.5 },
+        totals: { count: 5, sum: undefined, min: undefined, max: undefined },
+      }
+      let ctx!: MetricViewContext
+      render(MetricChartHarness, {
+        props: {
+          component: chart === 'heatmap' ? HistogramHeatmap : HistogramChart,
+          componentProps:
+            chart === 'heatmap'
+              ? {
+                  points: [
+                    {
+                      ...point,
+                      counts: [10, 12, 8],
+                      totals: { ...point.totals, count: 30 },
+                    },
+                  ],
+                }
+              : { datapoint: histogramDatapointToChartDatapoint(aggregate) },
+          metric,
+          contribution: { datapointID: source.id, point },
+          oncontext: context => {
+            ctx = context
+          },
+        },
+      })
+      ctx.onDatapointClick(source)
+      await tick()
+      expect(
+        [...document.querySelectorAll('[data-contribution-count]')].map(e =>
+          e.getAttribute('data-contribution-count')
+        )
+      ).toEqual(['2', '3'])
+      expect(
+        screen.queryByRole('status', { name: 'Datapoint contribution' })
+      ).toBeNull()
+      const contributionLayer = document.querySelector(
+        chart === 'heatmap'
+          ? '.heatmap-contributions'
+          : '.histogram-contributions'
+      )!
+      const quantile = document.querySelector(
+        chart === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-marker'
+      )!
+      expect(quantile).not.toBeNull()
+      // Heatmap quantiles cross filled cells and must paint above contribution
+      // textures (also covered by the browser intersection test). Histogram
+      // contributions retain their existing layer above vertical quantile guides.
+      expect(
+        quantile.compareDocumentPosition(contributionLayer) &
+          (chart === 'heatmap'
+            ? Node.DOCUMENT_POSITION_PRECEDING
+            : Node.DOCUMENT_POSITION_FOLLOWING)
+      ).not.toBe(0)
+      const textures = contributionLayer.querySelectorAll('[fill^="url(#"]')
+      expect(textures.length).toBeGreaterThan(0)
+      for (const texture of textures) {
+        const id = texture.getAttribute('fill')!.slice(5, -1)
+        expect(document.getElementById(id)?.tagName.toLowerCase()).toBe(
+          'pattern'
+        )
+      }
+      expect(ctx.selectedDatapoint).toMatchObject({ count: 90n })
+      ctx.onDatapointClick(source)
+      await tick()
+      expect(
+        document.querySelectorAll('[data-contribution-count]')
+      ).toHaveLength(0)
+      expect(screen.queryByText('Selected contribution:')).toBeNull()
+      expect(ctx.selectedDatapointID).toBeNull()
+    }
+  )
+
+  it('does not display stale or unchecked source contributions', async () => {
+    const source = histogramDatapoint('source', [], [5])
+    const other = histogramDatapoint('other', [], [8])
+    let ctx!: MetricViewContext
+    render(MetricChartHarness, {
+      props: {
+        component: HistogramHeatmap,
+        componentProps: { points: [] },
+        metric: metricWithDatapoints('Histogram', [source, other]),
+        contribution: { datapointID: source.id, point: null },
+        oncontext: context => {
+          ctx = context
+        },
+      },
+    })
+    ctx.onDatapointClick(source)
+    expect(ctx.histogramContribution?.point).toBeNull()
+    ctx.onDatapointClick(other)
+    expect(ctx.histogramContribution).toBeNull()
+    ctx.onDatapointClick(source)
+    ctx.toggleTimeseriesVisible('series-a', false)
+    expect(ctx.histogramContribution).toBeNull()
   })
 })
 
@@ -716,7 +1091,7 @@ describe('HistogramHeatmap keyboard model', () => {
       label => label.textContent
     )
     expect(labels).toEqual(
-      expect.arrayContaining(['22:13:20', '>2.00', '(1.00, 2.00]', '≤1.00'])
+      expect.arrayContaining(['22:13:20', '>2', '(1, 2]', '≤1'])
     )
   })
 
@@ -820,16 +1195,23 @@ describe('HistogramHeatmap keyboard model', () => {
     })
 
     await fireEvent.focus(surface)
-    expect(readout()).toContain('Row 1 of 4, bucket >1.00. Count 0.')
+    expect(readout()).toContain('Row 1 of 4, bucket >1.003. Count 0.')
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })
-    expect(readout()).toContain('Row 2 of 4, bucket (1.00, 1.00]. Count 0.')
+    expect(readout()).toContain('Row 2 of 4, bucket (1.002, 1.003]. Count 0.')
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })
-    expect(readout()).toContain('Row 3 of 4, bucket (1.00, 1.00]. Count 0.')
+    expect(readout()).toContain('Row 3 of 4, bucket (1.001, 1.002]. Count 0.')
+    await fireEvent.keyDown(surface, { key: 'ArrowDown' })
+    expect(readout()).toContain('Row 4 of 4, bucket ≤1.001. Count 5.')
+    await fireEvent.keyDown(surface, { key: 'ArrowUp' })
     await fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    expect(readout()).toContain('Row 3 of 4, bucket (1.001, 1.002]. Count 0.')
     await fireEvent.keyDown(surface, { key: 'Home' })
     expect(readout()).toContain('Column 1 of 2')
     await fireEvent.keyDown(surface, { key: 'End' })
     expect(readout()).toContain('Column 2 of 2')
+    await fireEvent.keyDown(surface, { key: 'ArrowUp' })
+    await fireEvent.keyDown(surface, { key: 'ArrowUp' })
+    expect(readout()).toContain('Row 1 of 4, bucket >1.003. Count 7.')
     await fireEvent.keyDown(surface, { key: 'Enter' })
     expect(onSelect).toHaveBeenLastCalledWith(points[1]!.timestamp)
   })

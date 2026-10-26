@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'svelte'
 import LogCard from './LogCard.svelte'
 import type { LogSummary } from '@/types/api-types'
-import { formatTimestampParts } from '@/utils/time'
+import { formatRelativeTime, formatTimestampParts } from '@/utils/time'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeLog(overrides: Partial<LogSummary> = {}): LogSummary {
@@ -41,9 +41,20 @@ describe('LogCard', () => {
     expect(screen.getByText('Failed to charge card')).toBeInTheDocument()
   })
 
-  it('renders the severity text and number in the badge', () => {
+  it('renders the severity text and number beside its status dot', () => {
     renderCard({ log: makeLog({ severityText: 'ERROR', severityNumber: 17 }) })
     expect(screen.getByText('ERROR (17)')).toBeInTheDocument()
+    expect(screen.queryByText('Log', { exact: true })).toBeNull()
+  })
+
+  it('shows log provenance beside the service and keeps severity separate', () => {
+    const { container } = renderCard({ log: makeLog(), showLogBadge: true })
+    expect(container.querySelector('.signal-row__badge')).toHaveTextContent(
+      'ERROR (17)'
+    )
+    expect(container.querySelector('.signal-row__title')).toHaveTextContent(
+      /^checkout-service · Log$/
+    )
   })
 
   it('falls back to the severity band label when severity text is empty', () => {
@@ -51,15 +62,41 @@ describe('LogCard', () => {
     expect(screen.getByText('DEBUG (5)')).toBeInTheDocument()
   })
 
-  it('renders the formatted timestamp', () => {
+  it('places relative recorded time after the body preview with the exact timestamp on hover', () => {
     const log = makeLog()
     renderCard({ log })
     const timestampParts = formatTimestampParts(
       log.timestamp,
       'local',
-      'milliseconds'
+      'nanoseconds'
     )
-    expect(screen.getByText(timestampParts.value)).toBeInTheDocument()
+    const relative = formatRelativeTime(
+      log.timestamp,
+      BigInt(Date.now()) * 1_000_000n
+    )
+    expect(screen.getByText(relative)).toBeInTheDocument()
+    const date = document.querySelector('.signal-date')
+    expect(date).toHaveTextContent(`Recorded: ${relative}`)
+    expect(date).toHaveAttribute(
+      'title',
+      `Recorded: ${timestampParts.value} ${timestampParts.unit}`
+    )
+    expect(date).not.toHaveTextContent(timestampParts.unit)
+    expect(timestampParts.value).toContain('.123456789')
+    expect(
+      document.querySelector('.signal-row__body')?.lastElementChild
+    ).toContainElement(date as HTMLElement)
+  })
+
+  it('shows an associated offset as Subtle text beside relative recorded time', () => {
+    const log = makeLog()
+    renderCard({ log, offset: '+500.000 ms' })
+    const offset = screen.getByText('(+500.000 ms)', { exact: true })
+    expect(offset).toHaveClass('text-subtle')
+    expect(offset.closest('.signal-date')).toHaveTextContent(
+      `${formatRelativeTime(log.timestamp, BigInt(Date.now()) * 1_000_000n)} (+500.000 ms)`
+    )
+    expect(screen.getByRole('button')).toContainElement(offset)
   })
 
   it('reflects the selected prop via aria-pressed', () => {

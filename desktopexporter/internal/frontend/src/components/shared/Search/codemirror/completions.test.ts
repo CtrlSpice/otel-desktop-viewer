@@ -61,8 +61,8 @@ describe('case-distinct attribute completions', () => {
     expect(result?.options.map(option => [option.label, option.apply])).toEqual(
       [
         ['ENV', 'attr(event, "ENV", int64) '],
-        ['env', 'attr(resource, "env", string) '],
         ['Env', 'attr(span, "Env", bool) '],
+        ['env', 'attr(resource, "env", string) '],
       ]
     )
   })

@@ -17,9 +17,9 @@
 </script>
 
 <div
-  class="flex items-baseline gap-1.5 py-1.5 text-xs text-rp-subtle {className}"
+  class="flex items-center gap-2 text-xs leading-normal text-subtle {className}"
   aria-label="Log timestamp"
 >
-  <span class="text-xs text-rp-subtle">timestamp:</span>
+  <span class="text-xs text-subtle">timestamp:</span>
   <span class="tabular-nums text-base-content">{timestampLabel}</span>
 </div>

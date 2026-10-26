@@ -1,23 +1,27 @@
 <script lang="ts">
   /*
-   * Keys remain fully readable. Values clamp to three measured lines and use a
-   * separate button so text selection and copying still work.
+   * Keep values up to three lines whole. Longer values use two native-clamped
+   * lines and a separate disclosure so text selection and copying still work.
    */
   import type { Snippet } from 'svelte'
 
   type Props = {
     /** The key, rendered by the caller so each signal keeps its own markup. */
-    keyLabel: Snippet
+    keyLabel?: Snippet
     value: string
+    /** Rich field content. The value remains its identity for expansion reset. */
+    children?: Snippet
     /** Extra classes for the value (tabular-nums, font-mono, ...). */
     valueClass?: string
   }
 
-  let { keyLabel, value, valueClass = '' }: Props = $props()
+  let { keyLabel, value, children, valueClass = '' }: Props = $props()
+  const contentID = $props.id()
 
   let expanded = $state(false)
   let clipped = $state(false)
   let el = $state<HTMLElement | null>(null)
+  let content = $state<HTMLElement | null>(null)
 
   // Clicking between spans should not leave a field open from the previous
   // one: the same field on the next span is a different question.
@@ -30,35 +34,59 @@
   // on the width the value ends up with, which the string cannot know. The
   // observer keeps it honest as the pane is dragged.
   $effect(() => {
+    void value
     const node = el
     if (!node) return
     const measure = () => {
       if (expanded) return
-      clipped = node.scrollHeight > node.clientHeight + 1
+      const lineHeight = Number.parseFloat(getComputedStyle(node).lineHeight)
+      clipped = node.scrollHeight > lineHeight * 3 + 1
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(node)
-    return () => ro.disconnect()
+    const mutations = new MutationObserver(measure)
+    if (content)
+      mutations.observe(content, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      })
+    return () => {
+      ro.disconnect()
+      mutations.disconnect()
+    }
   })
 </script>
 
-<span class="detail-pair">
-  {@render keyLabel()}
-  <span
+<div class="detail-pair">
+  {@render keyLabel?.()}
+  <div
+    id={contentID}
     bind:this={el}
     class="detail-pair__value {valueClass}"
-    class:detail-pair__value--clamped={!expanded}>{value}</span
+    class:detail-pair__value--clamped={!expanded}
+    style:--preview-lines={clipped ? 2 : 3}
+    onfocusin={() => {
+      if (clipped) expanded = true
+    }}
   >
+    {#if children}<div class="detail-pair__content" bind:this={content}>
+        {@render children()}
+      </div>{:else}{value}{/if}
+  </div>
   {#if clipped}
-    <button
-      type="button"
-      class="detail-pair__toggle"
-      onclick={() => (expanded = !expanded)}
-      aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
-    >
+    <div class="detail-pair__disclosure">
+      <button
+        type="button"
+        class="detail-pair__toggle"
+        onclick={() => (expanded = !expanded)}
+        aria-controls={contentID}
+        aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
+      >
+    </div>
   {/if}
-</span>
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
@@ -75,8 +103,18 @@
   .detail-pair__value--clamped {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: var(--preview-lines);
     overflow: hidden;
+  }
+
+  .detail-pair__content {
+    display: contents;
+  }
+
+  .detail-pair__disclosure {
+    @apply flex items-baseline gap-1;
+    white-space: normal;
+    color: var(--color-subtle);
   }
 
   .detail-pair__toggle {

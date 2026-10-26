@@ -10,9 +10,17 @@ vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
 afterEach(() => vi.resetAllMocks())
 
 describe('ExportButton', () => {
+  it('uses the shared icon-only control with an accessible download name', () => {
+    render(ExportButton, { signal: 'log', id: 'log-id' })
+    const button = screen.getByRole('button', { name: 'Download log' })
+    expect(button).toHaveClass('header-icon-button')
+    expect(button).toHaveAttribute('data-tip', 'Download log')
+    expect(button.textContent?.trim()).toBe('')
+    expect(button.querySelector('svg')).not.toBeNull()
+  })
   it('does not export without a selected identifier', async () => {
     render(ExportButton, { signal: 'trace', id: '' })
-    const trigger = screen.getByRole('button', { name: 'Export trace' })
+    const trigger = screen.getByRole('button', { name: 'Download trace' })
     expect(trigger).toBeDisabled()
     await userEvent.click(trigger)
     expect(downloadOTLP).not.toHaveBeenCalled()
@@ -21,7 +29,7 @@ describe('ExportButton', () => {
   it('downloads JSON with one click and keeps keyboard focus', async () => {
     vi.mocked(downloadOTLP).mockResolvedValue()
     render(ExportButton, { signal: 'trace', id: 'trace-id' })
-    const trigger = screen.getByRole('button', { name: 'Export trace' })
+    const trigger = screen.getByRole('button', { name: 'Download trace' })
     await userEvent.click(trigger)
     await waitFor(() =>
       expect(downloadOTLP).toHaveBeenCalledWith(
@@ -41,7 +49,7 @@ describe('ExportButton', () => {
       new Error('export record not found')
     )
     render(ExportButton, { signal: 'log', id: 'log-id' })
-    const trigger = screen.getByRole('button', { name: 'Export log' })
+    const trigger = screen.getByRole('button', { name: 'Download log' })
     await userEvent.click(trigger)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'export record not found'
@@ -62,7 +70,7 @@ describe('ExportButton', () => {
         })
     )
     const view = render(ExportButton, { signal: 'metric', id: 'metric-id' })
-    const trigger = screen.getByRole('button', { name: 'Export metric' })
+    const trigger = screen.getByRole('button', { name: 'Download metric' })
     await userEvent.click(trigger)
     expect(trigger).toHaveAttribute('aria-disabled', 'true')
     expect(trigger).toBeEnabled()

@@ -1,7 +1,9 @@
-import { heatmapSwatches } from '@/utils/chart-palette'
+import { countSwatches } from '@/utils/chart-palette'
+import type { HistogramChartDataPoint } from './histogram-aggregation'
+import { formatMetricCount } from './format-metric-value'
 
 const MIN_STEPS = 1
-const MAX_STEPS = 8
+const MAX_STEPS = 12
 
 export type HeatmapLegendEntry = {
   key: string
@@ -17,7 +19,7 @@ export type HeatmapColorScale = {
   legendEntries: HeatmapLegendEntry[]
 }
 
-/** Match distinct non-zero count values to a ramp length in [1, 8]. */
+/** Match distinct non-zero count values to a ramp length in [1, 12]. */
 export function adaptiveStepCount(distinctCounts: number): number {
   if (!Number.isFinite(distinctCounts) || distinctCounts < MIN_STEPS) {
     return MIN_STEPS
@@ -26,7 +28,7 @@ export function adaptiveStepCount(distinctCounts: number): number {
   return Math.floor(distinctCounts)
 }
 
-/** scaleThreshold domain for positive heatmap counts (first edge is always 1). */
+/** Equal-width integer bands below a separate maximum-count band. */
 export function heatmapCountThresholds(
   maxCount: number,
   swatchSteps: number
@@ -35,13 +37,13 @@ export function heatmapCountThresholds(
   if (!Number.isInteger(swatchSteps) || swatchSteps >= 2 ** 32) {
     throw new RangeError('swatchSteps must be a valid array length')
   }
-  let previous = 1
-  const out = [previous]
-  for (let i = 1; i < swatchSteps; i++) {
-    const next = Math.ceil((i * maxCount) / swatchSteps)
-    previous = next <= previous ? previous + 1 : next
-    out.push(previous)
+  if (swatchSteps === 1) return [maxCount]
+  const width = Math.ceil((maxCount - 1) / Math.min(swatchSteps, MAX_STEPS - 1))
+  const out: number[] = []
+  for (let lower = 1; lower < maxCount; lower += width) {
+    out.push(lower)
   }
+  out.push(maxCount)
   return out
 }
 
@@ -51,20 +53,21 @@ function heatmapLegendLabel(
   maxCount: number,
   thresholds: number[]
 ): string {
-  const lo = bandIndex === 0 ? 1 : Math.ceil(thresholds[bandIndex]!)
+  const lo = Math.ceil(thresholds[bandIndex]!)
   const hi =
     bandIndex === swatchSteps - 1
       ? maxCount
       : Math.floor(thresholds[bandIndex + 1]! - 1e-9)
-  const close = bandIndex === swatchSteps - 1 ? ']' : ')'
-  return `(${lo}\u2009–\u2009${hi}${close}`
+  return lo === hi
+    ? formatMetricCount(lo)
+    : `${formatMetricCount(lo)}\u2009–\u2009${formatMetricCount(hi)}`
 }
 
-/** Shared count ramp for heatmap cells and footer legend swatches. */
+/** Shared count ramp for heatmap cells and legend swatches. */
 export function computeHeatmapColorScale(opts: {
   maxCount: number
   distinctNonZeroCount: number
-  theme: string
+  theme?: string
   emptySwatch?: string
 }): HeatmapColorScale {
   const emptySwatch = opts.emptySwatch ?? 'var(--color-base-200)'
@@ -78,12 +81,13 @@ export function computeHeatmapColorScale(opts: {
     }
   }
 
-  const swatchSteps = Math.min(
+  const targetSteps = Math.min(
     adaptiveStepCount(opts.distinctNonZeroCount),
     Math.floor(opts.maxCount)
   )
-  const thresholds = heatmapCountThresholds(opts.maxCount, swatchSteps)
-  const swatches = heatmapSwatches(swatchSteps, opts.theme)
+  const thresholds = heatmapCountThresholds(opts.maxCount, targetSteps)
+  const swatchSteps = thresholds.length
+  const swatches = countSwatches(swatchSteps, opts.theme)
   const range = [emptySwatch, ...swatches]
 
   const legendEntries: HeatmapLegendEntry[] = []
@@ -97,4 +101,24 @@ export function computeHeatmapColorScale(opts: {
   }
 
   return { swatchSteps, thresholds, swatches, range, legendEntries }
+}
+
+/** One count scale shared by distribution bars and their legend. */
+export function computeHistogramBarColorScale(
+  datapoint: HistogramChartDataPoint,
+  theme: string
+): HeatmapColorScale {
+  const counts =
+    datapoint.metricType === 'Histogram'
+      ? datapoint.bucketCounts
+      : [
+          datapoint.zeroCount,
+          ...datapoint.negativeBucketCounts,
+          ...datapoint.positiveBucketCounts,
+        ]
+  return computeHeatmapColorScale({
+    maxCount: counts.reduce((max, count) => Math.max(max, count), 0),
+    distinctNonZeroCount: new Set(counts.filter(count => count > 0)).size,
+    theme,
+  })
 }

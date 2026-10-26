@@ -1,32 +1,13 @@
 <script module lang="ts">
   import { EditorView } from '@codemirror/view'
-  import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-  import { tags as t } from '@lezer/highlight'
+  import { syntaxHighlighting } from '@codemirror/language'
   import { editorColors as c } from '@/components/shared/utils/editor-colors'
+  import { editorHighlightStyle } from '@/components/shared/utils/editor-highlighting'
 
   // Share the CodeMirror theme across component instances.
-  const shellColors = {
-    subtle: `var(--readonly-code-subtle, ${c.subtle})`,
-    gold: `var(--readonly-code-gold, ${c.gold})`,
-    rose: `var(--readonly-code-rose, ${c.rose})`,
-    foam: `var(--readonly-code-foam, ${c.foam})`,
-    iris: `var(--readonly-code-iris, ${c.iris})`,
-  }
-
-  const shellHighlightStyle = HighlightStyle.define([
-    { tag: t.comment, color: shellColors.subtle, fontStyle: 'italic' },
-    { tag: t.string, color: shellColors.gold },
-    { tag: t.number, color: shellColors.rose },
-    { tag: t.variableName, color: shellColors.foam },
-    { tag: t.keyword, color: shellColors.iris },
-    { tag: t.operator, color: shellColors.subtle },
-    { tag: t.meta, color: shellColors.subtle },
-    { tag: t.name, color: c.text },
-  ])
-
   const readonlyCodeEditorTheme = EditorView.theme({
     '&': {
-      fontSize: '13px',
+      fontSize: 'var(--text-base)',
       fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
       backgroundColor: c.base,
       color: c.text,
@@ -37,6 +18,7 @@
     '.cm-scroller': {
       overflow: 'auto',
       fontFamily: 'inherit',
+      lineHeight: 'var(--text-base--line-height)',
     },
     '.cm-content': {
       padding: '0.75rem 1rem 1rem',
@@ -46,11 +28,10 @@
       display: 'none',
     },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-      backgroundColor: `${c.overlay} !important`,
+      backgroundColor: `${c.highlightMed} !important`,
     },
     '.cm-activeLine': {
-      backgroundColor:
-        'color-mix(in oklab, var(--color-base-300) 35%, transparent)',
+      backgroundColor: c.activeLine,
     },
     '.cm-gutters': {
       display: 'none',
@@ -59,15 +40,14 @@
 
   const readonlyCodeTheme = [
     readonlyCodeEditorTheme,
-    syntaxHighlighting(shellHighlightStyle),
+    syntaxHighlighting(editorHighlightStyle),
   ]
 </script>
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import { EditorState } from '@codemirror/state'
-  import { StreamLanguage } from '@codemirror/language'
-  import { shell } from '@codemirror/legacy-modes/mode/shell'
+  import { shellLanguage } from './utils/shell-highlighting'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckmarkCircle02Icon, Copy01Icon } from '@hugeicons/core-free-icons'
 
@@ -80,6 +60,10 @@
     copyLabel?: string
     /** Flush inside a parent chrome card (no border/radius on the panel). */
     embedded?: boolean
+    /** Editor only: the caller supplies its surrounding layout and Copy action. */
+    bare?: boolean
+    /** Disable soft wrapping for shell snippets with deliberate line breaks. */
+    wrap?: boolean
   }
 
   let {
@@ -88,13 +72,13 @@
     class: className = '',
     copyLabel = 'Copy to clipboard',
     embedded = false,
+    bare = false,
+    wrap = true,
   }: Props = $props()
 
   let mountEl: HTMLDivElement | undefined = $state()
   let editorView: EditorView | null = null
   let copied = $state(false)
-
-  const shellLanguage = StreamLanguage.define(shell)
 
   onMount(() => {
     if (!mountEl) return
@@ -107,7 +91,16 @@
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
-          EditorView.lineWrapping,
+          ...(wrap ? [EditorView.lineWrapping] : []),
+          ...(bare
+            ? [
+                EditorView.theme({
+                  '&': { backgroundColor: 'transparent' },
+                  '.cm-content': { padding: '0' },
+                  '.cm-line': { padding: '0' },
+                }),
+              ]
+            : []),
           ...readonlyCodeTheme,
         ],
       }),
@@ -143,12 +136,14 @@
   }
 </script>
 
-<div
-  class="readonly-code-panel {className}"
-  class:readonly-code-panel--embedded={embedded}
->
-  {#if !embedded}
-    <div class="readonly-code-panel__toolbar">
+{#if bare}
+  <div bind:this={mountEl}></div>
+{:else}
+  <div
+    class="readonly-code-panel {className}"
+    class:readonly-code-panel--embedded={embedded}
+  >
+    {#if !embedded}
       <button
         type="button"
         class="readonly-code-panel__copy drawer-header-btn tooltip tooltip-left"
@@ -174,51 +169,23 @@
           />
         {/if}
       </button>
-    </div>
-  {/if}
-  <div class="readonly-code-panel__editor" bind:this={mountEl}></div>
-</div>
+    {/if}
+    <div class="readonly-code-panel__editor" bind:this={mountEl}></div>
+  </div>
+{/if}
 
 <style lang="postcss">
   @reference "../../app.css";
 
   .readonly-code-panel {
-    @apply relative w-full overflow-hidden rounded-xl border border-base-300 bg-base-100;
-  }
-
-  /* Rosé Pine Dawn's display accents are too light for 13px code on Base.
-     These stay in the same hue families while clearing AA for small text. */
-  :global(html[data-theme='rose-pine-dawn']) .readonly-code-panel {
-    --readonly-code-subtle: var(--color-base-content);
-    --readonly-code-gold: #6d4f00;
-    --readonly-code-rose: #8f435b;
-    --readonly-code-foam: var(--color-secondary);
-    --readonly-code-iris: #6e577f;
+    @apply relative w-full overflow-hidden rounded-xl border-0 bg-base-100;
   }
 
   .readonly-code-panel--embedded {
-    @apply rounded-none rounded-b-xl border-0;
-  }
-
-  .readonly-code-panel__toolbar {
-    @apply pointer-events-none absolute right-0 top-0 z-10 flex justify-end p-1.5;
+    @apply rounded-none rounded-b-xl;
   }
 
   .readonly-code-panel__copy {
-    @apply pointer-events-auto;
-  }
-
-  .readonly-code-panel__editor {
-    @apply block min-h-0 w-full border-none bg-base-100 px-0 py-0 shadow-none;
-    height: auto;
-    min-height: 0;
-  }
-
-  .readonly-code-panel__editor :global(.cm-editor) {
-    @apply bg-base-100;
-  }
-
-  .readonly-code-panel__editor :global(.cm-editor.cm-focused) {
-    outline: none;
+    @apply absolute right-1.5 top-1.5 z-10;
   }
 </style>

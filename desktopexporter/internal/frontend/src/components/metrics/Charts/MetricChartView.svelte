@@ -1,7 +1,7 @@
 <script lang="ts">
   /*
    * MetricChartView is the "main" pane on the metrics page. It owns
-   * the chart surface (histogram views, time-series chart, or an
+   * the chart surface (combined histogram/quantile views, time-series chart, or an
    * unspecified-temporality callout). Histogram view tabs live in the
    * metrics page PaneHeader, same as Gauge/Sum aggregation tabs.
    *
@@ -16,60 +16,19 @@
     getMetricViewContext,
     type BucketSeriesError,
   } from '@/contexts/metric-view-context.svelte'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
-  import MetricQuantileAreaChart from '@/components/metrics/Charts/MetricQuantileAreaChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
   import HistogramHeatmap from '@/components/metrics/Charts/HistogramHeatmap.svelte'
+  import HistogramCountLegend from '@/components/metrics/Charts/HistogramCountLegend.svelte'
   import UnspecifiedTemporalityCallout from '@/components/metrics/Detail/UnspecifiedTemporalityCallout.svelte'
   import {
     DEFAULT_METRIC_CHART_HEIGHT,
     MIN_METRIC_CHART_HEIGHT,
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
-  import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
-  import HistogramQuantileControlBar from '@/components/metrics/Charts/HistogramQuantileControlBar.svelte'
-  import HistogramHeatmapControlBar from '@/components/metrics/Charts/HistogramHeatmapControlBar.svelte'
-  import HistogramChartControlBar from '@/components/metrics/Charts/HistogramChartControlBar.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
-  import { formatDateTime } from '@/utils/time'
-  import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
 
   const ctx = getMetricViewContext()
-  const timeContext = getTimeContext()
-
-  let activeQuantileKeys = $derived(
-    QUANTILE_LABELS.map(q => q.key).filter(k =>
-      ctx.activeQuantileOverlays.has(k)
-    )
-  )
-
-  let histogramBucketTimestamp = $derived.by((): string => {
-    if (ctx.histogramScope !== 'bucket') return ''
-    const dp = ctx.histogramChartDatapoint
-    if (!dp) return ''
-    return formatDateTime(
-      Number(dp.timestamp / 1_000_000n),
-      timeContext.tz,
-      'milliseconds'
-    )
-  })
-
-  let histogramEmptyMessage = $derived.by((): string => {
-    if (ctx.histogramScope === 'bucket') {
-      return 'Select a datapoint'
-    }
-    return 'No aggregate in range'
-  })
-
-  let quantileEmptyMessage = $derived.by((): string => {
-    if (ctx.bucketSeriesError) return 'Cannot chart quantiles for this metric'
-    if (ctx.histogramTimeseriesCount === 0) return 'No datapoints to chart'
-    if (ctx.visibleSeries.size === 0) {
-      return 'Nothing to see here — select a timeseries below'
-    }
-    return 'No quantile data in range'
-  })
 
   /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
   let plotHostHeight = $state(0)
@@ -79,6 +38,23 @@
       ? Math.max(MIN_METRIC_CHART_HEIGHT, Math.floor(plotHostHeight))
       : DEFAULT_METRIC_CHART_HEIGHT
   )
+
+  function histogramEmptyMessage(hasIntervals: boolean) {
+    if (ctx.visibleSeries.size === 0)
+      return 'Nothing to see here — select a timeseries below'
+    const hasReadings = ctx.metric?.timeseries.some(
+      series =>
+        ctx.visibleSeries.has(series.seriesRef) && series.datapointCount > 0
+    )
+    if (ctx.temporalityCode === 2 && hasReadings) {
+      return hasIntervals
+        ? 'No interval observations in this range. Cumulative charts show changes between readings; recorded totals are available in Details.'
+        : 'Not enough cumulative readings to calculate interval activity. Recorded totals are available in Details.'
+    }
+    return hasIntervals
+      ? 'No observations in this range'
+      : 'No bucket data in range'
+  }
 </script>
 
 {#snippet bucketSeriesErrorMessage(err: BucketSeriesError)}
@@ -97,6 +73,7 @@
 
 {#snippet histogramChartSlot()}
   <div class="metric-chart-view metric-chart-view--fill">
+    <HistogramCountLegend />
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
@@ -106,10 +83,10 @@
           {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
         {:else if ctx.heatmapBucketSeries === null}
           <div class="metric-chart-view__placeholder">No histogram data</div>
-        {:else if ctx.heatmapBucketSeries.length === 0}
+        {:else if ctx.heatmapBucketSeries.length === 0 || ctx.heatmapBucketSeries.every(point => point.totals.count === 0)}
           <MetricChartEmpty
             height={plotHeight}
-            message="No bucket data in range"
+            message={histogramEmptyMessage(ctx.heatmapBucketSeries.length > 0)}
           />
         {:else}
           <HistogramHeatmap
@@ -123,57 +100,26 @@
             selectedTimestamp={ctx.heatmapColumnStartNs}
           />
         {/if}
-      {:else if ctx.activeHistogramTab === 'quantiles'}
-        {#if ctx.bucketSeriesError}
-          {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
-        {:else if ctx.quantileChartTimeseries.length === 0}
-          <MetricChartEmpty
-            height={plotHeight}
-            message={quantileEmptyMessage}
-          />
-        {:else}
-          <MetricQuantileAreaChart
-            timeseries={ctx.quantileChartTimeseries}
-            {activeQuantileKeys}
-            unit={ctx.metric!.unit}
-            height={plotHeight}
-            timeRange={ctx.chartDataTimeRange ?? null}
-            colorByKey={ctx.timeseriesColorByKey}
-            onChartPointClick={ctx.onQuantileChartPointClick}
-            onClearSelection={ctx.clearChartSelection}
-            emptyMessage={quantileEmptyMessage}
-          />
-        {/if}
       {:else if ctx.activeHistogramTab === 'histogram'}
         {#if ctx.histogramChartError}
           {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
-        {:else if !ctx.histogramChartDatapoint}
+        {:else if !ctx.histogramChartDatapoint || ctx.histogramChartDatapoint.count === 0}
           <MetricChartEmpty
             height={plotHeight}
-            message={histogramEmptyMessage}
+            message={histogramEmptyMessage(
+              Boolean(ctx.histogramChartDatapoint)
+            )}
           />
         {:else}
           <HistogramChart
             datapoint={ctx.histogramChartDatapoint}
             unit={ctx.metric!.unit}
             height={plotHeight}
-            timeRange={ctx.histogramScope === 'window'
-              ? (ctx.chartDataTimeRange ?? null)
-              : null}
-            selectionTimestamp={histogramBucketTimestamp}
-            enableValueBucketPin={ctx.histogramScope === 'window'}
             onClearSelection={ctx.clearChartSelection}
           />
         {/if}
       {/if}
     </div>
-    {#if ctx.activeHistogramTab === 'quantiles'}
-      <HistogramQuantileControlBar />
-    {:else if ctx.activeHistogramTab === 'heatmap'}
-      <HistogramHeatmapControlBar />
-    {:else if ctx.activeHistogramTab === 'histogram'}
-      <HistogramChartControlBar />
-    {/if}
   </div>
 {/snippet}
 
@@ -196,14 +142,15 @@
         highlightedTimestamp={ctx.highlightedTimestamp}
         highlightedPointID={ctx.selectedDatapointID}
         selectedSeriesKey={ctx.selectedSeriesKey}
+        previewSeriesKey={ctx.previewSeriesKey}
         unit={ctx.metric!.unit}
         height={plotHeight}
         colorByKey={ctx.timeseriesColorByKey}
         aggregationView={ctx.aggregationView}
         showStatOverlays={ctx.showSelectionStatOverlays}
-        selectedRateSlope={ctx.selectedRateSlope}
         timeRange={ctx.chartDataTimeRange ?? null}
         onChartPointClick={ctx.onChartPointClick}
+        onRateChartPointClick={ctx.onRateChartPointClick}
         onClearSelection={ctx.clearChartSelection}
         seriesStats={ctx.seriesStatsByKey}
         emptyMessage={ctx.gaugeSumSeriesKeys.length === 0
@@ -213,7 +160,6 @@
             : 'No datapoints in selected timeseries'}
       />
     </div>
-    <MetricChartControlBar />
   </div>
 {/snippet}
 

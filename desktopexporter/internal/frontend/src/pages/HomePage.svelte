@@ -1,6 +1,4 @@
 <script module lang="ts">
-  // The kind is stored, so it survives a frontend that has not been taught
-  // about a new one: fall back to the raw token rather than showing nothing.
   export function rejectionLabel(kind: string): string {
     switch (kind) {
       case 'span_already_stored':
@@ -14,541 +12,421 @@
 </script>
 
 <script lang="ts">
-  import { onMount, type Component, type Snippet } from 'svelte'
-  import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
-  import {
-    BarChartHorizontalIcon,
-    ChartHistogramIcon,
-    CheckmarkCircle02Icon,
-    Copy01Icon,
-  } from '@hugeicons/core-free-icons'
-  import { LogIcon } from '@/icons'
-  import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import LogField from '@/components/logs/LogField.svelte'
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import IngestionIssues from '@/components/shared/IngestionIssues.svelte'
-  import PaneHeader, {
-    paneTabID,
-    type PaneTab,
-  } from '@/components/shared/PaneHeader.svelte'
+  import DetailStack from '@/components/shared/DetailStack.svelte'
+  import DetailBubble from '@/components/shared/DetailBubble.svelte'
+  import DetailProperty from '@/components/shared/DetailProperty.svelte'
+  import IngestionIssues, {
+    INGESTION_ISSUES_ID,
+  } from '@/components/shared/IngestionIssues.svelte'
+  import HomeSidebar from '@/components/home/HomeSidebar.svelte'
+  import GettingStarted from '@/components/home/GettingStarted.svelte'
+  import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
+  import ServiceMap from '@/components/home/ServiceMap.svelte'
+  import ServiceConnectionDetails from '@/components/home/ServiceConnectionDetails.svelte'
+  import type { MapSelection } from '@/components/home/service-map'
+  import {
+    homeFields,
+    homeQueries,
+    queryText,
+  } from '@/components/home/home-search'
+  import { getStaticFieldsForSearch } from '@/constants/fields'
+  import { getDynamicAttributes } from '@/services/search-field-service'
+  import { parseQuery } from '@/components/shared/Search/queryParser'
+  import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import { readRoute, navigateCurrentRoute, subscribeToRoute } from '@/route'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import type { Stats } from '@/types/api-types'
+  import { detailPanel } from '@/state/detail-panel.svelte'
+  import {
+    SIGNAL_ORDER,
+    serviceIdentity,
+    discoverySignalHref,
+    type ServiceSummary,
+    type DiscoveryOptions,
+  } from '@/services/discovery-types'
+  import {
+    getTimeContext,
+    selectionToQueryRangeNs,
+  } from '@/contexts/time-context.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import luluImage from '@/assets/images/lulu.webp'
+  import type { Stats } from '@/types/api-types'
 
   let {
     importContent,
     importFailures = [],
-  }: {
-    importContent?: Snippet
-    importFailures?: readonly ImportFailure[]
-  } = $props()
-
-  const POLL_INTERVAL_MS = 5000
-
-  const OTLP_SNIPPETS = {
-    http: `$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
-$ export OTEL_TRACES_EXPORTER="otlp"
-$ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`,
-    grpc: `$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-$ export OTEL_TRACES_EXPORTER="otlp"
-$ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
-  } as const
-
-  type EndpointTab = keyof typeof OTLP_SNIPPETS
-
-  function isEndpointTab(id: string): id is EndpointTab {
-    return id in OTLP_SNIPPETS
-  }
-
-  const ENDPOINT_TABS: PaneTab[] = [
-    { id: 'http', label: 'HTTP' },
-    { id: 'grpc', label: 'gRPC' },
-  ]
-  const ENDPOINT_PANEL_ID = 'otlp-endpoint-panel'
-
+  }: { importContent?: Snippet; importFailures?: readonly ImportFailure[] } =
+    $props()
+  const time = getTimeContext()
+  const navigation = getNavigationCounts()
+  const signals = SIGNAL_ORDER
+  let fields = homeFields(signals.map(getStaticFieldsForSearch))
+  let fieldsReady = $state(false)
+  let queries = $state(homeQueries(null))
+  let pendingQueries = homeQueries(null)
+  let totalServices = $state<number>()
+  let alive = true
+  let initialized = false
+  let services = $state<ServiceSummary[]>([])
+  let mapSelection = $state<MapSelection | null>(null)
+  const inspectedService = $derived(
+    mapSelection?.kind === 'service' ? mapSelection.service : null
+  )
   let stats = $state<Stats | null>(null)
-  let endpointTab = $state<EndpointTab>('http')
-  let endpointCopied = $state(false)
-
-  async function copyEndpointSnippet() {
-    try {
-      await navigator.clipboard.writeText(OTLP_SNIPPETS[endpointTab])
-      endpointCopied = true
-      setTimeout(() => {
-        endpointCopied = false
-      }, 2000)
-    } catch (e) {
-      console.error('Failed to copy text:', e)
-    }
+  let statsError = $state('')
+  let error = $state('')
+  let loading = $state(false)
+  let draft = $state(readRoute().query.q ?? '')
+  let routeQuery = readRoute().query.q ?? ''
+  let term = $state('')
+  let offset = $state(0)
+  let more = $state(false)
+  let loaded = $state(false)
+  let revision = $state(0)
+  function inspect(selection: MapSelection) {
+    mapSelection = selection
+    detailPanel.setOpen(true)
   }
-
-  async function fetchStats() {
-    try {
-      stats = await telemetryAPI.getStats()
-    } catch (e) {
-      console.error('Failed to fetch stats:', e)
-    }
-  }
-
-  // Only ever a handful of entries -- the backend keys them by signal and
-  // kind, so a replay loop that refuses thousands of spans is still one row.
-  let rejections = $derived(stats?.rejections ?? [])
-
-  function formatRelativeTime(timestampNs: bigint | null | undefined): string {
-    if (timestampNs == null) return '-'
-    const ms = Number(timestampNs / 1_000_000n)
-    const seconds = Math.floor((Date.now() - ms) / 1000)
-    if (seconds < 5) return 'just now'
-    if (seconds < 60) return `${seconds}s ago`
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `${minutes}m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}h ago`
-    return `${Math.floor(hours / 24)}d ago`
-  }
-
-  onMount(() => {
-    fetchStats()
-    const pollTimer = setInterval(fetchStats, POLL_INTERVAL_MS)
-    return () => clearInterval(pollTimer)
+  let range = $state<Pick<DiscoveryOptions, 'startTime' | 'endTime'>>({
+    startTime: null,
+    endTime: null,
   })
+  const discoveryScope = $derived({ ...range, queries })
+  let request: AbortController | undefined
+  const rejections = $derived(stats?.rejections ?? [])
+  const issueCount = $derived(
+    importFailures.length +
+      rejections.reduce((sum, entry) => sum + entry.occurrences, 0)
+  )
+
+  async function load(pageOffset = 0, refresh = false) {
+    request?.abort()
+    const controller = new AbortController()
+    request = controller
+    let nextRange = range
+    if (refresh) {
+      const bounds = selectionToQueryRangeNs(time.selection, Date.now())
+      nextRange = {
+        startTime: bounds.startTime?.toString() ?? null,
+        endTime: bounds.endTime?.toString() ?? null,
+      }
+    }
+    const options = {
+      ...nextRange,
+      queries: pendingQueries,
+      offset: pageOffset,
+      limit: 100,
+    }
+    loading = true
+    error = ''
+    if (refresh) {
+      statsError = ''
+      void telemetryAPI
+        .getStats()
+        .then(value => {
+          if (!controller.signal.aborted) stats = value
+        })
+        .catch(reason => {
+          if (!controller.signal.aborted) statsError = String(reason)
+        })
+    }
+    try {
+      const page = await telemetryAPI.discoverServices(
+        options,
+        controller.signal
+      )
+      if (controller.signal.aborted) return
+      services =
+        pageOffset === 0
+          ? page.items
+          : [
+              ...new Map(
+                [...services, ...page.items].map(service => [
+                  serviceIdentity(service),
+                  service,
+                ])
+              ).values(),
+            ]
+      if (refresh || !loaded) {
+        range = nextRange
+        queries = options.queries
+      }
+      totalServices = page.totals?.home
+      navigation?.setHomeCounts(
+        page.totals ?? {},
+        {
+          traces: discoverySignalHref(
+            'traces',
+            range,
+            queryText(queries.traces)
+          ),
+          metrics: discoverySignalHref(
+            'metrics',
+            range,
+            queryText(queries.metrics)
+          ),
+          logs: discoverySignalHref('logs', range, queryText(queries.logs)),
+        },
+        term.trim().length > 0
+      )
+      more = page.truncated
+      offset = pageOffset
+      loaded = true
+      // Connection totals belong to the old discovery scope. Invalidate that
+      // inspection on successful refresh, retaining its source-service context.
+      const previousService =
+        inspectedService ??
+        (mapSelection?.kind === 'connection'
+          ? mapSelection.connection.source
+          : null)
+      if (previousService && refresh) {
+        const selected =
+          services.find(
+            service =>
+              serviceIdentity(service) === serviceIdentity(previousService)
+          ) ??
+          services[0] ??
+          null
+        mapSelection = selected ? { kind: 'service', service: selected } : null
+      } else if (!mapSelection && services[0]) {
+        mapSelection = { kind: 'service', service: services[0] }
+      }
+      if (refresh) {
+        revision++
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted) error = String(reason)
+    } finally {
+      if (!controller.signal.aborted) loading = false
+    }
+  }
+  function submit() {
+    try {
+      pendingQueries = homeQueries(parseQuery(draft, fields))
+      term = draft
+      routeQuery = draft
+      const route = readRoute()
+      if ((route.query.q ?? '') !== draft)
+        navigateCurrentRoute(
+          { ...route.query, q: draft || undefined },
+          'replace'
+        )
+      void load(0, true)
+    } catch (reason) {
+      error = reason instanceof Error ? reason.message : String(reason)
+    }
+  }
+  $effect(() => {
+    void time.selection
+    if (!fieldsReady) return
+    untrack(() => {
+      if (!initialized) {
+        initialized = true
+        submit()
+      } else void load(0, true)
+    })
+  })
+  onMount(() => {
+    void Promise.all(signals.map(getDynamicAttributes)).then(groups => {
+      if (!alive) return
+      fields = homeFields([fields, ...groups])
+      fieldsReady = true
+    })
+    return subscribeToRoute(() => {
+      const route = readRoute()
+      if (route.path !== '/') return
+      const next = route.query.q ?? ''
+      if (next === routeQuery) return
+      routeQuery = next
+      draft = next
+      if (fieldsReady) submit()
+    })
+  })
+  onDestroy(() => {
+    alive = false
+    request?.abort()
+    navigation?.setHomeCounts(null)
+  })
+  function relative(timestamp: bigint | null | undefined) {
+    if (timestamp == null) return 'Unavailable'
+    const minutes = Math.max(
+      0,
+      Math.floor((Date.now() - Number(timestamp / 1_000_000n)) / 60_000)
+    )
+    return minutes === 0 ? 'just now' : `${minutes}m ago`
+  }
+  function bytes(value: number) {
+    const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
+    let unit = 0
+    while (value >= 1000 && unit < units.length - 1) {
+      value /= 1000
+      unit++
+    }
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`
+  }
 </script>
 
-<div class="home-page">
-  <PageLayout
-    items={[]}
-    railOnly
-    selectedID={null}
-    drawerID="signal-drawer"
-    drawerLabel="Home"
-    resizableStorageKey="home-panels"
-    defaultMainWidth={0.58}
-    minDetailPx={280}
+{#snippet foundOn()}
+  <AttributeTelemetry
+    attribute={null}
+    service={inspectedService}
+    options={discoveryScope}
+    {revision}
+  />
+{/snippet}
+{#snippet connectionDetails()}
+  {#if mapSelection?.kind === 'connection'}
+    <ServiceConnectionDetails
+      connection={mapSelection.connection}
+      options={discoveryScope}
+      {revision}
+    />
+  {/if}
+{/snippet}
+{#snippet storage()}
+  <DetailBubble label="Storage" initialOpen={false}>
+    {#if statsError}<p class="px-3 text-papaya" role="alert">
+        {statsError}{stats ? ' · Showing the last successful reading.' : ''}
+      </p>{/if}
+    {#if stats?.storage}{@const stored = stats.storage}
+      <table class="detail-fields w-full" aria-label="Viewer storage">
+        <tbody>
+          <DetailProperty
+            fieldName="Database"
+            fieldType="string"
+            showType={false}
+            fieldValue={stored.inMemory === undefined
+              ? 'DuckDB'
+              : `DuckDB · ${stored.inMemory ? 'In memory' : 'On disk'}`}
+          />
+          <DetailProperty
+            fieldName="Database size"
+            fieldType="uint64"
+            showType={false}
+            fieldValue={String(stored.sizeBytes)}
+          >
+            {#snippet value()}<span
+                title={`${stored.sizeBytes.toLocaleString()} bytes`}
+                >{bytes(stored.sizeBytes)}</span
+              >{/snippet}
+          </DetailProperty>
+          <DetailProperty
+            fieldName="Retention limit"
+            fieldType="uint64"
+            showType={false}
+            fieldValue={String(stored.maxSizeBytes)}
+          >
+            {#snippet value()}<span
+                title={`${stored.maxSizeBytes.toLocaleString()} bytes`}
+                >{stored.maxSizeBytes === 0
+                  ? 'No size limit'
+                  : bytes(stored.maxSizeBytes)}</span
+              >{/snippet}
+          </DetailProperty>
+        </tbody>
+      </table>{:else}<p class="p-3 text-subtle">
+        Storage information unavailable.
+      </p>{/if}
+  </DetailBubble>
+{/snippet}
+{#snippet issues()}
+  <DetailBubble
+    label="Ingestion issues"
+    count={issueCount}
+    initialOpen={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   >
-    {#snippet main()}
-      <div class="home-page__main">
-        <header class="mb-6">
-          <div
-            class="flex flex-col items-center gap-8 text-center min-[1100px]:flex-row min-[1100px]:items-center min-[1100px]:gap-10 min-[1100px]:text-left"
-          >
-            <img
-              src={luluImage}
-              alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu the First, valiant adventurer and observability queen."
-              class="h-48 w-48 shrink-0 object-contain drop-shadow-sm min-[1100px]:h-64 min-[1100px]:w-64"
-            />
-            <div class="min-w-0 py-2">
-              <p
-                class="home-hero__eyebrow mb-2 text-xs font-semibold uppercase tracking-[0.12em]"
-              >
-                Local-first telemetry
-              </p>
-              <h1
-                class="mb-3 text-base font-semibold leading-tight tracking-tight text-base-content"
-              >
-                OpenTelemetry Desktop Viewer
-              </h1>
-              <p class="home-hero__lede max-w-xl text-base leading-relaxed">
-                Collect, visualize, and query your OpenTelemetry data locally —
-                without shipping it to the cloud.
-              </p>
-            </div>
-          </div>
-        </header>
+    <IngestionIssues
+      {rejections}
+      {importFailures}
+      {rejectionLabel}
+      formatRelativeTime={relative}
+    />
+  </DetailBubble>
+{/snippet}
 
-        {@render importContent?.()}
+{#snippet guide()}
+  <DetailBubble label="Getting started" contained headerless>
+    <GettingStarted {importContent} />
+  </DetailBubble>
+{/snippet}
 
-        <section class="section home-endpoint-section">
-          <h2 class="section-title">Configure your OTLP exporter</h2>
-          <p class="section-description">
-            Point your OpenTelemetry SDK, collector, or agent at this viewer
-            with the OTLP exporter settings below. Copy the variables for your
-            protocol, then paste them into a terminal session, a <code
-              class="home-inline-code">.env</code
-            >
-            file, or wherever you usually set environment variables for the process
-            that exports telemetry.
-          </p>
-          <div class="home-endpoint-chrome">
-            <PaneHeader
-              mode="tabs"
-              tabs={ENDPOINT_TABS}
-              activeID={endpointTab}
-              onSelect={id => {
-                if (isEndpointTab(id)) endpointTab = id
-              }}
-              ariaLabel="OTLP endpoint protocol"
-              tabPanelID={ENDPOINT_PANEL_ID}
-            >
-              {#snippet right()}
-                <button
-                  type="button"
-                  class="drawer-header-btn tooltip tooltip-left"
-                  onclick={copyEndpointSnippet}
-                  data-tip={endpointCopied ? 'Copied!' : 'Copy snippet'}
-                  aria-label={endpointCopied ? 'Copied' : 'Copy snippet'}
-                >
-                  {#if endpointCopied}
-                    <HugeiconsIcon
-                      icon={CheckmarkCircle02Icon}
-                      size="1em"
-                      strokeWidth={1.5}
-                      class="h-4 w-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                  {:else}
-                    <HugeiconsIcon
-                      icon={Copy01Icon}
-                      size="1em"
-                      strokeWidth={1.5}
-                      class="h-4 w-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                  {/if}
-                </button>
-              {/snippet}
-            </PaneHeader>
-            <div
-              class="home-endpoint-chrome__body"
-              id={ENDPOINT_PANEL_ID}
-              role="tabpanel"
-              aria-labelledby={paneTabID(ENDPOINT_PANEL_ID, endpointTab)}
-              tabindex="0"
-            >
-              <ReadonlyCodePanel
-                code={OTLP_SNIPPETS[endpointTab]}
-                ariaLabel="OTLP exporter environment variables"
-                embedded
-              />
-            </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <h2 class="section-title">Example with otel-cli</h2>
-          <p class="section-description">
-            If you have
-            <a
-              href="https://github.com/equinix-labs/otel-cli"
-              class="external-link"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              otel-cli
-            </a>
-            installed, you can send example data:
-          </p>
-          <ReadonlyCodePanel
-            ariaLabel="otel-cli example commands"
-            code={`# start the desktop viewer
-$ otel-desktop-viewer
-
-# configure otel-cli
-$ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-
-# generate spans!
-$ otel-cli exec --service my-service --name "curl google" curl https://google.com`}
-          />
-        </section>
-      </div>
-    {/snippet}
-
-    {#snippet detail()}
-      <div class="home-page__detail">
-        <PaneHeader mode="title" title="Overview" ariaLabel="Overview" />
-
-        <div class="home-page__detail-scroll">
-          {#snippet signalOverviewHeader(
-            href: string,
-            label: string,
-            icon: IconSvgElement | null,
-            CustomIcon: Component | null,
-            count: number
-          )}
-            <div class="home-summary__header">
-              <a
-                {href}
-                class="home-summary__icon-link"
-                aria-label="View all {label.toLowerCase()}"
-              >
-                {#if icon}
-                  <HugeiconsIcon
-                    {icon}
-                    size="1em"
-                    strokeWidth={1.5}
-                    class="h-4 w-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                {:else if CustomIcon}
-                  <CustomIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
-                {/if}
-              </a>
-              <span class="home-summary__title">{label}</span>
-              <span class="badge-count home-summary__badge">{count}</span>
-            </div>
-          {/snippet}
-
-          <FieldGroup label="Traces">
-            {#snippet headerAction()}
-              {@render signalOverviewHeader(
-                '/traces',
-                'Traces',
-                BarChartHorizontalIcon,
-                null,
-                stats?.traces.traceCount ?? 0
-              )}
-            {/snippet}
-            <table class="detail-fields w-full" aria-label="Traces overview">
-              <tbody>
-                <LogField
-                  fieldName="spans"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.traces.spanCount ?? 0)}
-                />
-                <LogField
-                  fieldName="services"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.traces.serviceCount ?? 0)}
-                />
-                <LogField
-                  fieldName="errors"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.traces.errorCount ?? 0)}
-                />
-                <LogField
-                  fieldName="last received"
-                  fieldType="string"
-                  showType={false}
-                  fieldValue={formatRelativeTime(
-                    stats?.traces.lastReceived ?? null
-                  )}
-                />
-              </tbody>
-            </table>
-          </FieldGroup>
-
-          <FieldGroup label="Metrics">
-            {#snippet headerAction()}
-              {@render signalOverviewHeader(
-                '/metrics',
-                'Metrics',
-                ChartHistogramIcon,
-                null,
-                stats?.metrics.metricCount ?? 0
-              )}
-            {/snippet}
-            <table class="detail-fields w-full" aria-label="Metrics overview">
-              <tbody>
-                <LogField
-                  fieldName="data points"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.metrics.dataPointCount ?? 0)}
-                />
-                <LogField
-                  fieldName="last received"
-                  fieldType="string"
-                  showType={false}
-                  fieldValue={formatRelativeTime(
-                    stats?.metrics.lastReceived ?? null
-                  )}
-                />
-              </tbody>
-            </table>
-          </FieldGroup>
-
-          <FieldGroup label="Logs">
-            {#snippet headerAction()}
-              {@render signalOverviewHeader(
-                '/logs',
-                'Logs',
-                null,
-                LogIcon,
-                stats?.logs.logCount ?? 0
-              )}
-            {/snippet}
-            <table class="detail-fields w-full" aria-label="Logs overview">
-              <tbody>
-                <LogField
-                  fieldName="errors"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.logs.errorCount ?? 0)}
-                />
-                <LogField
-                  fieldName="last received"
-                  fieldType="string"
-                  showType={false}
-                  fieldValue={formatRelativeTime(
-                    stats?.logs.lastReceived ?? null
-                  )}
-                />
-              </tbody>
-            </table>
-          </FieldGroup>
-
-          <IngestionIssues
-            {rejections}
-            {importFailures}
-            {rejectionLabel}
-            {formatRelativeTime}
-          />
-        </div>
-
-        {#if rejections.length === 0 && importFailures.length === 0}
-          <p class="home-detail__coming-soon">more coming soon…</p>
-        {/if}
-      </div>
-    {/snippet}
-
-    {#snippet pageFooter()}
-      <div class="home-page__footer">
-        <p class="home-page__footer-text">
-          Artwork by
-          <a
-            href="https://cbatesonart.artstation.com/"
-            class="home-page__footer-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Chelsey Bateson
-          </a>
-        </p>
-      </div>
-    {/snippet}
-  </PageLayout>
-</div>
-
-<style lang="postcss">
-  @reference "../app.css";
-
-  .home-page {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col;
-    --home-secondary-text: var(--color-subtle);
-    --home-accent-text: var(--color-primary);
-  }
-
-  /* Keep Dawn's Rosé Pine hierarchy, but use darker members of the same
-     purple family where this page renders small text on pale panels. */
-  :global(html[data-theme='rose-pine-dawn']) .home-page {
-    --home-secondary-text: var(--color-base-content);
-    --home-accent-text: #6e577f;
-  }
-
-  .home-page__main {
-    @apply min-h-0 flex-1 overflow-y-auto px-4 py-4 min-[900px]:px-6;
-  }
-
-  .home-page__detail {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden text-sm;
-  }
-
-  .home-page__detail-scroll {
-    @apply min-h-0 flex-1 overflow-y-auto py-2;
-    scrollbar-width: thin;
-  }
-
-  .home-detail__coming-soon {
-    @apply shrink-0 px-3 pb-3 pt-1 text-center text-sm italic;
-    color: var(--home-secondary-text);
-  }
-
-  .home-summary__header {
-    @apply flex min-w-0 flex-1 items-center gap-2;
-  }
-
-  .home-summary__icon-link {
-    @apply btn btn-soft btn-primary btn-sm btn-circle h-8 w-8 min-h-8 shrink-0 border-transparent bg-primary/10 text-primary no-underline shadow-none;
-  }
-
-  .home-summary__icon-link:hover {
-    @apply border-transparent bg-primary/15 text-primary;
-  }
-
-  .home-summary__title {
-    @apply truncate text-sm font-medium;
-    color: var(--home-secondary-text);
-  }
-
-  .home-summary__badge {
-    @apply ml-auto shrink-0;
-  }
-
-  .section {
-    @apply mb-5;
-  }
-
-  .section-title {
-    @apply mb-3 text-base font-semibold tracking-tight text-base-content;
-  }
-
-  .home-hero__eyebrow {
-    color: var(--home-accent-text);
-  }
-
-  .home-hero__lede,
-  .section-description {
-    color: var(--home-secondary-text);
-  }
-
-  .section-description {
-    @apply mb-4 max-w-2xl leading-relaxed;
-  }
-
-  .home-inline-code {
-    @apply rounded bg-base-300/60 px-1 py-0.5 font-mono text-[0.9em];
-    color: var(--home-secondary-text);
-  }
-
-  .home-endpoint-section .section-title {
-    @apply mb-2;
-  }
-
-  .home-endpoint-section .section-description {
-    @apply max-w-none;
-  }
-
-  .home-endpoint-chrome {
-    @apply overflow-hidden rounded-xl border border-base-300 bg-base-200;
-  }
-
-  .home-endpoint-chrome :global(.pane-header__tab.tab-active) {
-    --pane-tab-active-bg: var(--color-base-100);
-  }
-
-  .home-endpoint-chrome :global(.pane-header__tab:not(.tab-active)) {
-    color: var(--home-accent-text);
-  }
-
-  .home-endpoint-chrome__body {
-    @apply bg-base-100;
-  }
-
-  .external-link {
-    @apply link;
-    color: var(--home-accent-text);
-  }
-
-  .home-page__detail :global(.detail-cell__key),
-  .home-page__detail :global(.detail-cell__type) {
-    color: var(--home-secondary-text);
-  }
-
-  .home-page__footer {
-    @apply flex min-h-[var(--app-footer-height)] shrink-0 items-center justify-center bg-base-100 px-4;
-  }
-
-  .home-page__footer-text {
-    @apply text-center text-sm;
-    color: var(--home-secondary-text);
-  }
-
-  .home-page__footer-link {
-    @apply link;
-    color: var(--home-accent-text);
-  }
-</style>
+<PageLayout
+  mainTitle="Service map"
+  items={[]}
+  emptyDrawer
+  selectedID={null}
+  drawerID="signal-drawer"
+  drawerLabel="Home"
+  revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
+  mainSurface="base"
+  onRefresh={submit}
+  {loading}
+>
+  {#snippet drawerSearch()}
+    <form
+      class="flex w-full min-w-0 items-center gap-1"
+      onsubmit={event => {
+        event.preventDefault()
+        submit()
+      }}
+    >
+      <input
+        class="input typed-field typed-field--pill min-w-0 flex-1"
+        type="search"
+        aria-label="Search telemetry"
+        placeholder="Search telemetry…"
+        bind:value={draft}
+      />
+      <button
+        type="button"
+        class="btn btn-circle btn-ghost btn-sm shrink-0"
+        aria-label="Clear search"
+        onclick={() => {
+          draft = ''
+          submit()
+        }}
+        ><HugeiconsIcon
+          icon={Cancel01Icon}
+          size={17}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        /></button
+      >
+    </form>
+  {/snippet}
+  {#snippet drawerContent()}
+    <HomeSidebar
+      sections={[
+        { id: 'guide', content: guide },
+        { id: 'storage', content: storage },
+        { id: 'issues', content: issues },
+      ]}
+    />
+  {/snippet}
+  {#snippet main()}
+    <ServiceMap
+      service={inspectedService}
+      {services}
+      {totalServices}
+      loadingServices={loading}
+      servicesError={error}
+      moreServices={more}
+      onMoreServices={() => load(offset + 100)}
+      options={discoveryScope}
+      {revision}
+      selection={mapSelection}
+      onSelect={inspect}
+    />
+  {/snippet}
+  {#snippet detail()}
+    <DetailStack
+      label="Home details"
+      storageKey="home-details"
+      sections={mapSelection?.kind === 'connection'
+        ? [{ id: 'connection', content: connectionDetails }]
+        : [{ id: 'found-on', content: foundOn }]}
+    />
+  {/snippet}
+</PageLayout>

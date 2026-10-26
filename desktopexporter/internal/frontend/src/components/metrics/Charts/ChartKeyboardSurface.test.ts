@@ -57,8 +57,8 @@ describe('ChartKeyboardSurface', () => {
   it('does not advertise activation keys for an inspection-only chart', () => {
     render(ChartKeyboardSurface, {
       props: {
-        id: 'snapshot-chart',
-        label: 'Histogram snapshot distribution chart',
+        id: 'inspection-chart',
+        label: 'Inspection chart',
         instructions: 'Use arrow keys to inspect buckets.',
         readout: 'Bucket 1 of 3.',
         shortcuts: ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'],
@@ -68,7 +68,7 @@ describe('ChartKeyboardSurface', () => {
 
     const shortcuts = screen
       .getByRole('application', {
-        name: 'Histogram snapshot distribution chart',
+        name: 'Inspection chart',
       })
       .getAttribute('aria-keyshortcuts')
     expect(shortcuts).not.toContain('Enter')

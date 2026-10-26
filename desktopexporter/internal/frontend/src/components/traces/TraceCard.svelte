@@ -1,33 +1,44 @@
 <script lang="ts">
   import type { TraceSummary } from '@/types/api-types'
-  import {
-    formatDurationParts,
-    formatTimestampParts,
-    traceSummaryDurationNs,
-  } from '@/utils/time'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { formatDurationParts, traceSummaryDurationNs } from '@/utils/time'
+  import SignalDate from '@/components/shared/SignalDate.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import SummaryBreakdown from '@/components/shared/SummaryBreakdown.svelte'
 
   type Props = {
     trace: TraceSummary
     selected?: boolean
     onclick?: (id: string) => void
+    href?: string
+    matchingSpanCount?: number
   }
 
-  let { trace, selected = false, onclick }: Props = $props()
-
-  const timeContext = getTimeContext()
-
-  let startParts = $derived(
-    formatTimestampParts(trace.startTime, timeContext.tz, 'milliseconds')
-  )
+  let {
+    trace,
+    selected = false,
+    onclick,
+    href,
+    matchingSpanCount,
+  }: Props = $props()
 
   // Not "yet": a promoted-orphan or salvaged-cycle trace has no null-parent
   // span and is not waiting for one.
   let titleLabel = $derived(trace.rootSpan?.name ?? 'No root span')
   let serviceLabel = $derived(trace.rootSpan?.serviceName)
-  let titleMuted = $derived(!trace.hasRootSpan)
+  const services = $derived(
+    trace.serviceBreakdown?.some(part => part.count > 0)
+      ? trace.serviceBreakdown
+      : serviceLabel === undefined
+        ? []
+        : [
+            {
+              key: `service:${serviceLabel}`,
+              label: serviceLabel,
+              count: trace.spanCount,
+            },
+          ]
+  )
 
   let durationParts = $derived.by(() => {
     const ns = traceSummaryDurationNs(trace)
@@ -35,19 +46,39 @@
   })
 </script>
 
+{#snippet serviceBreakdown()}
+  <SummaryBreakdown parts={services} rootService={serviceLabel} tooltipOnly />
+{/snippet}
+
+{#snippet matchingSummary()}
+  <span class="text-subtle"
+    >[{matchingSpanCount?.toLocaleString()} matching {matchingSpanCount === 1
+      ? 'span'
+      : 'spans'}]</span
+  >
+{/snippet}
+
+{#snippet durationSummary()}
+  {#if durationParts}
+    <span class="flex shrink-0 items-center gap-1">
+      <span>Duration:</span>
+      <span class="text-base-content">{durationParts.value}</span>
+      <span class="text-base-content">{durationParts.unit}</span>
+    </span>
+  {/if}
+{/snippet}
+
 <SignalCard
   id={trace.traceID}
   {selected}
   title={titleLabel}
   subtitle={serviceLabel}
-  description={trace.traceID}
-  {titleMuted}
-  timeLayout="interval"
-  timestamp={startParts.value}
-  timestampUnit={startParts.unit || undefined}
-  duration={durationParts?.value}
-  durationUnit={durationParts?.unit}
+  subtitleContent={serviceBreakdown}
+  titleContent={!trace.hasRootSpan ? missingRootTitle : undefined}
+  meta={matchingSpanCount !== undefined ? matchingSummary : undefined}
+  dateEnd={durationParts ? durationSummary : undefined}
   {onclick}
+  {href}
 >
   {#snippet badge()}
     <SignalBadges
@@ -56,4 +87,15 @@
       errorCount={trace.errorCount}
     />
   {/snippet}
+  {#snippet date()}
+    <SignalDate label="Start" timestamp={trace.startTime} />
+  {/snippet}
 </SignalCard>
+
+{#snippet missingRootTitle()}
+  <span class="inline-flex items-center gap-2 text-sm font-normal text-subtle">
+    [<span class="size-2 shrink-0 rounded-full bg-info" aria-hidden="true"
+    ></span>
+    <span>No root span</span>]
+  </span>
+{/snippet}

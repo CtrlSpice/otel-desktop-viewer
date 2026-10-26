@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -448,13 +449,14 @@ func traceSummaryOrderBy(sortOption *search.Sort) (string, error) {
 	return fmt.Sprintf("%s %s %s, trace_id asc", expression, direction, nulls), nil
 }
 
-// GetTraceView returns a whole trace with matching spans annotated when criteria
-// is provided.
+// GetTraceView returns a trace with matching spans annotated when criteria is
+// provided. Optional spanIDs restrict payloads to those exact stored IDs and
+// compress display depth through available ancestry; received parent IDs remain intact.
 //
 // The ordinary tree walk reports unreachable spans. A non-zero count triggers
 // the cycle-aware query, which chooses entry points and tracks ancestry.
-func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
-	query, args, err := getTraceViewSQL(traceID, criteria)
+func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any, spanIDs ...uint64) (json.RawMessage, error) {
+	query, args, err := renderSpansQuery(queries.GetTraceView, traceID, criteria, spanIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -471,8 +473,8 @@ func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any)
 		return json.RawMessage(raw), nil
 	}
 
-	// Re-run the whole trace with the cycle-aware walk.
-	salvaged, err := salvageSpans(ctx, db, traceID, criteria)
+	// Re-run ancestry with the cycle-aware walk, retaining the same payload selection.
+	salvaged, err := salvageSpans(ctx, db, traceID, criteria, spanIDs...)
 	if err != nil {
 		// The ordinary result is still correct as far as it goes, and short a
 		// few spans is better than an error page.
@@ -541,13 +543,19 @@ func GetSpan(ctx context.Context, db queryRower, traceID string, spanID uint64) 
 // not the search and display projection. Callers must transport the returned
 // bytes unchanged: parsing and re-encoding in JavaScript loses negative zero.
 func GetTraceOTLP(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	return GetTraceSelectionOTLP(ctx, db, traceID, "")
+}
+
+// GetTraceSelectionOTLP keeps resource/scope wrappers and filters by exact span identity.
+// spanID is decimal unsigned text, or empty for the complete retained trace.
+func GetTraceSelectionOTLP(ctx context.Context, db *sql.DB, traceID, spanID string) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetTraceOTLP, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetTraceOTLP: %w: %w", ErrSpansStoreInternal, err)
 	}
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, traceID, spanID, spanID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetTraceOTLP: %w", ErrTraceIDNotFound)
 		}
@@ -557,8 +565,8 @@ func GetTraceOTLP(ctx context.Context, db *sql.DB, traceID string) (json.RawMess
 }
 
 // salvageSpans runs the cycle-aware variant of the trace fetch.
-func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
-	query, args, err := renderSpansQuery(queries.SalvageSpans, traceID, criteria)
+func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any, spanIDs ...uint64) (json.RawMessage, error) {
+	query, args, err := renderSpansQuery(queries.SalvageSpans, traceID, criteria, spanIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +590,7 @@ func getTraceViewSQL(traceID string, criteria any) (string, []any, error) {
 // renderSpansQuery renders either trace-fetch query. Both take identical
 // parameters and differ only in whether they carry the salvage walk, so the
 // search-predicate plumbing is shared rather than duplicated.
-func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, []any, error) {
+func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs ...uint64) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -617,11 +625,16 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 
 	// The recursion carries only traversal columns. The tree CTE joins the
 	// payload once and defines one span set for every downstream projection.
+	if len(spanIDs) > 0 {
+		cteSQL += ", selected_ids as (select unnest(?::ubigint[]) as span_id)"
+		args = append(args, spanIDs)
+	}
 	query, err := queries.Render(name, getTraceViewParams{
 		CTEs:        cteSQL,
 		MatchedCTE:  matchedCTE,
 		MatchedExpr: matchedExpr,
 		MatchedJoin: matchedJoin,
+		Selected:    len(spanIDs) > 0,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)
@@ -772,6 +785,13 @@ func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (
 	return cteSQL, eligibilityWhere, queryWhere, args, err
 }
 
+// MatchingRowsSQL shares the trace search predicate with cross-signal discovery.
+// It returns matching spans, rather than expanding them to their complete traces.
+func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
+	cte, where, _, args, err := buildTraceSQL(queryNode, timeRange)
+	return cte + " SELECT s.* " + spanSearchFrom + " WHERE " + where, args, err
+}
+
 // Two idioms compare a trace id in this file, and they are not
 // interchangeable. Which one applies depends on the operation:
 //
@@ -910,6 +930,9 @@ func traceFieldMapper() search.FieldMapper {
 }
 
 func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
+	if field.Name == "serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("r")), nil
+	}
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
 		col := util.CamelToSnake(resourceField)
 		if err := util.ValidateColumnName(col, resourceColumns); err != nil {
@@ -1047,6 +1070,11 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
 	valueExpression := search.AttributeValueExpression(kind)
+	if mode != search.OTelArrayOperand {
+		if expression, ok := search.OwnerNullExpression(field, query, keyParam, kindPredicate, valueExpression); ok {
+			return []search.ResolvedExpression{expression}, nil
+		}
+	}
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {

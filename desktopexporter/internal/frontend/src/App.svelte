@@ -5,8 +5,9 @@
   import MetricsPage from '@/pages/MetricsPage.svelte'
   import LogsPage from '@/pages/LogsPage.svelte'
   import TracesPage from '@/pages/TracesPage.svelte'
+  import EvalsPage from '@/pages/EvalsPage.svelte'
   import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
-  import ImportFilesCard from '@/components/shared/ImportFilesCard.svelte'
+  import ImportFiles from '@/components/shared/ImportFiles.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import { isPlainLeftClick, navigate } from '@/route'
@@ -15,6 +16,9 @@
     getRouteContext,
   } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
+  import { createWorkspaceContext } from '@/contexts/workspace-context.svelte'
+  import WorkspaceShell from '@/components/shared/WorkspaceShell.svelte'
+  import { createNavigationCounts } from '@/contexts/navigation-counts.svelte'
 
   let {
     importFiles,
@@ -40,6 +44,8 @@
 
   createRouteContext()
   createTimeContext()
+  createNavigationCounts()
+  const workspace = createWorkspaceContext()
 
   const routeContext = getRouteContext()
   let mainElement = $state<HTMLElement | null>(null)
@@ -47,7 +53,7 @@
   let seenFailure: ImportFailure | undefined
 
   function pagePath(path: string): string {
-    for (const base of ['/traces', '/metrics', '/logs']) {
+    for (const base of ['/traces', '/metrics', '/logs', '/evals']) {
       if (path === base || path.startsWith(`${base}/`)) return base
     }
     return '/'
@@ -59,6 +65,7 @@
     const page = pagePath(routeContext.route.path)
     if (page === lastFocusedPage) return
     lastFocusedPage = page
+    const focused = document.activeElement
     void tick().then(() => {
       if (pagePath(routeContext.route.path) !== page) return
       const issuePanel =
@@ -68,7 +75,7 @@
       if (issuePanel) {
         issuePanel.scrollIntoView({ block: 'nearest' })
         issuePanel.focus({ preventScroll: true })
-      } else {
+      } else if (!focused?.isConnected || focused === document.body) {
         mainElement?.focus()
       }
     })
@@ -86,7 +93,9 @@
         ? MetricsPage
         : under('/logs')
           ? LogsPage
-          : HomePage
+          : __EVALS_BUILT__ && under('/evals')
+            ? EvalsPage
+            : HomePage
   )
 
   $effect(() => {
@@ -106,6 +115,8 @@
   }
 </script>
 
+{#snippet emptyPane()}{/snippet}
+
 <main
   bind:this={mainElement}
   tabindex="-1"
@@ -114,12 +125,24 @@
   {#if Page === HomePage}
     <HomePage importFailures={allImportFailures}>
       {#snippet importContent()}
-        <ImportFilesCard onFiles={handleImportFiles} />
+        <ImportFiles onFiles={handleImportFiles} />
       {/snippet}
     </HomePage>
   {:else}
     <Page {importFailure} onViewIssue={viewIssue} />
   {/if}
+  <WorkspaceShell
+    {...workspace.props ?? {
+      items: [],
+      selectedID: null,
+      drawerID: 'signal-drawer',
+      drawerLabel: '',
+      hideDrawer: Page === LogsPage || Page === HomePage,
+      mainSurface: 'base',
+      main: emptyPane,
+      detail: emptyPane,
+    }}
+  />
 </main>
 
 <FileDropOverlay onFiles={handleImportFiles} />

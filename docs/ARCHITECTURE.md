@@ -11,7 +11,8 @@ UI.
 flowchart TB
   subgraph ingest [Ingestion]
     SDK[OTel SDK or Collector] -->|OTLP gRPC :4317 or HTTP :4318| OTLP[otlp receiver]
-    OTLP --> Batch[batch processor]
+    OTLP --> Redaction[redaction processor]
+    Redaction --> Batch[batch processor]
     Batch --> Desktop[desktop exporter]
     Desktop --> Spans[spans.Ingest]
     Desktop --> Metrics[metrics.Ingest]
@@ -48,17 +49,21 @@ The binary uses these Collector components:
 | Kind | Component |
 | --- | --- |
 | Receiver | `otlp` |
-| Processor | `batch` |
+| Processor | `redaction`, `batch` |
 | Exporter | `desktop` |
 | Extension | `duckdb` |
 
 The default pipelines are:
 
 ```text
-traces:  otlp -> batch -> desktop
-metrics: otlp -> batch -> desktop
-logs:    otlp -> batch -> desktop
+traces:  otlp -> redaction -> batch -> desktop
+metrics: otlp -> redaction -> batch -> desktop
+logs:    otlp -> redaction -> batch -> desktop
 ```
+
+The standard Contrib redaction processor masks configured secret patterns before
+batching and storage, including browser OTLP telemetry file imports. See
+[redaction coverage and policy](redaction.md).
 
 The batch processor sends at 8,192 items or after 1 second. The exporter uses a
 blocking sending queue with one consumer. Each write has a 30-second ingest
@@ -121,7 +126,7 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 22. Store startup validates `schema_meta` before
+The current schema version is 24. Store startup validates `schema_meta` before
 running DDL. A mismatched, malformed, or unversioned telemetry database is
 rejected without modification. The store does not migrate or reset databases.
 
@@ -245,6 +250,19 @@ stored kind, for example:
 attr(span, "attempts", int64) > 2
 ```
 
+In the signal search editor, explicit attribute references appear as editable
+name-first tokens with scope and type metadata. Selecting a token opens the
+matching attribute choices; comparators and values remain ordinary query text.
+Autocomplete uses the same name-first presentation for attribute and value
+matches. The underlying query, clipboard text, and URL retain the exact explicit
+reference, so copying or reopening a search preserves its identity. Cursor
+navigation and deletion treat each attribute token as one unit.
+
+Multiline paste joins query formatting and plain-text lines with spaces. Inside
+quoted query values, pasted line endings become `\n` or `\r` escapes, preserving
+the received characters and indentation. Each multiline paste is one undoable
+edit and does not submit the search.
+
 Attribute equality can calculate the dictionary ID before querying and use
 `list_contains(attribute_ids, ?::uuid)`. Other operators join the dictionary and
 compare the stored value.
@@ -266,12 +284,23 @@ frontend `bigint` values. Derived chart values use JavaScript numbers. See
 
 ## HTTP and JSON-RPC
 
-The server exposes two routes:
+The server exposes these routes:
 
 | Route | Purpose |
 | --- | --- |
 | `POST /rpc` | JSON-RPC 2.0, with a 1 MB request limit |
+| `GET /openrpc.json` | OpenRPC method descriptions, also returned by `rpc.discover` |
+| `GET /llms.txt` | Agent guide, including HTTP discovery instructions |
+| `GET /export/{signal}/{id}` | Store-backed OTLP JSON download |
 | `GET /*` | Embedded frontend and client-route fallback |
+
+The HTTP root advertises `/openrpc.json` and `/llms.txt` with a `Link` header.
+Discovery uses existing method names. The document describes the `View` naming
+convention once, without audience tags or aliases. OpenRPC is a
+JSON-RPC description, not an OpenAPI description of HTTP routes. GET and HEAD
+are supported for the document. Named/positional params, exact numeric input
+rules and wire representations are described alongside each method. The two
+variadic delete methods accept repeated positional IDs, not a nested array.
 
 The server binds to `localhost` by default. CORS accepts HTTP and HTTPS origins
 so the Vite development server can call `/rpc`.
@@ -280,7 +309,10 @@ so the Vite development server can call `/rpc`.
 
 | Method | Result |
 | --- | --- |
+| `rpc.discover` | OpenRPC description of the JSON-RPC interface |
+| `getImportConfig` | Configured OTLP HTTP import port |
 | `query` | Read-only SQL rows |
+| `discoverTelemetry` | Typed service groups, directed service connections, child-span evidence, attribute keys and value frequencies |
 | `searchTraceSummaries` | Trace list summaries |
 | `getTraceOverview` | Compact spans and trace-linked log summaries |
 | `getTraceView` | Full trace display data |
@@ -313,32 +345,38 @@ Requests for missing entities return signal-specific errors. Invalid received
 IDs and invalid viewer references return separate parameter errors. Caller
 cancellation maps to `-32010` rather than an internal error.
 
-## Service discovery CLI
+## Service discovery
 
-`services` computes a summary through the existing read-only `query` RPC, with
-no stored service entity. It groups the stored `service_name` text projection
-and Resource `service.namespace` converted with `pcommon.Value.AsString` rules.
-Missing/empty namespaces share a label. Different types with equal text labels
-share a summary; surviving source attribute types remain available for inspection.
+The CLI `services` command uses the read-only `query` RPC. Home uses
+`discoverTelemetry`; both share query builders in `internal/discovery/`, with no
+stored service entity. Groups retain the exact typed Resource `service.name` and
+`service.namespace` values. An absent namespace equals an empty-string namespace;
+an absent name remains distinct. Equal display text with different types does
+not merge groups. Both CLI JSON and Home return `serviceIdentity`, preserving
+the typed values even when names and outer kinds have identical display text.
+Home carries this identity into attribute discovery and signal searches.
 
 Each field is computed within the selected inclusive time window:
 
 | Field | Source and formula | Unit / precision |
 | --- | --- | --- |
+| `traceCount` | Distinct trace IDs among qualifying spans | Exact integer traces |
 | `spanCount` | Number of stored spans, by composite trace/span identity | Exact integer records |
 | `errorSpanCount` | Spans with received status code 2 | Exact integer records |
 | `logCount` | Number of stored logs, independent of correlation IDs | Exact integer records |
 | `errorLogCount` | Logs with received severity number 17–24 | Exact integer records |
 | `metricCount` | Distinct `metrics.id` with qualifying datapoints | Exact integer Metric identities, not names or series |
 | `dataPointCount` | Number of stored datapoints; histogram buckets/count do not multiply it | Exact integer records |
+| `exemplarCount` | Exemplars belonging to qualifying datapoints | Exact integer records |
 | `lastSeen` | Maximum span start, effective log time, or datapoint timestamp | Exact unsigned Unix nanoseconds, decimal string |
 
 Effective log time is received timestamp, falling back to observed timestamp
 when timestamp is zero. The same times determine window eligibility. `lastSeen`
 is not ingestion time or proof of liveness. Signals aggregate independently before
 joining Resource identity, avoiding multiplied counts. Instances/versions contribute
-to the same namespace/name summary. JSON includes resolved window bounds and
-look-ahead truncation. The exact-name `--service` filter spans all namespaces.
+to the same typed namespace/name summary. CLI JSON includes resolved window bounds,
+log severity bands and look-ahead truncation. The exact-name `--service` filter
+spans all namespaces.
 
 ## Frontend
 
@@ -349,13 +387,13 @@ Routes are:
 
 | Route | Page |
 | --- | --- |
-| `/` | Home and connection help |
+| `/` | Radial service map, contextual telemetry and typed attribute discovery, file import, storage and ingestion issues |
 | `/traces`, `/traces/{traceID}` | Trace list and detail |
 | `/logs`, `/logs/{logRef}` | Log list and detail |
 | `/metrics`, `/metrics/{metricRef}` | Metric list and detail |
 
-Page-local state and Svelte context modules own routing, time selection, list
-state, and Metric presentation state. URL updates use explicit push or replace
+Route and time contexts own navigation and time selection. Pages own their data
+requests and signal presentation state. URL updates use explicit push or replace
 history modes.
 
 `telemetry-service.ts` is the wire boundary. It sends JSON-RPC requests,
@@ -366,8 +404,144 @@ Metric aggregation remains in SQL. The frontend chooses tabs, colours, visible
 series, chart coordinates, and selected datapoints. Legend changes request only
 the aggregate envelope.
 
-The UI polls `getStats` every 3 seconds on signal pages and every 5 seconds on
-the home page. There is no push channel.
+Signal pages poll `getStats` every 3 seconds for refresh indicators. Home loads
+discovery and storage readings on entry, submitted search, time-range changes
+and explicit refresh; it does not poll discovery. There is no push channel.
+
+### Persistent workspace and sections
+
+`App.svelte` owns one `WorkspaceShell.svelte`. Pages register content through
+`PageLayout.svelte` and `contexts/workspace-context.svelte.ts` before the next
+paint. Navigation and surviving pane containers stay mounted across routes.
+Pane identity follows the optional List, required Main and optional Details roles.
+One app-wide set of saved side-pane widths and open preferences applies across
+signals. An omitted pane gives its space to Main without changing its saved
+preference; responsive clamping changes only rendered geometry. Destination
+geometry applies immediately, including loading, empty and error states.
+All pane and section headers use one row, with controls beside the title and
+the service-colour dot before it. Headers expose horizontal scrolling when
+their controls cannot fit. Metric chart headers omit the
+repeated Start/End range; the global time selector and chart axes supply time context.
+
+`DetailStack.svelte` and `DetailBubble.svelte` share disclosure and sizing across
+Home and signal Details. The available primary section stays open. Open sections
+share height; closed available sections and then inactive sections dock below
+them. Non-first open headers resize the boundary above; clicks toggle disclosure,
+and keyboard resizing includes `0` to reset sizes. Stable keyed sections retain
+focus, scroll and JSON folds when regrouped. Closed sections do not donate resize
+space; drag-induced collapse commits on release.
+
+### Home discovery and search
+
+`HomePage.svelte` presents Getting started in List, service cards as graph
+nodes in Main, and contextual Telemetry in Details. Lulu and the file-drop control
+sit above the left section stack. The primary, headerless guide contains exporter
+configuration and an `otel-cli` example; Storage and Ingestion issues are siblings.
+HTTP configuration uses the received import port. The gRPC example identifies its
+default port. Joined terminal containers have one enclosing border and use
+Madoromi's Kami for code and Chitsu for their tab/tool bars, with Sumi text and
+the shared syntax colours. Header tabs switch their selected fill immediately,
+without a sliding indicator.
+The left pane uses a compact welcome and import target, with aligned guide edges.
+Without saved section sizing, the guide has the largest default weight and each
+utility section opens with a compact initial share. Closed headers stay compact;
+saved resizing takes precedence.
+
+The workspace, List/Details bodies, navigation and pagination share a uniform
+Kami background. Resting signal-list and Details cards are transparent;
+service-map nodes retain their Panel surface.
+Labelled headings and input fields use Hyoshi; code toolbars use Chitsu.
+Inputs and floating menus have quiet Nijimi
+boundaries; composite search/date fields have one outer boundary and focus ring.
+Cards use flat hover/selection fills, without hover shadows. See the frontend's
+[theme mappings and upstream sources](../desktopexporter/internal/frontend/src/themes/README.md#surfaces-and-readable-text).
+Issue links reveal the left pane and section.
+
+Each service appears once as a three-row card: identity and errors, signal counts
+separated by middle dots, then Last seen. Cards use the theme's Panel surface and
+retain independent colour controls. Services without recorded connections remain
+visible; layout ancestry alone never creates an edge. The footer's **More services**
+appends the next 100-item page without removing existing nodes.
+
+Selecting a card shows its Telemetry without moving the map or repeating the
+service summary in Details. New neighbours occupy free space without moving
+existing nodes. A new search/time scope or refresh starts a new layout. Reset view
+restores the top-aligned graph overview at the default zoom, independently of
+the inspected service. Selecting a directed connection
+shows its counts and 25-item pages of recorded child spans, each linking to its
+exact trace and span.
+
+The map uses LayerChart's Dagre layout utility for top-to-bottom connected flows
+and routed edges. Component packing places standalone cards alongside flows when
+space permits, or below them on narrow views. Measured card dimensions determine
+spacing and arrow endpoints. Cycles, reverse edges and shared dependencies retain
+their recorded direction without duplicating service nodes.
+It automatically loads the first 100 connections for
+each loaded service, and for a newly inspected neighbour. **More connections**
+continues a truncated result for the inspected service. The initial layout waits
+for the first connection requests and opens at readable card size near the top
+of the map; later discoveries preserve positions and zoom.
+Scroll, drag empty space or use arrow keys on focused items to pan. Pinch,
+Ctrl+wheel and the header buttons zoom. Card text and colour pickers retain
+native selection and scrolling. Exact typed service
+identities, including namespaces, distinguish nodes.
+
+`discoverTelemetry` kinds `connections` and `connection-spans` follow recorded
+parent span IDs within the same trace. Both endpoints must exist and satisfy the
+trace search and time window. Names, timestamps, same-service references and
+missing parents do not establish cross-service edges. `connections` requires
+`serviceIdentity` and returns incoming and outgoing directed aggregates with
+source/target service summaries, child-span count, distinct trace count and error
+child-span count. `connection-spans` also requires `targetIdentity` and returns
+the exact child spans for that source-to-target direction. Both use the shared
+bounded `limit`/`offset` contract; nanosecond timestamps remain decimal strings.
+
+`components/home/home-search.ts` projects the shared typed search tree onto each
+signal. An inapplicable condition is false for that signal, retaining AND/OR
+semantics. `discoverTelemetry` applies predicates and the time window before
+grouping and paging; matching navigation totals cover all pages. Services use
+100-item pages. The discovery API identifies attributes by key, stored kind and owner scope. Value
+coverage pools distinct span, log and datapoint counts across applicable signals.
+The denominator counts records carrying the key in that owner scope, across
+stored kinds; percentages use the pooled counts rather than averaging percentages.
+Each typed attribute heading counts distinct records carrying that key and kind;
+multiple values of the same kind on one record do not inflate its heading count.
+
+Home Telemetry shows signal summaries scoped to the inspected service, search
+and time range. Metric search selects Metric identities, following the metric
+workspace's query-membership semantics.
+Log cards keep body previews on one ellipsized line, with the preview on hover
+and the complete received body available in Details.
+
+Tabs beside the Telemetry title offer Traces, Metrics
+and Logs with known matching counts. Each signal keeps its own page and scroll position. Only the
+active list scrolls; the footer offers 25, 50 or 100 cards per page and remembers
+the choice. Signal changes are immediate and support arrow/Home/End keys.
+Confirmed-empty or inapplicable signals are disabled; loading and failed signals
+remain accessible. Service, search, time-range and refreshed
+result changes reset paging and scroll without toggling other Home sections.
+
+### Themes and data presentation
+
+The appearance group selects Ink, Season and Day/Night. Madoromi supplies eight
+seasonal variants with backgrounds at 20% of source OKLCH chroma. The default is
+To-ro with Autumn and the system's initial Day/Night preference. Saved choices
+take priority. Accent and count inks restore independently; selecting a global
+ink also sets the count ink, which the chart picker can subsequently override.
+Service/series assignments use 224 fixed categorical shades from 32 inks and
+remain independent of interface themes. See [chart-palettes.md](chart-palettes.md)
+and the [theme reference](../desktopexporter/internal/frontend/src/themes/README.md).
+
+Shared typography uses regular-weight Atkinson Hyperlegible Next for interface
+text and formatted values, and Mono for JSON, search and code: 14px working text,
+16px page/pane headings and 1.5 line-height at the default root size. Home's 22px
+welcome title is a display exception. Keys and helper text use Subtle; data uses
+Text; type/provenance metadata uses Secondary. Display formatting, folding,
+wrapping and identifier truncation preserve received types and exact values.
+Copy is explicit and complete; raw JSON and Download retain source values rather
+than formatted previews. Shared formatting lives in
+`components/shared/detail-value.ts` and `components/shared/utils/editor-highlighting.ts`
+under the frontend's `src/` directory.
 
 ## Trace view wire format
 
@@ -385,12 +559,15 @@ from responses with different baselines.
 ## Development
 
 ```text
-Terminal 1: make dev-go
+Terminal 1: make run-go
 Terminal 2: make dev-ts
 Browser:    http://localhost:3001
 ```
 
 Use `make build && ./otel-desktop-viewer` for an embedded production build.
+Public builds exclude Evals. `make build EVALS=1` selects its Go implementation
+and separate frontend assets; both variants retain the same database schema and
+shared telemetry functionality. See [Experimental features](experimental-features.md).
 
 ## Related files
 

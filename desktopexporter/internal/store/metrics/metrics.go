@@ -18,6 +18,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -1060,28 +1061,45 @@ func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timer
 }
 
 func searchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	query, args, err := searchSummariesSQL(timeRange, criteria, options)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// searchSummariesSQL builds the query and bound arguments without database I/O.
+// Validation, filtering, sorting, and limit placement depend only on the inputs.
+func searchSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
+			return "", nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 		}
 	}
 	cteSQL, whereClause, args, err := buildMetricSQL(searchTree, timeRange)
 	if err != nil {
-		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
+		return "", nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
 
 	candidateOrder, summaryOrder, earlyLimit, err := metricSummaryOrderBy(options.Sort)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	candidateLimit := ""
 	summaryLimit := ""
 	if options.Limit != nil {
 		if *options.Limit < 1 {
-			return nil, fmt.Errorf("SearchSummaries: limit must be positive: %w", ErrInvalidMetricLimit)
+			return "", nil, fmt.Errorf("SearchSummaries: limit must be positive: %w", ErrInvalidMetricLimit)
 		}
 		if earlyLimit {
 			candidateLimit = "\n\t\t\tlimit ?"
@@ -1101,16 +1119,9 @@ func searchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRa
 		SummaryLimit:   summaryLimit,
 	})
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return query, args, nil
 }
 
 func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder string, earlyLimit bool, err error) {
@@ -1321,6 +1332,13 @@ func supportedReceivedMetricType(metricType string) bool {
 // GetMetricOTLP returns a Metric as a standard OTLP JSON object. Callers
 // must transport the returned bytes unchanged because re-encoding can lose -0.0.
 func GetMetricOTLP(ctx context.Context, db *sql.DB, metricID string) (json.RawMessage, error) {
+	return GetMetricSelectionOTLP(ctx, db, metricID, "", "", true)
+}
+
+// GetMetricSelectionOTLP exports only the exact selected stored series or datapoint.
+// Empty selectors export the whole retained Metric. Selection never uses chart reductions.
+// When includeDatapoints is false, it omits dataPoints and skips their reconstruction.
+func GetMetricSelectionOTLP(ctx context.Context, db *sql.DB, metricID, seriesID, datapointID string, includeDatapoints bool) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetMetricOTLP, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetMetricOTLP: %w: %w", ErrMetricsStoreInternal, err)
@@ -1328,7 +1346,7 @@ func GetMetricOTLP(ctx context.Context, db *sql.DB, metricID string) (json.RawMe
 
 	var metricType string
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, metricID).Scan(&metricType, &raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, seriesID, datapointID, includeDatapoints, metricID).Scan(&metricType, &raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetricOTLP: %w", ErrMetricIDNotFound)
 		}
@@ -1413,7 +1431,7 @@ func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, 
 	if timeRange.End != nil {
 		endTime = []uint64{*timeRange.End}
 	}
-	if err := db.QueryRowContext(ctx, query, metricID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, metricID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit, params.ContributionID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetricView: %w", ErrMetricIDNotFound)
 		}
@@ -1438,9 +1456,13 @@ func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, 
 //
 // A scalar needs both selectedSeriesIDs and the complete metric so it can
 // compute Selected and All without narrowing the latter.
-func GetMetricAggregateView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
+func GetMetricAggregateView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string, contributionID ...string) (json.RawMessage, error) {
 	// The aggregate projection lets DuckDB prune per-series CTEs.
-	raw, err := getMetricView(ctx, db, aggregateViewShapeFor(ctx, db, metricID),
+	shape := aggregateViewShapeFor(ctx, db, metricID)
+	if len(contributionID) > 0 {
+		shape.ContributionID = contributionID[0]
+	}
+	raw, err := getMetricView(ctx, db, shape,
 		metricID, timeRange, targetBuckets, seriesIDs, quantiles,
 		tzOffsetNs, viewBuckets, 0, selectedSeriesIDs, tzName,
 		[]string{}, 0)
@@ -1538,6 +1560,12 @@ func buildMetricSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) 
 	return search.BuildSearchSQL(queryNode, metricFieldMapper(), timeCondition, timeParams)
 }
 
+// MatchingRowsSQL uses the same metric identity and datapoint eligibility as search.
+func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
+	cte, where, args, err := buildMetricSQL(queryNode, timeRange)
+	return cte + " SELECT s.* " + metricSearchFrom + " WHERE " + where, args, err
+}
+
 func metricDatapointWhere(timeRange timerange.TimeRange) string {
 	predicate, _ := search.TimePredicate("d.timestamp", timeRange.Start, timeRange.End)
 	if predicate == "" {
@@ -1608,6 +1636,9 @@ const metricSearchFrom = `from search_params, metrics s
 			inner join scopes sc on sc.id = s.scope_id`
 
 func mapMetricFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
+	if field.Name == "serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("r")), nil
+	}
 	name := field.Name
 	if name == "" {
 		return search.ResolvedExpression{}, fmt.Errorf("empty field name: %w", ErrInvalidMetricQuery)
@@ -1660,6 +1691,11 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
 	valueExpression := search.AttributeValueExpression(kind)
+	if mode != search.OTelArrayOperand {
+		if expression, ok := search.OwnerNullExpression(field, query, keyParam, kindPredicate, valueExpression); ok {
+			return []search.ResolvedExpression{expression}, nil
+		}
+	}
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
@@ -1852,6 +1888,8 @@ func boolValueToIdentityString(v driver.Value, metricType string) string {
 // final projection.
 type getMetricViewParams struct {
 	TimeFilter string
+	// ContributionID selects interval activity after differencing, never before.
+	ContributionID string
 	// AggregateOnly emits just the cross-series aggregates, which is all
 	// GetMetricAggregateView returns. It drops `timeseries` -- the field that
 	// carries the per-series pipelines and most of the planning cost.

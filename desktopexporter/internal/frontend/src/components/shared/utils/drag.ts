@@ -3,6 +3,8 @@
 export type DragOptions = {
   /** Which axis the delta is measured along. */
   axis: 'x' | 'y'
+  /** Override the axis cursor for surfaces dragged directly, such as headers. */
+  cursor?: string
   /** Pixels moved since the drag began, signed. */
   onMove: (delta: number) => void
   /** Fires once when the active pointer ends, capture is lost, focus leaves, or cancel() runs. */
@@ -67,7 +69,7 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   const prevCursor = ownerDocument.body.style.cursor
   const prevSelect = ownerDocument.body.style.userSelect
   ownerDocument.body.style.cursor =
-    opts.axis === 'x' ? 'col-resize' : 'row-resize'
+    opts.cursor ?? (opts.axis === 'x' ? 'col-resize' : 'row-resize')
   ownerDocument.body.style.userSelect = 'none'
 
   let done = false

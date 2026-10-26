@@ -80,6 +80,19 @@ without an attachment: 400 for invalid IDs/formats, 404 for missing records,
 422 for unsupported stored Metric types, and 500 for reconstruction/encoding
 failures.
 
+Metric exports accept `includeDatapoints=false` to omit the `dataPoints` fields
+without reconstructing datapoints or exemplars. Metric fields, resource and scope
+context remain present. The default and `includeDatapoints=true` include datapoints.
+The option also works with `seriesRef` or `datapointRef`; references must still
+belong to the selected metric. Empty, repeated or non-boolean values return 400.
+HEAD and byte ranges describe the requested representation.
+
+The metric Details JSON tab loads this metadata-only representation automatically.
+Copy and Download still return the complete metric. The existing 2 MiB preview
+bound remains; larger metadata documents show a partial preview automatically.
+Raw-JSON indentation has separate depth and output-size limits. If formatting
+would exceed either limit, the preview retains its original source whitespace.
+
 The CLI writes the exact response bytes to stdout, without an added newline:
 
 ```sh
@@ -106,6 +119,13 @@ encoded JSON, including their wrapper, with one request in flight at a time.
 Large resource groups are split at scope, span, log-record, Metric or datapoint
 boundaries while repeating the associated metadata. An individual record or
 required metadata that cannot fit is reported rather than truncated.
+
+The receiver sends these requests through the same [redaction processor](redaction.md)
+as live OTLP traffic, before batching and storage. Matching secret values are
+masked; credential identifiers and nonmatching telemetry remain available.
+In Evals-enabled builds, native Evals JSON import becomes log evidence and
+passes through the same Collector redaction policy before storage. Evals reads
+the retained, processed logs.
 
 The viewer's `getImportConfig` JSON-RPC method returns `otlpHttpPort`, populated
 from the CLI's `--http` setting. The browser connects using the viewer's hostname

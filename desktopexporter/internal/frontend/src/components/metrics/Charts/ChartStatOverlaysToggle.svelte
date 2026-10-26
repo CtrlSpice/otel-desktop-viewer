@@ -1,46 +1,69 @@
 <script lang="ts">
-  /*
-   * Master toggle for selection stat overlays (min / max / avg lines
-   * and labels on the selected series). Lives in the chart control bar.
-   */
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import {
+    combinedLineEnabled,
+    withCombinedLine,
+  } from '@/components/metrics/utils/aggregation'
 
-  const ctx = getMetricViewContext()
+  let { ctx }: { ctx: MetricViewContext } = $props()
+  const combinedModes = ['sum', 'avg'] as const
 </script>
 
 {#if ctx.showChartStatOverlaysToggleVisible}
-  <label
-    class="chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
-    data-tip={ctx.rateSlopeOverlayAvailable
-      ? 'Min/max + rate slope'
-      : 'Min/max + avg'}
-  >
-    <input
-      type="checkbox"
-      class="checkbox checkbox-xs checkbox-soft chart-stat-overlays-toggle__checkbox"
-      checked={ctx.showSelectionStatOverlays}
-      aria-label="Show chart stat overlays"
-      onchange={e => ctx.setShowSelectionStatOverlays(e.currentTarget.checked)}
-    />
-    <span class="chart-stat-overlays-toggle__label">Overlays</span>
-  </label>
+  {#if ctx.isHistogramKind}
+    <label
+      class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
+      data-tip="p50, p95 and p99 of the combined checked series"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-xs"
+        checked={ctx.showSelectionStatOverlays}
+        aria-label="Show Percentiles"
+        onchange={event =>
+          ctx.setShowSelectionStatOverlays(event.currentTarget.checked)}
+      />
+      <span>Percentiles</span>
+    </label>
+  {:else}
+    <div
+      class="header-choice-controls"
+      role="group"
+      aria-label="Combined series"
+    >
+      {#each combinedModes as mode (mode)}
+        {#if ctx.availableAggregationViews.includes(mode)}
+          <label
+            class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
+            data-tip={`${mode === 'sum' ? 'Sum' : 'Sample-weighted average'} of the checked series in each time bucket`}
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              checked={combinedLineEnabled(ctx.aggregationView, mode)}
+              aria-label={mode === 'sum'
+                ? 'Show combined sum'
+                : 'Show combined average'}
+              onchange={event =>
+                ctx.setAggregationView(
+                  withCombinedLine(
+                    ctx.aggregationView,
+                    mode,
+                    event.currentTarget.checked
+                  )
+                )}
+            />
+            <span>{mode === 'sum' ? 'Sum' : 'Average'}</span>
+          </label>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 <style lang="postcss">
   @reference "../../../app.css";
-
   .chart-stat-overlays-toggle {
-    @apply inline-flex shrink-0 cursor-pointer items-center gap-1.5
-           rounded-full px-2 py-1 text-xs font-medium;
-    color: var(--color-base-content);
-  }
-
-  .chart-stat-overlays-toggle__checkbox {
-    @apply shrink-0;
-  }
-
-  .chart-stat-overlays-toggle__label {
-    @apply whitespace-nowrap;
-    color: var(--color-muted);
+    @apply relative shrink-0 gap-2 whitespace-nowrap;
   }
 </style>

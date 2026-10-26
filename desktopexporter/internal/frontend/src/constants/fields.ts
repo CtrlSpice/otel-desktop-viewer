@@ -68,11 +68,11 @@ export const LOG_SEVERITY_TEXT_ENUM = [
 
 /** Metric instrument / datapoint type strings used in this app’s store and API. */
 export const METRIC_TYPE_ENUM = [
-  'Empty',
   'Gauge',
   'Sum',
   'Histogram',
   'ExponentialHistogram',
+  'Empty',
 ] as const
 
 // Field suggestions based on signal
@@ -611,6 +611,13 @@ export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership([
 
 // Resource fields
 export const RESOURCE_FIELDS: FieldDefinition[] = withScalarMembership([
+  {
+    name: 'serviceIdentity',
+    type: 'string',
+    searchScope: 'field',
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
+    description: 'Exact typed service name and namespace, as a JSON pair',
+  },
   {
     name: 'resource.droppedAttributesCount',
     type: 'int64',

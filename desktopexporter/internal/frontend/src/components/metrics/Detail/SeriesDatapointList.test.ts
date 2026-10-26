@@ -1,16 +1,29 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/svelte'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { tick } from 'svelte'
 import type {
   DataPoint,
   HistogramDataPoint,
   SumDataPoint,
+  SpanTiming,
 } from '@/types/api-types'
 import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
 import SeriesDatapointListHarness from '@/test/SeriesDatapointListHarness.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+
+const { getSpanTimings, getTraceSummary } = vi.hoisted(() => ({
+  getSpanTimings: vi.fn(),
+  getTraceSummary: vi.fn(),
+}))
+vi.mock('@/services/telemetry-service', () => ({
+  telemetryAPI: { getSpanTimings, getTraceSummary },
+}))
+beforeEach(() => {
+  getSpanTimings.mockReset().mockRejectedValue(new Error('Lookup unavailable'))
+  getTraceSummary.mockReset().mockRejectedValue(new Error('Lookup unavailable'))
+})
 
 function makeDatapoint(overrides: Partial<SumDataPoint> = {}): SumDataPoint {
   return {
@@ -169,15 +182,51 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(datapointRow('dp-1')).toHaveAccessibleName(/value 1 ms, ID dp-1$/)
   })
 
-  it('shows an absent histogram sum as unavailable and a supplied zero as zero', () => {
-    renderList([
-      makeHistogramDatapoint('hist-absent', null),
-      makeHistogramDatapoint('hist-zero', 0),
-    ])
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'separates %s counts and sums, preserving exact counts, omitted sums and zero',
+    metricType => {
+      const datapoints = [
+        {
+          ...makeHistogramDatapoint('hist-absent', null),
+          count: 18_446_744_073_709_551_615n,
+        },
+        makeHistogramDatapoint('hist-zero', 0),
+      ]
+      renderList(
+        datapoints.map(dp =>
+          metricType === 'Histogram'
+            ? dp
+            : {
+                ...dp,
+                metricType,
+                scale: 0,
+                zeroCount: 0n,
+                zeroThreshold: 0,
+                positiveBucketOffset: 0,
+                positiveBucketCounts: [dp.count],
+                negativeBucketOffset: 0,
+                negativeBucketCounts: [],
+              }
+        ),
+        'ms'
+      )
 
-    expect(datapointRow('hist-absent')).toHaveTextContent('count 1, sum —')
-    expect(datapointRow('hist-zero')).toHaveTextContent('count 1, sum 0')
-  })
+      expect(
+        screen
+          .getAllByRole('columnheader')
+          .map(header => header.textContent?.trim())
+      ).toEqual(['Time', 'Count', 'Sum (ms)'])
+      const absent = within(datapointRow('hist-absent')).getAllByRole('cell')
+      expect(absent[1]).toHaveTextContent(/^18446744073709551615$/)
+      expect(absent[2]).toHaveTextContent(/^—$/)
+      const zero = within(datapointRow('hist-zero')).getAllByRole('cell')
+      expect(zero[1]).toHaveTextContent(/^1$/)
+      expect(zero[2]).toHaveTextContent(/^0$/)
+      expect(datapointRow('hist-zero')).toHaveAccessibleName(
+        /count 1, sum 0 ms/
+      )
+    }
+  )
 
   it('keeps Details hidden unless any datapoint in the set has details', async () => {
     const user = userEvent.setup()
@@ -578,6 +627,93 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
       'href',
       '/traces/trace-ex?start=0&end=1&span=span-ex'
     )
+  })
+
+  it.each([null, 'B'.repeat(16)])(
+    'compacts confirmed missing references without changing exemplar evidence (span: %s)',
+    async spanID => {
+      getSpanTimings.mockResolvedValue([])
+      getTraceSummary.mockResolvedValue(null)
+      const dp = makeDatapoint()
+      dp.exemplars = [
+        {
+          ...dp.exemplars[0]!,
+          traceID: 'A'.repeat(32),
+          spanID,
+          filteredAttributes: [
+            { key: 'sample', value: { kind: 'string', value: 'recorded' } },
+          ],
+        },
+      ]
+      renderWithContexts(SeriesDatapointListHarness, {
+        datapoints: [dp],
+        expandDatapointID: dp.id,
+      })
+      await screen.findByText('(unavailable)')
+      expect(screen.getByText('value: 42')).toBeVisible()
+      expect(screen.getByText(/^time:/)).toBeVisible()
+      expect(screen.getByText('sample: recorded')).toBeVisible()
+      expect(screen.getByTitle('A'.repeat(32))).toBeVisible()
+      if (spanID) expect(screen.getByTitle(spanID)).toBeVisible()
+      else expect(screen.queryByRole('link', { name: /^Open span/ })).toBeNull()
+      expect(screen.getByRole('link', { name: /^Open trace/ })).toHaveAttribute(
+        'href',
+        `/traces/${'A'.repeat(32)}?start=0&end=1${spanID ? `&span=${spanID}` : ''}`
+      )
+    }
+  )
+
+  it('does not mark pending or failed exemplar lookups unavailable', async () => {
+    let fail!: (reason: Error) => void
+    getSpanTimings.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+    )
+    renderWithContexts(SeriesDatapointListHarness, {
+      datapoints: [makeDatapoint()],
+      expandDatapointID: 'dp-1',
+    })
+    await waitFor(() => expect(getSpanTimings).toHaveBeenCalledOnce())
+    expect(screen.queryByText('(unavailable)')).toBeNull()
+    fail(new Error('offline'))
+    await tick()
+    expect(screen.queryByText('(unavailable)')).toBeNull()
+    expect(screen.getByRole('link', { name: 'span: span-ex' })).toBeVisible()
+  })
+
+  it('refreshes the reference in place when refreshed exemplar data arrives', async () => {
+    getSpanTimings.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        traceID: 'trace-ex',
+        spanID: 'span-ex',
+        name: 'Arrived span',
+        serviceName: 'worker',
+        startTime: 0n,
+        endTime: 1n,
+        statusCodeValue: 0,
+      } satisfies SpanTiming,
+    ])
+    const dp = makeDatapoint()
+    const view = renderWithContexts(SeriesDatapointListHarness, {
+      datapoints: [dp],
+      expandDatapointID: dp.id,
+    })
+    await screen.findByText('(unavailable)')
+    const row = datapointRow(dp.id)
+    const evidence = screen.getByText('value: 42')
+    await view.rerender({
+      componentProps: {
+        datapoints: [{ ...dp, exemplars: dp.exemplars.map(ex => ({ ...ex })) }],
+        expandDatapointID: dp.id,
+      },
+    })
+    await waitFor(() => expect(getSpanTimings).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText('(unavailable)')).toBeNull())
+    expect(datapointRow(dp.id)).toBe(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('value: 42')).toBe(evidence)
+    expect(screen.getByRole('link', { name: 'span: span-ex' })).toBeVisible()
   })
 
   // The store caps how many exemplars a datapoint ships. The reader has to be

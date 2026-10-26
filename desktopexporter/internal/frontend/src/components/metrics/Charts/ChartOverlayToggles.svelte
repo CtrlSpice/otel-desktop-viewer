@@ -52,9 +52,8 @@
     {@const active = activeOverlays.has(overlay.id)}
     <button
       type="button"
-      class="chart-overlay-toggles__pill drawer-header-btn {active
-        ? 'chart-overlay-toggles__pill--active'
-        : 'drawer-header-btn--inactive'}"
+      class="chart-overlay-toggles__pill drawer-header-btn"
+      class:chart-overlay-toggles__pill--active={active}
       aria-pressed={active}
       onclick={() => onToggle(overlay.id)}
     >
@@ -88,6 +87,6 @@
       transparent
     );
     color: var(--color-base-content);
-    @apply font-medium;
+    @apply font-normal;
   }
 </style>

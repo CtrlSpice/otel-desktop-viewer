@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -67,6 +69,7 @@ type statsJSON struct {
 type storageStatsJSON struct {
 	SizeBytes    float64 `json:"sizeBytes"`
 	MaxSizeBytes float64 `json:"maxSizeBytes"`
+	InMemory     bool    `json:"inMemory"`
 }
 
 type traceStatsJSON struct {
@@ -96,7 +99,7 @@ func rawStats(t *testing.T, s *store.Store, ctx context.Context) json.RawMessage
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap(), s.InMemory())
 	})
 	require.NoError(t, err)
 	return raw
@@ -107,12 +110,26 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap(), s.InMemory())
 	})
 	require.NoError(t, err)
 	var result statsJSON
 	require.NoError(t, json.Unmarshal(raw, &result))
 	return result
+}
+
+func TestGetStatsStorageMode(t *testing.T) {
+	for _, inMemory := range []bool{true, false} {
+		path := ""
+		if !inMemory {
+			path = filepath.Join(t.TempDir(), "telemetry.duckdb")
+		}
+		s, err := store.NewStore(t.Context(), path, zap.NewNop())
+		require.NoError(t, err)
+		result := getStats(t, s, t.Context())
+		assert.Equal(t, inMemory, result.Storage.InMemory)
+		require.NoError(t, s.Close())
+	}
 }
 
 func TestGetStats_Empty(t *testing.T) {

@@ -1,0 +1,89 @@
+/* Register semantic colours with Tailwind so text-subtle/text-muted work in
+   markup and @apply. themes/tokens.ts supplies their seasonal Madoromi values. */
+@theme {
+  --color-subtle: var(--color-base-content);
+  --color-muted: var(--color-base-content);
+  --color-papaya: #ff8000;
+  /* Compact component sizes change spacing, not the working text size. */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1rem;
+  --text-xl--line-height: 1.5;
+  --text-card-title: 1.0625rem;
+  --text-card-title--line-height: 1.5;
+}
+
+:root {
+  /* Shared DaisyUI shape and control sizing. */
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+
+  /* Interaction, focus and floating surfaces. */
+  --focus-ring-width: 1px;
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
+  --popover-shadow: 0 2px 8px rgb(0 0 0 / 0.16), 0 12px 32px rgb(0 0 0 / 0.2);
+  --item-hover-bg: var(--color-highlight-low);
+  --item-selected-bg: var(--color-highlight-med);
+  --tooltip-show-delay: 400ms;
+  --resize-grip-length: 3rem;
+  --resize-grip-thickness: 0.1875rem;
+
+  /* Feedback and explicit panel transitions. */
+  --motion-feedback-duration: 120ms;
+  --motion-fade-duration: 160ms;
+  --motion-compact-duration: 180ms;
+  --motion-panel-duration: 240ms;
+  --motion-settle-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --item-motion-duration: var(--motion-feedback-duration);
+  --panel-motion-duration: var(--motion-panel-duration);
+  --panel-motion-easing: var(--motion-settle-easing);
+
+  /* Tables, shared pane headers and shell geometry. */
+  --table-row-h: 2.5rem;
+  --table-header-h: 2.75rem;
+  --table-heading-color: var(--color-subtle);
+  --waterfall-gutter-tail: 4px;
+  --layout-gap: 1rem;
+  --resize-bar-hit-width: 0.75rem;
+  --panel-split-total: var(--layout-gap);
+  --panel-split-flex-gap: calc(
+    (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
+  );
+  --app-footer-height: 2.75rem;
+  --header-gap: 0.5rem;
+  --control-icon-gap: 0.125rem;
+  --control-choice-gap: 0.25rem;
+  --control-group-gap: 0.5rem;
+  --control-target-size: 2rem;
+  --header-counter-min-width: 1rem;
+  --signal-card-row-h: 1.5rem;
+  --header-padding: 0.5rem;
+  --header-padding-inline: var(--pane-inline-inset);
+  --pane-header-row-h: 2rem;
+  --pane-header-single-h: calc(
+    var(--pane-header-row-h) + 2 * var(--header-padding)
+  );
+  --pane-inline-inset: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-feedback-duration: 0ms;
+    --motion-fade-duration: 0ms;
+    --motion-compact-duration: 0ms;
+    --motion-panel-duration: 0ms;
+  }
+}

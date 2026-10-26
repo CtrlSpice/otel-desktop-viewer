@@ -1,285 +1,50 @@
 <script lang="ts" generics="TSortColumn extends string">
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { ArrowUp02Icon, Sorting05Icon } from '@hugeicons/core-free-icons'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
-  import {
-    createPopoverID,
-    setupAnchorPopover,
-  } from '@/components/shared/utils/anchor-popover'
   import type { SearchResultEvent } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+  import type { FieldDefinition, ParsedSearchRequest } from '@/search/model'
 
-  import type {
-    SortDirection,
-    SortOption,
-  } from '@/contexts/signal-list-page.svelte'
+  import type { SortDirection } from '@/contexts/signal-list-page.svelte'
 
   type DrawerSearchPanelSegment = 'full' | 'toolbar' | 'search'
-  type SortMenuFocusTarget = 'selected' | 'first' | 'last'
 
   type Props = {
-    /** `toolbar` = sort/time/refresh · `search` = editor · `full` = both */
+    /** `toolbar` = time range · `search` = editor · `full` = both */
     segment?: DrawerSearchPanelSegment
     signal: 'traces' | 'metrics' | 'logs'
-    sortOptions: SortOption<TSortColumn>[]
     sortValue: TSortColumn
     sortDirection: SortDirection
-    onSortChange?: (value: TSortColumn, direction: SortDirection) => void
     onSearchResults?: (event: SearchResultEvent) => void
     onSearchError?: (error: string | null) => void
     onSearchReady?: (api: SearchEditorAPI) => void
+    onQueryChange?: (text: string, fields: FieldDefinition[]) => void
+    onQuerySubmit?: (text: string) => void
+    onSearchRequest?: (request: ParsedSearchRequest | null) => void
   }
 
   let {
     segment = 'full',
     signal,
-    sortOptions,
     sortValue,
     sortDirection,
-    onSortChange,
     onSearchResults,
     onSearchError,
     onSearchReady,
+    onQueryChange,
+    onQuerySubmit,
+    onSearchRequest,
   }: Props = $props()
-
-  let sortPopoverEl = $state<HTMLDivElement | null>(null)
-  let sortTriggerEl = $state<HTMLButtonElement | null>(null)
-  let sortPopoverOpen = $state(false)
-  let focusedSortIndex = $state(0)
-  let pendingMenuFocus: SortMenuFocusTarget = 'selected'
-
-  const sortPopoverID = createPopoverID('sort-popover')
-
-  let currentSortLabel = $derived(
-    sortOptions.find(o => o.value === sortValue)?.label ?? 'Sort'
-  )
-
-  let sortAriaLabel = $derived(
-    `Sort by ${currentSortLabel}, ${sortDirection === 'asc' ? 'ascending' : 'descending'}`
-  )
-
-  $effect(() => {
-    const popover = sortPopoverEl
-    const trigger = sortTriggerEl
-    if (!popover || !trigger) return
-    return setupAnchorPopover({
-      popover,
-      trigger,
-      anchor: 'below-end',
-      onOpenChange: open => {
-        sortPopoverOpen = open
-        if (open) {
-          const target = pendingMenuFocus
-          pendingMenuFocus = 'selected'
-          queueMicrotask(() => {
-            if (sortPopoverOpen) focusSortTarget(target)
-          })
-        }
-      },
-    })
-  })
-
-  function nextDirection(opt: SortOption<TSortColumn>): SortDirection {
-    if (opt.value !== sortValue) return opt.defaultDirection ?? 'asc'
-    return sortDirection === 'asc' ? 'desc' : 'asc'
-  }
-
-  function selectSort(value: TSortColumn, dir: SortDirection) {
-    onSortChange?.(value, dir)
-    sortPopoverEl?.hidePopover()
-    sortTriggerEl?.focus()
-  }
-
-  function sortMenuItems(): HTMLButtonElement[] {
-    return Array.from(
-      sortPopoverEl?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitemradio"]'
-      ) ?? []
-    )
-  }
-
-  function focusSortItem(index: number) {
-    const menuItems = sortMenuItems()
-    const item = menuItems[index]
-    if (!item) {
-      sortTriggerEl?.focus()
-      return
-    }
-
-    focusedSortIndex = index
-    item.focus()
-  }
-
-  function focusSortTarget(target: SortMenuFocusTarget) {
-    const menuItems = sortMenuItems()
-    const selectedIndex = sortOptions.findIndex(
-      option => option.value === sortValue
-    )
-    const index =
-      target === 'first'
-        ? 0
-        : target === 'last'
-          ? menuItems.length - 1
-          : Math.max(0, selectedIndex)
-    focusSortItem(index)
-  }
-
-  function openSortMenu(target: SortMenuFocusTarget) {
-    pendingMenuFocus = target
-    if (sortPopoverOpen) {
-      focusSortTarget(target)
-    } else {
-      sortPopoverEl?.showPopover()
-    }
-  }
-
-  function closeSortMenu() {
-    sortPopoverEl?.hidePopover()
-    sortTriggerEl?.focus()
-  }
-
-  function handleSortTriggerKeydown(event: KeyboardEvent) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      openSortMenu('first')
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      openSortMenu('last')
-    }
-  }
-
-  function handleSortMenuKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      closeSortMenu()
-      return
-    }
-
-    const menuItems = sortMenuItems()
-    const target = event.target
-    if (!(target instanceof Element)) return
-    const current = target.closest<HTMLButtonElement>('[role="menuitemradio"]')
-    const currentIndex = current ? menuItems.indexOf(current) : -1
-    if (currentIndex < 0 || menuItems.length === 0) return
-
-    let nextIndex: number
-    if (event.key === 'ArrowDown') {
-      nextIndex = (currentIndex + 1) % menuItems.length
-    } else if (event.key === 'ArrowUp') {
-      nextIndex = (currentIndex - 1 + menuItems.length) % menuItems.length
-    } else if (event.key === 'Home') {
-      nextIndex = 0
-    } else if (event.key === 'End') {
-      nextIndex = menuItems.length - 1
-    } else if (
-      event.key.length === 1 &&
-      !event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey
-    ) {
-      const prefix = event.key.toLocaleLowerCase()
-      nextIndex = menuItems.findIndex((item, index) => {
-        const wrappedIndex = (currentIndex + index + 1) % menuItems.length
-        return menuItems[wrappedIndex].textContent
-          ?.trim()
-          .toLocaleLowerCase()
-          .startsWith(prefix)
-      })
-      if (nextIndex < 0) return
-      nextIndex = (currentIndex + nextIndex + 1) % menuItems.length
-    } else {
-      return
-    }
-
-    event.preventDefault()
-    focusSortItem(nextIndex)
-  }
-
-  function handleSortPopoverFocusout(event: FocusEvent) {
-    const next = event.relatedTarget
-    if (next instanceof Node && sortPopoverEl?.contains(next)) return
-    sortPopoverEl?.hidePopover()
-  }
 </script>
 
-<div class="drawer-search-panel">
+<div class="flex w-full min-w-0 flex-col gap-2">
   {#if segment === 'full' || segment === 'toolbar'}
-    <!-- Toolbar row: time · sort -->
     <div
-      class="drawer-search-panel__toolbar-row"
+      class="flex min-w-0 items-center justify-end gap-2"
       role="toolbar"
       aria-label="List controls"
     >
-      <DateTimeFilter
-        class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
-      />
-
-      <button
-        bind:this={sortTriggerEl}
-        type="button"
-        class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
-        popovertarget={sortPopoverID}
-        aria-expanded={sortPopoverOpen}
-        aria-haspopup="menu"
-        aria-controls={sortPopoverID}
-        aria-label={sortAriaLabel}
-        data-tip="Sort"
-        onkeydown={handleSortTriggerKeydown}
-      >
-        <HugeiconsIcon
-          icon={Sorting05Icon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-[17px] w-[17px] shrink-0"
-        />
-      </button>
-
-      <div
-        bind:this={sortPopoverEl}
-        popover="auto"
-        id={sortPopoverID}
-        class="anchor-popover anchor-popover--anchored anchor-popover--menu"
-        onfocusout={handleSortPopoverFocusout}
-      >
-        <ul
-          class="anchor-popover-menu"
-          role="menu"
-          aria-label="Sort by"
-          onkeydown={handleSortMenuKeydown}
-        >
-          {#each sortOptions as opt, index (opt.value)}
-            <li role="none">
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={opt.value === sortValue}
-                tabindex={index === focusedSortIndex ? 0 : -1}
-                class="anchor-popover-menu__option {opt.value === sortValue
-                  ? 'anchor-popover-menu__option--active'
-                  : ''}"
-                onfocus={() => (focusedSortIndex = index)}
-                onclick={() => selectSort(opt.value, nextDirection(opt))}
-              >
-                <span>{opt.label}</span>
-                {#if opt.value === sortValue}
-                  <HugeiconsIcon
-                    icon={ArrowUp02Icon}
-                    size="1em"
-                    strokeWidth={1.5}
-                    class="anchor-popover-menu__option-icon {sortDirection ===
-                    'desc'
-                      ? 'rotate-180'
-                      : ''}"
-                    aria-hidden="true"
-                  />
-                {/if}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </div>
+      <DateTimeFilter />
     </div>
   {/if}
 
@@ -291,19 +56,10 @@
       variant="drawer"
       {onSearchResults}
       {onSearchError}
+      {onQueryChange}
+      {onQuerySubmit}
+      {onSearchRequest}
       onReady={onSearchReady}
     />
   {/if}
 </div>
-
-<style lang="postcss">
-  @reference "../../../app.css";
-
-  .drawer-search-panel {
-    @apply flex w-full min-w-0 flex-col gap-2;
-  }
-
-  .drawer-search-panel__toolbar-row {
-    @apply flex min-w-0 items-center justify-end gap-2;
-  }
-</style>

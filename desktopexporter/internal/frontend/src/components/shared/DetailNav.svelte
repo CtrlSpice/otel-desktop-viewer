@@ -106,6 +106,6 @@
   }
 
   .detail-nav__counter {
-    @apply px-2 text-xs text-base-content/60 select-none;
+    @apply px-2 text-xs text-base-content select-none;
   }
 </style>

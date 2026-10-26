@@ -23,6 +23,7 @@ import { parser } from './query.parser'
 import { resolveField } from '../field-resolution'
 import {
   attributeFieldIdentity,
+  attributeMetadata,
   formatAttributeFieldReference,
   parseAttributeFieldReference,
   storedKindForField,
@@ -153,6 +154,39 @@ export function createQueryCompletionSource(
   return function queryCompletionSource(
     context: CompletionContext
   ): CompletionResult | null {
+    const selection = context.state.selection.main
+    const selectedAttribute =
+      !selection.empty && context.explicit
+        ? parseAttributeFieldReference(
+            context.state.sliceDoc(selection.from, selection.to),
+            signal
+          )
+        : null
+    if (selectedAttribute) {
+      const choices = getFields().filter(
+        field =>
+          field.searchScope === 'attribute' &&
+          field.name === selectedAttribute.name
+      )
+      if (
+        !choices.some(
+          field =>
+            field.searchScope === 'attribute' &&
+            attributeFieldIdentity(field) ===
+              attributeFieldIdentity(selectedAttribute)
+        )
+      )
+        choices.push(selectedAttribute)
+      const result = fieldCompletions(
+        context,
+        choices,
+        signal,
+        selection.from,
+        selection.to,
+        false
+      )
+      return result ? { ...result, filter: false, validFor: undefined } : null
+    }
     const tree = syntaxTree(context.state)
     const node = tree.resolveInner(context.pos, -1)
 
@@ -430,8 +464,8 @@ function compareText(left: string, right: string): number {
 
 function compareAttributeFields(left: AttributeField, right: AttributeField) {
   return (
-    compareText(left.attributeScope, right.attributeScope) ||
     compareText(left.name, right.name) ||
+    compareText(left.attributeScope, right.attributeScope) ||
     compareText(storedKindForField(left), storedKindForField(right))
   )
 }
@@ -441,7 +475,8 @@ function fieldCompletions(
   fields: FieldDefinition[],
   signal?: SearchSignal,
   from?: number,
-  to?: number
+  to?: number,
+  appendSpace = true
 ): CompletionResult | null {
   const options: Completion[] = []
   const nativeFields = fields.filter(
@@ -463,16 +498,12 @@ function fieldCompletions(
     options.push({
       label: field.name,
       type: 'property',
-      detail: attribute
-        ? `${attribute.attributeScope} · ${storedKindForField(attribute)}`
-        : field.type,
+      detail: attribute ? attributeMetadata(attribute) : field.type,
       info: 'description' in field ? field.description : undefined,
       boost: field.searchScope === 'field' ? 1 : 0,
-      section: attribute
-        ? `${attribute.attributeScope} / ${attribute.name}`
-        : 'Fields',
-      // The trailing space opens operator completion.
-      apply: `${attribute ? formatAttributeFieldReference(attribute) : field.name} `,
+      section: attribute ? 'Attributes' : 'Fields',
+      // New fields open operator completion; token edits retain existing spacing.
+      apply: `${attribute ? formatAttributeFieldReference(attribute) : field.name}${appendSpace ? ' ' : ''}`,
     })
   }
 

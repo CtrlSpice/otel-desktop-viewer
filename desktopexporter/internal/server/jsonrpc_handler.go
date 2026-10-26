@@ -27,6 +27,7 @@ type JSONRPCHandler struct {
 	store        *store.Store
 	logger       *zap.Logger
 	otlpHTTPPort int
+	otlpGRPCPort int
 }
 
 func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
@@ -105,13 +106,19 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	req.Params = normalized
 
 	switch req.Method {
+	case "rpc.discover":
+		if err := validateNoParams(req.Params); err != nil {
+			return nil, err
+		}
+		return openRPCDocument(), nil
 	case "getImportConfig":
 		if h.otlpHTTPPort <= 0 {
 			return nil, fmt.Errorf("%w: OTLP HTTP import is not configured", jsonrpc2.ErrInternal)
 		}
 		return struct {
 			OTLPHTTPPort int `json:"otlpHttpPort"`
-		}{OTLPHTTPPort: h.otlpHTTPPort}, nil
+			OTLPGRPCPort int `json:"otlpGrpcPort,omitempty"`
+		}{OTLPHTTPPort: h.otlpHTTPPort, OTLPGRPCPort: h.otlpGRPCPort}, nil
 	case "searchTraceSummaries":
 		return h.searchTraceSummaries(ctx, req)
 	case "getTraceView":
@@ -122,6 +129,10 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getSpan(ctx, req)
 	case "searchLogSummaries":
 		return h.searchLogSummaries(ctx, req)
+	case "searchLogPage":
+		return h.searchLogPage(ctx, req)
+	case "getLogErrorNavigation":
+		return h.getLogErrorNavigation(ctx, req)
 	case "getTraceLogSummaries":
 		return h.getTraceLogSummaries(ctx, req)
 	case "getLog":
@@ -162,6 +173,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getTraceAttributeDefinitionsByTraceID(ctx, req)
 	case "getStats":
 		return h.getStats(ctx)
+	case "discoverTelemetry":
+		return h.discoverTelemetry(ctx, req)
 	case "getTraceSpanCount":
 		return h.getTraceSpanCount(ctx, req)
 	case "query":
@@ -208,7 +221,7 @@ func (h *JSONRPCHandler) searchTraceSummaries(ctx context.Context, req *jsonrpc2
 }
 
 func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	params, err := decodePositionalParams(req.Params, 1, 2)
+	params, err := decodePositionalParams(req.Params, 1, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -218,12 +231,26 @@ func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	var query any
-	if len(params) == 2 {
+	if len(params) >= 2 {
 		query = params[1]
+	}
+	var spanIDs []uint64
+	if len(params) >= 3 && params[2] != nil {
+		values, ok := params[2].([]any)
+		if !ok || len(values) == 0 || len(values) > 256 {
+			return nil, fmt.Errorf("spanIDs requires 1 to 256 span IDs: %w", jsonrpc2.ErrInvalidParams)
+		}
+		for _, value := range values {
+			_, id, err := parseSpanIDParam(value)
+			if err != nil {
+				return nil, err
+			}
+			spanIDs = append(spanIDs, id)
+		}
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetTraceView(ctx, db, traceID, query)
+		return spans.GetTraceView(ctx, db, traceID, query, spanIDs...)
 	})
 }
 
@@ -475,6 +502,82 @@ func (h *JSONRPCHandler) searchLogSummaries(ctx context.Context, req *jsonrpc2.R
 	})
 }
 
+func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	values, err := decodePositionalParams(req.Params, 2, 8)
+	if err != nil {
+		return nil, err
+	}
+	params, err := searchParamsFromValues(values)
+	if err != nil {
+		return nil, err
+	}
+	size := int64(100)
+	if len(values) > 5 && values[5] != nil {
+		size, err = parseTimestampParam(values[5], "pageSize")
+		if err != nil {
+			return nil, err
+		}
+	}
+	offset, err := parseOptionalNonNegativeInt(values, 6, "offset")
+	if err != nil {
+		return nil, err
+	}
+	if size < 1 || size > 250 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	var columns []logs.Column
+	if len(values) > 7 && values[7] != nil {
+		list, ok := values[7].([]any)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		for _, value := range list {
+			column, ok := value.(map[string]any)
+			if !ok || len(column) != 3 {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			source, sourceOK := column["source"].(string)
+			kind, kindOK := column["kind"].(string)
+			key, keyOK := column["key"].(string)
+			if !sourceOK || !kindOK || !keyOK {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			columns = append(columns, logs.Column{Source: source, Kind: kind, Key: key})
+		}
+		if logs.ValidateColumns(columns) != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, logs.PageOptions{Size: size, Offset: offset, Columns: columns})
+	})
+}
+
+func (h *JSONRPCHandler) getLogErrorNavigation(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	values, err := decodePositionalParams(req.Params, 2, 6)
+	if err != nil {
+		return nil, err
+	}
+	params, err := searchParamsFromValues(values)
+	if err != nil {
+		return nil, err
+	}
+	selectedID := ""
+	if len(values) > 5 && values[5] != nil {
+		value, ok := values[5].(string)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		selectedID, err = normalizeUUID(value)
+		if err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetErrorNavigation(ctx, db, params.timeRange, params.query, params.options, selectedID)
+	})
+}
+
 func (h *JSONRPCHandler) getTraceLogSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
@@ -701,7 +804,7 @@ func (h *JSONRPCHandler) getMetricAggregateView(ctx context.Context, req *jsonrp
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAggregateView(ctx, db, args.metricRef, args.timeRange,
 			args.targetBuckets, args.seriesRefs, args.quantiles, args.tzOffsetNs,
-			args.viewBuckets, args.selectedSeriesRefs, args.tzName)
+			args.viewBuckets, args.selectedSeriesRefs, args.tzName, args.datapointRef)
 	})
 }
 
@@ -745,6 +848,6 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return stats.GetStats(ctx, db, sizeBytes, retentionCap)
+		return stats.GetStats(ctx, db, sizeBytes, retentionCap, h.store.InMemory())
 	})
 }

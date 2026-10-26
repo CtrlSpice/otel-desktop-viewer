@@ -25,6 +25,11 @@ const (
 	maxPruneRounds = 3
 )
 
+// InMemory reports whether this store has no persistent database file.
+func (s *Store) InMemory() bool {
+	return s.dbPath == ""
+}
+
 // SizeBytes reports the current size of the telemetry store.
 //
 // In disk mode this is the size of the database file plus its write-ahead
@@ -251,12 +256,8 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	for _, q := range []string{
-		`delete from logs where ` + logTime + ` <= (select unnest(?::ubigint[]))`,
-	} {
-		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
-			return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
-		}
+	if err := ingest.DeleteLogs(ctx, db, `delete from logs where `+logTime+` <= (select unnest(?::ubigint[]))`, []uint64{cutoff}); err != nil {
+		return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
 	}
 	return nil
 }

@@ -2,13 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   loadPersistedAggregationView,
-  loadPersistedShowAllSeriesAggregate,
   metricViewStorageKey,
   persistedVisibleKeys,
   repairEmptyPersistedVisibleKeys,
   resolveTimeseriesVisible,
   savePersistedAggregationView,
-  savePersistedShowAllSeriesAggregate,
   savePersistedTimeseriesVisible,
 } from '@/components/metrics/utils/metric-timeseries-visible'
 
@@ -52,7 +50,6 @@ describe('repairEmptyPersistedVisibleKeys', () => {
     expect(stored.futurePreference).toBe('preserved')
     expect(stored.visibleKeys).toBeUndefined()
     expect(loadPersistedAggregationView('m1', ['raw', 'rate'])).toBe('rate')
-    expect(loadPersistedShowAllSeriesAggregate('m1')).toBe(true)
     expect(resolveTimeseriesVisible(keys, 'm1')).toEqual(keys)
   })
 
@@ -102,10 +99,8 @@ describe('repairEmptyPersistedVisibleKeys', () => {
     expect(() => repairEmptyPersistedVisibleKeys()).not.toThrow()
     expect(() => savePersistedTimeseriesVisible('m1', ['a'])).not.toThrow()
     expect(() => savePersistedAggregationView('m1', 'sum')).not.toThrow()
-    expect(() => savePersistedShowAllSeriesAggregate('m1', true)).not.toThrow()
     expect(persistedVisibleKeys('m1')).toBeNull()
     expect(loadPersistedAggregationView('m1', ['sum'])).toBeNull()
-    expect(loadPersistedShowAllSeriesAggregate('m1')).toBe(false)
   })
 
   it('keeps saves non-fatal when writing storage fails', () => {
@@ -115,7 +110,6 @@ describe('repairEmptyPersistedVisibleKeys', () => {
 
     expect(() => savePersistedTimeseriesVisible('m1', ['a'])).not.toThrow()
     expect(() => savePersistedAggregationView('m1', 'sum')).not.toThrow()
-    expect(() => savePersistedShowAllSeriesAggregate('m1', true)).not.toThrow()
   })
 
   it('does not recreate an empty selection when settings change after repair', () => {
@@ -130,7 +124,6 @@ describe('repairEmptyPersistedVisibleKeys', () => {
     repairEmptyPersistedVisibleKeys()
 
     savePersistedAggregationView('m5', 'sum')
-    savePersistedShowAllSeriesAggregate('m5', false)
 
     const stored = JSON.parse(localStorage.getItem(metricViewStorageKey('m5'))!)
     expect(stored).toEqual({ aggregationView: 'sum' })
@@ -155,7 +148,6 @@ describe('persisted metric view decoding', () => {
 
     expect(persistedVisibleKeys('mixed')).toEqual(['b', 'a', 'b'])
     expect(loadPersistedAggregationView('mixed', ['raw', 'rate'])).toBe('rate')
-    expect(loadPersistedShowAllSeriesAggregate('mixed')).toBe(true)
   })
 
   it('rejects the whole view when visibleKeys is not an array', () => {
@@ -170,7 +162,6 @@ describe('persisted metric view decoding', () => {
 
     expect(persistedVisibleKeys('invalid-list')).toBeNull()
     expect(loadPersistedAggregationView('invalid-list', ['rate'])).toBeNull()
-    expect(loadPersistedShowAllSeriesAggregate('invalid-list')).toBe(false)
   })
 
   it('ignores malformed optional fields while keeping visible keys', () => {
@@ -185,7 +176,6 @@ describe('persisted metric view decoding', () => {
 
     expect(persistedVisibleKeys('invalid-options')).toEqual(['a'])
     expect(loadPersistedAggregationView('invalid-options', ['raw'])).toBeNull()
-    expect(loadPersistedShowAllSeriesAggregate('invalid-options')).toBe(false)
   })
 
   it('rewrites a partially valid view canonically on the next save', () => {
@@ -203,7 +193,6 @@ describe('persisted metric view decoding', () => {
       JSON.stringify({
         visibleKeys: ['b', 'a'],
         aggregationView: 'sum',
-        showAllSeriesAggregate: true,
       })
     )
   })

@@ -1,136 +1,57 @@
-// Single source of truth for chart colors. Two flavours live here:
+// Colour allocation from the shared theme definitions.
 //
-//   - `categoricalPalette()` -- series-identity colours for line charts,
-//     histogram heatmap legends, and trace waterfall bars. Uses the approved
-//     six-family static table, rotated so the caller's requested family leads.
+//   - `metricSeriesPalette()` -- one type-independent sequence for plotted series.
+//   - `traceSpanPalette()` -- the same theme-specific identity slots.
 //
-//   - `heatmapSwatches()` -- smooth count ramp for the histogram heatmap.
-//     Endpoints are per-theme literal hex; HCL interpolation keeps the
-//     middle stops on a clean hue arc rather than drifting through
-//     grey/purple the way sRGB does for dark-to-saturated pairs. Try
-//     `interpolateLab` if HCL hue arcs ever look wrong; sRGB
-//     (`interpolateRgb`) is generally too muddy for these endpoints.
+//   - `countSwatches()` -- perceptually spaced ink spectrum in count order.
 //
-// Error colouring (e.g. error spans in the waterfall) is intentionally
-// *not* in this file -- callers reach for `var(--color-error)` directly so
-// the error semantic stays anchored to the daisyUI token rather than
-// shadowed by a palette function. Keeps the categorical pool free of
-// reserved hues.
+// Error spans use `var(--color-error)` directly.
 
-import { interpolateHcl } from 'd3-interpolate'
-import chartPalettes from './chart-palettes.json'
+import { getSeriesPalette, getTheme } from '@/themes'
+import heatmapPalette from '@/themes/heatmap-palette.json' with { type: 'json' }
 
-// Per-theme heatmap endpoints. base-200 on the cold end so the lowest swatch
-// blends into the chart surface; the "hot" end varies by theme so the ramp
-// reads as theme-native rather than imported.
-const DEFAULT_HEATMAP_ENDPOINTS = ['#2a273f', '#eb6f92'] as const
-const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
-  ['rose-pine', ['#1f1d2e', '#eb6f92']], // base-200 → error (love)
-  ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS], // base-200 → error (love)
-  ['rose-pine-dawn', ['#faf4ed', '#907aa9']], // base-200 → primary (iris)
-])
+const countRamps: Record<number, { day: string[]; night: string[] }> =
+  heatmapPalette.ramps
 
 /**
- * Visually-stepped colour ramp for a heatmap with `steps` swatches. Interpolates
- * between a theme-specific [cold, hot] hex pair so the lowest active cell is
- * already one perceptual step in from the chart surface and the hottest cell
- * reads as the theme's accent.
- *
- * Sample positions are `1/steps, 2/steps, ..., 1` -- intentionally excluding
- * t=0 (the cold endpoint) so the first swatch is visible against the chart
- * background. Callers that need a true "empty" colour should prepend the
- * `base-200` (or whatever surface) swatch themselves.
- *
- * No upper cap on steps -- callers that need 16 or 32 swatches get them.
- * `steps <= 1` returns just the hot end.
- *
- * Returns CSS-compatible `rgb(r, g, b)` strings (d3's default output format).
- * Unknown / empty `theme` falls back to the moon ramp.
+ * Ink-derived sequential spectrum at 1–12 perceptually spaced samples.
+ * Day reverses Night's exact shades; a singleton uses its mode's high-count end.
  */
-export function heatmapSwatches(steps: number, theme: string = ''): string[] {
+export function countSwatches(steps: number, theme: string = ''): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
-  if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
-    throw new RangeError('steps must produce a valid array length')
+  if (!Number.isFinite(safeSteps) || safeSteps > 12) {
+    throw new RangeError('steps must produce a count ramp length from 1 to 12')
   }
-  const [start, end] = HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
-  if (safeSteps === 1) return [end]
-  const interpolator = interpolateHcl(start, end)
-  const out: string[] = []
-  for (let i = 0; i < safeSteps; i++) {
-    out.push(interpolator((i + 1) / safeSteps))
-  }
-  return out
+  const mode = getTheme(theme).scheme === 'light' ? 'day' : 'night'
+  return [...countRamps[safeSteps]![mode]]
 }
 
-// ── Categorical series palette ──
-//
-// Fixed static palette interleaving six colour families at five levels. The
-// family order rotates to put `start` first; the level order deliberately
-// spreads the first few series across family and lightness.
-//
-// Callers pass the *cap* (MAX_VISIBLE_TIMESERIES), never the current
-// series count. That is the load-bearing part: a count-aware palette
-// would shift every series's colour whenever the user toggled visibility
-// on a metric with a different number of timeseries -- a series's colour
-// shouldn't depend on how many neighbours it has. Passing a constant
-// means "the 4th visible timeseries" always gets the same hue, no matter
-// the metric.
-//
-// The scalar cap is independent of the finite table size. It keeps dense line
-// charts readable without changing their selection policy.
-//
-export type CategoricalStem =
-  'pine' | 'foam' | 'gold' | 'rose' | 'iris' | 'love'
-
-// Families rotate in this order. Each level is emitted across all families
-// before moving to the next level.
-const FAMILY_ORDER: readonly CategoricalStem[] = [
-  'pine',
-  'foam',
-  'gold',
-  'rose',
-  'iris',
-  'love',
-] as const
-
-const DEFAULT_CATEGORICAL_PALETTE = chartPalettes['rose-pine-moon']
-const PALETTES_BY_THEME = new Map(Object.entries(chartPalettes))
-const LEVEL_ORDER = [2, 0, 4, 1, 3] as const
-
-export const CHART_PALETTES = chartPalettes
-
-/**
- * Categorical chart palette of length `count`. The 30 approved colours are
- * emitted as family/level interleaves and repeat deterministically past that
- * finite pool. Unknown / empty `theme` falls back to moon. `count <= 0`
- * returns `[]`.
- */
-export function categoricalPalette(
-  count: number,
-  start: CategoricalStem,
-  theme: string = ''
-): string[] {
+/** Stable prefixes: visibility and theme changes never shuffle colour identities. */
+function repeatPalette(count: number, pool: readonly string[]): string[] {
   const safeCount = Math.max(0, Math.floor(count))
   if (!Number.isFinite(safeCount) || safeCount >= 2 ** 32) {
     throw new RangeError('count must produce a valid array length')
   }
   if (safeCount === 0) return []
 
-  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
-  const startIdx = FAMILY_ORDER.indexOf(start)
-  const rotated =
-    startIdx >= 0
-      ? [...FAMILY_ORDER.slice(startIdx), ...FAMILY_ORDER.slice(0, startIdx)]
-      : [...FAMILY_ORDER]
-  const approvedPool = LEVEL_ORDER.flatMap(level =>
-    rotated.map(family => palette[family][level]!)
-  )
-
   const out: string[] = []
   for (let i = 0; i < safeCount; i++) {
-    out.push(approvedPool[i % approvedPool.length]!)
+    out.push(pool[i % pool.length]!)
   }
   return out
+}
+
+/** Official Madoromi ink identities; actual errors retain the Error role. */
+export function traceSpanPalette(count: number, theme: string = ''): string[] {
+  return repeatPalette(count, getSeriesPalette(theme))
+}
+
+/** The same 224 logical slots for every metric shape. */
+export function metricSeriesPalette(
+  count: number,
+  theme: string = ''
+): string[] {
+  return repeatPalette(count, getSeriesPalette(theme))
 }
 
 /** Neutral swatch / unchecked-checkbox colour. */
@@ -142,31 +63,32 @@ export function chartNeutral(): string {
 export const AGG_COLOR_SELECTED = 'var(--color-primary)'
 export const AGG_COLOR_ALL = 'var(--color-secondary)'
 
-// On-swatch glyph colour (checkbox tick, etc.) for a categorical-palette
-// entry. The legend swatches use the same colours as the chart lines, which
-// span pine through gold/foam (light) through rose toward iris -- some are
-// dark enough for a white glyph, some are light enough to need a dark one.
-// Pre-baked fg tables don't survive theme switches or palette length changes,
-// so we do the contrast check at read time.
-
-/** Pick the active theme's on-light or on-dark glyph colour for a given
- *  background swatch. Accepts d3's `rgb(r, g, b)` (from interpolateHcl) or
- *  `#rrggbb`. Returns one of two CSS variables -- `--color-on-light` for
- *  dark glyphs on bright swatches, `--color-on-dark` for light glyphs on
- *  dark swatches -- both defined per theme in app.css. Using vars (not
- *  literal hex) means a theme switch reroutes glyphs without touching
- *  this function. Uses Rec. 709 luminance: WCAG-style without gamma, fine
- *  for "which of two glyphs reads better here". Unparseable input falls
- *  back to the on-dark glyph so the answer always resolves to a defined
- *  theme variable. */
-export function readableTextColor(bg: string): string {
+/** Choose the higher-contrast seasonal glyph using linear-sRGB luminance. */
+export function readableTextColor(bg: string, theme: string = ''): string {
   const rgb = parseRgbLike(bg)
   if (!rgb) return 'var(--color-on-dark)'
-  const [r, g, b] = rgb
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-  // Threshold at ~140/255 picks the same dark/light split as eyeballing
-  // each Rosé Pine stem against the theme's surface + text colours.
-  return luminance > 140 ? 'var(--color-on-light)' : 'var(--color-on-dark)'
+  const { colors, scheme } = getTheme(theme)
+  const dark = scheme === 'light' ? colors.text : colors.canvas
+  const light = scheme === 'light' ? colors.canvas : colors.text
+  const background = luminance(rgb)
+  const contrast = (color: string) => {
+    const foreground = luminance(parseRgbLike(color)!)
+    return (
+      (Math.max(background, foreground) + 0.05) /
+      (Math.min(background, foreground) + 0.05)
+    )
+  }
+  return contrast(dark) >= contrast(light)
+    ? 'var(--color-on-light)'
+    : 'var(--color-on-dark)'
+}
+
+function luminance(rgb: [number, number, number]): number {
+  const [r, g, b] = rgb.map(channel => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 function parseRgbLike(s: string): [number, number, number] | null {

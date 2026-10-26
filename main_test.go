@@ -96,6 +96,16 @@ func validateServiceTelemetry(t *testing.T, o configOptions) error {
 }
 
 func TestCollectorURIsResolve(t *testing.T) {
+	t.Run("local feature flag paths round trip", func(t *testing.T) {
+		for _, file := range []string{"", "local flags.json", `C:\viewer\flags.json`, `flags #1 "local".json`} {
+			o := testOptions()
+			o.featureFlagsFile = file
+			cfg, err := resolveConfig(t, o)
+			require.NoError(t, err)
+			ext := cfg.Extensions[component.NewID(duckdbextension.Type)].(*duckdbextension.Config)
+			require.Equal(t, file, ext.FeatureFlagsFile)
+		}
+	})
 	t.Run("imports advertise the configured HTTP receiver port", func(t *testing.T) {
 		o := testOptions()
 		o.httpPort = 54318
@@ -162,8 +172,8 @@ func TestPipelinesBatch(t *testing.T) {
 
 	for _, signal := range []string{"traces", "metrics", "logs"} {
 		assert.Contains(t, joined,
-			"service::pipelines::"+signal+"::processors: [batch]",
-			"%s pipeline must batch", signal)
+			"service::pipelines::"+signal+"::processors: [redaction, batch]",
+			"%s pipeline must redact before batching", signal)
 	}
 
 	// send_batch_max_size bounds a merged batch, which is what makes the
@@ -184,6 +194,7 @@ func TestSelfTelemetryEndpointConfiguresBothSignalsExactly(t *testing.T) {
 
 	joined := strings.Join(collectorURIs(o), "\n")
 	assert.Contains(t, joined, `receivers::otlp::protocols::grpc::endpoint: "127.0.0.1:15317"`)
+	assert.Contains(t, joined, `extensions::duckdb::otlp_grpc_port: 15317`)
 	assert.Equal(t, 2, strings.Count(joined, `endpoint: "http://collector.example:4327"`),
 		"traces and metrics must use the exact supplied endpoint")
 }
