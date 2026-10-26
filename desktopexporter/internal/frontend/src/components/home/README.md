@@ -24,7 +24,8 @@ Home's left pane contains Getting started, the file-drop box, Storage and
 Ingestion issues. The dotted box matches the terminals' width and neutral border
 colour. It has a fixed 96px height, centred content and a 2px dotted outline.
 Pixel Lulu and the OTel Desktop Viewer wordmark form the sidebar header.
-The import box and exporter/test-trace instructions scroll below that header.
+The exporter/test-trace instructions scroll below that header. The import box
+stays at the bottom of Getting started, above Storage, outside the guide's scroll area.
 The box opens the multi-file JSON/JSONL picker and says “Drop telemetry JSON
 files here or anywhere on the screen.” File dropping works across the app.
 Getting started retains its accessible section name and stays open as the primary

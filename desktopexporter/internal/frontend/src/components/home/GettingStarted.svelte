@@ -43,9 +43,6 @@
   <h1 class="guide-name">OTel Desktop Viewer</h1>
 </header>
 <div class="guide-scroll">
-  {#if importContent}
-    <div class="guide-import">{@render importContent()}</div>
-  {/if}
   <section class="flex flex-col gap-3">
     <h2 class="text-lg font-normal">Connect an exporter</h2>
     <p class="text-subtle">
@@ -127,6 +124,9 @@
     </div>
   </section>
 </div>
+{#if importContent}
+  <div class="guide-import">{@render importContent()}</div>
+{/if}
 
 <style lang="postcss">
   @reference '../../app.css';
@@ -136,6 +136,7 @@
   }
   .guide-import {
     @apply flex h-24 shrink-0;
+    margin: 0.75rem var(--pane-inline-inset);
   }
   .guide-lulu {
     width: 48px;
