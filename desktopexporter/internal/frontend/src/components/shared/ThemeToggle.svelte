@@ -115,11 +115,11 @@
   }
 
   .theme-controls :global(.theme-season) {
-    @apply gap-2 rounded-l-full rounded-r-none pl-3 pr-2;
+    @apply gap-2 rounded-l-full rounded-r-none pl-3 pr-1;
   }
 
   .theme-toggle {
-    @apply w-auto gap-0 rounded-l-none rounded-r-full pl-2 pr-3 font-normal;
+    @apply w-auto gap-0 rounded-l-none rounded-r-full border-0 pl-1 pr-3 font-normal;
   }
 
   .theme-toggle__icon {
