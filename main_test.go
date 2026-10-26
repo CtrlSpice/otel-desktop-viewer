@@ -265,8 +265,7 @@ func TestComponentModuleVersionsMatchGoMod(t *testing.T) {
 	pinned := map[string]string{}
 	for _, line := range strings.Split(string(gomod), "\n") {
 		fields := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), " // indirect"))
-		if len(fields) == 2 && strings.HasPrefix(fields[0], "go.opentelemetry.io/") &&
-			strings.HasPrefix(fields[1], "v") {
+		if len(fields) == 2 && strings.HasPrefix(fields[1], "v") {
 			pinned[fields[0]] = fields[1]
 		}
 	}
