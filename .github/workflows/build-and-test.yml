@@ -9,14 +9,28 @@ permissions:
 env:
   EVALS: '0'
 
-# Cancel superseded branch runs and serialize setup-go cache writes.
+# Cancel superseded runs for the same pull request.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  release-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v7
+    - uses: goreleaser/goreleaser-action@v7
+      with:
+        distribution: goreleaser-pro
+        version: v2.19.0
+        # Legacy Docker publishing remains supported by this pinned release.
+        args: check --soft
+
   build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env: ${{ matrix.env }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -73,6 +87,10 @@ jobs:
     - name: Go Tests
       run: go test ./...
 
+    - name: Windows executable smoke
+      if: matrix.os == 'windows-latest'
+      run: ./.github/scripts/smoke-viewer.ps1 -Executable (Resolve-Path ./otel-desktop-viewer.exe).Path
+
   # These source checks need neither CGO nor the platform matrix.
   go-checks:
     runs-on: ubuntu-latest
@@ -98,6 +116,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         evals: ['0', '1']
@@ -120,6 +139,11 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    # Fail before the browser jobs if the committed public bundle is stale.
+    - name: Built assets are current
+      working-directory: ${{ github.workspace }}
+      run: make build-ts-check
+
     # The committed parser must match query.grammar.
     - name: Generated parser matches the grammar
       run: |
@@ -141,30 +165,74 @@ jobs:
     - name: Format check (Prettier)
       run: npm run format:check
 
+  browser:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        evals: ['0', '1']
+        shard: [1, 2, 3, 4]
+    env:
+      EVALS: ${{ matrix.evals }}
+    defaults:
+      run:
+        working-directory: desktopexporter/internal/frontend
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+    - run: npm ci
     - name: Install Chromium for Playwright
+      timeout-minutes: 15
       run: npx playwright install --with-deps chromium
 
-    - name: Accessibility tests (Playwright and axe)
-      run: npm run test:a11y
+    - name: Browser and accessibility tests
+      run: npm run test:a11y -- --shard=${{ matrix.shard }}/4
 
     - name: Upload Playwright artifacts
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
-        name: playwright-accessibility-report-evals-${{ matrix.evals }}
+        name: playwright-evals-${{ matrix.evals }}-shard-${{ matrix.shard }}
         path: |
           desktopexporter/internal/frontend/playwright-report/
           desktopexporter/internal/frontend/test-results/
         if-no-files-found: ignore
         retention-days: 14
 
-    # The committed bundle must match the frontend sources and lockfile.
-    - name: Built assets are current
-      working-directory: ${{ github.workspace }}
-      run: make build-ts-check
+  embedded-smoke:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-go@v7
+      with:
+        go-version: '1.26'
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+    - run: npm ci
+      working-directory: desktopexporter/internal/frontend
+    - name: Install Chromium
+      timeout-minutes: 15
+      run: npx playwright install --with-deps chromium
+      working-directory: desktopexporter/internal/frontend
+    - name: Build public executable with committed assets
+      run: go build -o otel-desktop-viewer
+    - name: Exercise embedded UI, ingestion and export
+      run: node desktopexporter/internal/frontend/scripts/smoke-binary.mjs ./otel-desktop-viewer
 
   evals-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       EVALS: '1'
     steps:
