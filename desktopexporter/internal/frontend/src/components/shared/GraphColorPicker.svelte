@@ -69,7 +69,7 @@
           Hex
           <input
             bind:this={input}
-            class="input input-sm min-w-0 w-full"
+            class="input typed-field typed-field--pill min-w-0 w-full text-base-content"
             aria-label="Colour value"
             type="text"
             spellcheck={false}
@@ -137,7 +137,7 @@
     width: max-content;
   }
   .graph-colour-picker {
-    @apply flex flex-col gap-2;
+    @apply flex flex-col gap-4 py-2;
     width: min(16rem, calc(100vw - 3rem));
   }
   .graph-colour-picker__swatches {
