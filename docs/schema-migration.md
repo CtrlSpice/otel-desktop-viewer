@@ -2,6 +2,10 @@
 
 The store uses schema version 24. It does not migrate databases.
 
+The viewer uses DuckDB 2.0.0. This engine update retains application schema 24,
+so schema-24 databases created by viewer 0.6.0 open without a schema conversion.
+The application schema version is independent of the DuckDB engine version.
+
 Version 24 makes Evals source tables rebuildable caches of retained,
 Collector-processed log evidence. Earlier versions contain independently stored
 producer JSON and cannot establish this processing boundary. The compatibility
