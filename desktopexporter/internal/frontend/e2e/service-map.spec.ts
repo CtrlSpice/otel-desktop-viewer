@@ -291,5 +291,53 @@ test('service cards are unique graph nodes with standalone services, stable insp
   await expect
     .poll(async () => (await workerNode.boundingBox())!.width)
     .toBeGreaterThan(beforeScroll.width)
+  await page.getByRole('button', { name: 'Reset service map view' }).click()
+  await connection.focus()
+  await connection.press('Enter')
+  const connectionDetails = details.getByRole('table', {
+    name: 'Connection details',
+  })
+  await expect(connectionDetails).toBeVisible()
+  let refreshedEdges: ServiceConnection[] = [
+    { ...edge(api, worker), spanCount: 7, traceCount: 3, errorSpanCount: 2 },
+  ]
+  await page.route('**/rpc', route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'discoverTelemetry' || params.options.kind !== 'connections')
+      return route.fallback()
+    return route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result: { rows: refreshedEdges.map(edge => [edge]), truncated: false },
+      },
+    })
+  })
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(connectionDetails).toHaveCount(0)
+  await expect(apiNode).toHaveAttribute('aria-pressed', 'true')
+  await expect(connection).toHaveAccessibleName(
+    'api → worker: 7 parent-child connections in 3 traces'
+  )
+  await connection.focus()
+  await connection.press('Enter')
+  await expect(
+    connectionDetails.locator(
+      '[data-field="Parent-child connections"] .detail-property__value'
+    )
+  ).toHaveText('7')
+  await expect(
+    connectionDetails.locator('[data-field="Traces"] .detail-property__value')
+  ).toHaveText('3')
+  await expect(
+    connectionDetails.locator(
+      '[data-field="Error child spans"] .detail-property__value'
+    )
+  ).toHaveText('2')
+  refreshedEdges = []
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(connectionDetails).toHaveCount(0)
+  await expect(connection).toHaveCount(0)
+  await expect(apiNode).toHaveAttribute('aria-pressed', 'true')
   expect(errors).toEqual([])
 })

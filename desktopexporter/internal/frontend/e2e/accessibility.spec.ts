@@ -1141,7 +1141,7 @@ test.describe('home page accessibility', () => {
       '--color-subtle': '#5e6277',
       '--color-sakura': '#aa6e89',
       '--color-primary': '#694d80',
-      '--color-secondary': '#71504e',
+      '--color-secondary': '#1e5d88',
       '--color-accent': '#18644a',
       '--color-neutral': '#8d91a4',
       '--color-neutral-content': '#4a4e63',

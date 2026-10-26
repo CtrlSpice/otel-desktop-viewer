@@ -42,6 +42,10 @@ section of the resizable stack. The main pane contains the Service map, with eac
 represented once and recorded cross-service parent/child connections drawn as
 edges. Selecting a node keeps the map layout stable and shows matching records
 in Details.
+After a successful refresh or search/time-range change, service inspection follows
+the same identity when it is still present. Connection inspection returns to its
+source service (or the first available service if the source is absent). Reopen a
+connection from the refreshed map to inspect its current totals and records.
 
 The HTTP and gRPC setup snippets use the receiver ports advertised by the running
 viewer. If configuration is unavailable, the guide labels the standard fallback

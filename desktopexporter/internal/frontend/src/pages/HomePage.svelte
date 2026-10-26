@@ -174,11 +174,18 @@
       more = page.truncated
       offset = pageOffset
       loaded = true
-      if (inspectedService && refresh) {
+      // Connection totals belong to the old discovery scope. Invalidate that
+      // inspection on successful refresh, retaining its source-service context.
+      const previousService =
+        inspectedService ??
+        (mapSelection?.kind === 'connection'
+          ? mapSelection.connection.source
+          : null)
+      if (previousService && refresh) {
         const selected =
           services.find(
             service =>
-              serviceIdentity(service) === serviceIdentity(inspectedService!)
+              serviceIdentity(service) === serviceIdentity(previousService)
           ) ??
           services[0] ??
           null
