@@ -4,6 +4,9 @@ import {
   graphServices,
   serviceGraphLayout,
   retainServicePositions,
+  serviceGraphBounds,
+  fitServiceGraph,
+  constrainServiceGraph,
   type ServicePositions,
 } from './service-map'
 import {
@@ -44,19 +47,88 @@ const edge = (
   traceCount: 1,
   errorSpanCount: 0,
 })
+function settle(
+  services: ServiceSummary[],
+  connections: ServiceConnection[],
+  width: number,
+  height = 900,
+  previous: ServicePositions = new Map()
+) {
+  return serviceGraphLayout(
+    services,
+    connections,
+    new Map(),
+    { width, height },
+    previous
+  )
+}
+
 function expectNoOverlap(positions: ServicePositions) {
   const points = [...positions.values()]
   for (let i = 0; i < points.length; i++) {
     for (let j = i + 1; j < points.length; j++) {
       expect(
-        Math.abs(points[i]!.x - points[j]!.x) >= 352 ||
-          Math.abs(points[i]!.y - points[j]!.y) >= 128
+        Math.abs(points[i]!.x - points[j]!.x) >= 320 ||
+          Math.abs(points[i]!.y - points[j]!.y) >= 96
       ).toBe(true)
     }
   }
 }
 
 describe('service graph layout', () => {
+  it('fits every measured card inside padded wide and tall viewports', () => {
+    const bounds = serviceGraphBounds(
+      new Map([
+        ['a', { x: -500, y: 100 }],
+        ['b', { x: 1800, y: 1200 }],
+      ]),
+      new Map([['b', { width: 320, height: 200 }]])
+    )!
+    expect(bounds).toEqual({ left: -660, right: 1960, top: 52, bottom: 1300 })
+    for (const viewport of [
+      { width: 995, height: 1100 },
+      { width: 1400, height: 400 },
+      { width: 300, height: 500 },
+    ]) {
+      const { scale, translate } = fitServiceGraph(bounds, viewport)
+      expect(bounds.left * scale + translate.x).toBeGreaterThanOrEqual(
+        32 - 1e-9
+      )
+      expect(bounds.top * scale + translate.y).toBeGreaterThanOrEqual(32 - 1e-9)
+      expect(bounds.right * scale + translate.x).toBeLessThanOrEqual(
+        viewport.width - 32 + 1e-9
+      )
+      expect(bounds.bottom * scale + translate.y).toBeLessThanOrEqual(
+        viewport.height - 32 + 1e-9
+      )
+    }
+    expect(serviceGraphBounds(new Map(), new Map())).toBeUndefined()
+  })
+
+  it('bounds extreme panning at different zoom levels without blocking ordinary movement', () => {
+    const bounds = { left: -100, right: 1000, top: 50, bottom: 900 }
+    const viewport = { width: 800, height: 600 }
+    for (const scale of [0.1, 1, 6]) {
+      for (const offset of [-100000, 100000]) {
+        const translate = constrainServiceGraph(bounds, viewport, scale, {
+          x: offset,
+          y: offset,
+        })
+        expect(bounds.left * scale + translate.x).toBeLessThanOrEqual(
+          viewport.width - 64
+        )
+        expect(bounds.right * scale + translate.x).toBeGreaterThanOrEqual(64)
+        expect(bounds.top * scale + translate.y).toBeLessThanOrEqual(
+          viewport.height - 64
+        )
+        expect(bounds.bottom * scale + translate.y).toBeGreaterThanOrEqual(64)
+      }
+    }
+    expect(
+      constrainServiceGraph(bounds, viewport, 1, { x: 48, y: -48 })
+    ).toEqual({ x: 48, y: -48 })
+  })
+
   it('keeps complete service summaries and exact identities through cycles and shared dependencies', () => {
     const a = service('api'),
       b = { ...service('worker'), metricCount: 12 },
@@ -74,7 +146,7 @@ describe('service graph layout', () => {
       [a, b, c, other].map(serviceIdentity).sort()
     )
     expect(services.find(s => s.serviceName === 'worker')!.metricCount).toBe(12)
-    const layout = serviceGraphLayout(services, edges, new Map(), 1000)
+    const layout = settle(services, edges, 1000)
     expect(layout.positions.size).toBe(4)
     expect(layout.paths.size).toBe(5)
     for (const path of layout.paths.values()) {
@@ -87,40 +159,39 @@ describe('service graph layout', () => {
     expectNoOverlap(layout.positions)
   })
 
-  it('lays out directed flows vertically and packs standalone cards beside them without invented edges', () => {
+  it('keeps standalone cards without invented edges and clips arrows outside cards', () => {
     const a = service('api'),
       b = service('worker'),
       c = service('metrics-only'),
       d = service('logs-only')
     const edges = [edge(a, b)]
     const services = graphServices([a, b, c, d], edges)
-    const layout = serviceGraphLayout(services, edges, new Map(), 900)
+    const layout = settle(services, edges, 900)
     const point = (s: ServiceSummary) =>
       layout.positions.get(serviceIdentity(s))!
-    expect(point(a).x).toBe(point(b).x)
-    expect(point(a).y).toBeLessThan(point(b).y)
-    expect(point(c).x).toBe(point(d).x)
-    expect(point(c).x).toBeGreaterThan(point(a).x)
     expect(layout.paths.size).toBe(1)
     expectNoOverlap(layout.positions)
     const path = layout.paths.get(connectionIdentity(edges[0]!))!
-    const start = path.match(/^M([^,]+),([^LC]+)/)!
-    expect(Number(start[2])).toBeGreaterThan(point(a).y + 48)
+    const start = path.match(/^M([^,]+),([^Q]+)/)!
+    expect(
+      Math.abs(Number(start[1]) - point(a).x) >= 165 ||
+        Math.abs(Number(start[2]) - point(a).y) >= 53
+    ).toBe(true)
     expect(
       Math.max(...[...layout.positions.values()].map(p => p.x + 160))
     ).toBeLessThan(900)
   })
 
-  it('keeps discovered positions when new nodes arrive or the viewport changes', () => {
+  it('pins discovered positions when more nodes arrive', () => {
     const a = service('api'),
       b = service('worker'),
       c = service('store')
-    const initial = serviceGraphLayout([a, b], [edge(a, b)], new Map(), 900)
-    const next = serviceGraphLayout(
+    const initial = settle([a, b], [edge(a, b)], 900)
+    const next = settle(
       [a, b, c],
       [edge(a, b), edge(b, c)],
-      new Map(),
-      448,
+      900,
+      900,
       initial.positions
     )
     expect(next.positions.get(serviceIdentity(a))).toEqual(
@@ -145,11 +216,36 @@ describe('service graph layout', () => {
     const services = Array.from({ length: 100 }, (_, i) =>
       service(`service-${i}`)
     )
-    const layout = serviceGraphLayout(services, [], new Map(), 900)
+    const layout = settle(services, [], 900)
     expect(layout.positions.size).toBe(100)
     expect(layout.paths.size).toBe(0)
     expectNoOverlap(layout.positions)
-    const narrow = serviceGraphLayout(services.slice(0, 4), [], new Map(), 448)
-    expect(new Set([...narrow.positions.values()].map(p => p.x)).size).toBe(1)
+    const narrow = settle(services.slice(0, 4), [], 448)
+    const bounds = serviceGraphBounds(narrow.positions, new Map())!
+    expect(bounds.right - bounds.left).toBeLessThan(384)
+  })
+
+  it('reflows a wide fan-out and disconnected cards for portrait and landscape panes', () => {
+    const services = Array.from({ length: 19 }, (_, i) =>
+      service(`service-${i}`)
+    )
+    const edges = services.slice(1, 8).map(target => edge(services[0]!, target))
+    for (const viewport of [
+      { width: 995, height: 1100 },
+      { width: 1500, height: 650 },
+    ]) {
+      const layout = settle(services, edges, viewport.width, viewport.height)
+      expectNoOverlap(layout.positions)
+      expect(
+        fitServiceGraph(
+          serviceGraphBounds(layout.positions, new Map())!,
+          viewport
+        ).scale,
+        JSON.stringify(viewport)
+      ).toBeGreaterThan(0.8)
+      expect(
+        settle(services, edges, viewport.width, viewport.height).positions
+      ).toEqual(layout.positions)
+    }
   })
 })

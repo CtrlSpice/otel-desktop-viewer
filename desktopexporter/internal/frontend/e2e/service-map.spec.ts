@@ -5,35 +5,36 @@ import type {
   ServiceConnectionSpan,
 } from '../src/services/discovery-types'
 
+const service = (serviceName: string): ServiceSummary => ({
+  serviceName,
+  serviceNamespace: '',
+  serviceIdentity: serviceName,
+  traceCount: 1,
+  spanCount: 2,
+  errorSpanCount: 0,
+  logCount: 0,
+  errorLogCount: 0,
+  logSeverityCounts: {
+    trace: 0,
+    debug: 0,
+    info: 0,
+    warn: 0,
+    error: 0,
+    fatal: 0,
+    other: 0,
+  },
+  metricCount: 0,
+  dataPointCount: 0,
+  exemplarCount: 0,
+  lastSeen: null,
+})
+
 test('service cards are unique graph nodes with standalone services, stable inspection and exact connection evidence', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 2400, height: 1100 })
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  const service = (serviceName: string): ServiceSummary => ({
-    serviceName,
-    serviceNamespace: '',
-    serviceIdentity: serviceName,
-    traceCount: 1,
-    spanCount: 2,
-    errorSpanCount: 0,
-    logCount: 0,
-    errorLogCount: 0,
-    logSeverityCounts: {
-      trace: 0,
-      debug: 0,
-      info: 0,
-      warn: 0,
-      error: 0,
-      fatal: 0,
-      other: 0,
-    },
-    metricCount: 0,
-    dataPointCount: 0,
-    exemplarCount: 0,
-    lastSeen: null,
-  })
   const api = service('api'),
     worker = service('worker'),
     store = service('store'),
@@ -225,13 +226,17 @@ test('service cards are unique graph nodes with standalone services, stable insp
         left: Math.min(...boxes.map(box => box.left)),
         right: Math.max(...boxes.map(box => box.right)),
         top: Math.min(...boxes.map(box => box.top)),
+        bottom: Math.max(...boxes.map(box => box.bottom)),
       }
     })
   expect((overview.left + overview.right) / 2).toBeCloseTo(
     viewport.x + viewport.width / 2,
     0
   )
-  expect(overview.top).toBeCloseTo(viewport.y + 32, 0)
+  expect((overview.top + overview.bottom) / 2).toBeCloseTo(
+    viewport.y + viewport.height / 2,
+    0
+  )
   await apiNode.focus()
   await apiNode.press('Enter')
   await expect(apiNode).toHaveAttribute('aria-pressed', 'true')
@@ -339,5 +344,112 @@ test('service cards are unique graph nodes with standalone services, stable insp
   await expect(connectionDetails).toHaveCount(0)
   await expect(connection).toHaveCount(0)
   await expect(apiNode).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('force layout fits a fan-out, reflows on resize and bounds pan without drifting on selection', async ({
+  page,
+}) => {
+  const services = Array.from({ length: 19 }, (_, index) =>
+    service(`service-${index}`)
+  )
+  const connections = services.slice(1, 8).map(target => ({
+    source: services[0]!,
+    target,
+    spanCount: 1,
+    traceCount: 1,
+    errorSpanCount: 0,
+  }))
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.route('**/api/features', route =>
+    route.fulfill({ json: { evals: { enabled: false } } })
+  )
+  await page.route('**/rpc', route => {
+    const { id, method, params } = route.request().postDataJSON()
+    const items =
+      method === 'discoverTelemetry'
+        ? params.options.kind === 'services'
+          ? services
+          : params.options.kind === 'connections'
+            ? connections
+            : []
+        : []
+    return route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result:
+          method === 'discoverTelemetry'
+            ? { rows: items.map(item => [item]), truncated: false }
+            : [],
+      },
+    })
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem('signal-drawer:open', 'false')
+    localStorage.setItem('signal-detail:open', 'false')
+  })
+  const measure = () =>
+    page.locator('.service-map__canvas').evaluate(canvas => ({
+      viewport: canvas.getBoundingClientRect().toJSON(),
+      cards: [...canvas.querySelectorAll('.service-map__node')].map(card =>
+        card.getBoundingClientRect().toJSON()
+      ),
+    }))
+  await page.setViewportSize({ width: 1100, height: 1200 })
+  await page.goto('/?time=all')
+  await expect(page.locator('.service-map__node')).toHaveCount(19)
+  for (const viewport of [
+    { width: 1100, height: 1200 },
+    { width: 1600, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.getByRole('button', { name: 'Reset service map view' }).click()
+    await expect
+      .poll(async () => {
+        const { viewport: bounds, cards } = await measure()
+        return cards.every(
+          card =>
+            card.left >= bounds.left + 31 &&
+            card.right <= bounds.right - 31 &&
+            card.top >= bounds.top + 31 &&
+            card.bottom <= bounds.bottom - 31
+        )
+      })
+      .toBe(true)
+    const { cards } = await measure()
+    expect(cards[0]!.width / 320).toBeGreaterThan(0.8)
+    for (let i = 0; i < cards.length; i++)
+      for (let j = i + 1; j < cards.length; j++) {
+        const a = cards[i]!,
+          b = cards[j]!
+        expect(
+          a.right <= b.left ||
+            b.right <= a.left ||
+            a.bottom <= b.top ||
+            b.bottom <= a.top
+        ).toBe(true)
+      }
+  }
+  const card = page
+    .locator('.service-map__node')
+    .getByRole('button', { name: /^service-0\s/ })
+  const positions = (await measure()).cards
+  await card.click()
+  expect((await measure()).cards).toEqual(positions)
+  const { viewport } = await measure()
+  await page.mouse.move(viewport.left + 10, viewport.top + 10)
+  await page.mouse.wheel(100000, 100000)
+  await expect
+    .poll(async () => {
+      const { viewport: bounds, cards } = await measure()
+      return (
+        Math.max(...cards.map(card => card.right)) >= bounds.left + 63 &&
+        Math.max(...cards.map(card => card.bottom)) >= bounds.top + 63
+      )
+    })
+    .toBe(true)
+  await page.getByRole('button', { name: 'Reset service map view' }).click()
   expect(errors).toEqual([])
 })

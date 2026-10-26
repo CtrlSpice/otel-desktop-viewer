@@ -265,7 +265,7 @@
       <button
         class="header-icon-button tooltip tooltip-left"
         aria-label="Reset service map view"
-        data-tip="Reset view"
+        data-tip="Fit graph"
         disabled={!layoutReady || nodes.length === 0}
         onclick={() => viewRevision++}
         ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
@@ -305,7 +305,6 @@
             mode: 'canvas',
             scrollMode: 'translate',
             motion: 'none',
-            scaleExtent: [0.1, 6],
           }}
         >
           <Svg title="Service connections">
