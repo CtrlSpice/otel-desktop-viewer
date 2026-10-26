@@ -13,6 +13,7 @@
     constrainServiceGraph,
     type ServiceLayout,
     type ServiceSizes,
+    type ServicePoint,
     SERVICE_CARD_HEIGHT,
   } from './service-map'
 
@@ -45,6 +46,17 @@
       }
     | undefined
   const bounds = $derived(serviceGraphBounds(layout.positions, sizes))
+
+  export function constrain(view: { scale: number; translate: ServicePoint }) {
+    if (!bounds || chart.width <= 0 || chart.height <= 0) return view
+    const viewport = { width: chart.width, height: chart.height }
+    const fitted = fitServiceGraph(bounds, viewport)
+    const scale = Math.max(Math.min(0.1, fitted.scale), Math.min(6, view.scale))
+    return {
+      scale,
+      translate: constrainServiceGraph(bounds, viewport, scale, view.translate),
+    }
+  }
 
   $effect.pre(() => {
     const items = services,
@@ -95,11 +107,6 @@
       return
     const viewport = { width, height }
     const fitted = fitServiceGraph(content, viewport)
-    transform.scaleExtent = [Math.min(0.1, fitted.scale), 6]
-    transform.constrain = ({ scale, translate }) => ({
-      scale,
-      translate: constrainServiceGraph(content, viewport, scale, translate),
-    })
     if (
       camera &&
       camera.width === width &&

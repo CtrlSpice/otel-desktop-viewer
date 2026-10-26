@@ -435,9 +435,24 @@ test('force layout fits a fan-out, reflows on resize and bounds pan without drif
   const card = page
     .locator('.service-map__node')
     .getByRole('button', { name: /^service-0\s/ })
+  // Opening Details changes the viewport and intentionally reflows the graph.
+  // Check selection stability with that pane already open.
+  const fullWidth = (await measure()).viewport.width
+  await page.getByRole('button', { name: 'Open details', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect
+    .poll(async () => (await measure()).viewport.width)
+    .toBeLessThan(fullWidth)
+  await page.getByRole('button', { name: 'Reset service map view' }).click()
+  await page.evaluate(
+    () =>
+      new Promise<void>(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  )
   const positions = (await measure()).cards
   await card.click()
-  expect((await measure()).cards).toEqual(positions)
+  await expect.poll(async () => (await measure()).cards).toEqual(positions)
   const { viewport } = await measure()
   await page.mouse.move(viewport.left + 10, viewport.top + 10)
   await page.mouse.wheel(100000, 100000)
