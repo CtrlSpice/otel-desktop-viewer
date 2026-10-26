@@ -185,7 +185,9 @@ for (const [signal, scope, method] of [
     await page.keyboard.press('ControlOrMeta+z')
     await expect(token).toHaveCount(1)
     await expect(editor).toContainText('>= 3')
-    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await page.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+y'
+    )
     await expect(token).toHaveCount(2)
     await page.keyboard.press('Escape')
     await editor.press('Enter')
