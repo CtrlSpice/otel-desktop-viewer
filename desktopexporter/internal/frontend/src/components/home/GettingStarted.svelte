@@ -43,7 +43,10 @@
   <h1 class="guide-name">OTel Desktop Viewer</h1>
 </header>
 <div class="guide-scroll">
-  <section class="flex flex-col gap-3">
+  {#if importContent}
+    <div class="guide-import">{@render importContent()}</div>
+  {/if}
+  <section class="flex flex-col gap-2">
     <h2 class="text-lg font-normal">Connect an exporter</h2>
     <p class="text-subtle">
       Set these variables in the terminal that starts your
@@ -91,7 +94,7 @@
         configured port if different.
       </p>{/if}
   </section>
-  <section class="flex flex-col gap-3">
+  <section class="flex flex-col gap-2">
     <h2 class="text-lg font-normal">Send a test trace</h2>
     <p class="text-subtle">
       Run this with <a
@@ -124,19 +127,16 @@
     </div>
   </section>
 </div>
-{#if importContent}
-  <div class="guide-import">{@render importContent()}</div>
-{/if}
 
 <style lang="postcss">
   @reference '../../app.css';
   .guide-scroll {
-    @apply flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto py-3;
+    @apply flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto py-3;
+    padding-block-start: 2rem;
     padding-inline: var(--pane-inline-inset);
   }
   .guide-import {
     @apply flex h-24 shrink-0;
-    margin: 0.75rem var(--pane-inline-inset);
   }
   .guide-lulu {
     width: 48px;
