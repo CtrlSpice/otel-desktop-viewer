@@ -2130,7 +2130,7 @@ for (const { id: theme } of THEMES) {
         const hover = page.locator(hoverSelector)
         await expect(hover).toBeVisible()
         await expect(hover).toHaveCSS('fill', hoverColour)
-        await expect(hover).toHaveCSS('fill-opacity', '0.22')
+        await expect(hover).toHaveCSS('fill-opacity', '0.45')
         await expect(hover).toHaveCSS('stroke', 'none')
         await expect(hover).toHaveCSS('rx', '8px')
         await expect(hover).toHaveCSS('pointer-events', 'none')
@@ -2161,7 +2161,7 @@ for (const { id: theme } of THEMES) {
         await expect(selection).toBeVisible()
         await expect(selection).toHaveCSS('fill', selectedColour)
         await expect(selection).toHaveCSS('stroke', selectedColour)
-        await expect(selection).toHaveCSS('fill-opacity', '0.28')
+        await expect(selection).toHaveCSS('fill-opacity', '0.55')
         await expect(selection).toHaveCSS('rx', '8px')
         await expect(selection).toHaveCSS('pointer-events', 'none')
         if (tab === 'heatmap') {
