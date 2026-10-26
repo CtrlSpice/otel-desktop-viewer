@@ -356,7 +356,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
           marker
             .querySelector('title')
             ?.textContent?.startsWith(
-              aggregationView === 'rate' ? 'rate slope ' : 'avg '
+              aggregationView === 'rate' ? 'rate slope ' : 'Series avg '
             )
         )
         if (aggregationView === 'rate') {
@@ -372,8 +372,8 @@ describe('MetricTimeSeriesChart keyboard model', () => {
           )
           expect(
             averageLabel?.querySelector('.chart-selection-legend__label')
-          ).toHaveTextContent('avg')
-          expect(averageLabel).toHaveAttribute('title', 'avg 3')
+          ).toHaveTextContent('Series avg')
+          expect(averageLabel).toHaveAttribute('title', 'Series avg 3')
           const line = derived?.querySelector('.series-average-line')
           expect(line).not.toBeNull()
           expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'))
