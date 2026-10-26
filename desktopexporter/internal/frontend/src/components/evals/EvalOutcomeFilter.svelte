@@ -1,7 +1,8 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { FilterIcon, Tick02Icon } from '@hugeicons/core-free-icons'
+  import { FilterIcon } from '@hugeicons/core-free-icons'
   import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
+  import FilterOption from '@/components/shared/Toolbar/FilterOption.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import type { ExperimentOutcomeOption } from './experiment-outcome-filter'
 
@@ -23,14 +24,13 @@
 
 <FilterPopover
   label="Outcomes"
+  popoverClass="filter-popover--choices"
   compact
   showCount
   count={selected.length}
-  clearable={draft.length > 0}
   onOpenChange={open => {
     if (open) draft = [...selected]
   }}
-  onClear={() => (draft = [])}
 >
   {#snippet icon()}<HugeiconsIcon
       icon={FilterIcon}
@@ -41,6 +41,13 @@
   {#snippet footer(close)}
     <button
       type="button"
+      class="btn btn-ghost btn-sm"
+      aria-label="Clear outcomes filter"
+      disabled={draft.length === 0}
+      onclick={() => (draft = [])}>Clear</button
+    >
+    <button
+      type="button"
       class="btn btn-ghost btn-sm text-sm font-normal text-primary"
       disabled={!changed}
       onclick={() => {
@@ -49,13 +56,11 @@
       }}>Apply</button
     >
   {/snippet}
-  <div class="outcome-options">
+  <div class="filter-options">
     {#each options as option (option.key)}
       {@const active = draft.includes(option.key)}
-      <button
-        type="button"
-        class="item-state flex min-h-8 min-w-0 cursor-pointer items-center gap-2 px-3 py-1 text-left text-sm font-normal wrap-anywhere text-base-content"
-        aria-pressed={active}
+      <FilterOption
+        selected={active}
         title={`${option.label}: ${option.count} ${option.count === 1 ? 'experiment' : 'experiments'}`}
         onclick={() =>
           (draft = active
@@ -66,24 +71,9 @@
         <span class="ml-auto shrink-0 text-subtle tabular-nums"
           >[{option.count}]</span
         >
-        <span
-          class="flex size-4 shrink-0 items-center justify-center"
-          class:invisible={!active}
-          aria-hidden="true"
-        >
-          <HugeiconsIcon icon={Tick02Icon} size={16} strokeWidth={1.5} />
-        </span>
-      </button>
+      </FilterOption>
     {:else}
       <p class="text-sm text-subtle">No outcomes in this source.</p>
     {/each}
   </div>
 </FilterPopover>
-
-<style lang="postcss">
-  @reference "../../app.css";
-  .outcome-options {
-    @apply grid gap-2;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
-  }
-</style>

@@ -1811,8 +1811,11 @@ test('toolbar filters draft service and severity selections and search once on A
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'false')
   await expect(filtersToggle).toBeFocused()
   await expect(filtersToggle).toContainText('[2]')
-  await expect(editor).toContainText(
+  expect(new URL(page.url()).searchParams.get('q')).toContain(
     'attr(resource, "service.name", string) IN ["api"]'
+  )
+  await expect(editor.locator('.cm-attribute-token')).toHaveText(
+    'service.name · Resource · String'
   )
   await expect(editor).toContainText(
     'severityNumber >= 17 AND severityNumber <= 20'

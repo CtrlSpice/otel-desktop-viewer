@@ -566,13 +566,13 @@
 
     {#if beforeApply}{@render beforeApply()}{/if}
 
-    <button
-      type="submit"
-      class="btn btn-sm btn-ghost mt-2 w-full rounded-full text-sm text-primary"
-      aria-label="Apply range"
-    >
-      Apply
-    </button>
+    <div class="filter-actions">
+      <button
+        type="submit"
+        class="btn btn-sm btn-ghost text-primary"
+        aria-label="Apply range">Apply</button
+      >
+    </div>
     {#if customFieldIssue}
       <FieldErrorMessage
         id="custom-time-range-error"

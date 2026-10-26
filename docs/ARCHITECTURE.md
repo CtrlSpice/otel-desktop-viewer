@@ -258,6 +258,11 @@ matches. The underlying query, clipboard text, and URL retain the exact explicit
 reference, so copying or reopening a search preserves its identity. Cursor
 navigation and deletion treat each attribute token as one unit.
 
+Multiline paste joins query formatting and plain-text lines with spaces. Inside
+quoted query values, pasted line endings become `\n` or `\r` escapes, preserving
+the received characters and indentation. Each multiline paste is one undoable
+edit and does not submit the search.
+
 Attribute equality can calculate the dictionary ID before querying and use
 `list_contains(attribute_ids, ?::uuid)`. Other operators join the dictionary and
 compare the stored value.

@@ -98,7 +98,7 @@
     placeholder="Find columns…"
   >
     {#snippet children(filterToggle, filterField)}
-      <div class="mb-2 flex min-w-0 items-center gap-2 px-2">
+      <div class="mb-2 flex min-h-8 min-w-0 items-center gap-2">
         <span class="min-w-0 flex-1 text-sm text-subtle">{label}</span>
         {@render filterToggle()}
       </div>
@@ -119,7 +119,7 @@
       <fieldset class="min-w-0" aria-label={group}>
         <legend class="w-full">
           <label
-            class="item-state flex cursor-pointer items-center gap-2 px-2 py-1 text-sm font-normal text-base-content"
+            class="item-state flex min-h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm font-normal text-base-content"
           >
             <Checkbox
               label={`All ${group} columns`}
@@ -138,7 +138,7 @@
         </legend>
         {#each entries as option (option.id)}
           <label
-            class="item-state flex cursor-pointer items-center gap-2 pl-8 pr-2 py-1.5 text-sm"
+            class="item-state flex min-h-8 cursor-pointer items-center gap-2 rounded-lg pl-8 pr-2 py-1 text-sm"
           >
             <Checkbox
               label={option.accessibleLabel ?? option.label}
@@ -168,7 +168,7 @@
 <style lang="postcss">
   @reference "../../app.css";
   .table-columns-picker {
-    @apply overflow-y-auto p-2;
+    @apply overflow-y-auto p-3;
     width: 22rem;
     max-width: calc(100vw - 1.5rem);
     max-height: min(70vh, 32rem);

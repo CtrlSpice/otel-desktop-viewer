@@ -399,15 +399,25 @@ svg {
   background: var(--color-border);
 }
 
-/* Shared service/severity choices in the log and telemetry filter menus. */
+/* Shared choice rows and actions across filter menus. */
+.anchor-popover--form.filter-popover--choices {
+  width: 22rem;
+}
 .filter-options {
-  @apply flex min-w-0 flex-wrap gap-2 px-2 py-1;
+  @apply grid min-w-0 gap-1 overflow-y-auto;
+  max-height: 16rem;
 }
 .filter-option {
-  @apply inline-flex min-h-8 max-w-full cursor-pointer items-center gap-2 border-0 px-3 py-1 text-sm font-normal text-base-content;
+  @apply flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border-0 px-2 py-1 text-left text-sm font-normal text-base-content;
 }
 .filter-option:disabled {
-  @apply cursor-default opacity-50;
+  @apply cursor-default text-muted;
+}
+.filter-actions {
+  @apply flex items-center justify-end gap-2 pt-2;
+}
+.filter-actions .btn {
+  @apply h-8 min-h-8 rounded-full px-3 text-sm font-normal;
 }
 .filter-dot {
   @apply size-2 shrink-0 rounded-full;

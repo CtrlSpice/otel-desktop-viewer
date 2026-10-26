@@ -158,6 +158,55 @@ for (const [signal, scope, method] of [
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
       .toBe('attr(resource, "attempts", int64) >= 3')
+
+    const previousURL = page.url()
+    const multiline = `attr(${scope}, "attempts", int64) >= 9007199254740993\r\n  and attr(${scope}, "message", string) = "first\r\n  second"`
+    await page.keyboard.press('ControlOrMeta+a')
+    await editor.evaluate((element, text) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', text)
+      element.dispatchEvent(
+        new ClipboardEvent('paste', {
+          clipboardData: data,
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+    }, multiline)
+    await expect(token).toHaveCount(2)
+    await expect(editor).toContainText('"first\\r\\n  second"')
+    await expect(editor.locator('.cm-line')).toHaveCount(1)
+    expect(page.url()).toBe(previousURL)
+
+    // Typing after a paste has its own undo step; the paste replaces one selection.
+    await editor.pressSequentially(' ')
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(token).toHaveCount(2)
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(token).toHaveCount(1)
+    await expect(editor).toContainText('>= 3')
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await expect(token).toHaveCount(2)
+    await page.keyboard.press('Escape')
+    await editor.press('Enter')
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('q'))
+      .toBe(
+        `attr(${scope}, "attempts", int64) >= 9007199254740993 and attr(${scope}, "message", string) = "first\\r\\n  second"`
+      )
+    await expect
+      .poll(() => requests)
+      .toContainEqual(
+        expect.objectContaining({
+          group: expect.objectContaining({
+            children: expect.arrayContaining([
+              expect.objectContaining({
+                query: expect.objectContaining({ value: 'first\r\n  second' }),
+              }),
+            ]),
+          }),
+        })
+      )
     expect(errors).toEqual([])
   })
 }

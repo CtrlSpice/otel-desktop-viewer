@@ -135,7 +135,7 @@
         >{/if}
     </div>{/if}
   {@render children(close)}
-  {#if footer}<div class="filter-popover__footer">
+  {#if footer}<div class="filter-popover__footer filter-actions">
       {@render footer(close)}
     </div>{/if}
 </div>
@@ -146,13 +146,10 @@
     @apply overflow-y-auto;
   }
   .filter-popover__header {
-    @apply mb-2 flex min-h-8 items-center gap-2;
+    @apply mb-2 flex min-h-8 items-center justify-between gap-2 text-subtle;
   }
   .filter-popover__footer {
-    @apply sticky bottom-0 mt-2 flex shrink-0 gap-2 bg-inherit;
-  }
-  .filter-popover__footer :global(.btn) {
-    @apply flex-1 rounded-full;
+    @apply sticky bottom-0 mt-2 shrink-0 bg-inherit;
   }
   .filter-popover__footer :global(.btn:disabled) {
     @apply bg-transparent;

@@ -2,6 +2,7 @@
   import type { FieldDefinition } from '@/search/model'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
+  import FilterOption from '@/components/shared/Toolbar/FilterOption.svelte'
   import ListFilter from '@/components/shared/Search/ListFilter.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -68,6 +69,7 @@
 
 <FilterPopover
   label="Filters"
+  popoverClass="filter-popover--choices"
   compact
   showHeader={false}
   showCount
@@ -117,7 +119,7 @@
     bind:value={serviceSearch}
   >
     {#snippet children(filterToggle, filterField)}
-      <FieldGroup label="Service">
+      <FieldGroup label="Service" bare>
         {#snippet headerAction()}
           <span class="min-w-0 flex-1">Service</span>
           {@render filterToggle()}
@@ -130,11 +132,9 @@
           </p>{/if}
         <div class="filter-options">
           {#each visibleServices as service (service)}
-            <button
-              type="button"
-              class="filter-option item-state"
-              aria-label={`Service ${service}`}
-              aria-pressed={filters.service.values.includes(service)}
+            <FilterOption
+              label={`Service ${service}`}
+              selected={filters.service.values.includes(service)}
               disabled={filters.service.custom || !editor?.setQuery}
               onclick={() =>
                 change(
@@ -152,10 +152,7 @@
                 aria-hidden="true"
               ></span>
               <span class="min-w-0 truncate" title={service}>{service}</span>
-              {#if filters.service.values.includes(service)}<span
-                  aria-hidden="true">✓</span
-                >{/if}
-            </button>
+            </FilterOption>
           {:else}<p class="log-filters__hint">
               {serviceSearch
                 ? 'No matching services.'
@@ -165,7 +162,7 @@
       </FieldGroup>
     {/snippet}
   </ListFilter>
-  <FieldGroup label="Severity">
+  <FieldGroup label="Severity" bare>
     {#if filters.severity.custom && filters.editable}<p
         class="log-filters__hint"
       >
@@ -173,11 +170,9 @@
       </p>{/if}
     <div class="filter-options">
       {#each LOG_SEVERITIES as level (level.label)}
-        <button
-          type="button"
-          class="filter-option item-state"
-          aria-label={`Severity ${level.label}`}
-          aria-pressed={filters.severity.values.includes(level.label)}
+        <FilterOption
+          label={`Severity ${level.label}`}
+          selected={filters.severity.values.includes(level.label)}
           disabled={filters.severity.custom || !editor?.setQuery}
           onclick={() =>
             change(
@@ -192,14 +187,7 @@
             aria-hidden="true"
           ></span>
           <span>{level.label}</span>
-          <span
-            class="log-filters__check"
-            class:log-filters__check--selected={filters.severity.values.includes(
-              level.label
-            )}
-            aria-hidden="true">✓</span
-          >
-        </button>
+        </FilterOption>
       {/each}
     </div>
   </FieldGroup>
@@ -207,12 +195,6 @@
 
 <style lang="postcss">
   @reference "../../app.css";
-  .log-filters__check {
-    opacity: 0;
-  }
-  .log-filters__check--selected {
-    opacity: 1;
-  }
   .log-filters__hint {
     @apply px-2 text-sm;
     color: var(--color-subtle);

@@ -2659,7 +2659,8 @@ test.describe('home page accessibility', () => {
       timezoneListBounds!.width -
       timezoneBadgeBounds!.x -
       timezoneBadgeBounds!.width
-    expect(timezoneLeftInset).toBeCloseTo(12, 0)
-    expect(timezoneRightInset).toBeCloseTo(timezoneLeftInset, 0)
+    expect(timezoneLeftInset).toBeCloseTo(8, 0)
+    // The shared choice row reserves a 16px selection mark and an 8px gap.
+    expect(timezoneRightInset).toBeCloseTo(timezoneLeftInset + 24, 0)
   })
 })

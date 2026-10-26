@@ -44,6 +44,7 @@
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
   import SearchHelpDialog from './SearchHelpDialog.svelte'
   import { attributeTokens } from './codemirror/attribute-tokens'
+  import { multilineQueryPaste } from './codemirror/paste'
   import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchEditorAPI } from './search-editor-api'
@@ -356,6 +357,7 @@
       extensions: [
         queryLanguageSupport(),
         attributeTokens(signal),
+        multilineQueryPaste,
         autocompletion({
           // Key-first runs first and wins where it applies; value-first only
           // fires on bare text at the top level, where the other has nothing to

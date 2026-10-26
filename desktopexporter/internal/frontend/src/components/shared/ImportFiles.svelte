@@ -16,21 +16,18 @@
 
 <button
   type="button"
-  class="item-state flex min-h-20 w-full flex-1 cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dotted border-(--color-highlight-high) p-3 text-center text-sm"
+  class="item-state flex min-h-20 w-full flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dotted border-(--color-highlight-high) p-3 text-center text-sm"
   aria-label="Import files"
   onclick={() => input?.click()}
 >
-  <span
-    class="flex size-7 shrink-0 items-center justify-center text-base-content"
-  >
-    <HugeiconsIcon
-      icon={FileImportIcon}
-      size={20}
-      strokeWidth={1.5}
-      aria-hidden="true"
-    />
-  </span>
-  <span class="text-balance text-subtle">
+  <HugeiconsIcon
+    icon={FileImportIcon}
+    size={20}
+    strokeWidth={1.5}
+    class="shrink-0 text-base-content"
+    aria-hidden="true"
+  />
+  <span class="max-w-[32ch] text-balance text-subtle">
     Drop telemetry JSON files here or anywhere on the screen.
   </span>
 </button>

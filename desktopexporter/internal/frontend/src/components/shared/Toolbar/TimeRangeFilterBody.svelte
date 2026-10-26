@@ -14,6 +14,7 @@
     resolveTimezoneName,
   } from '@/utils/time'
   import CustomTimeRange from './CustomTimeRange.svelte'
+  import FilterOption from './FilterOption.svelte'
 
   const ctx = getTimeContext()
 
@@ -150,15 +151,14 @@
                 bind:this={timezoneList}
               >
                 {#each filteredTimezones as timezone (timezone.name)}
-                  <button
-                    type="button"
-                    class="tz-option item-state item-state--menu"
-                    aria-pressed={ctx.tz === timezone.name}
+                  <FilterOption
+                    class="tz-option"
+                    selected={ctx.tz === timezone.name}
                     onclick={() => ctx.setTz(timezone.name)}
                   >
                     <span class="tz-name">{timezone.label}</span>
                     <span class="tz-badge">{timezone.shortLabel}</span>
-                  </button>
+                  </FilterOption>
                 {/each}
                 {#if filteredTimezones.length === 0}
                   <p class="timezone-list__empty">No matching timezones</p>
@@ -176,7 +176,7 @@
   @reference "../../../app.css";
 
   .timezone-heading {
-    @apply flex cursor-pointer select-none list-none items-center gap-2 py-1.5 pl-3 text-sm font-normal;
+    @apply flex cursor-pointer select-none list-none items-center gap-2 py-1.5 text-sm font-normal;
     color: var(--color-subtle);
   }
 
@@ -196,11 +196,6 @@
 
   .timezone-content {
     @apply pb-2;
-  }
-
-  .tz-option {
-    height: var(--table-row-h);
-    @apply flex w-full cursor-pointer items-center gap-2 border-none px-3 py-0 text-left text-sm text-base-content;
   }
 
   .tz-name {

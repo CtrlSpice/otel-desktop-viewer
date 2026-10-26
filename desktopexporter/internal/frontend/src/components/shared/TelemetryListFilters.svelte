@@ -2,6 +2,7 @@
   import type { FieldDefinition } from '@/search/model'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
+  import FilterOption from './Toolbar/FilterOption.svelte'
   import ListFilter from './Search/ListFilter.svelte'
   import FieldGroup from './FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -84,6 +85,7 @@
 
 <FilterPopover
   label="Filters"
+  popoverClass="filter-popover--choices"
   compact
   showHeader={false}
   showCount
@@ -129,7 +131,7 @@
     bind:value={serviceSearch}
   >
     {#snippet children(filterToggle, filterField)}
-      <FieldGroup label="Service">
+      <FieldGroup label="Service" bare>
         {#snippet headerAction()}
           <span class="min-w-0 flex-1">Service</span>
           {@render filterToggle()}
@@ -140,11 +142,9 @@
           </p>{/if}
         <div class="filter-options">
           {#each visibleServices as service (service)}
-            <button
-              type="button"
-              class="filter-option item-state"
-              aria-label={`Service ${service}`}
-              aria-pressed={filters.service.values.includes(service)}
+            <FilterOption
+              label={`Service ${service}`}
+              selected={filters.service.values.includes(service)}
               disabled={filters.service.custom || !editor?.setQuery}
               onclick={() => toggle('service', service)}
             >
@@ -157,7 +157,7 @@
                 aria-hidden="true"
               ></span>
               <span class="min-w-0 truncate" title={service}>{service}</span>
-            </button>
+            </FilterOption>
           {:else}<p class="filter-hint">
               {serviceSearch
                 ? 'No matching services.'
@@ -168,16 +168,14 @@
     {/snippet}
   </ListFilter>
   {@const kind = signal === 'traces' ? 'errors' : 'metricType'}
-  <FieldGroup label={signal === 'traces' ? 'Span status' : 'Type'}>
+  <FieldGroup label={signal === 'traces' ? 'Span status' : 'Type'} bare>
     {#if filters[kind].custom && filters.editable}<p class="filter-hint">
         Edit {signal === 'traces' ? 'status' : 'type'} in search
       </p>{/if}
     <div class="filter-options">
       {#each signal === 'traces' ? ['Has errors'] : METRIC_TYPE_ENUM as value (value)}
-        <button
-          type="button"
-          class="filter-option item-state"
-          aria-pressed={filters[kind].values.includes(value)}
+        <FilterOption
+          selected={filters[kind].values.includes(value)}
           disabled={filters[kind].custom || !editor?.setQuery}
           onclick={() => toggle(kind, value)}
         >
@@ -191,7 +189,7 @@
               aria-hidden="true"
             />{/if}
           {value === 'ExponentialHistogram' ? 'Exp. Histogram' : value}
-        </button>
+        </FilterOption>
       {/each}
     </div>
   </FieldGroup>
