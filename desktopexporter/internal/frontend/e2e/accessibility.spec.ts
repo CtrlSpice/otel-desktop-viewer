@@ -2215,18 +2215,39 @@ test.describe('home page accessibility', () => {
     }
   })
 
-  test('opens query help after Clear and restores focus on close', async ({
-    page,
-  }) => {
-    await page.goto('/logs')
-    const help = page.getByRole('button', { name: 'Search query help' })
-    await help.click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(dialog).not.toBeVisible()
-    await expect(help).toBeFocused()
-  })
+  for (const signal of ['logs', 'traces', 'metrics']) {
+    test(`centres ${signal} query help and restores focus on close`, async ({
+      page,
+    }) => {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 })
+        await page.goto(`/${signal}`)
+        const help = page.getByRole('button', { name: 'Search query help' })
+        await help.click()
+        const dialog = page.getByRole('dialog', { name: `Search ${signal}` })
+        await expect(dialog).toBeVisible()
+        const bounds = (await dialog.boundingBox())!
+        expect(bounds.width).toBeCloseTo(Math.min(768, width - 32), 0)
+        expect(bounds.x + bounds.width / 2).toBeCloseTo(width / 2, 0)
+        expect(bounds.y + bounds.height / 2).toBeCloseTo(450, 0)
+        await expect(dialog.locator('table')).not.toBeVisible()
+        await dialog.getByText('Query reference', { exact: true }).click()
+        await expect(dialog.locator('table')).toBeVisible()
+        expect(
+          await dialog.evaluate(
+            element => element.scrollWidth <= element.clientWidth
+          )
+        ).toBe(true)
+        await page.keyboard.press('Escape')
+        await expect(dialog).not.toBeVisible()
+        await expect(help).toBeFocused()
+        await help.click()
+        await dialog.getByRole('button', { name: 'Close search help' }).click()
+        await expect(dialog).not.toBeVisible()
+        await expect(help).toBeFocused()
+      }
+    })
+  }
 
   test('keeps focus while keyboard-resizing the Home panels', async ({
     page,

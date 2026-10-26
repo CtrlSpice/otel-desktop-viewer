@@ -42,6 +42,7 @@
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import SearchHelpDialog from './SearchHelpDialog.svelte'
   import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchEditorAPI } from './search-editor-api'
@@ -67,8 +68,6 @@
     /** Actions pinned top-right inside the editor container (drawer variant only). */
     headerActions?: Snippet
   }
-
-  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
   let {
     signal,
@@ -117,7 +116,6 @@
 
   $effect(() => onQueryChange?.(queryText, availableFields))
 
-  let signalLabel = $derived(capitalize(signal))
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
   let placeholderText = $derived(`search ${signal}...`)
 
@@ -557,199 +555,7 @@
   </div>
 {/if}
 
-<!-- Help dialog: rendered OUTSIDE .search-editor-container to avoid clipping -->
-<dialog
-  bind:this={helpDialogElement}
-  class="help-dialog popover-surface"
-  closedby="any"
-  tabindex="-1"
->
-  <header class="help-dialog-header">
-    <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
-    <button
-      type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-subtle hover:text-base-content tooltip tooltip-left"
-      onclick={() => helpDialogElement?.close()}
-      aria-label="Close"
-      data-tip="Close"
-    >
-      <svg
-        class="h-5 w-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M18 6L6 18M6 6l12 12" />
-      </svg>
-    </button>
-  </header>
-
-  <div class="help-dialog-body">
-    <div class="help-query-lines">
-      <p>
-        Type plain words to search everything — fields, attributes, and values
-        alike
-      </p>
-      <p>
-        Or filter precisely with <code class="q-field">field</code>
-        <code class="q-operator">operator</code>
-        <code class="q-value">value</code>
-      </p>
-      <p>
-        Combine filters with <code class="q-logic">AND</code> or
-        <code class="q-logic">OR</code> — <code class="q-logic">AND</code> binds
-        tighter, parentheses <code class="q-paren">( )</code> override
-      </p>
-      <p>
-        Combine plain-text search with filters using
-        <code class="q-field">search("checkout")</code>.
-      </p>
-      <p>
-        Quote values containing spaces:
-        <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
-      </p>
-      <p>
-        Attribute suggestions include their exact scope and stored kind, for
-        example <code class="q-field">attr(span, "attempts", int64)</code>. This
-        selects received integer values; it does not convert other values.
-      </p>
-      <p>
-        Cap the returned results by appending
-        <code class="q-logic">| LIMIT 100</code>
-      </p>
-    </div>
-
-    <h3 class="help-section-heading">Operators</h3>
-    <table class="help-op-table">
-      <thead>
-        <tr>
-          <th scope="col">Category</th>
-          <th scope="col">Operators</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th scope="row">Equality</th>
-          <td>
-            <code class="help-op-code">=</code>,
-            <code class="help-op-code">!=</code>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Comparison</th>
-          <td>
-            <code class="help-op-code">&gt;</code>,
-            <code class="help-op-code">&lt;</code>,
-            <code class="help-op-code">&gt;=</code>,
-            <code class="help-op-code">&lt;=</code>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Text</th>
-          <td>
-            <code class="help-op-code">CONTAINS</code>,
-            <code class="help-op-code">NOT CONTAINS</code>
-            <span class="help-op-note">
-              <code class="help-op-code">^</code> (starts with)
-              <code class="help-op-code">$</code> (ends with)
-            </span>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Pattern</th>
-          <td>
-            <code class="help-op-code">=~</code>,
-            <code class="help-op-code">!~</code>,
-            <code class="help-op-code">REGEXP</code>
-            <span class="help-op-note">
-              full match — wrap substrings: <code class="help-op-code"
-                >.*checkout.*</code
-              ></span
-            >
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">List</th>
-          <td>
-            <code class="help-op-code">IN</code>,
-            <code class="help-op-code">NOT IN</code>
-            <span class="help-op-note">
-              <code class="help-op-code">kind IN [Server, Client]</code></span
-            >
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Null</th>
-          <td>
-            <code class="help-op-code">= NULL</code>,
-            <code class="help-op-code">!= NULL</code>
-            <span class="help-op-note">
-              bare <code class="help-op-code">NULL</code> or
-              <code class="help-op-code">nil</code> checks for absence; quoted
-              <code class="help-op-code">"NULL"</code> is the literal text</span
-            >
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h3 class="help-section-heading">Examples</h3>
-
-    {#if signal === 'traces'}
-      <pre class="help-example"><code class="q-field">name</code> <code
-          class="q-operator">CONTAINS</code
-        > <code class="q-value">http</code> <code class="q-logic"
-          >| LIMIT 100</code
-        ></pre>
-      <pre class="help-example"><code class="q-field">kind</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">Server</code> <code class="q-logic">AND</code
-        > <code class="q-field">statusCode</code> <code class="q-operator"
-          >=</code
-        > <code class="q-value">Error</code> <code class="q-logic">AND</code
-        > <code class="q-field">name</code> <code class="q-operator"
-          >CONTAINS</code
-        > <code class="q-value">checkout</code></pre>
-    {:else if signal === 'logs'}
-      <pre class="help-example"><code class="q-field">severityText</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">ERROR</code></pre>
-      <pre class="help-example"><code class="q-field">severityText</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">WARN</code> <code class="q-logic">AND</code
-        > <code class="q-field">body</code> <code class="q-operator"
-          >CONTAINS</code
-        > <code class="q-value">disk</code> <code class="q-logic">AND</code
-        > <code class="q-field">traceID</code> <code class="q-operator">=</code
-        > <code class="q-value">4af9f2c…</code></pre>
-    {:else}
-      <pre class="help-example"><code class="q-field">name</code> <code
-          class="q-operator">CONTAINS</code
-        > <code class="q-value">requests</code> <code class="q-logic">AND</code
-        > <code class="q-field">type</code> <code class="q-operator">=</code
-        > <code class="q-value">Gauge</code></pre>
-    {/if}
-
-    <h3 class="help-section-heading">Keyboard shortcuts</h3>
-    <ul class="help-shortcut-list">
-      <li>
-        <kbd class="kbd kbd-sm">Enter</kbd>
-        <span class="help-shortcut-sep">—</span>
-        run query
-      </li>
-      <li>
-        <kbd class="kbd kbd-sm">Ctrl</kbd>
-        <kbd class="kbd kbd-sm">Space</kbd>
-        <span class="help-shortcut-sep">—</span>
-        open autocomplete
-      </li>
-    </ul>
-  </div>
-</dialog>
+<SearchHelpDialog bind:element={helpDialogElement} {signal} />
 
 <style lang="postcss">
   @reference "../../../app.css";
@@ -886,121 +692,5 @@
 
   .search-filter-popover {
     @apply px-3 py-2;
-  }
-
-  .help-dialog {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    translate: -50% -50%;
-    margin: 0;
-    box-sizing: border-box;
-    width: min(32rem, calc(100vw - 2rem));
-    max-height: min(85vh, calc(100vh - 2rem));
-    overflow: hidden;
-
-    padding: 0;
-    overscroll-behavior: contain;
-  }
-
-  .help-dialog[open] {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .help-dialog::backdrop {
-    background-color: rgba(0, 0, 0, 0.2);
-  }
-
-  .help-dialog-header {
-    @apply flex shrink-0 items-center justify-between gap-3 bg-base-300 px-4 py-3;
-  }
-
-  .help-dialog-title {
-    @apply min-w-0 flex-1 text-lg font-normal leading-snug tracking-tight;
-  }
-
-  .help-dialog-body {
-    @apply overflow-y-auto px-4 pb-4 pt-3;
-    min-height: 0;
-    overscroll-behavior: contain;
-  }
-
-  .help-section-heading {
-    @apply mt-4 text-sm font-normal uppercase tracking-wide text-subtle;
-  }
-
-  .help-query-lines {
-    @apply mt-1 space-y-1 text-sm text-base-content;
-  }
-
-  .help-op-table {
-    @apply mt-2 w-full border-collapse text-left text-sm text-base-content;
-  }
-
-  .help-op-table thead th {
-    @apply pb-2 pt-1 text-sm font-normal uppercase tracking-wide text-subtle;
-  }
-
-  .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-sm font-normal text-subtle;
-  }
-
-  .help-op-table tbody td {
-    @apply py-2 align-top;
-  }
-
-  .help-op-code {
-    @apply rounded bg-base-100 px-1 py-0.5 font-mono text-xs text-base-content;
-  }
-
-  .help-op-note {
-    @apply mt-1 block text-xs text-(--color-subtle);
-  }
-
-  .help-op-note .help-op-code {
-    @apply mx-0.5;
-  }
-
-  .help-shortcut-list {
-    @apply mt-2 space-y-2 text-sm text-base-content;
-  }
-
-  .help-shortcut-list li {
-    @apply flex flex-wrap items-center gap-1.5;
-  }
-
-  .help-shortcut-sep {
-    @apply mx-0.5 text-(--color-subtle);
-  }
-
-  .help-example {
-    @apply mt-2 overflow-x-auto rounded-md bg-base-100 p-3 font-mono text-xs leading-relaxed text-base-content;
-  }
-
-  .help-example :global(code) {
-    @apply whitespace-pre-wrap break-all bg-transparent p-0;
-  }
-
-  /* Match CodeMirror query token colors (see lang/theme.ts + app.css --color-*) */
-  .q-field {
-    color: var(--color-accent);
-  }
-
-  .q-operator {
-    color: var(--color-subtle);
-  }
-
-  .q-logic {
-    color: var(--color-primary);
-    font-weight: 400;
-  }
-
-  .q-value {
-    color: var(--color-base-content);
-  }
-
-  .q-paren {
-    color: var(--color-subtle);
   }
 </style>
