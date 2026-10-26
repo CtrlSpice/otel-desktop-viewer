@@ -169,7 +169,7 @@
     <PaneHeader
       mode="tabs"
       bare
-      tabLayout="right"
+      tabLayout="equal"
       {tabs}
       activeID={active?.signal ?? ''}
       onSelect={selectSignal}
@@ -280,7 +280,7 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
   .attribute-telemetry__tabs {
-    @apply min-w-0 overflow-x-auto;
+    @apply flex w-full min-w-0 overflow-x-auto;
   }
   .attribute-telemetry__cards {
     @apply min-h-0 flex-1 overflow-auto px-3 pb-3;

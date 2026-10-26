@@ -47,8 +47,10 @@
 
 <header class="guide-welcome">
   <div class="guide-lulu"><Lulu /></div>
-  <h1 class="guide-name">OTel Desktop Viewer</h1>
-  <p class="guide-subtitle">{tagline}</p>
+  <div class="guide-wordmark">
+    <h1 class="guide-name">OTel Desktop Viewer</h1>
+    <p class="guide-subtitle">{tagline}</p>
+  </div>
 </header>
 <div class="guide-scroll">
   {#if importContent}
@@ -141,7 +143,6 @@
   .guide-scroll {
     @apply flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto py-3;
     padding-block-start: 2rem;
-    padding-inline: var(--pane-inline-inset);
   }
   .guide-import {
     @apply flex h-24 shrink-0;
@@ -154,8 +155,12 @@
   .guide-welcome {
     @apply grid shrink-0 items-center gap-x-3;
     grid-template-columns: minmax(0, 48px) minmax(min-content, 1fr);
-    grid-template-rows: var(--pane-header-single-h) auto;
+    min-height: var(--pane-header-single-h);
     padding-inline: var(--pane-inline-inset);
+  }
+  .guide-wordmark {
+    @apply flex min-w-0 flex-col;
+    gap: 0.125rem;
   }
   .guide-name {
     @apply whitespace-nowrap font-normal text-base-content;
@@ -165,7 +170,5 @@
   }
   .guide-subtitle {
     @apply text-balance text-sm text-subtle;
-    grid-column: 2;
-    margin-block-start: -0.5rem;
   }
 </style>

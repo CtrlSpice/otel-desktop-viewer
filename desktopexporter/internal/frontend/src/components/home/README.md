@@ -26,10 +26,13 @@ colour. It has a fixed 96px height, centred content and a 2px dotted outline.
 Pixel Lulu and the OTel Desktop Viewer wordmark form the sidebar header.
 One of four humorous subtitles is selected on each Home visit and
 shown beneath the wordmark, aligned with its left edge, in regular 14px Subtle text. It stays fixed during
-the visit and wraps naturally without changing the aligned header row.
+the visit and wraps naturally. The title and subtitle form one closely spaced
+block, with Lulu vertically centred beside both lines.
 The import box sits 32px below the subtitle, followed by the exporter/test-trace
 instructions in the same scrollable guide. Major groups have 32px gaps; each
 instruction section groups its heading, description and code with 8px gaps.
+The scrollable guide has no horizontal padding, so the import box and setup
+instructions use the pane's full content width.
 The box opens the multi-file JSON/JSONL picker and says “Drop telemetry JSON
 files here or anywhere on the screen.” File dropping works across the app.
 Getting started retains its accessible section name and stays open as the primary
@@ -84,6 +87,7 @@ current page. Changing pages preserves the selected attribute and expansion stat
 
 The right-hand Details pane contains matching records. Its single header row
 offers shared Traces, Metrics and Logs tabs with known matching-record counts.
+When no attribute heading is shown, these tabs share the full header width evenly.
 The redundant visible Telemetry label is omitted; the section retains its
 accessible name. An inspected attribute keeps its actual field name and metadata.
 Choices switch immediately; arrow, Home and End keys navigate available signals.

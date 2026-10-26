@@ -241,6 +241,7 @@
   <div
     id={sectionID}
     class="detail-bubble"
+    class:detail-bubble--hidden-label={hideLabel}
     class:detail-bubble--resizable={Boolean(stack)}
     class:detail-bubble--unavailable={unavailable}
     class:detail-bubble--contained={contained && expanded && !unavailable}
@@ -352,6 +353,12 @@
   }
   .detail-bubble__content {
     @apply px-0;
+  }
+  .detail-bubble--hidden-label .detail-bubble__action {
+    left: var(--header-padding-inline);
+  }
+  .detail-bubble--hidden-label .detail-bubble__heading--action {
+    padding-inline-end: var(--header-padding-inline);
   }
 
   .detail-bubble__disclosure--contained {
