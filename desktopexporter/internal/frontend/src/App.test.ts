@@ -20,6 +20,7 @@ const {
   getLogErrorNavigation,
   getLog,
   searchMetricSummaries,
+  getMetric,
   getMetricView,
   getTraceAttributeDefinitions,
   getLogAttributeDefinitions,
@@ -31,6 +32,7 @@ const {
   getLogErrorNavigation: vi.fn(),
   getLog: vi.fn(),
   searchMetricSummaries: vi.fn(),
+  getMetric: vi.fn(),
   getMetricView: vi.fn(),
   getTraceAttributeDefinitions: vi.fn(),
   getLogAttributeDefinitions: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getLogErrorNavigation,
       getLog,
       searchMetricSummaries,
+      getMetric,
       getMetricView,
       getTraceAttributeDefinitions,
       getLogAttributeDefinitions,
@@ -90,6 +93,7 @@ beforeEach(() => {
   })
   getLog.mockResolvedValue(null)
   searchMetricSummaries.mockResolvedValue([])
+  getMetric.mockResolvedValue(null)
   getMetricView.mockResolvedValue(null)
   getTraceAttributeDefinitions.mockResolvedValue([])
   getLogAttributeDefinitions.mockResolvedValue([])
@@ -271,8 +275,9 @@ describe('App real-page composition', () => {
     expect(searchTraceSummaries).toHaveBeenCalled()
 
     navigate('/metrics/metric-1')
-    await screen.findByText('No metrics in this time range')
+    await screen.findByText('The selected metric was not found.')
     expect(searchMetricSummaries).toHaveBeenCalled()
+    expect(getMetric).toHaveBeenCalledWith('metric-1')
 
     navigate('/logs/log-1')
     await screen.findByText('No logs match this search and time range.')
@@ -286,7 +291,7 @@ describe('App real-page composition', () => {
   it('preserves focus across repeated master-detail pathname changes', async () => {
     setTestUrl('/metrics/a')
     render(App)
-    await screen.findByText('No metrics in this time range')
+    await screen.findByText('The selected metric was not found.')
     const control = document.createElement('button')
     document.body.appendChild(control)
     control.focus()
