@@ -158,9 +158,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     name: 'Colour for checkout options',
     exact: true,
   })
-  await expect(dialog.locator('[data-ink-family]')).toContainText(
-    'Closest ink · '
-  )
+  await expect(dialog.locator('[data-ink-family]')).toHaveCount(0)
   await expect(
     dialog.getByRole('slider', { name: 'Alpha', exact: true })
   ).toHaveCount(0)
@@ -177,9 +175,6 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await shade.press('Enter')
   await expect(colourDot).toHaveCSS('background-color', shadeColour)
   await expect(shade).toHaveAttribute('aria-pressed', 'true')
-  await expect(dialog.locator('[data-ink-family]')).not.toContainText(
-    'Closest ink'
-  )
   await page.keyboard.press('Escape')
   await picker.click()
   await expect(shade).toHaveAttribute('aria-pressed', 'true')

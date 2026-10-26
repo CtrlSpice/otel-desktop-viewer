@@ -357,7 +357,9 @@ with a hue slider, colour field, hex input and Reset to automatic. Its surroundi
 controls use the app's seasonal surfaces, regular Atkinson text and focus styles.
 Seven 8px dots offer the current ink's official shades. Named preset and curve
 overrides retain their ink identity; custom RGB values use the closest official
-shade in OKLab and show “Closest ink”. The picker has no opacity control.
+shade in OKLab. Ink names remain in the shade tooltips and accessible labels,
+without a separate visible heading. The rounded colour field and hue strip fit
+inside the shared popover padding. The picker has no opacity control.
 Checkboxes use
 the shared neutral Text checkmark and round outline on a transparent background, independent of series
 colour. Saved choices survive visibility changes. Reset restores the owner's

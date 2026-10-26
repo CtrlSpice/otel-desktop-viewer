@@ -104,9 +104,6 @@
           />
         </button>
       </div>
-      <span class="text-sm text-subtle" data-ink-family
-        >{family.exact ? '' : 'Closest ink · '}{family.ink.name}</span
-      >
       <div
         class="graph-colour-picker__swatches"
         role="group"
@@ -149,14 +146,15 @@
   hex-color-picker {
     width: 100%;
     height: 11rem;
+    gap: 1rem;
   }
   hex-color-picker::part(saturation) {
-    bottom: 24px;
+    border-bottom: 0;
     border-radius: var(--radius-lg);
   }
   hex-color-picker::part(hue) {
-    height: 12px;
-    border-radius: var(--radius-full);
+    flex: 0 0 0.75rem;
+    border-radius: calc(infinity * 1px);
   }
   hex-color-picker::part(saturation-pointer),
   hex-color-picker::part(hue-pointer) {
