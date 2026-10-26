@@ -1,5 +1,13 @@
-import { dagreGraph } from 'layerchart/utils/graph/dagre'
-import { curveBasis, line } from 'd3-shape'
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceX,
+  forceY,
+  type Force,
+  type SimulationNodeDatum,
+  type SimulationLinkDatum,
+} from 'd3-force'
 import {
   serviceIdentity,
   type ServiceConnection,
@@ -20,6 +28,13 @@ export type ServiceLayout = {
   positions: ServicePositions
   paths: Map<string, string>
 }
+export type ServiceBounds = {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+export const SERVICE_MAP_PADDING = 32
 const GAP = 32
 const EDGE_CLEARANCE = 6
 
@@ -57,38 +72,74 @@ function cardSize(sizes: ServiceSizes, identity: string): ServiceSize {
   )
 }
 
-function components(
-  services: readonly ServiceSummary[],
-  connections: readonly ServiceConnection[]
-) {
-  const neighbours = new Map(
-    services.map(service => [serviceIdentity(service), new Set<string>()])
-  )
-  for (const edge of connections) {
-    const source = serviceIdentity(edge.source),
-      target = serviceIdentity(edge.target)
-    neighbours.get(source)?.add(target)
-    neighbours.get(target)?.add(source)
+export function serviceGraphBounds(
+  positions: ServicePositions,
+  sizes: ServiceSizes
+): ServiceBounds | undefined {
+  if (!positions.size) return undefined
+  const bounds = {
+    left: Infinity,
+    right: -Infinity,
+    top: Infinity,
+    bottom: -Infinity,
   }
-  const seen = new Set<string>()
-  const groups: string[][] = []
-  for (const id of [...neighbours.keys()].sort()) {
-    if (seen.has(id)) continue
-    const group = [id]
-    seen.add(id)
-    for (let i = 0; i < group.length; i++) {
-      for (const neighbour of [...(neighbours.get(group[i]!) ?? [])].sort()) {
-        if (seen.has(neighbour)) continue
-        seen.add(neighbour)
-        group.push(neighbour)
-      }
-    }
-    groups.push(group)
+  for (const [identity, point] of positions) {
+    const size = cardSize(sizes, identity)
+    bounds.left = Math.min(bounds.left, point.x - size.width / 2)
+    bounds.right = Math.max(bounds.right, point.x + size.width / 2)
+    bounds.top = Math.min(bounds.top, point.y - size.height / 2)
+    bounds.bottom = Math.max(bounds.bottom, point.y + size.height / 2)
   }
-  // Connected flows lead; standalone cards fill the remaining columns.
-  return groups.sort(
-    (a, b) => b.length - a.length || a[0]!.localeCompare(b[0]!)
+  return bounds
+}
+
+export function fitServiceGraph(bounds: ServiceBounds, viewport: ServiceSize) {
+  const scale = Math.min(
+    1,
+    Math.max(1, viewport.width - SERVICE_MAP_PADDING * 2) /
+      (bounds.right - bounds.left),
+    Math.max(1, viewport.height - SERVICE_MAP_PADDING * 2) /
+      (bounds.bottom - bounds.top)
   )
+  return {
+    scale,
+    translate: {
+      x: (viewport.width - (bounds.left + bounds.right) * scale) / 2,
+      y: (viewport.height - (bounds.top + bounds.bottom) * scale) / 2,
+    },
+  }
+}
+
+/** Allow free inspection, but keep part of the graph within reach. */
+export function constrainServiceGraph(
+  bounds: ServiceBounds,
+  viewport: ServiceSize,
+  scale: number,
+  translate: ServicePoint
+): ServicePoint {
+  const visibleWidth = Math.min(
+    SERVICE_MAP_PADDING * 2,
+    viewport.width / 2,
+    (bounds.right - bounds.left) * scale
+  )
+  const visibleHeight = Math.min(
+    SERVICE_MAP_PADDING * 2,
+    viewport.height / 2,
+    (bounds.bottom - bounds.top) * scale
+  )
+  return {
+    x: Math.max(
+      visibleWidth - bounds.right * scale,
+      Math.min(viewport.width - visibleWidth - bounds.left * scale, translate.x)
+    ),
+    y: Math.max(
+      visibleHeight - bounds.bottom * scale,
+      Math.min(
+        viewport.height - visibleHeight - bounds.top * scale,
+        translate.y
+      )
+    ),
+  }
 }
 
 /** Keep inspection and incremental discovery from shuffling existing cards. */
@@ -108,9 +159,9 @@ export function retainServicePositions(
         const otherSize = cardSize(sizes, otherID)
         return (
           Math.abs(point.x - other.x) <
-            (size.width + otherSize.width) / 2 + GAP &&
+            (size.width + otherSize.width) / 2 + GAP - 0.001 &&
           Math.abs(point.y - other.y) <
-            (size.height + otherSize.height) / 2 + GAP
+            (size.height + otherSize.height) / 2 + GAP - 0.001
         )
       })
       if (collision)
@@ -124,114 +175,306 @@ export function retainServicePositions(
   return positions
 }
 
-/** Dagre routes each real connected component; packing adds no synthetic edges. */
+type ServiceForceNode = SimulationNodeDatum &
+  ServicePoint &
+  ServiceSize & {
+    id: string
+  }
+type ServiceForceLink = SimulationLinkDatum<ServiceForceNode>
+
+/** Rectangular collision uses measured cards rather than oversized circles. */
+function cardCollision(
+  viewport: ServiceSize
+): Force<ServiceForceNode, ServiceForceLink> {
+  let nodes: ServiceForceNode[] = []
+  const force = () => {
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i]!,
+            b = nodes[j]!
+          const dx = a.x + (a.vx ?? 0) - b.x - (b.vx ?? 0)
+          const dy = a.y + (a.vy ?? 0) - b.y - (b.vy ?? 0)
+          const overlapX = (a.width + b.width) / 2 + GAP - Math.abs(dx)
+          const overlapY = (a.height + b.height) / 2 + GAP - Math.abs(dy)
+          if (overlapX <= 0 || overlapY <= 0) continue
+          const aFree = a.fx == null,
+            bFree = b.fx == null
+          const free = Number(aFree) + Number(bFree)
+          if (!free) continue
+          if (overlapX / viewport.width < overlapY / viewport.height) {
+            const push = (Math.sign(dx || 1) * overlapX) / free
+            if (aFree) a.vx = (a.vx ?? 0) + push
+            if (bFree) b.vx = (b.vx ?? 0) - push
+          } else {
+            const push = (Math.sign(dy || 1) * overlapY) / free
+            if (aFree) a.vy = (a.vy ?? 0) + push
+            if (bFree) b.vy = (b.vy ?? 0) - push
+          }
+        }
+      }
+    }
+  }
+  force.initialize = (items: ServiceForceNode[]) => {
+    nodes = items
+  }
+  return force
+}
+
+function cardBoundary(
+  viewport: ServiceSize
+): Force<ServiceForceNode, ServiceForceLink> {
+  let nodes: ServiceForceNode[] = []
+  const force = () => {
+    for (const node of nodes) {
+      if (node.fx != null) continue
+      const x = node.x + (node.vx ?? 0),
+        y = node.y + (node.vy ?? 0)
+      node.vx =
+        (node.vx ?? 0) +
+        Math.max(node.width / 2, Math.min(viewport.width - node.width / 2, x)) -
+        x
+      node.vy =
+        (node.vy ?? 0) +
+        Math.max(
+          node.height / 2,
+          Math.min(viewport.height - node.height / 2, y)
+        ) -
+        y
+    }
+  }
+  force.initialize = (items: ServiceForceNode[]) => {
+    nodes = items
+  }
+  return force
+}
+
+/** Seed neighbours together so rectangular cards need not pass through each other. */
+function connectedSeeds(
+  ids: string[],
+  connections: readonly ServiceConnection[],
+  columns: number,
+  cardHeight: number
+): ServicePositions {
+  const neighbours = new Map(ids.map(id => [id, new Set<string>()]))
+  for (const edge of connections) {
+    const source = serviceIdentity(edge.source),
+      target = serviceIdentity(edge.target)
+    if (source === target) continue
+    neighbours.get(source)?.add(target)
+    neighbours.get(target)?.add(source)
+  }
+  const order = [...ids].sort(
+    (a, b) =>
+      neighbours.get(b)!.size - neighbours.get(a)!.size || a.localeCompare(b)
+  )
+  const remaining = new Set(order)
+  const cells = Array.from(
+    { length: Math.ceil(ids.length / columns) * columns },
+    (_, index) => ({ x: index % columns, y: Math.floor(index / columns) })
+  )
+  const placed = new Map<string, ServicePoint>()
+  for (const root of order) {
+    if (!remaining.delete(root)) continue
+    const group = [root]
+    for (let index = 0; index < group.length; index++) {
+      for (const id of neighbours.get(group[index]!)!) {
+        if (remaining.delete(id)) group.push(id)
+      }
+    }
+    const centre = {
+      x: (columns - 1) / 2,
+      y: cells[0]!.y + Math.floor((Math.ceil(group.length / columns) - 1) / 2),
+    }
+    for (const id of group) {
+      const adjacent = [...neighbours.get(id)!].flatMap(neighbour =>
+        placed.has(neighbour) ? [placed.get(neighbour)!] : []
+      )
+      const targets = adjacent.length ? adjacent : [centre]
+      const distance = (cell: ServicePoint) =>
+        targets.reduce(
+          (sum, target) =>
+            sum + (cell.x - target.x) ** 2 + (cell.y - target.y) ** 2,
+          0
+        )
+      let best = 0
+      for (let index = 1; index < cells.length; index++) {
+        if (distance(cells[index]!) < distance(cells[best]!)) best = index
+      }
+      placed.set(id, cells.splice(best, 1)[0]!)
+    }
+  }
+  return new Map(
+    [...placed].map(([id, cell]) => [
+      id,
+      {
+        x: SERVICE_CARD_WIDTH / 2 + cell.x * (SERVICE_CARD_WIDTH + GAP),
+        y: cardHeight / 2 + cell.y * (cardHeight + GAP),
+      },
+    ])
+  )
+}
+
+/** A deterministic, viewport-shaped seed gives the static simulation room to settle. */
+function createServiceSimulation(
+  services: readonly ServiceSummary[],
+  connections: readonly ServiceConnection[],
+  sizes: ServiceSizes,
+  viewport: ServiceSize,
+  previous: ServicePositions = new Map()
+) {
+  const ids = services.map(serviceIdentity).sort()
+  const cardHeight = Math.max(
+    SERVICE_CARD_HEIGHT,
+    ...[...sizes.values()].map(size => size.height)
+  )
+  const usableWidth = Math.max(
+    SERVICE_CARD_WIDTH,
+    viewport.width - SERVICE_MAP_PADDING * 2
+  )
+  const usableHeight = Math.max(
+    cardHeight,
+    viewport.height - SERVICE_MAP_PADDING * 2
+  )
+  let columns = 1,
+    bestScale = 0
+  for (let count = 1; count <= ids.length; count++) {
+    const width = count * (SERVICE_CARD_WIDTH + GAP) - GAP
+    const height = Math.ceil(ids.length / count) * (cardHeight + GAP) - GAP
+    const scale = Math.min(1, usableWidth / width, usableHeight / height)
+    if (scale > bestScale) {
+      columns = count
+      bestScale = scale
+    }
+  }
+  const area = {
+    width: Math.max(usableWidth, columns * (SERVICE_CARD_WIDTH + GAP) - GAP),
+    height: Math.max(
+      usableHeight,
+      Math.ceil(ids.length / columns) * (cardHeight + GAP) - GAP
+    ),
+  }
+  const seeds = connectedSeeds(ids, connections, columns, cardHeight)
+  const positions = retainServicePositions(previous, seeds, sizes)
+  const nodes: ServiceForceNode[] = ids.map(id => {
+    const node: ServiceForceNode = {
+      id,
+      ...positions.get(id)!,
+      ...cardSize(sizes, id),
+    }
+    const retained = previous.get(id)
+    if (retained) {
+      node.fx = retained.x
+      node.fy = retained.y
+    }
+    return node
+  })
+  const links: ServiceForceLink[] = connections.map(edge => ({
+    source: serviceIdentity(edge.source),
+    target: serviceIdentity(edge.target),
+  }))
+  return {
+    data: { nodes, links },
+    forces: {
+      link: forceLink<ServiceForceNode, ServiceForceLink>(links)
+        .id(node => node.id)
+        .distance(220)
+        .strength(0.15),
+      charge: forceManyBody<ServiceForceNode>().strength(-300),
+      x: forceX<ServiceForceNode>(area.width / 2).strength(0.04),
+      y: forceY<ServiceForceNode>(area.height / 2).strength(0.04),
+      boundary: cardBoundary(area),
+      collision: cardCollision(area),
+    },
+  }
+}
+
+/** Settle the same d3-force engine used by LayerChart before publishing positions. */
 export function serviceGraphLayout(
   services: readonly ServiceSummary[],
   connections: readonly ServiceConnection[],
   sizes: ServiceSizes,
-  availableWidth: number,
+  viewport: ServiceSize,
   previous: ServicePositions = new Map()
 ): ServiceLayout {
-  const candidates: ServicePositions = new Map()
-  const routes = new Map<
-    string,
-    { source: string; target: string; points: ServicePoint[] }
-  >()
-  const columnWidth = SERVICE_CARD_WIDTH + EDGE_CLEARANCE * 2 + GAP
-  const columns = Math.max(
-    1,
-    Math.floor((availableWidth - 48 + GAP) / columnWidth)
+  const { data, forces } = createServiceSimulation(
+    services,
+    connections,
+    sizes,
+    viewport,
+    previous
   )
-  const bottoms = Array<number>(columns).fill(0)
-  for (const ids of components(services, connections)) {
-    const members = new Set(ids)
-    const edges = connections.filter(
-      edge =>
-        members.has(serviceIdentity(edge.source)) &&
-        members.has(serviceIdentity(edge.target))
+  const simulation = forceSimulation<ServiceForceNode, ServiceForceLink>(
+    data.nodes
+  ).stop()
+  for (const [name, force] of Object.entries(forces))
+    simulation.force(name, force)
+  simulation.tick(
+    Math.ceil(
+      Math.log(simulation.alphaMin()) / Math.log(1 - simulation.alphaDecay())
     )
-    const graph = dagreGraph(
-      {
-        nodes: ids.map(id => {
-          const size = cardSize(sizes, id)
-          return {
-            id,
-            label: {
-              width: size.width + EDGE_CLEARANCE * 2,
-              height: size.height + EDGE_CLEARANCE * 2,
-            },
-          }
-        }),
-        edges: edges.map(edge => ({
-          source: serviceIdentity(edge.source),
-          target: serviceIdentity(edge.target),
-        })),
-      },
-      {
-        direction: 'top-bottom',
-        rankSeparation: 56,
-        nodeSeparation: GAP,
-        edgeSeparation: 24,
-      }
+  )
+  return serviceForceLayout(simulation.nodes(), connections, sizes)
+}
+
+function cardPort(
+  point: ServicePoint,
+  target: ServicePoint,
+  size: ServiceSize
+) {
+  const dx = target.x - point.x,
+    dy = target.y - point.y
+  const ratio =
+    1 /
+    Math.max(
+      Math.abs(dx) / (size.width / 2 + EDGE_CLEARANCE),
+      Math.abs(dy) / (size.height / 2 + EDGE_CLEARANCE)
     )
-    const width = graph.graph().width!,
-      height = graph.graph().height!
-    const span = Math.min(
-      columns,
-      Math.max(1, Math.ceil((width + GAP) / columnWidth))
-    )
-    let column = 0
-    for (let i = 1; i <= columns - span; i++) {
-      if (
-        Math.max(...bottoms.slice(i, i + span)) <
-        Math.max(...bottoms.slice(column, column + span))
-      )
-        column = i
-    }
-    const x = column * columnWidth
-    const y = Math.max(...bottoms.slice(column, column + span))
-    for (let i = column; i < column + span; i++) bottoms[i] = y + height + GAP
-    for (const id of ids) {
-      const node = graph.node(id)
-      candidates.set(id, { x: node.x + x, y: node.y + y })
-    }
-    for (const edge of edges) {
-      const source = serviceIdentity(edge.source),
-        target = serviceIdentity(edge.target)
-      const points: ServicePoint[] = graph.edge(source, target).points
-      routes.set(connectionIdentity(edge), {
-        source,
-        target,
-        points: points.map(point => ({ x: point.x + x, y: point.y + y })),
-      })
-    }
-  }
-  const positions = retainServicePositions(previous, candidates, sizes)
-  const path = line<ServicePoint>()
-    .x(point => point.x)
-    .y(point => point.y)
-    .curve(curveBasis)
+  return { x: point.x + dx * ratio, y: point.y + dy * ratio }
+}
+
+function serviceForceLayout(
+  nodes: readonly ServiceForceNode[],
+  connections: readonly ServiceConnection[],
+  sizes: ServiceSizes
+): ServiceLayout {
+  const positions = new Map(
+    nodes.map(node => [node.id, { x: node.x, y: node.y }])
+  )
   const paths = new Map<string, string>()
-  for (const [id, route] of routes) {
-    const source = positions.get(route.source)!,
-      sourceCandidate = candidates.get(route.source)!
-    const target = positions.get(route.target)!,
-      targetCandidate = candidates.get(route.target)!
-    // Carry Dagre's routing with retained endpoints when discovery extends a flow.
-    const points = route.points.map((point, index) => {
-      const t = index / (route.points.length - 1)
-      return {
-        x:
-          point.x +
-          (source.x - sourceCandidate.x) * (1 - t) +
-          (target.x - targetCandidate.x) * t,
-        y:
-          point.y +
-          (source.y - sourceCandidate.y) * (1 - t) +
-          (target.y - targetCandidate.y) * t,
-      }
-    })
-    paths.set(id, path(points) ?? '')
+  const pairs = new Set(connections.map(connectionIdentity))
+  for (const edge of connections) {
+    const sourceID = serviceIdentity(edge.source),
+      targetID = serviceIdentity(edge.target)
+    const source = positions.get(sourceID)!,
+      target = positions.get(targetID)!
+    const sourceSize = cardSize(sizes, sourceID),
+      targetSize = cardSize(sizes, targetID)
+    if (sourceID === targetID) {
+      const x = source.x + sourceSize.width / 2 + EDGE_CLEARANCE,
+        y = source.y
+      paths.set(
+        connectionIdentity(edge),
+        `M${x},${y - 16} C${x + 48},${y - 64} ${x + 48},${y + 64} ${x},${y + 16}`
+      )
+      continue
+    }
+    const reciprocal = pairs.has(
+      connectionIdentity({ ...edge, source: edge.target, target: edge.source })
+    )
+    const dx = target.x - source.x,
+      dy = target.y - source.y
+    const length = Math.hypot(dx, dy)
+    const control = {
+      x: (source.x + target.x) / 2 - (reciprocal ? (dy / length) * 40 : 0),
+      y: (source.y + target.y) / 2 + (reciprocal ? (dx / length) * 40 : 0),
+    }
+    const start = cardPort(source, control, sourceSize),
+      end = cardPort(target, control, targetSize)
+    paths.set(
+      connectionIdentity(edge),
+      `M${start.x},${start.y} Q${control.x},${control.y} ${end.x},${end.y}`
+    )
   }
   return { positions, paths }
 }

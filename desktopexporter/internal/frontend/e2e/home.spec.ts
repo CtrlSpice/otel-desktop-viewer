@@ -119,10 +119,11 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await expect(colourDot).toHaveCSS('width', '8px')
   await expect(colourDot).toHaveCSS('height', '8px')
   const dotBox = (await colourDot.boundingBox())!
+  const mapScale = dotBox.width / 8
   const titleBox = (await card
     .locator('.signal-row__title > span > span:last-child')
     .boundingBox())!
-  expect(titleBox.x - dotBox.x - dotBox.width).toBeCloseTo(8, 0)
+  expect((titleBox.x - dotBox.x - dotBox.width) / mapScale).toBeCloseTo(8, 0)
   const dateBox = (await card.locator('.signal-date').boundingBox())!
   expect(dateBox.x).toBeCloseTo(titleBox.x, 0)
   await expect(card.locator('svg')).toHaveCount(0)
@@ -130,7 +131,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const countsBox = (await card.locator('.signal-row__badge').boundingBox())!
   expect(countsBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width)
   expect(countsBox.x + countsBox.width).toBeCloseTo(
-    cardBox.x + cardBox.width - 16,
+    cardBox.x + cardBox.width - 16 * mapScale,
     0
   )
   expect(countsBox.y + countsBox.height / 2).toBeCloseTo(
@@ -201,7 +202,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const service of await serviceCards.all()) {
-      expect((await service.boundingBox())!.width).toBeCloseTo(320, 0)
+      await expect(service).toHaveCSS('width', '320px')
     }
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
