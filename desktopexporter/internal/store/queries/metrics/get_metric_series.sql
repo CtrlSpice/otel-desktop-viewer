@@ -66,8 +66,8 @@ datapoint_documents as materialized (
 					'flags', d.flags,
 					'exemplars', coalesce(e.documents, json('[]')),
 					'count', d.count::varchar,
-					'bucketCounts', list_transform(d.bucket_counts, n -> n::varchar),
-					'explicitBounds', list_transform(d.explicit_bounds, bound -> double_wire_json(bound))),
+					'bucketCounts', list_transform(d.bucket_counts, lambda n: n::varchar),
+					'explicitBounds', list_transform(d.explicit_bounds, lambda bound: double_wire_json(bound))),
 				case when d.sum is null then json('{}') else json_object('sum', double_wire_json(d.sum)) end,
 				case when d.min is null then json('{}') else json_object('min', double_wire_json(d.min)) end,
 				case when d.max is null then json('{}') else json_object('max', double_wire_json(d.max)) end)
@@ -83,9 +83,9 @@ datapoint_documents as materialized (
 					'zeroCount', d.zero_count::varchar,
 					'zeroThreshold', double_wire_json(d.zero_threshold),
 					'positive', json_object('offset', d.positive_bucket_offset,
-						'bucketCounts', list_transform(d.positive_bucket_counts, n -> n::varchar)),
+						'bucketCounts', list_transform(d.positive_bucket_counts, lambda n: n::varchar)),
 					'negative', json_object('offset', d.negative_bucket_offset,
-						'bucketCounts', list_transform(d.negative_bucket_counts, n -> n::varchar))),
+						'bucketCounts', list_transform(d.negative_bucket_counts, lambda n: n::varchar))),
 				case when d.sum is null then json('{}') else json_object('sum', double_wire_json(d.sum)) end,
 				case when d.min is null then json('{}') else json_object('min', double_wire_json(d.min)) end,
 				case when d.max is null then json('{}') else json_object('max', double_wire_json(d.max)) end)

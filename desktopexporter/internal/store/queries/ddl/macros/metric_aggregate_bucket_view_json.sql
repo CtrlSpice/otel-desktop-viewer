@@ -12,7 +12,7 @@ create or replace macro metric_aggregate_bucket_view_json(timestamp_, start_time
 				'count', count_,
 				'sum', double_wire_json(sum_),
 				'bucketCounts', counts,
-				'explicitBounds', list_transform(bounds, value -> double_wire_json(value)),
+				'explicitBounds', list_transform(bounds, lambda value: double_wire_json(value)),
 				-- NULL when no quantiles were requested.
 				'quantiles', quantiles
 			), json_object(
