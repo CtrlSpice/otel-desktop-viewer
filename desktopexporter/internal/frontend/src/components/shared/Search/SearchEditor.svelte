@@ -456,7 +456,7 @@
             <FieldErrorMessage message={searchError} />
           </div>
         {/if}
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="header-icon-controls shrink-0">
           <button
             type="button"
             class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
@@ -582,7 +582,8 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply items-center gap-1.5 py-1 pl-4 pr-0;
+    @apply items-center py-1 pl-4 pr-0;
+    gap: var(--control-icon-gap);
     height: auto;
   }
 

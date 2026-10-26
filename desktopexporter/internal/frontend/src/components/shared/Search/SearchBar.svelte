@@ -24,7 +24,7 @@
 </script>
 
 <div
-  class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
+  class="search-bar flex w-full min-w-0 items-center rounded-full text-sm text-base-content {search
     ? 'search-bar--editable bg-(--color-input)'
     : ''}"
   role={search ? 'search' : undefined}
@@ -73,8 +73,13 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
+  .search-bar {
+    gap: var(--control-icon-gap);
+  }
+
   .search-bar--editable {
     border: 1px solid var(--color-border);
+    padding-inline: 0.25rem;
   }
 
   .search-bar--editable:has(.search-bar__field :global(:focus)) {
