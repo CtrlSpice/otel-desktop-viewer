@@ -2465,8 +2465,8 @@ test('extrema use the series colour and the backed average stays behind the seri
   const averageLabel = page.locator('.series-stat-tooltip--right')
   await expect(
     averageLabel.locator('.chart-selection-legend__label')
-  ).toHaveText('avg')
-  await expect(averageLabel).toHaveAttribute('title', 'avg 20.5')
+  ).toHaveText('Series avg')
+  await expect(averageLabel).toHaveAttribute('title', 'Series avg 20.5')
   await expect(
     averageLabel.locator('.chart-selection-legend--stat')
   ).toBeVisible()
@@ -2541,7 +2541,7 @@ test('extrema use the series colour and the backed average stays behind the seri
     averageLabelAtRight: true,
   })
   const emphasis = averageLabel.getByRole('button', {
-    name: 'Emphasize avg overlay',
+    name: 'Emphasize Series avg overlay',
   })
   const before = page.url()
   await expect(emphasis).toHaveCSS('font-weight', '400')
@@ -2690,7 +2690,7 @@ test('combined average labels avoid source statistics while staying near their e
         average.evaluate(element => {
           const rect = element.getBoundingClientRect()
           const stat = document
-            .querySelector('.series-stat-tooltip[title^="avg "]')!
+            .querySelector('.series-stat-tooltip[title^="Series avg "]')!
             .getBoundingClientRect()
           return {
             overlap:
@@ -2722,7 +2722,7 @@ test('combined average labels avoid source statistics while staying near their e
     'true'
   )
   const sourceLabel = page
-    .locator('.series-stat-tooltip[title^="avg "]')
+    .locator('.series-stat-tooltip[title^="Series avg "]')
     .getByRole('button')
   await expect(sourceLabel).toHaveAttribute('aria-pressed', 'false')
   await sourceLabel.click()

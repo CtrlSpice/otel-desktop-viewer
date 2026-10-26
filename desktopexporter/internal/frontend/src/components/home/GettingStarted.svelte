@@ -155,7 +155,7 @@
   }
   .guide-welcome {
     @apply grid shrink-0 items-center gap-x-3;
-    grid-template-columns: minmax(0, 48px) minmax(min-content, 1fr);
+    grid-template-columns: minmax(0, 56px) minmax(min-content, 1fr);
     min-height: var(--pane-header-single-h);
     padding-inline: var(--pane-inline-inset);
   }

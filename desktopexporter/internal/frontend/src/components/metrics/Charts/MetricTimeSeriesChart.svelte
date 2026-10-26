@@ -806,7 +806,7 @@
   const SERIES_STAT_LABEL: Record<'min' | 'max' | 'avg' | 'slope', string> = {
     min: 'min',
     max: 'max',
-    avg: 'avg',
+    avg: 'Series avg',
     slope: rateSlopeViewSymbol(),
   }
 
@@ -948,7 +948,7 @@
         kind: 'avg',
         statLabel: SERIES_STAT_LABEL.avg,
         valueText,
-        title: `avg ${formatMetricHoverValue(stats.avg)}`,
+        title: `Series avg ${formatMetricHoverValue(stats.avg)}`,
         color,
         dotDate: series.data[0]!.date,
         y: stats.avg,
