@@ -165,7 +165,7 @@
       class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm"
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
-      aria-label={item.id === 'evals' ? 'Experimental Evals' : item.label}
+      aria-label={`${item.label}${item.id === 'evals' ? ' [experimental]' : ''}${itemCount === undefined ? '' : ` [${itemCount}]`}`}
       title={item.id === 'evals' ? 'Test Feature Please Ignore' : undefined}
       aria-describedby={itemCount !== undefined
         ? `${countID}-${item.id}`

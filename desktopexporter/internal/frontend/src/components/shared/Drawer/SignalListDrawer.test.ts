@@ -153,7 +153,9 @@ describe('SignalListDrawer empty and loading states', () => {
     setTestUrl('/traces')
     renderDrawer({ items: [], drawerSearch })
     expect(screen.getByText('search box')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Traces' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
+    ).toBeInTheDocument()
   })
 })
 
@@ -161,13 +163,12 @@ describe('SignalListDrawer navigation', () => {
   it('marks the destination for the signal in the URL as current', () => {
     setTestUrl('/metrics')
     renderDrawer({ label: 'Metrics' })
-    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    )
-    expect(screen.getByRole('link', { name: 'Traces' })).not.toHaveAttribute(
-      'aria-current'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    ).toHaveAttribute('aria-current', 'page')
+    expect(
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
+    ).not.toHaveAttribute('aria-current')
   })
 
   it('marks no signal destination current when the URL matches no signal', () => {
@@ -183,28 +184,26 @@ describe('SignalListDrawer navigation', () => {
   it('navigates to another signal when its tab is clicked', async () => {
     setTestUrl('/traces')
     renderDrawer()
-    await userEvent.click(screen.getByRole('link', { name: 'Logs' }))
+    await userEvent.click(screen.getByRole('link', { name: /^Logs(?: \[|$)/ }))
     expect(window.location.pathname).toBe('/logs')
   })
 
   it('navigates home when the home button is clicked', async () => {
     setTestUrl('/traces')
     renderDrawer()
-    await userEvent.click(screen.getByRole('link', { name: 'Home' }))
+    await userEvent.click(screen.getByRole('link', { name: /^Home(?: \[|$)/ }))
     expect(window.location.pathname).toBe('/')
   })
 
   it('uses real hrefs that preserve the active time window', () => {
     setTestUrl('/traces?start=10&end=20&span=old')
     renderDrawer()
-    expect(screen.getByRole('link', { name: 'Logs' })).toHaveAttribute(
-      'href',
-      '/logs?start=10&end=20'
-    )
-    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute(
-      'href',
-      '/'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Logs(?: \[|$)/ })
+    ).toHaveAttribute('href', '/logs?start=10&end=20')
+    expect(
+      screen.getByRole('link', { name: /^Home(?: \[|$)/ })
+    ).toHaveAttribute('href', '/')
   })
 
   it('does not intercept modified signal or Home clicks', () => {
@@ -308,7 +307,7 @@ describe('SignalListDrawer list keyboard navigation', () => {
     const oldRoving = await screen.findByRole('button', { name: 'Item 5' })
     oldRoving.focus()
     await waitFor(() => expect(oldRoving).toHaveAttribute('tabindex', '0'))
-    const external = screen.getByRole('link', { name: 'Home' })
+    const external = screen.getByRole('link', { name: /^Home(?: \[|$)/ })
     external.focus()
 
     const reordered = [
@@ -410,7 +409,9 @@ describe('SignalListDrawer collapse behaviour', () => {
   it('opens by default when no preference is stored', () => {
     setTestUrl('/traces')
     renderDrawer()
-    expect(screen.getByRole('link', { name: 'Traces' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
+    ).toBeInTheDocument()
     expect(screen.queryByLabelText('Open sidebar')).not.toBeInTheDocument()
   })
 
@@ -493,7 +494,9 @@ describe('SignalListDrawer collapse behaviour', () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'false')
     setTestUrl('/traces')
     renderDrawer()
-    await userEvent.click(screen.getByRole('link', { name: 'Metrics' }))
+    await userEvent.click(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    )
     expect(window.location.pathname).toBe('/metrics')
   })
 })
@@ -513,7 +516,7 @@ describe('SignalListDrawer empty-drawer pages', () => {
       screen.getByRole('button', { name: 'Collapse sidebar' })
     ).toHaveFocus()
     await user.tab()
-    expect(screen.getByRole('link', { name: 'Home' })).toHaveFocus()
+    expect(screen.getByRole('link', { name: /^Home(?: \[|$)/ })).toHaveFocus()
   })
 
   it('keeps the empty drawer open when the stored preference says open', () => {

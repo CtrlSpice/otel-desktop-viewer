@@ -44,7 +44,7 @@ test('public frontend cannot activate Evals from a server capability', async ({
   })
   await page.goto('/evals')
   await expect(
-    page.getByRole('link', { name: 'Experimental Evals' })
+    page.getByRole('link', { name: /^Evals \[experimental\]/ })
   ).toHaveCount(0)
   await expect(page.getByLabel('Choose telemetry JSON files')).toBeAttached()
   await page.getByLabel('Choose telemetry JSON files').setInputFiles({

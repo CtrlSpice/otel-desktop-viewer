@@ -1094,7 +1094,7 @@ test.describe('home page accessibility', () => {
   })
 
   test('keeps Home import and setup guide accessible', async ({ page }) => {
-    const imports = page.getByRole('button', { name: 'Import files' })
+    const imports = page.getByRole('button', { name: /^Import files\./ })
     await expect(imports).toBeVisible()
     await expect(imports).toHaveText(
       'Drop telemetry JSON files here or anywhere on the screen.'
@@ -1388,11 +1388,11 @@ test.describe('home page accessibility', () => {
     ).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(
-      page.getByRole('link', { name: 'Home', exact: true })
+      page.getByRole('link', { name: /^Home(?: \[|$)/ })
     ).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(
-      page.getByRole('link', { name: 'Traces', exact: true })
+      page.getByRole('link', { name: /^Traces(?: \[|$)/ })
     ).toBeFocused()
   })
 
@@ -1567,7 +1567,7 @@ test.describe('home page accessibility', () => {
     await page.getByRole('button', { name: 'Collapse details' }).click()
     await page
       .getByRole('navigation', { name: 'Primary' })
-      .getByRole('link', { name: 'Metrics', exact: true })
+      .getByRole('link', { name: /^Metrics(?: \[|$)/ })
       .click()
     await expect(detail).toBeHidden()
     await page.getByRole('button', { name: 'Open details' }).click()
