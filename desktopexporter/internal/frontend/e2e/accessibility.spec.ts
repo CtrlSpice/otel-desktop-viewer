@@ -1502,7 +1502,7 @@ test.describe('home page accessibility', () => {
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.setViewportSize({ width: 3000, height: 1000 })
     await page.goto('/traces')
     const detail = page.locator('#signal-drawer-detail')
     const navigator = page.locator('.signal-drawer__panel')

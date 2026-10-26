@@ -2,6 +2,7 @@
 package discovery
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -37,7 +38,13 @@ type Location struct {
 	OwnerType string `json:"ownerType"`
 }
 
-func Literal(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+func Literal(value string) string {
+	// SQL source cannot contain NUL; decode the UTF-8 bytes inside DuckDB instead.
+	if strings.ContainsRune(value, 0) {
+		return "decode(from_hex('" + hex.EncodeToString([]byte(value)) + "'))"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
 
 // ServiceIdentity retains received value kinds and exact wire values. OTel treats
 // an absent namespace as an empty string; an absent name remains distinct.

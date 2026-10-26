@@ -126,7 +126,7 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 22. Store startup validates `schema_meta` before
+The current schema version is 24. Store startup validates `schema_meta` before
 running DDL. A mismatched, malformed, or unversioned telemetry database is
 rejected without modification. The store does not migrate or reset databases.
 
@@ -352,8 +352,9 @@ The CLI `services` command uses the read-only `query` RPC. Home uses
 stored service entity. Groups retain the exact typed Resource `service.name` and
 `service.namespace` values. An absent namespace equals an empty-string namespace;
 an absent name remains distinct. Equal display text with different types does
-not merge groups. Home carries the returned `serviceIdentity` into attribute
-discovery and signal searches.
+not merge groups. Both CLI JSON and Home return `serviceIdentity`, preserving
+the typed values even when names and outer kinds have identical display text.
+Home carries this identity into attribute discovery and signal searches.
 
 Each field is computed within the selected inclusive time window:
 

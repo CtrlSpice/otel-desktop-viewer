@@ -76,12 +76,7 @@
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import {
-    isPlainLeftClick,
-    itemHref,
-    setSpanInQuery,
-    SPAN_PARAM,
-  } from '@/route'
+  import { isPlainLeftClick, itemHref, navigate, SPAN_PARAM } from '@/route'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { spanCopyJSON, spanExportURL } from './span-copy'
   import {
@@ -341,7 +336,11 @@
                       onclick={event => {
                         if (!isPlainLeftClick(event)) return
                         event.preventDefault()
-                        setSpanInQuery(rootSpanID, 'push')
+                        navigate(
+                          itemHref('traces', span.traceID, {
+                            [SPAN_PARAM]: rootSpanID,
+                          })
+                        )
                       }}><Identifier value={span.traceID} /></a
                     >
                   {:else}<Identifier value={span.traceID} />{/if}
@@ -358,8 +357,12 @@
                   <button
                     type="button"
                     class="detail-cell__value link link-primary"
-                    onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
-                    ><Identifier value={span.parentSpanID ?? ''} /></button
+                    onclick={() =>
+                      navigate(
+                        itemHref('traces', span.traceID, {
+                          [SPAN_PARAM]: span.parentSpanID!,
+                        })
+                      )}><Identifier value={span.parentSpanID ?? ''} /></button
                   >
                 {/snippet}
               </SpanField>

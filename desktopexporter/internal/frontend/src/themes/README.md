@@ -413,8 +413,8 @@ steadily at Night.
 Legacy count-palette preferences are left in storage but no
 longer select a different ramp.
 
-The generator takes hue/chroma anchors from Murasaki-shikibu, Tsuki-yo,
-Shin-ryoku and To-ro. Their OKLab lightnesses are 0.48, 0.61, 0.74 and 0.87,
+The generator takes hue/chroma anchors from Murasaki-shikibu, Momiji
+and Fuyu-gaki. Their OKLab lightnesses are 0.48, 0.68 and 0.87,
 avoiding near-black and paper-white endpoints. It interpolates in OKLab,
 maps into sRGB gamut, and samples at equal perceptual arc-length intervals.
 Each adaptive ramp size from 1–12 is generated separately. Night uses

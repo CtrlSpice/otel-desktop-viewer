@@ -42,6 +42,37 @@ func TestDiscoveryQueryResultColumns(t *testing.T) {
 	}
 }
 
+func TestDiscoveryNULStrings(t *testing.T) {
+	h := setupHandler(t)
+	ctx := context.Background()
+	data := buildTestTraces()
+	resource := data.ResourceSpans().At(0)
+	resource.Resource().Attributes().PutStr("service.name", "svc\x00'雪")
+	resource.Resource().Attributes().PutStr("service.namespace", "ns\x00")
+	span := resource.ScopeSpans().At(0).Spans().At(0)
+	span.Attributes().PutStr("a\x00'b", "value\x00'雪")
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, data, h.store.FlushedIDs())
+	}))
+	for _, kind := range []string{"services", "keys", "values"} {
+		options := map[string]any{"kind": kind, "signal": "traces", "ownerType": "span", "key": "a\x00'b", "serviceName": "svc\x00'雪", "namespace": "ns\x00", "term": "\x00"}
+		if kind == "values" {
+			// Value filtering searches the received JSON representation.
+			options["term"] = `\u0000`
+		}
+		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
+		require.NoError(t, err, kind)
+		var page struct {
+			Rows [][]json.RawMessage `json:"rows"`
+		}
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+		require.NotEmpty(t, page.Rows, kind)
+		if kind == "values" {
+			require.Contains(t, string(page.Rows[0][0]), `value\u0000'雪`)
+		}
+	}
+}
+
 func TestServiceIdentityRetainsTypesAcrossDiscoveryAndSignalSearch(t *testing.T) {
 	h := setupHandler(t)
 	h.logger = zaptest.NewLogger(t)

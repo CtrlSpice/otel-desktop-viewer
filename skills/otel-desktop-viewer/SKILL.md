@@ -234,10 +234,11 @@ otel-desktop-viewer query 'DESCRIBE attributes'
 otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE function_type = 'macro' AND function_name IN ('span_id_wire', 'trace_id_wire') ORDER BY function_name"
 ```
 
-The examples use schema 22 tables `spans`, `logs`, `metrics`,
+The examples use schema 24 tables `spans`, `logs`, `metrics`,
 `metric_series`, `metric_datapoints`, and `attributes`, plus registered
 `trace_id_wire` and `span_id_wire` macros. Inspect the installed schema before
-adapting SQL.
+adapting SQL. This build rejects earlier database versions without modifying
+them. Use a new `--db` path to retain an older file; there is no migration.
 
 ## Query recent spans
 

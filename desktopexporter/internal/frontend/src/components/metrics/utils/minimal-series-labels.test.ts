@@ -17,6 +17,32 @@ function row(key: string, values: Record<string, string>): LegendTimeseries {
   }
 }
 
+it('bounds high-dimensional parity search while preserving every series distinction', () => {
+  const rows: LegendTimeseries[] = Array.from({ length: 128 }, (_, index) => ({
+    key: String(index),
+    attributes: Array.from({ length: 127 }, (_, column) => ({
+      key: `parity-${column + 1}`,
+      value: {
+        kind: 'bool',
+        value:
+          ((index & (column + 1)).toString(2).match(/1/g)?.length ?? 0) % 2 ===
+          1,
+      },
+    })),
+  }))
+  const table = minimalSeriesTable(rows)
+  expect(table.columns.length).toBeLessThanOrEqual(7)
+  expect(
+    new Set([...table.labels.values()].map(label => label.text)).size
+  ).toBe(128)
+  expect([...table.labels.values()].every(label => !label.needsIdentity)).toBe(
+    true
+  )
+  expect(
+    minimalSeriesTable([...rows].reverse()).columns.map(column => column.key)
+  ).toEqual(table.columns.map(column => column.key))
+})
+
 it('sorts numeric attributes without losing int64 precision and keeps typed filter identities', () => {
   const rows: LegendTimeseries[] = [
     {

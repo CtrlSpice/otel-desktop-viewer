@@ -126,19 +126,31 @@ export function valueTokenTree(
 /** Recognize complete containers; formatted display also accepts runtime literals.
  * Validation uses a throwaway JSON-compatible copy; output always uses source
  * lexemes, retaining exact numbers, duplicate keys and non-JSON literal spelling. */
+type FormattingBudget = { characters: number; tokens: number }
+const formattingBudget = (): FormattingBudget => ({
+  characters: 1_048_576,
+  tokens: 65_536,
+})
+
 export function jsonContainerTokens(
   text: string,
-  expandStrings = false
+  expandStrings = false,
+  budget = formattingBudget(),
+  baseDepth = 0
 ): ValueToken[] | null {
   // Embedded JSON is an optional display enhancement, not a reason to expand
   // a small received string into gigabytes of indentation on the UI thread.
   const maxCharacters = 1_048_576
   const maxDepth = 64
-  let remainingCharacters = maxCharacters
-  let remainingTokens = 65_536
   const limit = Symbol('formatting limit')
   function format(text: string, baseDepth: number): ValueToken[] | null {
-    if (text.length > maxCharacters || !/^\s*[[{]/.test(text)) return null
+    if (
+      budget.characters <= 0 ||
+      budget.tokens <= 0 ||
+      text.length > maxCharacters ||
+      !/^\s*[[{]/.test(text)
+    )
+      return null
     try {
       JSON.parse(
         expandStrings
@@ -157,8 +169,8 @@ export function jsonContainerTokens(
     const tokens: ValueToken[] = []
     let depth = baseDepth
     const append = (token: ValueToken) => {
-      remainingCharacters -= token.text.length
-      if (remainingCharacters < 0 || --remainingTokens < 0) throw limit
+      budget.characters -= token.text.length
+      if (budget.characters < 0 || --budget.tokens < 0) throw limit
       tokens.push(token)
     }
     const punctuation = (text: string) => append({ text, kind: 'punctuation' })
@@ -209,20 +221,11 @@ export function jsonContainerTokens(
     return tokens
   }
   try {
-    return format(text, 0)
+    return format(text, baseDepth)
   } catch (error) {
     if (error === limit) return null
     throw error
   }
-}
-
-function indentTokens(tokens: ValueToken[], depth: number): ValueToken[] {
-  const indent = '  '.repeat(depth)
-  return tokens.map(token =>
-    token.kind === 'punctuation'
-      ? { ...token, text: token.text.replaceAll('\n', `\n${indent}`) }
-      : token
-  )
 }
 
 /** Format received values directly: do not round int64s or merge duplicate keys. */
@@ -231,6 +234,7 @@ export function attributeValueTokens(
   expandStrings = false
 ): ValueToken[] {
   const tokens: ValueToken[] = []
+  const budget = formattingBudget()
   const punctuation = (text: string) =>
     tokens.push({ text, kind: 'punctuation' })
   function visit(value: AttributeValue, depth: number): void {
@@ -264,9 +268,9 @@ export function attributeValueTokens(
       }
       case 'string':
         if (expandStrings) {
-          const nested = jsonContainerTokens(value.value, true)
+          const nested = jsonContainerTokens(value.value, true, budget, depth)
           if (nested) {
-            for (const token of indentTokens(nested, depth)) tokens.push(token)
+            for (const token of nested) tokens.push(token)
             break
           }
         }

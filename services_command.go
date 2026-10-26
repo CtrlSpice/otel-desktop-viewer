@@ -12,6 +12,7 @@ import (
 )
 
 type serviceSummary struct {
+	ServiceIdentity      string            `json:"serviceIdentity"`
 	ServiceNamespace     string            `json:"serviceNamespace"`
 	ServiceName          string            `json:"serviceName"`
 	ServiceNameKind      string            `json:"serviceNameKind,omitempty"`

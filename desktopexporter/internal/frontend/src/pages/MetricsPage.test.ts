@@ -605,6 +605,39 @@ describe('MetricsPage raw series fetching', () => {
     expect(screen.queryByText('Could not load datapoints.')).toBeNull()
   })
 
+  it('keeps inspected datapoints while another metric is pending and after it fails', async () => {
+    prepareRawSeriesTest()
+    searchMetricSummaries.mockResolvedValue([
+      makeSummary('Sum'),
+      { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
+    ])
+    let reject!: (error: Error) => void
+    const pending = new Promise<MetricViewData>((_, fail) => {
+      reject = fail
+    })
+    getMetricView.mockImplementation((id: string) =>
+      id === 'next' ? pending : Promise.resolve(makeMetric('Sum', [reduced]))
+    )
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    )
+    navigateToItem('metrics', 'next')
+    await waitFor(() =>
+      expect(getMetricView.mock.calls.some(call => call[0] === 'next')).toBe(
+        true
+      )
+    )
+    expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    reject(new Error('replacement unavailable'))
+    await screen.findByText('Could not load the selected metric.')
+    expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    expect(rawSeriesCalls()).toHaveLength(1)
+    error.mockRestore()
+  })
+
   it('anchors a preset window when the series request is triggered', async () => {
     const initialNow = 1_700_000_000_000
     const requestNow = initialNow + 5 * 60_000

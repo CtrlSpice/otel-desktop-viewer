@@ -11,6 +11,38 @@ import {
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it.each(['array', 'map'] as const)(
+    'shares the embedded formatting budget across a native %s',
+    kind => {
+      const source =
+        '['.repeat(62) + JSON.stringify(Array(2_000).fill(0)) + ']'.repeat(62)
+      const strings: AttributeValue[] = Array.from({ length: 500 }, () => ({
+        kind: 'string',
+        value: source,
+      }))
+      const value: AttributeValue =
+        kind === 'array'
+          ? { kind, value: strings }
+          : {
+              kind,
+              value: strings.map((value, index) => ({
+                key: String(index),
+                value,
+              })),
+            }
+      const exact = attributeValueCopy(value)
+      const formatted = attributeValueTokens(value, true)
+      expect(formatted.map(token => token.text).join('').length).toBeLessThan(
+        exact.length + 1_048_576
+      )
+      expect(formatted.length).toBeLessThan(70_000)
+      expect(
+        formatted.some(token => token.text === JSON.stringify(source))
+      ).toBe(true)
+      expect(attributeValueCopy(value)).toBe(exact)
+    }
+  )
+
   it('leaves deeply nested embedded JSON intact instead of expanding quadratic indentation', () => {
     const source = '['.repeat(50_000) + '0' + ']'.repeat(50_000)
     expect(jsonContainerTokens(source, true)).toBeNull()

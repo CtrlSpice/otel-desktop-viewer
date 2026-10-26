@@ -177,7 +177,7 @@ func TestServicesNamespacePresenceAndQuotedNames(t *testing.T) {
 	}), result.Services)
 	all := servicesTestResult(t, endpoint)
 	require.Len(t, all.Services, 4)
-	assert.Equal(t, serviceSummary{ServiceNameKind: "missing", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000004"}, all.Services[0])
+	assert.Equal(t, serviceSummary{ServiceIdentity: `[null,{"kind":"string","value":""}]`, ServiceNameKind: "missing", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000004"}, all.Services[0])
 	output, err := servicesTestRun(t, endpoint, "--service", name)
 	require.NoError(t, err)
 	assert.NotContains(t, output, "\x1b")
@@ -279,8 +279,40 @@ func stringServiceSummaries(services []serviceSummary) []serviceSummary {
 	for i := range services {
 		services[i].ServiceNameKind = "string"
 		services[i].ServiceNamespaceKind = "string"
+		services[i].ServiceIdentity = expectedServiceIdentity(services[i])
 	}
 	return services
+}
+
+func expectedServiceIdentity(service serviceSummary) string {
+	name, _ := json.Marshal(service.ServiceName)
+	namespace, _ := json.Marshal(service.ServiceNamespace)
+	// DuckDB uses uppercase hex for the ESC in the quoted-name fixture.
+	return strings.ReplaceAll(fmt.Sprintf(`[{"kind":%q,"value":%s},{"kind":%q,"value":%s}]`, service.ServiceNameKind, name, service.ServiceNamespaceKind, namespace), `\u001b`, `\u001B`)
+}
+
+func TestServicesPreserveSameKindDisplayCollisionIdentities(t *testing.T) {
+	endpoint, _, le, _ := startAttributeIntegration(t)
+	data := plog.NewLogs()
+	for _, number := range []any{int64(1), float64(1)} {
+		resource := data.ResourceLogs().AppendEmpty()
+		require.NoError(t, resource.Resource().Attributes().PutEmpty("service.name").FromRaw([]any{number}))
+		resource.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(8000000000000)
+	}
+	require.NoError(t, le.ConsumeLogs(context.Background(), data))
+	result := servicesTestResult(t, endpoint)
+	require.Len(t, result.Services, 2)
+	left, right := result.Services[0], result.Services[1]
+	require.Equal(t, left.ServiceName, right.ServiceName)
+	require.Equal(t, "array", left.ServiceNameKind)
+	require.Equal(t, left.ServiceNameKind, right.ServiceNameKind)
+	require.NotEmpty(t, left.ServiceIdentity)
+	require.NotEqual(t, left.ServiceIdentity, right.ServiceIdentity)
+	identities := []string{left.ServiceIdentity, right.ServiceIdentity}
+	require.ElementsMatch(t, []string{
+		`[{"kind":"array","value":[{"kind":"int64","value":"1"}]},{"kind":"string","value":""}]`,
+		`[{"kind":"array","value":[{"kind":"double","value":1}]},{"kind":"string","value":""}]`,
+	}, identities)
 }
 
 func TestServicesSeparateReceivedIdentityTypes(t *testing.T) {
@@ -327,6 +359,7 @@ func TestServicesSeparateReceivedIdentityTypes(t *testing.T) {
 			} else {
 				expected[0].ServiceNamespaceKind = "int64"
 			}
+			expected[0].ServiceIdentity = expectedServiceIdentity(expected[0])
 			assert.Equal(t, expected, result.Services)
 			filtered := servicesTestResult(t, endpoint, "--service", "42")
 			assert.Equal(t, result.Services[:2], filtered.Services)

@@ -186,19 +186,20 @@
      pixel floors exceed the container: prefer the right pane's floor
      (detail strip / timeseries list). */
   let splitBounds = $derived.by(() => {
+    const rightFloor = rightWidthRem != null && !stacked ? 0 : minRightWidth
     const dim = flexSpacePx()
     if (dim <= 0) {
       return {
         minLeft: minLeftWidth,
-        minRight: minRightWidth,
-        maxLeft: 1 - minRightWidth,
+        minRight: rightFloor,
+        maxLeft: 1 - rightFloor,
       }
     }
 
     const leftPxFrac = minLeftPx ? minLeftPx / dim : 0
     const rightPxFrac = minRightPx ? minRightPx / dim : 0
     let minLeft = Math.max(minLeftWidth, leftPxFrac)
-    let minRight = Math.max(minRightWidth, rightPxFrac)
+    let minRight = Math.max(rightFloor, rightPxFrac)
 
     if (maxRightPx) {
       minLeft = Math.max(minLeft, 1 - maxRightPx / dim)
@@ -214,7 +215,7 @@
         minLeft = Math.max(minLeftWidth, 1 - minRight)
       } else {
         minLeft = minLeftWidth
-        minRight = minRightWidth
+        minRight = rightFloor
         maxLeft = 1 - minRight
         if (maxLeftPx) maxLeft = Math.min(maxLeft, maxLeftPx / dim)
         if (maxRightPx) minLeft = Math.max(minLeft, 1 - maxRightPx / dim)

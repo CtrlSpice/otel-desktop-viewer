@@ -111,6 +111,7 @@ import {
   readRoute,
   setMetricViewQuery,
   subscribeToRoute,
+  signalIdFromPath,
   type HistoryMode,
   type MetricViewParseContext,
   type MetricViewQuery,
@@ -1433,6 +1434,9 @@ export function createMetricViewContext(
     const unsubscribe = subscribeToRoute(() => {
       // Registration invokes synchronously; keep callback reads untracked.
       untrack(() => {
+        const requested = signalIdFromPath('metrics', readRoute().path)
+        const displayed = getMetric()?.metricRef
+        if (requested && displayed && requested !== displayed) return
         const parsed = parseMetricUrl()
         const fromUrl = parsed.query
         if (

@@ -44,6 +44,29 @@ function spanField(name: string) {
 }
 
 describe('TraceDetailView table field inspection', () => {
+  it.each(['root', 'parent'] as const)(
+    'navigates from retained %s details using the displayed trace identity',
+    async target => {
+      setTestUrl('/traces/replacement?span=other')
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan(),
+        rootSpanID: 'root-span',
+      })
+      const user = userEvent.setup()
+      await user.click(
+        target === 'root'
+          ? screen.getByRole('link', {
+              name: 'Open root span in trace trace-1',
+            })
+          : screen.getByRole('button', { name: 'parent-span' })
+      )
+      expect(window.location.pathname).toBe('/traces/trace-1')
+      expect(new URLSearchParams(window.location.search).get('span')).toBe(
+        `${target}-span`
+      )
+    }
+  )
+
   it.each([
     ['span', 'field'],
     ['span', 'attribute'],
@@ -249,7 +272,9 @@ describe('TraceDetailView parent span link', () => {
     await userEvent.click(screen.getByRole('button', { name: 'parent-span' }))
 
     expect(window.location.pathname).toBe('/traces/trace-1')
-    expect(window.location.search).toBe('?span=parent-span&start=0&end=1')
+    expect(
+      Object.fromEntries(new URLSearchParams(window.location.search))
+    ).toEqual({ span: 'parent-span', start: '0', end: '1' })
     expect(window.history.length).toBe(historyLength + 1)
   })
 

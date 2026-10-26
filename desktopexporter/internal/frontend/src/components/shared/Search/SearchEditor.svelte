@@ -115,6 +115,8 @@
 
   let availableFields = $state<FieldDefinition[]>([])
   let queryText = $state('')
+  let definitionsLoaded = false
+  let pendingRestoration: string | undefined
 
   $effect(() => onQueryChange?.(queryText, availableFields))
 
@@ -132,17 +134,28 @@
   /** Fetch dynamic attributes from the shared dictionary. */
   $effect(() => {
     const base = [...staticFieldsList]
+    const requestedSignal = signal
+    definitionsLoaded = false
     availableFields = base
 
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
         void selectionToQueryRangeMs(timeContext.selection, Date.now())
-        const dynamicAttrs = await getDynamicAttributes(signal)
+        const dynamicAttrs = await getDynamicAttributes(requestedSignal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
       } catch (error) {
         console.warn('Failed to load dynamic attributes:', error)
+      } finally {
+        if (!cancelled) {
+          definitionsLoaded = true
+          if (
+            pendingRestoration !== undefined &&
+            pendingRestoration === editorView?.state.doc.toString()
+          )
+            onSubmit()
+        }
       }
     }, 250)
 
@@ -240,6 +253,7 @@
   }
 
   function onSubmit() {
+    pendingRestoration = undefined
     const text = editorView?.state.doc.toString() ?? ''
     // Initial URL submission can precede the reactive change notification.
     onQueryChange?.(text, availableFields)
@@ -291,6 +305,19 @@
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }
+  }
+
+  function restoreQuery() {
+    const text = editorView?.state.doc.toString() ?? ''
+    if (!definitionsLoaded && text.trim()) {
+      try {
+        parseSearchRequest(text, [...staticFieldsList], signal)
+      } catch {
+        pendingRestoration = text
+        return
+      }
+    }
+    onSubmit()
   }
 
   function openHelp() {
@@ -383,7 +410,10 @@
         closeBrackets(),
         history(),
         EditorView.updateListener.of(update => {
-          if (update.docChanged) queryText = update.state.doc.toString()
+          if (update.docChanged) {
+            pendingRestoration = undefined
+            queryText = update.state.doc.toString()
+          }
         }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
@@ -413,7 +443,7 @@
         onSubmit()
       },
     })
-    if (initialQuery) onSubmit()
+    if (initialQuery) restoreQuery()
     return subscribeToRoute(() => {
       const route = readRoute()
       if (route.path !== `/${signal}` && !route.path.startsWith(`/${signal}/`))
@@ -424,7 +454,7 @@
       editorView.dispatch({
         changes: { from: 0, to: editorView.state.doc.length, insert: next },
       })
-      onSubmit()
+      restoreQuery()
     })
   })
 

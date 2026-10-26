@@ -62,6 +62,30 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
   const target = columns.reduce(split, initial).length
   if (target <= 1) return []
 
+  // A deterministic greedy cover preserves every distinction even when proving
+  // a minimum would be too expensive for the UI thread.
+  function greedy(): Column[] {
+    const chosen: Column[] = []
+    let groups = initial
+    while (groups.length < target) {
+      let best: Column | undefined
+      let bestGroups = groups
+      for (const column of columns) {
+        if (chosen.includes(column)) continue
+        const refined = split(groups, column)
+        if (refined.length > bestGroups.length) {
+          best = column
+          bestGroups = refined
+        }
+      }
+      if (!best) break
+      chosen.push(best)
+      groups = bestGroups
+    }
+    return chosen
+  }
+  if (columns.length > 16) return greedy()
+
   // A key is mandatory when removing it merges otherwise distinct rows.
   // This also avoids combinatorial searches for independent binary labels.
   const required = columns.filter(
@@ -71,6 +95,11 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
   )
   const remaining = columns.filter(column => !required.includes(column))
   const base = required.reduce(split, initial)
+  let remainingWork = 100_000
+  const refine = (groups: Partition, column: Column) => {
+    remainingWork -= rowCount
+    return split(groups, column)
+  }
 
   function search(
     start: number,
@@ -78,13 +107,15 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
     groups: Partition
   ): Column[] | undefined {
     if (groups.length === target) return []
-    if (slots === 0 || remaining.length - start < slots) return undefined
+    if (remainingWork <= 0 || slots === 0 || remaining.length - start < slots)
+      return undefined
     // No subset of the remaining keys can do better than all of them together.
-    if (remaining.slice(start).reduce(split, groups).length < target)
+    if (remaining.slice(start).reduce(refine, groups).length < target)
       return undefined
     for (let index = start; index <= remaining.length - slots; index++) {
+      if (remainingWork <= 0) return undefined
       const column = remaining[index]!
-      const refined = split(groups, column)
+      const refined = refine(groups, column)
       if (refined.length === groups.length) continue
       const suffix = search(index + 1, slots - 1, refined)
       if (suffix) return [column, ...suffix]
@@ -92,16 +123,17 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
     return undefined
   }
 
-  // Increasing cardinality makes this an exact minimum, not a greedy heuristic.
+  // Increasing cardinality finds an exact minimum within the work budget.
   // Columns are already ordered by display length, then key, for stable ties.
   for (let size = 0; size <= remaining.length; size++) {
     const chosen = search(0, size, base)
     if (chosen) return [...required, ...chosen]
+    if (remainingWork <= 0) return greedy()
   }
   return columns
 }
 
-/** One minimum distinguishing key set for all rows, including hidden series. */
+/** A compact distinguishing key set for all rows, including hidden series. */
 export function minimalSeriesTable(
   rows: readonly LegendTimeseries[]
 ): SeriesTable {

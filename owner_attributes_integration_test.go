@@ -172,8 +172,8 @@ func TestServiceLabelsFollowSelectedResourceAttributes(t *testing.T) {
 	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
 	result := servicesTestResult(t, endpoint)
 	assert.Equal(t, []serviceSummary{
-		{ServiceName: "healthy", ServiceNameKind: "string", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000000"},
-		{ServiceName: "42", ServiceNamespace: "shop", ServiceNameKind: "int64", ServiceNamespaceKind: "string", TraceCount: 1, SpanCount: 1, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000000"},
+		{ServiceIdentity: `[{"kind":"string","value":"healthy"},{"kind":"string","value":""}]`, ServiceName: "healthy", ServiceNameKind: "string", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000000"},
+		{ServiceIdentity: `[{"kind":"int64","value":"42"},{"kind":"string","value":"shop"}]`, ServiceName: "42", ServiceNamespace: "shop", ServiceNameKind: "int64", ServiceNamespaceKind: "string", TraceCount: 1, SpanCount: 1, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000000"},
 	}, result.Services)
 	assert.Equal(t, result.Services[1:], servicesTestResult(t, endpoint, "--service", "42").Services)
 	assert.Empty(t, servicesTestResult(t, endpoint, "--service", "discard").Services)

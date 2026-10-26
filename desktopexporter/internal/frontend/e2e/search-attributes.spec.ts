@@ -23,6 +23,7 @@ for (const [signal, scope, method] of [
               { name: 'attempts', type: 'int64', attributeScope: scope },
               { name: 'attempts', type: 'int64', attributeScope: 'resource' },
               { name: 'attempts', type: 'string', attributeScope: scope },
+              { name: 'custom.key', type: 'string', attributeScope: scope },
             ]
           : rpcMethod === 'getStats'
             ? {
@@ -209,6 +210,33 @@ for (const [signal, scope, method] of [
           }),
         })
       )
+    // Bare unambiguous attributes are saved as entered. Restoration must wait
+    // for the dynamic dictionary rather than permanently rejecting the URL.
+    await editor.fill('custom.key = "recorded"')
+    await editor.press('Escape')
+    await editor.press('Enter')
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('q'))
+      .toBe('custom.key = "recorded"')
+    requests.length = 0
+    await page.reload()
+    await expect
+      .poll(() => requests)
+      .toContainEqual(
+        expect.objectContaining({
+          query: {
+            field: {
+              name: 'custom.key',
+              type: 'string',
+              searchScope: 'attribute',
+              attributeScope: scope,
+            },
+            fieldOperator: '=',
+            value: 'recorded',
+          },
+        })
+      )
+    await expect(page.getByText(/Unknown field/)).toHaveCount(0)
     expect(errors).toEqual([])
   })
 }

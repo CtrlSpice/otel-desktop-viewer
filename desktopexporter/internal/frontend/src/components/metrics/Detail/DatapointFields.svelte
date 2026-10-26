@@ -6,6 +6,8 @@
 
   let { datapoint: dp }: { datapoint: DataPoint } = $props()
   const time = getTimeContext()
+  const doubleText = (value: number) =>
+    Object.is(value, -0) ? '-0' : String(value)
 </script>
 
 <table class="detail-fields w-full" aria-label="Datapoint fields">
@@ -31,7 +33,7 @@
       {#if dp.doubleValue !== null}<DetailProperty
           fieldName="asDouble"
           fieldType="double"
-          fieldValue={String(dp.doubleValue)}
+          fieldValue={doubleText(dp.doubleValue)}
         />{/if}
     {:else}
       <DetailProperty
@@ -44,15 +46,15 @@
         {#if value !== null}<DetailProperty
             fieldName={field}
             fieldType="double"
-            fieldValue={String(value)}
+            fieldValue={doubleText(value)}
           />{/if}
       {/each}
       {#if dp.metricType === 'Histogram'}
         <DetailProperty
           fieldName="explicitBounds"
           fieldType="double[]"
-          fieldValue={`[${dp.explicitBounds.join(',')}]`}
-          jsonText={`[${dp.explicitBounds.join(',')}]`}
+          fieldValue={`[${dp.explicitBounds.map(doubleText).join(',')}]`}
+          jsonText={`[${dp.explicitBounds.map(doubleText).join(',')}]`}
         />
         <DetailProperty
           fieldName="bucketCounts"
@@ -74,7 +76,7 @@
         <DetailProperty
           fieldName="zeroThreshold"
           fieldType="double"
-          fieldValue={String(dp.zeroThreshold)}
+          fieldValue={doubleText(dp.zeroThreshold)}
         />
         <DetailProperty
           fieldName="positive.offset"

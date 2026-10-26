@@ -942,6 +942,55 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
+  test('retains histogram aggregates through a pending and failed metric replacement', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    const pending = await holdAggregates(page, true)
+    await Promise.all(pending.map(({ route }) => respond(route)))
+    const bars = page.locator('.heatmap-cell')
+    await expect(bars).toHaveCount(3)
+    const before = await bars.evaluateAll(elements =>
+      elements.map(element => element.getAttribute('fill'))
+    )
+    let replacement: Route | undefined
+    await page.route('**/rpc', route => {
+      const request = route.request().postDataJSON()
+      if (
+        request.method === 'getMetricView' &&
+        request.params.metricRef === `${metric.metricRef}-next`
+      ) {
+        replacement = route
+        return
+      }
+      return route.fallback()
+    })
+    await page.getByRole('button', { name: /next.histogram/ }).click()
+    await expect.poll(() => Boolean(replacement)).toBe(true)
+    await expect(bars).toHaveCount(3)
+    expect(
+      await bars.evaluateAll(elements =>
+        elements.map(element => element.getAttribute('fill'))
+      )
+    ).toEqual(before)
+    await replacement!.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: replacement!.request().postDataJSON().id,
+        error: { code: -32603, message: 'replacement unavailable' },
+      },
+    })
+    await expect(
+      page.getByText('Could not load the selected metric.')
+    ).toBeVisible()
+    await expect(bars).toHaveCount(3)
+    expect(
+      await bars.evaluateAll(elements =>
+        elements.map(element => element.getAttribute('fill'))
+      )
+    ).toEqual(before)
+  })
+
   test('histogram and heatmap gutters fit long counts and high-precision bucket labels', async ({
     page,
   }) => {

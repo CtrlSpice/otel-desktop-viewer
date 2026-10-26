@@ -94,7 +94,21 @@ describe('Home service discovery', () => {
     )
     expect(services).toHaveBeenCalledTimes(1)
     expect(window.location.pathname).toBe('/')
+    await fireEvent.click(
+      screen
+        .getAllByRole('button', { name: /checkout/ })
+        .find(button => button.textContent?.includes('internal'))!
+    )
+    await waitFor(() =>
+      expect(JSON.stringify(traces.mock.lastCall?.[2])).toContain('internal')
+    )
+    const calls = traces.mock.calls.length
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(services).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(traces.mock.calls.length).toBeGreaterThan(calls))
+    expect(JSON.stringify(traces.mock.lastCall?.[2])).toContain('internal')
+    expect(JSON.stringify(traces.mock.lastCall?.[2])).not.toContain(
+      'storefront'
+    )
   })
 })

@@ -70,7 +70,6 @@
   let alive = true
   let initialized = false
   let services = $state<ServiceSummary[]>([])
-  let selected = $state<ServiceSummary | null>(null)
   let mapSelection = $state<MapSelection | null>(null)
   const inspectedService = $derived(
     mapSelection?.kind === 'service' ? mapSelection.service : null
@@ -86,13 +85,6 @@
   let more = $state(false)
   let loaded = $state(false)
   let revision = $state(0)
-  const selectedServiceIdentity = $derived(
-    selected ? serviceIdentity(selected) : null
-  )
-  $effect(() => {
-    void selectedServiceIdentity
-    mapSelection = selected ? { kind: 'service', service: selected } : null
-  })
   function inspect(selection: MapSelection) {
     mapSelection = selection
     detailPanel.setOpen(true)
@@ -182,14 +174,18 @@
       more = page.truncated
       offset = pageOffset
       loaded = true
-      if (selected && refresh)
-        selected =
+      if (inspectedService && refresh) {
+        const selected =
           services.find(
-            service => serviceIdentity(service) === serviceIdentity(selected!)
+            service =>
+              serviceIdentity(service) === serviceIdentity(inspectedService!)
           ) ??
           services[0] ??
           null
-      else if (!selected) selected = services[0] ?? null
+        mapSelection = selected ? { kind: 'service', service: selected } : null
+      } else if (!mapSelection && services[0]) {
+        mapSelection = { kind: 'service', service: services[0] }
+      }
       if (refresh) {
         revision++
       }
@@ -404,7 +400,7 @@
   {/snippet}
   {#snippet main()}
     <ServiceMap
-      service={selected}
+      service={inspectedService}
       {services}
       {totalServices}
       loadingServices={loading}

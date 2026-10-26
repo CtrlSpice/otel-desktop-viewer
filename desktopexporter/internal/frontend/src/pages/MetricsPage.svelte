@@ -303,7 +303,7 @@
   // Scalar aggregates for the checked and full series pools.
   let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
 
-  // Unreduced inspected-series datapoints, cleared when their request scope changes.
+  // Unreduced inspected-series datapoints belong to the displayed response.
   let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
   let seriesDatapointErrors = new SvelteMap<string, string>()
   let seriesDatapointsKey = ''
@@ -311,12 +311,13 @@
   let inspectedSeriesSnapshot: string | null = null
   let seriesRetry = $state(0)
   let seriesRetrySnapshot = 0
-  let seriesDatapointsMetricID = $derived.by(() => {
-    const summaryID = selectedSummary?.metricRef
-    return summaryID && selectedMetric?.metricRef === summaryID
-      ? summaryID
-      : null
-  })
+  let seriesDatapointsMetricID = $derived(selectedMetric?.metricRef ?? null)
+  let displayedDatapointScope = $state<{
+    selection: typeof timeContext.selection
+    timezone: typeof timeContext.tz
+    timezoneOffsetNs: number
+    timezoneName: string | undefined
+  }>()
 
   // Per-series distributions for the selected heatmap column.
   let columnDistribution = $state<MetricViewData | undefined>(undefined)
@@ -412,7 +413,7 @@
 
   $effect(() => {
     const token = ++aggregateToken
-    const summary = selectedSummary
+    const summary = displayedMetricSummary
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
     const scalar =
@@ -426,7 +427,6 @@
       !summary ||
       !needsAggregate ||
       !selectedMetric ||
-      detailLoading ||
       selectedMetric.metricRef !== summary.metricRef
     ) {
       aggregateMetric = undefined
@@ -490,11 +490,11 @@
         wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
         narrowTo,
         quantiles,
-        tzOffsetNs(),
+        displayedDatapointScope?.timezoneOffsetNs ?? 0,
         // Keep pooled and per-series lines on the same bucket grid.
         wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
         wholeWindow ? undefined : [],
-        tzName()
+        displayedDatapointScope?.timezoneName
       )
       // A slower earlier request must not overwrite a newer answer.
       if (token === aggregateToken) {
@@ -536,12 +536,11 @@
     const selectedSeries = metricCtx.selectedSeriesKey
     const retryChanged = seriesRetry !== seriesRetrySnapshot
     seriesRetrySnapshot = seriesRetry
-    const selection = timeContext.selection
-    const timezone = timeContext.tz
-    // Presets keep their duration here; requests resolve their moving bounds.
-    const scopeKey = metricRef
-      ? JSON.stringify([metricRef, selection, timezone])
-      : ''
+    const scope = displayedDatapointScope
+    const scopeKey =
+      metricRef && scope
+        ? JSON.stringify([metricRef, scope.selection, scope.timezone])
+        : ''
     const scopeChanged = scopeKey !== seriesDatapointsScopeKey
     if (scopeChanged) {
       seriesDatapointsScopeKey = scopeKey
@@ -551,13 +550,14 @@
     }
     const selectionChanged = selectedSeries !== inspectedSeriesSnapshot
     inspectedSeriesSnapshot = selectedSeries
-    if (!metricRef || !selectedSeries) return
+    if (!metricRef || !selectedSeries || !scope) return
     if (!scopeChanged && !selectionChanged && !retryChanged) return
 
     const now = Date.now()
-    const { startTime, endTime } = selectionToQueryRangeNs(selection, now)
-    const timezoneOffsetNs = tzOffsetNs(now)
-    const timezoneName = tzName()
+    const { startTime, endTime } = selectionToQueryRangeNs(scope.selection, now)
+    const { timezone, timezoneName } = scope
+    const timezoneOffsetNs =
+      timezoneOffsetMinutes(timezone, now) * 60 * 1_000_000_000
     // Capture every input that can change the store's answer. A structured key
     // avoids collisions with attribute-derived series and metric identifiers.
     const key = JSON.stringify([
@@ -663,13 +663,11 @@
     const visibleKeys = [...metricCtx.visibleSeries].sort()
     const wholeWindow = metricCtx.activeHistogramTab === 'histogram'
     const source = metricCtx.selectionSource
-    const offset = tzOffsetNs()
-    const zone = tzName()
+    const offset = displayedDatapointScope?.timezoneOffsetNs ?? 0
+    const zone = displayedDatapointScope?.timezoneName
     histogramContribution = null
     if (
       !metric ||
-      detailLoading ||
-      metric.metricRef !== selectedSummary?.metricRef ||
       !metricCtx.isHistogramKind ||
       source !== 'detail' ||
       !datapointID ||
@@ -716,12 +714,12 @@
     // Primitive bounds avoid refetching when only the heatmap array identity changes.
     const startNs = metricCtx.heatmapColumnStartNs
     const endNs = metricCtx.heatmapColumnEndNs
-    const summary = selectedSummary
+    const summary = displayedMetricSummary
+    const token = ++columnToken
     if (startNs === null || endNs === null || !summary) {
       columnDistribution = undefined
       return
     }
-    const token = ++columnToken
     // Clear stale column data while the new request is in flight.
     columnDistribution = undefined
     void (async () => {
@@ -734,11 +732,11 @@
           1,
           undefined,
           DEFAULT_HISTOGRAM_QUANTILES,
-          tzOffsetNs(),
+          displayedDatapointScope?.timezoneOffsetNs ?? 0,
           0,
           0,
           undefined,
-          tzName()
+          displayedDatapointScope?.timezoneName
         )
         if (token !== columnToken) return
         columnDistribution = result ?? undefined
@@ -803,6 +801,12 @@
         timeContext.selection,
         Date.now()
       )
+      const scope = {
+        selection: timeContext.selection,
+        timezone: timeContext.tz,
+        timezoneOffsetNs: tzOffsetNs(),
+        timezoneName: tzName(),
+      }
       // Scalar lines and histogram heatmaps use different display resolutions.
       const isHistogramMetric =
         summary.metricType === 'Histogram' ||
@@ -822,11 +826,11 @@
           isHistogramMetric ? DEFAULT_HISTOGRAM_QUANTILES : undefined,
           // Bucket boundaries follow the reader's calendar rather than the
           // epoch. 0 is UTC, which is what the store assumes without this.
-          tzOffsetNs(),
+          scope.timezoneOffsetNs,
           SCALAR_VIEW_BUCKETS,
           SPARKLINE_BUCKETS,
           undefined,
-          tzName(),
+          scope.timezoneName,
           // Include datapoints only for drawn series; keep all series metadata.
           requestedDatapointSeries,
           DEFAULT_VISIBLE_TIMESERIES
@@ -842,7 +846,11 @@
             .map(ts => ts.seriesRef) ??
           []
       )
+      selectedAggregate = null
+      selectedAggregateSummary = null
+      selectedScalarAggregate = null
       selectedMetric = result
+      displayedDatapointScope = scope
       displayedMetricSummary = summary
       // Seed state before the result renders.
       if (reseed) metricCtx.seedForMetric(selectedMetric)
