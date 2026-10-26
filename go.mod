@@ -11,7 +11,7 @@ require (
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.7.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza v0.163.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor v0.162.0
-	github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.162.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.163.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rivo/uniseg v0.4.7
 	github.com/rs/cors v1.11.1
