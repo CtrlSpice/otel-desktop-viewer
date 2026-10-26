@@ -103,6 +103,112 @@ test.beforeEach(async ({ page }) => {
   ).toBeVisible()
 })
 
+test('log selection retains the inspector, delays loading feedback and rejects superseded same-ID responses', async ({
+  page,
+}) => {
+  const detail = page.getByRole('table', { name: 'Log fields' })
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  const nodes = await page.evaluateHandle(() => [
+    document.querySelector('.log-detail-panel > .pane-header'),
+    document.querySelector('.log-detail-panel__scroll'),
+    document.querySelector('[aria-label="Log fields"]'),
+  ])
+  await page.clock.install()
+  await page.clock.pauseAt(new Date())
+  const pending: Array<() => Promise<void>> = []
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getLog') return route.fallback()
+    const log = logs.find(record => record.logRef === params.logRef)!
+    pending.push(() =>
+      route.fulfill({ json: { jsonrpc: '2.0', id, result: log } })
+    )
+  })
+  const select = (id: string) =>
+    page
+      .locator(`[data-log-ref="${id}"]`)
+      .getByRole('button', { name: 'Show log: body in details' })
+      .click()
+  await select(secondID)
+  // A pointer selection starts its request without advancing the debounce clock.
+  await expect.poll(() => pending.length).toBe(1)
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  await expect(page.locator('.log-detail-panel > .pane-header')).toContainText(
+    'Log'
+  )
+  await expect(page.getByText('Loading selected log…')).toHaveCount(0)
+  await page.clock.runFor(199)
+  await expect(page.getByText('Loading selected log…')).toHaveCount(0)
+  await page.clock.runFor(1)
+  await expect(page.getByText('Loading selected log…')).toBeVisible()
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+  await pending[0]!()
+  await expect(detail).toContainText('Full body 1: exact retained text')
+  await expect(page.getByText('Loading selected log…')).toHaveCount(0)
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+
+  // A → B → A: the first A request must not win just because its ID matches again.
+  await select(firstID)
+  await expect.poll(() => pending.length).toBe(2)
+  await select(secondID)
+  await expect.poll(() => pending.length).toBe(3)
+  await select(firstID)
+  await expect.poll(() => pending.length).toBe(4)
+  await pending[1]!()
+  await expect(detail).toContainText('Full body 1: exact retained text')
+  await pending[3]!()
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  await pending[2]!()
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  await expect(page.getByText('Loading selected log…')).toHaveCount(0)
+})
+
+test('a failed log replacement keeps the displayed record and its Download target until refresh recovers', async ({
+  page,
+}) => {
+  const detail = page.getByRole('table', { name: 'Log fields' })
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  let fail = true
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getLog' || params.logRef !== secondID || !fail)
+      return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32000, message: 'Record temporarily unavailable' },
+      },
+    })
+  })
+  await page
+    .locator(`[data-log-ref="${secondID}"]`)
+    .getByRole('button', { name: 'Show log: body in details' })
+    .click()
+  await expect(page.getByRole('alert')).toContainText(
+    'Record temporarily unavailable'
+  )
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  await expect(page.getByText('Loading selected log…')).toHaveCount(0)
+  const exported: string[] = []
+  await page.route('**/export/logs/**', async route => {
+    exported.push(new URL(route.request().url()).pathname)
+    await route.fulfill({ json: {} })
+  })
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download log', exact: true }).click()
+  await download
+  expect(exported).toEqual([`/export/logs/${firstID}`])
+  fail = false
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(detail).toContainText('Full body 1: exact retained text')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
 test('table cells reveal exact fields in separate Details, with observed-time fallback and keyboard selection', async ({
   page,
 }) => {
@@ -1147,7 +1253,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
     })
   await header.getByRole('tab', { name: 'JSON', exact: true }).click()
   await expect(jsonStatus).toHaveText(/^OTLP JSON · /)
-  await expect(header.locator('.pane-header__title-row')).toContainText('api')
+  await expect(header.locator('.pane-header__title-row')).toHaveText('Log')
   await expect(header.locator('.pane-header__title-row')).not.toContainText(
     'OTLP JSON'
   )

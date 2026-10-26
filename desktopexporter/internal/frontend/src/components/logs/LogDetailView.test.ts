@@ -157,7 +157,7 @@ describe('LogDetailView trace correlation', () => {
       within(tabs).getByRole('tab', { name: 'Properties' })
     ).toHaveAttribute('aria-selected', 'true')
     expect(within(tabs).getByRole('tab', { name: 'JSON' })).toBeInTheDocument()
-    const title = within(header).getByText('checkout', { exact: true })
+    const title = within(header).getByText('Log', { exact: true })
     expect(
       title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)

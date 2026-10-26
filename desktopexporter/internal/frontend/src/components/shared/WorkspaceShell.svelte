@@ -25,6 +25,8 @@
     refreshPulse?: boolean
     refreshAsideTip?: string
     loading?: boolean
+    /** Delayed feedback for a list or record request; never replaces pane content. */
+    loadingMessage?: string
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
@@ -58,6 +60,7 @@
   import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
   import PanelToggle from './PanelToggle.svelte'
   import PaneHeader from './PaneHeader.svelte'
+  import LoadingStatus from './LoadingStatus.svelte'
   import {
     detailWidth,
     DETAIL_SPLIT_STORAGE_KEY,
@@ -84,6 +87,7 @@
     refreshPulse,
     refreshAsideTip,
     loading,
+    loadingMessage,
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
@@ -170,7 +174,14 @@
     banner={pageBanner}
   >
     <div class="page-layout__content">
-      <div class="page-layout__region">
+      <div class="page-layout__loading">
+        <LoadingStatus
+          pending={!!loadingMessage}
+          label={loadingMessage}
+          requestKey={`${routeContext.route.path}:${selectedID ?? ''}`}
+        />
+      </div>
+      <div class="page-layout__region" aria-busy={!!loadingMessage}>
         <ResizablePanels
           layoutKey={`${routeContext.route.path}:${!!hideDrawer}:${!!detail}`}
           rightCollapsed={!detail || !detailPanel.open}
@@ -231,7 +242,11 @@
      bottom. The footer (when present) spans the full content width
      -- main + detail + the resizer between them. */
   .page-layout__content {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
+  }
+
+  .page-layout__loading {
+    @apply pointer-events-none absolute bottom-2 right-4 z-10 rounded bg-base-100;
   }
 
   /* The region that hosts main (solo) or main+detail (split). Same

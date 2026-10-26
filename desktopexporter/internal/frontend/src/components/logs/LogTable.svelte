@@ -731,10 +731,8 @@
                 {/each}
               </div>
             {/each}
-          {:else}<div class="log-table__empty" role="status">
-              {loading
-                ? 'Loading logs…'
-                : 'No logs match this search and time range.'}
+          {:else if !loading}<div class="log-table__empty" role="status">
+              No logs match this search and time range.
             </div>{/if}
         </div>
       </div>

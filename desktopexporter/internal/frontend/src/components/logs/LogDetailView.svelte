@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
-  import ServiceDot from '@/components/shared/ServiceDot.svelte'
+  import { LogIcon } from '@/icons'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { readOTLPText } from '@/services/export-service'
@@ -16,7 +16,6 @@
   import AssociatedTrace from './AssociatedTrace.svelte'
   import { severityLabel as buildSeverityLabel } from '@/components/logs/log-severity'
   import LogSeverity from './LogSeverity.svelte'
-  import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import {
@@ -90,8 +89,6 @@
     return () => scroll.removeEventListener('scroll', update)
   })
 
-  let service = $derived(log ? (getServiceName(log.resource) ?? '') : '')
-
   let severityLabel = $derived(
     log ? buildSeverityLabel(log.severityText, log.severityNumber) : ''
   )
@@ -102,13 +99,11 @@
   data-field-source="log"
   use:revealDetailField={resolvedTarget}
 >
-  <PaneHeader
-    pill
-    mode="title"
-    title={service || 'Log record'}
-    ariaLabel="Log record"
-  >
-    {#snippet leading()}{#if log}<ServiceDot {service} />{/if}{/snippet}
+  <PaneHeader pill mode="title" title="Log" ariaLabel="Log record">
+    {#snippet leading()}<LogIcon
+        class="size-4 text-subtle"
+        aria-hidden="true"
+      />{/snippet}
     {#snippet metaRight()}
       <DetailViewTabs id={detailViewID} bind:view={detailView} />
       {#if log}{#key log.logRef}
@@ -128,6 +123,7 @@
     {/snippet}
   </PaneHeader>
 
+  {#if error}<p class="p-3" role="alert">Error: {error}</p>{/if}
   {#if log}
     {#if log.traceID}
       <div class="log-detail-panel__trace">
@@ -297,9 +293,8 @@
     {#if footer}
       {@render footer()}
     {/if}
-  {:else if error}<p class="p-3" role="alert">Error: {error}</p>
-  {:else}<p class="p-3 text-subtle" role={loading ? 'status' : undefined}>
-      {loading ? 'Loading log details…' : 'Select a log to view details'}
+  {:else if !loading && !error}<p class="p-3 text-subtle">
+      Select a log to view details
     </p>{/if}
 </div>
 

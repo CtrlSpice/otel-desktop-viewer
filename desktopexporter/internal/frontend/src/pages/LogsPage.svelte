@@ -209,10 +209,9 @@
 
   let displayError = $derived(page.error ?? actionError)
   let selectedLog = $derived(
-    detailFetcher.data?.logRef === page.selectedID
-      ? detailFetcher.data
-      : undefined
+    page.selectedID ? (detailFetcher.data ?? undefined) : undefined
   )
+  let keyboardDetailID: string | null = null
 
   $effect(() => {
     const names = page.items.map(log => log.serviceName).filter(Boolean)
@@ -220,7 +219,11 @@
   })
 
   $effect(() => {
-    detailFetcher.key = page.selectedID
+    const id = page.selectedID
+    untrack(() => {
+      detailFetcher.select(id, keyboardDetailID === id)
+      keyboardDetailID = null
+    })
   })
 
   $effect(() => {
@@ -277,11 +280,13 @@
   }
 
   function selectLog(logRef: string, keyboard = false) {
+    keyboardDetailID = keyboard ? logRef : null
     inspection = null
     page.selectItem(logRef, keyboard ? 'replace' : 'push')
   }
 
   function inspectLog(id: string, target: DetailFieldTarget) {
+    keyboardDetailID = null
     inspection = { id, target: { ...target } }
     detailPanel.reveal()
     page.selectItem(id)
@@ -369,6 +374,11 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
+  loadingMessage={detailFetcher.loading
+    ? 'Loading selected log…'
+    : page.loading
+      ? 'Loading logs…'
+      : undefined}
   itemKey={l => l.logRef}
 >
   {#snippet drawerSearch()}
@@ -459,7 +469,7 @@
 
   {#snippet detail()}
     <LogDetailPanel
-      loading={!!page.selectedID && !selectedLog && !detailFetcher.error}
+      loading={detailFetcher.loading}
       error={page.selectedID ? (detailFetcher.error ?? '') : ''}
       log={selectedLog}
       bind:detailView

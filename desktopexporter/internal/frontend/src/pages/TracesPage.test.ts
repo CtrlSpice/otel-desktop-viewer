@@ -419,7 +419,7 @@ describe('TracesPage trace detail lifecycle', () => {
     }
   )
 
-  it('hides old detail and its delete action while the next trace loads', async () => {
+  it('retains the displayed trace and its actions while the next trace loads', async () => {
     const nextDetail = deferred<TraceData>()
     searchTraceSummaries.mockResolvedValue([
       makeTraceSummary(),
@@ -443,12 +443,12 @@ describe('TracesPage trace detail lifecycle', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
 
     await waitFor(() =>
-      expect(screen.getByText('Loading trace detail…')).toBeVisible()
+      expect(screen.getByText('Loading selected trace…')).toBeVisible()
     )
-    expect(document.querySelector('tr[data-span-id="root"]')).toBeNull()
+    expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
     expect(
       screen.queryByRole('button', { name: 'Delete this trace' })
-    ).not.toBeInTheDocument()
+    ).toBeInTheDocument()
 
     nextDetail.resolve(makeTraceData(0, 'trace-2', 'next-root'))
     await waitFor(() =>
@@ -481,7 +481,7 @@ describe('TracesPage trace detail lifecycle', () => {
     firstDetail.resolve(makeTraceData(0, 'trace-1', 'old-span'))
 
     await waitFor(() =>
-      expect(screen.getByText('Loading trace detail…')).toBeVisible()
+      expect(screen.getByText('Loading selected trace…')).toBeVisible()
     )
     expect(window.location.pathname).toBe('/traces/trace-2')
     expect(window.location.search).toBe('')
@@ -639,14 +639,16 @@ describe('TracesPage trace detail lifecycle', () => {
       )
       expect(spansSignal).toBe(logsSignal)
       expect(spansSignal?.aborted).toBe(true)
-      expect(window.location.search).toBe('')
-      expect(screen.getByText('Select a trace to view details')).toBeVisible()
+      expect(window.location.search).toBe('?span=old-span')
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Could not load the selected trace.'
+      )
 
       await fireEvent.click(
         screen.getByRole('button', { name: /^Trace two\b/ })
       )
       await waitFor(() =>
-        expect(screen.getByText('Loading trace detail…')).toBeVisible()
+        expect(screen.getByText('Loading selected trace…')).toBeVisible()
       )
 
       if (lateSibling === 'failure') {
@@ -656,7 +658,7 @@ describe('TracesPage trace detail lifecycle', () => {
       }
       await new Promise(resolve => setTimeout(resolve))
 
-      expect(screen.getByText('Loading trace detail…')).toBeVisible()
+      expect(screen.getByText('Loading selected trace…')).toBeVisible()
       expect(document.querySelector('tr[data-span-id="old-span"]')).toBeNull()
       expect(consoleError).toHaveBeenCalledTimes(1)
 
@@ -686,7 +688,10 @@ describe('TracesPage trace detail lifecycle', () => {
         error
       )
     )
-    expect(window.location.search).toBe('')
+    expect(window.location.search).toBe('?span=span-1')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not load the selected trace.'
+    )
     consoleError.mockRestore()
   })
 })

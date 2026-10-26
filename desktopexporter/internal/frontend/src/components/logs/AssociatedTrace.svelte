@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SpanTiming, TraceSummary } from '@/types/api-types'
   import Identifier from '@/components/shared/Identifier.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -112,7 +113,11 @@
 >
   <h3 class="text-sm font-normal text-subtle">Trace context</h3>
   {#if loading}
-    <p class="text-subtle" role="status">Loading trace context…</p>
+    <LoadingStatus
+      pending={loading}
+      label="Loading trace context…"
+      requestKey={`${traceID}:${spanID ?? ''}`}
+    />
   {:else if error}
     <div class="flex items-center gap-2" role="alert">
       <span>{error}</span>

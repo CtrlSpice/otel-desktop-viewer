@@ -77,6 +77,101 @@ const trace: JsonTraceData = {
   })),
 }
 
+test('trace selection keeps the waterfall and detail sections mounted until the replacement arrives', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  const next = structuredClone(trace)
+  next.traceID = 'abcdefabcdefabcdefabcdefabcdefab'
+  next.spans[0]!.spanData.name = 'replacement trace'
+  let release: (() => Promise<void>) | undefined
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    const result =
+      method === 'getTraceView'
+        ? params.traceID === next.traceID
+          ? next
+          : trace
+        : method === 'searchTraceSummaries'
+          ? [trace, next].map(item => ({
+              traceID: item.traceID,
+              hasRootSpan: true,
+              rootSpan: {
+                serviceName: 'checkout',
+                name: item.spans[0]!.spanData.name,
+              },
+              startTime: item.traceStart,
+              durationNs: '1000000000',
+              spanCount: 2,
+              errorCount: 0,
+            }))
+          : method === 'getStats'
+            ? {
+                traces: {
+                  traceCount: 2,
+                  spanCount: 4,
+                  serviceCount: 1,
+                  errorCount: 0,
+                  lastReceived: null,
+                },
+                logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                metrics: {
+                  metricCount: 0,
+                  dataPointCount: 0,
+                  lastReceived: null,
+                },
+                rejections: [],
+              }
+            : []
+    const fulfill = () =>
+      route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+    if (method === 'getTraceView' && params.traceID === next.traceID)
+      release = fulfill
+    else await fulfill()
+  })
+  await page.goto(`/traces/${traceID}?span=${selectedID}&time=all`)
+  const fields = page.getByRole('table', { name: 'Span fields' })
+  await expect(fields.locator('[data-field="name"]').first()).toContainText(
+    'selected span'
+  )
+  const nodes = await page.evaluateHandle(() => [
+    document.querySelector('.page-layout__main-chrome > .pane-header'),
+    document.querySelector('.waterfall-view'),
+    document.querySelector('.waterfall-view__scroll'),
+    document.querySelector('[aria-label="Span fields"]'),
+    ...document.querySelectorAll('#signal-drawer-detail details'),
+  ])
+  await page.clock.install()
+  await page.clock.pauseAt(new Date())
+  await page
+    .locator('#signal-drawer-panel')
+    .getByRole('button', { name: /replacement trace/ })
+    .click()
+  await expect.poll(() => !!release).toBe(true)
+  await expect(fields.locator('[data-field="name"]').first()).toContainText(
+    'selected span'
+  )
+  await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
+  await page.clock.runFor(200)
+  await expect(page.getByText('Loading selected trace…')).toBeVisible()
+  await expect(page.locator('.waterfall-view')).toHaveCSS('opacity', '1')
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+  await release!()
+  await expect(
+    page.locator('.page-layout__main-chrome > .pane-header')
+  ).toContainText('replacement trace')
+  await expect(fields.locator('[data-field="traceId"]')).toContainText('abcdef')
+  await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+})
+
 test('waterfall column groups toggle together without changing span selection', async ({
   page,
 }) => {

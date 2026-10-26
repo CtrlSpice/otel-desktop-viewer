@@ -1,8 +1,10 @@
-// Debounce keyboard-driven selections and discard results for stale keys.
-// Key comparison, rather than request cancellation, guards the displayed data.
+import { onDestroy } from 'svelte'
+
+// Keep the displayed record until its replacement is ready. Only keyboard
+// traversal is debounced; request generations also guard A → B → A races.
 
 export type DebouncedDetailFetcher<K, D> = {
-  key: K | null
+  select(key: K | null, debounce?: boolean): void
   readonly data: D | null
   readonly loading: boolean
   readonly error: string | null
@@ -24,14 +26,21 @@ export function createDebouncedDetailFetcher<K, D>(
   const delayMs = opts.delayMs ?? 150
   const fallback = opts.fallbackErrorMessage ?? 'Failed to load details'
 
-  let key = $state<K | null>(null)
+  let key: K | null = null
   let data = $state<D | null>(null)
   let loading = $state(false)
   let error = $state<string | null>(null)
 
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
+  let generation = 0
+
+  onDestroy(() => {
+    ++generation
+    if (pendingTimer !== null) clearTimeout(pendingTimer)
+  })
 
   function clear() {
+    ++generation
     if (pendingTimer !== null) {
       clearTimeout(pendingTimer)
       pendingTimer = null
@@ -41,45 +50,41 @@ export function createDebouncedDetailFetcher<K, D>(
     error = null
   }
 
-  // Check the captured key before starting and after resolving the request.
-  function schedule(forKey: K) {
+  function schedule(forKey: K, debounce = false) {
+    const request = ++generation
     if (pendingTimer !== null) clearTimeout(pendingTimer)
     loading = true
     error = null
-    pendingTimer = setTimeout(() => {
+    const run = () => {
       pendingTimer = null
-      if (key === null || !opts.keysEqual(key, forKey)) return
+      if (request !== generation) return
       opts.fetch(forKey).then(
         result => {
-          if (key === null || !opts.keysEqual(key, forKey)) return
+          if (request !== generation) return
           data = result
           loading = false
         },
         err => {
-          if (key === null || !opts.keysEqual(key, forKey)) return
+          if (request !== generation) return
           error = err instanceof Error ? err.message : fallback
-          data = null
           loading = false
         }
       )
-    }, delayMs)
+    }
+    if (debounce) pendingTimer = setTimeout(run, delayMs)
+    else run()
   }
 
-  $effect(() => {
-    const current = key
-    if (current === null) {
-      clear()
-      return
-    }
-    schedule(current)
-  })
-
   return {
-    get key() {
-      return key
-    },
-    set key(next: K | null) {
+    select(next: K | null, debounce = false) {
+      if (next === null) {
+        key = null
+        clear()
+        return
+      }
+      if (key !== null && opts.keysEqual(key, next)) return
       key = next
+      schedule(next, debounce)
     },
     get data() {
       return data

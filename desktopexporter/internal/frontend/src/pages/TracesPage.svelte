@@ -182,16 +182,37 @@
   let traceData = $state<TraceData | null>(null)
   let traceLogs = $state<TraceLogSummary[]>([])
   let detailLoading = $state(false)
+  let detailError = $state('')
   let activeQueryTree = $state<QueryNode | undefined>(undefined)
 
   let hasTraceRows = $derived(page.items.length > 0)
   let displayError = $derived(page.error ?? actionError)
 
-  let currentTraceData = $derived(
-    traceData?.traceID === page.selectedID ? traceData : null
+  let currentTraceData = $derived(page.selectedID ? traceData : null)
+  // Requested selection and displayed selection are separate until the response
+  // arrives. Keep the previous span/events/links together during that handoff.
+  let displayedSelection = $state<{
+    spanID: string | null
+    eventIndex: number | null
+    logRef: string | null
+  }>({ spanID: null, eventIndex: null, logRef: null })
+  let displayingRequestedTrace = $derived(
+    currentTraceData?.traceID === page.selectedID
+  )
+  $effect.pre(() => {
+    if (displayingRequestedTrace) {
+      displayedSelection = {
+        spanID: selectedSpanID,
+        eventIndex: selectedEventIndex,
+        logRef: selectedLogRef,
+      }
+    }
+  })
+  let displayedSpanID = $derived(
+    displayingRequestedTrace ? selectedSpanID : displayedSelection.spanID
   )
   let selectedNode = $derived(
-    currentTraceData?.spans.find(n => n.spanData.spanID === selectedSpanID) ??
+    currentTraceData?.spans.find(n => n.spanData.spanID === displayedSpanID) ??
       currentTraceData?.spans[0] ??
       undefined
   )
@@ -204,13 +225,17 @@
 
   let resolvedEventIndex = $derived.by((): number | null => {
     const span = selectedSpan
-    const index = selectedEventIndex
+    const index = displayingRequestedTrace
+      ? selectedEventIndex
+      : displayedSelection.eventIndex
     if (index === null || !span) return null
     if (index >= span.events.length) return null
     return index
   })
   let resolvedLogRef = $derived.by((): string | null => {
-    const logRef = selectedLogRef
+    const logRef = displayingRequestedTrace
+      ? selectedLogRef
+      : displayedSelection.logRef
     const span = selectedSpan
     if (!logRef || !span) return null
     return traceLogs.some(
@@ -222,7 +247,8 @@
 
   $effect(() => {
     const raw = selectedEventRaw
-    if (detailLoading || currentTraceData === null) return
+    if (detailLoading || !displayingRequestedTrace || currentTraceData === null)
+      return
 
     if (resolvedEventIndex !== null) {
       if (selectedLogRef !== null) setEventInQuery(resolvedEventIndex)
@@ -260,12 +286,14 @@
   }
 
   function handleSelectSpan(spanID: string) {
+    if (!displayingRequestedTrace) return
     fieldRequest = undefined
     detailPanel.reveal()
     setSpanInQuery(spanID, 'push')
   }
 
   function handleSelectTimelineRecord(spanID: string, record: TimelineRecord) {
+    if (!displayingRequestedTrace) return
     fieldRequest = undefined
     detailPanel.reveal()
     if (record.kind === 'event') {
@@ -322,6 +350,7 @@
     traceData = null
     traceLogs = []
     detailLoading = false
+    detailError = ''
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
@@ -332,11 +361,12 @@
 
     try {
       detailLoading = true
+      detailError = ''
       const [result, logs] = await Promise.all([
         telemetryAPI.getTraceView(traceID, queryTree, fetchCtl.signal),
         telemetryAPI.getTraceLogSummaries(traceID, fetchCtl.signal),
       ])
-      if (detailFetch !== fetchCtl) return
+      if (detailFetch !== fetchCtl || page.selectedID !== traceID) return
       traceData = result
       traceLogs = logs
       const spanIDs = result.spans.map(n => n.spanData.spanID)
@@ -364,9 +394,7 @@
       // and owns the view state.
       if (isAbortError(err)) return
       console.error('Failed to fetch trace detail:', err)
-      traceData = null
-      traceLogs = []
-      setSpanInQuery(null)
+      detailError = 'Could not load the selected trace.'
     } finally {
       // Only the newest fetch owns the loading flag; an aborted older one
       // must not clear it out from under its replacement.
@@ -423,6 +451,11 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
+  loadingMessage={detailLoading
+    ? 'Loading selected trace…'
+    : page.loading
+      ? 'Loading traces…'
+      : undefined}
   itemKey={t => t.traceID}
 >
   {#snippet drawerSearch()}
@@ -481,6 +514,9 @@
   {/snippet}
 
   {#snippet main()}
+    {#if detailError}
+      <p class="traces-page__placeholder" role="alert">{detailError}</p>
+    {/if}
     {#if displayError || importFailure}
       <div class="traces-page__placeholder alert alert-error">
         {#if displayError}
@@ -492,8 +528,8 @@
           >
         {/if}
       </div>
-    {:else if page.loading && !hasTraceRows}
-      <div class="traces-page__placeholder traces-empty">Loading traces…</div>
+    {:else if page.loading && !hasTraceRows && !currentTraceData}
+      <div class="traces-page__placeholder traces-empty"></div>
     {:else if !page.loading && !hasTraceRows && !currentTraceData}
       <div class="traces-page__placeholder traces-empty">
         <p class="text-subtle">No traces in this time range</p>
@@ -517,17 +553,14 @@
         traceID={currentTraceData?.traceID ?? ''}
         spans={currentTraceData?.spans ?? []}
         logs={traceLogs}
-        {selectedSpanID}
+        selectedSpanID={displayedSpanID}
         searchActive={activeQueryTree !== undefined}
         onSelectSpan={handleSelectSpan}
         onInspectColumn={handleInspectColumn}
         onSelectTimelineRecord={handleSelectTimelineRecord}
-        loading={detailLoading}
       />
-    {:else if detailLoading}
-      <div class="traces-page__placeholder traces-empty">
-        Loading trace detail…
-      </div>
+    {:else if detailLoading || detailError}
+      <div class="traces-page__placeholder traces-empty"></div>
     {:else}
       <div class="traces-page__placeholder traces-empty">
         <p class="text-subtle">Select a trace to view details</p>

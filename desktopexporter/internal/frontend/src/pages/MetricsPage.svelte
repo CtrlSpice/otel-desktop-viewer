@@ -270,6 +270,11 @@
 
   let selectedMetric = $state<MetricViewData | undefined>(undefined)
   let detailLoading = $state(false)
+  let detailError = $state('')
+  let displayedMetricSummary = $state<MetricSelection>()
+  let displayedSummary = $derived(
+    selectedMetric ? displayedMetricSummary : selectedSummary
+  )
   // Requested series can legitimately return no reduced datapoints (for
   // example, a cumulative baseline). Keep that distinct from omitted payloads.
   let loadedDatapointSeries = $state<ReadonlySet<string>>(new Set())
@@ -333,14 +338,14 @@
   })
 
   let showChartAggregationTabs = $derived(
-    (selectedSummary?.metricType === 'Sum' ||
-      selectedSummary?.metricType === 'Gauge') &&
+    (displayedSummary?.metricType === 'Sum' ||
+      displayedSummary?.metricType === 'Gauge') &&
       chartAggregationTabs.length > 1
   )
 
   let showChartHistogramTabs = $derived(
-    selectedSummary?.metricType === 'Histogram' ||
-      selectedSummary?.metricType === 'ExponentialHistogram'
+    displayedSummary?.metricType === 'Histogram' ||
+      displayedSummary?.metricType === 'ExponentialHistogram'
   )
   let showChartOverlayControls = $derived(
     metricCtx.showChartStatOverlaysToggleVisible
@@ -372,6 +377,9 @@
     void timeContext.selection
     const id = selectedSummary?.metricRef
     if (!id) {
+      ++detailToken
+      detailLoading = false
+      detailError = ''
       selectedMetric = undefined
       return
     }
@@ -772,6 +780,7 @@
       datapointSeries ?? persistedVisibleKeys(summary.metricRef) ?? undefined
     try {
       detailLoading = true
+      detailError = ''
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
@@ -805,7 +814,7 @@
           DEFAULT_VISIBLE_TIMESERIES
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
-      if (token !== detailToken) return
+      if (token !== detailToken || page.selectedID !== summary.metricRef) return
       // The store's default limit uses the response's own series order. Replace
       // this set with each response so a refresh or scope change loads afresh.
       loadedDatapointSeries = new Set(
@@ -816,13 +825,13 @@
           []
       )
       selectedMetric = result
+      displayedMetricSummary = summary
       // Seed state before the result renders.
       if (reseed) metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
       if (token !== detailToken) return
-      selectedMetric = undefined
-      metricCtx.seedForMetric(undefined)
+      detailError = 'Could not load the selected metric.'
     } finally {
       // Only the current request owns the loading state.
       if (token === detailToken) detailLoading = false
@@ -870,6 +879,11 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
+  loadingMessage={detailLoading
+    ? 'Loading selected metric…'
+    : page.loading
+      ? 'Loading metrics…'
+      : undefined}
   itemKey={metricSummaryKey}
 >
   {#snippet drawerSearch()}
@@ -934,14 +948,14 @@
   {/snippet}
 
   {#snippet main()}
-    {#if selectedSummary}
+    {#if displayedSummary}
       {#snippet metricChartHeaderBadge()}
-        {#if selectedSummary}
+        {#if displayedSummary}
           <SignalBadges
             signal="metric"
-            metricType={selectedSummary.metricType}
-            aggregationTemporality={selectedSummary.aggregationTemporality}
-            isMonotonic={selectedSummary.isMonotonic}
+            metricType={displayedSummary.metricType}
+            aggregationTemporality={displayedSummary.aggregationTemporality}
+            isMonotonic={displayedSummary.isMonotonic}
           />
         {/if}
       {/snippet}
@@ -975,8 +989,8 @@
         <PaneHeader
           pill
           mode="title-tabs"
-          title={selectedSummary.name}
-          subtitleService={selectedSummary.serviceName || undefined}
+          title={displayedSummary.name}
+          subtitleService={displayedSummary.serviceName || undefined}
           tabs={showChartAggregationTabs
             ? chartAggregationTabs
             : histogramChartTabs}
@@ -998,9 +1012,9 @@
             {#if showChartOverlayControls}{@render overlayControl()}{/if}
           {/snippet}
           {#snippet metaRight()}
-            {#if selectedSummary}
-              {#key selectedSummary.metricRef}
-                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+            {#if displayedSummary}
+              {#key displayedSummary.metricRef}
+                <ExportButton signal="metric" id={displayedSummary.metricRef} />
               {/key}
             {/if}
           {/snippet}
@@ -1009,21 +1023,24 @@
         <PaneHeader
           pill
           mode="title"
-          title={selectedSummary.name}
-          subtitleService={selectedSummary.serviceName || undefined}
+          title={displayedSummary.name}
+          subtitleService={displayedSummary.serviceName || undefined}
           ariaLabel="Metric chart"
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           {#snippet metaRight()}
             {#if showChartOverlayControls}{@render overlayControl()}{/if}
-            {#if selectedSummary}
-              {#key selectedSummary.metricRef}
-                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+            {#if displayedSummary}
+              {#key displayedSummary.metricRef}
+                <ExportButton signal="metric" id={displayedSummary.metricRef} />
               {/key}
             {/if}
           {/snippet}
         </PaneHeader>
       {/if}
+    {/if}
+    {#if detailError}
+      <p class="metrics-page__placeholder" role="alert">{detailError}</p>
     {/if}
     {#if displayError || importFailure}
       <div
@@ -1043,9 +1060,7 @@
       <div
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"
-      >
-        Loading metrics…
-      </div>
+      ></div>
     {:else if !page.loading && !hasMetricRows && !selectedSummary}
       <div
         {...chartTabPanelAttrs}
@@ -1081,8 +1096,8 @@
       onPrev={() => page.selectByOffset(-1)}
       onNext={() => page.selectByOffset(1)}
       onLast={page.selectLast}
-      onDelete={selectedSummary
-        ? () => handleDeleteMetric(selectedSummary!.metricRef)
+      onDelete={displayedSummary
+        ? () => handleDeleteMetric(displayedSummary!.metricRef)
         : undefined}
     />
   {/snippet}

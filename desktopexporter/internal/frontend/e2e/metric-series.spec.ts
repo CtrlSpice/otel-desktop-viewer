@@ -169,6 +169,77 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('metric replacement keeps its displayed identity and mounted headers during delayed loading', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  const replacement = {
+    ...metric,
+    metricRef: 'replacement',
+    name: 'replacement.metric',
+  }
+  let release: (() => Promise<void>) | undefined
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method === 'searchMetricSummaries') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: [
+            summary,
+            {
+              ...summary,
+              metricRef: replacement.metricRef,
+              name: replacement.name,
+            },
+          ],
+        },
+      })
+    } else if (
+      method === 'getMetricView' &&
+      params.metricRef === replacement.metricRef
+    ) {
+      release = () =>
+        route.fulfill({ json: { jsonrpc: '2.0', id, result: replacement } })
+    } else await route.fallback()
+  })
+  await page.goto(`/metrics/${metric.metricRef}?time=all`)
+  const fields = page.getByRole('table', { name: 'Metric fields' })
+  const header = page.locator('.page-layout__main-chrome > .pane-header')
+  await expect(fields).toContainText(metric.name)
+  const nodes = await page.evaluateHandle(() => [
+    document.querySelector('.page-layout__main-chrome > .pane-header'),
+    document.querySelector('[aria-label="Metric fields"]'),
+    document.querySelector('#metric-chart-tabpanel'),
+  ])
+  await page.clock.install()
+  await page.clock.pauseAt(new Date())
+  await page
+    .locator('#signal-drawer-panel')
+    .getByRole('button', { name: /replacement.metric/ })
+    .click()
+  await expect.poll(() => !!release).toBe(true)
+  await expect(header).toContainText(metric.name)
+  await expect(fields).toContainText(metric.name)
+  await expect(page.getByText('Loading selected metric…')).toHaveCount(0)
+  await page.clock.runFor(200)
+  await expect(page.getByText('Loading selected metric…')).toBeVisible()
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+  await release!()
+  await expect(header).toContainText(replacement.name)
+  await expect(fields).toContainText(replacement.name)
+  await expect(page.getByText('Loading selected metric…')).toHaveCount(0)
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+})
+
 test('series IDs stay on one line beside a separate compact colour column', async ({
   page,
 }) => {

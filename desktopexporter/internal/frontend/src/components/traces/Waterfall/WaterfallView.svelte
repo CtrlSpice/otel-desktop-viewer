@@ -271,7 +271,6 @@
     onSelectSpan: (spanID: string) => void
     onInspectColumn?: (spanID: string, column: WaterfallColumn) => void
     onSelectTimelineRecord: (spanID: string, record: TimelineRecord) => void
-    loading?: boolean
     footer?: Snippet
   }
 
@@ -284,7 +283,6 @@
     onSelectSpan,
     onInspectColumn,
     onSelectTimelineRecord,
-    loading = false,
     footer,
   }: Props = $props()
 
@@ -1047,7 +1045,7 @@
 </script>
 
 <div
-  class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}"
+  class="waterfall-view"
   data-unmatched-log-count={logPartition.unmatched.length}
   style:--tree-count-width={`max(var(--waterfall-gutter-col), calc(${countDigits + 2}ch + 0.5rem))`}
 >
@@ -1244,7 +1242,7 @@
 
   .waterfall-view {
     --table-cell-inline-padding: 1rem;
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-100 transition-opacity duration-200;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-100;
   }
 
   .waterfall-view__scroll {
