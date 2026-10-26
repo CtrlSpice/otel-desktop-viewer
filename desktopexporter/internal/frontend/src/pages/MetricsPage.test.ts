@@ -13,7 +13,12 @@ import type {
   SumDataPoint,
 } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
+import {
+  navigateCurrentRoute,
+  navigateToItem,
+  readRoute,
+  withQueryPatch,
+} from '@/route'
 import { downloadOTLP } from '@/services/export-service'
 
 vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
@@ -218,6 +223,80 @@ async function renderSelected(metricType: MetricType) {
 }
 
 describe('Metric main-header range', () => {
+  it.each(['failure', 'missing'] as const)(
+    'reports an out-of-list metric lookup %s and retries without changing the URL',
+    async outcome => {
+      searchMetricSummaries.mockResolvedValue([])
+      getStats.mockResolvedValue(makeStats())
+      if (outcome === 'failure')
+        getMetric.mockRejectedValueOnce(new Error('lookup failed'))
+      else getMetric.mockResolvedValueOnce(null)
+      getMetric.mockResolvedValueOnce(makeMetric('Gauge'))
+      getMetricView.mockResolvedValue(makeMetric('Gauge'))
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      setTestUrl('/metrics/metric-1?q=name%20%3D%20%22excluded%22')
+      renderWithContexts(MetricsPage)
+      const message =
+        outcome === 'failure'
+          ? 'Could not load the selected metric.'
+          : 'The selected metric was not found.'
+      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      expect(screen.queryByText('No metrics in this time range')).toBeNull()
+      expect(getMetricView).not.toHaveBeenCalled()
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+      expect(
+        await screen.findByRole('table', { name: 'Metric fields' })
+      ).toHaveTextContent('demo.metric')
+      expect(getMetric).toHaveBeenCalledTimes(2)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(window.location.pathname).toBe('/metrics/metric-1')
+      expect(new URLSearchParams(window.location.search).get('q')).toBe(
+        'name = "excluded"'
+      )
+      consoleError.mockRestore()
+    }
+  )
+
+  it('retains the displayed metric while an out-of-list identity loads and ignores its late response after navigation', async () => {
+    await renderSelected('Gauge')
+    const fields = await screen.findByRole('table', { name: 'Metric fields' })
+    const header = screen.getByRole('region', { name: 'Metric chart' })
+    const pending = deferred<ReturnType<typeof makeMetric> | null>()
+    getMetric.mockReturnValueOnce(pending.promise)
+    navigateToItem('metrics', 'outside-list')
+    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('outside-list'))
+    expect(fields.isConnected).toBe(true)
+    expect(header).toHaveTextContent('demo.metric')
+    expect(await screen.findByText('Loading selected metric…')).toBeVisible()
+    await fireEvent.click(
+      within(header).getByRole('button', { name: 'Download metric' })
+    )
+    expect(downloadOTLP).toHaveBeenCalledWith(
+      'metric',
+      'metric-1',
+      expect.any(AbortSignal)
+    )
+    navigateToItem('metrics', 'metric-1')
+    await tick()
+    pending.resolve({
+      ...makeMetric('Gauge'),
+      metricRef: 'outside-list',
+      name: 'late.metric',
+    })
+    await tick()
+    await waitFor(() =>
+      expect(screen.queryByText('Loading selected metric…')).toBeNull()
+    )
+    expect(header).toHaveTextContent('demo.metric')
+    expect(fields.isConnected).toBe(true)
+    expect(screen.queryByText('late.metric')).toBeNull()
+    expect(getMetricView.mock.calls.every(call => call[0] === 'metric-1')).toBe(
+      true
+    )
+  })
+
   it('opens an exact route-selected metric outside the filtered list on a fresh mount', async () => {
     searchMetricSummaries.mockResolvedValue([])
     getStats.mockResolvedValue(makeStats())

@@ -6,6 +6,7 @@ import {
   GRAPH_INKS,
   GRAPH_PALETTE_VERSION,
   GRAPH_SWATCHES,
+  graphSwatch,
 } from '../src/themes/graph-inks'
 import type {
   JsonAggregateBucket,
@@ -2230,10 +2231,10 @@ for (const { id: theme } of THEMES) {
           tab === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-line'
         )
         const quantileColours = [
-          themeRgb(theme, 'success'),
-          themeRgb(theme, 'warning'),
-          themeRgb(theme, 'error'),
-        ]
+          'shin-ryoku:6',
+          'daikokuten:2',
+          'benzaiten:2',
+        ].map(id => rgb(graphSwatch(id)!.color))
         await expect(quantileLines).toHaveCount(3)
         for (const [index, line] of (await quantileLines.all()).entries()) {
           await expect(line).toHaveCSS('stroke', quantileColours[index]!)

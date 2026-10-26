@@ -211,6 +211,9 @@
     | 'serviceName'
   >
   let retainedSummary = $state<MetricSelection>()
+  let summaryLoading = $state(false)
+  let summaryError = $state('')
+  let summaryRetry = $state(0)
   let selectedSummary = $derived(
     page.selectedSummary ??
       (retainedSummary?.metricRef === page.selectedID
@@ -218,6 +221,9 @@
         : undefined)
   )
   $effect(() => {
+    void summaryRetry
+    summaryLoading = false
+    summaryError = ''
     const summary = page.selectedSummary
     if (summary) {
       retainedSummary = summary
@@ -233,10 +239,15 @@
       return
     // A shared URL selects an identity independently of filtered-list membership.
     let cancelled = false
+    summaryLoading = true
     void telemetryAPI
       .getMetric(id)
       .then(metric => {
-        if (cancelled || !metric) return
+        if (cancelled) return
+        if (!metric) {
+          summaryError = 'The selected metric was not found.'
+          return
+        }
         const service = metric.resource.attributes.find(
           attribute =>
             attribute.key === 'service.name' &&
@@ -261,7 +272,13 @@
         }
       })
       .catch(error => {
-        if (!cancelled) console.error('Failed to fetch selected metric:', error)
+        if (!cancelled) {
+          summaryError = 'Could not load the selected metric.'
+          console.error('Failed to fetch selected metric:', error)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) summaryLoading = false
       })
     return () => {
       cancelled = true
@@ -375,12 +392,13 @@
   // Polling may replace a summary object without changing its metric identity.
   $effect(() => {
     void timeContext.selection
+    const requestedID = page.selectedID
     const id = selectedSummary?.metricRef
     if (!id) {
       ++detailToken
       detailLoading = false
       detailError = ''
-      selectedMetric = undefined
+      if (!requestedID) selectedMetric = undefined
       return
     }
     const summary = untrack(() => selectedSummary)
@@ -879,7 +897,7 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
-  loadingMessage={detailLoading
+  loadingMessage={detailLoading || summaryLoading
     ? 'Loading selected metric…'
     : page.loading
       ? 'Loading metrics…'
@@ -1042,6 +1060,19 @@
     {#if detailError}
       <p class="metrics-page__placeholder" role="alert">{detailError}</p>
     {/if}
+    {#if summaryError}
+      <div
+        class="metrics-page__placeholder flex items-center gap-2"
+        role="alert"
+      >
+        <span>{summaryError}</span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          onclick={() => summaryRetry++}>Retry</button
+        >
+      </div>
+    {/if}
     {#if displayError || importFailure}
       <div
         {...chartTabPanelAttrs}
@@ -1061,7 +1092,7 @@
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"
       ></div>
-    {:else if !page.loading && !hasMetricRows && !selectedSummary}
+    {:else if !page.loading && !hasMetricRows && !page.selectedID}
       <div
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"
@@ -1073,7 +1104,7 @@
       </div>
     {:else}
       <div {...chartTabPanelAttrs} class="metrics-page__chart">
-        <MetricChartView />
+        {#if selectedMetric || !page.selectedID}<MetricChartView />{/if}
       </div>
     {/if}
   {/snippet}

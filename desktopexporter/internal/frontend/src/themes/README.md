@@ -125,7 +125,8 @@ dropped anywhere.
 Workspace edges and pane gutters use a shared 16px spacing. Pane headings,
 signal cards and Details fields use 16px horizontal content insets; the List
 pane uses the adjacent gutter rather than adding another trailing outer inset.
-Controls retain their 8px gaps, and data-row heights stay compact.
+Related header icons use 2px gaps, choices/tabs 4px and distinct groups 8px;
+data-row heights stay compact.
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
@@ -269,9 +270,9 @@ exact spelling.
 The complete time-range menu uses Next, including dates, times, calendars,
 timezone names and ambiguity choices. Its 32rem preferred width is clamped to
 the viewport; endpoint controls wrap into two rows on narrow menus.
-Keys, section/column headers and helper text use Subtle; data and main titles use
-Text; type/provenance metadata uses Secondary. Muted is for unavailable or
-disabled content.
+Details field names use Primary, with type/provenance metadata in Subtle.
+Section/column headers and helper text use Subtle; data and main titles use
+Text. Muted is for unavailable or disabled content.
 
 Properties shows ordinary strings decoded without outer JSON quotes, retaining
 meaningful quotes/backslashes and displaying empty strings as `""`. Shared
@@ -291,18 +292,6 @@ The left gutter is measured from rendered Y labels and angled X labels. It updat
 after label, font and size changes; fixed left insets are only pre-measurement
 fallbacks. Metric chart headers keep the service-colour dot without repeating the
 service name beside the metric title.
-
-Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
-Copy has its own far-right column, with its tooltip opening left.
-Count and % columns are fixed-width and right-aligned, with sortable headings.
-The value column takes one third of the available row width, capped at 12rem.
-Long values use an ellipsis, with the full value available on hover and through Copy.
-The 8px-high percentage bar uses an aligned track that fills the remaining width.
-Short bars stop at the canonical 8px dot. Colours use
-official middle-strength shades 3–5 across the 32 graph inks, chosen by a stable
-hash of attribute source, key and typed value identity. Sorting, paging and theme
-changes preserve each value's colour. Parent attribute rows remain plain; counts
-and percentages keep their record denominator, and Copy retains the full value.
 
 The categorical catalogue contains the first seven official swatches from the same
 32 colourful Madoromi inks: 224 distinct colours. Automatic allocation uses its
@@ -360,13 +349,14 @@ overrides retain their ink identity; custom RGB values use the closest official
 shade in OKLab. Ink names remain in the shade tooltips and accessible labels,
 without a separate visible heading. The rounded colour field and hue strip fit
 inside the shared popover padding. The picker has no opacity control.
-Scalar charts show individual series by default. Statistics contains the optional
-Combined line selector (Off, Sum where supported, or Average) and the independent
-min/max/average annotation toggle. Values and Rate tabs appear only for metrics
-that support Rate; returning to Values restores the combined-line choice for the
-current metric visit. Existing `agg=raw|sum|avg|rate` links and saved choices retain
-their meanings. Source lines keep their recorded timestamps when a combined line
-is displayed.
+Scalar charts show individual series by default. Sum and Average are independent
+checkboxes where supported, and can appear together as `agg=sum-avg`; Gauge offers
+Average. Values and Rate tabs appear only for metrics that support Rate; returning
+to Values restores the prior combined-line choice for the current metric visit.
+Existing `agg=raw|sum|avg|rate` links and saved choices retain their meanings.
+Source lines keep their recorded timestamps when combined lines are displayed.
+Whole-series average annotations are labelled Series avg. The chart measures
+right-side label widths to reserve space for their full text.
 Checkboxes use
 the shared neutral Text checkmark and round outline on a transparent background, independent of series
 colour. Saved choices survive visibility changes. Reset restores the owner's
@@ -431,6 +421,11 @@ uses its mode's high-count endpoint. Seasons do not change the ramp.
 `themes/heatmap-palette.json` records the source anchors and generated ramps;
 `utils/chart-palette.ts` provides the pure sampler.
 
+Percentile guides use fixed official chart swatches: Shin-ryoku shade 6 (green)
+for p50, Daikokuten shade 2 (amber-yellow) for p95 and Benzaiten shade 2 (red)
+for p99. Histogram and heatmap views share these colours in all seasons and
+Day/Night modes. Labels remain neutral text.
+
 Count thresholds, source zero/empty buckets and categorical identity assignments
-retain their existing treatment. Semantic error overrides and chart guides use
-the active interface's shared tokens.
+retain their existing treatment. Semantic error overrides retain the active
+interface's shared tokens.

@@ -3,15 +3,24 @@ import {
   type HistogramSlicePoint,
 } from './histogram-aggregation'
 import type { HistogramHeatmapData } from './histogram-heatmap-data'
+import { graphSwatch } from '@/themes/graph-inks'
 
 export const HISTOGRAM_QUANTILE_DASH = '6 4'
 
+// Graph inks, rather than text-corrected status colours. Keep percentile colours
+// consistent between histogram/heatmap views and Day/Night.
+const quantileColors = {
+  '0.5': graphSwatch('shin-ryoku:6')!.color,
+  '0.95': graphSwatch('daikokuten:2')!.color,
+  '0.99': graphSwatch('benzaiten:2')!.color,
+}
+
 export function histogramQuantileColor(key: string): string {
   return key === '0.5'
-    ? 'var(--color-success)'
+    ? quantileColors['0.5']
     : key === '0.95'
-      ? 'var(--color-warning)'
-      : 'var(--color-error)'
+      ? quantileColors['0.95']
+      : quantileColors['0.99']
 }
 
 /** Project the store's merged-distribution quantiles onto the heatmap's

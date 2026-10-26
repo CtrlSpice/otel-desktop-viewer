@@ -57,46 +57,15 @@ dot/count, then comma-separated trace, metric and log counts, then Last seen.
 The lower rows align with the service name. The error total adds
 error spans and error/fatal logs, with the breakdown on hover and in its accessible
 label. Each service keeps a decorative assigned-colour dot before its name.
-Attribute queries, typed values, sorting, filtering and exact Copy retain their
-existing scope and behaviour. The header's filter icon opens and focuses the
-attribute-key filter. Escape collapses the field and restores icon focus without
-clearing the filter; an active filter remains marked on the icon.
-
-Records is the number of distinct records carrying that attribute and type,
-combining spans, logs and datapoints. Expanded rows count records carrying each
-exact value. Those values can overlap on a record, so their counts are not
-necessarily additive.
-
-The table has four columns: Name, Records, %, and Copy. Received types appear
-beside attribute names, with provenance on hover. The Attributes header offers
-the same Collapse all / Expand all controls as traces. These apply across
-attribute pages, including values still loading. Individual disclosures remain
-independent until the next bulk action. Refreshing or changing the discovery
-scope resets the disclosures.
-
-Name uses the shared table's responsive pinned-prefix layout; Copy stays at
-the far right. Narrow panes fall back to native horizontal scrolling when the
-pinned prefix would leave too little room for another column. Resized widths
-are saved.
-
-Clicking an attribute or value row shows its matching Telemetry. Native name
-and value buttons remain keyboard-accessible; a focused row also supports
-Enter/Space selection and Up/Down/Home/End navigation. Copy, disclosures and
-text selection do not activate the row.
-
-Attributes offers 25, 50 or 100 entries per page, with each entry's expanded values
-kept together. Filtering and sorting apply to all matching entries, not only the
-current page. Changing pages preserves the selected attribute and expansion state.
-
 The right-hand Details pane contains matching records. Its single header row
 offers shared Traces, Metrics and Logs tabs with known matching-record counts.
-When no attribute heading is shown, these tabs share the full header width evenly.
+These tabs share the full header width evenly.
 Tabs use the shared 4px choice gap. Service map view buttons use 32px targets
 with the shared 2px icon-control gap.
 The redundant visible Telemetry label is omitted; the section retains its
-accessible name. An inspected attribute keeps its actual field name and metadata.
+accessible name.
 Choices switch immediately; arrow, Home and End keys navigate available signals.
-Each signal retains independent pages and scroll positions. Attributes and
-Telemetry each remember their own 25/50/100 page-size preference, defaulting to 25.
-Selecting a service, attribute key or exact value updates the matching records;
+Each signal retains independent pages and scroll positions. Telemetry remembers
+its 25/50/100 page-size preference, defaulting to 25.
+Selecting a service updates the matching records;
 record cards still navigate to their native signal workspace.

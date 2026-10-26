@@ -184,7 +184,7 @@ test('uses the shared tooltip style on hover and keyboard focus without clipping
   const buttonBox = (await trigger.boundingBox())!
   const titleBox = (await page
     .getByRole('region', { name: 'Log record', exact: true })
-    .getByText('checkout-api', { exact: true })
+    .getByText('Log', { exact: true })
     .boundingBox())!
   expect(buttonBox.x).toBeGreaterThan(titleBox.x + titleBox.width)
   await expect(trigger).toHaveAttribute('data-tip', 'Download log')

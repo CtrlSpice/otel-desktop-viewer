@@ -481,10 +481,7 @@ for (const { id: theme, scheme, name } of THEMES) {
         'color',
         themeRgb(theme, 'text')
       )
-      await expect(toggle).toHaveCSS(
-        'background-color',
-        themeRgb(theme, 'highlightMedium')
-      )
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       const box = (await toggle.boundingBox())!
       expect(box.width).toBe(box.height)
       expect(
@@ -511,16 +508,13 @@ for (const { id: theme, scheme, name } of THEMES) {
       await expect(reopen).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await expect(reopen.locator('svg')).toHaveCSS(
         'color',
-        themeRgb(theme, 'text')
+        themeRgb(theme, 'subtle')
       )
       await reopen.focus()
       await page.keyboard.press('Enter')
       await expect(toggle).toBeFocused()
       await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-      await expect(toggle).toHaveCSS(
-        'background-color',
-        themeRgb(theme, 'highlightMedium')
-      )
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     }
   })
 }

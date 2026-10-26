@@ -51,14 +51,15 @@ Choose from eight Madoromi seasonal Day/Night themes and 32 named inks.
 ## Explore Telemetry
 
 Home discovers services across traces, metrics and logs. Search and the selected
-time range scope the results; selecting a service reveals its typed attributes,
-value frequencies and matching telemetry. Traces, Metrics and Logs header tabs
-show matching card counts, with independent 25-card pages and scroll positions.
+time range scope the results. The Service map shows recorded cross-service
+connections; selecting a service shows its matching telemetry in Details.
+Traces, Metrics and Logs tabs show matching card counts, with independent pages,
+scroll positions and a choice of 25, 50 or 100 records per page.
 Open a card to inspect it in its signal workspace. Shared List and Details pane
 widths and open preferences carry across routes.
 
-The appearance controls are **Ink · Season · Day/Night**. Defaults are To-ro
-(warm lantern), Autumn and the system's Day/Night preference; saved choices take
+The appearance controls are **Season · Day/Night**. Defaults are Autumn and
+the system's Day/Night preference; saved choices take
 priority. Service and metric-series colours stay fixed across themes and have
 individual overrides. See [Chart Palettes](docs/chart-palettes.md).
 
