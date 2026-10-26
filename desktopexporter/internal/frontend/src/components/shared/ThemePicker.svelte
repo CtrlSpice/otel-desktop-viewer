@@ -68,12 +68,14 @@
   onOpenChange={focusSeason}
 >
   {#snippet icon()}
-    <HugeiconsIcon
-      icon={seasonIcons[theme.season]}
-      size={18}
-      strokeWidth={1.5}
-      aria-hidden="true"
-    />
+    {#key theme.season}
+      <HugeiconsIcon
+        icon={seasonIcons[theme.season]}
+        size={18}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+    {/key}
     <span>{chosen.name}</span>
   {/snippet}
   {#snippet children()}

@@ -1,19 +1,21 @@
 <script module lang="ts">
   import sprite from '@/assets/images/lulu-pixel.txt?raw'
   import inks from '@/themes/graph-inks.json'
-  import heatmapPalette from '@/themes/heatmap-palette.json'
+  import interfacePalette from '@/themes/interface-palette.json'
 
   // Pixel Lulu, CC0-1.0; source and character credits are in README.md.
   // Keep the source grid intact; combine pixels into one SVG path per colour.
-  // Use the fixed Iris → Love → Rose progression, never the Day reversal.
-  const ramp = heatmapPalette.ramps['12'].night
+  // Fixed Rose and Love strengths, independent of the active season/mode.
+  const rose = interfacePalette['madoromi-aki-yoru'].syntax.nadeshiko
+  const love = interfacePalette['madoromi-aki-yoru'].colors.error
+  const outline = interfacePalette['madoromi-aki-hiru'].colors.error
   const colors = {
-    o: ramp[0],
-    s: ramp[8],
-    b: ramp[11],
-    g: ramp[5],
-    G: ramp[4],
-    e: ramp[0],
+    o: outline,
+    s: `color-mix(in srgb, ${rose} 70%, ${love})`,
+    b: rose,
+    g: love,
+    G: `color-mix(in srgb, ${love} 75%, ${outline})`,
+    e: outline,
     w: inks.inks['fuyu-gaki'][7],
   }
   const rows = sprite.trim().split('\n')

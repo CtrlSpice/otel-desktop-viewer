@@ -519,6 +519,38 @@ for (const { id: theme, scheme, name } of THEMES) {
   })
 }
 
+test('season trigger updates its drawing while keeping the picker open and keyboard focus', async ({
+  page,
+}) => {
+  await interceptRpc(page)
+  await page.addInitScript(() =>
+    localStorage.setItem('theme', 'madoromi-aki-yoru')
+  )
+  await page.goto('/')
+  const trigger = page.getByRole('button', { name: /^Season:/ })
+  await trigger.click()
+  const seasons = page.getByRole('radiogroup', { name: 'Season', exact: true })
+  const originalButton = await trigger.elementHandle()
+  for (const name of ['Winter', 'Spring', 'Summer', 'Autumn']) {
+    await page.keyboard.press('ArrowDown')
+    const chosen = seasons.getByRole('radio', { name, exact: true })
+    await expect(chosen).toBeFocused()
+    await expect(chosen).toHaveAttribute('aria-checked', 'true')
+    await expect(trigger).toHaveAccessibleName(`Season: ${name}`)
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    const expected = await chosen.locator('svg').innerHTML()
+    await expect.poll(() => trigger.locator('svg').innerHTML()).toBe(expected)
+    expect(
+      await trigger.evaluate(
+        (element, original) => element === original,
+        originalButton
+      )
+    ).toBe(true)
+  }
+  await page.keyboard.press('Escape')
+  await expect(trigger).toBeFocused()
+})
+
 test('season picker stays compact and viewport-clamped without swatch controls', async ({
   page,
 }) => {
