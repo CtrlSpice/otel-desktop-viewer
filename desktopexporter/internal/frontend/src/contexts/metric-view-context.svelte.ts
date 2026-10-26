@@ -682,9 +682,15 @@ export function createMetricViewContext(
     const scalar = metricType === 'Gauge' || metricType === 'Sum'
     const source = m && scalar ? m.timeseries : []
 
-    const labelByKey = seriesLabelsByKey(source)
-    const labelFor = (ts: MetricSeriesViewData) =>
-      labelByKey.get(ts.seriesRef) ?? ts.seriesRef
+    // Use the same all-series identity as the table, even when siblings are
+    // hidden. Labels are presentation only; seriesRef still owns selection/colour.
+    const labelFor = (ts: MetricSeriesViewData) => {
+      const label = seriesTable.labels.get(ts.seriesRef)
+      if (!label) return ts.seriesRef
+      return label.needsIdentity
+        ? `${label.text} · ${ts.seriesRef}`
+        : label.text
+    }
 
     return {
       timeseries: source,
