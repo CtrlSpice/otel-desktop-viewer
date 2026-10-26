@@ -682,6 +682,7 @@ export type JsonStats = {
   storage: {
     sizeBytes: number
     maxSizeBytes: number
+    inMemory?: boolean
   }
   traces: JsonTraceStats
   logs: JsonLogStats

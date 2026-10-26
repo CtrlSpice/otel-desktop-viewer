@@ -4,12 +4,13 @@
 
   // Pixel Lulu, CC0-1.0; source and character credits are in README.md.
   // Keep the source grid intact; combine pixels into one SVG path per colour.
+  const skin = `color-mix(in srgb, ${inks.inks['edo-murasaki'][5]} 50%, ${inks.inks['edo-murasaki'][6]})`
   const colors = {
     o: inks.inks['edo-murasaki'][1],
     s: inks.inks['edo-murasaki'][4],
-    b: inks.inks['fuyu-gaki'][6],
-    g: inks.inks.bishamonten[3],
-    G: inks.inks.bishamonten[2],
+    b: skin,
+    g: `color-mix(in srgb, ${inks.inks.bishamonten[3]} 75%, ${skin})`,
+    G: `color-mix(in srgb, ${inks.inks.bishamonten[2]} 75%, ${skin})`,
     e: inks.inks['edo-murasaki'][1],
     w: inks.inks['edo-murasaki'][7],
   }

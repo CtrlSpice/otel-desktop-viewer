@@ -7,8 +7,11 @@ The retained pixel Lulu artwork comes from
 dedicated to the public domain under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 `assets/images/lulu-pixel.txt` retains the source pixel grid. `Lulu.svelte` draws
-it as inline SVG, without the telescope, using fixed official Edo-murasaki,
-Fuyu-gaki and Bishamonten swatches. Lulu keeps her soft pink identity across ink, season
+it as inline SVG, without the telescope, using Edo-murasaki and Bishamonten inks.
+Her body blends Edo-murasaki shades 6 and 7 equally; the gills blend Bishamonten
+shades 4 and 3 with 25% of that skin colour to soften their saturation.
+The original pixel palette guides the warm blush skin and rose gills, with the
+retained plum outline. Lulu keeps her soft pink identity across ink, season
 and Day/Night changes. The outline, shading, body, gills and eyes retain separate
 colour roles; the palest Edo-murasaki swatch supplies her eye highlights.
 Lulu Axol'Otel was created for OTel Desktop Viewer. The original painting is by
@@ -20,15 +23,23 @@ and is not covered by the pixel sprite's CC0 dedication.
 Home's left pane contains Getting started, the file-drop box, Storage and
 Ingestion issues. The dotted box matches the terminals' width and neutral border
 colour. It has a fixed 96px height, centred content and a 2px dotted outline.
-It sits directly below the Getting started header, before the exporter and
-test-trace instructions in the same scrollable guide.
+Pixel Lulu and the OTel Desktop Viewer wordmark form the sidebar header.
+The import box and exporter/test-trace instructions scroll below that header.
 The box opens the multi-file JSON/JSONL picker and says “Drop telemetry JSON
 files here or anywhere on the screen.” File dropping works across the app.
-Getting started has the shared section header and stays open as the primary
+Getting started retains its accessible section name and stays open as the primary
 section of the resizable stack. The main pane contains the Service map, with each service
 represented once and recorded cross-service parent/child connections drawn as
 edges. Selecting a node keeps the map layout stable and shows matching records
 in Details.
+
+The HTTP and gRPC setup snippets use the receiver ports advertised by the running
+viewer. If configuration is unavailable, the guide labels the standard fallback
+port explicitly. The test-trace command uses the configured HTTP receiver port.
+
+Storage identifies DuckDB's in-memory or on-disk mode, current usage and configured
+retention limit. The default cap is 512 MiB in memory or 2 GiB on disk;
+`--db-max-size 0` explicitly disables size-based retention.
 
 Service cards use three shared card rows: service name and right-aligned Error
 dot/count, then comma-separated trace, metric and log counts, then Last seen.

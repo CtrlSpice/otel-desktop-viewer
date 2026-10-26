@@ -25,6 +25,11 @@ const (
 	maxPruneRounds = 3
 )
 
+// InMemory reports whether this store has no persistent database file.
+func (s *Store) InMemory() bool {
+	return s.dbPath == ""
+}
+
 // SizeBytes reports the current size of the telemetry store.
 //
 // In disk mode this is the size of the database file plus its write-ahead

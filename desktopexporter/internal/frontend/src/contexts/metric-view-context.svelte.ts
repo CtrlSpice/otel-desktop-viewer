@@ -49,6 +49,8 @@ import {
 import {
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
+  AGG_KEY_AVG_SELECTED,
+  AGG_KEY_AVG_TOTAL,
   availableAggregationViews,
   DEFAULT_AGGREGATION_VIEW,
   availableSeriesStatBadges,
@@ -67,7 +69,11 @@ import type {
   ChartTimeseries,
   LegendTimeseries,
 } from '@/types/metric-chart-types'
-import { AGG_COLOR_SELECTED, metricSeriesPalette } from '@/utils/chart-palette'
+import {
+  AGG_COLOR_SELECTED,
+  AGG_COLOR_ALL,
+  metricSeriesPalette,
+} from '@/utils/chart-palette'
 import { themeSignal } from '@/state/theme.svelte'
 import { SERIES_COLOR_COUNT } from '@/themes'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
@@ -866,15 +872,28 @@ export function createMetricViewContext(
     const checkedCount = view.visibleSeries.size
     const total = gaugeSumGroups.keys.length
     if (checkedCount < 2) return { lines: [], presentKeys: [] }
-    const points = viewPoints(pools.all, v)
-    if (points.length === 0) return { lines: [], presentKeys: [] }
-    const key = checkedCount === total ? AGG_KEY_TOTAL : AGG_KEY_SELECTED
-    return {
-      lines: [
-        { key, label: checkedCount === total ? 'Total' : 'Selected', points },
-      ],
-      presentKeys: [key],
+    const modes: ('sum' | 'avg' | 'rate')[] =
+      v === 'sum-avg' ? ['sum', 'avg'] : [v]
+    const result: AggregateResult = { lines: [], presentKeys: [] }
+    for (const mode of modes) {
+      const points = viewPoints(pools.all, mode)
+      if (points.length === 0) continue
+      const key =
+        mode === 'avg'
+          ? checkedCount === total
+            ? AGG_KEY_AVG_TOTAL
+            : AGG_KEY_AVG_SELECTED
+          : checkedCount === total
+            ? AGG_KEY_TOTAL
+            : AGG_KEY_SELECTED
+      result.lines.push({
+        key,
+        label: mode === 'sum' ? 'Sum' : mode === 'avg' ? 'Average' : 'Rate',
+        points,
+      })
+      result.presentKeys.push(key)
     }
+    return result
   })
 
   /** Aggregate legend keys after duplicate-line and visibility rules. */
@@ -890,8 +909,10 @@ export function createMetricViewContext(
 
   const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
     return (
-      metricType === 'Gauge' ||
-      metricType === 'Sum' ||
+      (view.aggregationView !== 'rate' &&
+        availableAggregationViewsList.some(
+          mode => mode === 'sum' || mode === 'avg'
+        )) ||
       (isHistogramKind && !isUnsafeTemporality)
     )
   })
@@ -1981,6 +2002,8 @@ export function createMetricViewContext(
       const merged = new Map(resolvedTimeseriesColors)
       merged.set(AGG_KEY_SELECTED, AGG_COLOR_SELECTED)
       merged.set(AGG_KEY_TOTAL, AGG_COLOR_SELECTED)
+      merged.set(AGG_KEY_AVG_SELECTED, AGG_COLOR_ALL)
+      merged.set(AGG_KEY_AVG_TOTAL, AGG_COLOR_ALL)
       return merged
     },
     get timeseriesChartColors() {

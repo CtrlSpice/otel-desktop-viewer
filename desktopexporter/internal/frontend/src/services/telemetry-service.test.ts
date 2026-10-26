@@ -121,9 +121,10 @@ afterEach(() => {
 
 describe('file-import endpoint discovery', () => {
   it('reads the configured OTLP port through RPC', async () => {
-    stubRpcResult({ otlpHttpPort: 54318 })
+    stubRpcResult({ otlpHttpPort: 54318, otlpGrpcPort: 54317 })
     expect(await telemetryAPI.getImportConfig()).toEqual({
       otlpHttpPort: 54318,
+      otlpGrpcPort: 54317,
     })
     expect(
       JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).method
@@ -142,6 +143,16 @@ describe('file-import endpoint discovery', () => {
       'invalid OTLP HTTP port'
     )
   })
+
+  it.each([0, '4317', 65536, null])(
+    'rejects invalid gRPC port %j',
+    async otlpGrpcPort => {
+      stubRpcResult({ otlpHttpPort: 4318, otlpGrpcPort })
+      await expect(telemetryAPI.getImportConfig()).rejects.toThrow(
+        'invalid OTLP gRPC port'
+      )
+    }
+  )
 })
 
 describe('JSON-RPC response identity', () => {

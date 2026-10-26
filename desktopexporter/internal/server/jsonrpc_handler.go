@@ -27,6 +27,7 @@ type JSONRPCHandler struct {
 	store        *store.Store
 	logger       *zap.Logger
 	otlpHTTPPort int
+	otlpGRPCPort int
 }
 
 func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
@@ -116,7 +117,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		}
 		return struct {
 			OTLPHTTPPort int `json:"otlpHttpPort"`
-		}{OTLPHTTPPort: h.otlpHTTPPort}, nil
+			OTLPGRPCPort int `json:"otlpGrpcPort,omitempty"`
+		}{OTLPHTTPPort: h.otlpHTTPPort, OTLPGRPCPort: h.otlpGRPCPort}, nil
 	case "searchTraceSummaries":
 		return h.searchTraceSummaries(ctx, req)
 	case "getTraceView":
@@ -846,6 +848,6 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return stats.GetStats(ctx, db, sizeBytes, retentionCap)
+		return stats.GetStats(ctx, db, sizeBytes, retentionCap, h.store.InMemory())
 	})
 }

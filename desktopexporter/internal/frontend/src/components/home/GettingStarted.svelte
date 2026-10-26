@@ -4,17 +4,19 @@
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import Lulu from './Lulu.svelte'
 
   let { importContent }: { importContent?: Snippet } = $props()
   let protocol = $state('http')
   let httpPort = $state<number | null>(null)
+  let grpcPort = $state<number | null>(null)
   const panelID = $props.id()
   const tabs = [
     { id: 'http', label: 'HTTP' },
     { id: 'grpc', label: 'gRPC' },
   ]
   const code = $derived(
-    `export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${protocol === 'http' ? (httpPort ?? 4318) : 4317}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="${protocol === 'http' ? 'http/protobuf' : 'grpc'}"\nexport OTEL_SERVICE_NAME="my-service"`
+    `export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${protocol === 'http' ? (httpPort ?? 4318) : (grpcPort ?? 4317)}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="${protocol === 'http' ? 'http/protobuf' : 'grpc'}"\nexport OTEL_SERVICE_NAME="my-service"`
   )
   const example = $derived(
     `otel-cli exec \\\n  --endpoint http://localhost:${httpPort ?? 4318} \\\n  --protocol http/protobuf \\\n  --service my-service \\\n  --name "test trace" \\\n  -- sleep 1`
@@ -24,7 +26,10 @@
     void telemetryAPI
       .getImportConfig(controller.signal)
       .then(config => {
-        if (!controller.signal.aborted) httpPort = config.otlpHttpPort
+        if (!controller.signal.aborted) {
+          httpPort = config.otlpHttpPort
+          grpcPort = config.otlpGrpcPort ?? null
+        }
       })
       .catch(() => {
         // The guide labels the default port when configuration is unavailable.
@@ -33,6 +38,10 @@
   })
 </script>
 
+<header class="guide-welcome">
+  <div class="guide-lulu"><Lulu /></div>
+  <h1 class="guide-name">OTel Desktop Viewer</h1>
+</header>
 <div class="guide-scroll">
   {#if importContent}
     <div class="guide-import">{@render importContent()}</div>
@@ -78,7 +87,9 @@
         />
       </div>
     </div>
-    {#if protocol === 'grpc' || httpPort === null}<p class="text-subtle">
+    {#if (protocol === 'grpc' ? grpcPort : httpPort) === null}<p
+        class="text-subtle"
+      >
         Port {protocol === 'grpc' ? 4317 : 4318} is the default. Use the viewer’s
         configured port if different.
       </p>{/if}
@@ -125,5 +136,20 @@
   }
   .guide-import {
     @apply flex h-24 shrink-0;
+  }
+  .guide-lulu {
+    width: 64px;
+    min-width: 0;
+    aspect-ratio: 32 / 27;
+    flex-shrink: 1;
+  }
+  .guide-welcome {
+    @apply flex shrink-0 items-center gap-4 rounded-xl bg-base-200 py-3;
+    padding-inline: var(--pane-inline-inset);
+  }
+  .guide-name {
+    @apply whitespace-nowrap font-normal text-base-content;
+    font-size: 1.5rem;
+    line-height: 1.15;
   }
 </style>

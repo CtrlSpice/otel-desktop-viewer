@@ -1566,18 +1566,25 @@ LIMIT ${batch.length}`,
   // Stats methods
   getImportConfig: async (
     signal?: AbortSignal
-  ): Promise<{ otlpHttpPort: number }> => {
-    const config = await callRPC<{ otlpHttpPort: number }>(
-      'getImportConfig',
-      undefined,
-      signal
-    )
+  ): Promise<{ otlpHttpPort: number; otlpGrpcPort?: number }> => {
+    const config = await callRPC<{
+      otlpHttpPort: number
+      otlpGrpcPort?: number
+    }>('getImportConfig', undefined, signal)
     if (
       !Number.isInteger(config?.otlpHttpPort) ||
       config.otlpHttpPort < 1 ||
       config.otlpHttpPort > 65535
     ) {
       throw new Error('The viewer returned an invalid OTLP HTTP port')
+    }
+    if (
+      config.otlpGrpcPort !== undefined &&
+      (!Number.isInteger(config.otlpGrpcPort) ||
+        config.otlpGrpcPort < 1 ||
+        config.otlpGrpcPort > 65535)
+    ) {
+      throw new Error('The viewer returned an invalid OTLP gRPC port')
     }
     return config
   },

@@ -656,7 +656,11 @@
     if (!context || !(target instanceof Element)) return
     const lineKey = target.closest<SVGPathElement>('.metric-series-line')
       ?.dataset.seriesKey
-    if (lineKey && isAggregateLineKey(lineKey)) return
+    if (lineKey && isAggregateLineKey(lineKey)) {
+      emphasis.toggle(lineKey)
+      event.stopPropagation()
+      return
+    }
     const root = target.closest('.lc-root-container')
     if (!root) return
     const bounds = root.getBoundingClientRect()
@@ -824,12 +828,9 @@
   }
 
   let statLabelSizes = $state<
-    Partial<Record<SeriesStatMark['kind'], { width: number; height: number }>>
+    Partial<Record<string, { width: number; height: number }>>
   >({})
-  function measureStatLabel(
-    element: HTMLElement,
-    kind: SeriesStatMark['kind']
-  ) {
+  function measureStatLabel(element: HTMLElement, kind: string) {
     const measure = () => {
       const { width, height } = element.getBoundingClientRect()
       const previous = statLabelSizes[kind]
@@ -959,6 +960,34 @@
     })
   })
 
+  const aggregateLabelPlacements = $derived.by(() => {
+    const ctx = lineChartContext
+    if (!ctx) return []
+    const labels = chartSeries.flatMap(series => {
+      if (!isAggregateLineKey(series.key)) return []
+      const point = series.data.at(-1)
+      if (!point || !Number.isFinite(point.value)) return []
+      return [
+        {
+          kind: series.key,
+          label: series.label,
+          color: series.color,
+          placement: 'right' as const,
+          left: ctx.padding.left + ctx.xScale(point.date),
+          top: ctx.padding.top + ctx.yScale(point.value),
+          title: `Combined ${series.label.toLowerCase()} across checked series\n${formatMetricHoverValue(point.value)}${unit ? ` ${unit}` : ''}\n${formatDateTime(point.date.getTime(), timeContext.tz, 'milliseconds')}`,
+        },
+      ]
+    })
+    // Separate nearby endpoint labels locally, without moving either far from its line.
+    if (labels.length === 2 && Math.abs(labels[0].top - labels[1].top) < 24) {
+      const direction = labels[0].top <= labels[1].top ? -1 : 1
+      labels[0].top += direction * 12
+      labels[1].top -= direction * 12
+    }
+    return labels
+  })
+
   let selectionDots = $derived.by((): SelectionDot[] => {
     if (highlightDate === null) return []
     const dots: SelectionDot[] = []
@@ -1026,7 +1055,10 @@
   const selectionObstacles = $derived.by(() => {
     const context = lineChartContext
     if (!context) return []
-    const labels = seriesStatTooltipPlacements.flatMap(mark => {
+    const labels = [
+      ...seriesStatTooltipPlacements,
+      ...aggregateLabelPlacements,
+    ].flatMap(mark => {
       const size = statLabelSizes[mark.kind]
       if (!size) return []
       // Match the stat label's CSS translation, in the sticky's coordinates.
@@ -1097,7 +1129,9 @@
             {#each chartSeries as series (series.key)}
               {@const emphasized =
                 series.key === emphasizedSeriesKey ||
-                series.key === selectedSeriesKey}
+                series.key === selectedSeriesKey ||
+                emphasis.has(series.key)}
+              {@const aggregate = isAggregateLineKey(series.key)}
               <Spline
                 seriesKey={series.key}
                 curve={series.props?.curve}
@@ -1105,12 +1139,23 @@
                 data-series-key={series.key}
                 data-emphasized={emphasized}
                 onclick={handlePlotClick}
-                strokeWidth={emphasized ? 2.5 : 1.75}
-                style="--metric-series-line-opacity: {emphasized
-                  ? 1
-                  : emphasizedSeriesKey || selectedSeriesKey
-                    ? 0.45
-                    : 0.7}"
+                strokeWidth={aggregate
+                  ? emphasized
+                    ? 4
+                    : 2
+                  : emphasized
+                    ? 2.5
+                    : 1.75}
+                stroke-dasharray={series.props?.['stroke-dasharray']}
+                style="--metric-series-line-opacity: {aggregate
+                  ? emphasized
+                    ? 0.95
+                    : 0.35
+                  : emphasized
+                    ? 1
+                    : emphasizedSeriesKey || selectedSeriesKey
+                      ? 0.45
+                      : 0.7}"
               />
             {/each}
           {/snippet}
@@ -1346,6 +1391,36 @@
             </div>
           </ChartSticky>
         {/if}
+        {#each aggregateLabelPlacements as mark (mark.kind)}
+          <div
+            use:measureStatLabel={mark.kind}
+            class="series-stat-tooltip series-stat-tooltip--right"
+            data-aggregate-label={mark.kind}
+            style:left="{mark.left}px"
+            style:top="{mark.top}px"
+            title={mark.title}
+          >
+            <div class="chart-selection-legend chart-selection-legend--stat">
+              <ul class="chart-selection-legend__rows">
+                <li class="chart-selection-legend__row">
+                  <span
+                    class="chart-selection-legend__dot"
+                    style:--color={mark.color}
+                    aria-hidden="true"
+                  ></span>
+                  <span class="chart-selection-legend__label">
+                    <ChartOverlayLabel
+                      label={mark.label}
+                      description={mark.title}
+                      active={emphasis.has(mark.kind)}
+                      onclick={() => emphasis.toggle(mark.kind)}
+                    />
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        {/each}
         {#each seriesStatTooltipPlacements as mark (mark.kind)}
           <div
             use:measureStatLabel={mark.kind}

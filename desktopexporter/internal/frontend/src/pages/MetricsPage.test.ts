@@ -443,38 +443,42 @@ describe('MetricsPage chart control keyboard navigation', () => {
     setTestUrl('/metrics/metric-1?agg=sum')
     renderWithContexts(MetricsPage)
 
-    const statistics = await screen.findByRole('button', {
-      name: 'Statistics',
+    const sum = await screen.findByRole('checkbox', {
+      name: 'Show combined sum',
     })
-    await user.click(statistics)
-    const combined = screen.getByRole('combobox', { name: 'Combined line' })
-    expect(combined).toHaveValue('sum')
-    await user.selectOptions(combined, 'avg')
-    const overlays = screen.getByRole('checkbox', {
-      name: 'Show Statistics',
+    const average = screen.getByRole('checkbox', {
+      name: 'Show combined average',
     })
-
-    overlays.focus()
-    expect(overlays).toHaveFocus()
-    expect(overlays.closest('.pane-header')).not.toBeNull()
-    expect(overlays).toBeChecked()
+    expect(sum).toBeChecked()
+    expect(average).not.toBeChecked()
+    average.focus()
+    expect(average.closest('.pane-header')).not.toBeNull()
     await user.keyboard(' ')
-    expect(overlays).not.toBeChecked()
-    expect(overlays).toHaveFocus()
-    expect(combined).toHaveValue('avg')
-    await user.click(statistics)
-    expect(statistics).toHaveFocus()
+    expect(average).toBeChecked()
+    expect(average).toHaveFocus()
+    expect(sum).toBeChecked()
+    expect(window.location.search).toContain('agg=sum-avg')
     const rate = screen.getByRole('tab', { name: 'Rate' })
     await user.click(rate)
     expect(rate).toHaveAttribute('aria-selected', 'true')
     await user.click(screen.getByRole('tab', { name: 'Values' }))
-    await user.click(statistics)
-    expect(screen.getByRole('combobox', { name: 'Combined line' })).toHaveValue(
-      'avg'
+    expect(
+      screen.getByRole('checkbox', { name: 'Show combined sum' })
+    ).toBeChecked()
+    expect(
+      screen.getByRole('checkbox', { name: 'Show combined average' })
+    ).toBeChecked()
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Show combined sum' })
     )
     expect(
-      screen.getByRole('checkbox', { name: 'Show Statistics' })
-    ).not.toBeChecked()
+      screen.getByRole('checkbox', { name: 'Show combined average' })
+    ).toBeChecked()
+    expect(window.location.search).toContain('agg=avg')
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Show combined average' })
+    )
+    expect(window.location.search).toContain('agg=raw')
     expect(screen.queryByRole('tab', { name: 'Raw' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Sum' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Average' })).toBeNull()

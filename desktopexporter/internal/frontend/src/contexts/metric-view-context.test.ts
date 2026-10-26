@@ -551,6 +551,7 @@ describe('metric view context aggregation URL sync', () => {
       'raw',
       'sum',
       'avg',
+      'sum-avg',
       'rate',
     ])
   })
@@ -734,7 +735,7 @@ describe('metric view context visibility seeding', () => {
     ctx.setAggregationView('raw')
     await tick()
     const rawSeries = ctx.transformedGaugeSumChartTimeseries
-    for (const mode of ['sum', 'avg'] as const) {
+    for (const mode of ['sum', 'avg', 'sum-avg'] as const) {
       ctx.setAggregationView(mode)
       await tick()
       // Aggregate bucket boundaries must not move or discard source samples,
@@ -743,6 +744,18 @@ describe('metric view context visibility seeding', () => {
         rawSeries
       )
     }
+    const combined = ctx.transformedGaugeSumChartTimeseries.slice(2)
+    expect(combined.map(series => series.key)).toEqual([
+      '__agg:selected__',
+      '__agg:avg:selected__',
+    ])
+    expect(combined.map(series => series.points[0]?.value)).toEqual([14, 7])
+    expect(readRoute().query.agg).toBe('sum-avg')
+    externalNavigationTo('/metrics/m1?agg=raw')
+    await tick()
+    externalNavigationTo('/metrics/m1?agg=sum-avg')
+    await tick()
+    expect(ctx.transformedGaugeSumChartTimeseries.slice(2)).toEqual(combined)
     ctx.visibleSeries.clear()
     await tick()
     expect(ctx.transformedGaugeSumChartTimeseries).toEqual([])

@@ -291,6 +291,14 @@
       <table class="detail-fields w-full" aria-label="Viewer storage">
         <tbody>
           <DetailProperty
+            fieldName="Database"
+            fieldType="string"
+            showType={false}
+            fieldValue={stored.inMemory === undefined
+              ? 'DuckDB'
+              : `DuckDB · ${stored.inMemory ? 'In memory' : 'On disk'}`}
+          />
+          <DetailProperty
             fieldName="Database size"
             fieldType="uint64"
             showType={false}
@@ -336,7 +344,7 @@
 {/snippet}
 
 {#snippet guide()}
-  <DetailBubble label="Getting started" contained>
+  <DetailBubble label="Getting started" contained headerless>
     <GettingStarted {importContent} />
   </DetailBubble>
 {/snippet}

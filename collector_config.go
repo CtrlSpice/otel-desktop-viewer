@@ -41,6 +41,7 @@ func collectorURIs(o configOptions) []string {
 		// through the extension at startup.
 		`yaml:extensions::duckdb::endpoint: "` + endpoint(o.browserPort) + `"`,
 		`yaml:extensions::duckdb::otlp_http_port: ` + strconv.Itoa(o.httpPort),
+		`yaml:extensions::duckdb::otlp_grpc_port: ` + strconv.Itoa(o.grpcPort),
 		`yaml:extensions::duckdb::db: ` + o.db,
 		`yaml:extensions::duckdb::db_max_size: "` + o.dbMaxSize + `"`,
 		`yaml:extensions::duckdb::feature_flags_file: ` + strconv.Quote(o.featureFlagsFile),

@@ -46,6 +46,11 @@ type Server struct {
 	startMu   sync.Mutex
 }
 
+// WithOTLPGRPCPort supplies the receiver port advertised by the setup guide.
+func WithOTLPGRPCPort(port int) Option {
+	return func(s *Server) { s.jsonrpcHandler.otlpGRPCPort = port }
+}
+
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
 	if tel == nil {
 		tel = telemetry.Disabled()

@@ -16,10 +16,11 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
   await page.route('**/rpc', async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {
-      if (method === 'getImportConfig') return { otlpHttpPort: 4318 }
+      if (method === 'getImportConfig')
+        return { otlpHttpPort: 54318, otlpGrpcPort: 54317 }
       if (method === 'getStats')
         return {
-          storage: { sizeBytes: 4096, maxSizeBytes: 0 },
+          storage: { sizeBytes: 4096, maxSizeBytes: 0, inMemory: false },
           traces: {
             traceCount: 2,
             spanCount: 2,
@@ -108,14 +109,26 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     'Drop telemetry JSON files here or anywhere on the screen.'
   )
   await expect(
-    page.locator('[data-detail-section="guide"] summary')
-  ).toHaveText('Getting started')
+    page
+      .locator('[data-detail-section="guide"]')
+      .getByRole('heading', { name: 'OTel Desktop Viewer' })
+  ).toBeVisible()
   await expect(
     page.getByText('Connect an exporter', { exact: true })
   ).toBeVisible()
   await expect(
     page.getByText('Send a test trace', { exact: true })
   ).toBeVisible()
+  const guideCode = page.getByRole('tabpanel', { name: 'HTTP', exact: true })
+  await expect(guideCode).toContainText('http://localhost:54318')
+  await page.getByRole('tab', { name: 'gRPC', exact: true }).click()
+  await expect(
+    page.getByRole('tabpanel', { name: 'gRPC', exact: true })
+  ).toContainText('http://localhost:54317')
+  await expect(
+    page.getByText('Port 4317 is the default.', { exact: false })
+  ).toHaveCount(0)
+  await page.getByRole('tab', { name: 'HTTP', exact: true }).click()
   await expect(page.locator('#signal-drawer-panel')).toContainText(
     'Ingestion issues'
   )
@@ -132,6 +145,8 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
   const guide = page.locator('[data-detail-section="guide"]')
   await storage.locator('summary').click()
   await expect(storage).toHaveAttribute('data-detail-group', 'open')
+  await expect(storage).toContainText('DuckDB · On disk')
+  await expect(storage).toContainText('No size limit')
   expect((await guide.boundingBox())!.height).toBeGreaterThan(
     (await storage.boundingBox())!.height * 2
   )

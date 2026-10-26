@@ -719,11 +719,9 @@ test('series table sorts attributes while retaining checked choices and colours'
   await expect(
     grid.getByRole('button', { name: 'Sort by type', exact: true })
   ).toBeVisible()
-  await page.getByRole('button', { name: 'Statistics', exact: true }).click()
   await page
-    .getByRole('combobox', { name: 'Combined line', exact: true })
-    .selectOption('avg')
-  await page.keyboard.press('Escape')
+    .getByRole('checkbox', { name: 'Show combined average', exact: true })
+    .check()
   await expect.poll(() => requested).toEqual(['b', 'c'])
   await expect(
     page.getByRole('checkbox', { name: /across all series/ })
@@ -2645,6 +2643,97 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
   ).toHaveCount(0)
 })
 
+test('combined sum and average toggle independently and labels emphasize without changing inspection', async ({
+  page,
+}) => {
+  const counterMetadata = {
+    metricType: 'Sum',
+    isMonotonic: true,
+    aggregationTemporalityCode: 2,
+    aggregationTemporality: 'Cumulative',
+  }
+  const buckets = [0, 20, 39].map(index => ({
+    bucketStart: String(BigInt(startMs + index * 1000) * 1_000_000n),
+    sampleCount: 2,
+    sum: (index + 1) * 2,
+    avg: index + 1,
+    rate: null,
+    slope: null,
+    hasReset: false,
+  }))
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    const result =
+      method === 'getMetricView'
+        ? {
+            ...metric,
+            ...counterMetadata,
+            timeseries: timeseries.map(series => ({
+              ...series,
+              datapoints: series.datapoints.map(point => ({
+                ...point,
+                ...counterMetadata,
+              })),
+            })),
+          }
+        : method === 'searchMetricSummaries'
+          ? [{ ...summary, ...counterMetadata }]
+          : method === 'getMetricAggregateView'
+            ? {
+                aggregate: null,
+                scalarAggregate: { all: buckets, selected: buckets },
+              }
+            : undefined
+    if (result === undefined) await route.fallback()
+    else await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+  })
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.goto(
+    `/metrics/${metric.metricRef}?agg=raw&series=first&dp=first-1`
+  )
+  const sum = page.getByRole('checkbox', {
+    name: 'Show combined sum',
+    exact: true,
+  })
+  const average = page.getByRole('checkbox', {
+    name: 'Show combined average',
+    exact: true,
+  })
+  const source = page.locator('.metric-series-line[data-series-key="first"]')
+  const sourceColour = await source.evaluate(
+    element => getComputedStyle(element).stroke
+  )
+  await sum.check()
+  await average.check()
+  await expect(page.locator('[data-aggregate-label]')).toHaveCount(2)
+  await expect(page).toHaveURL(/agg=sum-avg/)
+  const sumLine = page.locator(
+    '.metric-series-line[data-series-key="__agg:total__"]'
+  )
+  const avgLine = page.locator(
+    '.metric-series-line[data-series-key="__agg:avg:total__"]'
+  )
+  await expect(sumLine).toHaveCSS('stroke-width', '2px')
+  await page
+    .locator('[data-aggregate-label="__agg:total__"]')
+    .getByRole('button')
+    .click()
+  await expect(sumLine).toHaveCSS('stroke-width', '4px')
+  await expect(avgLine).toHaveCSS('stroke-width', '2px')
+  expect(new URL(page.url()).searchParams.get('dp')).toBe('first-1')
+  expect(new URL(page.url()).searchParams.get('series')).toBe('first')
+  await expect(source).toHaveCSS('stroke', sourceColour)
+  await sum.uncheck()
+  await expect(sumLine).toHaveCount(0)
+  await expect(avgLine).toBeVisible()
+  await expect(average).toBeChecked()
+  await page.reload()
+  await expect(average).toBeChecked()
+  await expect(sum).not.toBeChecked()
+  await average.uncheck()
+  await expect(page.locator('[data-aggregate-label]')).toHaveCount(0)
+})
+
 test('Rate clicks pin the exact bucket and put slope at the right edge', async ({
   page,
 }) => {
@@ -3100,12 +3189,15 @@ test('series selection drives a separate datapoint section with independent attr
   await expect(mainHeader).toHaveCSS('border-radius', '12px')
   const range = mainHeader.locator('[aria-label="Chart time range"]')
   await expect(
-    mainHeader.getByRole('button', { name: 'Statistics', exact: true })
+    mainHeader.getByRole('checkbox', {
+      name: 'Show combined average',
+      exact: true,
+    })
   ).toBeVisible()
   await expect(
     page
       .locator('.metric-chart-view')
-      .getByRole('checkbox', { name: 'Show Statistics' })
+      .getByRole('checkbox', { name: 'Show combined average' })
   ).toHaveCount(0)
   await expect(range).toHaveCount(0)
   await expect(
@@ -3125,7 +3217,7 @@ test('series selection drives a separate datapoint section with independent attr
       .querySelector('[aria-label="Download metric"]')!
       .getBoundingClientRect()
     const statistics = header
-      .querySelector('[aria-label="Statistics"]')!
+      .querySelector('[aria-label="Show combined average"]')!
       .getBoundingClientRect()
     return {
       statisticsBeforeDownload: statistics.right <= download.left,

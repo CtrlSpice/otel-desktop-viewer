@@ -661,7 +661,7 @@ export type Rejection = {
 }
 
 export type Stats = {
-  storage?: { sizeBytes: number; maxSizeBytes: number }
+  storage?: { sizeBytes: number; maxSizeBytes: number; inMemory?: boolean }
   traces: TraceStats
   logs: LogStats
   metrics: MetricStats

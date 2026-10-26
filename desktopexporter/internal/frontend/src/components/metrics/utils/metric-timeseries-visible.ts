@@ -52,7 +52,11 @@ function isString(value: unknown): value is string {
 
 function isAggregationView(value: unknown): value is AggregationView {
   return (
-    value === 'raw' || value === 'sum' || value === 'avg' || value === 'rate'
+    value === 'raw' ||
+    value === 'sum' ||
+    value === 'avg' ||
+    value === 'sum-avg' ||
+    value === 'rate'
   )
 }
 

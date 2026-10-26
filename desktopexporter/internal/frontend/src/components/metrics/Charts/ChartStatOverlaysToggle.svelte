@@ -1,93 +1,63 @@
 <script lang="ts">
   import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
-  import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
+  import {
+    combinedLineEnabled,
+    withCombinedLine,
+  } from '@/components/metrics/utils/aggregation'
 
   let { ctx }: { ctx: MetricViewContext } = $props()
-  const overlayLabel = $derived(
-    ctx.isHistogramKind ? 'Percentiles' : 'Statistics'
-  )
-  const combinedViews = $derived(
-    ctx.availableAggregationViews.filter(
-      view => view === 'sum' || view === 'avg'
-    )
-  )
+  const combinedModes = ['sum', 'avg'] as const
 </script>
-
-{#snippet annotations()}
-  <label
-    class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
-    data-tip={ctx.isHistogramKind
-      ? 'p50, p95 and p99 of the combined checked series'
-      : ctx.rateSlopeOverlayAvailable
-        ? 'Min/max and selected rate slope'
-        : 'Min/max and average'}
-  >
-    <input
-      type="checkbox"
-      class="checkbox checkbox-xs chart-stat-overlays-toggle__checkbox"
-      checked={ctx.showSelectionStatOverlays}
-      aria-label="Show {overlayLabel}"
-      onchange={e => ctx.setShowSelectionStatOverlays(e.currentTarget.checked)}
-    />
-    <span class="chart-stat-overlays-toggle__label"
-      >{ctx.isHistogramKind
-        ? overlayLabel
-        : ctx.rateSlopeOverlayAvailable
-          ? 'Min / max / slope'
-          : 'Min / max / average'}</span
-    >
-  </label>
-{/snippet}
 
 {#if ctx.showChartStatOverlaysToggleVisible}
   {#if ctx.isHistogramKind}
-    {@render annotations()}
-  {:else}
-    <FilterPopover
-      label="Statistics"
-      compact
-      role="dialog"
-      showHeader={false}
-      triggerClass="btn btn-xs chart-header-control tooltip tooltip-top"
+    <label
+      class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
+      data-tip="p50, p95 and p99 of the combined checked series"
     >
-      {#snippet icon()}<span>Statistics</span>{/snippet}
-      <div class="flex flex-col gap-3">
-        {#if ctx.aggregationView !== 'rate' && combinedViews.length > 0}
-          <label class="flex items-center justify-between gap-3 text-subtle">
-            Combined line
-            <select
-              class="select select-sm text-base-content"
-              aria-label="Combined line"
-              value={ctx.aggregationView}
-              onchange={event => {
-                const value = event.currentTarget.value
-                if (value === 'raw' || value === 'sum' || value === 'avg')
-                  ctx.setAggregationView(value)
-              }}
-            >
-              <option value="raw">Off</option>
-              {#each combinedViews as view (view)}
-                <option value={view}
-                  >{view === 'sum' ? 'Sum' : 'Average'}</option
-                >
-              {/each}
-            </select>
-          </label>
-        {/if}
-        {@render annotations()}
-      </div>
-    </FilterPopover>
+      <input
+        type="checkbox"
+        class="checkbox checkbox-xs"
+        checked={ctx.showSelectionStatOverlays}
+        aria-label="Show Percentiles"
+        onchange={event =>
+          ctx.setShowSelectionStatOverlays(event.currentTarget.checked)}
+      />
+      <span>Percentiles</span>
+    </label>
+  {:else}
+    {#each combinedModes as mode (mode)}
+      {#if ctx.availableAggregationViews.includes(mode)}
+        <label
+          class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
+          data-tip={`${mode === 'sum' ? 'Sum' : 'Sample-weighted average'} of the checked series in each time bucket`}
+        >
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs"
+            checked={combinedLineEnabled(ctx.aggregationView, mode)}
+            aria-label={mode === 'sum'
+              ? 'Show combined sum'
+              : 'Show combined average'}
+            onchange={event =>
+              ctx.setAggregationView(
+                withCombinedLine(
+                  ctx.aggregationView,
+                  mode,
+                  event.currentTarget.checked
+                )
+              )}
+          />
+          <span>{mode === 'sum' ? 'Sum' : 'Average'}</span>
+        </label>
+      {/if}
+    {/each}
   {/if}
 {/if}
 
 <style lang="postcss">
   @reference "../../../app.css";
-
   .chart-stat-overlays-toggle {
-    @apply relative shrink-0 gap-2;
-  }
-
-  .chart-stat-overlays-toggle__label {
-    @apply whitespace-nowrap;
+    @apply relative shrink-0 gap-2 whitespace-nowrap;
   }
 </style>

@@ -25,7 +25,24 @@ import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
  * aggregation across series, not the metric type — those collide
  * naming-wise but the value 'sum' is genuinely about summation.
  */
-export type AggregationView = 'raw' | 'sum' | 'avg' | 'rate'
+export type AggregationView = 'raw' | 'sum' | 'avg' | 'sum-avg' | 'rate'
+
+export function combinedLineEnabled(
+  view: AggregationView,
+  line: 'sum' | 'avg'
+): boolean {
+  return view === line || view === 'sum-avg'
+}
+
+export function withCombinedLine(
+  view: AggregationView,
+  line: 'sum' | 'avg',
+  enabled: boolean
+): AggregationView {
+  const sum = line === 'sum' ? enabled : combinedLineEnabled(view, 'sum')
+  const avg = line === 'avg' ? enabled : combinedLineEnabled(view, 'avg')
+  return sum && avg ? 'sum-avg' : sum ? 'sum' : avg ? 'avg' : 'raw'
+}
 
 /** Compact glyph beside aggregate labels (tooltip, etc.). */
 export function aggregateViewSymbol(view: AggregationView): string | null {
@@ -91,13 +108,13 @@ export function isCumulativeTemporality(temporality: string): boolean {
 export const DEFAULT_AGGREGATION_VIEW: AggregationView = 'raw'
 
 /**
- * Which AggregationView options the dropdown should offer for the
+ * Which AggregationView combinations the chart supports for the
  * current metric. Rules (intersected):
  *
  *   - 'raw' is always available.
  *   - 'sum' / 'avg' require seriesCount >= 2: aggregating one series
  *     produces the same shape as raw (just bucketed), which is not
- *     useful enough to clutter the menu.
+ *     useful enough to offer a combined line.
  *   - 'rate' requires the source to be cumulative-monotonic. This
  *     constraint is shape-driven, not count-driven: rate of a single
  *     cumulative-monotonic counter is the natural per-second view
@@ -121,6 +138,7 @@ export function availableAggregationViews(
   if (seriesCount >= 2) {
     if (metricType === 'Sum') out.push('sum')
     out.push('avg')
+    if (metricType === 'Sum') out.push('sum-avg')
   }
   if (
     metricType === 'Sum' &&
@@ -136,15 +154,23 @@ export function availableAggregationViews(
 export const AGG_KEY_SELECTED = '__agg:selected__'
 export const AGG_KEY_ALL = '__agg:all__'
 export const AGG_KEY_TOTAL = '__agg:total__'
+export const AGG_KEY_AVG_SELECTED = '__agg:avg:selected__'
+export const AGG_KEY_AVG_TOTAL = '__agg:avg:total__'
 
 export type AggregateLineKey =
-  typeof AGG_KEY_SELECTED | typeof AGG_KEY_ALL | typeof AGG_KEY_TOTAL
+  | typeof AGG_KEY_SELECTED
+  | typeof AGG_KEY_ALL
+  | typeof AGG_KEY_TOTAL
+  | typeof AGG_KEY_AVG_SELECTED
+  | typeof AGG_KEY_AVG_TOTAL
 
 export function isAggregateLineKey(key: string): key is AggregateLineKey {
   switch (key) {
     case AGG_KEY_SELECTED:
     case AGG_KEY_ALL:
     case AGG_KEY_TOTAL:
+    case AGG_KEY_AVG_SELECTED:
+    case AGG_KEY_AVG_TOTAL:
       return true
     default:
       return false
@@ -157,9 +183,15 @@ export function aggregateLineLabel(
   view: AggregationView
 ): string {
   switch (key) {
+    case AGG_KEY_AVG_SELECTED:
+    case AGG_KEY_AVG_TOTAL:
+      return aggregateScopeLabel('avg', 'checked')!
     case AGG_KEY_SELECTED:
     case AGG_KEY_TOTAL:
-      return aggregateScopeLabel(view, 'checked') ?? 'checked'
+      return (
+        aggregateScopeLabel(view === 'sum-avg' ? 'sum' : view, 'checked') ??
+        'checked'
+      )
     case AGG_KEY_ALL:
       return aggregateScopeLabel(view, 'all') ?? 'all'
   }
@@ -172,6 +204,8 @@ export function aggregateSummaryScopeLabel(key: AggregateLineKey): string {
       return 'all series'
     case AGG_KEY_SELECTED:
     case AGG_KEY_TOTAL:
+    case AGG_KEY_AVG_SELECTED:
+    case AGG_KEY_AVG_TOTAL:
       return 'selected series'
   }
 }
@@ -182,7 +216,13 @@ export function aggregateSummaryRowLabel(
   view: AggregationView
 ): string {
   const scope = aggregateSummaryScopeLabel(key)
-  const glyph = aggregateViewSymbol(view)
+  const glyph = aggregateViewSymbol(
+    key === AGG_KEY_AVG_SELECTED || key === AGG_KEY_AVG_TOTAL
+      ? 'avg'
+      : view === 'sum-avg'
+        ? 'sum'
+        : view
+  )
   return glyph ? `${scope} ${glyph}` : scope
 }
 
@@ -207,7 +247,12 @@ export function buildAggregateSummaryRows(
     if (value === undefined || !Number.isFinite(value)) continue
     rows.push({
       key,
-      variant: key === AGG_KEY_ALL ? 'secondary' : 'primary',
+      variant:
+        key === AGG_KEY_ALL ||
+        key === AGG_KEY_AVG_SELECTED ||
+        key === AGG_KEY_AVG_TOTAL
+          ? 'secondary'
+          : 'primary',
       label: aggregateSummaryRowLabel(key, view),
       valueText: formatValue(value),
     })

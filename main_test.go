@@ -194,6 +194,7 @@ func TestSelfTelemetryEndpointConfiguresBothSignalsExactly(t *testing.T) {
 
 	joined := strings.Join(collectorURIs(o), "\n")
 	assert.Contains(t, joined, `receivers::otlp::protocols::grpc::endpoint: "127.0.0.1:15317"`)
+	assert.Contains(t, joined, `extensions::duckdb::otlp_grpc_port: 15317`)
 	assert.Equal(t, 2, strings.Count(joined, `endpoint: "http://collector.example:4327"`),
 		"traces and metrics must use the exact supplied endpoint")
 }
