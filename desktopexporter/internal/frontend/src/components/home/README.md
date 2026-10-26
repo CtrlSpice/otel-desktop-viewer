@@ -24,7 +24,7 @@ Home's left pane contains Getting started, the file-drop box, Storage and
 Ingestion issues. The dotted box matches the terminals' width and neutral border
 colour. It has a fixed 96px height, centred content and a 2px dotted outline.
 Pixel Lulu and the OTel Desktop Viewer wordmark form the sidebar header.
-One of the four original humorous subtitles is selected on each Home visit and
+One of four humorous subtitles is selected on each Home visit and
 shown beneath the wordmark, aligned with its left edge, in regular 14px Subtle text. It stays fixed during
 the visit and wraps naturally without changing the aligned header row.
 The import box sits 32px below the subtitle, followed by the exporter/test-trace

@@ -8,7 +8,7 @@
 
   let { importContent }: { importContent?: Snippet } = $props()
   const taglines = [
-    'OpenTelemetry made cozy',
+    'We have OpenTelemetry at home',
     "I'm not changing the name, buddy.",
     'Now with “a lot more functionality”™',
     "I have splintered the ecosystem. Pray I don't splinter it any further.",
