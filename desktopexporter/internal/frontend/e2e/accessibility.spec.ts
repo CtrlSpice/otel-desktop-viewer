@@ -1790,7 +1790,7 @@ test.describe('home page accessibility', () => {
     await expect(trigger).toHaveAttribute('data-tip', 'Sort by: Start Time')
     await expect(trigger).toHaveClass(/header-icon-button/)
     expect((await trigger.boundingBox())!.width).toBeGreaterThan(28)
-    await expect(trigger).toHaveCSS('height', '28px')
+    await expect(trigger).toHaveCSS('height', '32px')
     await expect(controls).toHaveCSS('box-shadow', 'none')
     await expect(trigger).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(trigger).toHaveCSS('font-size', '14px')
@@ -1807,12 +1807,12 @@ test.describe('home page accessibility', () => {
       }
     })
     expect(Math.abs(spacing.centreOffset)).toBeLessThan(1)
-    expect(spacing.spacer).toBeCloseTo(0, 0)
+    expect(spacing.spacer).toBeCloseTo(2, 0)
     const directionIcon = controls.locator('button[title] svg')
     await expect(controls.locator('button[title]')).toHaveClass(
       /header-icon-button/
     )
-    await expect(controls.locator('button[title]')).toHaveCSS('width', '28px')
+    await expect(controls.locator('button[title]')).toHaveCSS('width', '32px')
     await expect(directionIcon).toHaveCSS('rotate', 'none')
 
     await controls

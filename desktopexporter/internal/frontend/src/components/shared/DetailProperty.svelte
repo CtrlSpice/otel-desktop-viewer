@@ -285,12 +285,12 @@
   }
   .detail-property__key {
     @apply min-w-0 font-sans text-xs;
-    color: var(--color-subtle);
+    color: var(--color-primary);
     overflow-wrap: anywhere;
   }
   .detail-property__origin,
   .detail-property__type {
-    color: var(--color-secondary);
+    color: var(--color-subtle);
   }
   .detail-property__qualifier {
     color: var(--color-subtle);

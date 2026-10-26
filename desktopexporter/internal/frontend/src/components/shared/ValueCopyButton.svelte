@@ -125,8 +125,7 @@
 <style lang="postcss">
   @reference "../../app.css";
   .value-copy--grouped {
-    @apply size-6 min-w-6;
-    --header-control-height: 1.5rem;
+    min-width: var(--control-target-size);
     --header-control-padding: 0;
   }
   .value-copy--copied {

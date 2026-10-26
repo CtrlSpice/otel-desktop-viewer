@@ -241,30 +241,36 @@
         disabled={busy}
         onclick={() => inspected && expand(inspected)}>More connections</button
       >{/if}
-    <button
-      class="header-icon-button tooltip tooltip-left"
-      aria-label="Zoom out service map"
-      data-tip="Zoom out"
-      disabled={!layoutReady || nodes.length === 0}
-      onclick={() => transform?.zoomOut()}
-      ><HugeiconsIcon icon={MinusSignIcon} size={16} /></button
+    <div
+      class="header-icon-controls"
+      role="group"
+      aria-label="Service map view"
     >
-    <button
-      class="header-icon-button tooltip tooltip-left"
-      aria-label="Zoom in service map"
-      data-tip="Zoom in"
-      disabled={!layoutReady || nodes.length === 0}
-      onclick={() => transform?.zoomIn()}
-      ><HugeiconsIcon icon={Add01Icon} size={16} /></button
-    >
-    <button
-      class="header-icon-button tooltip tooltip-left"
-      aria-label="Reset service map view"
-      data-tip="Reset view"
-      disabled={!layoutReady || nodes.length === 0}
-      onclick={() => viewRevision++}
-      ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
-    >
+      <button
+        class="header-icon-button tooltip tooltip-left"
+        aria-label="Zoom out service map"
+        data-tip="Zoom out"
+        disabled={!layoutReady || nodes.length === 0}
+        onclick={() => transform?.zoomOut()}
+        ><HugeiconsIcon icon={MinusSignIcon} size={16} /></button
+      >
+      <button
+        class="header-icon-button tooltip tooltip-left"
+        aria-label="Zoom in service map"
+        data-tip="Zoom in"
+        disabled={!layoutReady || nodes.length === 0}
+        onclick={() => transform?.zoomIn()}
+        ><HugeiconsIcon icon={Add01Icon} size={16} /></button
+      >
+      <button
+        class="header-icon-button tooltip tooltip-left"
+        aria-label="Reset service map view"
+        data-tip="Reset view"
+        disabled={!layoutReady || nodes.length === 0}
+        onclick={() => viewRevision++}
+        ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
+      >
+    </div>
   {/snippet}
 </WorkspaceHeader>
 <div class="service-map" aria-busy={busy}>

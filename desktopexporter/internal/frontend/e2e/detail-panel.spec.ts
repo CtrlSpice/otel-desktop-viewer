@@ -765,18 +765,18 @@ test('associated logs reuse summary cards and open the full log without losing t
   })
   const fields = page.getByRole('table', { name: 'Span fields' })
   const key = fields.locator('.detail-property__key').first()
-  const subtle = await key.evaluate(element => {
+  const primary = await key.evaluate(element => {
     const probe = document.createElement('span')
-    probe.style.color = 'var(--color-subtle)'
+    probe.style.color = 'var(--color-primary)'
     element.append(probe)
     const color = getComputedStyle(probe).color
     probe.remove()
     return color
   })
-  await expect(key).toHaveCSS('color', subtle)
+  await expect(key).toHaveCSS('color', primary)
   await expect(fields.locator('.detail-property__value').first()).not.toHaveCSS(
     'color',
-    subtle
+    primary
   )
   await expect(
     associated.getByText('order.delayed', { exact: true })

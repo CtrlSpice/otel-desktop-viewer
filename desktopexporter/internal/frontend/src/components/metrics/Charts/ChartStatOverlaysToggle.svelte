@@ -26,32 +26,38 @@
       <span>Percentiles</span>
     </label>
   {:else}
-    {#each combinedModes as mode (mode)}
-      {#if ctx.availableAggregationViews.includes(mode)}
-        <label
-          class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
-          data-tip={`${mode === 'sum' ? 'Sum' : 'Sample-weighted average'} of the checked series in each time bucket`}
-        >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-xs"
-            checked={combinedLineEnabled(ctx.aggregationView, mode)}
-            aria-label={mode === 'sum'
-              ? 'Show combined sum'
-              : 'Show combined average'}
-            onchange={event =>
-              ctx.setAggregationView(
-                withCombinedLine(
-                  ctx.aggregationView,
-                  mode,
-                  event.currentTarget.checked
-                )
-              )}
-          />
-          <span>{mode === 'sum' ? 'Sum' : 'Average'}</span>
-        </label>
-      {/if}
-    {/each}
+    <div
+      class="header-choice-controls"
+      role="group"
+      aria-label="Combined series"
+    >
+      {#each combinedModes as mode (mode)}
+        {#if ctx.availableAggregationViews.includes(mode)}
+          <label
+            class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
+            data-tip={`${mode === 'sum' ? 'Sum' : 'Sample-weighted average'} of the checked series in each time bucket`}
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              checked={combinedLineEnabled(ctx.aggregationView, mode)}
+              aria-label={mode === 'sum'
+                ? 'Show combined sum'
+                : 'Show combined average'}
+              onchange={event =>
+                ctx.setAggregationView(
+                  withCombinedLine(
+                    ctx.aggregationView,
+                    mode,
+                    event.currentTarget.checked
+                  )
+                )}
+            />
+            <span>{mode === 'sum' ? 'Sum' : 'Average'}</span>
+          </label>
+        {/if}
+      {/each}
+    </div>
   {/if}
 {/if}
 

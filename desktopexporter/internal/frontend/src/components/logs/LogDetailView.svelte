@@ -112,12 +112,18 @@
     {#snippet metaRight()}
       <DetailViewTabs id={detailViewID} bind:view={detailView} />
       {#if log}{#key log.logRef}
-          <ValueCopyButton
-            label="log"
-            tooltip="Copy log"
-            loadText={loadLogJSON}
-          />
-          <ExportButton signal="log" id={log.logRef} />
+          <div
+            class="header-icon-controls"
+            role="group"
+            aria-label="Log actions"
+          >
+            <ValueCopyButton
+              label="log"
+              tooltip="Copy log"
+              loadText={loadLogJSON}
+            />
+            <ExportButton signal="log" id={log.logRef} />
+          </div>
         {/key}{/if}
     {/snippet}
   </PaneHeader>

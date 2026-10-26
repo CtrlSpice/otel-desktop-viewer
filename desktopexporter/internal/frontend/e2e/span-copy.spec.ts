@@ -889,7 +889,8 @@ test('Copy span shares the section heading row and copies only the selected span
     const colors = Object.fromEntries(
       [
         'base-content',
-        'secondary',
+        'primary',
+        'subtle',
         'code-wakaba',
         'code-literal',
         'highlight-low',
@@ -935,7 +936,13 @@ test('Copy span shares the section heading row and copies only the selected span
       .locator('[data-field="name"]')
       .first()
       .locator('.detail-property__type')
-  ).toHaveCSS('color', palette.secondary!)
+  ).toHaveCSS('color', palette.subtle!)
+  await expect(
+    fields
+      .locator('[data-field="name"]')
+      .first()
+      .locator('.detail-property__key')
+  ).toHaveCSS('color', palette.primary!)
   await expect(
     fields.locator('[data-field="kind"] .detail-property__value')
   ).toHaveCSS('color', palette['base-content']!)

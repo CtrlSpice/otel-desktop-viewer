@@ -722,7 +722,11 @@
   {/snippet}
   {#snippet metaRight()}
     {@render headerActions?.()}
-    <div class="header-controls" role="radiogroup" aria-label="Eval view">
+    <div
+      class="header-choice-controls"
+      role="radiogroup"
+      aria-label="Eval view"
+    >
       {#each views as item, index (item.id)}
         {@const label = item.id === 'cost' ? 'Cost · CAD est.' : item.label}
         <button

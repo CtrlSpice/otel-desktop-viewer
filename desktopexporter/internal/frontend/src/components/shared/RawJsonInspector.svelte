@@ -207,7 +207,7 @@
       </label>{/if}
     {#if showStatus && status}<RawJsonStatus {status} />{/if}
     <div
-      class="header-controls ml-auto shrink-0"
+      class="header-icon-controls ml-auto shrink-0"
       role="group"
       aria-label="JSON folding"
     >

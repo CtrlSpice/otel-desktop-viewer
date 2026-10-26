@@ -215,8 +215,8 @@ svg {
 .btn.chart-header-control,
 .btn.header-tab {
   @apply rounded-lg border-0 text-sm font-normal;
-  height: var(--header-control-height, 2rem);
-  min-height: var(--header-control-height, 2rem);
+  height: var(--header-control-height, var(--control-target-size));
+  min-height: var(--header-control-height, var(--control-target-size));
   padding-inline: var(--header-control-padding, 0.5rem);
   line-height: 1.5;
   --btn-noise: none;
@@ -227,14 +227,27 @@ svg {
 
 .header-controls {
   @apply inline-flex min-w-0 items-center;
-  gap: var(--header-gap);
+  gap: var(--control-group-gap);
   line-height: 1.5;
+}
+
+.header-icon-controls,
+.header-choice-controls {
+  @apply inline-flex min-w-0 items-center;
+}
+
+.header-icon-controls {
+  gap: var(--control-icon-gap);
+}
+
+.header-choice-controls {
+  gap: var(--control-choice-gap);
 }
 
 .header-tabs {
   @apply relative isolate inline-grid shrink-0;
   grid-template-columns: repeat(var(--header-tab-count), minmax(0, 1fr));
-  column-gap: var(--header-gap);
+  column-gap: var(--control-choice-gap);
 }
 
 .btn.header-tab {
@@ -610,7 +623,9 @@ html[data-theme] .cm-completionDetail::before {
 
 /* Shared round controls for copy actions and chart overlays. */
 .header-icon-button {
-  @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
+  @apply inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
+  width: var(--control-target-size);
+  height: var(--control-target-size);
   color: var(--color-subtle);
 }
 

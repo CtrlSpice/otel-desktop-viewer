@@ -1074,38 +1074,44 @@
       {/if}
     {/snippet}
     {#snippet metaRight()}
-      <button
-        type="button"
-        class="btn btn-xs chart-header-control tooltip tooltip-left"
-        onclick={() => setAll(true)}
-        disabled={collapsibleSpanIDs.length === 0}
-        aria-label="Collapse all spans"
-        data-tip="Collapse all spans"
+      <div
+        class="header-icon-controls"
+        role="group"
+        aria-label="Span disclosure"
       >
-        <HugeiconsIcon
-          icon={UnfoldLessIcon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-4 w-4"
-          aria-hidden="true"
-        />
-      </button>
-      <button
-        type="button"
-        class="btn btn-xs chart-header-control tooltip tooltip-left"
-        onclick={() => setAll(false)}
-        disabled={collapsibleSpanIDs.length === 0}
-        aria-label="Expand all spans"
-        data-tip="Expand all spans"
-      >
-        <HugeiconsIcon
-          icon={UnfoldMoreIcon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-4 w-4"
-          aria-hidden="true"
-        />
-      </button>
+        <button
+          type="button"
+          class="btn btn-xs chart-header-control tooltip tooltip-left"
+          onclick={() => setAll(true)}
+          disabled={collapsibleSpanIDs.length === 0}
+          aria-label="Collapse all spans"
+          data-tip="Collapse all spans"
+        >
+          <HugeiconsIcon
+            icon={UnfoldLessIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="btn btn-xs chart-header-control tooltip tooltip-left"
+          onclick={() => setAll(false)}
+          disabled={collapsibleSpanIDs.length === 0}
+          aria-label="Expand all spans"
+          data-tip="Expand all spans"
+        >
+          <HugeiconsIcon
+            icon={UnfoldMoreIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
       <WaterfallColumnsPicker
         options={availableColumns}
         selected={selectedColumns}

@@ -62,6 +62,8 @@
     embedded?: boolean
     /** Editor only: the caller supplies its surrounding layout and Copy action. */
     bare?: boolean
+    /** Disable soft wrapping for shell snippets with deliberate line breaks. */
+    wrap?: boolean
   }
 
   let {
@@ -71,6 +73,7 @@
     copyLabel = 'Copy to clipboard',
     embedded = false,
     bare = false,
+    wrap = true,
   }: Props = $props()
 
   let mountEl: HTMLDivElement | undefined = $state()
@@ -88,7 +91,7 @@
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
-          EditorView.lineWrapping,
+          ...(wrap ? [EditorView.lineWrapping] : []),
           ...(bare
             ? [
                 EditorView.theme({

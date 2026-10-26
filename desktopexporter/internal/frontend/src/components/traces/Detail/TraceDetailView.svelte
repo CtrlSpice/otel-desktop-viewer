@@ -498,10 +498,6 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .span-fields :global(.detail-property__key) {
-    color: var(--color-subtle);
-  }
-
   /* Repeats the waterfall's cycle marks where the reader is actually
      looking. Same split as the rows: warning gold for every stranded span,
      error red for the retained cycle point. */

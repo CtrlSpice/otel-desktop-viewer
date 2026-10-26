@@ -23,7 +23,7 @@
     { id: 'grpc', label: 'gRPC' },
   ]
   const code = $derived(
-    `export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${protocol === 'http' ? (httpPort ?? 4318) : (grpcPort ?? 4317)}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="${protocol === 'http' ? 'http/protobuf' : 'grpc'}"\nexport OTEL_SERVICE_NAME="my-service"`
+    `export OTEL_EXPORTER_OTLP_ENDPOINT=\\\n"http://localhost:${protocol === 'http' ? (httpPort ?? 4318) : (grpcPort ?? 4317)}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL=\\\n"${protocol === 'http' ? 'http/protobuf' : 'grpc'}"\nexport OTEL_SERVICE_NAME="my-service"`
   )
   const example = $derived(
     `otel-cli exec \\\n  --endpoint http://localhost:${httpPort ?? 4318} \\\n  --protocol http/protobuf \\\n  --service my-service \\\n  --name "test trace" \\\n  -- sleep 1`
@@ -59,8 +59,7 @@
   <section class="flex flex-col gap-2">
     <h2 class="text-lg font-normal">Connect an exporter</h2>
     <p class="text-subtle">
-      Set these variables in the terminal that starts your
-      OpenTelemetry-instrumented app.
+      Set these variables in the terminal where you start your instrumented app.
     </p>
     <div
       class="overflow-hidden rounded-xl border border-(--color-highlight-high) bg-base-100"
@@ -93,6 +92,7 @@
         <ReadonlyCodePanel
           {code}
           bare
+          wrap={false}
           ariaLabel="OTLP exporter environment variables"
         />
       </div>
@@ -131,6 +131,7 @@
         <ReadonlyCodePanel
           code={example}
           bare
+          wrap={false}
           ariaLabel="otel-cli example commands"
         />
       </div>

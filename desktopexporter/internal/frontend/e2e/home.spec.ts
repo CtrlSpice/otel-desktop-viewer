@@ -87,6 +87,13 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     .getByRole('button', { name: /^checkout/ })
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Reset service map view' }).click()
+  const mapControls = page.getByRole('group', { name: 'Service map view' })
+  await expect(mapControls).toHaveCSS('gap', '2px')
+  expect((await mapControls.boundingBox())!.width).toBeCloseTo(100, 0)
+  for (const button of await mapControls.getByRole('button').all()) {
+    await expect(button).toHaveCSS('width', '32px')
+    await expect(button).toHaveCSS('height', '32px')
+  }
   await expect(card.locator('.signal-row__title')).toHaveCSS(
     'font-size',
     '17px'
@@ -243,6 +250,17 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await expect(left.locator('.signal-row')).toHaveCount(0)
   await expect(guideScroll).toHaveCSS('overflow-y', 'auto')
   await expect(guide).toContainText('http://localhost:54318')
+  const environment = guide.getByRole('textbox', {
+    name: 'OTLP exporter environment variables',
+  })
+  await expect(environment).toHaveCSS('white-space', 'pre')
+  await expect(environment.locator('.cm-line')).toHaveCount(5)
+  await expect(environment.locator('.cm-line').nth(0)).toHaveText(
+    'export OTEL_EXPORTER_OTLP_ENDPOINT=\\'
+  )
+  await expect(environment.locator('.cm-line').nth(1)).toHaveText(
+    '"http://localhost:54318"'
+  )
   const headerY = (await serviceHeader.boundingBox())!.y
   await guideScroll.evaluate(element => {
     element.scrollTop = element.scrollHeight

@@ -64,6 +64,10 @@
   );
   --app-footer-height: 2.75rem;
   --header-gap: 0.5rem;
+  --control-icon-gap: 0.125rem;
+  --control-choice-gap: 0.25rem;
+  --control-group-gap: 0.5rem;
+  --control-target-size: 2rem;
   --header-counter-min-width: 1rem;
   --signal-card-row-h: 1.5rem;
   --header-padding: 0.5rem;

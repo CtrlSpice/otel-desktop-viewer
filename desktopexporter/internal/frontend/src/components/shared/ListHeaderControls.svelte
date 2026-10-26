@@ -25,7 +25,8 @@
     @apply flex min-w-0 w-full items-center gap-2 text-sm font-normal;
   }
   .list-header-controls__sort {
-    @apply flex min-w-0 items-center gap-0;
+    @apply flex min-w-0 items-center;
+    gap: var(--control-icon-gap);
   }
   .list-header-controls__filters {
     @apply ml-auto flex shrink-0 items-center gap-2;

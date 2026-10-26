@@ -33,6 +33,8 @@ instructions in the same scrollable guide. Major groups have 32px gaps; each
 instruction section groups its heading, description and code with 8px gaps.
 The scrollable guide has no horizontal padding, so the import box and setup
 instructions use the pane's full content width.
+Shell snippets use explicit backslash continuations and native horizontal
+scrolling rather than soft wrapping. Copy retains the executable command text.
 The box opens the multi-file JSON/JSONL picker and says “Drop telemetry JSON
 files here or anywhere on the screen.” File dropping works across the app.
 Getting started retains its accessible section name and stays open as the primary
@@ -88,6 +90,8 @@ current page. Changing pages preserves the selected attribute and expansion stat
 The right-hand Details pane contains matching records. Its single header row
 offers shared Traces, Metrics and Logs tabs with known matching-record counts.
 When no attribute heading is shown, these tabs share the full header width evenly.
+Tabs use the shared 4px choice gap. Service map view buttons use 32px targets
+with the shared 2px icon-control gap.
 The redundant visible Telemetry label is omitted; the section retains its
 accessible name. An inspected attribute keeps its actual field name and metadata.
 Choices switch immediately; arrow, Home and End keys navigate available signals.
