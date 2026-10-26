@@ -63,7 +63,6 @@
   import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
 
   let yAxisInset = $state<number>(fallbackPadding.left)
-  const chartPadding = $derived({ ...fallbackPadding, left: yAxisInset })
 
   const emphasis = createOverlayEmphasis()
 
@@ -956,6 +955,27 @@
     }
 
     return marks
+  })
+
+  // Reserve the rendered card width, its 8px anchor gap and 8px outer clearance.
+  // The observer also remeasures when fonts or text size change.
+  const rightLabelKeys = $derived([
+    ...seriesStatMarks
+      .filter(mark => mark.kind === 'avg' || mark.kind === 'slope')
+      .map(mark => mark.kind),
+    ...chartSeries
+      .filter(series => isAggregateLineKey(series.key))
+      .map(series => series.key),
+  ])
+  const chartPadding = $derived({
+    ...fallbackPadding,
+    left: yAxisInset,
+    right: Math.max(
+      fallbackPadding.right,
+      ...rightLabelKeys.map(
+        key => Math.ceil(statLabelSizes[key]?.width ?? 0) + 16
+      )
+    ),
   })
 
   /** Min/max labels stay on their points; average and slope use the right edge. */

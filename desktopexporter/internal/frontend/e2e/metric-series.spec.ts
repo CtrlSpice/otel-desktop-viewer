@@ -2645,6 +2645,28 @@ test('extrema use the series colour and the backed average stays behind the seri
     'opacity',
     '0.35'
   )
+  for (const [width, fontSize] of [
+    [1200, 16],
+    [1920, 24],
+  ] as const) {
+    await page.setViewportSize({ width, height: 1100 })
+    await page.locator('html').evaluate((element, size) => {
+      element.style.fontSize = `${size}px`
+    }, fontSize)
+    await expect
+      .poll(() =>
+        averageLabel.evaluate(element => {
+          const label = element.getBoundingClientRect()
+          const plot = element
+            .closest('.metric-time-series-chart__plot')!
+            .getBoundingClientRect()
+          return plot.right - label.right
+        })
+      )
+      .toBeGreaterThanOrEqual(7.5)
+    await expect(emphasis).toHaveText('Series avg')
+    await expect(emphasis).toHaveCSS('font-size', `${fontSize * 0.875}px`)
+  }
 })
 
 test('a new single-point cumulative counter opens in Raw without preferences', async ({
