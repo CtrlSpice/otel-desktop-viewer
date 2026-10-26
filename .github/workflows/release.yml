@@ -115,7 +115,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
-          version: v2.16.0
+          version: v2.19.0
           # GGOOS and GGOARCH select the partial target.
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
@@ -144,12 +144,18 @@ jobs:
           fi
           echo "Partial artifacts ready in $dir:"
           find "$dir" -type f | head -20
-      - name: Cache GoReleaser contexts
-        uses: actions/cache@v6
+      # Tar preserves executable permissions, symlinks and hidden context files.
+      - name: Archive GoReleaser context
+        shell: bash
+        run: tar -czf "${{ matrix.build_id }}.tar.gz" -C dist "${{ matrix.goos }}_${{ matrix.goarch }}"
+      - name: Upload GoReleaser context
+        uses: actions/upload-artifact@v7
         with:
-          path: dist/${{ matrix.goos }}_${{ matrix.goarch }}
-          key: ${{ matrix.goos }}-${{ matrix.goarch }}-${{ github.sha }}
-          enableCrossOsArchive: ${{ matrix.os == 'windows-latest' }}
+          name: goreleaser-context-${{ matrix.build_id }}
+          path: ${{ matrix.build_id }}.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
 
 
@@ -165,32 +171,20 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: '1.26'
-      - name: Restore GoReleaser build artifacts (darwin-amd64)
-        uses: actions/cache@v6
+      - name: Download GoReleaser contexts from this run
+        uses: actions/download-artifact@v8
         with:
-          path: dist/darwin_amd64
-          key: darwin-amd64-${{ github.sha }}
-      - name: Restore GoReleaser build artifacts (darwin-arm64)
-        uses: actions/cache@v6
-        with:
-          path: dist/darwin_arm64
-          key: darwin-arm64-${{ github.sha }}
-      - name: Restore GoReleaser build artifacts (linux-amd64)
-        uses: actions/cache@v6
-        with:
-          path: dist/linux_amd64
-          key: linux-amd64-${{ github.sha }}
-      - name: Restore GoReleaser build artifacts (linux-arm64)
-        uses: actions/cache@v6
-        with:
-          path: dist/linux_arm64
-          key: linux-arm64-${{ github.sha }}
-      - name: Restore GoReleaser build artifacts (windows-amd64)
-        uses: actions/cache@v6
-        with:
-          path: dist/windows_amd64
-          key: windows-amd64-${{ github.sha }}
-          enableCrossOsArchive: true
+          pattern: goreleaser-context-*
+          path: release-contexts
+          merge-multiple: true
+      - name: Extract GoReleaser contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in macos_amd64 macos_arm64 linux_amd64 linux_arm64 windows_amd64; do
+            tar -xzf "release-contexts/${target}.tar.gz" -C dist
+          done
       - name: Verify restored GoReleaser partial artifacts
         shell: bash
         run: |
@@ -210,7 +204,7 @@ jobs:
             fi
           done
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "::error::Missing or empty GoReleaser partial artifacts (cache miss?): ${missing[*]}"
+            echo "::error::Missing or empty GoReleaser partial artifacts: ${missing[*]}"
             find dist -type f 2>/dev/null || true
             exit 1
           fi
@@ -240,7 +234,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
-          version: v2.16.0
+          version: v2.19.0
           args: continue --merge
         env:
           GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
