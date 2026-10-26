@@ -1,205 +1,101 @@
 # Evals workspace
 
-## Normalized results
+Evals is experimental and unsupported. It requires an `EVALS=1` build and an
+enabled local `evals.enabled` flag. Public `EVALS=0` builds omit the workspace and
+its HTTP handlers; a runtime flag cannot add omitted code.
 
-The current hierarchy is **Experiment → Test case → Result**. Output is the model's
-returned content; a Result also holds assessments, timing and recorded tool evidence.
-Native result IDs are shown with the shared Identifier component and retained in
-Details. Results have no displayed repetition number. Default ordering uses
+The build and capability contract is documented in `docs/experimental-features.md`.
+Supported input, exact source preservation, database indexing and search are
+documented in `docs/eval-ingestion.md`.
+
+## Data and navigation
+
+The global file picker/drop queue imports complete Promptfoo v3 envelopes through
+the Evals ingestion endpoint. Experiment cards read database-wide summaries; the
+workspace loads source results for the selected experiment. The shared database
+retains the processed source evidence and rebuildable indexes.
+
+`model.ts` is a presentation model, not an import contract. Experiment
+configuration, assessment names, score scales and overall judgments come from
+received data. Opening the workspace does not launch a model or grading job.
+Synthetic examples in `examples.ts` support development and tests; they are not
+the database storage contract or a completed usability cohort.
+
+Experiment/result selection and search are URL-backed. Browser history restores
+selection. Disclosures, pane geometry and column widths retain their own state.
+The workspace reuses shared navigation, signal cards, field cards, resizable
+panels and tree controls.
+
+## Results and evidence
+
+The normalized hierarchy is **Experiment → Test case → Result**. Native result
+identities remain intact. Results have no displayed ordinal; ordering uses
 available start times, with stable source order for ties and unavailable times.
+A singleton without repetition metadata displays its evidence on the test case.
 
-The Promptfoo adapter groups complete native test definitions and resolved variables
-within each provider/prompt group. Each native result remains separate. A singleton
-without repetition metadata displays its evidence directly on the test case.
-Execution/grading are roles, not unconditional wrapper rows. Explicit distinct
-execution spans and recorded tool/grader evidence can add children. Assertion-only
-results remain assessments in Details. Native scores and assertion reasons are
-displayed without inventing a maximum; missing tool detail remains unknown.
+Execution and grading are roles, not mandatory wrapper rows. Explicit execution
+spans and recorded tool/grader evidence can supply children. Assessments alone
+do not manufacture grading spans, parentage or execution timing. A failed
+assessment remains distinct from an execution error.
 
-The database ingestion/API contract is documented in `docs/eval-ingestion.md`.
-Selection routes use `experiment`/`result`; opaque source identities retain their
-original values, including the adapter's `"run"` identity namespace.
+Results, Tool calls and Cost form a single-select view control. Selection,
+disclosure and section sizes persist across views. Tool calls and Cost are
+unavailable when the experiment has no corresponding recorded data; known zero
+measurements remain available. Missing measurements are not inferred as zero.
 
-The Result row's **Assessment** cell shows the producer's recorded overall judgment.
-Result Details groups judgments under **Assessments**, with the producer's combined
-judgment labelled **Overall** and individual assessments retaining their names.
-These judgments do not add tree levels or imply grading spans.
+Received trace/span references connect evidence to exact stored telemetry.
+Telemetry cards open the trace workspace; Evals does not embed a second span
+inspector. Tree disclosures and row selection remain independent.
 
-The `/evals` frontend is a fixture-backed workspace for developing the Evals
-experience before implementing ingestion and storage. It uses the existing
-drawer, resizable panels, headers, field groups and trace viewer.
-App-wide navigation, search and controls live above the drawer in
-`shared/Toolbar/WorkspaceToolbar.svelte`. Detail field cards reuse
-`shared/DetailProperty.svelte` for logs, traces and Evals. The server's
-`/api/features` capability gates navigation and loading; Evals remains off by
-default and is labelled experimental and unsupported.
+Timing prefers referenced spans, then available child timing extents, then
+recorded durations. Child durations are not summed into an elapsed window.
+Duration-only records do not acquire an invented start offset or trace reference.
+Missing timing stays unavailable. The timeline uses shared waterfall geometry,
+service/span colours and error indicators.
 
-`examples.ts` supplies clearly labelled, synthetic experiments, including a completed
-experiment, a paused investigator, missing assessments and unstarted work. Each of the
-eight cases has one, two or three repetitions (16 results per experiment). Results retain a shared
-case ID and distinct result/telemetry IDs; repetition 1 keeps the original URLs.
-These are
-not the completed viewer-usability cohort and do not establish a new rubric.
-No model calls, launch controls or persistence writes occur when opening Evals.
+Costs are presentation-only API estimates in CAD, with dated pricing and exchange
+rate provenance. Investigator and grader costs stay separate. Unknown and partial
+estimates are explicit, and parent estimates are not added again to child totals.
 
-`model.ts` is a presentation model, not an import contract. Experiment configuration,
-assessment names, score scales, headline assessment and aggregation rules belong
-to the supplied data. Storage integration should replace the fixture source;
-the **Search evals** control currently filters only loaded fixture results and
-their assessment text. It does not execute the viewer's DuckDB search language.
+## Details
 
-Experiment/result selection and the result filter are URL-backed. Browser history
-returns to the selected experiment/result; detail disclosures are local UI state and
-existing panel widths remain resizable. Column headings sort the loaded results
-locally in ascending or descending order.
-Scores sort by their numeric value, not outcome labels. Cases stay together,
-ranked by their first sorted visible result; repetitions sort within each case.
-Missing measurements stay last within each case in both directions; cases with
-no known measurements come last. Ties preserve source order and sorting preserves selection.
-Columns use the shared resize geometry, drag lifecycle and handles. Widths are
-saved by column ID across group combinations. Handles follow the visible table bounds, including
-the footer, and stop before unused space below the last row.
+Details shows the selected experiment, case, result or evidence row. Output,
+assessments, source context and Telemetry retain their own sections. A received
+overall assessment appears as Overall; independent judgments keep their names,
+scores, explanations and provenance. Copy and raw source inspection preserve
+received values and types.
 
-The main pane has independent Results / Tool calls / Cost toggle buttons. Results
-starts on; any combination can be shown, including none (Case, Result and Duration remain).
-Native buttons expose `aria-pressed` and toggle with Enter or Space. They reuse
-the shared header control styling: active icons use Primary, inactive icons and
-all labels use Text, with no persistent selected fill. Results contains assessments;
-Tool calls contains call and failure counts; Cost contains investigator and grader estimates. Tool branches remain available independently of these toggles. Case and Result
-remain visible in each combination. Column order is always Case · Result, Duration,
-Tool calls, Results, Cost, regardless of activation order. Case width stays stable
-across toggles; Duration absorbs spare width. Combinations share collapse state,
-result selection and saved widths, with independent sorting. The assessment
-legend appears whenever Results is shown; otherwise Tool calls/Cost use the execution
-legend. Each table has one regular-weight
-heading row. Logs and the trace waterfall retain their shared Columns picker.
-Case names stay on one line with ellipsis; hover retains the full name. Cases
-with multiple results share a parent row with aggregate values and branch to
-their repetition rows. A case with one result renders that result directly,
-with its name selecting Details, duration and assessment on the same row.
-Filtering a multi-result case down to one visible result does not flatten it.
-Branches reuse the waterfall's rounded 1px Muted
-connectors at 50% opacity. Result rows select their Details; all values stay
-under their column headings. Case completion uses every result, including
-results hidden by the current filter.
-Case collapse uses the same TreeRowIdentity, TreeGutter, TreeChildCount and TreeToggle components
-as traces. A plain parenthesised child count sits in the left gutter before the dot,
-using global 14px/21px Atkinson Next typography and Subtle text. The count rail reserves enough width for
-the largest count and keeps ancestor connectors aligned on leaves and parents.
-The whole gutter is one full-height button; Enter and Space toggle it without changing result selection.
-The identity heading is `Experiment · Test case · Result`, with test-name and start-time sorting.
-Their compact heading slots and branches are measured from rendered labels,
-padding and shared tree spacing. The combined identity area keeps its resized width
-when groups change; Duration takes the spare width.
-The branch gutter stays fixed; the identity area and answer columns use shared
-resize handles. Native result IDs use Subtle.
-Resizing stays within the available table width and stops at readable column
-minimums. Horizontal scrolling is needed only when those minimums cannot fit.
-Case and Result pin to the left during horizontal scrolling, including their heading,
-connectors and the Total label. Case titles truncate in the combined identity area.
-As in Logs, pinning releases when the pane cannot fit
-the pinned columns plus one complete scrolling column. Saved widths and shared
-hover/selection motion remain intact.
-Assessment dots, labels and numeric fractions stay together at the left; case
-percentages align above them. Measurements and their headings also align left.
-Duration is always present, directly after Case · Result. Its header uses the shared waterfall timing ruler, with the
-same guide renderer behind the bars and one aligned plotting width per column.
-Stored span timings take precedence for
-bars, sorting and totals. Otherwise a recorded eval duration draws a plain,
-unlinked bar; absent durations leave the cell empty. Zero is a recorded duration,
-not a missing value. Hover distinguishes recorded eval durations from span data.
-Linked bars open their exact trace/span. Both kinds reuse DurationBar and the
-waterfall's SpanBar component. Tool bars use their recorded start offsets within each question, with
-one duration scale across questions. When a stored experiment span exists, all linked
-bars use one experiment-wide timeline. Bounds include early starts and late ends, so
-children outside a parent span are not clipped. With a missing question span,
-its earliest stored tool supplies the local origin. Hover shows the start offset;
-duration labels follow bar ends. Tool calls include failed calls; Failures counts those
-calls separately for each repetition and the full case. Cost keeps
-investigator and grader estimates separate. The Total footer aligns each estimate
-under its visible cost column, with unknown and partial estimates explicit. Its
-top divider is a solid 1px Muted line at 60% opacity. The footer appears whenever Cost is enabled.
-Totals cover the shown results; drawer summaries cover the whole experiment.
-The duration table fetches only explicit experiment, question/result and tool-call span references,
-using exact trace/span pairs and batches of at most 64 lightweight timing rows.
-It does not load trace trees, attributes or logs. Experiment spans appear when the experiment
-has a reference; question rows can fan out to their tool calls using the same
-tree gutter, counts and collapse control as traces. Tool expansion preserves
-result selection. When neither a stored span nor a recorded duration is available,
-the empty cell's tooltip explains missing references, missing spans or request
-errors. Case duration totals sum question durations (not nested tool durations),
-retain exact span nanoseconds and mark partial totals explicitly. Plain eval
-durations never acquire a trace link or an inferred start offset.
+Experiment Configuration and Grading are sibling, initially collapsed sections.
+The shared Details stack keeps section identity and disclosure during navigation
+and resizing. Plain text, small meaningful dots and regular Atkinson typography
+match the other signal workspaces.
 
-Experiment cards show a proportional breakdown and every outcome in a visible list,
-with neutral labels, small colour dots and exact result counts. Neutral outcome
-fills use base-300. Completion dots use base-300 for Planned, Iris for in-progress,
-Pine for Complete and Papaya for execution errors or interrupted experiments. Assessment
-success dots and bars use Foam, independently of completion. Experiment statuses use
-neutral text and small status dots. Planned
-cards show only their title and `Planned (count)` status. Completed counts are omitted only
-when the experiment is complete and every result completed; graded counts appear only
-when they differ from completed counts. The labelled score is not a pass rate.
-Clicking the card selects the experiment and opens Details. Tiny bar groups have an 8px
-visual minimum. Outcome grouping and the headline assessment mean remain separate.
-Experiment metadata uses the shared working text size and continuous card rows, with
-regular-weight scores. Metadata wraps when needed instead of shrinking text.
-Assessments use neutral text with small decorative outcome dots;
-counts are plain text. Tables, Details and summaries use the shared 14px working
-size, regular weight and row spacing. Colour is never the only status label.
+## Local use
 
-Details separate the question from the selected result. Question and output
-are prose with Copy actions; state appears in the result heading.
-Timing and accounting belong to the result, alongside its Telemetry section.
-Assessment explanations precede optional grading metadata; execution errors stay
-visible beside the answer.
+From the repository root:
 
-Promptfoo owns native test/repetition scheduling and grading results. The active
-usability suite uses `llm-rubric`; its evidence supplier does not orchestrate or
-parse grading. Questions and rubrics remain in `tasks.json` and `rubrics.json`.
-A repeated question does not make outputs, explanations, usage or telemetry shared.
-Rubric and evaluator provenance remain attached to each assessment.
+```sh
+make build EVALS=1
+./otel-desktop-viewer --feature-flags-file ./feature-flags.json
+```
 
-The standalone saved-results report remains a separate presentation. Its
-Trace / Span links target this viewer's existing trace routes; the report's
-score-column positions do not define Evals experiment identities. Import, storage-backed
-search and launch behavior are still proposed in
-`notes/evals-observer-integration-plan.md`.
+Set the local `evals.enabled` flag's `defaultVariant` to `"on"`; the repository
+configuration defaults it to off. Then open `/evals` and import supported results.
 
-## Try it
+For hot-reload development, run this from `desktopexporter/internal/frontend`
+against that enabled backend:
 
-1. Start a local viewer with an explicit flag file enabling `evals.enabled`.
-2. Open `/evals`, or start Vite with `VIEWER_PROXY_TARGET=http://127.0.0.1:PORT`
-   pointing to that viewer. Vite proxies feature capabilities, RPC and export.
-3. Optionally load matching synthetic investigator, tool and grader spans into
-   that viewer's OTLP HTTP receiver:
+```sh
+EVALS=1 VIEWER_PROXY_TARGET=http://127.0.0.1:8000 npm run dev
+```
 
-   ```sh
-   node scripts/seed-eval-examples.mjs http://127.0.0.1:OTLP_PORT
-   ```
-
-Use a development instance for the examples. They are labelled with the
-`eval-ui-examples` service and `eval.example=true`. Without seeding, their trace
-references have no corresponding telemetry in the viewer. The example timestamps
-are on 16 October 2026; use an appropriate time window when browsing signals.
+Use the backend's configured browser port if it differs from 8000. Vite proxies
+capabilities, RPC, ingestion and export to the existing backend.
 
 ## Checks
 
-`e2e/evals.spec.ts` exercises gating, selection/history, separate assessments,
-filters, unknown costs, and desktop/mobile accessibility in Day and Night.
-Run the normal frontend checks and rebuild embedded assets after changes.
-
-# Case totals
-
-Each case has a collapsible parent row with its name, plain repetition count,
-and normal-Text aggregates aligned with the visible data columns. The circle/count
-gutter toggle (shared with the waterfall) opens its repetitions with pointer,
-Enter or Space without changing
-result selection. Expanded repetition values use Subtle. Case and Result headings
-stay together, with compact branches and repetition numbers beneath them;
-the wider combined identity area accommodates the parent name. Each assessment uses its own percentage and declared
-planned/scored denominator. Duration sums recorded repetition durations; calls
-include failures; costs remain estimates. Missing measurements stay Unknown or
-explicitly partial. Case totals include all repetitions, even when some are
-filtered out, matching the case completion state; their accessible label and
-tooltips identify this scope.
+Run frontend checks with `EVALS=1` to include the Evals browser suites:
+`e2e/evals.spec.ts`, `e2e/eval-source-copy.spec.ts` and
+`e2e/eval-mounted-state.spec.ts`. They cover gating, source fidelity, navigation,
+selection/disclosure independence and mounted state. Rebuild enabled assets with
+`make build-ts EVALS=1`; committed embedded assets remain the public build.
