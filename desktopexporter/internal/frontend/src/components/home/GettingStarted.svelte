@@ -166,6 +166,6 @@
   .guide-subtitle {
     @apply text-balance text-sm text-subtle;
     grid-column: 2;
-    padding-block-start: 0.25rem;
+    margin-block-start: -0.5rem;
   }
 </style>
