@@ -162,7 +162,7 @@ search and editor Find remain separate controls.
 | Subtle: keys, headers and helper text | Usuzumi 1    |
 | Muted: unavailable and disabled       | Kasure 1     |
 | Primary / focus                       | Iris         |
-| Secondary / metadata                  | Rose         |
+| Secondary / metadata                  | Pine         |
 | Accent                                | Foam         |
 | Info                                  | Pine         |
 | Success                               | Foam         |
@@ -187,14 +187,14 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 The interface uses six complementary roles inspired by Rosé Pine's balance, with
 colours derived from the pinned Madoromi ink curves:
 
-| Role | Ink              | Character and use                                      |
-| ---- | ---------------- | ------------------------------------------------------ |
-| Iris | Murasaki-shikibu | Soft violet controls, focus and keywords               |
-| Pine | Tsuki-yo         | Definite blue for information, code keys and operators |
-| Foam | Shin-ryoku       | Mint green for success and accents                     |
-| Gold | To-ro            | Honey-gold warnings and code types                     |
-| Rose | Fuyu-gaki        | Warm rose metadata, functions and cursors              |
-| Love | Momiji           | Berry-rose errors, built-ins and escapes               |
+| Role | Ink              | Character and use                                                 |
+| ---- | ---------------- | ----------------------------------------------------------------- |
+| Iris | Murasaki-shikibu | Soft violet controls, focus and keywords                          |
+| Pine | Tsuki-yo         | Definite blue for Secondary, information, code keys and operators |
+| Foam | Shin-ryoku       | Mint green for success and accents                                |
+| Gold | To-ro            | Honey-gold warnings and code types                                |
+| Rose | Fuyu-gaki        | Warm rose annotations, functions and cursors                      |
+| Love | Momiji           | Berry-rose errors, built-ins and escapes                          |
 
 Pine is deeper and bluer; Foam is lighter and greener. Each source is sampled at
 a fixed point on its curve, with softened chroma and a stable hue for Day/Night.
@@ -205,7 +205,8 @@ highlights. The theme generator writes the shared accents to
 `interface-palette.json`; the Sakura attribution heart retains its original shade.
 Semantic roles retain the guide's slots: Fuji for focus, Sora for information,
 Wakaba for success, Yamabuki for warnings and Beni for errors. The custom palette
-changes their ink/shade values. Viewer metadata uses the warm Nadeshiko/Rose slot.
+changes their ink/shade values. Secondary uses Pine/Tsuki-yo blue. The Rose
+syntax slots retain Fuyu-gaki's warm hue.
 
 Navigation stays left-aligned; search fills the
 available desktop space and appearance controls stay together at the right.
@@ -406,8 +407,9 @@ service colours. Error spans and exception events retain the semantic Error over
 This follows [Honeycomb's default waterfall colour basis](https://docs.honeycomb.io/investigate/analyze/explore-traces/#change-color-in-waterfall-representation).
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
-legends share one ink-derived violet → blue → green → gold spectrum. Counts remain
-sequential: perceived lightness and grayscale luminance increase steadily at Night.
+legends share a direct Murasaki-shikibu (Primary/Iris) → Fuyu-gaki (Rose) ramp.
+Counts remain sequential: perceived lightness and grayscale luminance increase
+steadily at Night.
 Legacy count-palette preferences are left in storage but no
 longer select a different ramp.
 

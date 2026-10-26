@@ -68,7 +68,7 @@ and Momiji for berry Love. Each source has one fixed sample hue and softened
 chroma, with separate Day/Night lightness. The generator checks all four seasons'
 five surfaces together, keeping identical accents across seasons within a mode.
 These are viewer adaptations, not upstream mix output or Rosé Pine hex colours.
-Primary uses Iris, metadata uses Rose, information uses Pine, success and accents
+Primary uses Iris, Secondary and information use Pine, success and accents
 use Foam, warnings use Gold and errors use Love. Seasonal paper, neutral text and
 highlights retain their existing roles. Appearance
 controls select only season and Day/Night. Graph colours are independent of those
@@ -85,9 +85,9 @@ and Love respectively. Functions and annotations use Rose; types use Gold.
 Built-ins and invalid syntax share Love.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
-Histogram and heatmap counts use one sequential violet → blue → green → gold
-spectrum. Murasaki-shikibu, Tsuki-yo, Shin-ryoku and To-ro supply hue/chroma
-anchors at OKLab lightness 0.48, 0.61, 0.74 and 0.87. The generator interpolates
+Histogram and heatmap counts interpolate directly from Murasaki-shikibu
+(Primary/Iris) at OKLab lightness 0.48 to Fuyu-gaki (Rose) at 0.87.
+The generator interpolates
 in OKLab, maps into sRGB gamut and samples equal perceptual arc-length intervals
 for each adaptive size from 2–12. Night orders shades dark to light; Day uses
 the exact same shades reversed. A one-step ramp uses its mode's high-count

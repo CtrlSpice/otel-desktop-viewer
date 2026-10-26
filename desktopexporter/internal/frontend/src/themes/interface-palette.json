@@ -2,7 +2,7 @@
   "madoromi-haru-hiru": {
     "colors": {
       "primary": "#694d80",
-      "secondary": "#71504e",
+      "secondary": "#1e5d88",
       "accent": "#18644a",
       "info": "#1e5d88",
       "success": "#18644a",
@@ -29,7 +29,7 @@
   "madoromi-natsu-hiru": {
     "colors": {
       "primary": "#694d80",
-      "secondary": "#71504e",
+      "secondary": "#1e5d88",
       "accent": "#18644a",
       "info": "#1e5d88",
       "success": "#18644a",
@@ -56,7 +56,7 @@
   "madoromi-aki-hiru": {
     "colors": {
       "primary": "#694d80",
-      "secondary": "#71504e",
+      "secondary": "#1e5d88",
       "accent": "#18644a",
       "info": "#1e5d88",
       "success": "#18644a",
@@ -83,7 +83,7 @@
   "madoromi-fuyu-hiru": {
     "colors": {
       "primary": "#694d80",
-      "secondary": "#71504e",
+      "secondary": "#1e5d88",
       "accent": "#18644a",
       "info": "#1e5d88",
       "success": "#18644a",
@@ -110,7 +110,7 @@
   "madoromi-haru-yoru": {
     "colors": {
       "primary": "#caace5",
-      "secondary": "#e6c0bd",
+      "secondary": "#68a5d5",
       "accent": "#8bd3b3",
       "info": "#68a5d5",
       "success": "#8bd3b3",
@@ -137,7 +137,7 @@
   "madoromi-natsu-yoru": {
     "colors": {
       "primary": "#caace5",
-      "secondary": "#e6c0bd",
+      "secondary": "#68a5d5",
       "accent": "#8bd3b3",
       "info": "#68a5d5",
       "success": "#8bd3b3",
@@ -164,7 +164,7 @@
   "madoromi-aki-yoru": {
     "colors": {
       "primary": "#caace5",
-      "secondary": "#e6c0bd",
+      "secondary": "#68a5d5",
       "accent": "#8bd3b3",
       "info": "#68a5d5",
       "success": "#8bd3b3",
@@ -191,7 +191,7 @@
   "madoromi-fuyu-yoru": {
     "colors": {
       "primary": "#caace5",
-      "secondary": "#e6c0bd",
+      "secondary": "#68a5d5",
       "accent": "#8bd3b3",
       "info": "#68a5d5",
       "success": "#8bd3b3",

@@ -273,7 +273,7 @@ const interfaceModes = Object.fromEntries(
       {
         colors: {
           primary: syntax.fuji,
-          secondary: syntax.nadeshiko,
+          secondary: syntax.ruri,
           accent: syntax.tokiwa,
           info: syntax.sora,
           success: syntax.wakaba,
@@ -297,21 +297,19 @@ await writeFile(
   interfaceJson
 )
 
-// Sequential counts follow a restrained violet → blue → green → gold path.
+// Sequential counts interpolate directly from the Primary/Iris ink to Rose.
 // Bound lightness away from both black and paper-white. Interpolate in OKLab,
 // gamut-map, then resample equal perceptual arc length for each adaptive size.
 // The original ink curves supply the anchor hues/chroma, not RGB gradients.
 const heatmapAnchors = [
-  { role: 'iris', lightness: 0.48, strength: 0.8 },
-  { role: 'pine', lightness: 0.61, strength: 0.9 },
-  { role: 'foam', lightness: 0.74, strength: 0.8 },
-  { role: 'gold', lightness: 0.87, strength: 0.6 },
-].map(({ role, lightness, strength }) => ({
-  ink: interfaceInks[role].ink,
-  sourceLightness: interfaceInks[role].at,
-  lightness,
-  strength,
-}))
+  {
+    ink: 'murasaki-shikibu',
+    sourceLightness: 0.8,
+    lightness: 0.48,
+    strength: 0.8,
+  },
+  { ink: 'fuyu-gaki', sourceLightness: 0.84, lightness: 0.87, strength: 0.6 },
+]
 const heatmapStops = heatmapAnchors.map(source => {
   const [, a, b] = inkLabAt(source.ink, source.sourceLightness)
   return [source.lightness, a * source.strength, b * source.strength]
@@ -355,7 +353,7 @@ const heatmapRamps = Object.fromEntries(
 const heatmapJson =
   JSON.stringify(
     {
-      version: 'ink-spectrum-v1',
+      version: 'ink-spectrum-v2',
       anchors: heatmapAnchors,
       ramps: heatmapRamps,
     },

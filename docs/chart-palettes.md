@@ -17,9 +17,9 @@ Charts use [Madoromi](https://madoromi.moonwit.ch/) inks.
 - The colour dot beside a Home service name or a Gauge/Sum series opens the shared
   picker. It offers a colour field, hue strip, Hex input, seven ink-shade dots and
   Reset. Reset restores that owner's saved automatic assignment.
-- Histogram and heatmap counts share one ink-derived violet → blue → green → gold
-  spectrum. Adaptive ramps contain 1–12 bands; Day reverses Night's exact shades
-  for 2–12 bands, while a singleton uses its mode's high-count endpoint. Seasons
+- Histogram and heatmap counts share a direct Murasaki-shikibu (Primary/Iris) →
+  Fuyu-gaki (Rose) ramp. Adaptive ramps contain 1–12 bands; Day reverses Night's
+  exact shades for 2–12 bands, while a singleton uses its mode's high-count endpoint. Seasons
   do not change the ramp.
 - Percentile guides use Shin-ryoku shade 6 for p50, Daikokuten shade 2 for p95 and
   Benzaiten shade 2 for p99: green, amber-yellow and red. These chart swatches stay
