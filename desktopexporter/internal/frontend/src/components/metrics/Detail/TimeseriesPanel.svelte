@@ -140,9 +140,11 @@
 
 {#snippet cellContent(key: string, cell: SeriesCell)}
   {@const identifier = identifierValue(key, cell)}
-  {#if identifier !== undefined}<Identifier
-      value={identifier}
-    />{:else}{cell.label}{/if}
+  <span class="block max-w-full truncate" title={cell.label}>
+    {#if identifier !== undefined}<Identifier
+        value={identifier}
+      />{:else}{cell.label}{/if}
+  </span>
 {/snippet}
 
 {#snippet colour(key: string, label: string)}
@@ -382,7 +384,6 @@
   }
   .ts-row__attrs {
     @apply text-sm;
-    overflow-wrap: anywhere;
   }
   .ts-row__colour {
     padding-inline: 0;
