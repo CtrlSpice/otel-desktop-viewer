@@ -144,7 +144,8 @@
     flex-shrink: 1;
   }
   .guide-welcome {
-    @apply flex shrink-0 items-center gap-3 py-4;
+    @apply flex shrink-0 items-center gap-3;
+    height: var(--pane-header-single-h);
     padding-inline: var(--pane-inline-inset);
   }
   .guide-name {
