@@ -719,7 +719,11 @@ test('series table sorts attributes while retaining checked choices and colours'
   await expect(
     grid.getByRole('button', { name: 'Sort by type', exact: true })
   ).toBeVisible()
-  await page.getByRole('tab', { name: 'Average', exact: true }).click()
+  await page.getByRole('button', { name: 'Statistics', exact: true }).click()
+  await page
+    .getByRole('combobox', { name: 'Combined line', exact: true })
+    .selectOption('avg')
+  await page.keyboard.press('Escape')
   await expect.poll(() => requested).toEqual(['b', 'c'])
   await expect(
     page.getByRole('checkbox', { name: /across all series/ })
@@ -2625,7 +2629,7 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
   })
   await page.goto(`/metrics/${metric.metricRef}`)
   await expect(
-    page.getByRole('tab', { name: 'Raw', exact: true })
+    page.getByRole('tab', { name: 'Values', exact: true })
   ).toHaveAttribute('aria-selected', 'true')
   await expect(
     page.getByRole('tab', { name: 'Rate', exact: true })
@@ -3096,7 +3100,7 @@ test('series selection drives a separate datapoint section with independent attr
   await expect(mainHeader).toHaveCSS('border-radius', '12px')
   const range = mainHeader.locator('[aria-label="Chart time range"]')
   await expect(
-    mainHeader.getByRole('checkbox', { name: 'Show Statistics' })
+    mainHeader.getByRole('button', { name: 'Statistics', exact: true })
   ).toBeVisible()
   await expect(
     page
@@ -3114,9 +3118,6 @@ test('series selection drives a separate datapoint section with independent attr
     const badges = header
       .querySelector('.pane-header__badges')!
       .getBoundingClientRect()
-    const tabs = header
-      .querySelector('[role="tablist"]')!
-      .getBoundingClientRect()
     const title = header
       .querySelector('.pane-header__title')!
       .getBoundingClientRect()
@@ -3124,24 +3125,23 @@ test('series selection drives a separate datapoint section with independent attr
       .querySelector('[aria-label="Download metric"]')!
       .getBoundingClientRect()
     const statistics = header
-      .querySelector('.chart-stat-overlays-toggle')!
+      .querySelector('[aria-label="Statistics"]')!
       .getBoundingClientRect()
     return {
-      statisticsBeforeTabs: statistics.right <= tabs.left,
-      tabsBeforeDownload: tabs.right <= download.left,
+      statisticsBeforeDownload: statistics.right <= download.left,
       badgesAfterTitle: badges.left >= title.right,
       badgesBeforeDownload: badges.right <= download.left,
       downloadInset: header.getBoundingClientRect().right - download.right,
       titleCenter: top.top + top.height / 2,
-      tabsCenter: tabs.top + tabs.height / 2,
+      statisticsCenter: statistics.top + statistics.height / 2,
     }
   })
   expect(headerLayout.badgesAfterTitle).toBe(true)
-  expect(headerLayout.statisticsBeforeTabs).toBe(true)
-  expect(headerLayout.tabsBeforeDownload).toBe(true)
+  expect(headerLayout.statisticsBeforeDownload).toBe(true)
   expect(headerLayout.badgesBeforeDownload).toBe(true)
   expect(headerLayout.downloadInset).toBeCloseTo(16, 0)
-  expect(headerLayout.tabsCenter).toBeCloseTo(headerLayout.titleCenter, 0)
+  expect(headerLayout.statisticsCenter).toBeCloseTo(headerLayout.titleCenter, 0)
+  await expect(mainHeader.getByRole('tablist')).toHaveCount(0)
   await expect(mainHeader).toHaveCSS('height', '48px')
   await expect(mainHeader).toHaveCSS(
     'background-color',

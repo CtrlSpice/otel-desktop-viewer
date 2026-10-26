@@ -320,6 +320,17 @@
   let chartAggregationTabs = $derived(
     aggregationViewTabs(metricCtx.availableAggregationViews)
   )
+  let lastValuesView = $state<AggregationView>('raw')
+  let valuesMetricRef: string | undefined
+  $effect(() => {
+    const metricRef = metricCtx.metric?.metricRef
+    if (metricRef !== valuesMetricRef) {
+      valuesMetricRef = metricRef
+      lastValuesView = 'raw'
+    }
+    if (metricCtx.aggregationView !== 'rate')
+      lastValuesView = metricCtx.aggregationView
+  })
 
   let showChartAggregationTabs = $derived(
     (selectedSummary?.metricType === 'Sum' ||
@@ -340,7 +351,9 @@
   )
   let activeChartTabID = $derived(
     showChartAggregationTabs
-      ? metricCtx.aggregationView
+      ? metricCtx.aggregationView === 'rate'
+        ? 'rate'
+        : 'values'
       : metricCtx.activeHistogramTab
   )
   let chartTabPanelAttrs = $derived.by(() =>
@@ -351,7 +364,7 @@
           'aria-labelledby': paneTabID(METRIC_CHART_PANEL_ID, activeChartTabID),
           tabindex: 0,
         }
-      : {}
+      : { id: METRIC_CHART_PANEL_ID }
   )
 
   // Polling may replace a summary object without changing its metric identity.
@@ -967,12 +980,12 @@
           tabs={showChartAggregationTabs
             ? chartAggregationTabs
             : histogramChartTabs}
-          activeID={showChartAggregationTabs
-            ? metricCtx.aggregationView
-            : metricCtx.activeHistogramTab}
+          activeID={activeChartTabID}
           onSelect={id => {
             if (showChartAggregationTabs) {
-              metricCtx.setAggregationView(id as AggregationView)
+              metricCtx.setAggregationView(
+                id === 'rate' ? 'rate' : lastValuesView
+              )
             } else {
               metricCtx.setActiveHistogramTab(id as HistogramTab)
             }

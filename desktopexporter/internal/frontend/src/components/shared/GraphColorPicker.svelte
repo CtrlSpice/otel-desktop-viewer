@@ -69,7 +69,7 @@
           Hex
           <input
             bind:this={input}
-            class="input typed-field typed-field--pill min-w-0 w-full text-base-content"
+            class="input input-sm h-8 min-h-0 min-w-0 w-full rounded-full px-3.5 py-0 font-sans text-sm text-base-content"
             aria-label="Colour value"
             type="text"
             spellcheck={false}

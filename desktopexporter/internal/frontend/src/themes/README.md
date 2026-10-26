@@ -353,13 +353,20 @@ Home service names retain their assigned 8px dots with an 8px gap before the nam
 Service dots open a shared colour popover independently of card selection.
 Gauge/Sum series with assigned colours have the same editable dot before their
 attribute values. The popover uses vanilla-colorful's dependency-free hex picker,
-with a hue slider, colour field, hex input and Reset to automatic. Its surrounding
+with a hue slider, colour field, compact 32px hex input and Reset to automatic. Its surrounding
 controls use the app's seasonal surfaces, regular Atkinson text and focus styles.
 Seven 8px dots offer the current ink's official shades. Named preset and curve
 overrides retain their ink identity; custom RGB values use the closest official
 shade in OKLab. Ink names remain in the shade tooltips and accessible labels,
 without a separate visible heading. The rounded colour field and hue strip fit
 inside the shared popover padding. The picker has no opacity control.
+Scalar charts show individual series by default. Statistics contains the optional
+Combined line selector (Off, Sum where supported, or Average) and the independent
+min/max/average annotation toggle. Values and Rate tabs appear only for metrics
+that support Rate; returning to Values restores the combined-line choice for the
+current metric visit. Existing `agg=raw|sum|avg|rate` links and saved choices retain
+their meanings. Source lines keep their recorded timestamps when a combined line
+is displayed.
 Checkboxes use
 the shared neutral Text checkmark and round outline on a transparent background, independent of series
 colour. Saved choices survive visibility changes. Reset restores the owner's

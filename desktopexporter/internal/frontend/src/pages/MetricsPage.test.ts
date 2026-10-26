@@ -211,9 +211,10 @@ async function renderSelected(metricType: MetricType) {
   renderWithContexts(MetricsPage)
   // The aggregate fetch is debounced until after detail loading.
   await waitFor(() => expect(getMetricView).toHaveBeenCalled())
-  await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
-    timeout: 3000,
-  })
+  if (metricType === 'Histogram' || metricType === 'ExponentialHistogram')
+    await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
+      timeout: 3000,
+    })
 }
 
 describe('Metric main-header range', () => {
@@ -406,8 +407,7 @@ describe('MetricsPage aggregate fetching', () => {
     // Let any debounced follow-up land before asserting absence.
     await new Promise(r => setTimeout(r, 400))
     expect(wholeWindowCalls()).toHaveLength(0)
-    // Scalar aggregates use the bucketed call.
-    expect(getMetricAggregateView.mock.calls.length).toBeGreaterThan(0)
+    expect(getMetricAggregateView).not.toHaveBeenCalled()
   })
 
   it('does not ask a Sum either', async () => {
@@ -418,7 +418,7 @@ describe('MetricsPage aggregate fetching', () => {
 })
 
 describe('MetricsPage chart control keyboard navigation', () => {
-  it('toggles rate and overlays with Space while retaining focus', async () => {
+  it('keeps Rate separate and restores the combined line after switching back to Values', async () => {
     const user = userEvent.setup()
     const datapoints = [
       makeSumDatapoint('dp-1', 1_700_000_000_000, 10),
@@ -440,22 +440,19 @@ describe('MetricsPage chart control keyboard navigation', () => {
       aggregate: null,
       scalarAggregate: null,
     })
-    setTestUrl('/metrics/metric-1?agg=rate')
+    setTestUrl('/metrics/metric-1?agg=sum')
     renderWithContexts(MetricsPage)
 
-    const rate = await screen.findByRole('checkbox', {
-      name: 'Show rate across all series',
+    const statistics = await screen.findByRole('button', {
+      name: 'Statistics',
     })
+    await user.click(statistics)
+    const combined = screen.getByRole('combobox', { name: 'Combined line' })
+    expect(combined).toHaveValue('sum')
+    await user.selectOptions(combined, 'avg')
     const overlays = screen.getByRole('checkbox', {
       name: 'Show Statistics',
     })
-
-    rate.focus()
-    expect(rate).toHaveFocus()
-    expect(rate).not.toBeChecked()
-    await user.keyboard(' ')
-    expect(rate).toBeChecked()
-    expect(rate).toHaveFocus()
 
     overlays.focus()
     expect(overlays).toHaveFocus()
@@ -464,6 +461,23 @@ describe('MetricsPage chart control keyboard navigation', () => {
     await user.keyboard(' ')
     expect(overlays).not.toBeChecked()
     expect(overlays).toHaveFocus()
+    expect(combined).toHaveValue('avg')
+    await user.click(statistics)
+    expect(statistics).toHaveFocus()
+    const rate = screen.getByRole('tab', { name: 'Rate' })
+    await user.click(rate)
+    expect(rate).toHaveAttribute('aria-selected', 'true')
+    await user.click(screen.getByRole('tab', { name: 'Values' }))
+    await user.click(statistics)
+    expect(screen.getByRole('combobox', { name: 'Combined line' })).toHaveValue(
+      'avg'
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'Show Statistics' })
+    ).not.toBeChecked()
+    expect(screen.queryByRole('tab', { name: 'Raw' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Sum' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Average' })).toBeNull()
   })
 })
 
