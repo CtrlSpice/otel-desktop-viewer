@@ -257,7 +257,7 @@ test('export completion does not take focus back after the user moves it', async
   await trigger.focus()
   const downloaded = page.waitForEvent('download')
   await page.keyboard.press('Enter')
-  const elsewhere = page.getByRole('link', { name: 'Traces', exact: true })
+  const elsewhere = page.getByRole('link', { name: /^Traces(?: \[|$)/ })
   try {
     await expect(trigger).toHaveAttribute('aria-busy', 'true')
     await elsewhere.focus()

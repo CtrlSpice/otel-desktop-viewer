@@ -4,6 +4,7 @@
 
   let { onFiles }: { onFiles: (files: File[]) => void } = $props()
   let input = $state<HTMLInputElement | null>(null)
+  const hint = 'Drop telemetry JSON files here or anywhere on the screen.'
 
   function chooseFiles(event: Event) {
     const field = event.currentTarget
@@ -17,7 +18,7 @@
 <button
   type="button"
   class="item-state flex min-h-20 w-full flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dotted border-(--color-highlight-high) p-3 text-center text-sm"
-  aria-label="Import files"
+  aria-label={`Import files. ${hint}`}
   onclick={() => input?.click()}
 >
   <HugeiconsIcon
@@ -28,7 +29,7 @@
     aria-hidden="true"
   />
   <span class="max-w-[32ch] text-balance text-subtle">
-    Drop telemetry JSON files here or anywhere on the screen.
+    {hint}
   </span>
 </button>
 <input

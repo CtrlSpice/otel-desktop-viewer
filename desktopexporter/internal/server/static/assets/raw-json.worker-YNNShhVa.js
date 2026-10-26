@@ -1,0 +1,2 @@
+(function(){let e={characters:2097152,depth:64};function t(t){if(t.length>e.characters)return t;let n=[],r=0,i=0,a=!1,o=!1,s=e=>{r+=e.length,n.push(e)},c=()=>s(`
+`+`  `.repeat(i));for(let n=0;n<t.length;n++){if(r>e.characters)return t;let l=t[n];if(a)s(l),o?o=!1:l===`\\`?o=!0:l===`"`&&(a=!1);else if(!/\s/.test(l)){if(l===`"`)a=!0,s(l);else if(l===`{`||l===`[`){if(s(l),i++,i>e.depth)return t;c()}else l===`}`||l===`]`?(i=Math.max(0,i-1),c(),s(l)):l===`,`?(s(l),c()):s(l===`:`?`: `:l)}}return r>e.characters?t:n.join(``)}self.onmessage=e=>{self.postMessage(t(e.data))}})();

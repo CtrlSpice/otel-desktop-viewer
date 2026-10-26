@@ -170,7 +170,9 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 
     const nav = page.getByRole('navigation', { name: 'Primary' })
     for (const name of ['Traces', 'Metrics']) {
-      const link = nav.getByRole('link', { name, exact: true })
+      const link = nav.getByRole('link', {
+        name: new RegExp(`^${name}(?: \\[|$)`),
+      })
       await link.focus()
       await link.press('Enter')
       await expect(link).toHaveAttribute('aria-current', 'page')
@@ -181,7 +183,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         .toBe(homeBounds.width)
     }
 
-    await nav.getByRole('link', { name: 'Logs', exact: true }).click()
+    await nav.getByRole('link', { name: /^Logs(?: \[|$)/ }).click()
     await expect(list).toBeHidden()
     await assertShell()
     await expect
@@ -203,9 +205,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         await moduleGate
         await route.continue()
       })
-      await nav
-        .getByRole('link', { name: 'Experimental Evals', exact: true })
-        .click()
+      await nav.getByRole('link', { name: /^Evals \[experimental\]/ }).click()
       await expect(page.getByText('Opening Evals…')).toBeVisible()
       await assertShell()
       await expect
@@ -231,11 +231,11 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       ).toBe('true')
     } else {
       await expect(
-        nav.getByRole('link', { name: 'Experimental Evals', exact: true })
+        nav.getByRole('link', { name: /^Evals \[experimental\]/ })
       ).toHaveCount(0)
     }
 
-    await nav.getByRole('link', { name: 'Home', exact: true }).click()
+    await nav.getByRole('link', { name: /^Home(?: \[|$)/ }).click()
     await expect(
       page.getByRole('region', { name: 'Service map', exact: true })
     ).toBeVisible()
@@ -263,8 +263,8 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await page
       .getByRole('button', { name: 'Collapse details', exact: true })
       .press('Enter')
-    await nav.getByRole('link', { name: 'Logs', exact: true }).click()
-    await nav.getByRole('link', { name: 'Home', exact: true }).click()
+    await nav.getByRole('link', { name: /^Logs(?: \[|$)/ }).click()
+    await nav.getByRole('link', { name: /^Home(?: \[|$)/ }).click()
     await expect(
       page.getByRole('button', { name: 'Open sidebar', exact: true })
     ).toBeVisible()

@@ -173,9 +173,9 @@ test('Evals stays closed when its capability is disabled', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Evals is not enabled' })
   ).toBeVisible()
-  await expect(
-    page.getByRole('link', { name: 'Evals', exact: true })
-  ).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /^Evals(?: \[|$)/ })).toHaveCount(
+    0
+  )
   await expect(page.getByRole('table')).toHaveCount(0)
 })
 

@@ -101,8 +101,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     page.getByRole('region', { name: 'Home sections' })
   ).toContainText('Storage')
   const imports = page.getByRole('button', {
-    name: 'Import files',
-    exact: true,
+    name: /^Import files\./,
   })
   await expect(imports).toBeVisible()
   await expect(imports).toHaveText(
@@ -134,7 +133,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
   )
   await expect(
     page.locator('.home-sidebar').getByRole('button', {
-      name: 'Import files',
+      name: /^Import files\./,
       includeHidden: true,
     })
   ).toBeAttached()
@@ -154,7 +153,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     storage.getByRole('table', { name: 'Viewer storage' })
   ).toBeVisible()
   await expect(
-    page.getByRole('button', { name: 'Import files', exact: true })
+    page.getByRole('button', { name: /^Import files\./ })
   ).toBeVisible()
   expect(errors).toEqual([])
 })

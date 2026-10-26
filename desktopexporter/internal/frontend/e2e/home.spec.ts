@@ -80,7 +80,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await page.goto('/?time=all')
   const serviceCards = page.locator('.service-map__node .signal-row')
   await expect(serviceCards).toHaveCount(8)
-  const homeTab = page.getByRole('link', { name: 'Home', exact: true })
+  const homeTab = page.getByRole('link', { name: /^Home(?: \[|$)/ })
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   const card = page
     .locator('.service-map__node')
@@ -223,7 +223,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const guideBox = (await guide.boundingBox())!
   const detailsBox = (await details.boundingBox())!
   const drop = (await left
-    .getByRole('button', { name: 'Import files', exact: true })
+    .getByRole('button', { name: /^Import files\./ })
     .boundingBox())!
   const storage = (await left
     .locator('[data-detail-section="storage"]')
@@ -237,9 +237,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const terminalBox = (await terminal.boundingBox())!
   expect(drop.x).toBeCloseTo(terminalBox.x, 0)
   expect(drop.width).toBeCloseTo(terminalBox.width, 0)
-  await expect(
-    left.getByRole('button', { name: 'Import files', exact: true })
-  ).toHaveCSS(
+  await expect(left.getByRole('button', { name: /^Import files\./ })).toHaveCSS(
     'border-color',
     await terminal.evaluate(element => getComputedStyle(element).borderColor)
   )
@@ -275,7 +273,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     .toBe(true)
   expect((await serviceHeader.boundingBox())!.y).toBeCloseTo(headerY, 0)
   await expect(
-    left.getByRole('button', { name: 'Import files', exact: true })
+    left.getByRole('button', { name: /^Import files\./ })
   ).toBeVisible()
   await guideScroll.evaluate(element => {
     element.scrollTop = 0
@@ -317,7 +315,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await search.press('Enter')
   const logs = page
     .getByRole('navigation', { name: 'Primary' })
-    .getByRole('link', { name: 'Logs', exact: true })
+    .getByRole('link', { name: /^Logs(?: \[|$)/ })
   await expect(logs).toHaveAttribute('href', /service.namespace/)
   const destination = new URL((await logs.getAttribute('href'))!, page.url())
   expect(destination.pathname).toBe('/logs')

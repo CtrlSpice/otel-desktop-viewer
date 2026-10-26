@@ -158,11 +158,11 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await input.press('Enter')
   await expect(serviceCards).toHaveCount(1)
   await expect(
-    page.getByRole('link', { name: 'Logs', exact: true })
+    page.getByRole('link', { name: /^Logs(?: \[|$)/ })
   ).toHaveAccessibleDescription('Matching logs: [1]')
   const traces = page
     .getByRole('navigation', { name: 'Primary' })
-    .getByLabel('Traces', { exact: true })
+    .getByLabel(/^Traces(?: \[|$)/)
   await expect(traces).toHaveAttribute('aria-disabled', 'true')
   await expect(traces).not.toHaveAttribute('href')
   const telemetry = page.getByRole('tablist', { name: 'Telemetry signals' })
@@ -237,7 +237,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   }
   const link = page
     .getByRole('navigation', { name: 'Primary' })
-    .getByRole('link', { name: 'Logs', exact: true })
+    .getByRole('link', { name: /^Logs(?: \[|$)/ })
   const target = new URL((await link.getAttribute('href'))!, page.url())
   expect(target.searchParams.get('q')).toBe('search("declined")')
   expect(target.searchParams.get('start')).toBe(
@@ -264,7 +264,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
     target.searchParams.get('end')
   )
   await expect(
-    page.getByRole('link', { name: 'Logs', exact: true })
+    page.getByRole('link', { name: /^Logs(?: \[|$)/ })
   ).toHaveAccessibleDescription('Stored logs: [10]')
   const pageReads = logPageQueries.length
   await page.reload()
@@ -289,10 +289,10 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await expect(page.getByRole('alert')).toHaveCount(0)
   // Workspace navigation carries time, but each signal keeps its own query.
   const logsQuery = new URL(page.url()).searchParams.get('q')
-  await page.getByRole('link', { name: 'Metrics', exact: true }).click()
+  await page.getByRole('link', { name: /^Metrics(?: \[|$)/ }).click()
   expect(new URL(page.url()).searchParams.get('q')).toBeNull()
   await expect(page.getByRole('alert')).toHaveCount(0)
-  await page.getByRole('link', { name: 'Logs', exact: true }).click()
+  await page.getByRole('link', { name: /^Logs(?: \[|$)/ }).click()
   expect(new URL(page.url()).searchParams.get('q')).toBe(logsQuery)
   await page.goBack()
   await page.goBack()
@@ -301,7 +301,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await input.press('Enter')
   await expect(serviceCards).toHaveCount(0)
   await expect(
-    page.getByRole('link', { name: 'Home', exact: true })
+    page.getByRole('link', { name: /^Home(?: \[|$)/ })
   ).toHaveAccessibleDescription('Matching services: [0]')
   await expect(
     page.getByText('No services match this search and time range.')

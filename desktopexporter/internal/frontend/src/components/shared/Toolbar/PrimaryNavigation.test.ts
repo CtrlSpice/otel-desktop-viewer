@@ -53,20 +53,21 @@ describe('PrimaryNavigation', () => {
     renderWithContexts(PrimaryNavigation, {
       counts: { home: 9, traces: 62, logs: 0 },
     })
-    const logs = screen.getByRole('link', { name: 'Logs' })
+    const logs = screen.getByRole('link', { name: /^Logs(?: \[|$)/ })
+    expect(logs).toHaveAccessibleName('Logs [0]')
     expect(logs).toHaveAccessibleDescription('Stored logs: [0]')
     expect(
-      screen.getByRole('link', { name: 'Traces' })
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
     ).toHaveAccessibleDescription('Stored traces: [62]')
-    expect(screen.getByRole('link', { name: 'Metrics' })).not.toHaveAttribute(
-      'aria-describedby'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    ).not.toHaveAttribute('aria-describedby')
     await userEvent.click(logs)
     expect(
-      screen.getByRole('link', { name: 'Home' })
+      screen.getByRole('link', { name: /^Home(?: \[|$)/ })
     ).toHaveAccessibleDescription('Stored services: [9]')
     expect(
-      screen.getByRole('link', { name: 'Traces' })
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
     ).toHaveAccessibleDescription('Stored traces: [62]')
   })
   it('renders a labelled tab for each signal', () => {
@@ -81,32 +82,30 @@ describe('PrimaryNavigation', () => {
   it('marks the tab matching the current URL as the current page', () => {
     setTestUrl('/metrics')
     renderTabs()
-    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    )
-    expect(screen.getByRole('link', { name: 'Traces' })).not.toHaveAttribute(
-      'aria-current'
-    )
-    expect(screen.getByRole('link', { name: 'Logs' })).not.toHaveAttribute(
-      'aria-current'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    ).toHaveAttribute('aria-current', 'page')
+    expect(
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
+    ).not.toHaveAttribute('aria-current')
+    expect(
+      screen.getByRole('link', { name: /^Logs(?: \[|$)/ })
+    ).not.toHaveAttribute('aria-current')
   })
 
   it('marks a signal tab as current while an item of that signal is open', () => {
     setTestUrl('/logs/log-42')
     renderTabs()
-    expect(screen.getByRole('link', { name: 'Logs' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Logs(?: \[|$)/ })
+    ).toHaveAttribute('aria-current', 'page')
   })
 
   it('applies primary colour only to the current tab icon', async () => {
     setTestUrl('/metrics')
     renderTabs()
-    const metrics = screen.getByRole('link', { name: 'Metrics' })
-    const logs = screen.getByRole('link', { name: 'Logs' })
+    const metrics = screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    const logs = screen.getByRole('link', { name: /^Logs(?: \[|$)/ })
 
     expect(metrics.querySelector('svg')).toHaveClass('text-primary')
     expect(logs.querySelector('svg')).not.toHaveClass('text-primary')
@@ -124,10 +123,9 @@ describe('PrimaryNavigation', () => {
   it('marks Home as current on the root path', () => {
     setTestUrl('/')
     renderTabs()
-    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Home(?: \[|$)/ })
+    ).toHaveAttribute('aria-current', 'page')
     for (const label of ['Traces', 'Metrics', 'Logs']) {
       expect(screen.getByRole('link', { name: label })).not.toHaveAttribute(
         'aria-current'
@@ -138,14 +136,14 @@ describe('PrimaryNavigation', () => {
   it('navigates to the signal list when its tab is clicked', async () => {
     setTestUrl('/traces')
     renderTabs()
-    await userEvent.click(screen.getByRole('link', { name: 'Logs' }))
+    await userEvent.click(screen.getByRole('link', { name: /^Logs(?: \[|$)/ }))
     expect(window.location.pathname).toBe('/logs')
   })
 
   it('navigates Home through the primary tab strip', async () => {
     setTestUrl('/traces/abc?span=selected')
     renderTabs()
-    const home = screen.getByRole('link', { name: 'Home' })
+    const home = screen.getByRole('link', { name: /^Home(?: \[|$)/ })
     expect(home).toHaveAttribute('href', '/')
     expect(
       screen.getByRole('navigation', { name: 'Primary' })
@@ -159,36 +157,38 @@ describe('PrimaryNavigation', () => {
   it('moves the current-page marker to the tab that was clicked', async () => {
     setTestUrl('/traces')
     renderTabs()
-    await userEvent.click(screen.getByRole('link', { name: 'Metrics' }))
-    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
-      'aria-current',
-      'page'
+    await userEvent.click(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
     )
-    expect(screen.getByRole('link', { name: 'Traces' })).not.toHaveAttribute(
-      'aria-current'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    ).toHaveAttribute('aria-current', 'page')
+    expect(
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
+    ).not.toHaveAttribute('aria-current')
   })
 
   it('leaves the trace item path for the trace list when Traces is clicked', async () => {
     setTestUrl('/traces/abc')
     renderTabs()
-    await userEvent.click(screen.getByRole('link', { name: 'Traces' }))
+    await userEvent.click(
+      screen.getByRole('link', { name: /^Traces(?: \[|$)/ })
+    )
     expect(window.location.pathname).toBe('/traces')
   })
 
   it('preserves the active time window in each real href', () => {
     setTestUrl('/traces?start=10&end=20&span=old')
     renderTabs()
-    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
-      'href',
-      '/metrics?start=10&end=20'
-    )
+    expect(
+      screen.getByRole('link', { name: /^Metrics(?: \[|$)/ })
+    ).toHaveAttribute('href', '/metrics?start=10&end=20')
   })
 
   it('leaves modified clicks to native anchor handling', () => {
     setTestUrl('/traces')
     renderTabs()
-    const link = screen.getByRole('link', { name: 'Logs' })
+    const link = screen.getByRole('link', { name: /^Logs(?: \[|$)/ })
     const event = new MouseEvent('click', {
       bubbles: true,
       cancelable: true,

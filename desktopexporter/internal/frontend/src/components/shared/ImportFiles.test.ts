@@ -10,7 +10,7 @@ describe('ImportFiles', () => {
     const input = screen.getByLabelText('Choose telemetry JSON files')
     const open = vi.spyOn(input, 'click')
     const button = screen.getByRole('button', {
-      name: 'Import files',
+      name: /^Import files\./,
     })
     button.focus()
     await userEvent.keyboard('{Enter}')
