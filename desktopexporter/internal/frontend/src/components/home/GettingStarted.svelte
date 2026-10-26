@@ -138,18 +138,19 @@
     @apply flex h-24 shrink-0;
   }
   .guide-lulu {
-    width: 64px;
+    width: 48px;
     min-width: 0;
     aspect-ratio: 32 / 27;
     flex-shrink: 1;
   }
   .guide-welcome {
-    @apply flex shrink-0 items-center gap-4 rounded-xl bg-base-200 py-3;
+    @apply flex shrink-0 items-center gap-3 py-4;
     padding-inline: var(--pane-inline-inset);
   }
   .guide-name {
     @apply whitespace-nowrap font-normal text-base-content;
     font-size: 1.5rem;
     line-height: 1.15;
+    letter-spacing: -0.02em;
   }
 </style>
