@@ -170,7 +170,9 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 
     const nav = page.getByRole('navigation', { name: 'Primary' })
     for (const name of ['Traces', 'Metrics']) {
-      const link = nav.getByRole('link', { name, exact: true })
+      const link = nav.getByRole('link', {
+        name: new RegExp(`^${name}(?: \\[|$)`),
+      })
       await link.focus()
       await link.press('Enter')
       await expect(link).toHaveAttribute('aria-current', 'page')

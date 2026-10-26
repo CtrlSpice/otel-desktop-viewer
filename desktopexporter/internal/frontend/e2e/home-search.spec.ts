@@ -162,7 +162,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   ).toHaveAccessibleDescription('Matching logs: [1]')
   const traces = page
     .getByRole('navigation', { name: 'Primary' })
-    .getByLabel('Traces', { exact: true })
+    .getByLabel(/^Traces(?: \[|$)/)
   await expect(traces).toHaveAttribute('aria-disabled', 'true')
   await expect(traces).not.toHaveAttribute('href')
   const telemetry = page.getByRole('tablist', { name: 'Telemetry signals' })

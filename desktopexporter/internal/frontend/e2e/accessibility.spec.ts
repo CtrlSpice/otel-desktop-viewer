@@ -1545,8 +1545,7 @@ test.describe('home page accessibility', () => {
       await page
         .getByRole('navigation', { name: 'Primary' })
         .getByRole('link', {
-          name,
-          exact: true,
+          name: new RegExp(`^${name}(?: \\[|$)`),
         })
         .click()
       if (name === 'Logs') {
