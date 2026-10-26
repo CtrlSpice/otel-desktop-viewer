@@ -7,13 +7,12 @@ The retained pixel Lulu artwork comes from
 dedicated to the public domain under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 `assets/images/lulu-pixel.txt` retains the source pixel grid. `Lulu.svelte` draws
-it as inline SVG, without the telescope, using Edo-murasaki and Bishamonten inks.
-Her body blends Edo-murasaki shades 6 and 7 equally; the gills blend Bishamonten
-shades 4 and 3 with 25% of that skin colour to soften their saturation.
-The original pixel palette guides the warm blush skin and rose gills, with the
-retained plum outline. Lulu keeps her soft pink identity across ink, season
-and Day/Night changes. The outline, shading, body, gills and eyes retain separate
-colour roles; the palest Edo-murasaki swatch supplies her eye highlights.
+it as inline SVG, without the telescope, using the shared Iris → Love → Rose
+count ramp. The twelve-band Night ramp supplies violet outlines, berry gills,
+rose shading and a pale rose body. The artwork always uses that fixed ramp:
+Day/Night and season changes never reverse or recolour Lulu. The outline,
+shading, body, gills and eyes retain separate colour roles; the palest official
+Fuyu-gaki swatch supplies her eye highlights.
 Lulu Axol'Otel was created for OTel Desktop Viewer. The original painting is by
 [Chelsey Bateson](https://cbatesonart.artstation.com/); it is a separate artwork
 and is not covered by the pixel sprite's CC0 dedication.

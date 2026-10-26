@@ -1,18 +1,20 @@
 <script module lang="ts">
   import sprite from '@/assets/images/lulu-pixel.txt?raw'
   import inks from '@/themes/graph-inks.json'
+  import heatmapPalette from '@/themes/heatmap-palette.json'
 
   // Pixel Lulu, CC0-1.0; source and character credits are in README.md.
   // Keep the source grid intact; combine pixels into one SVG path per colour.
-  const skin = `color-mix(in srgb, ${inks.inks['edo-murasaki'][5]} 50%, ${inks.inks['edo-murasaki'][6]})`
+  // Use the fixed Iris → Love → Rose progression, never the Day reversal.
+  const ramp = heatmapPalette.ramps['12'].night
   const colors = {
-    o: inks.inks['edo-murasaki'][1],
-    s: inks.inks['edo-murasaki'][4],
-    b: skin,
-    g: `color-mix(in srgb, ${inks.inks.bishamonten[3]} 75%, ${skin})`,
-    G: `color-mix(in srgb, ${inks.inks.bishamonten[2]} 75%, ${skin})`,
-    e: inks.inks['edo-murasaki'][1],
-    w: inks.inks['edo-murasaki'][7],
+    o: ramp[0],
+    s: ramp[8],
+    b: ramp[11],
+    g: ramp[5],
+    G: ramp[4],
+    e: ramp[0],
+    w: inks.inks['fuyu-gaki'][7],
   }
   const rows = sprite.trim().split('\n')
   const paths = Object.entries(colors).map(([pixel, color]) => ({
