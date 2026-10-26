@@ -26,7 +26,6 @@
     MIN_METRIC_CHART_HEIGHT,
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
-  import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
 
   const ctx = getMetricViewContext()
@@ -161,7 +160,6 @@
             : 'No datapoints in selected timeseries'}
       />
     </div>
-    <MetricChartControlBar />
   </div>
 {/snippet}
 

@@ -1,15 +1,13 @@
 /**
  * Per-metric view state that survives navigation: which timeseries are
- * checked, which AggregationView the user last picked, and whether the
- * optional all-series aggregate line is shown.
+ * checked and which AggregationView the user last picked.
  *
  * Stored as one JSON blob per Metric reference so the user's
  * "how I had this metric set up" travels together. Storage shape:
  *
  *   {
  *     visibleKeys?: string[],
- *     aggregationView?: AggregationView,
- *     showAllSeriesAggregate?: boolean
+ *     aggregationView?: AggregationView
  *   }
  *
  * The one-shot empty-selection repair omits visibleKeys so normal defaults can
@@ -35,13 +33,11 @@ const STORAGE_PREFIX = 'metrics:view:'
 type PersistedMetricView = {
   visibleKeys?: string[]
   aggregationView?: AggregationView
-  showAllSeriesAggregate?: boolean
 }
 
 type PersistedMetricViewFields = {
   visibleKeys?: unknown
   aggregationView?: unknown
-  showAllSeriesAggregate?: unknown
 }
 
 function isPersistedMetricViewFields(
@@ -58,10 +54,6 @@ function isAggregationView(value: unknown): value is AggregationView {
   return (
     value === 'raw' || value === 'sum' || value === 'avg' || value === 'rate'
   )
-}
-
-function isBoolean(value: unknown): value is boolean {
-  return value === true || value === false
 }
 
 /**
@@ -133,13 +125,9 @@ function loadPersistedView(metricRef: string): PersistedMetricView | null {
     const aggregationView = isAggregationView(parsed.aggregationView)
       ? parsed.aggregationView
       : undefined
-    const showAllSeriesAggregate = isBoolean(parsed.showAllSeriesAggregate)
-      ? parsed.showAllSeriesAggregate
-      : undefined
     return {
       visibleKeys,
       aggregationView,
-      showAllSeriesAggregate,
     }
   } catch {
     return null
@@ -153,9 +141,6 @@ function serializePersistedView(view: PersistedMetricView): string {
   }
   if (view.aggregationView !== undefined) {
     payload.aggregationView = view.aggregationView
-  }
-  if (view.showAllSeriesAggregate === true) {
-    payload.showAllSeriesAggregate = true
   }
   return JSON.stringify(payload)
 }
@@ -186,10 +171,6 @@ function mergePersistedView(
       'aggregationView' in patch
         ? patch.aggregationView
         : existing?.aggregationView,
-    showAllSeriesAggregate:
-      'showAllSeriesAggregate' in patch
-        ? patch.showAllSeriesAggregate
-        : existing?.showAllSeriesAggregate,
   }
 }
 
@@ -219,20 +200,6 @@ export function savePersistedAggregationView(
   )
 }
 
-/** Persist whether the optional all-series aggregate line is shown. */
-export function savePersistedShowAllSeriesAggregate(
-  metricRef: string,
-  showAllSeriesAggregate: boolean
-): void {
-  const existing = loadPersistedView(metricRef)
-  writePersistedView(
-    metricRef,
-    mergePersistedView(existing, {
-      showAllSeriesAggregate,
-    })
-  )
-}
-
 /** Read an allowed persisted aggregation view, or null. */
 export function loadPersistedAggregationView(
   metricRef: string,
@@ -241,13 +208,6 @@ export function loadPersistedAggregationView(
   const v = loadPersistedView(metricRef)?.aggregationView
   if (v === undefined) return null
   return allowed.includes(v) ? v : null
-}
-
-/** Read persisted all-series aggregate toggle. Defaults to false. */
-export function loadPersistedShowAllSeriesAggregate(
-  metricRef: string
-): boolean {
-  return loadPersistedView(metricRef)?.showAllSeriesAggregate === true
 }
 
 /**

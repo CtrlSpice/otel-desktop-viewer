@@ -660,8 +660,10 @@ test('series table sorts attributes while retaining checked choices and colours'
       return route.fulfill({
         json: { jsonrpc: '2.0', id: request.id, result: received },
       })
-    if (request.method === 'getMetricAggregateView')
-      requested = request.params.selectedSeriesRefs
+    if (request.method === 'getMetricAggregateView') {
+      requested = request.params.seriesRefs
+      expect(request.params.selectedSeriesRefs).toEqual([])
+    }
     return route.fallback()
   })
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -700,7 +702,7 @@ test('series table sorts attributes while retaining checked choices and colours'
   await expect(rows.first()).toHaveAttribute('data-series-key', 'b')
   await expect(rows).toHaveCount(3)
   await expect(lines).toHaveCount(2)
-  await expect.poll(() => requested).toEqual(['b', 'c'])
+  expect(requested).toEqual([])
   await expect(
     grid.getByRole('checkbox', {
       name: 'Show model: haiku · type: input in chart',
@@ -717,6 +719,11 @@ test('series table sorts attributes while retaining checked choices and colours'
   await expect(
     grid.getByRole('button', { name: 'Sort by type', exact: true })
   ).toBeVisible()
+  await page.getByRole('tab', { name: 'Average', exact: true }).click()
+  await expect.poll(() => requested).toEqual(['b', 'c'])
+  await expect(
+    page.getByRole('checkbox', { name: /across all series/ })
+  ).toHaveCount(0)
   await page.setViewportSize({ width: 390, height: 844 })
   await page
     .getByRole('button', { name: 'Collapse sidebar', exact: true })
@@ -3016,8 +3023,9 @@ test('series selection drives a separate datapoint section with independent attr
     'border-width',
     '0px'
   )
-  for (const bar of await page.locator('.metric-chart-control-bar').all())
-    await expect(bar).toHaveCSS('background-color', darkest)
+  await expect(
+    page.getByRole('group', { name: 'Chart controls', exact: true })
+  ).toHaveCount(0)
   await expect(mainHeader).toHaveCSS('border-radius', '12px')
   const range = mainHeader.locator('[aria-label="Chart time range"]')
   await expect(

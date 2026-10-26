@@ -376,10 +376,16 @@
     const summary = selectedSummary
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
+    const scalar =
+      summary?.metricType === 'Gauge' || summary?.metricType === 'Sum'
+    const needsAggregate =
+      !scalar ||
+      (metricCtx.aggregationView !== 'raw' && visibleKeys.length >= 2)
 
     // The metric response seeds the initial legend selection.
     if (
       !summary ||
+      !needsAggregate ||
       !selectedMetric ||
       detailLoading ||
       selectedMetric.metricRef !== summary.metricRef
@@ -406,6 +412,7 @@
     clearTimeout(aggregateTimer)
     // Do not display a previous selection's summary beside the new plot.
     selectedAggregateSummary = null
+    selectedScalarAggregate = null
     const requestAggregates = () => {
       void fetchAggregate(summary, visibleKeys, bounds, token, false)
       if (
@@ -434,12 +441,9 @@
     try {
       const { startTime, endTime } = bounds
       const quantiles = DEFAULT_HISTOGRAM_QUANTILES
-      const isHistogramMetric =
-        summary.metricType === 'Histogram' ||
-        summary.metricType === 'ExponentialHistogram'
-      // Histograms narrow the merge; scalars keep All intact and name Selected.
-      const narrowTo = isHistogramMetric ? visibleKeys : null
-      const scalarSelected = isHistogramMetric ? [] : visibleKeys
+      // Both shapes aggregate only checked series. The scoped whole pool is
+      // sufficient for scalars; no second cross-series pool is needed.
+      const narrowTo = visibleKeys
       const result = await telemetryAPI.getMetricAggregateView(
         summary.metricRef,
         startTime,
@@ -450,7 +454,7 @@
         tzOffsetNs(),
         // Keep pooled and per-series lines on the same bucket grid.
         wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
-        wholeWindow ? undefined : scalarSelected,
+        wholeWindow ? undefined : [],
         tzName()
       )
       // A slower earlier request must not overwrite a newer answer.

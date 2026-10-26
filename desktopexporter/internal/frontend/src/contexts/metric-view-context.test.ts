@@ -698,7 +698,7 @@ describe('metric view context visibility seeding', () => {
     expect([...ctx.visibleSeries].sort()).toEqual(['route=/a', 'route=/b'])
   })
 
-  it('keeps the aggregate producer order through the chart series', async () => {
+  it('keeps the checked-series aggregate after source lines without an all-series overlay', async () => {
     const metric = makeCumulativeSumMetric()
     metric.timeseries.push({
       ...metric.timeseries[1]!,
@@ -726,12 +726,14 @@ describe('metric view context visibility seeding', () => {
     })
 
     ctx.visibleSeries.delete('route=/c')
-    ctx.setShowAllSeriesAggregate(true)
     await tick()
 
     expect(
       ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
-    ).toEqual(['route=/a', 'route=/b', '__agg:selected__', '__agg:all__'])
+    ).toEqual(['route=/a', 'route=/b', '__agg:selected__'])
+    ctx.visibleSeries.clear()
+    await tick()
+    expect(ctx.transformedGaugeSumChartTimeseries).toEqual([])
   })
 
   it('restores linked inspection without changing the full visible set or saved colours', async () => {

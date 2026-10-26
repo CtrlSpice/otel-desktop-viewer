@@ -47,7 +47,6 @@ import {
   type QuantilePointSelection,
 } from '@/components/metrics/utils/quantile-point-selection'
 import {
-  AGG_KEY_ALL,
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
   availableAggregationViews,
@@ -69,11 +68,7 @@ import type {
   ChartTimeseries,
   LegendTimeseries,
 } from '@/types/metric-chart-types'
-import {
-  AGG_COLOR_ALL,
-  AGG_COLOR_SELECTED,
-  metricSeriesPalette,
-} from '@/utils/chart-palette'
+import { AGG_COLOR_SELECTED, metricSeriesPalette } from '@/utils/chart-palette'
 import { themeSignal } from '@/state/theme.svelte'
 import { SERIES_COLOR_COUNT } from '@/themes'
 import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
@@ -86,11 +81,9 @@ import {
   DEFAULT_VISIBLE_TIMESERIES,
   MAX_VISIBLE_TIMESERIES,
   loadPersistedAggregationView,
-  loadPersistedShowAllSeriesAggregate,
   reconcileTimeseriesVisible,
   resolveTimeseriesVisible,
   savePersistedAggregationView,
-  savePersistedShowAllSeriesAggregate,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/components/metrics/utils/metric-timeseries-visible'
@@ -166,7 +159,6 @@ type MetricViewState = {
   visibleSeries: SvelteSet<string>
   timeseriesColorByKey: TimeseriesColorByKey
   aggregationView: AggregationView
-  showAllSeriesAggregate: boolean
   showSelectionStatOverlays: boolean
 }
 
@@ -227,10 +219,6 @@ export interface MetricViewContext {
   /** Which aggregate line keys are present (for legend rendering).
    *  Empty when aggregationView === 'raw'. */
   readonly aggregatePresentKeys: AggregateLineKey[]
-  /** Whether the optional all-series aggregate line is shown. */
-  readonly showAllSeriesAggregate: boolean
-  /** Show the all-series aggregate toggle in the chart control bar. */
-  readonly showAllSeriesAggregateToggleVisible: boolean
   /** Whether min / max / avg selection overlays render on the chart. */
   readonly showSelectionStatOverlays: boolean
   /** Show the stat overlay toggle in the chart control bar. */
@@ -300,7 +288,6 @@ export interface MetricViewContext {
   selectSeries(key: string): void
   setActiveHistogramTab(tab: HistogramTab): void
   setAggregationView(next: AggregationView): void
-  setShowAllSeriesAggregate(next: boolean): void
   setShowSelectionStatOverlays(next: boolean): void
   /** Replace the visible-set for the Gauge/Sum legend. The legend
    * keeps a `bind:visibleKeys` model; we expose a setter so the
@@ -408,7 +395,6 @@ export function createMetricViewContext(
     visibleSeries: new SvelteSet<string>(),
     timeseriesColorByKey: new Map<string, string>(),
     aggregationView: 'raw',
-    showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
   })
 
@@ -871,41 +857,25 @@ export function createMetricViewContext(
     })
   })
 
-  /** Store-folded Selected and All lines. Equal pools render once as Total. */
+  /** The aggregate request is narrowed to checked series; its whole pool is
+   * their combined line. Keep the existing Selected/Total graph identities. */
   const aggregatedTransformed = $derived.by((): AggregateResult => {
     const pools = getScalarAggregate()
     if (!pools) return { lines: [], presentKeys: [] }
     const v = view.aggregationView
     if (v === 'raw') return { lines: [], presentKeys: [] }
-    const allPoints = viewPoints(pools.all, v)
-    if (allPoints.length === 0) return { lines: [], presentKeys: [] }
-
     const checkedCount = view.visibleSeries.size
     const total = gaugeSumGroups.keys.length
-    // Empty selection shows All; full selection shows the same pool as Total.
-    if (checkedCount === 0 || checkedCount === total) {
-      const key = checkedCount === 0 ? AGG_KEY_ALL : AGG_KEY_TOTAL
-      const label = checkedCount === 0 ? 'All' : 'Total'
-      return {
-        lines: [{ key, label, points: allPoints }],
-        presentKeys: [key],
-      }
+    if (checkedCount < 2) return { lines: [], presentKeys: [] }
+    const points = viewPoints(pools.all, v)
+    if (points.length === 0) return { lines: [], presentKeys: [] }
+    const key = checkedCount === total ? AGG_KEY_TOTAL : AGG_KEY_SELECTED
+    return {
+      lines: [
+        { key, label: checkedCount === total ? 'Total' : 'Selected', points },
+      ],
+      presentKeys: [key],
     }
-
-    const lines: ChartTimeseries[] = []
-    const presentKeys: AggregateLineKey[] = []
-    const selectedPoints = viewPoints(pools.selected, v)
-    if (selectedPoints.length > 0) {
-      lines.push({
-        key: AGG_KEY_SELECTED,
-        label: 'Selected',
-        points: selectedPoints,
-      })
-      presentKeys.push(AGG_KEY_SELECTED)
-    }
-    lines.push({ key: AGG_KEY_ALL, label: 'All', points: allPoints })
-    presentKeys.push(AGG_KEY_ALL)
-    return { lines, presentKeys }
   })
 
   /** Aggregate legend keys after duplicate-line and visibility rules. */
@@ -916,22 +886,7 @@ export function createMetricViewContext(
     if (rawTransformed.series.length < 2) {
       keys = keys.filter(k => k !== AGG_KEY_SELECTED)
     }
-    if (!view.showAllSeriesAggregate) {
-      keys = keys.filter(k => k !== AGG_KEY_ALL)
-    }
     return keys
-  })
-
-  /** Show the optional all-series aggregate toggle in the chart control bar. */
-  const showAllSeriesAggregateToggleVisible = $derived.by((): boolean => {
-    if (view.aggregationView === 'raw') return false
-    const keys = gaugeSumGroups.keys
-    if (keys.length < 2) return false
-    let selectedCount = 0
-    for (const key of keys) {
-      if (view.visibleSeries.has(key)) selectedCount++
-    }
-    return selectedCount !== keys.length
   })
 
   const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
@@ -979,9 +934,6 @@ export function createMetricViewContext(
       let aggLines = aggregatedTransformed.lines
       if (selectedCount < 2) {
         aggLines = aggLines.filter(l => l.key !== AGG_KEY_SELECTED)
-      }
-      if (!view.showAllSeriesAggregate) {
-        aggLines = aggLines.filter(l => l.key !== AGG_KEY_ALL)
       }
       if (aggLines.length === 0) return rawTransformed.series
 
@@ -1413,9 +1365,6 @@ export function createMetricViewContext(
     seededAggregationView = persistedAggregationView ?? DEFAULT_AGGREGATION_VIEW
     view.aggregationView = seededAggregationView
     view.showSelectionStatOverlays = true
-    view.showAllSeriesAggregate = metricRef
-      ? loadPersistedShowAllSeriesAggregate(metricRef)
-      : false
 
     // Scalars cap visible series; histogram selection remains uncapped.
     const histIsHistogram =
@@ -1650,12 +1599,6 @@ export function createMetricViewContext(
     const metricRef = getMetric()?.metricRef
     if (metricRef) savePersistedAggregationView(metricRef, next)
     writeMetricUrl('replace')
-  }
-
-  function setShowAllSeriesAggregate(next: boolean) {
-    view.showAllSeriesAggregate = next
-    const metricRef = getMetric()?.metricRef
-    if (metricRef) savePersistedShowAllSeriesAggregate(metricRef, next)
   }
 
   function setShowSelectionStatOverlays(next: boolean) {
@@ -1956,12 +1899,6 @@ export function createMetricViewContext(
     get aggregatePresentKeys() {
       return aggregatePresentKeys
     },
-    get showAllSeriesAggregate() {
-      return view.showAllSeriesAggregate
-    },
-    get showAllSeriesAggregateToggleVisible() {
-      return showAllSeriesAggregateToggleVisible
-    },
     get showSelectionStatOverlays() {
       return view.showSelectionStatOverlays
     },
@@ -2050,7 +1987,6 @@ export function createMetricViewContext(
       if (view.aggregationView === 'raw') return resolvedTimeseriesColors
       const merged = new Map(resolvedTimeseriesColors)
       merged.set(AGG_KEY_SELECTED, AGG_COLOR_SELECTED)
-      merged.set(AGG_KEY_ALL, AGG_COLOR_ALL)
       merged.set(AGG_KEY_TOTAL, AGG_COLOR_SELECTED)
       return merged
     },
@@ -2076,7 +2012,6 @@ export function createMetricViewContext(
     selectSeries,
     setActiveHistogramTab,
     setAggregationView,
-    setShowAllSeriesAggregate,
     setShowSelectionStatOverlays,
     toggleTimeseriesVisible,
     clearAllTimeseriesVisible,

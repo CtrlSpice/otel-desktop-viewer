@@ -151,12 +151,6 @@ export function isAggregateLineKey(key: string): key is AggregateLineKey {
   }
 }
 
-/** Checkbox label for the optional all-series aggregate toggle. */
-export function aggregateAllToggleLabel(view: AggregationView): string {
-  if (view === 'raw') return 'Show aggregate across all series'
-  return aggregateScopeLabelTitle(view, 'all')
-}
-
 /** Label for a synthetic aggregate line key in tooltips / legend. */
 export function aggregateLineLabel(
   key: AggregateLineKey,
