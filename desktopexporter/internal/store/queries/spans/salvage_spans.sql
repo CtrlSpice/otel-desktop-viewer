@@ -122,7 +122,7 @@
 			select map(list(id), list({
 				'k': key,
 				'i': id,
-				'j': json_object('id', id::varchar, 'key', key, 'value', value)
+				'j': json_object('id', id::varchar, 'key', key, 'value', otel_value_json(value))
 			})) as m
 			from attributes
 			where id in (

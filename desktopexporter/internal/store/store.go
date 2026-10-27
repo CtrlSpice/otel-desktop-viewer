@@ -151,6 +151,9 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}
 
 	// Create macros. Queries use CREATE OR REPLACE so reopening is safe.
+	if err := queries.RegisterFunctions(ctx, db); err != nil {
+		return nil, fmt.Errorf("%w while registering value functions: %w", ErrStoreInitFailed, err)
+	}
 	for _, stmt := range queries.Macros() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating macro %s: %w", ErrStoreInitFailed, stmt.Name, err)

@@ -9,7 +9,7 @@ create or replace macro log_data_json(l, resource, scope, resource_schema_url, s
         'spanID', span_id_wire(l.span_id),
         'severityText', l.severity_text,
         'severityNumber', l.severity_number,
-        'body', l.body,
+        'body', otel_value_json(l.body),
         'resource', resource,
         'scope', scope,
         'resourceSchemaURL', resource_schema_url,

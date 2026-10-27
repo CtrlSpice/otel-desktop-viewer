@@ -46,8 +46,8 @@ func TestNumericMetricAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, resolved, 1)
 			assert.Equal(t, search.AttributeSignedIntegerOperand, resolved[0].OperandMode)
-			assert.Contains(t, resolved[0].SQL, "attribute_int64(a.value)")
-			assert.Contains(t, resolved[0].SQL, "json_extract_string(a.value, '$.kind') = attr_kind_1")
+			assert.Contains(t, resolved[0].SQL, "try_cast(a.value as bigint)")
+			assert.Contains(t, resolved[0].SQL, "otel_value_kind(a.value) = attr_kind_1")
 		})
 	}
 }

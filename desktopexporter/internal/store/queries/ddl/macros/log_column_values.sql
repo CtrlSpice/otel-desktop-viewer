@@ -3,7 +3,7 @@
 -- Timestamps use decimal strings (uint64), IDs use the shared wire encoders.
 create or replace macro log_column_values(l, r, sc, owner, kind, key) as (
     case when kind = 'attribute' then coalesce((
-        select to_json(list(a.value order by t.ordinality))
+        select to_json(list(otel_value_json(a.value) order by t.ordinality))
         from unnest(case owner
             when 'log' then l.attribute_ids
             when 'resource' then r.attribute_ids
@@ -23,7 +23,7 @@ create or replace macro log_column_values(l, r, sc, owner, kind, key) as (
                 when 'traceId' then case when l.trace_id is not null then json_object('kind', 'string', 'value', trace_id_wire(l.trace_id)) end
                 when 'spanId' then case when l.span_id is not null then json_object('kind', 'string', 'value', span_id_wire(l.span_id)) end
                 when 'eventName' then json_object('kind', 'string', 'value', l.event_name)
-                when 'body' then l.body
+                when 'body' then otel_value_json(l.body)
                 when 'flags' then json_object('kind', 'int64', 'value', l.flags::varchar)
                 when 'droppedAttributesCount' then json_object('kind', 'int64', 'value', l.dropped_attributes_count::varchar)
             end

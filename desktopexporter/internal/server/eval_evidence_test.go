@@ -51,10 +51,11 @@ func TestCollectorEvalRedactionFidelityAndCacheRebuild(t *testing.T) {
 	}
 	page := read()
 	require.Len(t, page.Rows, 1)
-	for _, text := range []string{`"large":9007199254740993`, `"negativeZero":-0`, `"decimal":1.2300e+02`, `"stringNumber":"9007199254740993"`, `"null":null`, `"success":false`, `"secret":"****"`, `"password":"****"`} {
+	for _, text := range []string{`"large":9007199254740993`, `"negativeZero":-0`, `"decimal":123.0`, `"stringNumber":"9007199254740993"`, `"null":null`, `"success":false`, `"secret":"****"`, `"password":"****"`} {
 		require.Contains(t, string(page.Rows[0]), text)
 	}
-	require.Contains(t, string(page.Context), `1e9999`)
+	require.Contains(t, string(page.Context), `"1e9999"`)
+	require.True(t, json.Valid(page.Context))
 	require.NotContains(t, string(page.Context), "synthetic-secret")
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		for _, q := range []string{`select count(*) from logs where body::varchar like '%synthetic-secret%' or body::varchar like '%synthetic-nested-secret%'`, `select count(*) from eval_records where payload::varchar like '%synthetic-nested-secret%'`, `select count(*) from eval_datasets where context::varchar like '%synthetic-secret%'`} {
@@ -95,7 +96,8 @@ func TestCollectorEvalRedactionFidelityAndCacheRebuild(t *testing.T) {
 		part, err := evaldecode.Decode(data.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0))
 		require.NoError(t, err)
 		if part.Row == 0 {
-			require.Equal(t, string(page.Rows[0]), string(part.Payload))
+			require.JSONEq(t, string(page.Rows[0]), string(part.Payload))
+			require.Contains(t, string(part.Payload), `"decimal":1.2300e+02`)
 		}
 	}
 	// Destroy every disposable projection/tracking table; retained logs alone

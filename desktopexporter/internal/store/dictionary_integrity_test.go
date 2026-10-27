@@ -244,9 +244,9 @@ func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 		for _, tc := range []struct {
 			name, query, want string
 		}{
-			{"span", `select json_extract_string(a.value, '$.value') from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "trace-env"},
-			{"log", `select json_extract_string(a.value, '$.value') from logs l join resources r on r.id = l.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "log-env"},
-			{"metric", `select json_extract_string(a.value, '$.value') from metrics m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
+			{"span", `select a.value::varchar from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "trace-env"},
+			{"log", `select a.value::varchar from logs l join resources r on r.id = l.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "log-env"},
+			{"metric", `select a.value::varchar from metrics m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
 		} {
 			var got string
 			require.NoError(t, db.QueryRow(tc.query).Scan(&got), tc.name)

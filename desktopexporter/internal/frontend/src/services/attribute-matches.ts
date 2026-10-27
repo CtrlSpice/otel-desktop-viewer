@@ -97,7 +97,7 @@ export function attributeMatchesSQL(
     attributes = 'sc.attribute_ids'
   }
   const predicates = [
-    `EXISTS (SELECT 1 FROM unnest(${attributes}) owned(id) JOIN attributes a ON a.id = owned.id WHERE a.key = ${literal(options.key)} AND json_extract_string(a.value, '$.kind') = ${literal(options.kind)}${options.valueIdentity === undefined ? '' : ` AND a.value = ${literal(storedIdentity(options.valueIdentity))}::JSON`})`,
+    `EXISTS (SELECT 1 FROM unnest(${attributes}) owned(id) JOIN attributes a ON a.id = owned.id WHERE a.key = ${literal(options.key)} AND otel_value_kind(a.value) = ${literal(options.kind)}${options.valueIdentity === undefined ? '' : ` AND otel_value_json(a.value) = ${literal(storedIdentity(options.valueIdentity))}::JSON`})`,
   ]
   for (const timestamp of new Set([time, ownerTime])) {
     if (options.startTime != null)

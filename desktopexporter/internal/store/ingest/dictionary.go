@@ -37,11 +37,11 @@ const (
 	ScopeMetricMetadata = "metadata"
 )
 
-// Attribute is one dictionary row: a distinct key and canonical JSON value.
+// Attribute is one dictionary row: a distinct key and typed OTel value.
 type Attribute struct {
 	ID    duckdb.UUID
 	Key   string
-	Value string
+	Nodes []any
 }
 
 // Resource is one exact Resource payload and schema URL.
@@ -172,10 +172,14 @@ func attributeSetUncached(attrs pcommon.Map, scope string) ([]Attribute, []duckd
 			panic(err)
 		}
 		value := string(encoded)
+		nodes, err := ValueNodes(v)
+		if err != nil {
+			panic(err)
+		}
 		rows = append(rows, Attribute{
 			ID:    AttributeID(k, value),
 			Key:   k,
-			Value: value,
+			Nodes: nodes,
 		})
 	}
 
@@ -322,9 +326,8 @@ func (d *Dictionary) Counts() (attributes, resources, scopes int) {
 // LIST -- so a crash between statements leaves orphan dictionary rows, which
 // the sweep collects, rather than resources referencing rows that do not exist.
 //
-// These are SQL inserts rather than appender writes because the appender has no
-// conflict handling at all: its entire surface is AppendRow/Flush/Clear/Close,
-// and a duplicate would error at flush and take the whole chunk with it.
+// Dictionary writes use fixed conflict-tolerant SQL. Attributes use the query
+// appender so typed OTel trees can be assembled into native VARIANT values.
 func (d *Dictionary) Flush(ctx context.Context, conn driver.Conn) error {
 	if err := d.flushAttributes(ctx, conn); err != nil {
 		return err
@@ -369,24 +372,34 @@ func flushRows[T any](
 	return nil
 }
 
-// attributesUpsert has fixed text; only its bound arrays vary by batch.
+// All keys and values are appender data; none become SQL text.
 const attributesUpsert = `insert into attributes (id, key, value)
-	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::json[])
+	select id, key, otel_value_from_nodes(nodes) from appended_data
 	on conflict (id) do nothing`
 
-func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) error {
-	return flushRows(ctx, conn, d.flushed, d.attributes, attributesUpsert, "attributes",
-		func(rows map[duckdb.UUID]Attribute) []any {
-			ids := make([]string, 0, len(rows))
-			keys := make([]string, 0, len(rows))
-			values := make([]string, 0, len(rows))
-			for _, a := range rows {
-				ids = append(ids, formatUUID(a.ID))
-				keys = append(keys, a.Key)
-				values = append(values, a.Value)
-			}
-			return []any{ids, keys, values}
-		})
+func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) (err error) {
+	rows := unseen(d.flushed, d.attributes)
+	if len(rows) == 0 {
+		return nil
+	}
+	appenders, err := NewAppenders(conn, []string{"attributes"})
+	if err != nil {
+		return err
+	}
+	a := appenders["attributes"]
+	for _, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, a.Close())
+		}
+		if err := a.AppendRow(row.ID, row.Key, row.Nodes); err != nil {
+			return errors.Join(err, a.Close())
+		}
+	}
+	if err := a.Close(); err != nil {
+		return err
+	}
+	mark(d.flushed, rows)
+	return nil
 }
 
 const boundsUpsert = `insert into histogram_bounds (id, bounds)

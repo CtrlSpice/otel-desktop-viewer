@@ -83,7 +83,7 @@ func TestQueryReadsViewerTablesAndMacros(t *testing.T) {
 
 	result, err := handler.Handle(context.Background(), createRequest("query", []any{`
 		select l.event_name,
-		       body_preview(l.body) as preview,
+		       body_preview(otel_value_json(l.body)) as preview,
 		       trace_id_wire(l.trace_id) as trace_id,
 		       span_id_wire(l.span_id) as span_id,
 		       attrs_json(r.attribute_ids) as resource_attributes

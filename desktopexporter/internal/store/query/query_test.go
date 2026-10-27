@@ -86,6 +86,22 @@ func TestExecuteReturnsNativeScalarsAndExactTopLevelJSON(t *testing.T) {
 	})
 }
 
+func TestExecuteReturnsNestedNativeVariants(t *testing.T) {
+	withConnection(t, "", func(conn *sql.Conn) {
+		raw, err := query.Execute(t.Context(), conn, `select
+		 {'numbers': [9007199254740993::bigint, 9223372036854775807],
+		  'special': ['NaN'::double, 'Infinity'::double, '-Infinity'::double],
+		  'text': 'NaN "Infinity" \\ -Infinity', 'empty': null}::variant as native,
+		 '{"unsigned":18446744073709551615,"nested":{"id":7}}'::json::variant as payload`, 25)
+		require.NoError(t, err)
+		result := decodeResponse(t, raw)
+		require.Equal(t, "VARIANT", result.Columns[0].Type)
+		assert.JSONEq(t, `{"numbers":[9007199254740993,9223372036854775807],"special":["NaN","Infinity","-Infinity"],"text":"NaN \"Infinity\" \\\\ -Infinity","empty":null}`, string(result.Rows[0][0]))
+		assert.Contains(t, string(raw), "9223372036854775807")
+		assert.Contains(t, string(result.Rows[0][1]), "18446744073709551615")
+	})
+}
+
 func TestExecuteLimitLookaheadAndIntrospection(t *testing.T) {
 	withConnection(t, "", func(conn *sql.Conn) {
 		for _, tc := range []struct {
@@ -239,7 +255,7 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 		require.NoError(t, err)
 		defer conn.Close()
 		raw, err := query.Execute(context.Background(), conn, `
-			select l.body, a.value
+			select otel_value_json(l.body), otel_value_json(a.value)
 			from logs l, unnest(l.attribute_ids) ids(attribute_id)
 			join attributes a on a.id = ids.attribute_id
 			where a.key = 'direct'`, 25)
@@ -361,8 +377,8 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 		raw, err := query.Execute(context.Background(), conn, `
 			with owned_values as (
 				select s.trace_id, s.span_id,
-					json_extract_string(a.value, '$.kind') as value_kind,
-					a.value as tagged_value
+					otel_value_kind(a.value) as value_kind,
+					otel_value_json(a.value) as tagged_value
 				from spans s
 				cross join unnest(s.attribute_ids) owned(attribute_id)
 				join attributes a on a.id = owned.attribute_id

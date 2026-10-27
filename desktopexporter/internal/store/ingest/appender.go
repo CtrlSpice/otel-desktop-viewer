@@ -17,7 +17,20 @@ var (
 func NewAppenders(conn driver.Conn, tables []string) (map[string]*duckdb.Appender, error) {
 	out := make(map[string]*duckdb.Appender, len(tables))
 	for _, table := range tables {
-		a, err := duckdb.NewAppender(conn, "", "", table)
+		var a *duckdb.Appender
+		var err error
+		switch table {
+		case "attributes":
+			a, err = NewTypedQueryAppender(conn, attributesUpsert,
+				`select null::uuid as id, null::varchar as key,
+				 null::otel_value_node[] as nodes where false`)
+		case "logs":
+			a, err = NewTypedQueryAppender(conn, `insert into logs
+				select * replace(otel_value_from_nodes(body) as body) from appended_data`,
+				`select * replace(null::otel_value_node[] as body) from logs where false`)
+		default:
+			a, err = duckdb.NewAppender(conn, "", "", table)
+		}
 		if err != nil {
 			CloseAppenders(out, tables)
 			return nil, fmt.Errorf("NewAppenders: %w: %w", ErrIngestInternal, err)

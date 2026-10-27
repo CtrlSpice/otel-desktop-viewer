@@ -695,11 +695,11 @@ func GetTraceAttributeDefinitionsByTraceID(ctx context.Context, db *sql.DB, trac
 		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
 			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
 		from (
-			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
-			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
-			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
-			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid where e.trace_id = ?::uuid
-			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid where l.trace_id = ?::uuid
+			select distinct a.key, 'resource' as scope, otel_value_kind(a.value) as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'scope', otel_value_kind(a.value) from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'span', otel_value_kind(a.value) from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'event', otel_value_kind(a.value) from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid where e.trace_id = ?::uuid
+			union select distinct a.key, 'link', otel_value_kind(a.value) from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid where l.trace_id = ?::uuid
 		) sub
 	`
 	var raw []byte
@@ -717,11 +717,11 @@ func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error
 		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
 			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
 		from (
-			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			select distinct a.key, 'resource' as scope, otel_value_kind(a.value) as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'scope', otel_value_kind(a.value) from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'span', otel_value_kind(a.value) from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'event', otel_value_kind(a.value) from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'link', otel_value_kind(a.value) from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
 		) sub
 	`
 	var raw []byte
@@ -1183,8 +1183,7 @@ func matchAnyAttribute(from, scope string) string {
 		from %s
 		join attributes a on a.id = t.aid
 		where %s(
-			a.key {COND} or a.value::varchar {COND} or
-			exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
+			a.key {COND} or otel_value_json(a.value)::varchar {COND}
 		)
 	)`, from, scope)
 }

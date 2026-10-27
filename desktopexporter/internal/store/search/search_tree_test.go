@@ -1004,7 +1004,7 @@ func TestJSONValueArrayPredicateKeepsAbsentArraysOutOfNegativeMatches(t *testing
 	predicate, err := JSONValueArrayPredicate("s.attribute_ids", "attr_key_0", "attr_kind_1", query, &params)
 
 	require.NoError(t, err)
-	assert.Contains(t, predicate, "json_extract_string(a.value, '$.kind') = attr_kind_1")
+	assert.Contains(t, predicate, "otel_value_kind(a.value) = attr_kind_1")
 	assert.Contains(t, predicate, "and not exists")
 	assert.Equal(t, []NamedParam{
 		{Name: "attr_key_0", Value: "retries"},

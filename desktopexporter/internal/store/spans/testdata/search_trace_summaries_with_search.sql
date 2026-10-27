@@ -6,7 +6,7 @@ with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubig
 		join scopes sc on sc.id = s.scope_id
 			where (exists(
 			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = attr_key_2 and json_extract_string(a.value, '$.kind') = attr_kind_3 and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) = value_4
+			where a.key = attr_key_2 and otel_value_kind(a.value) = attr_kind_3 and coalesce(json_extract_string(otel_value_json(a.value), '$.value'), json_extract(otel_value_json(a.value), '$.value')::varchar) = value_4
 		)) AND s.start_time >= time_start and s.start_time <= time_end
 		),
 		selected_trace_ids as materialized (
@@ -20,7 +20,7 @@ with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubig
 			join selected_trace_ids selected on selected.trace_id = s.trace_id
 			where (exists(
 			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = attr_key_2 and json_extract_string(a.value, '$.kind') = attr_kind_3 and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) = value_4
+			where a.key = attr_key_2 and otel_value_kind(a.value) = attr_kind_3 and coalesce(json_extract_string(otel_value_json(a.value), '$.value'), json_extract(otel_value_json(a.value), '$.value')::varchar) = value_4
 		))
 		),
 		matched_span_lists as (

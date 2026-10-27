@@ -1,0 +1,253 @@
+package queries_test
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"math"
+	"testing"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/stretchr/testify/require"
+)
+
+func numericID(n int) string { return fmt.Sprintf("00000000-0000-0000-0000-%012d", n) }
+
+func numericMetricDB(t *testing.T, kind string, seriesCount int) (*sql.DB, []string) {
+	t.Helper()
+	db := freshDB(t)
+	db.SetMaxOpenConns(1)
+	for _, stmt := range []string{
+		`insert into resources(id,payload_id,attribute_ids) values ('` + numericID(1) + `','` + numericID(1) + `',[])`,
+		`insert into scopes(id,attribute_ids) values ('` + numericID(2) + `',[])`,
+		`insert into metrics(id,resource_id,resource_payload_id,scope_id,name,metric_type,aggregation_temporality)
+		 values ('` + numericID(3) + `','` + numericID(1) + `','` + numericID(1) + `','` + numericID(2) + `','numerics','` + kind + `',1)`,
+		`insert into histogram_bounds values ('` + numericID(4) + `',[0,1])`,
+	} {
+		_, err := db.Exec(stmt)
+		require.NoError(t, err)
+	}
+	if kind == "Sum" {
+		_, err := db.Exec("update metrics set aggregation_temporality=2")
+		require.NoError(t, err)
+	}
+	var ids []string
+	for i := range seriesCount {
+		ids = append(ids, numericID(100+i))
+		_, err := db.Exec(`insert into attributes values (?::uuid,'series',?::json)`, numericID(200+i), fmt.Sprintf(`{"kind":"string","value":"%d"}`, i))
+		require.NoError(t, err)
+		_, err = db.Exec(`insert into metric_series values (?::uuid,?::uuid,[?::uuid])`, ids[i], numericID(3), numericID(200+i))
+		require.NoError(t, err)
+	}
+	return db, ids
+}
+
+func numericPoint(t *testing.T, db *sql.DB, id, series int, timestamp uint64, value float64, integer *int64) {
+	t.Helper()
+	var double any = value
+	if integer != nil {
+		double = nil
+	}
+	_, err := db.Exec(`insert into metric_datapoints
+		(id,metric_id,series_id,timestamp,attribute_ids,double_value,int_value,value_type,
+		 count,sum,bounds_id,bucket_counts,scale,zero_count,zero_threshold,
+		 positive_bucket_offset,positive_bucket_counts,negative_bucket_offset,negative_bucket_counts)
+		values (?::uuid,?::uuid,?::uuid,?,[?::uuid],?,?,?,1,?,?::uuid,[0,1,0],0,0,0,0,[1],0,[])`,
+		numericID(1000+id), numericID(3), numericID(100+series), timestamp, numericID(200+series),
+		double, integer, map[bool]string{true: "Int", false: "Double"}[integer != nil], value, numericID(4))
+	require.NoError(t, err)
+}
+
+func numericView(t *testing.T, db *sql.DB, selected []string, end uint64, views int64, aggregate bool, histogram bool) map[string]any {
+	t.Helper()
+	var raw json.RawMessage
+	var err error
+	var target int64
+	var quantiles []float64
+	if histogram {
+		target, quantiles = 1, []float64{0.5}
+	}
+	if aggregate {
+		raw, err = metrics.GetMetricAggregateView(context.Background(), db, numericID(3), store.BoundedTimeRange(0, end), target, nil, quantiles, 0, views, selected, "")
+	} else {
+		raw, err = metrics.GetMetricView(context.Background(), db, numericID(3), store.BoundedTimeRange(0, end), target, nil, quantiles, 0, views, 0, selected, "", nil, 0)
+	}
+	require.NoError(t, err)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(raw, &result))
+	return result
+}
+
+// Reinsert the identical stored rows (including IDs) in a different physical
+// order. Changing ingest UUIDs instead would change the timestamp-tie contract.
+func reorderNumericPoints(t *testing.T, db *sql.DB, reverse bool) {
+	t.Helper()
+	order := "id"
+	if reverse {
+		order = "id desc"
+	}
+	for _, stmt := range []string{
+		"create temp table numeric_copy as select * from metric_datapoints",
+		"delete from metric_datapoints",
+		"insert into metric_datapoints select * from numeric_copy order by " + order,
+		"drop table numeric_copy",
+	} {
+		_, err := db.Exec(stmt)
+		require.NoError(t, err)
+	}
+}
+
+func TestMetricNumericsOrderedScalarFolds(t *testing.T) {
+	for _, pool := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cross-series=%v", pool), func(t *testing.T) {
+			n := 1
+			if pool {
+				n = 4
+			}
+			db, ids := numericMetricDB(t, "Sum", n)
+			for i, value := range []float64{1e16, 1, -1e16, 1} {
+				series, timestamp := 0, uint64(100)
+				if pool {
+					series = i
+				}
+				// Tied timestamps make the datapoint ID tie-break observable.
+				numericPoint(t, db, i, series, timestamp, value, nil)
+				if pool {
+					numericPoint(t, db, 10+i, series, 200, 0, nil)
+				}
+			}
+			var baseline map[string]any
+			for _, reverse := range []bool{false, true} {
+				reorderNumericPoints(t, db, reverse)
+				for _, threads := range []int{1, 4} {
+					_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+					require.NoError(t, err)
+					full := numericView(t, db, ids, 999999, 1, false, false)
+					only := numericView(t, db, ids, 999999, 1, true, false)
+					require.Equal(t, full["scalarAggregate"], only["scalarAggregate"])
+					if baseline != nil {
+						require.Equal(t, baseline, full, "physical order=%v threads=%d", reverse, threads)
+					}
+					baseline = full
+					pools := full["scalarAggregate"].(map[string]any)
+					for _, key := range []string{"all", "selected"} {
+						buckets := pools[key].([]any)
+						require.Len(t, buckets, 1)
+						bucket := buckets[0].(map[string]any)
+						require.Equal(t, float64(1), bucket["sum"])
+						count := float64(4)
+						if pool {
+							count = 8
+							require.Equal(t, float64(-1000), bucket["rate"])
+						}
+						require.Equal(t, 1/count, bucket["avg"])
+					}
+					if !pool {
+						series := full["timeseries"].([]any)[0].(map[string]any)
+						require.Equal(t, float64(1), series["stats"].(map[string]any)["sum"])
+						require.Equal(t, 0.25, series["stats"].(map[string]any)["avg"])
+						bucket := series["views"].([]any)[0].(map[string]any)
+						require.Equal(t, float64(1), bucket["sum"])
+						require.Equal(t, 0.25, bucket["avg"])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMetricNumericsOrderedRates(t *testing.T) {
+	for _, separateBuckets := range []bool{false, true} {
+		db, ids := numericMetricDB(t, "Sum", 1)
+		for i, value := range []int64{0, 10000000000000000, 10000000000000001, 1, 2} {
+			timestamp := uint64(i * 100)
+			if separateBuckets {
+				timestamp = uint64(i) * 1e9
+			}
+			numericPoint(t, db, i, 0, timestamp, 0, &value)
+		}
+		for _, reverse := range []bool{false, true} {
+			reorderNumericPoints(t, db, reverse)
+			for _, threads := range []int{1, 4} {
+				_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+				require.NoError(t, err)
+				end, views := uint64(999999), int64(1)
+				if separateBuckets {
+					end, views = 4e9, 5
+				}
+				full := numericView(t, db, ids, end, views, false, false)
+				series := full["timeseries"].([]any)[0].(map[string]any)
+				want := 1000.0 // chronological deltas add to 1, divided by 1ms
+				if separateBuckets {
+					want = 0.25 // [1e16, 1, -1e16, 1] in bucket timestamp order
+				} else {
+					require.Equal(t, want, series["views"].([]any)[0].(map[string]any)["rate"])
+				}
+				require.Equal(t, want, series["rateStats"].(map[string]any)["avg"])
+				only := numericView(t, db, ids, end, views, true, false)
+				require.Equal(t, full["scalarAggregate"], only["scalarAggregate"])
+			}
+		}
+	}
+}
+
+func TestMetricNumericsNegativeDeltaProjection(t *testing.T) {
+	db, ids := numericMetricDB(t, "Sum", 1)
+	for i, value := range []int64{0, -9007199254740994} {
+		numericPoint(t, db, i, 0, uint64(i)*1e9, 0, &value)
+	}
+	full := numericView(t, db, ids, 1e9, 2, false, false)
+	series := full["timeseries"].([]any)[0].(map[string]any)
+	latest := series["datapoints"].([]any)[0].(map[string]any)
+	require.Equal(t, "-9007199254740994", latest["delta"])
+	require.Equal(t, "-9007199254740994", latest["intValue"])
+	require.Equal(t, false, latest["isReset"])
+	views := series["views"].([]any)
+	got := views[len(views)-1].(map[string]any)["rate"].(float64)
+	require.Equal(t, math.Float64bits(-9007199254740994), math.Float64bits(got))
+}
+
+func TestMetricNumericsOrderedHistogramSums(t *testing.T) {
+	for _, kind := range []string{"Histogram", "ExponentialHistogram"} {
+		t.Run(kind, func(t *testing.T) {
+			db, ids := numericMetricDB(t, kind, 4)
+			for i, value := range []float64{1e16, 1, -1e16, 1} {
+				numericPoint(t, db, i, 0, 100, value, nil)
+			}
+			for i, value := range []float64{1e16, -1e16, 1} {
+				numericPoint(t, db, 10+i, i+1, 100, value, nil)
+			}
+			// Histogram rows have no scalar arms.
+			_, err := db.Exec("update metric_datapoints set double_value=null, value_type=null")
+			require.NoError(t, err)
+			var baseline map[string]any
+			for _, reverse := range []bool{false, true} {
+				reorderNumericPoints(t, db, reverse)
+				for _, threads := range []int{1, 4} {
+					_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+					require.NoError(t, err)
+					full := numericView(t, db, ids, 999999, 0, false, true)
+					only := numericView(t, db, ids, 999999, 0, true, true)
+					require.Equal(t, full["aggregate"], only["aggregate"])
+					if baseline != nil {
+						require.Equal(t, baseline, full)
+					}
+					baseline = full
+					aggregate := full["aggregate"].([]any)
+					require.Len(t, aggregate, 1)
+					require.Equal(t, float64(1), aggregate[0].(map[string]any)["sum"])
+					for _, raw := range full["timeseries"].([]any) {
+						series := raw.(map[string]any)
+						if series["seriesRef"] == ids[0] {
+							points := series["datapoints"].([]any)
+							require.Len(t, points, 1)
+							require.Equal(t, float64(1), points[0].(map[string]any)["sum"])
+						}
+					}
+				}
+			}
+		})
+	}
+}

@@ -58,12 +58,12 @@ const searchQuery = `
 		'sampleValues',   sub.samples
 	) order by sub.match_count desc, sub.key, sub.scope)), '[]') as varchar) as matches
 	from (
-		select a.key, o.scope, json_extract_string(a.value, '$.kind') as type,
+		select a.key, o.scope, otel_value_kind(a.value) as type,
 			count(*) as match_count,
-			list(a.value order by a.value)[1:` + sampleLimit + `] as samples
+			list(otel_value_json(a.value) order by a.value)[1:` + sampleLimit + `] as samples
 		from owner_ids o join attributes a on a.id = o.id
-		where a.value::varchar ilike ? or a.key ilike ?
-		group by a.key, o.scope, json_extract_string(a.value, '$.kind')
+		where otel_value_json(a.value)::varchar ilike ? or a.key ilike ?
+		group by a.key, o.scope, otel_value_kind(a.value)
 	) sub`
 
 const sampleLimit = "3"

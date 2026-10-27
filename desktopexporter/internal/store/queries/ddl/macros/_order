@@ -5,6 +5,8 @@
 #
 # This is the only place the order is written down. Filenames say what an
 # object is; this file says when it is built.
+otel_value_from_nodes.sql
+otel_value_json.sql
 attr_frame.sql
 attr_id.sql
 attrs_json.sql
@@ -16,6 +18,7 @@ trace_id_wire.sql
 span_id_wire.sql
 resource_json.sql
 scope_json.sql
+hugeint_to_double.sql
 interp_linear.sql
 interp_loglin.sql
 hist_buckets.sql

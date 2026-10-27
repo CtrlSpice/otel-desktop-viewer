@@ -1705,7 +1705,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 			select count(*) from spans s
 			join resources r on r.id = s.resource_id
 			where s.service_name <> coalesce((
-				select json_extract_string(a.value, '$.value')
+				select a.value::varchar
 				from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
 				where a.key = 'service.name'
 			), '')

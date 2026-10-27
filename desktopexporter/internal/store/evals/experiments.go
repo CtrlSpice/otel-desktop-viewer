@@ -196,7 +196,7 @@ func GetExperimentPage(ctx context.Context, db *sql.DB, id string, after int64, 
 		return out, err
 	}
 	out.Summary = summary
-	if err := db.QueryRowContext(ctx, `select cast(context as varchar) from eval_experiment_indexes where dataset_id=? and source_kind='dataset' and status='ready'`, summary.DatasetID).Scan(&out.ContextJSON); err != nil {
+	if err := db.QueryRowContext(ctx, `select to_json(context)::varchar from eval_experiment_indexes where dataset_id=? and source_kind='dataset' and status='ready'`, summary.DatasetID).Scan(&out.ContextJSON); err != nil {
 		return out, err
 	}
 	rows, err := readExperimentSource(ctx, db, summary.DatasetID, id, after, limit)

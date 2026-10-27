@@ -6,7 +6,7 @@ create table if not exists logs (
 		span_id ubigint,
 		severity_text varchar,
 		severity_number integer,
-		body json,
+		body otel_value,
 		resource_id uuid not null,
 		scope_id uuid not null,
 		attribute_ids uuid[] not null,

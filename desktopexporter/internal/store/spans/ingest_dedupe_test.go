@@ -75,7 +75,7 @@ func TestIngestDedupesAcrossSpans(t *testing.T) {
 
 		var mismatched int
 		require.NoError(t, db.QueryRow(
-			`select count(*) from attributes where id <> attr_id(key, value::varchar)`).Scan(&mismatched))
+			`select count(*) from attributes where id <> attr_id(key, otel_value_json(value)::varchar)`).Scan(&mismatched))
 		assert.Zero(t, mismatched)
 		return nil
 	}))

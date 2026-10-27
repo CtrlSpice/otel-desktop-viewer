@@ -410,7 +410,7 @@ func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 	} {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			var id string
-			if err := db.QueryRow(`select id::varchar from logs where body = json_object('kind', 'string', 'value', ?)`, tc.body).Scan(&id); err != nil {
+			if err := db.QueryRow(`select id::varchar from logs where body = ?::varchar::variant`, tc.body).Scan(&id); err != nil {
 				return nil, err
 			}
 			return logs.Get(ctx, db, id)
@@ -1308,7 +1308,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 		select count(*) from logs l
 		join resources r on r.id = l.resource_id
 		where l.service_name <> coalesce((
-			select json_extract_string(a.value, '$.value')
+			select a.value::varchar
 			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
 			where a.key = 'service.name'
 		), '')
