@@ -5,23 +5,18 @@
 #
 # This is the only place the order is written down. Filenames say what an
 # object is; this file says when it is built.
+# Single-column foreign keys already provide ART indexes for selective lookups.
+# Keep composite unique indexes for identity enforcement, not scan acceleration.
 idx_spans_traceid.sql
 idx_spans_parentspanid.sql
 idx_spans_service.sql
-idx_spans_resource.sql
-idx_spans_scope.sql
 idx_logs_traceid.sql
 idx_logs_severitynumber.sql
 idx_logs_service.sql
-idx_logs_resource.sql
-idx_logs_scope.sql
 idx_metrics_name.sql
 idx_metrics_service.sql
 idx_metrics_identity.sql
-idx_metric_datapoints_series.sql
 idx_metric_series_metric.sql
 idx_metric_series_identity.sql
-idx_exemplars_metric_datapoint.sql
-idx_eval_experiment_rows_experiment.sql
 idx_eval_experiments_dataset.sql
 idx_eval_experiment_search_experiment.sql
