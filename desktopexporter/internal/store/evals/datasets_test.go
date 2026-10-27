@@ -2,6 +2,7 @@ package evals_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -50,10 +51,19 @@ func TestIngestDatasetReopenAndPendingVisibility(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		page, err := evals.Records(t.Context(), db, evals.DatasetID(importID, 0), 0, 1)
 		require.NoError(t, err)
-		require.Equal(t, string(parts[0].Payload), string(page.Rows[0]))
+		require.JSONEq(t, string(parts[0].Payload), string(page.Rows[0]))
+		require.Contains(t, string(page.Rows[0]), `"exact":18446744073709551615`)
 		var typ string
 		require.NoError(t, db.QueryRow(`select typeof(payload) from eval_records limit 1`).Scan(&typ))
-		require.Equal(t, "JSON", typ)
+		require.Equal(t, "VARIANT", typ)
+		var exact string
+		var negativeZero, hasNull bool
+		require.NoError(t, db.QueryRow(`select payload.exact::ubigint::varchar,
+		 signbit(payload.zero::double), variant_exists(payload,'unknown')
+		 from eval_records where payload.id::varchar='sample'`).Scan(&exact, &negativeZero, &hasNull))
+		require.Equal(t, "18446744073709551615", exact)
+		require.True(t, negativeZero)
+		require.True(t, hasNull)
 		var byteSize int64
 		require.NoError(t, db.QueryRow(`select byte_size from eval_datasets where id=?`, evals.DatasetID(importID, 0)).Scan(&byteSize))
 		require.Equal(t, fmt.Sprint(len(input)), fmt.Sprint(byteSize))
@@ -62,7 +72,39 @@ func TestIngestDatasetReopenAndPendingVisibility(t *testing.T) {
 		require.Len(t, experiments.Experiments, 1)
 		detail, err := evals.GetExperimentPage(t.Context(), db, experiments.Experiments[0].ID, -1, 100)
 		require.NoError(t, err)
-		require.Equal(t, string(parts[0].Payload), detail.Rows[0].JSON)
+		require.JSONEq(t, string(parts[0].Payload), detail.Rows[0].JSON)
+		require.Contains(t, detail.Rows[0].JSON, `"exact":18446744073709551615`)
+		return nil
+	}))
+}
+
+func TestNativeEvalNumberRanges(t *testing.T) {
+	s, err := store.NewStore(t.Context(), "", nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return evals.AppendParts(t.Context(), db, "numbers", "numbers.json", []evals.IngestPart{{
+			Payload: json.RawMessage(`{"signed":-9223372036854775808,"unsigned":18446744073709551615,"overflow":18446744073709551616,"huge":1e9999,"decimal":1.2300e+02,"zero":-0,"text":"-0 1e9999 \"quoted\""}`),
+		}})
+	}))
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var raw, signed, unsigned, overflowKind, hugeKind string
+		var negativeZero bool
+		err := db.QueryRow(`select to_json(payload)::varchar,
+		 payload.signed::bigint::varchar, payload.unsigned::ubigint::varchar,
+		 variant_typeof(payload.overflow), variant_typeof(payload.huge),
+		 signbit(payload.zero::double) from eval_records`).Scan(&raw, &signed, &unsigned, &overflowKind, &hugeKind, &negativeZero)
+		require.NoError(t, err)
+		require.True(t, json.Valid([]byte(raw)))
+		require.Equal(t, "-9223372036854775808", signed)
+		require.Equal(t, "18446744073709551615", unsigned)
+		require.Equal(t, "VARCHAR", overflowKind)
+		require.Equal(t, "VARCHAR", hugeKind)
+		require.True(t, negativeZero)
+		require.Contains(t, raw, `"overflow":"18446744073709551616"`)
+		require.Contains(t, raw, `"huge":"1e9999"`)
+		require.Contains(t, raw, `"decimal":123.0`)
+		require.Contains(t, raw, `"text":"-0 1e9999 \"quoted\""`)
 		return nil
 	}))
 }

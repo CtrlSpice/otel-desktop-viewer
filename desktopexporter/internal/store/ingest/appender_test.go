@@ -104,13 +104,17 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			return err
 		}
 
+		body, err := ingest.ValueNodes(pcommon.NewValueStr("flush test"))
+		if err != nil {
+			return err
+		}
 		if err := appenders["logs"].AppendRow(
 			logRef,
 			int64(0), int64(0), // Timestamp, ObservedTimestamp
 			nil, nil, // TraceID, SpanID
 			"INFO", int32(9), // SeverityText, SeverityNumber
-			`{"kind":"string","value":"flush test"}`, // Body JSON
-			resourceID, scopeID,                      // ResourceID, ScopeID
+			body,                // Body typed node tree
+			resourceID, scopeID, // ResourceID, ScopeID
 			ingest.NonNil(logAttrIDs), // AttributeIDs UUID[]
 			uint32(0), uint32(0), "",  // DroppedAttributesCount, Flags, EventName
 			"flush-test", // ServiceName VARCHAR (NOT NULL, '' = unknown)
@@ -157,7 +161,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	var key, value string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
-			select a.key, a.value::varchar
+			select a.key, otel_value_json(a.value)::varchar
 			from (select unnest(attribute_ids) as id from logs where id = ?) x
 			join attributes a on a.id = x.id
 			where a.id = ?

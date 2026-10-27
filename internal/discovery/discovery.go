@@ -51,7 +51,7 @@ func Literal(value string) string {
 // resource is a server-owned SQL alias, never query input.
 func ServiceIdentity(resource string) string {
 	value := func(key string) string {
-		return "(SELECT a.value FROM attributes a WHERE a.key = " + Literal(key) + " AND list_contains(" + resource + ".attribute_ids, a.id))"
+		return "(SELECT otel_value_json(a.value) FROM attributes a WHERE a.key = " + Literal(key) + " AND list_contains(" + resource + ".attribute_ids, a.id))"
 	}
 	return "json_array(" + value("service.name") + ", coalesce(" + value("service.namespace") + ", '{\"kind\":\"string\",\"value\":\"\"}'::JSON))::VARCHAR"
 }
@@ -70,7 +70,7 @@ func Predicate(query Query) string {
 		p = append(p, "s.service_name = "+Literal(query.Service))
 	}
 	if query.Namespace != nil {
-		p = append(p, `coalesce((SELECT attribute_text(a.value) FROM resources r, attributes a WHERE r.id = s.resource_id AND a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') = `+Literal(*query.Namespace))
+		p = append(p, `coalesce((SELECT attribute_text(otel_value_json(a.value)) FROM resources r, attributes a WHERE r.id = s.resource_id AND a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') = `+Literal(*query.Namespace))
 	}
 	if query.ServiceIdentity != nil {
 		p = append(p, "(SELECT "+ServiceIdentity("r")+" FROM resources r WHERE r.id = s.resource_id) = "+Literal(*query.ServiceIdentity))
@@ -137,19 +137,19 @@ func foundOn(location Location) string {
 
 func Keys(query Query, location Location, records string) string {
 	return `WITH records AS (` + records + `)
-SELECT json_object('key', a.key, 'kind', json_extract_string(a.value, '$.kind'),
+SELECT json_object('key', a.key, 'kind', otel_value_kind(a.value),
     'foundOn', ` + foundOn(location) + `) AS entry
 FROM records s
 CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
 JOIN attributes a ON a.id = owned.attribute_id
 WHERE ` + Predicate(query) + `
-GROUP BY a.key, json_extract_string(a.value, '$.kind')
-ORDER BY a.key, json_extract_string(a.value, '$.kind')`
+GROUP BY a.key, otel_value_kind(a.value)
+ORDER BY a.key, otel_value_kind(a.value)`
 }
 
 func Values(query Query, location Location, records, key string) string {
 	return `WITH records AS (` + records + `), owned_values AS (
-    SELECT s.record_id, a.value FROM records s
+    SELECT s.record_id, otel_value_json(a.value) AS value FROM records s
     CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
     JOIN attributes a ON a.id = owned.attribute_id
     WHERE ` + Predicate(query) + ` AND a.key = ` + Literal(key) + `

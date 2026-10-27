@@ -291,7 +291,7 @@ func TestFlushPreservesDistinctResourcePayloadsAcrossBatches(t *testing.T) {
 		var resources, regions, dropped int
 		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
 		require.NoError(t, db.QueryRow(`
-			select count(distinct json_extract_string(a.value, '$.value'))
+			select count(distinct a.value::varchar)
 			from resources r, unnest(r.attribute_ids) t(id)
 			join attributes a on a.id = t.id
 			where a.key = 'region'`).Scan(&regions))
@@ -385,7 +385,7 @@ func TestStoredIDsMatchTheSQLMacro(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		var mismatched int
 		err := db.QueryRow(
-			`select count(*) from attributes where id <> attr_id(key, value::varchar)`,
+			`select count(*) from attributes where id <> attr_id(key, otel_value_json(value)::varchar)`,
 		).Scan(&mismatched)
 		require.NoError(t, err)
 		assert.Zero(t, mismatched, "Go and SQL must agree on every id")

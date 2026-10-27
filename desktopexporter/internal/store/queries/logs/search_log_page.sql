@@ -34,8 +34,8 @@ select cast(json_object(
         'severityNumber', l.severity_number,
         'eventName',      l.event_name,
         'serviceName',    l.service_name,
-        'bodyPreview',    body_preview(l.body),
-        'bodyType',       json_extract_string(l.body, '$.kind')
+        'bodyPreview',    body_preview(otel_value_json(l.body)),
+        'bodyType',       otel_value_kind(l.body)
         {{if .Columns}}, 'columnValues', p.values{{end}}
     ) order by {{.Order}})), '[]'::json) from page l
     {{if .Columns}}left join projected_columns p on p.id = l.id{{end}})

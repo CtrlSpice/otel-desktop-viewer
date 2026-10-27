@@ -22,7 +22,8 @@ used_attribute_ids as materialized (
 attribute_batch_input as materialized (
 	select
 		coalesce(list(used.id order by used.id), []::uuid[]) as ids,
-		coalesce(list(a.value order by used.id), []::json[]) as encoded_values
+		coalesce(list(case when a.id is null then error('missing stored attribute')
+			else otel_value_json(a.value) end order by used.id), []::json[]) as encoded_values
 	from used_attribute_ids used
 	left join attributes a using (id)
 ),

@@ -11,7 +11,7 @@
 			'severityNumber', l.severity_number,
 			'eventName',      l.event_name,
 			'serviceName',    l.service_name,
-			'bodyPreview',    body_preview(l.body),
-			'bodyType',       json_extract_string(l.body, '$.kind')
+			'bodyPreview',    body_preview(otel_value_json(l.body)),
+			'bodyType',       otel_value_kind(l.body)
 		) order by {{.Order}})), '[]') as varchar) as logs
 		from filtered l

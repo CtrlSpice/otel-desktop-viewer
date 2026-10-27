@@ -160,7 +160,7 @@ func appendPass(
 					spanID = util.SpanIDUint64(sid)
 				}
 
-				bodyValue, err := util.EncodeValue(log.Body())
+				bodyNodes, err := ingest.ValueNodes(log.Body())
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 				}
@@ -176,7 +176,7 @@ func appendPass(
 					spanID,                          // SpanID UBIGINT or NULL
 					log.SeverityText(),              // SeverityText VARCHAR
 					int32(log.SeverityNumber()),     // SeverityNumber INTEGER
-					json.RawMessage(bodyValue),      // Body JSON
+					bodyNodes,                       // Body typed node tree
 					resourceID,                      // ResourceID UUID
 					scopeID,                         // ScopeID UUID
 					ingest.NonNil(logAttrIDs),       // AttributeIDs UUID[]
@@ -374,7 +374,7 @@ func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
 		"severity":  "coalesce(l.severity_number, 0)",
 		"service":   "coalesce(l.service_name, '')",
 		"name":      "coalesce(l.event_name, '')",
-		"body":      "coalesce(body_preview(l.body), '')",
+		"body":      "coalesce(body_preview(otel_value_json(l.body)), '')",
 	}
 	expression, ok := expressions[sortOption.Field]
 	if !ok {
@@ -608,7 +608,7 @@ func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpres
 	case "flags":
 		return search.NativeInteger("l.flags"), nil
 	case "body":
-		return search.Text("coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar)"), nil
+		return search.Text("coalesce(json_extract_string(otel_value_json(l.body), '$.value'), json_extract(otel_value_json(l.body), '$.value')::varchar)"), nil
 	case "eventName":
 		return search.Text("l.event_name"), nil
 	case "scope.name":
@@ -705,7 +705,7 @@ func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
 	return search.TextExpressions([]string{
 		"replace(l.trace_id::varchar, '-', '') {COND}",
 		"span_id_wire(l.span_id) {COND}",
-		"coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar) {COND}",
+		"coalesce(json_extract_string(otel_value_json(l.body), '$.value'), json_extract(otel_value_json(l.body), '$.value')::varchar) {COND}",
 		"CAST(l.severity_text AS VARCHAR) {COND}",
 		"CAST(l.severity_number AS VARCHAR) {COND}",
 		"CAST(l.event_name AS VARCHAR) {COND}",
@@ -717,8 +717,7 @@ func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
 			FROM unnest(l.attribute_ids || r.attribute_ids || sc.attribute_ids) AS t(aid)
 			JOIN attributes a ON a.id = t.aid
 			WHERE (
-				a.key {COND} OR a.value::varchar {COND} OR
-				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
+				a.key {COND} OR otel_value_json(a.value)::varchar {COND}
 			)
 		)`,
 	}), nil

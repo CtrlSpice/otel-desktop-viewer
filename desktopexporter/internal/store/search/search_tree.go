@@ -134,11 +134,11 @@ func AttributeKind(requested string) (string, OperandMode, error) {
 func AttributeValueExpression(kind string) string {
 	switch kind {
 	case "int64":
-		return "attribute_int64(a.value)"
+		return "try_cast(a.value as bigint)"
 	case "double":
-		return "attribute_double(a.value)"
+		return "try_cast(a.value as double)"
 	default:
-		return "coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar)"
+		return "coalesce(json_extract_string(otel_value_json(a.value), '$.value'), json_extract(otel_value_json(a.value), '$.value')::varchar)"
 	}
 }
 
@@ -150,7 +150,7 @@ func AttributeKindPredicate(kindParam string) string {
 	if kindParam == "" {
 		return ""
 	}
-	return " and json_extract_string(a.value, '$.kind') = " + kindParam
+	return " and otel_value_kind(a.value) = " + kindParam
 }
 
 // A resource or scope has one attribute set. A scalar null check includes an
@@ -788,7 +788,7 @@ func JSONValueArrayPredicate(attributeIDs, keyParam, kindParam string, query *Qu
 	)`, attributeIDs, keyParam, kindPredicate)
 	predicate := fmt.Sprintf(`exists(
 		select 1 from unnest(%s) t(aid)
-		join attributes a on a.id = t.aid, json_each(a.value, '$.value') j
+		join attributes a on a.id = t.aid, json_each(otel_value_json(a.value), '$.value') j
 		where a.key = %s%s
 			and json_extract_string(j.value, '$.value') = %s
 	)`, attributeIDs, keyParam, kindPredicate, valueParam)

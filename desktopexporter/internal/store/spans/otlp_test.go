@@ -273,7 +273,7 @@ func TestGetTraceOTLPRejectsDanglingAttribute(t *testing.T) {
 		return err
 	})
 	assert.ErrorIs(t, err, spans.ErrSpansStoreInternal)
-	assert.ErrorContains(t, err, "stored OTel value is SQL NULL")
+	assert.ErrorContains(t, err, "missing stored attribute")
 }
 
 func otlpTraceFixture() ptrace.Traces {

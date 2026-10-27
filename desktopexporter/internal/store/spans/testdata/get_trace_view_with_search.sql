@@ -49,7 +49,7 @@
 		join scopes sc on sc.id = s.scope_id
 			where s.trace_id = search_params.trace_id AND (exists(
 			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = attr_key_1 and json_extract_string(a.value, '$.kind') = attr_kind_2 and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) = value_3
+			where a.key = attr_key_1 and otel_value_kind(a.value) = attr_kind_2 and coalesce(json_extract_string(otel_value_json(a.value), '$.value'), json_extract(otel_value_json(a.value), '$.value')::varchar) = value_3
 		))
 		),
 
@@ -70,7 +70,7 @@
 			select map(list(id), list({
 				'k': key,
 				'i': id,
-				'j': json_object('id', id::varchar, 'key', key, 'value', value)
+				'j': json_object('id', id::varchar, 'key', key, 'value', otel_value_json(value))
 			})) as m
 			from attributes
 			where id in (

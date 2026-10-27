@@ -166,15 +166,24 @@ attribute IDs needed to render the datapoint.
 
 ### Values and precision
 
-Attributes, log bodies, and Metric metadata use recursive tagged JSON. Every
-value is `{kind,value}`.
+Attributes, log bodies, and Metric metadata use native VARIANT storage, retaining
+nested scalar types. SQL can query fields directly, for example
+`body.user.id::bigint`. Automatic VARIANT shredding is enabled.
+
+The UI wire projection uses recursive tagged JSON: every value is `{kind,value}`.
 
 - int64 values use decimal strings.
 - finite doubles use JSON numbers.
-- negative zero and non-finite doubles use exact IEEE-754 bit text.
+- negative zero and non-finite doubles use IEEE-754 bit text. NaN sign and payload
+  normalize to one representation before attribute hashing and native storage.
 - arrays preserve order.
 - maps keep the last received value per key, then sort the surviving entry list.
 - empty values use `null` inside the tagged value.
+
+Evals records and context also use native VARIANT. Reads use normalized JSON
+number formatting and retain exact signed and unsigned 64-bit integers. Numbers
+outside the native JSON conversion range remain text for inspection. Retained
+log evidence keeps the producer's original numeric text.
 
 Received OTLP timestamps use DuckDB `UBIGINT`. Span kind, span status code, and
 Metric aggregation temporality use signed `INTEGER`, including unknown values.
@@ -219,8 +228,11 @@ Each request uses two passes:
    identities.
 2. Append spans, logs, Metric datapoints, exemplars, events, and links.
 
-The dictionary and identity tables use inserts with conflict handling. High
-volume owner tables use DuckDB appenders.
+The dictionary and identity tables use inserts with conflict handling. Attributes
+and logs use query appenders: each pdata value travels as one typed node-array
+cell, and shared SQL assembles its native VARIANT tree. Other high-volume owner
+tables use DuckDB appenders. Tagged JSON is generated on reads, not stored beside
+the native values.
 
 ## Query layer
 

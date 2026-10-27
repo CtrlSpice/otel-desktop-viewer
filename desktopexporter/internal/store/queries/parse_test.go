@@ -26,6 +26,7 @@ func TestQueriesParse(t *testing.T) {
 
 	db := sql.OpenDB(connector)
 	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, queries.RegisterFunctions(t.Context(), db))
 
 	// Order matters: types, then tables, then indexes, then macros -- the same
 	// sequence NewStore uses, for the same reasons.

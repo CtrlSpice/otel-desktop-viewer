@@ -127,7 +127,7 @@ func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, before, after)
-			assert.Equal(t, 24, schema.Version)
+			assert.Equal(t, 25, schema.Version)
 		})
 	}
 }

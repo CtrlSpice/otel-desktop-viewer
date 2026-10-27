@@ -51,7 +51,7 @@ func TestSearchProbeMatchesIngestedID(t *testing.T) {
 	type row struct{ key, value, typ, id string }
 	var rows []row
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		r, err := db.Query(`select key, json_extract_string(value, '$.value'), json_extract_string(value, '$.kind'), id::varchar from attributes where json_extract_string(value, '$.kind') in ('string', 'int64', 'bool')`)
+		r, err := db.Query(`select key, value::varchar, otel_value_kind(value), id::varchar from attributes where otel_value_kind(value) in ('string', 'int64', 'bool')`)
 		if err != nil {
 			return err
 		}

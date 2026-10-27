@@ -94,12 +94,12 @@ func TestGetTraceLogSummariesPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	// than dependent on random ingest UUIDs.
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		if _, err := db.ExecContext(ctx,
-			`update logs set id = ?::uuid where body_preview(body) = ?`,
+			`update logs set id = ?::uuid where body_preview(otel_value_json(body)) = ?`,
 			"00000000-0000-0000-0000-0000000000ff", "tie-a"); err != nil {
 			return err
 		}
 		_, err := db.ExecContext(ctx,
-			`update logs set id = ?::uuid where body_preview(body) = ?`,
+			`update logs set id = ?::uuid where body_preview(otel_value_json(body)) = ?`,
 			"00000000-0000-0000-0000-000000000010", "tie-b")
 		return err
 	}))

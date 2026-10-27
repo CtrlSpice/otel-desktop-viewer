@@ -17,7 +17,8 @@ used_attribute_ids as materialized (
 attribute_batch_input as materialized (
 	select
 		coalesce(list(used.id order by used.id), []::uuid[]) as ids,
-		coalesce(list(a.value order by used.id), []::json[]) as encoded_values
+		coalesce(list(case when a.id is null then error('missing stored attribute')
+			else otel_value_json(a.value) end order by used.id), []::json[]) as encoded_values
 	from used_attribute_ids used
 	left join attributes a using (id)
 ),
@@ -25,7 +26,7 @@ value_batch_input as materialized (
 	select
 		(select id from selected) as id,
 		case when exists (select 1 from selected)
-			then list_prepend((select body from selected), input.encoded_values)
+			then list_prepend((select otel_value_json(body) from selected), input.encoded_values)
 			else []::json[]
 		end as encoded_values
 	from attribute_batch_input input

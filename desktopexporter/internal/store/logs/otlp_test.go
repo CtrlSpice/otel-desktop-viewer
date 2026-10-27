@@ -219,7 +219,7 @@ func TestGetLogOTLPRejectsDanglingAttribute(t *testing.T) {
 		return err
 	})
 	assert.ErrorIs(t, err, logs.ErrLogsStoreInternal)
-	assert.ErrorContains(t, err, "stored OTel value is SQL NULL")
+	assert.ErrorContains(t, err, "missing stored attribute")
 }
 
 func lookupLogRef(t testing.TB, s *store.Store, ctx context.Context, eventName string) string {

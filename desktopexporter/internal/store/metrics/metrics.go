@@ -1765,8 +1765,7 @@ const matchIngestByAnyLabel = `s.id in (
 			select d.metric_id from %s
 			where %s && (
 				select list(a.id) from attributes a where (
-					a.key {COND} OR a.value::varchar {COND} OR
-					exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
+					a.key {COND} OR otel_value_json(a.value)::varchar {COND}
 				)
 			)
 		)`
@@ -1791,8 +1790,7 @@ func mapMetricGlobalExpressions() ([]search.ResolvedExpression, error) {
 			FROM unnest(r.attribute_ids || sc.attribute_ids) AS t(aid)
 			JOIN attributes a ON a.id = t.aid
 			WHERE (
-				a.key {COND} OR a.value::varchar {COND} OR
-				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
+				a.key {COND} OR otel_value_json(a.value)::varchar {COND}
 		)
 	)`,
 	}), nil

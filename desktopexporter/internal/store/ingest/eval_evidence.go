@@ -60,7 +60,7 @@ func invalidateEvalEvidence(ctx context.Context, tx evalDeletionTx) error {
 		`delete from eval_experiments where dataset_id in (select id from eval_datasets where import_id in (` + missing + `))`,
 		`delete from eval_experiment_indexes where dataset_id in (select id from eval_datasets where import_id in (` + missing + `))`,
 		`delete from eval_records where import_id in (` + missing + `)`,
-		`update eval_datasets set context='{}', name='Imported evaluation', row_count=0, byte_size=0 where import_id in (` + missing + `)`,
+		`update eval_datasets set context='{}'::json::variant, name='Imported evaluation', row_count=0, byte_size=0 where import_id in (` + missing + `)`,
 		`delete from eval_parts where import_id in (` + missing + `)`,
 		`delete from eval_evidence where not exists(select 1 from logs l where l.id=log_id)`,
 	} {

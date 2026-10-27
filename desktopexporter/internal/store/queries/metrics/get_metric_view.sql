@@ -314,7 +314,7 @@
 			from input i, reduction_span rs, series_cadence c
 		),
 		scalar_view_bucketed as (
-			select d.series_id,
+			select d.series_id, d.timestamp, d.id,
 				floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 				          (select width_ns from scalar_view_grid))
 					::hugeint * (select width_ns from scalar_view_grid)::hugeint as bucket_local,
@@ -325,7 +325,7 @@
 					(select tz_name from input),
 					(select tz_offset_ns from input)) as bucket_start,
 				d.value,
-				coalesce(sd.delta_double, sd.delta_int::double) as delta,
+				coalesce(sd.delta_double, hugeint_to_double(sd.delta_int)) as delta,
 				sd.is_reset
 			from scalar_dps d
 			left join scalar_deltas sd
@@ -360,9 +360,10 @@
 			select sp.series_id,
 				sp.bucket_start,
 				count(b.series_id) as sample_count,
-				sum(b.value) as value_sum,
-				avg(b.value) as value_avg,
-				sum(b.delta) / ((select width_ns from scalar_view_grid) / 1e9) as rate,
+				-- Order additions, not just output rows. IDs resolve timestamp ties.
+				sum(b.value order by b.timestamp, b.id) as value_sum,
+				avg(b.value order by b.timestamp, b.id) as value_avg,
+				sum(b.delta order by b.timestamp, b.id) / ((select width_ns from scalar_view_grid) / 1e9) as rate,
 				-- Mark any cumulative-counter reset within the bucket.
 				coalesce(bool_or(b.is_reset), false) as has_reset
 			from scalar_view_spine sp
@@ -382,7 +383,7 @@
 		scalar_view_slope as (
 			select series_id, bucket_start,
 				(drawn_rate - lag(drawn_rate) over w)
-					/ ((bucket_start - lag(bucket_start) over w) / 1e9) as slope
+					/ (hugeint_to_double(bucket_start - lag(bucket_start) over w) / 1e9) as slope
 			from scalar_view_drawn
 			window w as (partition by series_id order by bucket_start)
 		),
@@ -391,7 +392,7 @@
 			select series_id,
 				json_object('min', double_wire_json(min(drawn_rate)),
 				            'max', double_wire_json(max(drawn_rate)),
-				            'avg', double_wire_json(avg(drawn_rate))) as rate_stats
+				            'avg', double_wire_json(avg(drawn_rate order by bucket_start))) as rate_stats
 			from scalar_view_drawn
 			group by series_id
 		),
@@ -428,9 +429,9 @@
 			select pool,
 				bucket_start,
 				sum(sample_count) as sample_count,
-				sum(value_sum) as value_sum,
-				sum(value_sum) / nullif(sum(sample_count), 0) as value_avg,
-				sum(rate) as rate,
+				sum(value_sum order by series_id) as value_sum,
+				sum(value_sum order by series_id) / hugeint_to_double(nullif(sum(sample_count), 0)) as value_avg,
+				sum(rate order by series_id) as rate,
 				coalesce(bool_or(has_reset), false) as has_reset
 			from scalar_pool_rows
 			group by pool, bucket_start
@@ -445,7 +446,7 @@
 		scalar_pool_slope as (
 			select pool, bucket_start,
 				(drawn_rate - lag(drawn_rate) over w)
-					/ ((bucket_start - lag(bucket_start) over w) / 1e9) as slope
+					/ (hugeint_to_double(bucket_start - lag(bucket_start) over w) / 1e9) as slope
 			from scalar_pool_drawn
 			window w as (partition by pool order by bucket_start)
 		),
@@ -686,7 +687,7 @@
 				any_value(p.is_monotonic) as is_monotonic,
 				-- hist_activity has already normalized both temporalities to activity.
 				sum(p.count) as count,
-				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
+				case when count(p.sum) = count(*) then sum(p.sum order by p.timestamp, p.id) end as sum,
 				-- Explicit bounds must match exactly within the group.
 				any_value(p.explicit_bounds) as explicit_bounds,
 				count(distinct p.explicit_bounds::varchar) as distinct_bounds,
@@ -809,7 +810,7 @@
 				count(coalesce(d.double_value, d.int_value)) as value_count,
 				min(coalesce(d.double_value, d.int_value)) as value_min,
 				max(coalesce(d.double_value, d.int_value)) as value_max,
-				sum(coalesce(d.double_value, d.int_value)) as value_sum
+				sum(coalesce(d.double_value, d.int_value) order by d.timestamp, d.id) as value_sum
 			-- Group on the fixed-width indexed series ID.
 		from projected_dps d
 			group by d.series_id
@@ -847,14 +848,16 @@
 			from dp_qsrc b, unnest(b.buckets) with ordinality u(b, i)
 		),
 		-- First non-empty bucket whose cumulative count crosses q * n.
+		-- The window sums remain exact HUGEINTs. Only the probability comparison
+		-- and interpolation project counts to correctly rounded binary64.
 		dp_q_picked as (
 			select a.id, qq.q,
 				case when a.is_linear
-					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n)
-					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n) end as v,
+					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * hugeint_to_double(a.n))
+					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * hugeint_to_double(a.n)) end as v,
 				row_number() over (partition by a.id, qq.q order by a.i) as rn
 			from dp_q_acc a, (select unnest((select quantiles from input)) as q) qq
-			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
+			where a.n > 0 and a.cnt > 0 and hugeint_to_double(a.acc) >= qq.q * hugeint_to_double(a.n)
 		),
 		-- Preserve request key order with ordered lists. Empty histograms emit each
 		-- requested key with NULL value.
@@ -952,7 +955,7 @@
 				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				sum(p.count) as count,
-				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
+				case when count(p.sum) = count(*) then sum(p.sum order by p.series_id) end as sum,
 				any_value(p.agg_scale) as scale,
 				max(p.zero_threshold) as zero_threshold,
 				sum(p.zero_count) as zero_count,
@@ -1016,11 +1019,11 @@
 		agg_q_picked as (
 			select a.bucket_start, qq.q,
 				case when a.is_linear
-					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n)
-					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n) end as v,
+					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * hugeint_to_double(a.n))
+					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * hugeint_to_double(a.n)) end as v,
 				row_number() over (partition by a.bucket_start, qq.q order by a.i) as rn
 			from agg_q_acc a, (select unnest((select quantiles from input)) as q) qq
-			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
+			where a.n > 0 and a.cnt > 0 and hugeint_to_double(a.acc) >= qq.q * hugeint_to_double(a.n)
 		),
 		agg_quantiles as (
 			select t.bucket_start, to_json(map(

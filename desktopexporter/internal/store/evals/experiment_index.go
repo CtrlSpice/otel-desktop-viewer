@@ -39,13 +39,13 @@ func indexStatus(ctx context.Context, access ExperimentDB, id, kind, status, rea
 		// A retention pass may have invalidated the context while projection ran
 		// outside the lock. Do not recreate a derived copy after that deletion.
 		var live bool
-		if err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets where id=? and context=cast(? as json))`, id, string(raw)).Scan(&live); err != nil {
+		if err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets where id=? and context=?::json::variant)`, id, string(raw)).Scan(&live); err != nil {
 			return err
 		}
 		if !live {
 			return ErrEvalNotFound
 		}
-		_, err := db.ExecContext(ctx, `insert into eval_experiment_indexes values (?, ?, ?, ?, cast(? as json)) on conflict(dataset_id) do update set status=excluded.status, reason=excluded.reason, context=excluded.context`, id, kind, status, reason, string(raw))
+		_, err := db.ExecContext(ctx, `insert into eval_experiment_indexes values (?, ?, ?, ?, ?::json::variant) on conflict(dataset_id) do update set status=excluded.status, reason=excluded.reason, context=excluded.context`, id, kind, status, reason, string(raw))
 		return err
 	})
 }
@@ -126,7 +126,7 @@ func readExperimentSource(ctx context.Context, db *sql.DB, id, experimentID stri
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `select r.ordinal, cast(r.payload as varchar) from `+from+` where `+where+` and r.ordinal <= ? order by r.ordinal`, append(args, end)...)
+	rows, err := db.QueryContext(ctx, `select r.ordinal, to_json(r.payload)::varchar from `+from+` where `+where+` and r.ordinal <= ? order by r.ordinal`, append(args, end)...)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func appendExperimentRows(ctx context.Context, db *sql.DB, rows []projectedExper
 	for _, row := range rows {
 		s := row.Summary
 		var live bool
-		if err := tx.QueryRowContext(ctx, `select exists(select 1 from eval_records r join eval_datasets d on d.import_id=r.import_id and d.envelope=r.envelope where d.id=? and r.ordinal=? and d.context<>cast('{}' as json))`, s.DatasetID, row.Ordinal).Scan(&live); err != nil {
+		if err := tx.QueryRowContext(ctx, `select exists(select 1 from eval_records r join eval_datasets d on d.import_id=r.import_id and d.envelope=r.envelope where d.id=? and r.ordinal=? and d.context<>'{}'::json::variant)`, s.DatasetID, row.Ordinal).Scan(&live); err != nil {
 			return err
 		}
 		if !live {
@@ -233,7 +233,7 @@ func EnsureExperimentIndex(ctx context.Context, access ExperimentDB, id, kind st
 	var metadata Metadata
 	var rawContext string
 	err = access.WithDBRead(func(db *sql.DB) error {
-		return scanMetadata(db.QueryRowContext(ctx, `select `+metadataColumns+`, cast(context as varchar) from eval_datasets where id=? and not deleted`, id), &metadata, &rawContext)
+		return scanMetadata(db.QueryRowContext(ctx, `select `+metadataColumns+`, to_json(context)::varchar from eval_datasets where id=? and not deleted`, id), &metadata, &rawContext)
 	})
 	if err != nil {
 		return err

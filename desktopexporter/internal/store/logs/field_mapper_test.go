@@ -48,8 +48,8 @@ func TestNumericLogAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, resolved, 1)
 			assert.Equal(t, search.AttributeDoubleOperand, resolved[0].OperandMode)
-			assert.Contains(t, resolved[0].SQL, "attribute_double(a.value)")
-			assert.Contains(t, resolved[0].SQL, "json_extract_string(a.value, '$.kind') = attr_kind_1")
+			assert.Contains(t, resolved[0].SQL, "try_cast(a.value as double)")
+			assert.Contains(t, resolved[0].SQL, "otel_value_kind(a.value) = attr_kind_1")
 		})
 	}
 }

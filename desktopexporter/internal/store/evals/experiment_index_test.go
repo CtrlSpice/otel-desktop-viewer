@@ -160,7 +160,7 @@ func TestExperimentIndexDoesNotRecreateExpiredContext(t *testing.T) {
 					return err
 				}
 			}
-			_, err := db.Exec(`update eval_datasets set context='{}',row_count=0,byte_size=0`)
+			_, err := db.Exec(`update eval_datasets set context='{}'::json::variant,row_count=0,byte_size=0`)
 			return err
 		}))
 	}}, evals.DatasetID(id, 0), "dataset")

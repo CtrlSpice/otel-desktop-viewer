@@ -29,7 +29,10 @@ func attributeTestViewer(t *testing.T) (*sql.DB, *httptest.Server) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	_, err = db.Exec(`CREATE TABLE attributes (id UUID PRIMARY KEY, key VARCHAR, value JSON);
 CREATE TABLE spans (trace_id UUID, span_id UBIGINT, start_time UBIGINT,
-    service_name VARCHAR, attribute_ids UUID[], resource_id UUID, PRIMARY KEY (trace_id, span_id))`)
+    service_name VARCHAR, attribute_ids UUID[], resource_id UUID, PRIMARY KEY (trace_id, span_id));
+-- This CLI-only fixture uses tagged JSON; production integration tests exercise native VARIANT.
+CREATE MACRO otel_value_json(v) AS v;
+CREATE MACRO otel_value_kind(v) AS json_extract_string(v, '$.kind')`)
 	require.NoError(t, err)
 	viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {

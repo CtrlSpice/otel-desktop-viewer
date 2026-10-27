@@ -14,14 +14,14 @@ create table if not exists eval_datasets (
     byte_size bigint not null,
     row_count bigint not null,
     deleted boolean not null default false,
-    context json not null
+    context variant not null
 );
 create table if not exists eval_records (
     import_id varchar not null,
     envelope integer not null,
     ordinal bigint not null,
     byte_size bigint not null,
-    payload json not null,
+    payload variant not null,
     primary key (import_id, envelope, ordinal)
 );
 -- Tracks physical records separately from logical source identities. Ordinary
