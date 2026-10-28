@@ -42,10 +42,6 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            build_id: macos_amd64
-            goos: darwin
-            goarch: amd64
-          - os: macos-latest
             build_id: macos_arm64
             goos: darwin
             goarch: arm64
@@ -182,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          for target in macos_amd64 macos_arm64 linux_amd64 linux_arm64 windows_amd64; do
+          for target in macos_arm64 linux_amd64 linux_arm64 windows_amd64; do
             tar -xzf "release-contexts/${target}.tar.gz" -C dist
           done
       - name: Verify restored GoReleaser partial artifacts
@@ -190,7 +186,6 @@ jobs:
         run: |
           set -euo pipefail
           targets=(
-            darwin_amd64
             darwin_arm64
             linux_amd64
             linux_arm64

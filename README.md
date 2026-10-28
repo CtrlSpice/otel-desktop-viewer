@@ -83,7 +83,6 @@ Download a pre-built binary for your platform from [Releases](https://github.com
 | Platform | Architecture          | File                                      |
 | -------- | --------------------- | ----------------------------------------- |
 | macOS    | Apple Silicon (M1–M4) | `otel-desktop-viewer_darwin_arm64.tar.gz` |
-| macOS    | Intel                 | `otel-desktop-viewer_darwin_amd64.tar.gz` |
 | Linux    | x86_64                | `otel-desktop-viewer_linux_amd64.tar.gz`  |
 | Linux    | arm64                 | `otel-desktop-viewer_linux_arm64.tar.gz`  |
 | Windows  | x86_64                | `otel-desktop-viewer_windows_amd64.zip`   |
