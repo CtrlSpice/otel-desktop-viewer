@@ -71,7 +71,7 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 			var rejected ingest.Rejected
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 				var err error
-				rejected, err = metrics.IngestReport(ctx, conn, batch, s.FlushedIDs())
+				rejected, err = metrics.IngestReport(ctx, conn, batch)
 				return err
 			}))
 			require.Equal(t, 1, rejected.Count())
@@ -94,7 +94,11 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 				otlp := getMetricOTLP(t, s, ctx, id)
 				decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(otlp)
 				require.NoError(t, err)
-				require.Equal(t, 1, decoded.MetricCount())
+				wantRecords := 1
+				if name == "Gauge" {
+					wantRecords = 2
+				}
+				require.Equal(t, wantRecords, decoded.MetricCount(), "both received Gauge descriptors survive")
 				assert.Zero(t, decoded.DataPointCount())
 			}
 			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_datapoints`))

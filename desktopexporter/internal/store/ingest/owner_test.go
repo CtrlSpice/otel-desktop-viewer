@@ -6,8 +6,10 @@ import (
 	"math"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
@@ -32,21 +34,21 @@ func TestInlineOwnersTypedRoundTrip(t *testing.T) {
 	// Mutating pdata after transport creation must not mutate the appended row.
 	resource.Attributes().Clear()
 	scope.Attributes().Clear()
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		_, err := db.Exec(`create table inline_owner_test(resource otel_resource, scope otel_scope)`)
 		return err
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		a, err := ingest.NewTypedQueryAppender(conn,
-			ingest.OwnedAppendQuery("inline_owner_test", []string{"resource.attributes", "scope.attributes"}),
-			`select null::otel_resource_input as resource, null::otel_scope_input as scope where false`)
-		if err != nil {
-			return err
+		var fields []arrow.Field
+		for _, field := range arrowingest.TableFields("logs") {
+			if field.Name == "resource" || field.Name == "scope" {
+				fields = append(fields, field)
+			}
 		}
-		if err := a.AppendRow(r, sc); err != nil {
-			_ = a.Close()
-			return err
-		}
+		a := arrowingest.NewCustomAppender(t.Context(), conn, fields,
+			ingest.OwnedAppendQuery("inline_owner_test", []string{"resource.attributes", "scope.attributes"}))
+		a.SetContext(r, sc)
+		a.FinishParent()
 		return a.Close()
 	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {

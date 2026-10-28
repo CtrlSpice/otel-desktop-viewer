@@ -14,7 +14,7 @@ var splitText = regexp.MustCompile(`[^\p{L}\p{N}_.:/?=&%#@+~-]+`)
 var plainWord = regexp.MustCompile(`^[\p{L}\p{N}]+$`)
 
 func BuildSearchSQL(node *search.QueryNode, mapper search.FieldMapper, timeCondition string, timeParams []search.NamedParam, signal, scope string) (string, string, []any, error) {
-	if !search.HasUntargetedText(node) && !search.HasUnscopedField(node) && !search.HasChildField(node) {
+	if !(signal == "metric" && node != nil) && !search.HasUntargetedText(node) && !search.HasUnscopedField(node) && !search.HasChildField(node) {
 		return search.BuildSearchSQL(node, mapper, timeCondition, timeParams)
 	}
 	switch signal {

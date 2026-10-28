@@ -34,7 +34,7 @@ func TestMetricTimestampsRoundTripAcrossUint64Range(t *testing.T) {
 		exemplar.SetIntValue(int64(i))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {

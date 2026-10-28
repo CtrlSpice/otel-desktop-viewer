@@ -105,7 +105,7 @@ func TestAttributeDiscoveryOrderIsTotal(t *testing.T) {
 		if err := logs.Ingest(ctx, conn, lg); err != nil {
 			return err
 		}
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 
 	type attrDef struct {

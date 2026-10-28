@@ -151,7 +151,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	}
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 	raw := getMetricFullByNameInRange(t, s, ctx, "test.counter", store.BoundedTimeRange(0, 400))
 

@@ -111,23 +111,14 @@ func seedLogs(t *testing.T, s *Store, n int) {
 func seedDatapoints(t *testing.T, s *Store, metricID string, n int, startTime int64) {
 	t.Helper()
 	seedOwners(t, s)
-	_, err := s.db.Exec(`insert into metrics
-		(id, resource_id, resource_payload_id, scope_id, name, metric_type, resource, scope)
-		values (?, ?::uuid, ?::uuid, ?::uuid, 'metric-' || ?, 'Gauge', seed_resource(), seed_scope()) on conflict do nothing`,
-		metricID, seedResourceID, seedPayloadID, seedScopeID, metricID)
-	require.NoError(t, err)
-	// datapoints.series_id is a NOT NULL foreign key, so the series has to
-	// exist before its points. One series per Metric is enough here; these
-	// tests are about pruning by time, not about series identity.
-	_, err = s.db.Exec(`
-		insert into metric_series (id, metric_id, attribute_key, attributes)
-		values (?::uuid, ?::uuid, '', '{}'::json::variant) on conflict do nothing`,
-		metricID, metricID)
-	require.NoError(t, err)
-	_, err = s.db.Exec(`
-		insert into metric_datapoints (id, metric_id, series_id, timestamp, double_value, value_type, attributes, resource, scope)
-		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', '{}'::json::variant, seed_resource(), seed_scope()
-		from range(?)`, metricID, metricID, startTime, n)
+	_, err := s.db.Exec(`insert into metric_records
+		(record_id, id, resource_id, resource_payload_id, scope_id, name, metric_type,
+		 resource, scope, datapoints, point_time_min, point_time_max)
+		select uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'metric-' || $1, 'Gauge', seed_resource(), seed_scope(),
+		 list(struct_pack(id:=uuid(), timestamp:=$5::ubigint+range*1000000,
+		 double_value:=range::double, value_type:='Double', attribute_key:='', attributes:='{}'::json::variant)),
+		 $5::ubigint, $5::ubigint+($6::ubigint-1)*1000000
+		 from range($6)`, metricID, seedResourceID, seedPayloadID, seedScopeID, startTime, n)
 	require.NoError(t, err)
 }
 
@@ -203,7 +194,7 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 	assert.Zero(t, dangling, "pruning must retain the matching attributes")
 }
 
-func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
+func TestEnforceRetentionRemovesFullyPrunedMetricRecords(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
@@ -221,11 +212,11 @@ func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
 
 	var oldMetrics, oldSeries, liveMetrics int64
 	require.NoError(t, s.db.QueryRow(`select count(*) from metrics where id = ?::uuid`, oldMetric).Scan(&oldMetrics))
-	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where id = ?::uuid`, oldMetric).Scan(&oldSeries))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where metric_id = ?::uuid`, oldMetric).Scan(&oldSeries))
 	require.NoError(t, s.db.QueryRow(`select count(*) from metrics where id = ?::uuid`, liveMetric).Scan(&liveMetrics))
 
-	assert.Equal(t, int64(1), oldMetrics, "generated Metric reference must survive full pruning")
-	assert.Equal(t, int64(1), oldSeries, "generated series id must survive full pruning")
+	assert.Zero(t, oldMetrics, "fully pruned received records are removed")
+	assert.Zero(t, oldSeries, "series with no remaining points are removed")
 	assert.Equal(t, int64(1), liveMetrics, "Metric with surviving datapoints must remain")
 
 	var activeMetrics, activeSeries int64
@@ -257,58 +248,6 @@ func TestEnforceRetentionUnderCap(t *testing.T) {
 
 	require.NoError(t, s.EnforceRetention(ctx, 1<<40 /* 1 TB */))
 	assert.Equal(t, int64(1000), count(t, s, "spans"), "store under the cap must not be pruned")
-}
-
-// TestSweepIfOverCapCollectsGarbage verifies that unreferenced histogram bounds are
-// swept before pruning live telemetry. Both operations reduce store size, so
-// the assertion checks that live spans survive.
-func TestSweepIfOverCapCollectsGarbage(t *testing.T) {
-	ctx := context.Background()
-	s, err := NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	defer s.Close()
-
-	const total, keep = 4000, 200
-	seedSpans(t, s, total)
-	_, err = s.db.Exec(`delete from spans where start_time >= ?`, int64(keep)*1000000)
-	require.NoError(t, err)
-	_, err = s.db.Exec(`insert into histogram_bounds select uuid(), [range::double] from range(?)`, total)
-	require.NoError(t, err)
-	require.Equal(t, int64(total), count(t, s, "histogram_bounds"),
-		"the orphans must still be present, or this test proves nothing")
-
-	size, err := s.SizeBytes(ctx)
-	require.NoError(t, err)
-
-	_, err = s.sweepIfOverCap(ctx, size-1)
-	require.NoError(t, err)
-
-	assert.Zero(t, count(t, s, "histogram_bounds"),
-		"unreferenced histogram bounds should have been collected before any prune")
-	assert.Equal(t, int64(keep), count(t, s, "spans"),
-		"sweeping must not touch live telemetry")
-}
-
-// TestSweepIfOverCapSkipsSweepUnderCap verifies that an under-cap store does
-// no sweep work.
-func TestSweepIfOverCapSkipsSweepUnderCap(t *testing.T) {
-	ctx := context.Background()
-	s, err := NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	defer s.Close()
-
-	const total, keep = 1000, 100
-	seedSpans(t, s, total)
-	_, err = s.db.Exec(`insert into histogram_bounds select uuid(), [range::double] from range(?)`, total)
-	require.NoError(t, err)
-	_, err = s.db.Exec(`delete from spans where start_time >= ?`, int64(keep)*1000000)
-	require.NoError(t, err)
-
-	fits, err := s.sweepIfOverCap(ctx, 1<<40 /* 1 TB */)
-	require.NoError(t, err)
-	assert.True(t, fits, "a store far under its cap must report that it fits")
-	assert.Equal(t, int64(total), count(t, s, "histogram_bounds"),
-		"under the cap there is nothing to protect against, so the sweep must not run")
 }
 
 // Pruning an old span must preserve children of a newer span in another trace
@@ -345,15 +284,10 @@ func TestEnforceRetentionPrunesChildrenByTraceAndSpan(t *testing.T) {
 			values (?::uuid, ?::ubigint, 'probe', ?, ?, seed_resource(), seed_scope(), '{}'::json::variant)`,
 			tr.trace, sharedSpanID, tr.start, tr.start+1)
 		require.NoError(t, err)
-		_, err = s.db.Exec(`
-			insert into events (id, trace_id, span_id, name, timestamp, attributes)
-			values (uuid(), ?::uuid, ?::ubigint, 'probe-event', ?, '{}'::json::variant)`,
-			tr.trace, sharedSpanID, tr.start)
-		require.NoError(t, err)
-		_, err = s.db.Exec(`
-			insert into links (id, trace_id, span_id, attributes)
-			values (uuid(), ?::uuid, ?::ubigint, '{}'::json::variant)`,
-			tr.trace, sharedSpanID)
+		_, err = s.db.Exec(`update spans set
+			events=[struct_pack(id:=uuid(), name:='probe-event', timestamp:=$3::ubigint, attributes:='{}'::json::variant)],
+			links=[struct_pack(id:=uuid(), attributes:='{}'::json::variant)]
+			where trace_id=$1::uuid and span_id=$2::ubigint`, tr.trace, sharedSpanID, tr.start)
 		require.NoError(t, err)
 	}
 

@@ -656,16 +656,9 @@ func (h *JSONRPCHandler) clearSignal(
 	clear func(context.Context, *sql.DB) error,
 	successMessage string,
 ) (any, error) {
-	// Clear deletes the signal's own rows but never the dictionary: attribute,
-	// resource and scope rows are shared across signals, so only a sweep can
-	// prove one is unreferenced. It has to run here rather than being left to
-	// retention -- retention is size-driven and does not run at all when the
-	// cap is disabled, which would leak every orphaned row until restart.
+	// Clear removes owning rows and their search catalogue atomically.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		if err := clear(ctx, db); err != nil {
-			return err
-		}
-		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
+		return clear(ctx, db)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(ctx, err)

@@ -473,10 +473,6 @@ func TestClearLogs(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from logs"))
 	assert.Zero(t, countRows(t, s, ctx, "select count(*) from logs, unnest(variant_keys(attributes))"))
 
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
-
 	// Owned payloads never create auxiliary attribute or context tables.
 	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
@@ -730,13 +726,13 @@ func TestDeleteLogsByRefs_Empty(t *testing.T) {
 }
 
 // TestIngestLogs_LargeBatchStaysConsistent verifies records and attributes in a
-// batch larger than the flush interval.
+// a shared-context batch with many independently owned records.
 func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
-	const batchSize = logs.FlushInterval + 1
+	const batchSize = 501
 	ldata := createTestLogsPdataN(baseTime, batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, ldata)

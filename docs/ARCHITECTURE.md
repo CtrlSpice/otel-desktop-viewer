@@ -104,17 +104,19 @@ The frontend build is committed under
 
 | Handle | Access | Purpose |
 | --- | --- | --- |
-| `driver.Conn` | `WithConn` | Ingest appenders |
+| `driver.Conn` | `WithConn` | Transactional Arrow ingestion |
 | `*sql.DB` | `WithDBRead`, `WithDBWrite` | Queries, deletion, retention, checkpointing |
 
 `WithConn` serializes ingest calls and takes the store read lock. Queries may run
 at the same time as ingest. `WithDBWrite` excludes ingest and queries while a
 pool mutation runs.
 
-DuckDB appenders buffer rows until a flush or close. A query can therefore lag
-ingest by one batch. Dictionary rows may become visible before their owner rows,
-but read queries join from owners to dictionary entries and do not expose
-unowned values.
+The desktop exporter builds Arrow batches from pdata using C-owned buffers.
+An application-owned, statically linked C API v2 extension hands these batches
+to the stock DuckDB driver on the existing connection. Telemetry owners and
+their search catalogue entries commit in one transaction. Reads see committed
+batches. Arrow conversion stays inside the exporter; Collector batching still
+counts logs, spans, and metric points.
 
 Callers never receive the raw `*sql.DB`. Production code runs database work
 inside a store closure so lock ownership covers the full operation.
@@ -126,7 +128,7 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 26. Store startup validates `schema_meta` before
+The current schema version is 27. Store startup validates `schema_meta` before
 running DDL. A mismatched, malformed, or unversioned telemetry database is
 rejected without modification. The store does not migrate or reset databases.
 
@@ -134,21 +136,19 @@ rejected without modification. The store does not migrate or reset databases.
 
 | Table | Stored data |
 | --- | --- |
-| `spans` | Span records with owned Resource, Scope, and attributes |
-| `events` | Span events |
-| `links` | Span links |
+| `spans` | Span records with owned Resource, Scope, attributes, and nested event/link lists |
 | `logs` | Log records with owned Resource, Scope, and attributes |
-| `metrics` | One exact OTel Metric identity with owned Resource, Scope, and metadata |
-| `metric_series` | One series for a Metric and datapoint attribute set |
-| `metric_datapoints` | Gauge, Sum, Histogram, and ExponentialHistogram datapoints with owned context and attributes |
-| `histogram_bounds` | Deduplicated explicit histogram bounds |
-| `exemplars` | Metric exemplars |
+| `metric_records` | Append-only received Metric records, each owning its descriptor, context, points, bounds, and exemplars |
 | `ingest_rejections` | Refused record diagnostics |
 
-`metrics.id` and `metric_series.id` are viewer-generated UUIDs. Public APIs call
+`events`, `links`, `metric_datapoints`, and `exemplars` are views of nested
+children. `metrics` exposes the latest received descriptor per logical identity;
+`metric_series` derives the identities of retained point attribute sets.
+
+`metrics.id` and `metric_series.id` are deterministic viewer-generated UUIDs. Public APIs call
 them `metricRef` and `seriesRef`. `getMetricSeries` exposes `metric_datapoints.id`
 as `datapointRef`; `getLog` exposes `logs.id` as `logRef`. These references are
-scoped to one database. Received OTel trace/span identifiers remain `traceID`
+opaque viewer references. Received OTel trace/span identifiers remain `traceID`
 and `spanID`.
 
 Metric identity includes the complete Resource payload key, complete Scope,
@@ -158,10 +158,12 @@ fields but do not identify a Metric. `service_name` is a derived search and
 display field from Resource attributes.
 
 `metric_series` identifies one Metric plus one datapoint attribute set.
-`metric_datapoints` keeps both `metric_id` and `series_id`, along with the exact
-attribute map, Resource, and Scope received with that datapoint.
-Metric OTLP export groups datapoints by this received context; Metric Details
-continues to show the Metric's current description and metadata.
+`metric_datapoints` projects both `metric_id` and `series_id`, along with the exact
+attribute map and the Resource and Scope of the owning received record.
+Metric OTLP export preserves each received descriptor with its own points,
+including earlier descriptions and metadata. Metric Details shows the latest
+description and metadata. Deleting an owner removes its nested children;
+retention filters point lists and removes records emptied by pruning.
 
 ### Values and precision
 
@@ -173,8 +175,9 @@ The UI wire projection uses recursive tagged JSON: every value is `{kind,value}`
 
 - int64 values use decimal strings.
 - finite doubles use JSON numbers.
-- negative zero and non-finite doubles use IEEE-754 bit text. NaN sign and payload
-  normalize to one representation before attribute hashing and native storage.
+- negative zero and non-finite doubles use IEEE-754 bit text. Native storage
+  preserves received NaN sign and payload bits. Content-identity hashing
+  normalizes NaNs; transport dictionaries also compare received attribute bytes.
 - arrays preserve order.
 - maps keep the last received value per key, then sort the surviving entry list.
 - empty values use `null` inside the tagged value.

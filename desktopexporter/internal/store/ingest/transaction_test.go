@@ -68,7 +68,9 @@ func TestInTransaction_RollbackDiscardsWrites(t *testing.T) {
 		txErr := ingest.InTransaction(ctx, conn, func() error {
 			exec := conn.(driver.ExecerContext)
 			if _, e := exec.ExecContext(ctx,
-				`insert into histogram_bounds values (gen_random_uuid(), [1.0])`, nil); e != nil {
+				`insert into logs(id, body, attributes, resource, scope) values (uuid(), 'rolled back'::variant, '{}'::json::variant,
+				struct_pack(id:=uuid(),attributes:='{}'::json::variant)::otel_resource,
+				struct_pack(id:=uuid(),attributes:='{}'::json::variant)::otel_scope)`, nil); e != nil {
 				return e
 			}
 			return sentinel
@@ -80,7 +82,7 @@ func TestInTransaction_RollbackDiscardsWrites(t *testing.T) {
 
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, "select count(*) from histogram_bounds").Scan(&n)
+		return db.QueryRowContext(ctx, "select count(*) from logs").Scan(&n)
 	}))
 	assert.Zero(t, n, "a rolled-back write must leave nothing behind")
 }

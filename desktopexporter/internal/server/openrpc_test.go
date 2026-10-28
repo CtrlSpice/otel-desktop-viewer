@@ -194,7 +194,7 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 	handler := setupHandlerWithData(t)
 	handler.otlpHTTPPort = 4318
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(context.Background(), conn, buildTestMetrics(), handler.store.FlushedIDs())
+		return metrics.Ingest(context.Background(), conn, buildTestMetrics())
 	}))
 	result, err := handler.Handle(context.Background(), createRequest("query", []any{`SELECT m.id::varchar, s.id::varchar, l.id::varchar FROM metrics m JOIN metric_series s ON s.metric_id = m.id CROSS JOIN logs l LIMIT 1`}))
 	require.NoError(t, err)

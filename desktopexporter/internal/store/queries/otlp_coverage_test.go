@@ -47,7 +47,7 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		"ExponentialHistogramDataPoint.Exemplars": {"exemplars", "metric_datapoint_id"},
 		// Field is plural and prefixed; the column is the ordinary one.
 		"Exemplar.FilteredAttributes":            {"exemplars", "attributes"},
-		"HistogramDataPoint.ExplicitBounds":      {"metric_datapoints", "bounds_id"},
+		"HistogramDataPoint.ExplicitBounds":      {"metric_datapoints", "explicit_bounds"},
 		"ExponentialHistogramDataPoint.Positive": {"metric_datapoints", "positive_bucket_counts"},
 		"ExponentialHistogramDataPoint.Negative": {"metric_datapoints", "negative_bucket_counts"},
 		// The oneof carrying a metric's datapoints. Not a field in its own

@@ -98,7 +98,7 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 			sm.Scope().Attributes().PutInt("attempt", 1)
 		}
 		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, h.store.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		}))
 	}
 	for _, tc := range []struct {

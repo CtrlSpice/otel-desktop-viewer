@@ -84,14 +84,14 @@ func TestGetTraceOTLP(t *testing.T) {
 	t.Run("json", func(t *testing.T) { assertTraceOTLP(t, decoded) })
 }
 
-func TestTraceChildrenRetainOrderAcrossFlush(t *testing.T) {
+func TestTraceChildrenRetainOrderInLargeNestedLists(t *testing.T) {
 	s, ctx := storetest.New(t)
 	input := ptrace.NewTraces()
 	span := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
 	span.SetTraceID(mustDecodeTraceID(otlpTraceID))
 	span.SetSpanID(mustDecodeSpanID("0000000000000001"))
 	span.SetName("many children")
-	const children = spans.FlushInterval + 1
+	const children = 8193
 	for i := range children {
 		event := span.Events().AppendEmpty()
 		event.SetTimestamp(100)
@@ -281,7 +281,7 @@ func TestGetTraceOTLPRejectsStoredSQLNull(t *testing.T) {
 	}))
 
 	err := s.WithDBRead(func(db *sql.DB) error {
-		if _, err := db.ExecContext(ctx, `update events set name = null`); err != nil {
+		if _, err := db.ExecContext(ctx, `update spans set events=list_transform(events,lambda e:struct_update(e,name:=null))`); err != nil {
 			return err
 		}
 		_, err := spans.GetTraceOTLP(ctx, db, otlpTraceID)

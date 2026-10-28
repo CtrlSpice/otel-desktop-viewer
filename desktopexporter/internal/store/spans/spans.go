@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/nested"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
@@ -34,11 +35,6 @@ var (
 type queryRower interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
-
-// flushIntervalSpans bounds pending rows, including events and links. Flushing
-// parents first also prevents a child appender's automatic flush from reaching
-// DuckDB before its owning spans.
-const flushIntervalSpans = 8192
 
 // resourceServiceName extracts the service.name resource attribute as a
 // plain string, returning "" when not present. This is the same logic
@@ -126,14 +122,14 @@ func appendPass(
 	traces ptrace.Traces,
 	keep func(ordinal int) bool,
 ) (err error) {
-	tables := []string{"events", "links", "spans"}
-	appenders, err := ingest.NewAppenders(conn, tables)
-	if err != nil {
-		return err
-	}
+	a := nested.NewSpanAppender(ctx, conn)
 	var catalogue searchindex.Batch
 	defer func() {
-		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+		if err != nil {
+			a.Discard()
+			return
+		}
+		err = errors.Join(err, a.Close())
 		if err == nil {
 			if indexErr := catalogue.Write(ctx, conn); indexErr != nil {
 				err = fmt.Errorf("%w: %w", ingest.ErrNotRowFault, indexErr)
@@ -141,15 +137,6 @@ func appendPass(
 		}
 	}()
 
-	pending := 0
-	flushRow := func() error {
-		pending++
-		if pending < flushIntervalSpans {
-			return nil
-		}
-		pending = 0
-		return ingest.FlushAppenders(appenders, tables)
-	}
 	var spanCur int
 	for _, resourceSpan := range traces.ResourceSpans().All() {
 		resource := resourceSpan.Resource()
@@ -165,6 +152,7 @@ func appendPass(
 				return err
 			}
 
+			a.SetContext(resourceInput, scopeInput)
 			for _, span := range scopeSpan.Spans().All() {
 				if err := ctx.Err(); err != nil {
 					return err
@@ -191,26 +179,7 @@ func appendPass(
 				}
 				spanCur++
 
-				err = appenders["spans"].AppendRow(
-					traceUUID,                     // TraceID UUID
-					span.TraceState().AsRaw(),     // TraceState VARCHAR
-					spanID,                        // SpanID UBIGINT
-					parentSpanID,                  // ParentSpanID UBIGINT or NULL
-					uint32(span.Flags()),          // Flags UINTEGER
-					span.Name(),                   // Name VARCHAR
-					int32(span.Kind()),            // Kind INTEGER (received enum code)
-					uint64(span.StartTimestamp()), // StartTime UBIGINT
-					uint64(span.EndTimestamp()),   // EndTime UBIGINT
-					resourceInput,
-					scopeInput,
-					attributes,
-					span.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-					span.DroppedEventsCount(),     // DroppedEventsCount UINTEGER
-					span.DroppedLinksCount(),      // DroppedLinksCount UINTEGER
-					int32(span.Status().Code()),   // StatusCode INTEGER (received enum code)
-					span.Status().Message(),       // StatusMessage VARCHAR
-					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
-				)
+				err = a.AppendSpan(span, attributes, serviceName)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 				}
@@ -237,9 +206,6 @@ func appendPass(
 					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
 				}
 				catalogue.Add(parent)
-				if err := flushRow(); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
-				}
 
 				for ordinal, event := range span.Events().All() {
 					eventID := uuid.New()
@@ -247,16 +213,7 @@ func appendPass(
 					if err != nil {
 						return err
 					}
-					err = appenders["events"].AppendRow(
-						duckdb.UUID(eventID),      // ID UUID
-						traceUUID,                 // TraceID UUID
-						spanID,                    // SpanID UBIGINT
-						event.Name(),              // Name VARCHAR
-						uint64(event.Timestamp()), // Timestamp UBIGINT
-						attributes,
-						event.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-						uint32(ordinal),
-					)
+					err = a.AppendEvent(event, eventID, traceUUID, spanID, ordinal, attributes)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
@@ -268,9 +225,6 @@ func appendPass(
 						return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
 					}
 					catalogue.Add(child)
-					if err := flushRow(); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
-					}
 				}
 
 				for ordinal, link := range span.Links().All() {
@@ -288,18 +242,7 @@ func appendPass(
 					if err != nil {
 						return err
 					}
-					err = appenders["links"].AppendRow(
-						duckdb.UUID(linkID),       // ID UUID
-						traceUUID,                 // TraceID UUID (owner)
-						spanID,                    // SpanID UBIGINT (owner)
-						linkTraceUUID,             // LinkedTraceID UUID or NULL
-						linkSpanID,                // LinkedSpanID UBIGINT or NULL
-						link.TraceState().AsRaw(), // TraceState VARCHAR
-						attributes,
-						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-						uint32(link.Flags()),          // Flags UINTEGER
-						uint32(ordinal),
-					)
+					err = a.AppendLink(link, linkID, traceUUID, spanID, ordinal, attributes)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
@@ -318,9 +261,6 @@ func appendPass(
 						return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
 					}
 					catalogue.Add(child)
-					if err := flushRow(); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
-					}
 				}
 			}
 		}
@@ -744,38 +684,14 @@ const traceAttributeDefinitions = `
 		from owners, attribute_entries(attrs) entry) definitions
 `
 
-// Clear deletes spans, events, links, and their search documents.
+// Clear deletes owning span rows and their complete search catalogue.
 func Clear(ctx context.Context, db *sql.DB) error {
-	childQueries := [][2]string{
-		{`truncate table links`, `delete from search_owners where signal='span' and owner='link'`},
-		{`truncate table events`, `delete from search_owners where signal='span' and owner='event'`},
-		{`truncate table spans`, `delete from search_owners where signal='span'`},
-	}
-	for _, q := range childQueries {
-		if err := searchindex.DeleteRows(ctx, db, q[0], q[1]); err != nil {
-			return fmt.Errorf("Clear: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
+	return nested.Mutate(ctx, db, `delete from spans`)
 }
 
 // DeleteSpansByTraceIDs deletes all spans for multiple traces.
 func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) error {
-	if len(traceIDs) == 0 {
-		return nil
-	}
-	ids := util.ToStringList(traceIDs)
-	childQueries := [][2]string{
-		{`delete from links where trace_id in (select id from uuid_list(?))`, `delete from search_owners where signal='span' and owner='link' and record_key in (select id::varchar from links where trace_id in (select id from uuid_list(?)))`},
-		{`delete from events where trace_id in (select id from uuid_list(?))`, `delete from search_owners where signal='span' and owner='event' and record_key in (select id::varchar from events where trace_id in (select id from uuid_list(?)))`},
-		{`delete from spans where trace_id in (select id from uuid_list(?))`, `delete from search_owners where signal='span' and root_key in (select replace(trace_id::varchar,'-','')||':'||span_id_wire(span_id) from spans where trace_id in (select id from uuid_list(?)))`},
-	}
-	for _, q := range childQueries {
-		if err := searchindex.DeleteRows(ctx, db, q[0], q[1], ids); err != nil {
-			return fmt.Errorf("DeleteSpansByTraceIDs: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
+	return nested.Mutate(ctx, db, `delete from spans where trace_id in(select id from uuid_list(?))`, util.ToStringList(traceIDs))
 }
 
 func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, eligibilityWhere string, queryWhere string, args []any, err error) {

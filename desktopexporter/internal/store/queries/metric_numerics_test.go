@@ -20,24 +20,29 @@ func numericMetricDB(t *testing.T, kind string, seriesCount int) (*sql.DB, []str
 	db := freshDB(t)
 	db.SetMaxOpenConns(1)
 	for _, stmt := range []string{
-		`insert into metrics(id,resource_id,resource_payload_id,scope_id,name,metric_type,aggregation_temporality,resource,scope)
-		 values ('` + numericID(3) + `','` + numericID(1) + `','` + numericID(1) + `','` + numericID(2) + `','numerics','` + kind + `',1,
+		`insert into metric_records(record_id,id,resource_id,resource_payload_id,scope_id,name,metric_type,aggregation_temporality,datapoints,resource,scope)
+		 values ('` + numericID(4) + `','` + numericID(3) + `','` + numericID(1) + `','` + numericID(1) + `','` + numericID(2) + `','numerics','` + kind + `',1,[],
 		 {'id': '` + numericID(1) + `'::uuid, 'payload_id': '` + numericID(1) + `'::uuid, 'schema_url': '', 'attributes': '{}'::json::variant, 'dropped_attributes_count': 0},
 		 {'id': '` + numericID(2) + `'::uuid, 'name': '', 'version': '', 'schema_url': '', 'attributes': '{}'::json::variant, 'dropped_attributes_count': 0})`,
-		`insert into histogram_bounds values ('` + numericID(4) + `',[0,1])`,
 	} {
 		_, err := db.Exec(stmt)
 		require.NoError(t, err)
 	}
 	if kind == "Sum" {
-		_, err := db.Exec("update metrics set aggregation_temporality=2")
+		_, err := db.Exec("update metric_records set aggregation_temporality=2")
 		require.NoError(t, err)
 	}
 	var ids []string
+	// Preserve ascending series-ID order in the cancellation-sensitive fold
+	// fixture while using the production deterministic identity expression.
+	_, err := db.Exec(`create temp table numeric_series as select row_number() over(order by id)-1 as ordinal, *
+		from (select range::varchar as key, md5(?::varchar||':'||range::varchar)::uuid as id from range(?))`, numericID(3), seriesCount)
+	require.NoError(t, err)
 	for i := range seriesCount {
-		ids = append(ids, numericID(100+i))
-		_, err := db.Exec(`insert into metric_series values (?::uuid,?::uuid,?::varchar,{'series': ?::varchar}::variant)`, ids[i], numericID(3), fmt.Sprint(i), fmt.Sprint(i))
+		var id string
+		err := db.QueryRow(`select id::varchar from numeric_series where ordinal=?`, i).Scan(&id)
 		require.NoError(t, err)
+		ids = append(ids, id)
 	}
 	return db, ids
 }
@@ -48,13 +53,17 @@ func numericPoint(t *testing.T, db *sql.DB, id, series int, timestamp uint64, va
 	if integer != nil {
 		double = nil
 	}
-	_, err := db.Exec(`insert into metric_datapoints
-		(id,metric_id,series_id,timestamp,attributes,resource,scope,double_value,int_value,value_type,
-		 count,sum,bounds_id,bucket_counts,scale,zero_count,zero_threshold,
-		 positive_bucket_offset,positive_bucket_counts,negative_bucket_offset,negative_bucket_counts)
-		select ?::uuid,?::uuid,?::uuid,?,{'series': ?::varchar}::variant,resource,scope,?,?,?,1,?,?::uuid,[0,1,0],0,0,0,0,[1],0,[] from metrics`,
-		numericID(1000+id), numericID(3), numericID(100+series), timestamp, fmt.Sprint(series),
-		double, integer, map[bool]string{true: "Int", false: "Double"}[integer != nil], value, numericID(4))
+	var key string
+	require.NoError(t, db.QueryRow(`select key from numeric_series where ordinal=?`, series).Scan(&key))
+	_, err := db.Exec(`update metric_records set datapoints=list_append(datapoints,
+		struct_pack(id:=$1::uuid,timestamp:=$2::ubigint,attributes:={'series': $3::varchar}::variant,
+		attribute_key:=$3::varchar,double_value:=$4::double,int_value:=$5::bigint,value_type:=$6::varchar,
+		count:=1::ubigint,sum:=$7::double,explicit_bounds:=[0,1]::double[],bucket_counts:=[0,1,0]::ubigint[],
+		scale:=0,zero_count:=0::ubigint,zero_threshold:=0::double,positive_bucket_offset:=0,
+		positive_bucket_counts:=[1]::ubigint[],negative_bucket_offset:=0,negative_bucket_counts:=[]::ubigint[])),
+		point_time_min=least(point_time_min,$2::ubigint),point_time_max=greatest(point_time_max,$2::ubigint)`,
+		numericID(1000+id), timestamp, key,
+		double, integer, map[bool]string{true: "Int", false: "Double"}[integer != nil], value)
 	require.NoError(t, err)
 }
 
@@ -82,19 +91,13 @@ func numericView(t *testing.T, db *sql.DB, selected []string, end uint64, views 
 // order. Changing ingest UUIDs instead would change the timestamp-tie contract.
 func reorderNumericPoints(t *testing.T, db *sql.DB, reverse bool) {
 	t.Helper()
-	order := "id"
+	order := "d.id"
 	if reverse {
-		order = "id desc"
+		order = "d.id desc"
 	}
-	for _, stmt := range []string{
-		"create temp table numeric_copy as select * from metric_datapoints",
-		"delete from metric_datapoints",
-		"insert into metric_datapoints select * from numeric_copy order by " + order,
-		"drop table numeric_copy",
-	} {
-		_, err := db.Exec(stmt)
-		require.NoError(t, err)
-	}
+	_, err := db.Exec(`update metric_records set datapoints=(select list(d order by ` + order + `)
+		from (select unnest(datapoints) as d))`)
+	require.NoError(t, err)
 }
 
 func TestMetricNumericsOrderedScalarFolds(t *testing.T) {
@@ -218,7 +221,7 @@ func TestMetricNumericsOrderedHistogramSums(t *testing.T) {
 				numericPoint(t, db, 10+i, i+1, 100, value, nil)
 			}
 			// Histogram rows have no scalar arms.
-			_, err := db.Exec("update metric_datapoints set double_value=null, value_type=null")
+			_, err := db.Exec("update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,double_value:=null,value_type:=null))")
 			require.NoError(t, err)
 			var baseline map[string]any
 			for _, reverse := range []bool{false, true} {
@@ -273,9 +276,9 @@ func TestMetricNumericsHistogramVectorMerges(t *testing.T) {
 					column := "bucket_counts"
 					bounds := ""
 					if kind == "ExponentialHistogram" {
-						column, bounds = "positive_bucket_counts", ", bounds_id=null"
+						column, bounds = "positive_bucket_counts", ", explicit_bounds:=null"
 					}
-					_, err := db.Exec("update metric_datapoints set double_value=null, value_type=null, "+column+"="+vector+"::ubigint[]"+bounds+" where id=?::uuid", numericID(1000+i))
+					_, err := db.Exec("update metric_records set datapoints=list_transform(datapoints,lambda d:case when d.id=?::uuid then struct_update(d,double_value:=null,value_type:=null,"+column+":="+vector+"::ubigint[]"+bounds+") else d end)", numericID(1000+i))
 					require.NoError(t, err)
 				}
 				raw, err := metrics.GetMetricView(t.Context(), db, numericID(3), store.BoundedTimeRange(0, 1000), 1, nil, nil, 0, 0, 0, nil, "", nil, 0)

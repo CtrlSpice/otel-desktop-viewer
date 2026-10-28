@@ -97,7 +97,7 @@ func TestServiceIdentityRetainsTypesAcrossDiscoveryAndSignalSearch(t *testing.T)
 		md := buildTestMetrics()
 		attrs.CopyTo(md.ResourceMetrics().At(0).Resource().Attributes())
 		md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0).SetTimestamp(100)
-		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, md, h.store.FlushedIDs()) }))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, md) }))
 	}
 	result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "services"}}))
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestHomeSearchCountsBeforePaginationAndFiltersAttributes(t *testing.T) {
 	m := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
 	m.SetName("needle")
 	m.Gauge().DataPoints().At(0).SetTimestamp(100)
-	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, md, h.store.FlushedIDs()) }))
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, md) }))
 	predicate := map[string]any{"type": "condition", "query": map[string]any{"field": map[string]any{"searchScope": "global"}, "fieldOperator": "CONTAINS", "value": "needle"}}
 	queries := map[string]any{"traces": predicate, "logs": predicate, "metrics": predicate}
 	options := map[string]any{"kind": "services", "queries": queries, "startTime": "100", "endTime": "100", "limit": 1}
@@ -332,7 +332,7 @@ func TestHomeLinksMatchMissingNamespaceAcrossSignals(t *testing.T) {
 	h := setupHandlerWithData(t)
 	ctx := context.Background()
 	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTestMetrics(), h.store.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
 	}))
 	for _, method := range []string{"searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries"} {
 		for _, key := range []string{"service.namespace", "service.name"} {

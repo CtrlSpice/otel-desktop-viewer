@@ -1,8 +1,6 @@
 package ingest
 
 import (
-	"database/sql/driver"
-	"errors"
 	"fmt"
 	"sort"
 
@@ -72,7 +70,7 @@ func appendValue(b *pv.Builder, v pcommon.Value) error {
 	case pcommon.ValueTypeInt:
 		return b.AppendInt(v.Int())
 	case pcommon.ValueTypeDouble:
-		return b.AppendFloat64(util.CanonicalDouble(v.Double()))
+		return b.AppendFloat64(v.Double())
 	case pcommon.ValueTypeBool:
 		return b.AppendBool(v.Bool())
 	case pcommon.ValueTypeBytes:
@@ -144,35 +142,4 @@ func AttributeIdentities(attributes pcommon.Map) ([]duckdb.UUID, error) {
 	}
 	sort.Slice(ids, func(i, j int) bool { return uuidLess(ids[i], ids[j]) })
 	return ids, nil
-}
-
-// NewTypedQueryAppender derives transport types from a fixed SELECT. This keeps
-// SQL type definitions authoritative instead of duplicating their fields in Go.
-// query and shape must be application constants, never received telemetry.
-func NewTypedQueryAppender(conn driver.Conn, query, shape string) (*duckdb.Appender, error) {
-	stmt, err := conn.Prepare(shape)
-	if err != nil {
-		return nil, err
-	}
-	s, ok := stmt.(*duckdb.Stmt)
-	if !ok {
-		return nil, errors.Join(fmt.Errorf("query appender requires DuckDB"), stmt.Close())
-	}
-	// Query the shape only for its column names; it always returns zero rows.
-	rows, err := stmt.Query(nil)
-	if err != nil {
-		return nil, errors.Join(err, stmt.Close())
-	}
-	names := rows.Columns()
-	types := make([]duckdb.TypeInfo, len(names))
-	for i := range names {
-		types[i], err = s.ColumnTypeInfo(i)
-		if err != nil {
-			return nil, errors.Join(err, rows.Close(), stmt.Close())
-		}
-	}
-	if err := errors.Join(rows.Close(), stmt.Close()); err != nil {
-		return nil, err
-	}
-	return duckdb.NewQueryAppender(conn, query, "", types, names)
 }

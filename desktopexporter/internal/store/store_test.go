@@ -141,7 +141,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 
 			metricData := buildStoreTestMetrics()
 			err = s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, metricData)
 			})
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
@@ -224,7 +224,7 @@ func TestStoreIndexesCreated(t *testing.T) {
 	assert.Equal(t, len(queries.Indexes()), count, "all explicit native indexes are installed")
 }
 
-func TestStoreForeignKeysEnforced(t *testing.T) {
+func TestStoreMetricChildrenFollowTheirOwner(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
@@ -232,22 +232,23 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 
 	seedOwners(t, s)
 	_, err = s.db.ExecContext(ctx, `
-		insert into metrics (id, resource_id, resource_payload_id, scope_id, name, metric_type, resource, scope)
-		values (gen_random_uuid(),
+		insert into metric_records (record_id, id, resource_id, resource_payload_id, scope_id, name, metric_type, resource, scope, datapoints)
+		values (uuid(), uuid(),
 			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
 			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid,
-			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge', seed_resource(), seed_scope())`)
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge', seed_resource(), seed_scope(),
+			[struct_pack(id:=uuid(),timestamp:=0::ubigint,attribute_key:='',attributes:='{}'::json::variant,
+			 exemplars:=[struct_pack(id:=uuid(),timestamp:=0::ubigint,attributes:='{}'::json::variant)])])`)
 	require.NoError(t, err)
 
-	var metricID string
-	require.NoError(t, s.db.QueryRowContext(ctx,
-		"select id::varchar from metrics where name = 'test'").Scan(&metricID))
-
-	_, err = s.db.ExecContext(ctx, `
-		insert into metric_datapoints (id, metric_id, series_id, timestamp, attributes, resource, scope)
-		values (gen_random_uuid(), ?::uuid,
-			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, '{}'::json::variant, seed_resource(), seed_scope())`, metricID)
-	assert.ErrorContains(t, err, "foreign key constraint", "a datapoint must reference an existing series")
+	for _, table := range []string{"metrics", "metric_series", "metric_datapoints", "exemplars"} {
+		assert.Equal(t, 1, countIn(t, s, "select count(*) from "+table))
+	}
+	_, err = s.db.ExecContext(ctx, "delete from metric_records")
+	require.NoError(t, err)
+	for _, table := range []string{"metrics", "metric_series", "metric_datapoints", "exemplars"} {
+		assert.Zero(t, countIn(t, s, "select count(*) from "+table), "nested children cannot outlive their owner")
+	}
 }
 
 // TestStorePersistentReopenIdempotent verifies that reopening a persistent store does not fail
@@ -303,7 +304,7 @@ func TestStoreExponentialHistogramConstraint(t *testing.T) {
 	dp.Negative().BucketCounts().FromRaw([]uint64{1, 2})
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, m, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, m)
 	})
 	assert.NoError(t, err, "ExponentialHistogram ingest should satisfy chk_exponential_histogram_fields constraint")
 }
