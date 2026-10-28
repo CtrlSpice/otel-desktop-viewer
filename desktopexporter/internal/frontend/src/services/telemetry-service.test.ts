@@ -1232,9 +1232,10 @@ describe('attribute discovery', () => {
     expect(field).toMatchObject({
       name: 'items',
       type: 'array',
-      attributeScope: 'span',
+      owner: 'span',
+      path: ['attributes', 'items'],
     })
-    if (field?.searchScope !== 'attribute') {
+    if (!field) {
       throw new Error('Expected an attribute field')
     }
     expect(
@@ -1596,7 +1597,7 @@ describe('telemetryAPI.getTraceSummary', () => {
         query: {
           type: 'condition',
           query: {
-            field: { name: 'traceID', searchScope: 'field' },
+            field: { owner: 'span', path: ['traceID'] },
             fieldOperator: '=',
             value: '00000000000000000000000000000011',
           },
@@ -2024,9 +2025,8 @@ describe('request parameters', () => {
   it('includes query when a query tree is supplied', async () => {
     const tree = {
       id: 'q1',
-      type: 'condition',
+      type: 'text',
       query: {
-        field: { searchScope: 'global' },
         operator: OPERATORS.CONTAINS,
         value: 'checkout',
       },
@@ -2040,16 +2040,13 @@ describe('request parameters', () => {
       'query',
       'startTime',
     ])
-    expect(params.query).toMatchObject({ id: 'q1', type: 'condition' })
+    expect(params.query).toMatchObject({ id: 'q1', type: 'text' })
   })
 
   it('serializes an exact duration boundary query', async () => {
     const duration = parseDuration('9007199254740993ns')
     if (duration === null) throw new Error('Expected valid duration')
-    const field = SPAN_FIELDS.find(
-      (field): field is Exclude<FieldDefinition, { searchScope: 'global' }> =>
-        'name' in field && field.name === 'duration'
-    )
+    const field = SPAN_FIELDS.find(field => field.name === 'duration')
     if (!field) throw new Error('Expected duration field')
     const tree = {
       id: 'duration-boundary',
@@ -2067,7 +2064,7 @@ describe('request parameters', () => {
       id: 'duration-boundary',
       type: 'condition',
       query: {
-        field: { name: 'duration', type: 'int64', searchScope: 'field' },
+        field: { owner: 'span', path: ['duration'], type: 'int64' },
         fieldOperator: '=',
         value: '9007199254740993',
       },
@@ -2081,9 +2078,8 @@ describe('request parameters', () => {
         (fieldName, index) => ({
           name: fieldName,
           type: index === 0 ? 'string' : index === 1 ? 'boolean' : 'int64',
-          searchScope: 'attribute',
-          attributeScope:
-            index === 0 ? 'resource' : index === 1 ? 'span' : 'event',
+          path: ['attributes', fieldName],
+          owner: index === 0 ? 'resource' : index === 1 ? 'span' : 'event',
           operators: [OPERATORS.EQUALS],
         })
       )
@@ -2093,13 +2089,13 @@ describe('request parameters', () => {
 
       await telemetryAPI.searchTraceSummaries(2n, 5n, tree).catch(() => {})
 
-      expect(sent().params.query.query.field.name).toBe(name)
+      expect(sent().params.query.query.field.path).toEqual(['attributes', name])
     }
   )
 
   it.each([
-    ['attr(log, "same.key", int64) = 42', 'int64', '42'],
-    ['attr(log, "same.key", string) = "42"', 'string', '42'],
+    ['log.attributes["same.key"]::BIGINT = 42', 'int64', '42'],
+    ['log.attributes["same.key"]::VARCHAR = "42"', 'string', '42'],
   ])(
     'serializes the explicit stored kind from %s',
     async (text, type, value) => {
@@ -2111,10 +2107,9 @@ describe('request parameters', () => {
 
       expect(sent().params.query.query).toMatchObject({
         field: {
-          name: 'same.key',
           type,
-          searchScope: 'attribute',
-          attributeScope: 'log',
+          owner: 'log',
+          path: ['attributes', 'same.key'],
         },
         fieldOperator: '=',
         value,

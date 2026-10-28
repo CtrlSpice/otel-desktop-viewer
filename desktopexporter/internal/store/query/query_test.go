@@ -247,7 +247,7 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 	record.Attributes().PutInt("direct", 9_007_199_254_740_993)
 	record.Attributes().PutEmptyMap("map").PutInt("large", 9_007_199_254_740_993)
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+		return logs.Ingest(context.Background(), conn, telemetry)
 	}))
 
 	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
@@ -255,10 +255,8 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 		require.NoError(t, err)
 		defer conn.Close()
 		raw, err := query.Execute(context.Background(), conn, `
-			select otel_value_json(l.body), otel_value_json(a.value)
-			from logs l, unnest(l.attribute_ids) ids(attribute_id)
-			join attributes a on a.id = ids.attribute_id
-			where a.key = 'direct'`, 25)
+			select otel_value_json(l.body), otel_value_json(l.attributes.direct)
+			from logs l where variant_exists(l.attributes, 'direct')`, 25)
 		require.NoError(t, err)
 		result := decodeResponse(t, raw)
 		require.Len(t, result.Rows, 1)
@@ -367,7 +365,7 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 		}
 	}
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, telemetry)
 	}))
 
 	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
@@ -377,14 +375,12 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 		raw, err := query.Execute(context.Background(), conn, `
 			with owned_values as (
 				select s.trace_id, s.span_id,
-					otel_value_kind(a.value) as value_kind,
-					otel_value_json(a.value) as tagged_value
+					otel_value_kind(s.attributes['http.request.method']) as value_kind,
+					otel_value_json(s.attributes['http.request.method']) as tagged_value
 				from spans s
-				cross join unnest(s.attribute_ids) owned(attribute_id)
-				join attributes a on a.id = owned.attribute_id
 				where s.start_time >= epoch_ns(current_timestamp - interval '1 hour')
 				  and s.start_time <= epoch_ns(current_timestamp)
-				  and a.key = 'http.request.method'
+				  and variant_exists(s.attributes, 'http.request.method')
 			), value_counts as (
 				select value_kind, tagged_value,
 					count(distinct struct_pack(trace_id := trace_id, span_id := span_id)) as owning_span_count

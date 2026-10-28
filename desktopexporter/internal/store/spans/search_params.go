@@ -3,8 +3,8 @@ package spans
 // getTraceViewParams are the conditional fragments getTraceViewSQL assembles into
 // queries/spans/get_trace_view.sql.
 type getTraceViewParams struct {
-	// CTEs is the search_params CTE, always present.
-	CTEs string
+	// SelectedIDs is the directly bound list of requested span IDs.
+	SelectedIDs string
 	// MatchedCTE, MatchedExpr and MatchedJoin are empty, "true" and empty
 	// respectively when there is no search predicate.
 	MatchedCTE  string
@@ -17,7 +17,7 @@ type getTraceViewParams struct {
 // searchTraceSummariesParams are the fragments searchTraceSummariesSQL assembles into
 // queries/spans/search_trace_summaries.sql.
 type searchTraceSummariesParams struct {
-	// CTEs is the search_params CTE holding the time bounds.
+	// CTEs contains optional search graph definitions.
 	CTEs string
 	// From is the shared FROM/JOIN chain for span search, so the summary
 	// query and the matched_spans CTE in get_trace_view stay in step.

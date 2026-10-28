@@ -161,7 +161,7 @@ func responseQuery(names, databaseTypes []string, statement string, columnsJSON 
 		quoted := `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 		values[i] = "to_json(" + quoted + ")"
 		if databaseTypes[i] == "FLOAT" || databaseTypes[i] == "DOUBLE" {
-			values[i] = "otlp_double_json(json_object('kind', 'double', 'value', double_wire_json(" + quoted + ")))"
+			values[i] = "otlp_double_json(" + quoted + ")"
 		}
 	}
 	rowJSON := "json_array(" + strings.Join(values, ", ") + ")"

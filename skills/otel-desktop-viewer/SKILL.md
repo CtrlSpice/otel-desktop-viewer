@@ -391,9 +391,9 @@ received timestamps, even when the parent is outside the window. Only in-window
 events/exemplars contribute values and parent counts; their denominator is distinct
 parents with an in-window event/exemplar carrying the key. Zero timestamps are
 compared as zero, with no parent-time fallback. Link targets and exemplar trace/span
-correlations do not determine ownership. Metric metadata/resource/scope lookup
-follows current stored associations,
-not a reconstruction of their history at each datapoint time.
+correlations do not determine ownership. Resource and scope discovery reads the
+payload owned by each datapoint. Metric metadata follows the current Metric
+association rather than reconstructing its history at each datapoint time.
 
 Values return complete typed values with these result fields:
 
@@ -424,13 +424,8 @@ FROM spans s
 WHERE s.service_name = 'checkout'
   AND s.start_time >= 1790928000000000000::UBIGINT
   AND s.start_time <= 1790931600000000000::UBIGINT
-  AND EXISTS (
-    SELECT 1 FROM attributes a
-    WHERE a.key = 'http.request.method'
-      AND json_extract_string(a.value, '$.kind') = 'string'
-      AND json_extract_string(a.value, '$.value') = 'POST'
-      AND list_contains(s.attribute_ids, a.id)
-  )
+  AND otel_value_kind(s.attributes['http.request.method']) = 'string'
+  AND s.attributes['http.request.method']::VARCHAR = 'POST'
 ORDER BY s.start_time DESC, s.trace_id, s.span_id"
 ```
 
@@ -441,16 +436,18 @@ there is no separate attribute-record lookup command.
 
 ## Custom span attribute SQL
 
-`attributes` is a canonical `{kind,value}` dictionary. Owner arrays such as
-`spans.attribute_ids` store its database-local IDs. For example:
+Each signal owns a native VARIANT attribute map. Resource and instrumentation
+scope payloads are embedded in `resource` and `scope`; their attributes live in
+`resource.attributes` and `scope.attributes`. `otel_value_json(value)` produces
+the typed JSON representation for inspection, for example:
 
 ```json
 {"kind":"int64","value":"9007199254740993"}
 ```
 
-For exact equality, first find the matching dictionary `id`, then filter owners
-with `list_contains(attribute_ids, '<id>'::UUID)`. Use unnest/join for counts,
-ranges, partial matches, or values without one exact ID.
+Filter a known key directly with `s.attributes['key']`. Cast integers to BIGINT
+to preserve exact int64 values, and check `otel_value_kind` when the received
+type matters. Enumerate unknown keys through the typed read projection below.
 
 With `--json`, SQL integers remain JSON numbers. This query counts distinct spans
 for each attribute key and value kind:
@@ -458,17 +455,16 @@ for each attribute key and value kind:
 ```sh
 otel-desktop-viewer query "
 SELECT
-  a.key,
-  json_extract_string(a.value, '$.kind') AS value_kind,
+  a.value->>'key' AS key,
+  a.value->'value'->>'kind' AS value_kind,
   count(DISTINCT struct_pack(trace_id := s.trace_id, span_id := s.span_id))
     AS owning_span_count
 FROM spans AS s
-CROSS JOIN unnest(s.attribute_ids) AS owned(attribute_id)
-JOIN attributes AS a ON a.id = owned.attribute_id
+CROSS JOIN json_each(otel_value_json(s.attributes), '$.value') AS a
 WHERE s.start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
   AND s.start_time <= epoch_ns(current_timestamp)
-GROUP BY a.key, value_kind
-ORDER BY owning_span_count DESC, a.key, value_kind"
+GROUP BY a.value->>'key', value_kind
+ORDER BY owning_span_count DESC, key, value_kind"
 ```
 
 This counts recent spans owning each key and received value kind, excluding
@@ -485,14 +481,12 @@ WITH owned_values AS (
   SELECT
     s.trace_id,
     s.span_id,
-    json_extract_string(a.value, '$.kind') AS value_kind,
-    a.value AS tagged_value
+    otel_value_kind(s.attributes['http.request.method']) AS value_kind,
+    otel_value_json(s.attributes['http.request.method']) AS tagged_value
   FROM spans AS s
-  CROSS JOIN unnest(s.attribute_ids) AS owned(attribute_id)
-  JOIN attributes AS a ON a.id = owned.attribute_id
   WHERE s.start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
     AND s.start_time <= epoch_ns(current_timestamp)
-    AND a.key = 'http.request.method'
+    AND variant_exists(s.attributes, 'http.request.method')
 ),
 value_counts AS (
   SELECT

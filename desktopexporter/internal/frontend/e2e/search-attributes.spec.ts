@@ -47,7 +47,7 @@ for (const [signal, scope, method] of [
               : []
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
-    const query = `attr(${scope}, "attempts", int64) >= 9007199254740993`
+    const query = `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993`
     const definitions = page.waitForResponse(
       response =>
         response.url().endsWith('/rpc') &&
@@ -58,17 +58,16 @@ for (const [signal, scope, method] of [
     const editor = page.locator('.cm-content[contenteditable="true"]')
     const token = editor.locator('.cm-attribute-token')
     await expect(token).toContainText('attempts')
-    await expect(editor).not.toContainText('attr(')
+    await expect(editor).not.toContainText('::BIGINT')
     await expect
       .poll(() => requests)
       .toContainEqual(
         expect.objectContaining({
           query: {
             field: {
-              name: 'attempts',
               type: 'int64',
-              searchScope: 'attribute',
-              attributeScope: scope,
+              owner: scope,
+              path: ['attributes', 'attempts'],
             },
             fieldOperator: '>=',
             value: '9007199254740993',
@@ -108,7 +107,8 @@ for (const [signal, scope, method] of [
     await expect(editor).toContainText('>= 9007199254740993')
     await page.keyboard.press('Escape')
     await editor.press('Enter')
-    const changed = 'attr(resource, "attempts", int64) >= 9007199254740993'
+    const changed =
+      'resource.attributes["attempts"]::BIGINT >= 9007199254740993'
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
       .toBe(changed)
@@ -158,10 +158,10 @@ for (const [signal, scope, method] of [
     await editor.press('Enter')
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
-      .toBe('attr(resource, "attempts", int64) >= 3')
+      .toBe('resource.attributes["attempts"]::BIGINT >= 3')
 
     const previousURL = page.url()
-    const multiline = `attr(${scope}, "attempts", int64) >= 9007199254740993\r\n  and attr(${scope}, "message", string) = "first\r\n  second"`
+    const multiline = `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993\r\n  and ${scope}.attributes["message"]::VARCHAR = "first\r\n  second"`
     await page.keyboard.press('ControlOrMeta+a')
     await editor.evaluate((element, text) => {
       const data = new DataTransfer()
@@ -195,7 +195,7 @@ for (const [signal, scope, method] of [
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
       .toBe(
-        `attr(${scope}, "attempts", int64) >= 9007199254740993 and attr(${scope}, "message", string) = "first\\r\\n  second"`
+        `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993 and ${scope}.attributes["message"]::VARCHAR = "first\\r\\n  second"`
       )
     await expect
       .poll(() => requests)
@@ -226,10 +226,9 @@ for (const [signal, scope, method] of [
         expect.objectContaining({
           query: {
             field: {
-              name: 'custom.key',
               type: 'string',
-              searchScope: 'attribute',
-              attributeScope: scope,
+              owner: '',
+              path: ['attributes', 'custom.key'],
             },
             fieldOperator: '=',
             value: 'recorded',

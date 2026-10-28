@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"database/sql"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 )
 
 // InvalidateEvalEvidence repairs missing references under the caller's write
@@ -53,8 +54,12 @@ func deleteLogsAndInvalidate(ctx context.Context, tx evalDeletionTx, query strin
 func invalidateEvalEvidence(ctx context.Context, tx evalDeletionTx) error {
 	const missing = `select distinct e.import_id from eval_evidence e where not exists(select 1 from logs l where l.id=e.log_id)`
 	for _, q := range []string{
+		`delete from search_owners where signal='log' and root_key not in (select id::varchar from logs)`,
 		`update eval_imports set complete=false where id in (` + missing + `)`,
 		`update eval_transfers set dirty=true where id in (` + missing + `)`,
+		`delete from search_owners where signal='experiment' and ref in (
+			select 'experiment:result:'||dataset_id||':'||ordinal::varchar from eval_experiment_search
+			where dataset_id in (select id from eval_datasets where import_id in (` + missing + `)))`,
 		`delete from eval_experiment_search where dataset_id in (select id from eval_datasets where import_id in (` + missing + `))`,
 		`delete from eval_experiment_rows where dataset_id in (select id from eval_datasets where import_id in (` + missing + `))`,
 		`delete from eval_experiments where dataset_id in (select id from eval_datasets where import_id in (` + missing + `))`,
@@ -68,5 +73,5 @@ func invalidateEvalEvidence(ctx context.Context, tx evalDeletionTx) error {
 			return err
 		}
 	}
-	return nil
+	return searchindex.CollectGarbage(ctx, tx)
 }

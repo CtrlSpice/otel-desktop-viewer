@@ -9,6 +9,7 @@ import {
 import type { SearchSignal } from '@/search/model'
 import {
   attributeMetadata,
+  attributeFieldIdentity,
   parseAttributeFieldReference,
   type AttributeField,
 } from '../attribute-field-reference'
@@ -24,10 +25,8 @@ class AttributeToken extends WidgetType {
 
   eq(other: AttributeToken) {
     return (
-      this.field.name === other.field.name &&
-      this.field.attributeScope === other.field.attributeScope &&
-      this.field.type === other.field.type &&
-      this.length === other.length
+      attributeFieldIdentity(this.field) ===
+        attributeFieldIdentity(other.field) && this.length === other.length
     )
   }
 
@@ -41,7 +40,7 @@ class AttributeToken extends WidgetType {
     )
     button.title = `${this.field.name} · ${attributeMetadata(this.field)}`
     const name = document.createElement('span')
-    name.textContent = this.field.name
+    name.textContent = this.field.name === '' ? '""' : this.field.name
     const metadata = document.createElement('span')
     metadata.className = 'cm-attribute-token__metadata'
     metadata.textContent = ` · ${attributeMetadata(this.field)}`
@@ -73,6 +72,9 @@ export function attributeTokens(signal: SearchSignal) {
     parser.parse(source).iterate({
       enter(node) {
         if (node.name !== 'AttributeReference') return
+        // Untyped addresses infer their operand type when parsed. Keep them
+        // visible rather than presenting an assumed received-type label.
+        if (!node.node.getChild('TypeAnnotation')) return
         const field = parseAttributeFieldReference(
           source.slice(node.from, node.to),
           signal

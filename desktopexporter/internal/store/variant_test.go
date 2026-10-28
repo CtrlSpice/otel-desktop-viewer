@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
@@ -35,6 +36,10 @@ func TestNativeVariantsRoundTripAndShred(t *testing.T) {
 		int64(math.MinInt64), int64(math.MaxInt64), float64(1), true, false,
 		[]any{}, map[string]any{}, []byte{}, "", nil,
 		map[string]any{"deep": []any{map[string]any{"a": []any{nil, "tail"}}}, "sibling": int64(9)},
+		map[string]any{"": "empty key", "a.b": "literal", "key\x00🦆": "value\x00",
+			"large": strings.Repeat("abcdef", 12000), "infinity": math.Inf(1), "negative_infinity": math.Inf(-1)},
+		map[string]any{"siblings": []any{map[string]any{"zero": math.Copysign(0, -1)}, map[string]any{"zero": float64(0)}}},
+		map[string]any{"siblings": []any{map[string]any{"zero": float64(0)}, map[string]any{"zero": math.Copysign(0, -1)}}},
 	}
 	// Multi-byte metadata offset tables must not wrap their cursor at byte 256.
 	wide := map[string]any{"": ""}
@@ -42,6 +47,9 @@ func TestNativeVariantsRoundTripAndShred(t *testing.T) {
 		wide[fmt.Sprintf("field.%03d", i)] = map[string]any{"value": int64(9007199254740993), "empty": ""}
 	}
 	values = append(values, wide)
+	// Repeated payloads must stay attached to every owner, including sibling
+	// rows whose only difference is the sign of a nested zero.
+	values = append(values, values...)
 	for i, raw := range values {
 		log := records.AppendEmpty()
 		name := fmt.Sprintf("fixture-%d", i)
@@ -53,7 +61,7 @@ func TestNativeVariantsRoundTripAndShred(t *testing.T) {
 		want[name] = string(encoded)
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 	// The input can be reused immediately after ingestion.
 	records.At(0).Body().SetStr("mutated")
@@ -63,8 +71,8 @@ func TestNativeVariantsRoundTripAndShred(t *testing.T) {
 			for name, expected := range want {
 				var body, attr string
 				err := db.QueryRow(`select otel_value_json(l.body)::varchar,
-				 otel_value_json(a.value)::varchar from logs l
-				 join attributes a on a.id=l.attribute_ids[1] where l.event_name=? limit 1`, name).Scan(&body, &attr)
+				 otel_value_json(l.attributes[$1])::varchar from logs l
+				 where l.event_name=$1 limit 1`, name).Scan(&body, &attr)
 				require.NoError(t, err, name)
 				require.Equal(t, expected, body, name)
 				require.Equal(t, expected, attr, name)
@@ -74,8 +82,8 @@ func TestNativeVariantsRoundTripAndShred(t *testing.T) {
 			 where body.user.tier::varchar='pro' limit 1`).Scan(&id))
 			require.Equal(t, int64(9007199254740993), id)
 			var count int
-			require.NoError(t, db.QueryRow(`select count(*) from attributes
-			 where id <> attr_id(key,otel_value_json(value)::varchar)`).Scan(&count))
+			require.NoError(t, db.QueryRow(`select count(*) from logs
+			 where otel_value_kind(attributes) <> 'map'`).Scan(&count))
 			require.Zero(t, count)
 			return nil
 		}))

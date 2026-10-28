@@ -25,8 +25,9 @@ create table if not exists metric_datapoints (
 		positive_bucket_counts ubigint[],
 		negative_bucket_offset integer,
 		negative_bucket_counts ubigint[],
-		-- Sorted attribute IDs are the exact datapoint attribute-set identity.
-		attribute_ids uuid[] not null,
+		attributes variant not null,
+		resource otel_resource not null,
+		scope otel_scope not null,
 		foreign key (series_id) references metric_series(id),
 		foreign key (bounds_id) references histogram_bounds(id)
 	)

@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 )
 
 type ExperimentSearch struct {
-	Query     string
+	Criteria  *search.QueryNode
 	Outcomes  []string
 	Sort      string
 	Direction string
@@ -36,17 +38,21 @@ type ExperimentSearchPage struct {
 	Indexing    ExperimentIndexState `json:"indexing"`
 }
 
-const visibleExperiments = `select r.* from eval_experiments r join eval_experiment_indexes i on i.dataset_id=r.dataset_id where i.status='ready' and i.source_kind='dataset' and r.format='promptfoo-v3' and exists(
-select 1 from eval_datasets d join eval_imports f on f.id=d.import_id where d.id=r.dataset_id and f.complete and not d.deleted)`
+const visibleExperiments = `select r.* from eval_experiments r
+join eval_experiment_indexes i on i.dataset_id=r.dataset_id
+join eval_datasets d on d.id=r.dataset_id
+join eval_imports f on f.id=d.import_id
+where i.status='ready' and i.source_kind='dataset' and r.format='promptfoo-v3'
+and f.complete and not d.deleted`
 const experimentColumns = `id, dataset_id, adapter_id, name, evaluation, source, format, started_at, pass_count, partial_count, fail_count, fault_count, unscored_count`
 
 var outcomeColumns = []string{"pass_count", "partial_count", "fail_count", "fault_count", "unscored_count"}
 
-func scanExperiment(row scanner) (ExperimentSummary, error) {
+func scanExperiment(row scanner, prefix ...any) (ExperimentSummary, error) {
 	var out ExperimentSummary
 	var stamp sql.NullString
 	var counts [5]int64
-	err := row.Scan(&out.ID, &out.DatasetID, &out.AdapterExperimentID, &out.Name, &out.Evaluation, &out.Source, &out.Format, &stamp, &counts[0], &counts[1], &counts[2], &counts[3], &counts[4])
+	err := row.Scan(append(prefix, &out.ID, &out.DatasetID, &out.AdapterExperimentID, &out.Name, &out.Evaluation, &out.Source, &out.Format, &stamp, &counts[0], &counts[1], &counts[2], &counts[3], &counts[4])...)
 	if err == sql.ErrNoRows {
 		return out, ErrEvalNotFound
 	}
@@ -73,7 +79,7 @@ func scanExperiment(row scanner) (ExperimentSummary, error) {
 
 func SearchExperiments(ctx context.Context, db *sql.DB, query ExperimentSearch) (ExperimentSearchPage, error) {
 	out := ExperimentSearchPage{Experiments: []ExperimentSummary{}, Facets: []OutcomeCount{}, Indexing: ExperimentIndexState{Issues: []ExperimentIndexIssue{}}}
-	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 || query.Offset > MaxOffset || len(query.Query) > 1024 || len(query.Outcomes) > 5 {
+	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 || query.Offset > MaxOffset || len(query.Outcomes) > 5 {
 		return out, fmt.Errorf("%w: invalid experiment query bounds", ErrInvalidEval)
 	}
 	if query.Sort != "name" && query.Sort != "started" {
@@ -83,22 +89,9 @@ func SearchExperiments(ctx context.Context, db *sql.DB, query ExperimentSearch) 
 		return out, fmt.Errorf("%w: direction must be asc or desc", ErrInvalidEval)
 	}
 	where := "true"
-	args := []any{}
-	for _, word := range strings.Fields(query.Query) {
-		where += ` and (contains(lower(v.name),lower(?)) or contains(lower(v.evaluation),lower(?)) or contains(lower(v.source),lower(?)) or exists(select 1 from eval_experiment_search x where x.experiment_id=v.id and contains(lower(x.text),lower(?))))`
-		args = append(args, word, word, word, word)
-	}
-	var counts [5]int64
-	err := db.QueryRowContext(ctx, `select count(*) filter(where pass_count>0),count(*) filter(where partial_count>0),count(*) filter(where fail_count>0),count(*) filter(where fault_count>0),count(*) filter(where unscored_count>0) from (`+visibleExperiments+`) v where `+where, args...).Scan(&counts[0], &counts[1], &counts[2], &counts[3], &counts[4])
+	searchCTEs, args, err := experimentSearchSQL(query.Criteria)
 	if err != nil {
 		return out, err
-	}
-	for n, count := range counts {
-		if count > 0 {
-			part := outcomeDefinitions[n]
-			part.Count = count
-			out.Facets = append(out.Facets, part)
-		}
 	}
 	if len(query.Outcomes) > 0 {
 		clauses := []string{}
@@ -117,9 +110,6 @@ func SearchExperiments(ctx context.Context, db *sql.DB, query ExperimentSearch) 
 		}
 		where += " and (" + strings.Join(clauses, " or ") + ")"
 	}
-	if err := db.QueryRowContext(ctx, `select count(*) from (`+visibleExperiments+`) v where `+where, args...).Scan(&out.Total); err != nil {
-		return out, err
-	}
 	direction := "asc"
 	if query.Direction == "desc" {
 		direction = "desc"
@@ -128,28 +118,60 @@ func SearchExperiments(ctx context.Context, db *sql.DB, query ExperimentSearch) 
 	if query.Sort == "started" {
 		order = "started_sort " + direction + " nulls last, name_key asc, id asc"
 	}
-	rows, err := db.QueryContext(ctx, `select `+experimentColumns+` from (`+visibleExperiments+`) v where `+where+` order by `+order+` limit ? offset ?`, append(args, query.Limit, query.Offset)...)
+	// Resolve matching experiments once, then share them between the counts and
+	// page. Facets precede outcome filtering; total and page apply that filter.
+	// The left join retains counts even when the requested page is empty.
+	rows, err := db.QueryContext(ctx, searchCTEs+`, search_counts as (
+select count(*) filter(where `+where+`) as total,
+count(*) filter(where pass_count>0) as pass_count,
+count(*) filter(where partial_count>0) as partial_count,
+count(*) filter(where fail_count>0) as fail_count,
+count(*) filter(where fault_count>0) as fault_count,
+count(*) filter(where unscored_count>0) as unscored_count
+from searched
+), page as (
+select * from searched where `+where+` order by `+order+` limit ? offset ?
+)
+select c.total,c.pass_count,c.partial_count,c.fail_count,c.fault_count,c.unscored_count,
+v.id is not null,
+coalesce(v.id,''),coalesce(v.dataset_id,''),coalesce(v.adapter_id,''),coalesce(v.name,''),
+coalesce(v.evaluation,''),coalesce(v.source,''),coalesce(v.format,''),v.started_at,
+coalesce(v.pass_count,0),coalesce(v.partial_count,0),coalesce(v.fail_count,0),coalesce(v.fault_count,0),coalesce(v.unscored_count,0)
+from search_counts c left join page v on true order by `+order, append(args, query.Limit, query.Offset)...)
 	if err != nil {
 		return out, err
 	}
+	var counts [5]int64
 	for rows.Next() {
-		experiment, err := scanExperiment(rows)
+		var present bool
+		experiment, err := scanExperiment(rows, &out.Total, &counts[0], &counts[1], &counts[2], &counts[3], &counts[4], &present)
 		if err != nil {
 			rows.Close()
 			return out, err
 		}
-		out.Experiments = append(out.Experiments, experiment)
+		if present {
+			out.Experiments = append(out.Experiments, experiment)
+		}
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return out, err
 	}
+	for n, count := range counts {
+		if count > 0 {
+			part := outcomeDefinitions[n]
+			part.Count = count
+			out.Facets = append(out.Facets, part)
+		}
+	}
 	out.HasMore = query.Offset+int64(len(out.Experiments)) < out.Total
-	err = db.QueryRowContext(ctx, `select count(*) filter(where `+experimentIndexNeedsWork+`),count(*) filter(where i.status='unsupported'),count(*) filter(where i.status='empty') from (`+experimentCandidates+`) c left join eval_experiment_indexes i on i.dataset_id=c.id`).Scan(&out.Indexing.Remaining, &out.Indexing.Unsupported, &out.Indexing.Empty)
+	err = db.QueryRowContext(ctx, experimentIndexStateCTEs+`select count(*) filter(where needs_work),count(*) filter(where status='unsupported'),count(*) filter(where status='empty') from index_state`).Scan(&out.Indexing.Remaining, &out.Indexing.Unsupported, &out.Indexing.Empty)
 	if err != nil {
 		return out, err
 	}
+	// Issues need only the recorded index status, not another scan for missing
+	// search rows or stale names. Those checks belong to the counts above.
 	issues, err := db.QueryContext(ctx, `select c.id,c.kind,i.status,i.reason from (`+experimentCandidates+`) c join eval_experiment_indexes i on i.dataset_id=c.id where i.status in ('unsupported','empty') order by c.id limit 26`)
 	if err != nil {
 		return out, err

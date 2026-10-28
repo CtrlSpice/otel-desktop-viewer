@@ -126,7 +126,7 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 24. Store startup validates `schema_meta` before
+The current schema version is 26. Store startup validates `schema_meta` before
 running DDL. A mismatched, malformed, or unversioned telemetry database is
 rejected without modification. The store does not migrate or reset databases.
 
@@ -134,16 +134,13 @@ rejected without modification. The store does not migrate or reset databases.
 
 | Table | Stored data |
 | --- | --- |
-| `attributes` | Distinct typed attribute values |
-| `resources` | Received Resource payloads |
-| `scopes` | Received InstrumentationScope payloads |
-| `spans` | Span records |
+| `spans` | Span records with owned Resource, Scope, and attributes |
 | `events` | Span events |
 | `links` | Span links |
-| `logs` | Log records |
-| `metrics` | One exact OTel Metric identity |
+| `logs` | Log records with owned Resource, Scope, and attributes |
+| `metrics` | One exact OTel Metric identity with owned Resource, Scope, and metadata |
 | `metric_series` | One series for a Metric and datapoint attribute set |
-| `metric_datapoints` | Gauge, Sum, Histogram, and ExponentialHistogram datapoints |
+| `metric_datapoints` | Gauge, Sum, Histogram, and ExponentialHistogram datapoints with owned context and attributes |
 | `histogram_bounds` | Deduplicated explicit histogram bounds |
 | `exemplars` | Metric exemplars |
 | `ingest_rejections` | Refused record diagnostics |
@@ -162,7 +159,9 @@ display field from Resource attributes.
 
 `metric_series` identifies one Metric plus one datapoint attribute set.
 `metric_datapoints` keeps both `metric_id` and `series_id`, along with the exact
-attribute IDs needed to render the datapoint.
+attribute map, Resource, and Scope received with that datapoint.
+Metric OTLP export groups datapoints by this received context; Metric Details
+continues to show the Metric's current description and metadata.
 
 ### Values and precision
 
@@ -198,20 +197,20 @@ absent. The store does not invent zero IDs.
 
 ### Attributes
 
-The attribute dictionary is keyed by a 128-bit prefix of SHA-256 over the key
-and canonical tagged value. Owners store sorted UUID arrays. Identical typed
-values deduplicate across owner categories. Each owner's attribute collection
+Every owner stores a complete native VARIANT attribute map. Resource and Scope
+are embedded structs with their own attributes, schema URLs, and dropped counts;
+Scope also retains its name and version. Content hashes preserve their grouping
+identities without referencing separate payload tables. DuckDB handles repeated
+values through compression and automatic shredding. Each attribute collection
 keeps the last received occurrence of each key before encoding and hashing.
 Selection is local to that collection: it never combines Resource, Scope, record,
 event, link, datapoint, exemplar or metadata attributes. Earlier conflicting values
 are not stored. The incoming pdata is not mutated.
 
-DuckDB cannot enforce foreign keys into UUID arrays. Ingest writes dictionary
-rows before owner rows. Store tests check for dangling references.
-
-`ingest.SweepOrphans` removes dictionary entries with no owners. Clear operations
-sweep immediately. Retention sweeps before measuring and after each prune round.
-Single-entity deletes leave cleanup to the next clear or retention sweep.
+Deleting a signal row also deletes its owned context and attributes.
+`ingest.SweepOrphans` collects unreferenced shared histogram bounds. Clear
+operations sweep immediately; retention sweeps before measuring and after each
+prune round.
 
 Cross-signal correlation fields are not foreign keys. Logs and exemplars can
 arrive before a span, after it, or without it. Link target IDs may point outside
@@ -222,17 +221,19 @@ the stored trace set.
 Ingest reads OpenTelemetry pdata directly. It does not build intermediate Go
 domain objects.
 
-Each request uses two passes:
+Logs append owned payloads directly. Traces first check span identities, then
+append accepted spans and their children. Metrics resolve Metric and series
+identities in batches before appending datapoints and exemplars.
 
-1. Encode and hash attributes, then resolve Resource, Scope, Metric, and series
-   identities.
-2. Append spans, logs, Metric datapoints, exemplars, events, and links.
-
-The dictionary and identity tables use inserts with conflict handling. Attributes
-and logs use query appenders: each pdata value travels as one typed node-array
-cell, and shared SQL assembles its native VARIANT tree. Other high-volume owner
-tables use DuckDB appenders. Tagged JSON is generated on reads, not stored beside
-the native values.
+Query appenders transport each complete pdata value as a BLOB containing standard
+Parquet Variant metadata and value bytes. `variant_bytes_to_variant` decodes the
+BLOB directly into a self-contained native VARIANT. Resource and Scope transports
+retain their typed scalar fields; their attribute bytes are prepared once per
+received group and reused for its rows. Metric identity resolution keeps this
+received context separate from the latest Metric metadata. The encoder preserves
+integer/double distinctions, bytes, signed zero, empty containers, and last-key-
+wins maps, and canonicalizes NaN. Returned buffers own their storage. Tagged JSON
+is generated on reads, not stored beside the native values.
 
 ## Query layer
 
@@ -252,15 +253,34 @@ Shared JSON shapes and numeric encoders live in SQL macros. Ordered arrays use
 ## Search
 
 The frontend sends a query tree. Signal-specific mappers convert supported
-fields and operators to parameterized SQL.
+fields and operators to parameterized SQL. Repeated parameter references reuse
+their positional binding. Parameters are direct expressions, not one-row tables
+or scalar subqueries. Conditional metric projections bind only used inputs.
 
 Built-in fields keep their native types. Received attribute keys keep exact
 case and spelling. Explicit attribute references include owner scope, key, and
 stored kind, for example:
 
 ```text
-attr(span, "attempts", int64) > 2
+WHERE span.attributes['attempts']::BIGINT > 2 LIMIT 100
 ```
+
+`WHERE` is optional. Predicates support `AND`, `OR`, parentheses, comparisons,
+inclusive `BETWEEN ... AND ...`, `IN (...)`, `NOT IN (...)`, `IS NULL`,
+`IS NOT NULL`, `LIKE`, `NOT LIKE`, `REGEXP` and `NOT REGEXP`. `CONTAINS` and
+`NOT CONTAINS` retain selected-field substring matching. Durations accept units
+such as `500ms` and `2s`. This language compiles to the existing query tree;
+it does not execute submitted SQL.
+
+Bracket paths preserve literal dotted keys and distinguish array indices from
+numeric string keys: `attributes['items'][0]['0']`. An omitted owner searches
+applicable owners; a specified owner narrows that search. Type annotations select
+received types, not conversions: `VARCHAR`, `BIGINT`, `DOUBLE`, `BOOLEAN`, `BLOB`,
+`EMPTY`, `MAP` and `ARRAY`. Without an annotation, bracket-addressed predicates
+infer string, integer, double or boolean from the operand. Quoted numbers remain
+strings; discovery does not change that choice. Both quote styles are accepted;
+doubling the quote escapes it, and backslash escapes encode control characters.
+Plain text and `search('text')` retain token matching.
 
 In the signal search editor, explicit attribute references appear as editable
 name-first tokens with scope and type metadata. Selecting a token opens the
@@ -275,9 +295,42 @@ quoted query values, pasted line endings become `\n` or `\r` escapes, preserving
 the received characters and indentation. Each multiline paste is one undoable
 edit and does not submit the search.
 
-Attribute equality can calculate the dictionary ID before querying and use
-`list_contains(attribute_ids, ?::uuid)`. Other operators join the dictionary and
-compare the stored value.
+Attribute filters extract the requested key directly from the owner's native
+map. Keys use bound parameters because VARIANT field extraction requires a
+bind-time constant. Scoped discovery reads distinct typed catalogue paths. Selected-field
+operators, including substring `contains`, retain their native comparison rules.
+
+Untargeted text searches distinct catalogue scalar values and received keys with
+DuckDB predicates. It matches case-insensitive complete tokens and
+punctuation-separated component words, not substrings. Complete IDs, URLs and
+dotted names remain searchable. Quoted free text requires all its words, not an
+exact phrase. There is no text extension, token table, inverted text index,
+stemming, stop-word list or relevance ranking. Result ordering and trace grouping
+are unchanged.
+
+One candidate owner satisfies the complete expression. Events, links,
+datapoints and exemplars reference their parent context, but never a
+sibling's values. An experiment predicate must match one result before selecting
+its parent experiment. Selected native child predicates remain native and must
+belong to that candidate's context chain when combined with untargeted text.
+
+Native VARIANT rows remain the telemetry source of truth. The derived catalogue
+contains owner records, distinct typed paths, distinct scalar values and
+owner/path/value associations. Values retain exact typed identities.
+Shared Resource/Scope context is referenced,
+not copied into every child. Native preparation walks Arrow VARIANT metadata and
+bytes without serializing received payloads to JSON. Container identities do not
+store another nested payload; selected discovery samples are read from native
+rows and encoded for the UI only then.
+
+Discovery selects keys and owners first, scoped to a signal where known. An exact
+owner/path selection requests typed value samples. It does not search every
+value before field selection. Catalogue changes occur synchronously in the
+native mutation transaction, including descriptor updates, deletion and
+retention. Unreferenced context, paths, values and owner/path entries are removed
+transactionally.
+Current-schema databases retain the catalogue on reopen; there is no migration,
+upgrade backfill or telemetry reconstruction from catalogue rows.
 
 ## Metric views
 

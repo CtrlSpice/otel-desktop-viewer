@@ -124,7 +124,9 @@ func parseAll() map[Name]*template.Template {
 	parsed := make(map[Name]*template.Template, len(queryNames))
 	for _, n := range queryNames {
 		parsed[n] = template.Must(
-			template.New(string(n)).Option("missingkey=error").Parse(mustRead(string(n))),
+			template.New(string(n)).Funcs(template.FuncMap{"bind": func(name string) (string, error) {
+				return "", fmt.Errorf("parameter %q requires RenderBound", name)
+			}}).Option("missingkey=error").Parse(mustRead(string(n))),
 		)
 	}
 	checkRegistered(parsed)
@@ -191,4 +193,38 @@ func Render(name Name, data any) (string, error) {
 		return "", fmt.Errorf("queries: rendering %s: %w", name, err)
 	}
 	return sb.String(), nil
+}
+
+// RenderBound assigns one positional binding per referenced input. Conditional
+// branches bind only their inputs; repeated uses share $N. Cloning keeps
+// concurrent renders independent, and values never become SQL text.
+func RenderBound(name Name, data any, values map[string]any) (string, []any, error) {
+	tmpl, ok := templates[name]
+	if !ok {
+		return "", nil, fmt.Errorf("queries: unknown query %q", name)
+	}
+	bound, err := tmpl.Clone()
+	if err != nil {
+		return "", nil, err
+	}
+	positions := make(map[string]string)
+	var args []any
+	bound.Funcs(template.FuncMap{"bind": func(key string) (string, error) {
+		if parameter, ok := positions[key]; ok {
+			return parameter, nil
+		}
+		value, ok := values[key]
+		if !ok {
+			return "", fmt.Errorf("missing parameter %q", key)
+		}
+		args = append(args, value)
+		parameter := fmt.Sprintf("$%d", len(args))
+		positions[key] = parameter
+		return parameter, nil
+	}})
+	var sql strings.Builder
+	if err := bound.Execute(&sql, data); err != nil {
+		return "", nil, fmt.Errorf("queries: rendering %s: %w", name, err)
+	}
+	return sql.String(), args, nil
 }

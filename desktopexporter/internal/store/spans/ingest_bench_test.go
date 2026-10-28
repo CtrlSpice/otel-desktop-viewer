@@ -86,7 +86,7 @@ func BenchmarkIngestBatch(b *testing.B) {
 
 				start := time.Now()
 				err = s.WithConn(func(conn driver.Conn) error {
-					return spans.Ingest(ctx, conn, td, s.FlushedIDs())
+					return spans.Ingest(ctx, conn, td)
 				})
 				elapsed := time.Since(start)
 

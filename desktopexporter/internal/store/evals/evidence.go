@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-const evidenceFrom = `logs l join scopes s on s.id=l.scope_id where l.event_name='viewer.eval.import.v1' and s.name='otel-desktop-viewer.evaldecode' and s.version='1' and l.service_name='otel-desktop-viewer'`
+const evidenceFrom = `logs l where l.event_name='viewer.eval.import.v1' and l.scope.name='otel-desktop-viewer.evaldecode' and l.scope.version='1' and l.service_name='otel-desktop-viewer'`
 
 var errUndiscoveredEvidence = errors.New("evaluation evidence arrived during reconstruction")
 

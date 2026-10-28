@@ -10,15 +10,15 @@ const fields: FieldDefinition[] = [
   {
     name: 'http.method',
     type: 'string',
-    searchScope: 'attribute',
-    attributeScope: 'span',
+    owner: 'span',
+    path: ['attributes', 'http.method'],
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.CONTAINS],
   },
   {
     name: 'service.name',
     type: 'string',
-    searchScope: 'attribute',
-    attributeScope: 'resource',
+    owner: 'resource',
+    path: ['attributes', 'service.name'],
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.CONTAINS],
   },
 ]
@@ -28,7 +28,8 @@ const contractFields: FieldDefinition[] = [
   {
     name: 'statusCode',
     type: 'string',
-    searchScope: 'field',
+    owner: 'span',
+    path: ['statusCode'],
     description: 'span status code',
     operators: [
       OPERATORS.EQUALS,
@@ -40,7 +41,8 @@ const contractFields: FieldDefinition[] = [
   {
     name: 'body',
     type: 'string',
-    searchScope: 'field',
+    owner: 'log',
+    path: ['body'],
     description: 'log body',
     operators: [
       OPERATORS.EQUALS,
@@ -56,7 +58,8 @@ const integerListFields: FieldDefinition[] = [
   {
     name: 'severityNumber',
     type: 'int64',
-    searchScope: 'field',
+    owner: 'log',
+    path: ['severityNumber'],
     description: 'log severity number',
     operators: [
       OPERATORS.EQUALS,
@@ -72,7 +75,8 @@ const durationFields: FieldDefinition[] = [
   {
     name: 'duration',
     type: 'int64',
-    searchScope: 'field',
+    owner: 'span',
+    path: ['duration'],
     description: 'span duration',
     operators: [
       OPERATORS.EQUALS,
@@ -91,8 +95,8 @@ const durationAttributeFields: FieldDefinition[] = [
   {
     name: 'duration',
     type: 'string',
-    searchScope: 'attribute',
-    attributeScope: 'span',
+    owner: 'span',
+    path: ['attributes', 'duration'],
     operators: [OPERATORS.EQUALS, OPERATORS.IN, OPERATORS.NOT_IN],
   },
 ]
@@ -101,7 +105,8 @@ const timestampListFields: FieldDefinition[] = [
   {
     name: 'timestamp',
     type: 'int64',
-    searchScope: 'field',
+    owner: 'log',
+    path: ['timestamp'],
     description: 'log timestamp',
     operators: [
       OPERATORS.EQUALS,
@@ -117,14 +122,16 @@ const numericEnumListFields: FieldDefinition[] = [
   {
     name: 'kindCode',
     type: 'int64',
-    searchScope: 'field',
+    owner: 'span',
+    path: ['kindCode'],
     description: 'received span kind number',
     operators: [OPERATORS.IN, OPERATORS.NOT_IN],
   },
   {
     name: 'statusCodeValue',
     type: 'int64',
-    searchScope: 'field',
+    owner: 'span',
+    path: ['statusCodeValue'],
     description: 'received span status code number',
     operators: [OPERATORS.IN, OPERATORS.NOT_IN],
   },
@@ -135,8 +142,8 @@ const collidingIntegerFields: FieldDefinition[] = [
   {
     name: 'severityNumber',
     type: 'int64',
-    searchScope: 'attribute',
-    attributeScope: 'log',
+    owner: 'log',
+    path: ['attributes', 'severityNumber'],
     operators: [OPERATORS.EQUALS, OPERATORS.IN, OPERATORS.NOT_IN],
   },
 ]
@@ -145,22 +152,22 @@ const mixedKindFields: FieldDefinition[] = [
   {
     name: 'same.key',
     type: 'int64',
-    searchScope: 'attribute',
-    attributeScope: 'span',
+    owner: 'span',
+    path: ['attributes', 'same.key'],
     operators: [OPERATORS.EQUALS, OPERATORS.GREATER_THAN],
   },
   {
     name: 'same.key',
     type: 'string',
-    searchScope: 'attribute',
-    attributeScope: 'span',
+    owner: 'span',
+    path: ['attributes', 'same.key'],
     operators: [OPERATORS.EQUALS, OPERATORS.CONTAINS],
   },
   {
     name: 'same.key',
     type: 'int64',
-    searchScope: 'attribute',
-    attributeScope: 'resource',
+    owner: 'resource',
+    path: ['attributes', 'same.key'],
     operators: [OPERATORS.EQUALS],
   },
 ]
@@ -183,6 +190,13 @@ function expectGroup(
   return node
 }
 
+function expectText(
+  node: QueryNode | null | undefined
+): Extract<QueryNode, { type: 'text' }> {
+  if (!node || node.type !== 'text') throw new Error('Expected a text query')
+  return node
+}
+
 function valueOf(input: string): string {
   return expectCondition(parseQuery(input, fields)).query.value
 }
@@ -191,32 +205,32 @@ const caseDistinctAttributeFields: FieldDefinition[] = [
   {
     name: 'env',
     type: 'string',
-    searchScope: 'attribute',
-    attributeScope: 'resource',
+    owner: 'resource',
+    path: ['attributes', 'env'],
     operators: [OPERATORS.EQUALS, OPERATORS.CONTAINS],
   },
   {
     name: 'Env',
     type: 'boolean',
-    searchScope: 'attribute',
-    attributeScope: 'span',
+    owner: 'span',
+    path: ['attributes', 'Env'],
     operators: [OPERATORS.EQUALS],
   },
   {
     name: 'ENV',
     type: 'int64',
-    searchScope: 'attribute',
-    attributeScope: 'event',
+    owner: 'event',
+    path: ['attributes', 'ENV'],
     operators: [OPERATORS.EQUALS],
   },
 ]
 
 describe('attribute key identity', () => {
   it.each([
-    ['env', 'string', 'resource'],
-    ['Env', 'boolean', 'span'],
-    ['ENV', 'int64', 'event'],
-  ] as const)('resolves %s with exact received casing', (name, type, scope) => {
+    ['env', 'string'],
+    ['Env', 'boolean'],
+    ['ENV', 'int64'],
+  ] as const)('resolves %s with exact received casing', (name, type) => {
     const condition = expectCondition(
       parseQuery(`${name} = value`, caseDistinctAttributeFields)
     )
@@ -224,8 +238,8 @@ describe('attribute key identity', () => {
     expect(condition.query.field).toMatchObject({
       name,
       type,
-      searchScope: 'attribute',
-      attributeScope: scope,
+      owner: '',
+      path: ['attributes', name],
     })
   })
 
@@ -239,7 +253,7 @@ describe('attribute key identity', () => {
       expect(condition.query.field).toMatchObject({
         name: 'Env',
         type: 'boolean',
-        attributeScope: 'span',
+        owner: '',
       })
     }
   })
@@ -256,15 +270,15 @@ describe('attribute key identity', () => {
         {
           name: 'service.Env',
           type: 'string',
-          searchScope: 'attribute',
-          attributeScope: 'resource',
+          owner: 'resource',
+          path: ['attributes', 'service.Env'],
           operators: [OPERATORS.EQUALS],
         },
         {
           name: 'service.env',
           type: 'string',
-          searchScope: 'attribute',
-          attributeScope: 'resource',
+          owner: 'resource',
+          path: ['attributes', 'service.env'],
           operators: [OPERATORS.EQUALS],
         },
       ])
@@ -277,15 +291,16 @@ describe('attribute key identity', () => {
     const native: FieldDefinition = {
       name: 'name',
       type: 'string',
-      searchScope: 'field',
+      owner: 'span',
+      path: ['name'],
       description: 'span name',
       operators: [OPERATORS.EQUALS],
     }
     const collidingAttribute: FieldDefinition = {
       name: 'Name',
       type: 'boolean',
-      searchScope: 'attribute',
-      attributeScope: 'span',
+      owner: 'span',
+      path: ['attributes', 'Name'],
       operators: [OPERATORS.EQUALS],
     }
 
@@ -303,9 +318,9 @@ describe('attribute key identity', () => {
 
 describe('explicit attribute identity', () => {
   it.each([
-    ['attr(span, "same.key", int64) = 42', 'int64', 'span'],
-    ['attr(span, "same.key", string) = "42"', 'string', 'span'],
-    ['attr(resource, "same.key", int64) = 42', 'int64', 'resource'],
+    ['span.attributes["same.key"]::BIGINT = 42', 'int64', 'span'],
+    ['span.attributes["same.key"]::VARCHAR = "42"', 'string', 'span'],
+    ['resource.attributes["same.key"]::BIGINT = 42', 'int64', 'resource'],
   ] as const)('preserves the selected tuple in %s', (input, type, scope) => {
     const condition = expectCondition(
       parseQuery(input, mixedKindFields, 'traces')
@@ -313,13 +328,13 @@ describe('explicit attribute identity', () => {
     expect(condition.query.field).toMatchObject({
       name: 'same.key',
       type,
-      searchScope: 'attribute',
-      attributeScope: scope,
+      owner: scope,
+      path: ['attributes', 'same.key'],
     })
   })
 
   it('does not depend on discovery availability, order, or duplicates', () => {
-    const input = 'attr(span, "same.key", string) = "42"'
+    const input = 'span.attributes["same.key"]::VARCHAR = "42"'
     const expected = expectCondition(parseQuery(input, [], 'traces')).query
       .field
     for (const available of [
@@ -335,18 +350,18 @@ describe('explicit attribute identity', () => {
 
   it('rejects a scope that the active signal cannot own', () => {
     expect(() =>
-      parseQuery('attr(log, "same.key", string) = "42"', [], 'traces')
+      parseQuery('log.attributes["same.key"]::VARCHAR = "42"', [], 'traces')
     ).toThrow(/Unknown field/)
   })
 
-  it.each(['attr(log, "x", string)', 'attr(span, "x", decimal)'])(
+  it.each(['log.attributes["x"]::VARCHAR', 'span.attributes["x"]::DECIMAL'])(
     'does not reinterpret invalid explicit syntax as the bare key %s',
     reference => {
       const collidingAttribute: FieldDefinition = {
         name: reference,
         type: 'string',
-        searchScope: 'attribute',
-        attributeScope: 'span',
+        owner: 'span',
+        path: ['attributes', reference],
         operators: [OPERATORS.EQUALS],
       }
       expect(() =>
@@ -355,9 +370,11 @@ describe('explicit attribute identity', () => {
       expect(() => parseQuery(reference, [], 'traces')).toThrow(
         /Incomplete expression/
       )
-      expect(validateQuery(reference, [], 'traces')).toEqual([
-        expect.objectContaining({ message: 'Incomplete expression' }),
-      ])
+      expect(validateQuery(reference, [], 'traces')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ message: 'Incomplete expression' }),
+        ])
+      )
     }
   )
 
@@ -366,7 +383,7 @@ describe('explicit attribute identity', () => {
     expect(
       expectCondition(parseQuery('same.key = 42', duplicate, 'traces')).query
         .field
-    ).toMatchObject({ type: 'int64', attributeScope: 'span' })
+    ).toMatchObject({ type: 'int64', owner: '' })
   })
 
   it('requires explicit text for a bare name with multiple tuples', () => {
@@ -390,28 +407,28 @@ describe('explicit attribute identity', () => {
     '雪',
   ])('round-trips the exact quoted key %j', key => {
     const field = parseAttributeFieldReference(
-      `attr(span, ${JSON.stringify(key)}, string)`,
+      `span.attributes[${JSON.stringify(key)}]::VARCHAR`,
       'traces'
     )
     if (!field) throw new Error('Expected an attribute field')
     const text = `${formatAttributeFieldReference(field)} = "value"`
     expect(
       expectCondition(parseQuery(text, [], 'traces')).query.field
-    ).toMatchObject({ name: key, type: 'string', attributeScope: 'span' })
+    ).toMatchObject({ name: key, type: 'string', owner: 'span' })
   })
 
   it.each([
-    ['string', 'string'],
-    ['int64', 'int64'],
+    ['VARCHAR', 'string'],
+    ['BIGINT', 'int64'],
     ['double', 'float64'],
-    ['bool', 'boolean'],
-    ['bytes', 'bytes'],
+    ['BOOLEAN', 'boolean'],
+    ['BLOB', 'bytes'],
     ['empty', 'empty'],
     ['array', 'array'],
     ['map', 'map'],
   ] as const)('maps stored kind %s to frontend type %s', (kind, type) => {
     expect(
-      parseAttributeFieldReference(`attr(span, "key", ${kind})`, 'traces')
+      parseAttributeFieldReference(`span.attributes["key"]::${kind}`, 'traces')
     ).toMatchObject({ type })
   })
 })
@@ -490,8 +507,7 @@ describe('plain text is still a global search', () => {
   // Free text has no operator, so it must not be dragged into the structured
   // path by the stricter parse -- multi-word global search is the common case.
   it('multi-word text becomes a global contains', () => {
-    const tree = expectCondition(parseQuery('Red Bull Racing', fields))
-    expect(tree.query.field.searchScope).toBe('global')
+    const tree = expectText(parseQuery('Red Bull Racing', fields))
     expect(tree.query.value).toBe('Red Bull Racing')
   })
 
@@ -508,37 +524,32 @@ describe('plain text is still a global search', () => {
 
 describe('LIMIT modifier syntax', () => {
   it('keeps a structured predicate and limit as separate request fields', () => {
-    const request = parseSearchRequest('http.method = GET | LIMIT 25', fields)
+    const request = parseSearchRequest('http.method = GET LIMIT 25', fields)
 
     expect(request?.predicate?.type).toBe('condition')
     expect(request?.limit).toBe(25)
   })
 
   it('keeps multi-word free text intact before the modifier', () => {
-    const request = parseSearchRequest('rate limit reached | LIMIT 50', fields)
-    const predicate = expectCondition(request?.predicate)
-
-    expect(predicate.query.field.searchScope).toBe('global')
+    const request = parseSearchRequest('rate limit reached LIMIT 50', fields)
+    const predicate = expectText(request?.predicate)
     expect(predicate.query.value).toBe('rate limit reached')
     expect(request?.limit).toBe(50)
   })
 
   it('accepts a limit without a predicate', () => {
-    expect(parseSearchRequest('| LIMIT 10', fields)).toEqual({
+    expect(parseSearchRequest('LIMIT 10', fields)).toEqual({
       predicate: null,
       limit: 10,
     })
   })
 
   it('accepts the lowercase keyword', () => {
-    expect(parseSearchRequest('checkout | limit 7', fields)?.limit).toBe(7)
+    expect(parseSearchRequest('checkout limit 7', fields)?.limit).toBe(7)
   })
 
   it('does not split a pipe inside an unquoted value', () => {
-    const request = parseSearchRequest(
-      'http.method = GET|POST | LIMIT 5',
-      fields
-    )
+    const request = parseSearchRequest('http.method = GET|POST LIMIT 5', fields)
     const predicate = expectCondition(request?.predicate)
 
     expect(predicate.query.value).toBe('GET|POST')
@@ -546,12 +557,12 @@ describe('LIMIT modifier syntax', () => {
   })
 
   it.each([
-    ['http.method = GET | LIMIT', /form \| LIMIT 100/],
-    ['http.method = GET | LIM 10', /form \| LIMIT 100/],
-    ['http.method = GET | LIMIT 0', /positive whole number/],
-    ['http.method = GET | LIMIT -1', /positive whole number/],
-    ['http.method = GET | LIMIT 1.5', /positive whole number/],
-    ['http.method = GET | LIMIT 9007199254740992', /positive whole number/],
+    ['http.method = GET LIMIT', /form LIMIT 100/],
+    ['http.method = GET LIM 10', /Unexpected/],
+    ['http.method = GET LIMIT 0', /positive whole number/],
+    ['http.method = GET LIMIT -1', /positive whole number/],
+    ['http.method = GET LIMIT 1.5', /positive whole number/],
+    ['http.method = GET LIMIT 9007199254740992', /positive whole number/],
   ])('rejects invalid modifier %s', (input, message) => {
     expect(() => parseSearchRequest(input, fields)).toThrow(message)
     expect(
@@ -560,7 +571,7 @@ describe('LIMIT modifier syntax', () => {
   })
 
   it('rejects repeated modifiers', () => {
-    const input = 'http.method = GET | LIMIT 10 | LIMIT 5'
+    const input = 'http.method = GET LIMIT 10 LIMIT 5'
     expect(() => parseSearchRequest(input, fields)).toThrow(/Only one LIMIT/)
     expect(validateQuery(input, fields)).toEqual(
       expect.arrayContaining([
@@ -572,7 +583,7 @@ describe('LIMIT modifier syntax', () => {
   })
 
   it('does not silently drop a limit for predicate-only callers', () => {
-    expect(() => parseQuery('http.method = GET | LIMIT 10', fields)).toThrow(
+    expect(() => parseQuery('http.method = GET LIMIT 10', fields)).toThrow(
       /not available/
     )
   })
@@ -582,7 +593,7 @@ describe('unified grammar contract', () => {
   it('preserves exact native integer list spellings and rejects fractions', () => {
     const query = expectCondition(
       parseQuery(
-        'severityNumber IN [42, "42.0", 4.2e1, "9007199254740993"]',
+        'severityNumber IN (42, "42.0", 4.2e1, "9007199254740993")',
         integerListFields
       )
     )
@@ -593,14 +604,14 @@ describe('unified grammar contract', () => {
       '9007199254740993',
     ])
     expect(() =>
-      parseQuery('severityNumber IN ["42.5"]', integerListFields)
+      parseQuery('severityNumber IN ("42.5")', integerListFields)
     ).toThrow(/exact signed 64-bit integer/)
   })
 
   it('accepts long exponent spellings by value without expanding them', () => {
     const query = expectCondition(
       parseQuery(
-        'severityNumber IN [42e000000, 0e999999999999999999999]',
+        'severityNumber IN (42e000000, 0e999999999999999999999)',
         integerListFields
       )
     )
@@ -609,14 +620,14 @@ describe('unified grammar contract', () => {
       '0e999999999999999999999',
     ])
     expect(() =>
-      parseQuery('severityNumber IN [1e999999]', integerListFields)
+      parseQuery('severityNumber IN (1e999999)', integerListFields)
     ).toThrow(/exact signed 64-bit integer/)
   })
 
   it('accepts exact unsigned timestamp lists through uint64 max', () => {
     const query = expectCondition(
       parseQuery(
-        'timestamp IN [9223372036854775808, 18446744073709551615]',
+        'timestamp IN (9223372036854775808, 18446744073709551615)',
         timestampListFields
       )
     )
@@ -626,7 +637,7 @@ describe('unified grammar contract', () => {
     ])
     for (const invalid of ['-1', '18446744073709551616', '1.5']) {
       expect(() =>
-        parseQuery(`timestamp IN [${invalid}]`, timestampListFields)
+        parseQuery(`timestamp IN (${invalid})`, timestampListFields)
       ).toThrow(/exact unsigned 64-bit integer/)
     }
   })
@@ -635,22 +646,22 @@ describe('unified grammar contract', () => {
     'requires exact signed integer lists for %s',
     field => {
       expect(() =>
-        parseQuery(`${field} IN [2.5]`, numericEnumListFields)
+        parseQuery(`${field} IN (2.5)`, numericEnumListFields)
       ).toThrow(/exact signed 64-bit integer/)
     }
   )
 
   it('uses static provenance rather than a colliding attribute name', () => {
     expect(() =>
-      parseQuery('severityNumber IN [42.5]', collidingIntegerFields)
+      parseQuery('severityNumber IN (42.5)', collidingIntegerFields)
     ).toThrow(/exact signed 64-bit integer/)
 
     const query = expectCondition(
-      parseQuery('severityNumber IN [42.5]', collidingIntegerFields.slice(1))
+      parseQuery('severityNumber IN (42.5)', collidingIntegerFields.slice(1))
     )
     expect(query.query.field).toMatchObject({
-      searchScope: 'attribute',
-      attributeScope: 'log',
+      owner: '',
+      path: ['attributes', 'severityNumber'],
     })
   })
 
@@ -665,9 +676,9 @@ describe('unified grammar contract', () => {
   })
 
   it('a bare NULL is the null check, carried as an explicit operator', () => {
-    const q = expectCondition(parseQuery('body = NULL', contractFields))
+    const q = expectCondition(parseQuery('body IS NULL', contractFields))
     expect(q.query.operator.symbol).toBe('IS NULL')
-    const q2 = expectCondition(parseQuery('body != nil', contractFields))
+    const q2 = expectCondition(parseQuery('body IS NOT NULL', contractFields))
     expect(q2.query.operator.symbol).toBe('IS NOT NULL')
   })
 
@@ -679,15 +690,17 @@ describe('unified grammar contract', () => {
 
   it('array values travel as JSON, so quoted commas survive', () => {
     const q = expectCondition(
-      parseQuery('statusCode IN ["a,b", "c"]', contractFields)
+      parseQuery('statusCode IN ("a,b", "c")', contractFields)
     )
     expect(JSON.parse(q.query.value)).toEqual(['a,b', 'c'])
   })
 
-  it('=~ and !~ are the PromQL spellings of the regex operators', () => {
-    const q = expectCondition(parseQuery('body =~ foo.*', contractFields))
+  it('uses explicit regex operators', () => {
+    const q = expectCondition(parseQuery('body REGEXP foo.*', contractFields))
     expect(q.query.operator.symbol).toBe('REGEXP')
-    const q2 = expectCondition(parseQuery('body !~ foo.*', contractFields))
+    const q2 = expectCondition(
+      parseQuery('body NOT REGEXP foo.*', contractFields)
+    )
     expect(q2.query.operator.symbol).toBe('NOT REGEXP')
   })
 
@@ -695,7 +708,7 @@ describe('unified grammar contract', () => {
     const q = expectCondition(parseQuery('body contains foo', contractFields))
     expect(q.query.operator.symbol).toBe('CONTAINS')
     const q2 = expectCondition(
-      parseQuery('statusCode not in [a, b]', contractFields)
+      parseQuery('statusCode not in (a, b)', contractFields)
     )
     expect(q2.query.operator.symbol).toBe('NOT IN')
   })
@@ -720,8 +733,7 @@ describe('unified grammar contract', () => {
   })
 
   it('plain words are still a global text search', () => {
-    const q = expectCondition(parseQuery('checkout latency', contractFields))
-    expect(q.query.field.searchScope).toBe('global')
+    const q = expectText(parseQuery('checkout latency', contractFields))
     expect(q.query.value).toBe('checkout latency')
   })
 })
@@ -742,7 +754,7 @@ describe('native duration operands', () => {
   it.each(['IN', 'NOT IN'])('%s preserves list order on the wire', operator => {
     const query = expectCondition(
       parseQuery(
-        `duration ${operator} [1s, "0.5ns", 9007199254740993ns, 0s]`,
+        `duration ${operator} (1s, "0.5ns", 9007199254740993ns, 0s)`,
         durationFields
       )
     )
@@ -752,7 +764,7 @@ describe('native duration operands', () => {
 
   it('normalizes parseSearchRequest before producing its final wire value', () => {
     const request = parseSearchRequest(
-      'duration IN [2m, 500ms] | LIMIT 5',
+      'duration IN (2m, 500ms) LIMIT 5',
       durationFields
     )
 
@@ -764,13 +776,13 @@ describe('native duration operands', () => {
 
   it.each([
     ['duration = -1ms', /Invalid duration:/],
-    ['duration = [1s]', /Invalid duration:/],
+    ['duration = (1s)', /Lists require IN or NOT IN/],
     ['duration = 9223372036854775808ns', /Invalid duration:/],
     [
-      'duration IN [1s, 9223372036854775808ns]',
+      'duration IN (1s, 9223372036854775808ns)',
       /Invalid duration at list element 2/,
     ],
-    ['duration IN [1s, bad]', /Invalid duration at list element 2/],
+    ['duration IN (1s, bad)', /Invalid duration at list element 2/],
   ])('rejects invalid or overflowing input in %s', (input, message) => {
     expect(() => parseQuery(input, durationFields)).toThrow(message)
     expect(validateQuery(input, durationFields)).toEqual([
@@ -779,7 +791,7 @@ describe('native duration operands', () => {
   })
 
   it('points validation at the invalid list element', () => {
-    const input = 'duration IN [1s, bad, 2s]'
+    const input = 'duration IN (1s, bad, 2s)'
     expect(validateQuery(input, durationFields)).toEqual([
       {
         from: input.indexOf('bad'),
@@ -790,10 +802,10 @@ describe('native duration operands', () => {
   })
 
   it.each([
-    ['duration IN [1s', /Invalid duration/],
-    ['duration IN []', /nonempty list/],
-    ['duration IN [NULL]', /NULL is not allowed/],
-    ['duration IN [[1s], 2s]', /nested/],
+    ['duration IN (1s', /Incomplete expression/],
+    ['duration IN ()', /nonempty list/],
+    ['duration IN (NULL)', /NULL is not allowed/],
+    ['duration IN ((1s), 2s)', /nested/],
   ])(
     'rejects malformed list syntax at the parser boundary: %s',
     (input, message) => {
@@ -803,8 +815,8 @@ describe('native duration operands', () => {
   )
 
   it.each([
-    ['duration = NULL', 'IS NULL'],
-    ['duration != nil', 'IS NOT NULL'],
+    ['duration IS NULL', 'IS NULL'],
+    ['duration IS NOT NULL', 'IS NOT NULL'],
   ])('keeps the operand-free null check %s', (input, operator) => {
     const query = expectCondition(parseQuery(input, durationFields))
     expect(query.query.operator.symbol).toBe(operator)
@@ -816,7 +828,7 @@ describe('native duration operands', () => {
       parseQuery('duration = "not a duration"', durationAttributeFields)
     )
     const list = expectCondition(
-      parseQuery('duration IN [1s, "not a duration"]', durationAttributeFields)
+      parseQuery('duration IN (1s, "not a duration")', durationAttributeFields)
     )
 
     expect(scalar.query.value).toBe('not a duration')
@@ -826,7 +838,7 @@ describe('native duration operands', () => {
   it('leaves an explicitly selected duration attribute as text', () => {
     const query = expectCondition(
       parseQuery(
-        'attr(span, "duration", string) = "not a duration"',
+        'span.attributes["duration"]::VARCHAR = "not a duration"',
         durationFields,
         'traces'
       )
@@ -835,8 +847,8 @@ describe('native duration operands', () => {
     expect(query.query.field).toMatchObject({
       name: 'duration',
       type: 'string',
-      searchScope: 'attribute',
-      attributeScope: 'span',
+      owner: 'span',
+      path: ['attributes', 'duration'],
     })
     expect(query.query.value).toBe('not a duration')
   })
@@ -908,12 +920,12 @@ describe('native integer scalar operands', () => {
 
   it('keeps lists, null checks, and same-named attributes on their existing paths', () => {
     const list = expectCondition(
-      parseQuery('severityNumber NOT IN [8.0, 8e0]', integerListFields)
+      parseQuery('severityNumber NOT IN (8.0, 8e0)', integerListFields)
     )
     expect(list.query.value).toBe('["8.0","8e0"]')
 
     const nullCheck = expectCondition(
-      parseQuery('severityNumber = NULL', integerListFields)
+      parseQuery('severityNumber IS NULL', integerListFields)
     )
     expect(nullCheck.query.operator.symbol).toBe('IS NULL')
     expect(nullCheck.query.value).toBe('')
@@ -921,7 +933,7 @@ describe('native integer scalar operands', () => {
     const attribute = expectCondition(
       parseQuery('severityNumber = 8.5', collidingIntegerFields.slice(1))
     )
-    expect(attribute.query.field.searchScope).toBe('attribute')
+    expect(attribute.query.field.path).toEqual(['attributes', 'severityNumber'])
     expect(attribute.query.value).toBe('8.5')
   })
 })
@@ -940,8 +952,7 @@ describe('keyword-prefixed words', () => {
   })
 
   it('free text starting with a keyword prefix stays free text', () => {
-    const q = expectCondition(parseQuery('orderly android', contractFields))
-    expect(q.query.field.searchScope).toBe('global')
+    const q = expectText(parseQuery('orderly android', contractFields))
     expect(q.query.value).toBe('orderly android')
   })
 
@@ -966,8 +977,7 @@ describe('review findings', () => {
       '(retrying) connection failed',
       '(500) internal error',
     ]) {
-      const q = expectCondition(parseQuery(input, contractFields))
-      expect(q.query.field.searchScope, input).toBe('global')
+      const q = expectText(parseQuery(input, contractFields))
       expect(q.query.value).toBe(input)
       expect(validateQuery(input, contractFields)).toEqual([])
     }
@@ -983,16 +993,16 @@ describe('review findings', () => {
   })
 
   it('nested arrays are rejected, not silently stringified', () => {
-    expect(() => parseQuery('statusCode IN [[a],b]', contractFields)).toThrow(
+    expect(() => parseQuery('statusCode IN ((a),b)', contractFields)).toThrow(
       /nested/i
     )
     expect(
-      validateQuery('statusCode IN [[a],b]', contractFields).length
+      validateQuery('statusCode IN ((a),b)', contractFields).length
     ).toBeGreaterThan(0)
   })
 
   it.each(['IN', 'NOT IN'])('%s requires a nonempty list', operator => {
-    for (const value of ['one', '"one"', '[]']) {
+    for (const value of ['one', '"one"', '()']) {
       const input = `statusCode ${operator} ${value}`
       expect(() => parseQuery(input, contractFields)).toThrow(/require.*list/i)
       expect(validateQuery(input, contractFields).length).toBeGreaterThan(0)

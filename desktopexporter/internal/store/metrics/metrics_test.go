@@ -455,8 +455,7 @@ func TestExactMetricSeriesPreservesMetricOwnership(t *testing.T) {
 
 	metricIDs, err := readStore(s, func(db *sql.DB) ([]string, error) {
 		rows, err := db.QueryContext(ctx, `select m.id::varchar from metrics m
-			join resources r on r.id = m.resource_id
-			where m.name = 'owned.gauge' order by r.schema_url`)
+			where m.name = 'owned.gauge' order by m.resource.schema_url`)
 		if err != nil {
 			return nil, err
 		}
@@ -565,7 +564,7 @@ func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
 		if err := db.QueryRow(`select count(*) from metric_datapoints`).Scan(&datapointCount); err != nil {
 			return err
 		}
-		if err := db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resourceCount, &payloadCount); err != nil {
+		if err := db.QueryRow(`select count(distinct resource.id), count(distinct resource.payload_id) from metric_datapoints`).Scan(&resourceCount, &payloadCount); err != nil {
 			return err
 		}
 		require.Equal(t, 1, metricsCount)
@@ -589,8 +588,22 @@ func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
 		return metrics.GetMetricOTLP(ctx, db, metricID)
 	})
 	require.NoError(t, err)
-	assert.Contains(t, string(otlp), `"schemaUrl":"resource-d"`)
-	assert.NotContains(t, string(otlp), `"schemaUrl":"resource-a"`)
+	decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(otlp)
+	require.NoError(t, err)
+	require.Equal(t, 4, decoded.ResourceMetrics().Len())
+	seen := map[string]int64{}
+	for _, rm := range decoded.ResourceMetrics().All() {
+		require.Equal(t, uint32(2), rm.Resource().DroppedAttributesCount())
+		require.Equal(t, 1, rm.ScopeMetrics().Len())
+		sm := rm.ScopeMetrics().At(0)
+		require.Equal(t, "scope-a", sm.SchemaUrl())
+		require.Equal(t, uint32(3), sm.Scope().DroppedAttributesCount())
+		require.Equal(t, 1, sm.Metrics().Len())
+		points := sm.Metrics().At(0).Gauge().DataPoints()
+		require.Equal(t, 1, points.Len())
+		seen[rm.SchemaUrl()] = points.At(0).IntValue()
+	}
+	require.Equal(t, map[string]int64{"resource-a": 1, "resource-b": 2, "resource-c": 3, "resource-d": 4}, seen)
 
 	differentScope := pmetric.NewMetrics()
 	appendMetric(differentScope, "resource-e", "scope-b", "different scope", 5)
@@ -1475,14 +1488,13 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 	}[aggTemporality]
 	const q = `
 		select m.id::varchar from metrics m
-		join scopes sc on sc.id = m.scope_id
 		where m.name = ?
 		  and m.unit = ?
 		  and m.metric_type = ?
 		  and m.aggregation_temporality = ?
 		  and m.is_monotonic = ?
-		  and sc.name = ?
-		  and sc.version = ?
+		  and m.scope.name = ?
+		  and m.scope.version = ?
 		  and m.service_name = ?
 		limit 1
 	`
@@ -1714,22 +1726,18 @@ func TestDeleteMetric(t *testing.T) {
 			`select count(*) from exemplars where metric_datapoint_id in (select id from metric_datapoints where metric_id in (select id from metrics where name = ?))`,
 			"histogram_metric")
 		attrBefore := countRows(t, s, ctx,
-			`select count(distinct t.aid)
-			 from metrics m
-			 join resources r on r.id = m.resource_id
-			 join scopes sc on sc.id = m.scope_id,
-			 unnest(r.attribute_ids || sc.attribute_ids) as t(aid)
+			`select count(distinct t.key)
+			 from metrics m,
+			 unnest(variant_keys(m.resource.attributes) || variant_keys(m.scope.attributes)) as t(key)
 			 where m.name = ?`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
 		assert.Greater(t, attrBefore, 0)
 
-		// The dictionary rows those ids point at, before the delete. They must
-		// survive the cascade -- other Metrics may still reference them -- and
-		// only go when the sweep proves them unreferenced.
-		dictBefore := countRows(t, s, ctx, `select count(*) from attributes`)
-		assert.Greater(t, dictBefore, 0)
+		// Other Metrics must retain their independently owned Resource payloads.
+		otherResources := countRows(t, s, ctx, `select count(*) from metrics where name <> 'histogram_metric' and len(variant_keys(resource.attributes)) > 0`)
+		assert.Greater(t, otherResources, 0)
 
 		err = deleteByIdentity(t, ctx, s,
 			"histogram_metric", "seconds", "Histogram",
@@ -1749,31 +1757,18 @@ func TestDeleteMetric(t *testing.T) {
 				where d.id = e.metric_datapoint_id
 				  and d.metric_id in (select id from metrics where name = ?)
 			)`, "histogram_metric"))
-		// The cascade deliberately does NOT touch the dictionary: attribute,
-		// resource and scope rows are shared across every signal, so "is this
-		// one still in use" is not a question a Metric-scoped delete can
-		// answer. It stays whole here...
-		assert.Equal(t, dictBefore, countRows(t, s, ctx, `select count(*) from attributes`),
-			"a Metric delete must not remove shared dictionary rows")
+		assert.Equal(t, otherResources, countRows(t, s, ctx, `select count(*) from metrics where len(variant_keys(resource.attributes)) > 0`),
+			"a Metric delete must preserve other Metrics' owned payloads")
 
-		// ...and the sweep is what collects whatever the delete orphaned.
+		// Sweep only collects histogram bounds abandoned by the delete.
 		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 			return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 		}))
-		// The other four fixture metrics still reference the same resource and
-		// scope, so the sweep must NOT take those rows -- shared content
-		// survives as long as one owner remains. What it does take is anything
-		// only the deleted Metric reached.
+		// Resource and Scope remain embedded on the four surviving Metrics.
 		assert.Equal(t, 0, countRows(t, s, ctx,
-			`select count(*) from attributes a
-			 where not exists (select 1 from resources r, unnest(r.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from scopes sc, unnest(sc.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metric_datapoints d, unnest(d.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metric_series ms, unnest(ms.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metrics m, unnest(m.metadata_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
-			"the sweep must leave no unreferenced dictionary row behind")
-		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
+			`select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')`),
+			"owned payloads require no auxiliary attribute or context tables")
+		assert.Greater(t, countRows(t, s, ctx, `select count(distinct resource.id) from metrics`), 0,
 			"the resource is still referenced by the four surviving Metrics")
 	})
 }
@@ -1912,8 +1907,8 @@ func TestMetrics_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 		}))
 	}
 	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metrics`))
-	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
-	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(distinct resource.id) from metrics`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(distinct scope.id) from metrics`))
 	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_series`))
 	var metricID string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -1936,15 +1931,14 @@ func TestMetricIdentityUniqueIndexes(t *testing.T) {
 	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.Exec(`insert into metrics
-			select uuid(), resource_id, resource_payload_id, scope_id, name, description,
-				unit, metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name
+			select uuid(), * exclude(id)
 			from metrics where name = 'gauge_metric'`)
 		require.ErrorContains(t, err, "Duplicate key")
 		_, err = db.Exec(`insert into metric_series
-			select uuid(), metric_id, attribute_ids from metric_series limit 1`)
+			select uuid(), metric_id, attribute_key, attributes from metric_series limit 1`)
 		require.ErrorContains(t, err, "Duplicate key")
 		_, err = db.Exec(`insert into metric_series select uuid(), id,
-			['00000000-0000-0000-0000-000000000001'::uuid]
+			'new-key', {'new': true}::variant
 			from metrics where name = 'gauge_metric'`)
 		require.NoError(t, err, "Datapoint attributes must split series within each metric")
 		return nil
@@ -1970,12 +1964,7 @@ func TestMetrics_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metrics s
-		join resources r on r.id = s.resource_id
-		where s.service_name <> coalesce((
-			select a.value::varchar
-			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
-			where a.key = 'service.name'
-		), '')
+		where s.service_name <> coalesce(s.resource.attributes['service.name']::varchar, '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"metrics.service_name must equal the source resource attribute")
@@ -2008,7 +1997,7 @@ func TestClearMetrics(t *testing.T) {
 	metricList := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metricList, 5)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from metric_datapoints"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from metric_datapoints, unnest(variant_keys(attributes))"), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
@@ -2022,17 +2011,13 @@ func TestClearMetrics(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_datapoints"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
 
-	// Clear leaves the dictionary alone -- it cannot know whether a traces or
-	// logs row still references any of it. With no other signal ingested here
-	// everything it left behind is orphaned, and the sweep takes all of it.
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0,
-		"Clear must not delete shared dictionary rows itself")
+	// Clear leaves shared histogram bounds for the store's subsequent sweep.
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from histogram_bounds"), 0,
+		"Clear leaves shared bounds for the sweep")
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from histogram_bounds"))
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
@@ -2414,7 +2399,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 	})
 }
 
-// Datapoint and exemplar labels are searchable through dictionary IDs.
+// Datapoint and exemplar labels are searchable through their owned maps.
 func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2477,7 +2462,7 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 		assert.Empty(t, search(t, "exemplar", "no.such.key", "=", "gauge"))
 	})
 
-	// Scope is part of the dictionary id, so a datapoint search must not reach
+	// Owner scope is explicit, so a datapoint search must not reach
 	// an exemplar label and vice versa -- even though both live in the same
 	// attributes table.
 	t.Run("scopes do not leak into each other", func(t *testing.T) {
@@ -2593,7 +2578,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 		}))
 		return n
 	}
-	assert.Equal(t, 2, countRows("resources"),
+	assert.Equal(t, 2, countRows("(select distinct resource.id from metrics)"),
 		"distinct resource payloads must produce distinct resource rows")
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -2654,7 +2639,7 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 		}))
 		return n
 	}
-	assert.Equal(t, 2, countRows("resources"),
+	assert.Equal(t, 2, countRows("(select distinct resource.id from metrics)"),
 		"distinct received resource payloads must remain distinct")
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -2863,7 +2848,7 @@ func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 		return n
 	}
 
-	assert.Equal(t, 2, countRows("resources"),
+	assert.Equal(t, 2, countRows("(select distinct resource.id from metrics)"),
 		"distinct received resource payloads must remain distinguishable")
 	assert.Equal(t, 2, countRows("metric_series"),
 		"resource attributes participate in OTLP metric series identity")
@@ -2890,12 +2875,12 @@ func TestMetricSeries_DroppedResourceCountPreservesExactOwners(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		var resources, metricsCount, series int
 		var minDropped, maxDropped uint32
-		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
+		require.NoError(t, db.QueryRow(`select count(distinct resource.id) from metrics`).Scan(&resources))
 		require.NoError(t, db.QueryRow(`select count(*) from metrics`).Scan(&metricsCount))
 		require.NoError(t, db.QueryRow(`select count(*) from metric_series`).Scan(&series))
 		require.NoError(t, db.QueryRow(`
-			select min(r.dropped_attributes_count), max(r.dropped_attributes_count)
-			from metrics m join resources r on r.id = m.resource_id`).Scan(&minDropped, &maxDropped))
+			select min(resource.dropped_attributes_count), max(resource.dropped_attributes_count)
+			from metrics`).Scan(&minDropped, &maxDropped))
 		assert.Equal(t, 2, resources, "dropped-count payloads need distinct resource rows")
 		assert.Equal(t, 2, metricsCount)
 		assert.Equal(t, 2, series)
@@ -6746,8 +6731,7 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(`
-			select count(*) from metrics m, unnest(m.metadata_ids) t(id)
-			join attributes a on a.id = t.id`).Scan(&n)
+			select count(*) from metrics m, unnest(variant_keys(m.metadata)) t(key)`).Scan(&n)
 	}))
 	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
 

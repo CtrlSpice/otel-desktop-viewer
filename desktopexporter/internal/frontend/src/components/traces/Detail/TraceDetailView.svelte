@@ -1,5 +1,9 @@
 <script module lang="ts">
-  import type { AttributeScope, FieldDefinition } from '@/search/model'
+  import {
+    usesFieldToken,
+    type AttributeScope,
+    type FieldDefinition,
+  } from '@/search/model'
 
   /** When empty, show all detail rows; otherwise only matching search fields / attributes. */
   export function detailSearchFieldVisible(
@@ -7,10 +11,7 @@
     searchFieldName: string
   ): boolean {
     if (selected.length === 0) return true
-    return selected.some(
-      f =>
-        f.searchScope === 'field' && 'name' in f && f.name === searchFieldName
-    )
+    return selected.some(f => !usesFieldToken(f) && f.name === searchFieldName)
   }
 
   export function detailAttributeVisible(
@@ -20,12 +21,7 @@
   ): boolean {
     if (selected.length === 0) return true
     return selected.some(
-      f =>
-        f.searchScope === 'attribute' &&
-        'name' in f &&
-        'attributeScope' in f &&
-        f.name === key &&
-        f.attributeScope === attributeScope
+      f => usesFieldToken(f) && f.path[1] === key && f.owner === attributeScope
     )
   }
 

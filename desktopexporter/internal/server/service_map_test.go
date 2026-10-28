@@ -42,7 +42,7 @@ func TestServiceMapConnections(t *testing.T) {
 	add("api", "one", 1, 7, 1, 160) // same-service span is not an edge
 	add("api", "one", 3, 1, 0, 90)
 	add("worker", "", 3, 2, 1, 95) // same edge in a second trace
-	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data, h.store.FlushedIDs()) }))
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data) }))
 	identity := `[{"kind":"string","value":"api"},{"kind":"string","value":"one"}]`
 	read := func(options map[string]any) struct {
 		Rows      [][]json.RawMessage `json:"rows"`

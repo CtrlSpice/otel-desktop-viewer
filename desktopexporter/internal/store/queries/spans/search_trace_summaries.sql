@@ -1,4 +1,4 @@
-{{.CTEs}},
+{{if .CTEs}}{{.CTEs}},{{else}}with{{end}}
 		eligible_spans as materialized (
 			select distinct s.trace_id
 			{{.From}}

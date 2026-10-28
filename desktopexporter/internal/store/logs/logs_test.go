@@ -188,7 +188,7 @@ func TestSearchLogSummariesNullableTimeRangesExecute(t *testing.T) {
 		record.Body().SetStr(fmt.Sprintf("log-%d", timestamp))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	start, end := uint64(200), uint64(200)
@@ -223,7 +223,7 @@ func TestSearchLogSummariesLimit(t *testing.T) {
 	s, ctx := storetest.New(t)
 	baseTime := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -361,7 +361,7 @@ func TestLogOrdering(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ldata)
 	})
 	assert.NoError(t, err)
 
@@ -399,7 +399,7 @@ func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 		rec.Body().SetStr(tc.body)
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	for _, tc := range []struct{ body, spanID string }{
@@ -434,7 +434,7 @@ func TestEmptyLogs(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, plog.NewLogs(), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, plog.NewLogs())
 	})
 	assert.NoError(t, err)
 
@@ -442,8 +442,7 @@ func TestEmptyLogs(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
-// TestClearLogs verifies the two-step delete contract: Clear removes owners,
-// then SweepOrphans removes unreferenced shared dictionary rows.
+// TestClearLogs verifies that clearing logs removes their owned payloads.
 func TestClearLogs(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -451,20 +450,18 @@ func TestClearLogs(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ldata)
 	})
 	assert.NoError(t, err)
 
 	entries := searchLogSummariesAll(t, s, ctx)
 	assert.Len(t, entries, 3)
 
-	// Snapshot rather than a non-empty check, so a Clear that deleted only some
-	// of the dictionary would still be caught.
-	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
+	// Confirm the fixture carries attributes before removing its rows.
+	attrsBefore := countRows(t, s, ctx, "select sum(len(variant_keys(attributes))) from logs")
 	assert.Greater(t, attrsBefore, 0)
 	assert.Greater(t, countRows(t, s, ctx, `
-		select count(*) from logs l, unnest(l.attribute_ids) t(id)
-		join attributes a on a.id = t.id`), 0)
+		select count(*) from logs l, unnest(variant_keys(l.attributes)) t(key)`), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return logs.Clear(ctx, db)
@@ -474,20 +471,14 @@ func TestClearLogs(t *testing.T) {
 	entries = searchLogSummariesAll(t, s, ctx)
 	assert.Empty(t, entries)
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from logs"))
-	assert.Equal(t, attrsBefore, countRows(t, s, ctx, "select count(*) from attributes"),
-		"Clear must not delete attribute rows: they are shared with spans and metrics")
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from resources"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from scopes"), 0)
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from logs, unnest(variant_keys(attributes))"))
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
 
-	// Logs were the only signal ingested, so after the sweep nothing is
-	// referenced and all three tables empty out.
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
+	// Owned payloads never create auxiliary attribute or context tables.
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
@@ -498,7 +489,7 @@ func TestLogSuite(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ldata)
 	})
 	assert.NoError(t, err, "failed to ingest test logs")
 
@@ -620,12 +611,13 @@ func TestLogSuite(t *testing.T) {
 	})
 }
 
-// attributeDef mirrors one entry of the GetLogAttributeDefinitions payload, which the
-// attribute_def_json macro renders.
+// attributeDef retains the exact address of each discovered value.
 type attributeDef struct {
 	Name           string `json:"name"`
 	AttributeScope string `json:"attributeScope"`
 	Type           string `json:"type"`
+	Owner          string `json:"owner"`
+	Path           []any  `json:"path"`
 }
 
 func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context) []attributeDef {
@@ -640,7 +632,7 @@ func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context) []at
 }
 
 // GetLogAttributeDefinitions returns every log-side attribute definition (resource,
-// scope, and log) in the ownerless dictionary. A later ingest must therefore
+// scope, and log) on retained records. A later ingest must therefore
 // add its definitions to the same result rather than creating a windowed view.
 func TestGetLogAttributeDefinitions(t *testing.T) {
 	t.Parallel()
@@ -648,22 +640,33 @@ func TestGetLogAttributeDefinitions(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
 	}))
 
 	attributes := getLogAttributeDefs(t, s, ctx)
 
-	// The full set for this fixture, exactly. Compared as a set rather than a
-	// slice: the query orders by (key, scope), and the two log.list entries tie
-	// on both, so their relative order is not something the function promises.
+	// Include containers and every received nested type. Array positions are
+	// numbers in the path; dotted attribute keys remain single strings.
 	assert.ElementsMatch(t, []attributeDef{
-		{Name: "log.bool", AttributeScope: "log", Type: "bool"},
-		{Name: "log.float", AttributeScope: "log", Type: "double"},
-		{Name: "log.int", AttributeScope: "log", Type: "int64"},
-		{Name: "log.list", AttributeScope: "log", Type: "array"},
-		{Name: "log.string", AttributeScope: "log", Type: "string"},
-		{Name: "service.name", AttributeScope: "resource", Type: "string"},
-		{Name: "service.version", AttributeScope: "resource", Type: "string"},
+		{Name: "log.bool", AttributeScope: "log", Type: "bool", Owner: "log", Path: []any{"attributes", "log.bool"}},
+		{Name: "log.float", AttributeScope: "log", Type: "double", Owner: "log", Path: []any{"attributes", "log.float"}},
+		{Name: "log.int", AttributeScope: "log", Type: "int64", Owner: "log", Path: []any{"attributes", "log.int"}},
+		{Name: "log.list", AttributeScope: "log", Type: "array", Owner: "log", Path: []any{"attributes", "log.list"}},
+		{Name: "log.string", AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"attributes", "log.string"}},
+		{Name: "service.name", AttributeScope: "resource", Type: "string", Owner: "resource", Path: []any{"attributes", "service.name"}},
+		{Name: "service.version", AttributeScope: "resource", Type: "string", Owner: "resource", Path: []any{"attributes", "service.version"}},
+		{Name: `["body","details","operation"]`, AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"body", "details", "operation"}},
+		{Name: `["body","details","status"]`, AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"body", "details", "status"}},
+		{Name: `["body","details"]`, AttributeScope: "log", Type: "map", Owner: "log", Path: []any{"body", "details"}},
+		{Name: `["body","message"]`, AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"body", "message"}},
+		{Name: `["log.list",0]`, AttributeScope: "log", Type: "int64", Owner: "log", Path: []any{"attributes", "log.list", float64(0)}},
+		{Name: `["log.list",0]`, AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"attributes", "log.list", float64(0)}},
+		{Name: `["log.list",1]`, AttributeScope: "log", Type: "int64", Owner: "log", Path: []any{"attributes", "log.list", float64(1)}},
+		{Name: `["log.list",1]`, AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"attributes", "log.list", float64(1)}},
+		{Name: `["log.list",2]`, AttributeScope: "log", Type: "int64", Owner: "log", Path: []any{"attributes", "log.list", float64(2)}},
+		{Name: `["log.list",2]`, AttributeScope: "log", Type: "string", Owner: "log", Path: []any{"attributes", "log.list", float64(2)}},
+		{Name: `["log.list",3]`, AttributeScope: "log", Type: "int64", Owner: "log", Path: []any{"attributes", "log.list", float64(3)}},
+		{Name: `["log.list",4]`, AttributeScope: "log", Type: "int64", Owner: "log", Path: []any{"attributes", "log.list", float64(4)}},
 	}, attributes)
 
 	// The ordering the function does promise: non-decreasing by (key, scope).
@@ -677,7 +680,7 @@ func TestGetLogAttributeDefinitions(t *testing.T) {
 	// used -- including a scope-scoped one, so all three scopes are covered.
 	laterTime := baseTime + int64(2*time.Hour)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdataN(laterTime, 1), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, createTestLogsPdataN(laterTime, 1))
 	}))
 
 	names := map[string]string{}
@@ -698,7 +701,7 @@ func TestDeleteLogsByRefs(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ldata)
 	})
 	assert.NoError(t, err)
 
@@ -736,7 +739,7 @@ func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 	const batchSize = logs.FlushInterval + 1
 	ldata := createTestLogsPdataN(baseTime, batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ldata)
 	})
 	assert.NoError(t, err)
 
@@ -779,7 +782,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 	var rejected ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
 		var err error
-		rejected, err = logs.IngestReport(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1), s.FlushedIDs())
+		rejected, err = logs.IngestReport(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1))
 		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
@@ -798,7 +801,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
 			var err error
-			rejected, err = logs.IngestReport(ctx, conn, ldata, s.FlushedIDs())
+			rejected, err = logs.IngestReport(ctx, conn, ldata)
 			return err
 		})
 	}()
@@ -817,7 +820,7 @@ func TestSearchLogSummaries(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ldata)
 	})
 	assert.NoError(t, err)
 
@@ -1298,7 +1301,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
 	})
 	require.NoError(t, err)
 
@@ -1306,12 +1309,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 	// service.name attribute to the empty value stored in logs.service_name.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from logs l
-		join resources r on r.id = l.resource_id
-		where l.service_name <> coalesce((
-			select a.value::varchar
-			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
-			where a.key = 'service.name'
-		), '')
+		where l.service_name <> coalesce(l.resource.attributes['service.name']::varchar, '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"logs.service_name must equal the source resource attribute (or '' when absent)")
@@ -1319,7 +1317,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 	// Guard against a vacuous pass: zero mismatches over zero joined rows would
 	// look identical to the invariant holding.
 	joined := countRows(t, s, ctx, `
-		select count(*) from logs l join resources r on r.id = l.resource_id
+		select count(*) from logs l where l.resource is not null
 	`)
 	assert.Equal(t, countRows(t, s, ctx, "select count(*) from logs"), joined,
 		"every log must resolve to a resource row, or the check above passes vacuously")

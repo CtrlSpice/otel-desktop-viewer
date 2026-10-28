@@ -38,7 +38,7 @@ func TestNumericMetricAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 	for _, scope := range []string{"resource", "metric", "scope", "datapoint", "exemplar", "metadata"} {
 		t.Run(scope, func(t *testing.T) {
 			params := []search.NamedParam{}
-			resolved, err := mapMetricAttributeExpressions(
+			resolved, err := metricFieldMapper()(
 				&search.FieldDefinition{Name: "number", SearchScope: "attribute", AttributeScope: scope, Type: "int64"},
 				&search.Query{FieldOperator: ">", Value: "2"},
 				&params,
@@ -46,8 +46,10 @@ func TestNumericMetricAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, resolved, 1)
 			assert.Equal(t, search.AttributeSignedIntegerOperand, resolved[0].OperandMode)
-			assert.Contains(t, resolved[0].SQL, "try_cast(a.value as bigint)")
-			assert.Contains(t, resolved[0].SQL, "otel_value_kind(a.value) = attr_kind_1")
+			predicate, err := search.BuildOperatorCondition(resolved[0], &search.Query{FieldOperator: ">", Value: "2"}, &params)
+			require.NoError(t, err)
+			assert.Contains(t, predicate, "[$1] as bigint)")
+			assert.Contains(t, predicate, "[$1]) = $2")
 		})
 	}
 }

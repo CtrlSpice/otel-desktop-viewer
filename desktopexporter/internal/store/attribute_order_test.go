@@ -99,10 +99,10 @@ func TestAttributeDiscoveryOrderIsTotal(t *testing.T) {
 	}
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		if err := spans.Ingest(ctx, conn, traces, s.FlushedIDs()); err != nil {
+		if err := spans.Ingest(ctx, conn, traces); err != nil {
 			return err
 		}
-		if err := logs.Ingest(ctx, conn, lg, s.FlushedIDs()); err != nil {
+		if err := logs.Ingest(ctx, conn, lg); err != nil {
 			return err
 		}
 		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())

@@ -1,10 +1,8 @@
-with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end),
+with
 		eligible_spans as materialized (
 			select distinct s.trace_id
-			from search_params, spans s
-		join resources r on r.id = s.resource_id
-		join scopes sc on sc.id = s.scope_id
-			where s.start_time >= time_start and s.start_time <= time_end
+			from spans s
+			where s.start_time >= $1::ubigint and s.start_time <= $2::ubigint
 		),
 		selected_trace_ids as materialized (
 			select trace_id from eligible_spans

@@ -89,7 +89,13 @@ func TestRedactionReceiveStoreExport(t *testing.T) {
 				}
 			}
 			_, result, err := requestQuery(t.Context(), http.DefaultClient, viewer, `select count(*)::varchar from (
-				select value::varchar as v from attributes union all select body::varchar from logs
+				select to_json(s)::varchar as v from spans s
+				union all select to_json(l)::varchar from logs l
+				union all select to_json(m)::varchar from metrics m
+				union all select to_json(d)::varchar from metric_datapoints d
+				union all select to_json(e)::varchar from events e
+				union all select to_json(l)::varchar from links l
+				union all select to_json(e)::varchar from exemplars e
 			) where contains(v, 'synthetic-secret')`, 1)
 			require.NoError(t, err)
 			require.Equal(t, "0", result.Rows[0][0], "secrets must never reach stored attributes or log bodies")

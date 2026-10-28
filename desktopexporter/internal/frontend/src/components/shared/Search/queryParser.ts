@@ -1,5 +1,6 @@
 import {
   OPERATORS,
+  usesFieldToken,
   type FieldDefinition,
   type Operator,
   type ParsedSearchRequest,
@@ -10,6 +11,7 @@ import { parser } from './codemirror/query.parser'
 import type { SyntaxNode } from '@lezer/common'
 import { fieldResolutionIsAmbiguous, resolveField } from './field-resolution'
 import { normalizeDuration, normalizeDurationList } from './duration-query'
+import { unquoteQueryString as unquote } from './query-literals'
 
 let nextQueryID = 0
 function generateID(): string {
@@ -32,33 +34,15 @@ function unexpectedTokenMessage(value: string): string {
   )
 }
 
-// Unsupported escapes keep the escaped character, so "\d" becomes "d".
-function unquote(text: string): string {
-  const quote = text[0]
-  const body = text.slice(1, text.endsWith(quote) ? -1 : undefined)
-  let out = ''
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i]
-    if (c !== '\\') {
-      out += c
-      continue
-    }
-    const next = body[++i]
-    if (next === undefined) break
-    if (next === 'n') out += '\n'
-    else if (next === 't') out += '\t'
-    else if (next === 'r') out += '\r'
-    else if (next === 'b') out += '\b'
-    else if (next === 'f') out += '\f'
-    else if (
-      next === 'u' &&
-      /^[0-9a-fA-F]{4}$/.test(body.slice(i + 1, i + 5))
-    ) {
-      out += String.fromCharCode(parseInt(body.slice(i + 1, i + 5), 16))
-      i += 4
-    } else out += next
-  }
-  return out
+function syntaxErrorMessage(
+  input: string,
+  error: { from: number; to: number }
+): string {
+  const token =
+    input.slice(error.from, error.to) ||
+    input.slice(error.from).trimStart().match(/^\S+/)?.[0] ||
+    ''
+  return unexpectedTokenMessage(token)
 }
 
 function findOperator(symbol: string): Operator | undefined {
@@ -68,13 +52,7 @@ function findOperator(symbol: string): Operator | undefined {
   return undefined
 }
 
-// The symbol an operator node resolves to. Symbol operators mostly map to
-// themselves; the regex sigils are spelled the PromQL way in query text and
-// the SQL way on the wire.
-const SIGIL_ALIASES = new Map<string, string>([
-  ['=~', 'REGEXP'],
-  ['!~', 'NOT REGEXP'],
-])
+const SIGIL_ALIASES = new Map<string, string>([['<>', '!=']])
 
 const KEYWORD_SYMBOLS = new Map<string, string>([
   ['Contains', 'CONTAINS'],
@@ -82,6 +60,11 @@ const KEYWORD_SYMBOLS = new Map<string, string>([
   ['In', 'IN'],
   ['NotContains', 'NOT CONTAINS'],
   ['NotIn', 'NOT IN'],
+  ['Like', 'LIKE'],
+  ['NotLike', 'NOT LIKE'],
+  ['NotRegexp', 'NOT REGEXP'],
+  ['Is', 'IS'],
+  ['IsNot', 'IS NOT'],
 ])
 
 // Derived null and regexp operators inherit permission from their base operator.
@@ -196,14 +179,17 @@ function surveyTree(
   let firstError: { from: number; to: number } | null = null
   tree.iterate({
     enter(n) {
-      if (n.from >= predicateEnd) return false
+      if (n.from > predicateEnd) return false
       if (
         n.name === 'Comparison' ||
         n.name === 'GlobalText' ||
         n.name === 'AndExpression' ||
         n.name === 'OrExpression' ||
         n.name === 'Operator' ||
-        n.name === 'KeywordOperator'
+        n.name === 'KeywordOperator' ||
+        n.name === 'AttributeReference' ||
+        n.name === 'Between' ||
+        n.name === 'Where'
       ) {
         structured = true
       }
@@ -221,15 +207,38 @@ function searchRequestNode(tree: ReturnType<typeof parser.parse>): SyntaxNode {
 
 function findPredicateNode(request: SyntaxNode): SyntaxNode | null {
   return (
-    namedChildren(request).find(child => child.name !== 'LimitClause') ?? null
+    namedChildren(request).find(
+      child => child.name !== 'LimitClause' && child.name !== 'Where'
+    ) ?? null
   )
 }
 
-function findLimitClauses(tree: ReturnType<typeof parser.parse>): SyntaxNode[] {
+function findLimitClauses(
+  tree: ReturnType<typeof parser.parse>,
+  input: string
+): SyntaxNode[] {
   const clauses: SyntaxNode[] = []
+  const structured = surveyTree(tree).structured
   tree.iterate({
     enter(node) {
-      if (node.name === 'LimitClause') clauses.push(node.node)
+      const keyword = node.node.getChild('Limit')
+      if (
+        node.name !== 'LimitClause' ||
+        !keyword ||
+        keyword.to === keyword.from
+      )
+        return
+      const value = node.node.getChild('LimitValue')
+      // "rate limit reached" is ordinary text. A numeric limit, a standalone
+      // LIMIT clause or a clause after a structured predicate is a modifier.
+      if (
+        !structured &&
+        keyword.from > 0 &&
+        value &&
+        !/^[+-]?\d/.test(input.slice(value.from, value.to))
+      )
+        return
+      clauses.push(node.node)
     },
   })
   return clauses
@@ -259,7 +268,7 @@ function walkLimit(ctx: WalkContext, clause: SyntaxNode): number | null {
       ctx,
       clause.from,
       Math.max(clause.to, clause.from + 1),
-      'Result limits use the form | LIMIT 100'
+      'Result limits use the form LIMIT 100'
     )
     return null
   }
@@ -283,7 +292,7 @@ function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     case 'GlobalText': {
       const name = node.getChild('Word')
       const value = node.getChild('QuotedString')
-      if (!name || text(ctx, name) !== 'search' || !value) {
+      if (!name || text(ctx, name).toLowerCase() !== 'search' || !value) {
         fail(ctx, node.from, node.to, 'Global text uses search("text")')
         return null
       }
@@ -329,6 +338,39 @@ function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
 
 function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   const fieldNode = node.getChild('FieldName')
+  if (fieldNode && node.getChild('Between')) {
+    const bounds = namedChildren(node).filter(child =>
+      ['Word', 'QuotedString', 'Null', 'Array'].includes(child.name)
+    )
+    if (bounds.length !== 2) {
+      fail(ctx, node.from, node.to, 'BETWEEN requires lower AND upper bounds')
+      return null
+    }
+    const kinds = bounds.map(bound => inferValueKind(ctx, bound))
+    const kind = kinds.includes('double') ? 'double' : kinds[0]
+    const lower = walkComparisonValue(
+      ctx,
+      fieldNode,
+      node,
+      bounds[0],
+      '>=',
+      kind
+    )
+    const upper = walkComparisonValue(
+      ctx,
+      fieldNode,
+      node,
+      bounds[1],
+      '<=',
+      kind
+    )
+    if (!lower || !upper) return null
+    return {
+      id: generateID(),
+      type: 'group',
+      group: { operator: 'AND', children: [lower, upper] },
+    }
+  }
   const opNode = node.getChild('Operator') ?? node.getChild('KeywordOperator')
   const valueNode =
     node.getChild('QuotedString') ??
@@ -340,9 +382,42 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     fail(ctx, node.from, node.to, 'Incomplete expression')
     return null
   }
+  return walkComparisonValue(ctx, fieldNode, opNode, valueNode)
+}
 
+function inferValueKind(
+  ctx: WalkContext,
+  valueNode: SyntaxNode | null
+): string {
+  const firstListValue =
+    valueNode?.name === 'Array' ? valueNode.firstChild : valueNode
+  const inferredText = firstListValue ? text(ctx, firstListValue) : ''
+  return firstListValue?.name === 'QuotedString'
+    ? 'string'
+    : /^(true|false)$/i.test(inferredText)
+      ? 'bool'
+      : /^[+-]?\d+$/.test(inferredText)
+        ? 'int64'
+        : /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(inferredText)
+          ? 'double'
+          : 'string'
+}
+
+function walkComparisonValue(
+  ctx: WalkContext,
+  fieldNode: SyntaxNode,
+  opNode: SyntaxNode,
+  valueNode: SyntaxNode | null,
+  operatorSymbol?: string,
+  inferredKind = inferValueKind(ctx, valueNode)
+): QueryNode | null {
   const fieldName = text(ctx, fieldNode)
-  const field = resolveField(fieldName, ctx.availableFields, ctx.signal)
+  const field = resolveField(
+    fieldName,
+    ctx.availableFields,
+    ctx.signal,
+    inferredKind
+  )
   if (!field) {
     fail(
       ctx,
@@ -355,7 +430,8 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   }
 
   let symbol: string
-  if (opNode.name === 'Operator') {
+  if (operatorSymbol) symbol = operatorSymbol
+  else if (opNode.name === 'Operator') {
     const raw = text(ctx, opNode)
     symbol = SIGIL_ALIASES.get(raw) ?? raw
   } else {
@@ -372,9 +448,8 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   let listItems: string[] | null = null
   let listItemNodes: SyntaxNode[] = []
   if (valueNode.name === 'Null') {
-    // Bare NULL/NIL is a null check; quoted "NULL" is a string.
-    if (symbol === '=') symbol = 'IS NULL'
-    else if (symbol === '!=') symbol = 'IS NOT NULL'
+    if (symbol === 'IS') symbol = 'IS NULL'
+    else if (symbol === 'IS NOT') symbol = 'IS NOT NULL'
     else {
       fail(
         ctx,
@@ -385,6 +460,9 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
       return null
     }
     value = ''
+  } else if (symbol === 'IS' || symbol === 'IS NOT') {
+    fail(ctx, valueNode.from, valueNode.to, 'IS and IS NOT require NULL')
+    return null
   } else if (valueNode.name === 'QuotedString') {
     value = unquote(text(ctx, valueNode))
   } else if (valueNode.name === 'Array') {
@@ -424,6 +502,10 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     fail(ctx, valueNode.from, valueNode.to, 'IN and NOT IN require a list')
     return null
   }
+  if (listItems && symbol !== 'IN' && symbol !== 'NOT IN') {
+    fail(ctx, valueNode.from, valueNode.to, 'Lists require IN or NOT IN')
+    return null
+  }
 
   const operator = findOperator(symbol)
   if (!operator) {
@@ -444,7 +526,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     }
 
     if (
-      field.searchScope === 'field' &&
+      !usesFieldToken(field) &&
       (symbol === 'IN' || symbol === 'NOT IN') &&
       (SIGNED_INTEGER_FIELDS.has(field.name.toLowerCase()) ||
         TIMESTAMP_FIELDS.has(field.name.toLowerCase())) &&
@@ -465,7 +547,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     }
 
     if (
-      field.searchScope === 'field' &&
+      !usesFieldToken(field) &&
       operatorIsValid &&
       valueNode.name !== 'Null' &&
       !listItems &&
@@ -492,7 +574,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     }
 
     if (
-      field.searchScope === 'field' &&
+      !usesFieldToken(field) &&
       field.name === 'duration' &&
       operatorIsValid &&
       valueNode.name !== 'Null'
@@ -546,9 +628,8 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
 function createGlobalTextSearch(input: string): QueryNode {
   return {
     id: generateID(),
-    type: 'condition',
+    type: 'text',
     query: {
-      field: { searchScope: 'global' },
       operator: OPERATORS.CONTAINS,
       value: input,
     },
@@ -567,7 +648,7 @@ export function parseSearchRequest(
 
   const tree = parser.parse(input)
   const request = searchRequestNode(tree)
-  const limitClauses = findLimitClauses(tree)
+  const limitClauses = findLimitClauses(tree, input)
   if (limitClauses.length > 1) {
     throw new Error('Only one LIMIT modifier is allowed')
   }
@@ -585,9 +666,7 @@ export function parseSearchRequest(
       predicate = createGlobalTextSearch(predicateText)
     } else {
       if (firstError) {
-        throw new Error(
-          unexpectedTokenMessage(input.slice(firstError.from, firstError.to))
-        )
+        throw new Error(syntaxErrorMessage(input, firstError))
       }
       const predicateNode = findPredicateNode(request)
       predicate = predicateNode ? walkExpression(ctx, predicateNode) : null
@@ -630,7 +709,7 @@ export function validateQuery(
 
   const tree = parser.parse(input)
   const request = searchRequestNode(tree)
-  const limitClauses = findLimitClauses(tree)
+  const limitClauses = findLimitClauses(tree, input)
   const limitClause = limitClauses[0] ?? null
   const predicateEnd = limitClause?.from ?? input.length
   const predicateText = input.slice(0, predicateEnd).trim()
@@ -643,9 +722,7 @@ export function validateQuery(
     errors.push({
       from: firstError.from,
       to: Math.max(firstError.to, firstError.from + 1),
-      message: unexpectedTokenMessage(
-        input.slice(firstError.from, firstError.to)
-      ),
+      message: syntaxErrorMessage(input, firstError),
     })
   }
 

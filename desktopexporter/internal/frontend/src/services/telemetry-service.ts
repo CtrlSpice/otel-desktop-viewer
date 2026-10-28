@@ -39,7 +39,6 @@ import type {
   JsonStats,
   JsonTraceData,
   JsonTraceSummary,
-  JsonAttributeType,
   JsonQueryNode,
   JsonAttributeMatch,
   JsonAttribute,
@@ -70,12 +69,8 @@ import {
   type AttributeMatchOptions,
   type AttributeRecordMatch,
 } from './attribute-matches'
-import {
-  getOperatorsForFieldType,
-  type FieldDefinition,
-  type FieldType,
-  type QueryNode,
-} from '@/search/model'
+import type { FieldDefinition, QueryNode } from '@/search/model'
+import { fieldFromDiscovery } from '@/components/shared/Search/attribute-field-reference'
 
 type JsonRpcParamValue =
   | string
@@ -84,8 +79,7 @@ type JsonRpcParamValue =
   | null
   | JsonQueryNode
   | SearchSort
-  | readonly string[]
-  | readonly number[]
+  | readonly (string | number)[]
   | readonly LogColumn[]
   | (Omit<DiscoveryOptions, 'queries'> & {
       queries?: Record<
@@ -952,12 +946,18 @@ export let telemetryAPI = {
   },
 
   searchAttributeMatches: async (
-    term: string
+    term: string,
+    options: {
+      signal?: string
+      owner?: string
+      path?: readonly (string | number)[]
+      type?: string
+    } = {}
   ): Promise<JsonAttributeMatch[]> => {
-    if (!term.trim()) return []
+    if (!term.trim() && !options.path) return []
     const rawData = await callRPC<JsonAttributeMatch[]>(
       'searchAttributeMatches',
-      named({ term })
+      named({ term, ...options })
     )
     if (!Array.isArray(rawData)) {
       console.warn('searchAttributeMatches: Expected array, got:', rawData)
@@ -1200,7 +1200,7 @@ LIMIT ${batch.length}`,
           id: 'associated-trace',
           type: 'condition',
           query: {
-            field: { name: 'traceID', searchScope: 'field', type: 'string' },
+            field: { owner: 'span', path: ['traceID'], type: 'string' },
             fieldOperator: '=',
             value: traceID,
           },
@@ -1600,21 +1600,28 @@ LIMIT ${batch.length}`,
 }
 
 // Helper function to convert frontend query tree to minimal backend format
-function convertQueryTreeForBackend(queryTree: QueryNode): JsonQueryNode {
+export function convertQueryTreeForBackend(
+  queryTree: QueryNode
+): JsonQueryNode {
+  if (queryTree.type === 'text') {
+    return {
+      id: queryTree.id,
+      type: 'text',
+      query: {
+        fieldOperator: queryTree.query.operator.symbol,
+        value: queryTree.query.value,
+      },
+    }
+  }
   if (queryTree.type === 'condition') {
     return {
       id: queryTree.id,
       type: 'condition',
       query: {
         field: {
-          ...(queryTree.query.field.searchScope !== 'global' && {
-            name: queryTree.query.field.name,
-            type: queryTree.query.field.type,
-          }),
-          searchScope: queryTree.query.field.searchScope,
-          ...(queryTree.query.field.searchScope === 'attribute' && {
-            attributeScope: queryTree.query.field.attributeScope,
-          }),
+          owner: queryTree.query.field.owner,
+          path: queryTree.query.field.path,
+          type: queryTree.query.field.type,
         },
         fieldOperator: queryTree.query.operator.symbol,
         value: queryTree.query.value,
@@ -1632,33 +1639,15 @@ function convertQueryTreeForBackend(queryTree: QueryNode): JsonQueryNode {
   }
 }
 
-// Frontend field names retain the established scalar spellings.
-function fieldTypeFromWire(type: JsonAttributeType): FieldType {
-  switch (type) {
-    case 'bool':
-      return 'boolean'
-    case 'double':
-      return 'float64'
-    default:
-      return type
-  }
-}
-
 // Helper function to convert backend attribute data to FieldDefinition objects
 function convertAttributesToFieldDefinitions(
   attributes: JsonAttributeDefinition[]
 ): FieldDefinition[] {
   const definitions: FieldDefinition[] = []
   for (const attr of attributes) {
-    if (!attr?.name || !attr.type || !attr.attributeScope) continue
-    const type = fieldTypeFromWire(attr.type)
-    definitions.push({
-      name: attr.name,
-      type,
-      searchScope: 'attribute',
-      attributeScope: attr.attributeScope,
-      operators: getOperatorsForFieldType(type),
-    })
+    if (!attr) continue
+    const field = fieldFromDiscovery(attr)
+    if (field) definitions.push(field)
   }
   return definitions
 }

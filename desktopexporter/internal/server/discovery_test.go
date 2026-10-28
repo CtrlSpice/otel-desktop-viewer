@@ -21,7 +21,7 @@ func TestDiscoveryQueryResultColumns(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		if populated {
 			require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-				return spans.Ingest(ctx, conn, buildTestTraces(), h.store.FlushedIDs())
+				return spans.Ingest(ctx, conn, buildTestTraces())
 			}))
 		}
 		for _, kind := range []string{"services", "keys", "values"} {
@@ -52,7 +52,7 @@ func TestDiscoveryNULStrings(t *testing.T) {
 	span := resource.ScopeSpans().At(0).Spans().At(0)
 	span.Attributes().PutStr("a\x00'b", "value\x00'雪")
 	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, h.store.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 	for _, kind := range []string{"services", "keys", "values"} {
 		options := map[string]any{"kind": kind, "signal": "traces", "ownerType": "span", "key": "a\x00'b", "serviceName": "svc\x00'雪", "namespace": "ns\x00", "term": "\x00"}
@@ -89,11 +89,11 @@ func TestServiceIdentityRetainsTypesAcrossDiscoveryAndSignalSearch(t *testing.T)
 		s.SetTraceID([16]byte{byte(index + 1)})
 		s.SetStartTimestamp(100)
 		s.Attributes().PutInt("identity-index", int64(index))
-		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data, h.store.FlushedIDs()) }))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data) }))
 		ld := buildTestLogs()
 		attrs.CopyTo(ld.ResourceLogs().At(0).Resource().Attributes())
 		ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).SetTimestamp(100)
-		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, ld, h.store.FlushedIDs()) }))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, ld) }))
 		md := buildTestMetrics()
 		attrs.CopyTo(md.ResourceMetrics().At(0).Resource().Attributes())
 		md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0).SetTimestamp(100)
@@ -152,14 +152,14 @@ func TestHomeSearchCountsBeforePaginationAndFiltersAttributes(t *testing.T) {
 			s.SetName("other")
 			s.Attributes().PutStr("excluded", "yes")
 		}
-		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data, h.store.FlushedIDs()) }))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data) }))
 	}
 	ld := buildTestLogs()
 	l := ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
 	l.SetTimestamp(0)
 	l.SetObservedTimestamp(100)
 	l.Body().SetStr("needle")
-	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, ld, h.store.FlushedIDs()) }))
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, ld) }))
 	md := buildTestMetrics()
 	m := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
 	m.SetName("needle")
@@ -224,7 +224,7 @@ func TestDiscoveryNamespaceValuesAndPagination(t *testing.T) {
 			second.Attributes().PutStr("exact'key", "9007199254740993")
 		}
 		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-			return spans.Ingest(ctx, conn, traces, h.store.FlushedIDs())
+			return spans.Ingest(ctx, conn, traces)
 		}))
 	}
 	type page struct {
@@ -290,7 +290,7 @@ func TestDiscoveryValueSortAcrossPages(t *testing.T) {
 		span.SetSpanID([8]byte{byte(index + 1)})
 		span.Attributes().PutStr("sortable", name)
 		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-			return spans.Ingest(ctx, conn, traces, h.store.FlushedIDs())
+			return spans.Ingest(ctx, conn, traces)
 		}))
 	}
 	for _, tc := range []struct {

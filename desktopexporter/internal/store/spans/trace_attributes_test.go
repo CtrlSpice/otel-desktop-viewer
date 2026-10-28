@@ -65,7 +65,7 @@ func TestAttributeDefinitionsStayWithinRequestedTrace(t *testing.T) {
 	empty.SetTraceID(emptyTraceID)
 	empty.SetSpanID(pcommon.SpanID{1})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {

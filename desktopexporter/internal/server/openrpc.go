@@ -77,7 +77,7 @@ func openRPCDocument() map[string]any {
 		"Attributes":           attributes,
 		"Resource":             rpcObject(map[string]any{"attributes": attributes, "droppedAttributesCount": integer, "schemaUrl": text}, "attributes", "droppedAttributesCount"),
 		"Scope":                rpcObject(map[string]any{"name": text, "version": text, "attributes": attributes, "droppedAttributesCount": integer, "schemaUrl": text}, "name", "version", "attributes", "droppedAttributesCount"),
-		"AttributeDefinitions": rpcArray(rpcObject(map[string]any{"name": text, "type": text, "attributeScope": text}, "name", "type", "attributeScope")),
+		"AttributeDefinitions": rpcArray(rpcObject(map[string]any{"name": text, "type": text, "attributeScope": text, "owner": text, "path": rpcArray(map[string]any{"oneOf": []any{text, map[string]any{"type": "integer", "minimum": 0, "maximum": 4294967294}}})}, "name", "type", "attributeScope", "owner", "path")),
 		"TraceSummaries": rpcArray(rpcObject(map[string]any{"traceID": text, "hasRootSpan": boolean, "rootSpan": nullableObject,
 			"startTime": decimal, "durationNs": nullableText, "spanCount": integer, "errorCount": integer, "matchedSpans": rpcArray(object),
 		}, "traceID", "hasRootSpan", "rootSpan", "startTime", "durationNs", "spanCount", "errorCount")),
@@ -96,7 +96,7 @@ func openRPCDocument() map[string]any {
 			"serviceName": text, "seriesCount": nullableInteger, "seriesCardinality": integer, "dataPointCount": nullableInteger,
 			"lastValue": map[string]any{"anyOf": []any{rpcSchemaRef("Double"), map[string]any{"type": "null"}}}, "lastSeen": nullableText,
 		}, "metricRef", "name", "metricType", "seriesCount", "seriesCardinality", "dataPointCount", "lastValue", "lastSeen")),
-		"SearchQuery": map[string]any{"type": []string{"object", "null"}, "description": "null selects all. A condition is {id,type:'condition',query:{field:{name,searchScope,type,attributeScope?},fieldOperator,value}}. Groups combine conditions; field/operator/type combinations are validated by the signal store. See /llms.txt for search examples."},
+		"SearchQuery": map[string]any{"type": []string{"object", "null"}, "description": "null selects all. A condition is {id,type:'condition',query:{field:{owner,path,type},fieldOperator,value}}. Path strings are exact owner-relative keys; numbers are zero-based array indices. Free text is {id,type:'text',query:{fieldOperator:'CONTAINS',value}}. Groups combine nodes. Previous name/searchScope/attributeScope field references remain accepted. The signal store validates addresses and operators. See /llms.txt for search examples."},
 		"Sort":        map[string]any{"anyOf": []any{map[string]any{"type": "null"}, map[string]any{"type": "object", "required": []string{"field", "direction"}, "additionalProperties": false, "properties": map[string]any{"field": text, "direction": map[string]any{"enum": []string{"asc", "desc"}}}}}},
 		"QueryResult": rpcObject(map[string]any{
 			"columns": rpcArray(rpcObject(map[string]any{"name": text, "type": text}, "name", "type")),
@@ -172,7 +172,7 @@ func openRPCDocument() map[string]any {
 		{"getMetricAttributeDefinitions", "AttributeDefinitions", "Returns attribute key/type/scope definitions used by Metric filters. No time bounds.", 0},
 		{"getTraceAttributeDefinitionsByTraceID", "AttributeDefinitions", "Returns attribute definitions for one received trace ID.", 1},
 		{"getFieldValueCompletions", "StringList", "Returns distinct text completion values from an allowlisted signal field. signal is traces/logs/metrics. term is a case-insensitive literal substring; empty matches all values. limit is clamped to 1..500; unknown signal returns -32602 and unsupported field returns -32007. Values are display/search text, not typed received attributes.", 4},
-		{"searchAttributeMatches", "ObjectList", "Searches the shared attribute dictionary across signals, without time bounds. Returns matching key/type/scope definitions, not telemetry records.", 1},
+		{"searchAttributeMatches", "ObjectList", "Scoped keys/owners-first discovery without time bounds. Supply signal where known; owner+exact path requests matching typed value samples after selection. Without a selected path, only key names match and sampleValues is empty.", 1},
 		{"getStats", "Stats", "Returns computed signal counts, source recency, storage byte size/retention cap and ingestion rejections. Counts are retained records, not request volume. traces.lastReceived = max(start_time); logs.lastReceived = max(nonzero timestamp), falling back to max(observed_timestamp) only when no nonzero timestamp exists; metrics.lastReceived = max(datapoint timestamp). These are nullable decimal Unix nanoseconds, not wall-clock arrival times. maxSizeBytes=0 disables retention.", 0},
 		{"getTraceSpanCount", "Integer", "Returns computed retained span count for a received trace ID as a JSON integer token. A trace with no spans has count 0.", 1},
 	}
@@ -246,6 +246,12 @@ func openRPCDocument() map[string]any {
 				description = "Optional exact span selection within this trace. Returns only these stored spans, with depth compressed through available ancestry. Received parentSpanID is unchanged. Attributes, events, links, resources and scopes are enriched only for the selected spans. Omitted or null returns the whole trace; an empty list is invalid."
 			case "signal":
 				schema = map[string]any{"enum": []string{"traces", "logs", "metrics"}}
+			case "owner":
+				schema = map[string]any{"enum": []string{"span", "event", "link", "log", "metric", "datapoint", "exemplar", "resource", "scope"}}
+			case "path":
+				schema = rpcArray(map[string]any{"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "integer", "minimum": 0, "maximum": 4294967294}}})
+			case "type":
+				schema = map[string]any{"enum": []string{"string", "int64", "double", "bool", "bytes", "empty", "map", "array"}}
 			case "field":
 				schema = map[string]any{"enum": []string{"name", "eventName", "unit"}}
 				description = "Allowed pairs: traces/name, logs/eventName, metrics/name or metrics/unit."

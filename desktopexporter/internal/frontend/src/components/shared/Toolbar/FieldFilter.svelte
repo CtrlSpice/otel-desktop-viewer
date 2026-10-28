@@ -7,7 +7,12 @@
     type ColumnVisibility,
   } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
-  import type { FieldDefinition, SearchSignal } from '@/search/model'
+  import {
+    fieldIdentity,
+    usesFieldToken,
+    type FieldDefinition,
+    type SearchSignal,
+  } from '@/search/model'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -67,13 +72,7 @@
     }
   })
 
-  /** Only show named fields (not global search scope) */
-  let filterableFields = $derived(
-    availableFields.filter(
-      (f): f is FieldDefinition & { name: string } =>
-        f.searchScope !== 'global' && 'name' in f
-    )
-  )
+  let filterableFields = $derived(availableFields)
 
   function isSelected(field: FieldDefinition & { name: string }): boolean {
     return selectedFields.some(f => sameFieldDefinition(f, field))
@@ -156,7 +155,7 @@
         <span class="text-sm font-normal text-subtle">Columns</span>
       </div>
       <div class="field-filter__popover-list">
-        {#each filterableFields as field (field.name + ':' + field.searchScope)}
+        {#each filterableFields as field (fieldIdentity(field))}
           {@const checked = isSelected(field)}
           {@const category = getColumnCategory(field.name)}
           {@const pinned = category === 'pinned'}
@@ -204,9 +203,9 @@
               </span>
             {/if}
             <span class="field-filter__field-name">{field.name}</span>
-            {#if field.searchScope === 'attribute' && 'attributeScope' in field}
+            {#if usesFieldToken(field)}
               <span class="text-subtle" aria-hidden="true">·</span>
-              <span class="text-secondary">{field.attributeScope}</span>
+              <span class="text-secondary">{field.owner}</span>
             {/if}
           </button>
         {/each}

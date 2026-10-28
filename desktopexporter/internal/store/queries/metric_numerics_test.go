@@ -20,10 +20,10 @@ func numericMetricDB(t *testing.T, kind string, seriesCount int) (*sql.DB, []str
 	db := freshDB(t)
 	db.SetMaxOpenConns(1)
 	for _, stmt := range []string{
-		`insert into resources(id,payload_id,attribute_ids) values ('` + numericID(1) + `','` + numericID(1) + `',[])`,
-		`insert into scopes(id,attribute_ids) values ('` + numericID(2) + `',[])`,
-		`insert into metrics(id,resource_id,resource_payload_id,scope_id,name,metric_type,aggregation_temporality)
-		 values ('` + numericID(3) + `','` + numericID(1) + `','` + numericID(1) + `','` + numericID(2) + `','numerics','` + kind + `',1)`,
+		`insert into metrics(id,resource_id,resource_payload_id,scope_id,name,metric_type,aggregation_temporality,resource,scope)
+		 values ('` + numericID(3) + `','` + numericID(1) + `','` + numericID(1) + `','` + numericID(2) + `','numerics','` + kind + `',1,
+		 {'id': '` + numericID(1) + `'::uuid, 'payload_id': '` + numericID(1) + `'::uuid, 'schema_url': '', 'attributes': '{}'::json::variant, 'dropped_attributes_count': 0},
+		 {'id': '` + numericID(2) + `'::uuid, 'name': '', 'version': '', 'schema_url': '', 'attributes': '{}'::json::variant, 'dropped_attributes_count': 0})`,
 		`insert into histogram_bounds values ('` + numericID(4) + `',[0,1])`,
 	} {
 		_, err := db.Exec(stmt)
@@ -36,9 +36,7 @@ func numericMetricDB(t *testing.T, kind string, seriesCount int) (*sql.DB, []str
 	var ids []string
 	for i := range seriesCount {
 		ids = append(ids, numericID(100+i))
-		_, err := db.Exec(`insert into attributes values (?::uuid,'series',?::json)`, numericID(200+i), fmt.Sprintf(`{"kind":"string","value":"%d"}`, i))
-		require.NoError(t, err)
-		_, err = db.Exec(`insert into metric_series values (?::uuid,?::uuid,[?::uuid])`, ids[i], numericID(3), numericID(200+i))
+		_, err := db.Exec(`insert into metric_series values (?::uuid,?::uuid,?::varchar,{'series': ?::varchar}::variant)`, ids[i], numericID(3), fmt.Sprint(i), fmt.Sprint(i))
 		require.NoError(t, err)
 	}
 	return db, ids
@@ -51,11 +49,11 @@ func numericPoint(t *testing.T, db *sql.DB, id, series int, timestamp uint64, va
 		double = nil
 	}
 	_, err := db.Exec(`insert into metric_datapoints
-		(id,metric_id,series_id,timestamp,attribute_ids,double_value,int_value,value_type,
+		(id,metric_id,series_id,timestamp,attributes,resource,scope,double_value,int_value,value_type,
 		 count,sum,bounds_id,bucket_counts,scale,zero_count,zero_threshold,
 		 positive_bucket_offset,positive_bucket_counts,negative_bucket_offset,negative_bucket_counts)
-		values (?::uuid,?::uuid,?::uuid,?,[?::uuid],?,?,?,1,?,?::uuid,[0,1,0],0,0,0,0,[1],0,[])`,
-		numericID(1000+id), numericID(3), numericID(100+series), timestamp, numericID(200+series),
+		select ?::uuid,?::uuid,?::uuid,?,{'series': ?::varchar}::variant,resource,scope,?,?,?,1,?,?::uuid,[0,1,0],0,0,0,0,[1],0,[] from metrics`,
+		numericID(1000+id), numericID(3), numericID(100+series), timestamp, fmt.Sprint(series),
 		double, integer, map[bool]string{true: "Int", false: "Double"}[integer != nil], value, numericID(4))
 	require.NoError(t, err)
 }
@@ -249,5 +247,77 @@ func TestMetricNumericsOrderedHistogramSums(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMetricNumericsHistogramVectorMerges(t *testing.T) {
+	for _, kind := range []string{"Histogram", "ExponentialHistogram"} {
+		for _, tc := range []struct {
+			name               string
+			vectors            [3]string
+			first, second, all []string
+		}{
+			{"unequal lengths and NULL slots", [3]string{"[1,NULL,3]", "[4]", "[NULL,2]"}, []string{"5", "0", "3"}, []string{"", "2"}, []string{"5", "2", "3"}},
+			{"empty vectors", [3]string{"[]", "[]", "[]"}, []string{}, []string{}, []string{}},
+			{"absent vectors", [3]string{"NULL", "NULL", "NULL"}, []string{}, nil, []string{}},
+			{"exact totals above uint64", [3]string{"[18446744073709551615,1]", "[1]", "[2,3]"}, []string{"18446744073709551616", "1"}, []string{"2", "3"}, []string{"18446744073709551618", "4"}},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				db, ids := numericMetricDB(t, kind, 2)
+				for i, vector := range tc.vectors {
+					series := 0
+					if i == 2 {
+						series = 1
+					}
+					numericPoint(t, db, i, series, 100, 0, nil)
+					column := "bucket_counts"
+					bounds := ""
+					if kind == "ExponentialHistogram" {
+						column, bounds = "positive_bucket_counts", ", bounds_id=null"
+					}
+					_, err := db.Exec("update metric_datapoints set double_value=null, value_type=null, "+column+"="+vector+"::ubigint[]"+bounds+" where id=?::uuid", numericID(1000+i))
+					require.NoError(t, err)
+				}
+				raw, err := metrics.GetMetricView(t.Context(), db, numericID(3), store.BoundedTimeRange(0, 1000), 1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+				require.NoError(t, err)
+				var result struct {
+					Timeseries []struct {
+						SeriesRef  string `json:"seriesRef"`
+						Datapoints []struct {
+							Counts   []string `json:"bucketCounts"`
+							Positive []string `json:"positiveBucketCounts"`
+						} `json:"datapoints"`
+					} `json:"timeseries"`
+					Aggregate []struct {
+						Counts   []json.Number `json:"bucketCounts"`
+						Positive []json.Number `json:"positiveBucketCounts"`
+					} `json:"aggregate"`
+				}
+				require.NoError(t, json.Unmarshal(raw, &result))
+				require.Len(t, result.Timeseries, 2)
+				for _, series := range result.Timeseries {
+					require.Len(t, series.Datapoints, 1)
+					got := series.Datapoints[0].Counts
+					if kind == "ExponentialHistogram" {
+						got = series.Datapoints[0].Positive
+					}
+					want := tc.second
+					if series.SeriesRef == ids[0] {
+						want = tc.first
+					}
+					require.Equal(t, want, got)
+				}
+				require.Len(t, result.Aggregate, 1)
+				got := result.Aggregate[0].Counts
+				if kind == "ExponentialHistogram" {
+					got = result.Aggregate[0].Positive
+				}
+				want := make([]json.Number, len(tc.all))
+				for i, value := range tc.all {
+					want[i] = json.Number(value)
+				}
+				require.Equal(t, want, got)
+			})
+		}
 	}
 }

@@ -17,7 +17,7 @@ func TestSpanMembershipExecutionAndExistentialSemantics(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, createTestTracePdata(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, createTestTracePdata())
 	}))
 	const traceID = "00000000000000000000000000000099"
 

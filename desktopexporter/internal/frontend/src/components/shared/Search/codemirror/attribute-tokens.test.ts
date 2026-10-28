@@ -14,7 +14,7 @@ function tokens(doc: string) {
 
 describe('attribute presentation', () => {
   it('decorates complete references before and after the comparator is entered', () => {
-    const reference = 'attr(log, "attempts", int64)'
+    const reference = 'log.attributes["attempts"]::BIGINT'
     expect(tokens(`${reference} `)).toEqual([reference])
     expect(tokens(`${reference} >= 3`)).toEqual([reference])
     expect(tokens(`body = "checkout" and (${reference} >= 3)`)).toEqual([
@@ -23,14 +23,15 @@ describe('attribute presentation', () => {
   })
 
   it('preserves arbitrary keys, spacing and escaped characters in the underlying document', () => {
-    const reference = 'attr( log, "a \\"quoted\\" key", int64 )'
+    const reference = 'log.attributes[ "a \\"quoted\\" key" ] :: BIGINT'
     expect(tokens(`${reference} = 3`)).toEqual([reference])
   })
 
   it('does not disguise literal text, invalid references or another signal’s scope', () => {
-    expect(tokens('body = \'attr(log, "attempts", int64)\'')).toEqual([])
-    expect(tokens('attr(log, "attempts", unknown) = 3')).toEqual([])
-    expect(tokens('attr(span, "attempts", int64) = 3')).toEqual([])
-    expect(tokens('attr(log, "attempts", ')).toEqual([])
+    expect(tokens('attributes["attempts"] = 3')).toEqual([])
+    expect(tokens('body = \'log.attributes["attempts"]::BIGINT\'')).toEqual([])
+    expect(tokens('log.attributes["attempts"]::UNKNOWN = 3')).toEqual([])
+    expect(tokens('span.attributes["attempts"]::BIGINT = 3')).toEqual([])
+    expect(tokens('log.attributes["attempts')).toEqual([])
   })
 })

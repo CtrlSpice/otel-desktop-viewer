@@ -710,16 +710,16 @@ export type JsonAttributeScope =
 
 export type JsonAttributeDefinition = {
   name: string
+  owner?: Exclude<JsonAttributeScope, 'metadata'> | 'metric'
+  path?: readonly (string | number)[]
   attributeScope: JsonAttributeScope
   type: JsonAttributeType
 }
 
-// searchAttributeMatches: value-first discovery.
+// searchAttributeMatches: scoped keys-first discovery.
 //
-// The getXAttributes methods answer "which keys exist" so a dropdown can be
-// filled. This answers the opposite question -- "I can see this text, which key
-// is it?" -- and does it across traces, logs and metrics in one call, because
-// they all reference the same attribute dictionary.
+// Without an exact owner/path selection, only keys match and sampleValues is
+// empty. A selected field requests matching typed samples from native rows.
 //
 // matchCount is the number of distinct *values* of this key that match, not the
 // number of spans or logs carrying it. It distinguishes "this term identifies
@@ -738,15 +738,17 @@ export type JsonDeleteResult = {
 }
 
 export type JsonQueryField = {
-  // name/type are omitted for global search; attributeScope only
-  // accompanies attribute-scoped fields.
-  name?: string
+  owner: string
+  path: readonly (string | number)[]
   type?: string
-  searchScope: string
-  attributeScope?: string
 }
 
 export type JsonQueryNode =
+  | {
+      id: string
+      type: 'text'
+      query: { fieldOperator: string; value: string }
+    }
   | {
       id: string
       type: 'condition'

@@ -86,9 +86,8 @@ func TestQueryReadsViewerTablesAndMacros(t *testing.T) {
 		       body_preview(otel_value_json(l.body)) as preview,
 		       trace_id_wire(l.trace_id) as trace_id,
 		       span_id_wire(l.span_id) as span_id,
-		       attrs_json(r.attribute_ids) as resource_attributes
+		       attribute_document(l.resource.attributes) as resource_attributes
 		from logs l
-		join resources r on r.id = l.resource_id
 		where l.service_name = 'pumpkin.pie'`,
 	}))
 	require.NoError(t, err)
@@ -279,12 +278,12 @@ func setupHandlerWithData(t *testing.T) *JSONRPCHandler {
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildTestTraces(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, buildTestTraces())
 	})
 	assert.NoError(t, err, "ingest spans")
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, buildTestLogs(), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, buildTestLogs())
 	})
 	assert.NoError(t, err, "ingest logs")
 
@@ -709,7 +708,7 @@ func TestGetTraceComputesExactUnsignedTimingAndStableOrder(t *testing.T) {
 	earlier.SetStartTimestamp(pcommon.Timestamp(maximum - 1000))
 	earlier.SetEndTimestamp(pcommon.Timestamp(maximum - 900))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, traces, s.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, traces)
 	}))
 
 	result, err := NewJSONRPCHandler(s, zap.NewNop()).Handle(context.Background(), createRequest("getTraceOverview", []string{"00000000000000000000000000000003"}))
@@ -758,14 +757,14 @@ func TestDetailSnapshotExcludesConcurrentIngest(t *testing.T) {
 		}
 
 		if err := handler.store.WithConn(func(conn driver.Conn) error {
-			if err := logs.Ingest(ctx, conn, buildTestLogs(), handler.store.FlushedIDs()); err != nil {
+			if err := logs.Ingest(ctx, conn, buildTestLogs()); err != nil {
 				return err
 			}
 			duplicate := buildTestTraces()
 			duplicate.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).SetTraceID(
 				pcommon.TraceID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
 			)
-			return spans.Ingest(ctx, conn, duplicate, handler.store.FlushedIDs())
+			return spans.Ingest(ctx, conn, duplicate)
 		}); err != nil {
 			return struct{ logCount, spanMatchCount int64 }{}, err
 		}
@@ -852,7 +851,7 @@ func TestGetSpanResolutionNeverGuesses(t *testing.T) {
 		span.SetEndTimestamp(2)
 	}
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, data, handler.store.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, data)
 	}))
 
 	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{"spanID": "000000000000002A"}))
@@ -921,7 +920,7 @@ func TestGetSpanAmbiguityUsesLookaheadAndExactCount(t *testing.T) {
 		span.SetEndTimestamp(pcommon.Timestamp(i + 1))
 	}
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, data, handler.store.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, data)
 	}))
 
 	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{
@@ -1003,7 +1002,7 @@ func TestGetSpanReturnsFullExactDetailAndOnlyCompositeLogs(t *testing.T) {
 		link.SetDroppedAttributesCount(17)
 	}
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, data, handler.store.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, data)
 	}))
 
 	logData := plog.NewLogs()
@@ -1024,7 +1023,7 @@ func TestGetSpanReturnsFullExactDetailAndOnlyCompositeLogs(t *testing.T) {
 		record.Body().SetStr(fmt.Sprintf("trace-%d", id[15]))
 	}
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(context.Background(), conn, logData, handler.store.FlushedIDs())
+		return logs.Ingest(context.Background(), conn, logData)
 	}))
 
 	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{
@@ -1893,10 +1892,7 @@ func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 	}
 }
 
-// searchAttributeMatches is the value-first counterpart to the getXAttributes
-// discovery methods: given text seen in the UI, which keys hold it. It takes no
-// time range and no signal, because the dictionary it reads is shared by all
-// three.
+// Discovery finds scoped keys first, then samples a selected exact field.
 func TestSearchAttributeMatches(t *testing.T) {
 	call := func(t *testing.T, handler *JSONRPCHandler, params any) []map[string]any {
 		t.Helper()
@@ -1909,11 +1905,17 @@ func TestSearchAttributeMatches(t *testing.T) {
 		return out
 	}
 
-	t.Run("finds the key holding a value", func(t *testing.T) {
+	t.Run("finds keys then selected values", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		got := call(t, handler, []string{"pumpkin"})
-		require.NotEmpty(t, got, "a value present in the fixture must be found")
+		assert.Empty(t, call(t, handler, []string{"pumpkin"}))
+		keys := call(t, handler, map[string]any{"term": "service", "signal": "traces"})
+		require.NotEmpty(t, keys)
+		for _, key := range keys {
+			assert.Empty(t, key["sampleValues"])
+		}
+		got := call(t, handler, map[string]any{"term": "pumpkin", "signal": "traces", "owner": "resource", "path": []any{"attributes", "service.name"}, "type": "string"})
+		require.NotEmpty(t, got, "a selected value present in the fixture must be found")
 
 		var found map[string]any
 		for _, m := range got {
