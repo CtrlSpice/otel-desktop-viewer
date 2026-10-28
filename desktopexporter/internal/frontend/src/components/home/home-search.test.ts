@@ -39,7 +39,8 @@ describe('cross-signal Home queries', () => {
       const parsed = predicate(url.searchParams.get('q')!)
       expect(parsed?.type === 'condition' && parsed.query.field).toMatchObject({
         name: 'serviceIdentity',
-        searchScope: 'field',
+        owner: 'resource',
+        path: ['serviceIdentity'],
       })
       expect(parsed?.type === 'condition' && parsed.query.value).toBe(
         service.serviceIdentity
@@ -68,16 +69,16 @@ describe('cross-signal Home queries', () => {
       if (child.type === 'condition') expect(child.query.value).toBe(value)
     }
     const global = predicate(`search(${JSON.stringify(value)})`)
-    expect(global?.type === 'condition' && global.query.value).toBe(value)
+    expect(global?.type === 'text' && global.query.value).toBe(value)
     expect(withoutIDs(predicate(queryText(global)))).toEqual(withoutIDs(global))
   })
   it('keeps supported OR branches and excludes impossible AND branches', () => {
     const disjunction = homeQueries(
       predicate('severityNumber >= 17 OR name = "checkout"')
     )
-    expect(queryText(disjunction.logs)).toBe('severityNumber >= "17"')
-    expect(queryText(disjunction.traces)).toBe('name = "checkout"')
-    expect(queryText(disjunction.metrics)).toBe('name = "checkout"')
+    expect(queryText(disjunction.logs)).toBe("severityNumber >= '17'")
+    expect(queryText(disjunction.traces)).toBe("name = 'checkout'")
+    expect(queryText(disjunction.metrics)).toBe("name = 'checkout'")
     const conjunction = homeQueries(
       predicate('severityNumber >= 17 AND name = "checkout"')
     )
@@ -86,7 +87,7 @@ describe('cross-signal Home queries', () => {
 
   it('limits owner-specific attributes to their actual signals', () => {
     const queries = homeQueries(
-      predicate('attr(event, "tool.output", string) CONTAINS "declined"')
+      predicate('event.attributes["tool.output"]::VARCHAR CONTAINS "declined"')
     )
     expect(queries.logs).toBe(false)
     expect(queries.metrics).toBe(false)
@@ -95,11 +96,11 @@ describe('cross-signal Home queries', () => {
 
   it.each([
     'search("  exact spacing  ")',
-    'body !~ "healthcheck"',
-    'search("checkout") AND attr(resource, "service.name", string) = "api"',
+    'body NOT REGEXP "healthcheck"',
+    'search("checkout") AND resource.attributes["service.name"]::VARCHAR = "api"',
     'search("a\\\"b\\\\c") OR severityNumber >= 17',
-    'attr(span, "exact", int64) IN [9007199254740993, -9223372036854775808]',
-    'attr(resource, "service.namespace", string) = NULL',
+    'span.attributes["exact"]::BIGINT IN (9007199254740993, -9223372036854775808)',
+    'resource.attributes["service.namespace"]::VARCHAR IS NULL',
     'duration > 1.5s',
   ])('round-trips editable links without losing values: %s', text => {
     const node = predicate(text)
@@ -121,6 +122,6 @@ describe('cross-signal Home queries', () => {
     expect(url.searchParams.get('start')).toBe('1')
     expect(url.searchParams.get('end')).toBe('2')
     expect(() => predicate(url.searchParams.get('q')!)).not.toThrow()
-    expect(url.searchParams.get('q')).toContain('search("checkout")')
+    expect(url.searchParams.get('q')).toContain("search('checkout')")
   })
 })

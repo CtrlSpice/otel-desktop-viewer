@@ -129,13 +129,13 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
 			err = s.WithConn(func(conn driver.Conn) error {
-				return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+				return spans.Ingest(ctx, conn, traces)
 			})
 			assert.NoError(t, err, "spans table should exist and accept data")
 
 			logData := buildStoreTestLogs()
 			err = s.WithConn(func(conn driver.Conn) error {
-				return logs.Ingest(ctx, conn, logData, s.FlushedIDs())
+				return logs.Ingest(ctx, conn, logData)
 			})
 			assert.NoError(t, err, "logs table should exist and accept data")
 
@@ -221,7 +221,7 @@ func TestStoreIndexesCreated(t *testing.T) {
 	var count int
 	err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, len(queries.Indexes()), count, "index count should match IndexCreationQueries")
+	assert.Equal(t, len(queries.Indexes()), count, "all explicit native indexes are installed")
 }
 
 func TestStoreForeignKeysEnforced(t *testing.T) {
@@ -230,35 +230,13 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
+	seedOwners(t, s)
 	_, err = s.db.ExecContext(ctx, `
-		insert into resources (id, payload_id, attribute_ids)
-		values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`)
-	require.NoError(t, err, "inserting a resources row should succeed")
-	_, err = s.db.ExecContext(ctx, `
-		insert into scopes (id, name, version, attribute_ids)
-		values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`)
-	require.NoError(t, err, "inserting a scopes row should succeed")
-	_, err = s.db.ExecContext(ctx, `
-		insert into resources (id, payload_id, attribute_ids)
-		values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid,
-			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, []::uuid[])`)
-	require.NoError(t, err)
-	_, err = s.db.ExecContext(ctx, `
-		insert into metrics
-			(id, resource_id, resource_payload_id, scope_id, name, metric_type)
-		values (gen_random_uuid(),
-			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid,
-			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'mismatched', 'Gauge')`)
-	require.Error(t, err, "a Metric payload key must belong to its exact Resource row")
-
-	_, err = s.db.ExecContext(ctx, `
-		insert into metrics (id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		insert into metrics (id, resource_id, resource_payload_id, scope_id, name, metric_type, resource, scope)
 		values (gen_random_uuid(),
 			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
 			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid,
-			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge')`)
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge', seed_resource(), seed_scope())`)
 	require.NoError(t, err)
 
 	var metricID string
@@ -266,10 +244,10 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 		"select id::varchar from metrics where name = 'test'").Scan(&metricID))
 
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_datapoints (id, metric_id, series_id, timestamp, attribute_ids)
+		insert into metric_datapoints (id, metric_id, series_id, timestamp, attributes, resource, scope)
 		values (gen_random_uuid(), ?::uuid,
-			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, []::uuid[])`, metricID)
-	assert.Error(t, err, "a datapoint must reference an existing series")
+			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, '{}'::json::variant, seed_resource(), seed_scope())`, metricID)
+	assert.ErrorContains(t, err, "foreign key constraint", "a datapoint must reference an existing series")
 }
 
 // TestStorePersistentReopenIdempotent verifies that reopening a persistent store does not fail
@@ -292,7 +270,7 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 	var indexCount int
 	err = s2.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
 	require.NoError(t, err)
-	assert.Equal(t, len(queries.Indexes()), indexCount)
+	assert.Equal(t, len(queries.Indexes()), indexCount, "reopening preserves all explicit native indexes")
 	require.NoError(t, s2.Close())
 }
 

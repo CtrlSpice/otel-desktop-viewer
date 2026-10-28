@@ -47,7 +47,7 @@ func TestGetTraceLogSummariesPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	span.SetStartTimestamp(1)
 	span.SetEndTimestamp(2)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	data := plog.NewLogs()
@@ -87,7 +87,7 @@ func TestGetTraceLogSummariesPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	otherTrace.Body().SetStr("same-span-other-trace")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	// Fix the equal-time IDs so the expected ID tie-break is explicit rather
@@ -163,7 +163,7 @@ func TestGetTraceLogSummariesIgnoresSearchTimeRangeAndHasNoDefaultLimit(t *testi
 		record.Body().SetStr("complete")
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	clipped, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {

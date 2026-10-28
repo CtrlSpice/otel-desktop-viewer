@@ -36,21 +36,15 @@ type Store struct {
 
 	// mu protects db and conn. Queries and ingest hold it for reading so they
 	// may overlap. Pool mutations and Close hold it for writing and exclude
-	// ingest; otherwise a sweep could delete dictionary rows before ingest writes
-	// their owners. Store locking methods are not reentrant.
+	// ingest; otherwise a sweep could delete histogram bounds before ingest writes
+	// their datapoints. Store locking methods are not reentrant.
 	mu sync.RWMutex
 
 	// ingestMu serializes appender use on the dedicated ingest connection.
 	ingestMu sync.Mutex
 
-	// flushed records which dictionary rows this store has already written, so
-	// a batch whose attributes, resource and scope are all known can skip its
-	// insert. Owned here because the set describes one database: sharing it
-	// across stores would skip inserts into the wrong one. Warmed from disk in
-	// NewStore via ingest.LoadFlushedIDs, so a persistent --db that already
-	// holds the dictionary does not re-insert everything until the cache
-	// refills. Invalidated by ingest.SweepOrphans, the only thing that deletes
-	// dictionary rows.
+	// flushed tracks retained histogram bounds for this database. It is warmed
+	// from disk on open and invalidated when SweepOrphans deletes bounds.
 	flushed *ingest.FlushedIDs
 
 	// retentionCapBytes is the store size cap enforced by EnforceRetention
@@ -122,6 +116,11 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if err != nil {
 		return nil, err
 	}
+	// Viewer captures are often smaller than DuckDB's default 30,000-row
+	// shredding threshold. Make every row group eligible at checkpoint.
+	if _, err := db.ExecContext(ctx, "SET variant_minimum_shredding_size = 0"); err != nil {
+		return nil, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
+	}
 	// Create types; DuckDB has no IF NOT EXISTS for these statements.
 	for _, stmt := range queries.Types() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
@@ -160,10 +159,10 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		}
 	}
 
-	// Warm the dictionary cache with every retained ID.
+	// Warm the bounds cache with every retained ID.
 	flushed, err := ingest.LoadFlushedIDs(ctx, db)
 	if err != nil {
-		return nil, fmt.Errorf("%w while warming the dictionary flush cache: %w", ErrStoreInitFailed, err)
+		return nil, fmt.Errorf("%w while warming the bounds cache: %w", ErrStoreInitFailed, err)
 	}
 
 	initialized = true
@@ -177,9 +176,8 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}, nil
 }
 
-// FlushedIDs is the store's record of which dictionary rows are already
-// written. Pass it to spans.Ingest, logs.Ingest and metrics.Ingest so a batch
-// whose content has all been seen can skip its dictionary insert.
+// FlushedIDs tracks histogram bounds already written to this store, allowing
+// metric ingestion to skip repeated bounds inserts.
 //
 // Passing nil instead is always safe -- it just reinserts every time -- but
 // passing *another* store's set is not, which is why this hangs off the store

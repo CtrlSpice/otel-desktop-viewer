@@ -7,11 +7,11 @@ import {
 import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
 import { FieldName as FieldTerm } from './query.parser.terms'
-import type { FieldDefinition } from '@/search/model'
+import { usesFieldToken, type FieldDefinition } from '@/search/model'
 import type { FieldValueCache } from './field-value-cache'
 import { resolveField } from '../field-resolution'
 
-/** Completes allowlisted column values and items inside `IN [...]`. */
+/** Completes allowlisted column values and items inside `IN (...)`. */
 
 /** Options handed to CodeMirror per open. It renders the list eagerly, so
  *  this caps DOM size while leaving local filtering plenty to match into. */
@@ -26,7 +26,8 @@ function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
 
 export function createFieldValueSource(
   cache: FieldValueCache,
-  getFields: () => FieldDefinition[]
+  getFields: () => FieldDefinition[],
+  attributeValues?: (field: FieldDefinition, term: string) => Promise<string[]>
 ) {
   return async function fieldValueSource(
     context: CompletionContext
@@ -42,8 +43,8 @@ export function createFieldValueSource(
     const resolved = resolveField(fieldText, getFields())
     if (
       !resolved ||
-      resolved.searchScope !== 'field' ||
-      resolved.discoverableValues !== true
+      (resolved.discoverableValues !== true &&
+        !(usesFieldToken(resolved) && attributeValues))
     ) {
       return null
     }
@@ -73,7 +74,7 @@ export function createFieldValueSource(
     // An IN array holds several values, so the item being typed -- not the
     // whole region -- is what completes. Anchor after the last bracket or
     // comma; everything before it is settled.
-    const inArray = region.startsWith('[')
+    const inArray = region.startsWith('(')
     if (isArrayOp && !inArray) {
       // Nothing typed yet, or something that is not an array: offer the
       // opening bracket, which reopens completion on the values inside.
@@ -82,13 +83,13 @@ export function createFieldValueSource(
         from: valueFrom,
         options: [
           {
-            label: '[',
+            label: '(',
             type: 'text',
             detail: `list of ${def.name} values`,
             // Reopen completion for the first array item.
             apply: (view, _completion, applyFrom, applyTo) => {
               view.dispatch({
-                changes: { from: applyFrom, to: applyTo, insert: '[' },
+                changes: { from: applyFrom, to: applyTo, insert: '(' },
                 selection: { anchor: applyFrom + 1 },
               })
               startCompletion(view)
@@ -98,10 +99,10 @@ export function createFieldValueSource(
         validFor: /^$/,
       }
     }
-    if (inArray && region.includes(']')) return null
+    if (inArray && region.includes(')')) return null
     let itemFrom = valueFrom
     if (inArray) {
-      const lastSep = Math.max(region.lastIndexOf('['), region.lastIndexOf(','))
+      const lastSep = Math.max(region.lastIndexOf('('), region.lastIndexOf(','))
       const afterSep = region.slice(lastSep + 1)
       itemFrom =
         valueFrom + lastSep + 1 + (afterSep.match(/^\s*/)?.[0].length ?? 0)
@@ -129,7 +130,10 @@ export function createFieldValueSource(
 
     let names: string[]
     try {
-      names = await cache.values(def.name)
+      names =
+        usesFieldToken(def) && attributeValues
+          ? await attributeValues(def, typed)
+          : await cache.values(def.name)
     } catch {
       // The cache evicts failures so a later trigger can retry.
       return null

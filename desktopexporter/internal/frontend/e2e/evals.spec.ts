@@ -130,6 +130,85 @@ async function enableEvals(page: Page, enabled = true) {
   )
 }
 
+test('Evals submits the shared grammar, validates errors, restores URLs and opens query help', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  const requests: URL[] = []
+  await page.route('**/api/evals/experiments?*', async route => {
+    requests.push(new URL(route.request().url()))
+    await route.fulfill({
+      json: {
+        experiments: [],
+        total: 0,
+        hasMore: false,
+        facets: [],
+        indexing: {
+          remaining: 0,
+          unsupported: 0,
+          empty: 0,
+          issues: [],
+          hasMoreIssues: false,
+        },
+      },
+    })
+  })
+  const text =
+    '(result.score < 0.5 or result.success = false) and search("idempotency key") | limit 25'
+  await page.goto(`/evals?q=${encodeURIComponent(text)}`)
+  const editor = page.getByRole('textbox', { name: 'Search evals' })
+  await expect(editor).toHaveText(text)
+  await expect.poll(() => requests.length).toBeGreaterThan(0)
+  const submitted = requests.at(-1)!
+  expect(submitted.searchParams.get('limit')).toBe('25')
+  expect(JSON.parse(submitted.searchParams.get('criteria')!)).toMatchObject({
+    type: 'group',
+    group: {
+      logicalOperator: 'AND',
+      children: [
+        { group: { logicalOperator: 'OR' } },
+        {
+          type: 'text',
+          query: { value: 'idempotency key' },
+        },
+      ],
+    },
+  })
+  await editor.fill('result.score contains "x"')
+  await editor.press('Enter')
+  await expect(page.locator('.field-error-message')).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('q')).toBe(text)
+  await page
+    .getByRole('button', { name: 'Search query help', exact: true })
+    .click()
+  await expect(page.getByRole('dialog', { name: 'Search evals' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('result.score < 0.5')
+  await page.getByRole('button', { name: 'Close search help' }).click()
+  await page.getByRole('button', { name: 'Clear search', exact: true }).click()
+  await expect(editor.locator('.cm-placeholder')).toBeVisible()
+  expect(new URL(page.url()).searchParams.has('q')).toBe(false)
+  await expect
+    .poll(() => requests.at(-1)?.searchParams.has('criteria'))
+    .toBe(false)
+  await editor.fill('result.ordinal >= 2')
+  await editor.press('Enter')
+  await expect
+    .poll(() =>
+      JSON.parse(requests.at(-1)?.searchParams.get('criteria') ?? 'null')
+    )
+    .toMatchObject({
+      query: {
+        field: { owner: 'result', path: ['ordinal'], type: 'int64' },
+        fieldOperator: '>=',
+        value: '2',
+      },
+    })
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: 'Search evals' })).toHaveText(
+    'result.ordinal >= 2'
+  )
+})
+
 test('case telemetry summarizes every repetition and links to its exact span', async ({
   page,
 }) => {
@@ -262,10 +341,10 @@ test('experiment selection, assessments, filtering and browser history stay conn
     name: 'Workspace controls',
   })
   await expect(
-    toolbar.getByRole('searchbox', { name: 'Search evals' })
+    toolbar.getByRole('textbox', { name: 'Search evals' })
   ).toBeVisible()
   await expect(
-    toolbar.getByRole('searchbox', { name: 'Search evals' })
+    toolbar.getByRole('textbox', { name: 'Search evals' })
   ).toHaveCSS('font-size', '14px')
   expect(
     await toolbar.getByRole('search').evaluate(element =>
@@ -298,7 +377,9 @@ test('experiment selection, assessments, filtering and browser history stay conn
       .getByRole('button', { name: 'Refresh', exact: true })
       .evaluate(element => getComputedStyle(element).backgroundColor)
   ).toBe('rgba(0, 0, 0, 0)')
-  await expect(page.getByRole('searchbox')).toHaveCount(1)
+  await expect(page.getByRole('textbox', { name: 'Search evals' })).toHaveCount(
+    1
+  )
   await expect(
     page.getByRole('combobox', { name: 'Execution status' })
   ).toHaveCount(0)
@@ -333,7 +414,8 @@ test('experiment selection, assessments, filtering and browser history stay conn
     detail.locator('summary').filter({ hasText: 'Tool calls' })
   ).toHaveCount(0)
   await expect(bubbles.nth(1)).toHaveAttribute('open')
-  await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
+  await page.getByRole('textbox', { name: 'Search evals' }).fill('Mixed')
+  await page.getByRole('textbox', { name: 'Search evals' }).press('Enter')
   await expect(page).toHaveURL(/q=Mixed/)
   await expect(
     page
@@ -341,8 +423,9 @@ test('experiment selection, assessments, filtering and browser history stay conn
       .locator('[data-result-id]')
   ).toHaveCount(16)
   await page
-    .getByRole('searchbox', { name: 'Search evals' })
+    .getByRole('textbox', { name: 'Search evals' })
     .fill('nonexistent-score')
+  await page.getByRole('textbox', { name: 'Search evals' }).press('Enter')
   await expect(page).toHaveURL(/q=nonexistent-score/)
   await expect(
     page
@@ -722,9 +805,8 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await parent.locator('button[aria-expanded]').click()
   await expect(selected).toHaveClass(/table-row--selected/)
   expect(page.url()).toBe(url)
-  await page
-    .getByRole('searchbox', { name: 'Search evals' })
-    .fill('CPU evidence')
+  await page.getByRole('textbox', { name: 'Search evals' }).fill('CPU evidence')
+  await page.getByRole('textbox', { name: 'Search evals' }).press('Enter')
   await expect(page).toHaveURL(/q=CPU\+evidence/)
   await expect(costs.locator('[data-result-id]')).toHaveCount(16)
   await expect(totals.locator('[title="Partial estimate · CAD"]')).toHaveCount(
@@ -1146,9 +1228,8 @@ test('column resizing uses shared handles and retains widths, sorting and select
       return Math.abs(edge - (bounds.x + bounds.width / 2))
     })
     .toBeLessThan(1)
-  await page
-    .getByRole('searchbox', { name: 'Search evals' })
-    .fill('slow request')
+  await page.getByRole('textbox', { name: 'Search evals' }).fill('slow request')
+  await page.getByRole('textbox', { name: 'Search evals' }).press('Enter')
   await expect(page).toHaveURL(/q=slow\+request/)
   await expect(table.locator('[data-result-id]')).toHaveCount(16)
   for (const toggle of await table

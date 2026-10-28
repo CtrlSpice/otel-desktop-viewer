@@ -1,4 +1,4 @@
-{{.CTEs}},
+{{if .CTEs}}{{.CTEs}},{{else}}with{{end}}
 		filtered_metrics as (
 			select s.*
 			{{.From}}
@@ -7,7 +7,7 @@
 		metric_latest_dp as (
 			select d.metric_id, max(d.timestamp) as last_dp_ts
 			from metric_datapoints d
-			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
+			inner join filtered_metrics fm on d.metric_id = fm.id
 			{{.DatapointWhere}}
 			group by d.metric_id
 		),
@@ -19,7 +19,7 @@
 		),
 		filtered_dps as (
 			select d.*, fm.metric_type from metric_datapoints d
-			inner join candidate_metrics fm on d.metric_id = fm.id, search_params
+			inner join candidate_metrics fm on d.metric_id = fm.id
 			{{.DatapointWhere}}
 		),
 		-- series_count is window-scoped; series_cardinality covers all retained

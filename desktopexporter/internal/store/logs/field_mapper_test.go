@@ -40,7 +40,7 @@ func TestNumericLogAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 	for _, scope := range []string{"resource", "scope", "log"} {
 		t.Run(scope, func(t *testing.T) {
 			params := []search.NamedParam{}
-			resolved, err := mapLogAttributeExpressions(
+			resolved, err := logFieldMapper()(
 				&search.FieldDefinition{Name: "number", SearchScope: "attribute", AttributeScope: scope, Type: "float64"},
 				&search.Query{FieldOperator: ">", Value: "2"},
 				&params,
@@ -48,8 +48,10 @@ func TestNumericLogAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, resolved, 1)
 			assert.Equal(t, search.AttributeDoubleOperand, resolved[0].OperandMode)
-			assert.Contains(t, resolved[0].SQL, "try_cast(a.value as double)")
-			assert.Contains(t, resolved[0].SQL, "otel_value_kind(a.value) = attr_kind_1")
+			predicate, err := search.BuildOperatorCondition(resolved[0], &search.Query{FieldOperator: ">", Value: "2"}, &params)
+			require.NoError(t, err)
+			assert.Contains(t, predicate, "attributes[$1] as double)")
+			assert.Contains(t, predicate, "attributes[$1]) = $2")
 		})
 	}
 }

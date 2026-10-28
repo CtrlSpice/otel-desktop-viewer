@@ -1,3 +1,7 @@
+with projected as materialized (
+	select l.*, otel_value_json(l.body) as body_wire
+	from logs l where l.trace_id = ?::uuid
+)
 select cast(coalesce(to_json(list(json_object(
 	'logRef',         l.id,
 	'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
@@ -6,7 +10,6 @@ select cast(coalesce(to_json(list(json_object(
 	'severityNumber', l.severity_number,
 	'serviceName',    l.service_name,
 	'eventName',      coalesce(l.event_name, ''),
-	'bodyPreview',    body_preview(otel_value_json(l.body))
+	'bodyPreview',    body_preview(l.body_wire)
 ) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) asc, l.id asc)), '[]') as varchar) as logs
-from logs l
-where l.trace_id = ?::uuid
+from projected l

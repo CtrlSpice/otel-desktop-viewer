@@ -19,7 +19,9 @@ func TestAggregateBucketJSONUsesBoundsPresenceForRepresentation(t *testing.T) {
 			` + scale + `, 0.0::double, ` + zeroCount + `,
 			{'offset': 0::integer, 'counts': ` + posCounts + `, 'folded': 0::bigint},
 			{'offset': 0::integer, 'counts': []::ubigint[], 'folded': 0::bigint},
-			` + bounds + `, ` + counts + `, null::json
+			` + bounds + `, ` + counts + `, null::json,
+			bucket_extents(case when ` + bounds + ` is not null then hist_buckets(` + bounds + `, ` + counts + `)
+				else exp_buckets(` + scale + `, 0, []::ubigint[], ` + zeroCount + `, 0, ` + posCounts + `) end)
 		)::varchar`).Scan(&raw)
 		require.NoError(t, err)
 

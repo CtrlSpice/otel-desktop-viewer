@@ -3,6 +3,7 @@ import type {
   EvalExperimentSearchPage,
   EvalExperimentSourcePage,
 } from './eval-experiment-types'
+import { convertQueryTreeForBackend } from './telemetry-service'
 
 type CompletedImport = { complete: true; ids: string[] }
 
@@ -30,7 +31,11 @@ export const evalAPI = {
     signal?: AbortSignal
   ): Promise<EvalExperimentSearchPage> => {
     const params = new URLSearchParams()
-    if (query.query !== undefined) params.set('q', query.query)
+    if (query.criteria)
+      params.set(
+        'criteria',
+        JSON.stringify(convertQueryTreeForBackend(query.criteria))
+      )
     for (const outcome of query.outcomes ?? [])
       params.append('outcome', outcome)
     for (const key of ['sort', 'direction', 'limit', 'offset'] as const)

@@ -2,11 +2,11 @@
 
 @top Query { SearchRequest }
 
-SearchRequest { expression LimitClause? | LimitClause }
+SearchRequest { Where? expression LimitClause? | LimitClause }
 
-LimitClause { ModifierPipe Limit LimitValue }
+LimitClause { Limit LimitValue }
 
-ModifierPipe { @specialize<Word, "|"> }
+Where       { @specialize<Word, "WHERE"> | @specialize<Word, "where"> }
 Limit        { @specialize<Word, "LIMIT"> | @specialize<Word, "limit"> }
 LimitValue   { Word }
 
@@ -23,16 +23,20 @@ FreeText { Word | Null }
 
 Group { "(" expression ")" }
 
-Comparison { FieldName operator value }
+Comparison { FieldName (operator value | Between value And value) }
 
 FieldName { AttributeReference | Word }
 
-AttributeReference { Word "(" Word "," QuotedString "," Word ")" }
+AttributeReference { Word PathSegment+ TypeAnnotation? }
+PathSegment { "[" (QuotedString | Word) "]" }
+TypeAnnotation { TypeSeparator Word }
 
 operator { Operator | KeywordOperator }
 
 KeywordOperator {
-  Contains | Regexp | In | NotContains { Not Contains } | NotIn { Not In }
+  Contains | Regexp | Like | In | Is | IsNot { Is Not } |
+  NotContains { Not Contains } | NotIn { Not In } |
+  NotLike { Not Like } | NotRegexp { Not Regexp }
 }
 
 And { @specialize<Word, "AND"> | @specialize<Word, "and"> }
@@ -40,33 +44,36 @@ Or  { @specialize<Word, "OR">  | @specialize<Word, "or"> }
 
 Contains { @specialize<Word, "CONTAINS"> | @specialize<Word, "contains"> }
 Regexp   { @specialize<Word, "REGEXP">   | @specialize<Word, "regexp"> }
+Like     { @specialize<Word, "LIKE">     | @specialize<Word, "like"> }
+Is       { @specialize<Word, "IS">       | @specialize<Word, "is"> }
+Between  { @specialize<Word, "BETWEEN">  | @specialize<Word, "between"> }
 In       { @specialize<Word, "IN">       | @specialize<Word, "in"> }
 Not      { @specialize<Word, "NOT">      | @specialize<Word, "not"> }
 
 value { QuotedString | Array | Word | Null }
 
 Null {
-  @specialize<Word, "NULL"> | @specialize<Word, "null"> |
-  @specialize<Word, "NIL">  | @specialize<Word, "nil">
+  @specialize<Word, "NULL"> | @specialize<Word, "null">
 }
 
-Array { "[" commaSep<value> "]" }
+Array { "(" commaSep<value> ")" }
 
 commaSep<content> { "" | content ("," content)* }
 
 @tokens {
   Word { $[a-zA-Z0-9_./:\-+@#%&*?{}|\\]+ }
 
-  Operator { "=" | "!=" | ">" | "<" | ">=" | "<=" | "=~" | "!~" | "^" | "$" }
+  TypeSeparator { "::" }
+  Operator { "=" | "!=" | "<>" | ">" | "<" | ">=" | "<=" }
 
   QuotedString {
-    '"' (![\\\"] | "\\" _)* '"' |
-    "'" (![\\\'] | "\\" _)* "'"
+    '"' (![\\\"] | "\\" _ | '""')* '"' |
+    "'" (![\\\'] | "\\" _ | "''")* "'"
   }
 
   space { @whitespace+ }
 
-  @precedence { QuotedString, Operator, Word }
+  @precedence { QuotedString, Operator, TypeSeparator, Word }
 }
 
 @skip { space }

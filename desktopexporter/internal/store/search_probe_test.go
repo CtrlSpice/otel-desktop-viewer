@@ -1,15 +1,5 @@
 package store
 
-// The content-hashed search fast path is only correct if the id it computes is
-// the id ingest wrote. Nothing enforces that: the probe hashes a *search term*,
-// ingest hashes a *stored attribute*, and the two arrive by completely
-// different routes -- one from a user typing into a box, one from
-// util.ValueToStringAndType. If they ever disagree, search returns nothing, with
-// no error and no clue.
-//
-// So these compare the two directly, and then compare fast-path results against
-// slow-path results on the same data.
-
 import (
 	"context"
 	"database/sql"
@@ -17,162 +7,83 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
 )
 
-// The load-bearing equality: for every attribute actually in the dictionary,
-// the id a search probe computes from (key, value, type, scope) must be the id
-// stored on the row.
-//
-// What this catches, and what it cannot: both sides call AttributeID, so this
-// detects the probe passing *wrong arguments* -- the wrong scope, a mangled
-// value, the wrong type token -- which is the realistic failure, since the
-// probe assembles them from a search field and ingest from pdata.
-//
-// It cannot detect AttributeID itself changing: mutate the hash and both sides
-// move together, still agreeing. That is precisely why the SQL attr_id macro
-// exists as an independent reimplementation; TestStoredIDsMatchTheSQLMacro is
-// what fails when the encoding drifts. Mutation-checked in both directions --
-// a wrong scope here fails this test and not that one, a changed hash fails
-// that one and not this.
-func TestSearchProbeMatchesIngestedID(t *testing.T) {
+func TestNativeTypedSearchAgreesWithUntypedComparison(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
-
-	ingestAll(t, s, 1)
-
-	type row struct{ key, value, typ, id string }
-	var rows []row
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		r, err := db.Query(`select key, value::varchar, otel_value_kind(value), id::varchar from attributes where otel_value_kind(value) in ('string', 'int64', 'bool')`)
-		if err != nil {
-			return err
-		}
-		defer r.Close()
-		for r.Next() {
-			var x row
-			if err := r.Scan(&x.key, &x.value, &x.typ, &x.id); err != nil {
-				return err
-			}
-			rows = append(rows, x)
-		}
-		return r.Err()
-	}))
-	require.NotEmpty(t, rows, "fixture must produce attributes, or this proves nothing")
-
-	checked := 0
-	for _, x := range rows {
-		// The type comes from the dictionary row, which is exactly what
-		// discovery serves to the frontend -- so this walks every distinct
-		// (key, value, type, scope) the fixture produced and asserts the
-		// probe recomputes the id ingest stored for it.
-		probe := ingest.IDProbe("ids",
-			&search.FieldDefinition{Name: x.key, Type: x.typ},
-			&search.Query{FieldOperator: "=", Value: x.value},
-			"")
-		require.NotEmpty(t, probe, "probe should fire")
-		assert.Contains(t, probe, x.id,
-			"probe id disagrees with the stored id for %s=%s", x.key, x.value)
-		checked++
-	}
-	assert.Positive(t, checked, "no attributes were compared")
-	t.Logf("verified %d attributes across %d dictionary rows", checked, len(rows))
-}
-
-// IDProbe must refuse everything it cannot answer byte-exactly, or the fast
-// path silently returns wrong answers instead of falling back.
-func TestIDProbeRefusesWhatItCannotGuarantee(t *testing.T) {
-	str := &search.FieldDefinition{Name: "http.method", Type: "string"}
-	for _, tc := range []struct {
-		name  string
-		field *search.FieldDefinition
-		query *search.Query
-		want  bool
-	}{
-		{"string equality", str, &search.Query{FieldOperator: "=", Value: "GET"}, true},
-		{"value with spaces", str, &search.Query{FieldOperator: "=", Value: " GET "}, true},
-		{"not-equals", str, &search.Query{FieldOperator: "!=", Value: "GET"}, false},
-		{"contains", str, &search.Query{FieldOperator: "CONTAINS", Value: "GE"}, false},
-		// Null checks have dedicated operators, so "NULL" is an ordinary value.
-		{"literal NULL string equality", str, &search.Query{FieldOperator: "=", Value: "NULL"}, true},
-		// The declared type is trusted -- for an attribute field it is the
-		// token ingest wrote, served back by discovery -- so a non-string
-		// type takes the fast path under that type. An int64's stored text
-		// is "200", exactly what is typed.
-		{"int64 field", &search.FieldDefinition{Name: "http.status_code", Type: "int64"},
-			&search.Query{FieldOperator: "=", Value: "200"}, true},
-		// Without a type there is no exact ID to compute, so use value comparison.
-		{"untyped field falls back", &search.FieldDefinition{Name: "x"},
-			&search.Query{FieldOperator: "=", Value: "y"}, false},
-		{"unknown type token falls back", &search.FieldDefinition{Name: "x", Type: "decimal"},
-			&search.Query{FieldOperator: "=", Value: "y"}, false},
-		{"nil query", str, nil, false},
-	} {
-		got := ingest.IDProbe("ids", tc.field, tc.query, ingest.ScopeSpan) != ""
-		assert.Equal(t, tc.want, got, "%s", tc.name)
-	}
-}
-
-// Fast and slow paths must return the same spans. The probe fires for string
-// equality, so the comparison is run against the value-comparison form by
-// asking the same question with an operator the probe refuses but that means
-// the same thing for a single-valued attribute.
-func TestFastPathAgreesWithValueComparison(t *testing.T) {
-	ctx := context.Background()
-	s, err := NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	defer s.Close()
-
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, integrityTraces(1), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, integrityTraces(1))
 	}))
-
-	count := func(t *testing.T, typ, op, value string) int {
-		t.Helper()
-		query := map[string]any{
-			"type": "condition",
-			"query": map[string]any{
-				"field": map[string]any{
-					"name": "http.method", "type": typ,
-					"searchScope": "attribute", "attributeScope": "span",
-				},
-				"fieldOperator": op,
-				"value":         value,
-			},
-		}
-		var n int
+	count := func(typ, value string) int {
+		query := map[string]any{"type": "condition", "query": map[string]any{
+			"field": map[string]any{"name": "http.method", "type": typ,
+				"searchScope": "attribute", "attributeScope": "span"},
+			"fieldOperator": "=", "value": value,
+		}}
+		var out []map[string]any
 		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 			raw, err := spans.SearchTraceSummaries(ctx, db, BoundedTimeRange(0, 1<<62), query)
 			if err != nil {
 				return err
 			}
-			var out []map[string]any
-			if err := json.Unmarshal(raw, &out); err != nil {
-				return err
-			}
-			n = len(out)
-			return nil
+			return json.Unmarshal(raw, &out)
 		}))
-		return n
+		return len(out)
 	}
+	assert.Equal(t, count("", "GET"), count("string", "GET"))
+	assert.Positive(t, count("string", "GET"))
+	assert.Zero(t, count("string", "POST"))
+	assert.Zero(t, count("", "POST"))
+}
 
-	// type "string" takes the probe; the empty type forces the value
-	// comparison. Same question, two implementations.
-	fast := count(t, "string", "=", "GET")
-	slow := count(t, "", "=", "GET")
-	assert.Equal(t, slow, fast, "fast path must find exactly what the value comparison finds")
-	assert.Positive(t, fast, "fixture must match, or this compares two zeroes")
-
-	// A value that does not exist must find nothing on both paths.
-	assert.Zero(t, count(t, "string", "=", "POST"))
-	assert.Zero(t, count(t, "", "=", "POST"))
+func TestInlineSearchDistinguishesEmptyAndAbsent(t *testing.T) {
+	ctx := t.Context()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	data := plog.NewLogs()
+	records := data.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	records.AppendEmpty().Attributes().PutEmpty("value")
+	records.AppendEmpty().Attributes().PutStr("value", "null")
+	records.AppendEmpty()
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, data)
+	}))
+	for _, tc := range []struct {
+		kind, key, operator, value string
+		want                       int
+	}{
+		{"empty", "value", "=", "null", 1},
+		{"string", "value", "=", "null", 1},
+		{"empty", "missing", "=", "null", 0},
+		{"empty", "value", "IS NOT NULL", "", 1},
+	} {
+		t.Run(tc.kind+"/"+tc.key+"/"+tc.operator, func(t *testing.T) {
+			criteria := map[string]any{"type": "condition", "query": map[string]any{
+				"field":         map[string]any{"name": tc.key, "type": tc.kind, "searchScope": "attribute", "attributeScope": "log"},
+				"fieldOperator": tc.operator, "value": tc.value,
+			}}
+			var result []map[string]any
+			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+				raw, err := logs.Search(ctx, db, TimeRange{}, criteria)
+				if err != nil {
+					return err
+				}
+				return json.Unmarshal(raw, &result)
+			}))
+			require.Len(t, result, tc.want)
+		})
+	}
 }
 
 func TestMembershipExcludesSQLNull(t *testing.T) {
@@ -180,22 +91,18 @@ func TestMembershipExcludesSQLNull(t *testing.T) {
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
-
 	for _, operator := range []string{"IN", "NOT IN"} {
 		t.Run(operator, func(t *testing.T) {
 			params := []search.NamedParam{}
 			condition, err := search.BuildOperatorCondition(search.Text("candidate"), &search.Query{
-				FieldOperator: operator,
-				Value:         `["blocked"]`,
+				FieldOperator: operator, Value: `["blocked"]`,
 			}, &params)
 			require.NoError(t, err)
 			require.Len(t, params, 1)
-
 			var count int
 			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-				return db.QueryRowContext(ctx, `with search_params as (select ? as value_0)
-			select count(*) from search_params, (values (NULL::varchar), ('blocked'), ('allowed')) t(candidate)
-			where `+condition, params[0].Value).Scan(&count)
+				return db.QueryRowContext(ctx, `select count(*) from (values (NULL::varchar), ('blocked'), ('allowed')) t(candidate)
+				where `+condition, params[0].Value).Scan(&count)
 			}))
 			assert.Equal(t, 1, count)
 		})

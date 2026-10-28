@@ -37,7 +37,7 @@ func TestSearchLogPageSelectedColumns(t *testing.T) {
 	other := sl.LogRecords().AppendEmpty()
 	other.SetTimestamp(1)
 	other.Body().SetStr("outside page")
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	columns := []logs.Column{
 		{Source: "log", Kind: "field", Key: "timeUnixNano"},
 		{Source: "log", Kind: "field", Key: "flags"},
@@ -100,7 +100,7 @@ func TestSearchLogPage(t *testing.T) {
 		record.SetTimestamp(0)
 		record.SetObservedTimestamp(pcommon.Timestamp(18446744073709551614))
 	}
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	type result struct {
 		Logs  []logSummaryJSON `json:"logs"`
 		Total int              `json:"total"`
@@ -159,7 +159,7 @@ func TestSearchLogPageSortsSeverityNumerically(t *testing.T) {
 		records.At(i).SetSeverityNumber(severity)
 		records.At(i).SetSeverityText([]string{"ZZZ", "AAA", "MMM"}[i])
 	}
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	for _, tc := range []struct {
 		direction string
 		want      []int32

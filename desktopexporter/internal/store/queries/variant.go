@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
-// RegisterFunctions installs the native-value wire encoder once per database.
+// RegisterFunctions installs native-value encoders once per database.
 // DuckDB's Go driver cannot scan VARIANT directly. Its standard Parquet VARIANT
 // projection exposes typed binary data, which Arrow decodes without a JSON
 // round-trip (including exact integers, bytes, and IEEE-754 payload bits).
@@ -30,13 +30,62 @@ func RegisterFunctions(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	err = duckdb.RegisterScalarUDF(conn, "otel_wire_json", &variantJSON{
-		config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: text},
-	})
+	for _, projection := range []struct {
+		name   string
+		encode func(pcommon.Value) ([]byte, error)
+	}{
+		{"otel_wire_json", util.EncodeValue},
+		{"otel_otlp_json", encodeOTLPValue},
+		{"otel_native_text", func(v pcommon.Value) ([]byte, error) { return []byte(v.AsString()), nil }},
+	} {
+		err = duckdb.RegisterScalarUDF(conn, projection.name, &variantJSON{
+			config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: text},
+			encode: projection.encode,
+		})
+		if err != nil {
+			break
+		}
+	}
+	if err == nil {
+		err = duckdb.RegisterScalarUDF(conn, "otel_native_object_field", &variantObjectField{
+			config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob, text}, ResultTypeInfo: blob},
+		})
+	}
 	return errors.Join(err, conn.Close())
 }
 
-type variantJSON struct{ config duckdb.ScalarFuncConfig }
+// DuckDB's variant_extract requires a constant field name. Discovery enumerates
+// received keys, so use the same native binary reader as the output encoders for
+// dynamic object access. Copy the child's original bytes without JSON conversion
+// or rebuilding its scalar types. Array children use DuckDB's native list cast.
+type variantObjectField struct{ config duckdb.ScalarFuncConfig }
+
+func (f *variantObjectField) Config() duckdb.ScalarFuncConfig { return f.config }
+func (f *variantObjectField) Executor() duckdb.ScalarFuncExecutor {
+	return duckdb.ScalarFuncExecutor{RowExecutor: func(args []driver.Value) (any, error) {
+		v, err := parquetvariant.New(args[0].([]byte), args[1].([]byte))
+		if err != nil {
+			return nil, err
+		}
+		object, ok := v.Value().(parquetvariant.ObjectValue)
+		if !ok {
+			return nil, fmt.Errorf("native field access requires an object, got %v", v.Type())
+		}
+		field, err := object.ValueByKey(args[2].(string))
+		if err != nil {
+			return nil, err
+		}
+		metadata, value := field.Value.Metadata().Bytes(), field.Value.Bytes()
+		out := make([]byte, 0, len(metadata)+len(value))
+		out = append(out, metadata...)
+		return append(out, value...), nil
+	}}
+}
+
+type variantJSON struct {
+	config duckdb.ScalarFuncConfig
+	encode func(pcommon.Value) ([]byte, error)
+}
 
 func (f *variantJSON) Config() duckdb.ScalarFuncConfig { return f.config }
 func (f *variantJSON) Executor() duckdb.ScalarFuncExecutor {
@@ -49,7 +98,7 @@ func (f *variantJSON) Executor() duckdb.ScalarFuncExecutor {
 		if err := decodeVariant(v, out); err != nil {
 			return nil, err
 		}
-		encoded, err := util.EncodeValue(out)
+		encoded, err := f.encode(out)
 		return string(encoded), err
 	}}
 }

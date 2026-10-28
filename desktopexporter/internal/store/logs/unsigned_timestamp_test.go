@@ -36,7 +36,7 @@ func TestLogTimestampsRoundTripAndSearchAcrossUint64Range(t *testing.T) {
 	fallback.Body().SetStr("fallback")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx, `select timestamp, observed_timestamp from logs order by timestamp, observed_timestamp`)

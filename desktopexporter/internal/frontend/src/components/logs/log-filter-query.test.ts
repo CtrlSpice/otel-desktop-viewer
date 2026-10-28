@@ -25,30 +25,30 @@ describe('query-backed log filters', () => {
 
   it('preserves mixed OR expressions, exact literals and the final limit', () => {
     const expression = '(body CONTAINS "a\\\"b" OR severityText = "WARN")'
-    const next = setLogFilter(`${expression} | LIMIT 17`, fields, 'service', [
+    const next = setLogFilter(`${expression} LIMIT 17`, fields, 'service', [
       'worker',
     ])!
     expect(next).toContain(expression)
-    expect(next).toMatch(/\| LIMIT 17$/)
+    expect(next).toMatch(/LIMIT 17$/)
     expect(parseSearchRequest(next, fields, 'logs')?.limit).toBe(17)
     const cleared = setLogFilter(next, fields, 'service', [])!
     expect(cleared).toContain(expression)
-    expect(cleared).toMatch(/\| LIMIT 17$/)
+    expect(cleared).toMatch(/LIMIT 17$/)
   })
 
   it('recognizes grouped top-level conjuncts without changing other owners', () => {
     const query =
-      '((attr(resource, "service.name", string) = "api" AND attr(log, "service.name", string) = "payload"))'
+      '((resource.attributes["service.name"]::VARCHAR = "api" AND log.attributes["service.name"]::VARCHAR = "payload"))'
     expect(readLogFilters(query, fields).service.values).toEqual(['api'])
     expect(setLogFilter(query, fields, 'service', [])).toBe(
-      '(attr(log, "service.name", string) = "payload")'
+      '(log.attributes["service.name"]::VARCHAR = "payload")'
     )
   })
 
   it.each([
-    'attr(resource, "service.name", string) != "worker"',
-    'attr(resource, "service.name", string) = "api" OR body CONTAINS "exception"',
-    'attr(resource, "service.name", string) = "api" AND attr(resource, "service.name", string) = "worker"',
+    'resource.attributes["service.name"]::VARCHAR != "worker"',
+    'resource.attributes["service.name"]::VARCHAR = "api" OR body CONTAINS "exception"',
+    'resource.attributes["service.name"]::VARCHAR = "api" AND resource.attributes["service.name"]::VARCHAR = "worker"',
   ])('leaves custom service conditions intact: %s', query => {
     expect(readLogFilters(query, fields).service.custom).toBe(true)
     expect(setLogFilter(query, fields, 'service', ['replacement'])).toBeNull()

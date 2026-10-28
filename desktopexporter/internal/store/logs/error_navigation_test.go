@@ -19,7 +19,7 @@ func TestLogErrorNavigation(t *testing.T) {
 	data := createTestLogsPdata(1700000000123456789)
 	records := data.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	records.At(2).SetSeverityNumber(21) // Fatal is also an error-navigation target.
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	type target struct {
 		LogRef string `json:"logRef"`
 		Offset int    `json:"offset"`

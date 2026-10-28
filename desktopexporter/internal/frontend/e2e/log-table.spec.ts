@@ -1918,7 +1918,7 @@ test('toolbar filters draft service and severity selections and search once on A
   await expect(filtersToggle).toBeFocused()
   await expect(filtersToggle).toContainText('[2]')
   expect(new URL(page.url()).searchParams.get('q')).toContain(
-    'attr(resource, "service.name", string) IN ["api"]'
+    "resource.attributes['service.name']::VARCHAR IN ('api')"
   )
   await expect(editor.locator('.cm-attribute-token')).toHaveText(
     'service.name · Resource · String'
@@ -1953,7 +1953,7 @@ test('toolbar filters draft service and severity selections and search once on A
   await expect(error).toHaveAttribute('aria-pressed', 'false')
   await expect(error).toBeEnabled()
   await editor.click()
-  await editor.fill('body CONTAINS "exact" | LIMIT 10')
+  await editor.fill('body CONTAINS "exact" LIMIT 10')
   const search = page.waitForRequest(
     request =>
       request.url().endsWith('/rpc') &&
@@ -1965,7 +1965,7 @@ test('toolbar filters draft service and severity selections and search once on A
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   expect((await search).postDataJSON().params.query).toBeTruthy()
   await expect(editor).toContainText('body CONTAINS "exact"')
-  await expect(editor).toContainText('| LIMIT 10')
+  await expect(editor).toContainText('LIMIT 10')
   await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'false')
   await expect(filtersToggle).toBeFocused()

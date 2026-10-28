@@ -17,6 +17,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
 	"go.uber.org/zap"
@@ -728,22 +729,73 @@ func (h *JSONRPCHandler) deleteLogsByRefs(ctx context.Context, req *jsonrpc2.Req
 	}, nil
 }
 
-// searchAttributeMatches answers "which attribute keys hold this text?" across every
-// signal at once, from the dictionary alone.
-//
-// Deliberately not scoped to a signal or a time window, unlike the
-// getXAttributes discovery methods. The dictionary is shared -- one row per
-// distinct (key, value, type, scope) for the whole store -- so narrowing to one
-// signal would mean unnesting owner arrays to find out which signals reference
-// a row, which is the cost this avoids. The scope on each result says which
-// signals can carry it.
+// searchAttributeMatches finds keys/owners first and values only after selection.
 func (h *JSONRPCHandler) searchAttributeMatches(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	term, err := parseSingleStringParam(req.Params)
+	params, err := decodePositionalParams(req.Params, 1, 5)
 	if err != nil {
 		return nil, err
 	}
+	options := attributes.SearchOptions{}
+	term, ok := params[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	options.Term = term
+	for i, target := range map[int]*string{1: &options.Signal, 2: &options.Owner, 4: &options.Kind} {
+		if i < len(params) && params[i] != nil {
+			v, ok := params[i].(string)
+			if !ok {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			*target = v
+		}
+	}
+	if len(params) > 3 && params[3] != nil {
+		path, ok := params[3].([]any)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		options.Path = path
+	}
+	if _, err := searchindex.NormalizeSignal(options.Signal); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if options.Owner != "" {
+		switch options.Owner {
+		case "span", "event", "link", "log", "metric", "datapoint", "exemplar", "resource", "scope":
+		default:
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	if options.Kind != "" {
+		switch options.Kind {
+		case "string", "int64", "double", "bool", "bytes", "empty", "map", "array":
+		default:
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	if len(options.Path) > 0 {
+		if options.Owner == "" {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		root, ok := options.Path[0].(string)
+		if !ok || (root != "attributes" && root != "body" && root != "metadata") {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		for _, segment := range options.Path {
+			switch v := segment.(type) {
+			case string:
+			case float64:
+				if math.Trunc(v) != v || v < 0 || v >= 4294967295 {
+					return nil, jsonrpc2.ErrInvalidParams
+				}
+			default:
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+		}
+	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return attributes.Search(ctx, db, term)
+		return attributes.SearchScoped(ctx, db, options)
 	})
 }
 

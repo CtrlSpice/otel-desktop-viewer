@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/duckdb/duckdb-go/v2"
 )
@@ -20,14 +21,24 @@ func NewAppenders(conn driver.Conn, tables []string) (map[string]*duckdb.Appende
 		var a *duckdb.Appender
 		var err error
 		switch table {
-		case "attributes":
-			a, err = NewTypedQueryAppender(conn, attributesUpsert,
-				`select null::uuid as id, null::varchar as key,
-				 null::otel_value_node[] as nodes where false`)
 		case "logs":
-			a, err = NewTypedQueryAppender(conn, `insert into logs
-				select * replace(otel_value_from_nodes(body) as body) from appended_data`,
-				`select * replace(null::otel_value_node[] as body) from logs where false`)
+			a, err = NewTypedQueryAppender(conn, OwnedAppendQuery(table, []string{"body", "attributes", "resource.attributes", "scope.attributes"}),
+				`select * replace(null::blob as body,
+					null::otel_resource_input as resource, null::otel_scope_input as scope,
+					null::blob as attributes) from logs where false`)
+		case "spans":
+			a, err = NewTypedQueryAppender(conn, OwnedAppendQuery(table, []string{"attributes", "resource.attributes", "scope.attributes"}),
+				`select * replace(null::otel_resource_input as resource,
+					null::otel_scope_input as scope, null::blob as attributes)
+				from spans where false`)
+		case "events", "links", "exemplars":
+			a, err = NewTypedQueryAppender(conn, OwnedAppendQuery(table, []string{"attributes"}),
+				`select * replace(null::blob as attributes) from `+table+` where false`)
+		case "metric_datapoints":
+			a, err = NewTypedQueryAppender(conn, OwnedAppendQuery(table, []string{"attributes", "resource.attributes", "scope.attributes"}),
+				`select * replace(null::blob as attributes,
+					null::otel_resource_input as resource, null::otel_scope_input as scope)
+				from metric_datapoints where false`)
 		default:
 			a, err = duckdb.NewAppender(conn, "", "", table)
 		}
@@ -38,6 +49,24 @@ func NewAppenders(conn driver.Conn, tables []string) (map[string]*duckdb.Appende
 		out[table] = a
 	}
 	return out, nil
+}
+
+// OwnedAppendQuery decodes each row's complete binary payloads into owned values.
+// Table and columns must be application constants, never received telemetry.
+func OwnedAppendQuery(table string, columns []string) string {
+	var replacements []string
+	for _, column := range columns {
+		root := "variant_bytes_to_variant(" + column + ")"
+		switch column {
+		case "resource.attributes":
+			replacements = append(replacements, "struct_update(resource, attributes := "+root+")::otel_resource as resource")
+		case "scope.attributes":
+			replacements = append(replacements, "struct_update(scope, attributes := "+root+")::otel_scope as scope")
+		default:
+			replacements = append(replacements, root+" as "+column)
+		}
+	}
+	return "insert into " + table + " select * replace (" + strings.Join(replacements, ", ") + ") from appended_data"
 }
 
 // FlushAppenders flushes in reverse table order, so parents land before the

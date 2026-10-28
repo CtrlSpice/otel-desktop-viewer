@@ -21,7 +21,7 @@ var (
 // QueryNode represents a parsed query tree from the frontend
 type QueryNode struct {
 	ID    string      `json:"id"`
-	Type  string      `json:"type"` // "condition" or "group"
+	Type  string      `json:"type"` // "condition", "text", or "group"
 	Query *Query      `json:"query,omitempty"`
 	Group *QueryGroup `json:"group,omitempty"`
 }
@@ -33,8 +33,10 @@ type Query struct {
 	Value         string           `json:"value"`
 }
 
-// FieldDefinition describes a field or attribute used in a condition.
+// FieldDefinition accepts owner/path/type addresses and legacy wire references.
 type FieldDefinition struct {
+	Owner          string `json:"owner,omitempty"`
+	Path           []any  `json:"path,omitempty"`
 	Name           string `json:"name,omitempty"`
 	SearchScope    string `json:"searchScope"`
 	AttributeScope string `json:"attributeScope,omitempty"`
@@ -47,17 +49,38 @@ type QueryGroup struct {
 	Children        []QueryNode `json:"children"`
 }
 
-// NamedParam is a positional parameter with a CTE column name and its value.
-// Using a slice of these instead of a map guarantees insertion-order alignment
-// between the CTE columns and the positional ? args.
+// NamedParam records a parameter's diagnostic name and value in binding order.
+// SQL references its position directly; the name is not a query column.
 type NamedParam struct {
 	Name  string
 	Value any
 }
 
-// unsignedScalar binds through a one-element UBIGINT array because database/sql
-// rejects scalar uint64 values above MaxInt64 before duckdb-go sees them.
+// unsignedScalar binds as exact decimal text because database/sql rejects
+// scalar uint64 values above MaxInt64 before duckdb-go sees them.
 type unsignedScalar uint64
+
+// Parameter reuses one binding wherever its value is needed in a query.
+func Parameter(index int, value any) string {
+	parameter := fmt.Sprintf("$%d", index+1)
+	if _, ok := value.(unsignedScalar); ok {
+		return parameter + "::ubigint"
+	}
+	return parameter
+}
+
+// Arguments preserves the complete uint64 domain through the driver boundary.
+func Arguments(params []NamedParam) []any {
+	args := make([]any, len(params))
+	for i, p := range params {
+		if value, ok := p.Value.(unsignedScalar); ok {
+			args[i] = strconv.FormatUint(uint64(value), 10)
+		} else {
+			args[i] = p.Value
+		}
+	}
+	return args
+}
 
 // OperandMode defines the server-owned binding and normalisation contract.
 type OperandMode uint8
@@ -69,16 +92,22 @@ const (
 	DurationOperand
 	WireIDOperand
 	OTelArrayOperand
-	CompletePredicateOperand
 	AttributeSignedIntegerOperand
 	AttributeDoubleOperand
 )
 
 // ResolvedExpression is the mapper-owned SQL expression and operand contract.
 type ResolvedExpression struct {
+	// ConditionSQL is a complete server-compiled predicate, including its bound
+	// operands. Catalogue mappers use it to reference precomputed owner hits.
+	ConditionSQL  string
 	SQL           string
 	OperandMode   OperandMode
 	AttributeKind string
+	ValueSQL      string
+	PresentSQL    string
+	Correlation   string
+	MissingIsNull bool
 }
 
 func Text(expr string) ResolvedExpression {
@@ -96,10 +125,6 @@ func Duration(expr string) ResolvedExpression {
 func WireID(expr string) ResolvedExpression {
 	return ResolvedExpression{SQL: expr, OperandMode: WireIDOperand}
 }
-func Complete(expr string) ResolvedExpression {
-	return ResolvedExpression{SQL: expr, OperandMode: CompletePredicateOperand}
-}
-
 func TextExpressions(expressions []string) []ResolvedExpression {
 	resolved := make([]ResolvedExpression, len(expressions))
 	for i, expression := range expressions {
@@ -131,47 +156,23 @@ func AttributeKind(requested string) (string, OperandMode, error) {
 	}
 }
 
-func AttributeValueExpression(kind string) string {
+func AttributeValueExpression(kind, value string) string {
 	switch kind {
 	case "int64":
-		return "try_cast(a.value as bigint)"
+		return "try_cast(" + value + " as bigint)"
 	case "double":
-		return "try_cast(a.value as double)"
+		return "try_cast(" + value + " as double)"
+	case "string":
+		return "try_cast(" + value + " as varchar)"
+	case "bool":
+		return "try_cast(" + value + " as varchar)"
 	default:
-		return "coalesce(json_extract_string(otel_value_json(a.value), '$.value'), json_extract(otel_value_json(a.value), '$.value')::varchar)"
+		return "otel_search_text(" + value + ")"
 	}
 }
 
 func AttributeExpression(sql, kind string, mode OperandMode) ResolvedExpression {
 	return ResolvedExpression{SQL: sql, OperandMode: mode, AttributeKind: kind}
-}
-
-func AttributeKindPredicate(kindParam string) string {
-	if kindParam == "" {
-		return ""
-	}
-	return " and otel_value_kind(a.value) = " + kindParam
-}
-
-// A resource or scope has one attribute set. A scalar null check includes an
-// absent key/kind, unlike EXISTS predicates over events or datapoints.
-func OwnerNullExpression(field *FieldDefinition, query *Query, keyParam, kindPredicate, valueExpression string) (ResolvedExpression, bool) {
-	if query.FieldOperator != "IS NULL" {
-		return ResolvedExpression{}, false
-	}
-	var ids string
-	switch field.AttributeScope {
-	case "resource":
-		ids = "r.attribute_ids"
-	case "scope":
-		ids = "sc.attribute_ids"
-	default:
-		return ResolvedExpression{}, false
-	}
-	return Complete(fmt.Sprintf(`not exists (
-		select 1 from unnest(%s) t(aid) join attributes a on a.id = t.aid
-		where a.key = %s%s and %s IS NOT NULL
-	)`, ids, keyParam, kindPredicate, valueExpression)), true
 }
 
 // FieldMapper maps a FieldDefinition to one or more resolved SQL expressions.
@@ -199,18 +200,36 @@ func ParseQueryTree(jsonData any) (*QueryNode, error) {
 // appending parameter values to params. The caller provides a FieldMapper
 // so the tree walker doesn't need to know about signal-specific schema.
 func BuildConditions(node *QueryNode, conditions *[]string, params *[]NamedParam, mapper FieldMapper) error {
+	return buildConditions(node, conditions, params, mapper, nil)
+}
+
+func buildConditions(node *QueryNode, conditions *[]string, params *[]NamedParam, mapper FieldMapper, textMapper TextMapper) error {
 	switch node.Type {
+	case "text":
+		if node.Query == nil || node.Query.Field != nil {
+			return fmt.Errorf("invalid text query: %w", ErrInvalidQuery)
+		}
+		if textMapper != nil {
+			return buildTextCondition(node.Query, conditions, params, textMapper)
+		}
+		return buildCondition(node.Query, conditions, params, mapper)
 	case "condition":
+		if node.Query == nil || node.Query.Field == nil {
+			return fmt.Errorf("invalid condition: missing field: %w", ErrInvalidQuery)
+		}
+		if f := node.Query.Field; textMapper != nil && f.Owner == "" && f.SearchScope == "global" {
+			return buildTextCondition(node.Query, conditions, params, textMapper)
+		}
 		return buildCondition(node.Query, conditions, params, mapper)
 	case "group":
-		return buildGroup(node.Group, conditions, params, mapper)
+		return buildGroup(node.Group, conditions, params, mapper, textMapper)
 	default:
 		return fmt.Errorf("unknown node type %s: %w", node.Type, ErrInvalidQuery)
 	}
 }
 
 func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, mapper FieldMapper) error {
-	if query == nil || query.Field == nil || query.FieldOperator == "" {
+	if query == nil || query.FieldOperator == "" {
 		return fmt.Errorf("invalid condition: missing field or operator: %w", ErrInvalidQuery)
 	}
 
@@ -218,7 +237,7 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 
 	dbExpressions, err := mapper(field, query, params)
 	if err != nil {
-		return fmt.Errorf("map field %s: %w", field.Name, err)
+		return fmt.Errorf("resolve search value: %w", err)
 	}
 
 	var sqlConditions []string
@@ -237,7 +256,7 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 	// requirements and join with AND.
 	if len(sqlConditions) > 1 {
 		joiner := " AND "
-		if field.SearchScope == "global" {
+		if field == nil || (field.Owner == "" && field.SearchScope == "global") || len(field.UnscopedPath()) > 0 {
 			joiner = " OR "
 		}
 		*conditions = append(*conditions, "("+strings.Join(sqlConditions, joiner)+")")
@@ -248,7 +267,7 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 	return nil
 }
 
-func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, mapper FieldMapper) error {
+func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, mapper FieldMapper, textMapper TextMapper) error {
 	if group == nil {
 		return fmt.Errorf("invalid group: missing group data: %w", ErrInvalidQuery)
 	}
@@ -258,7 +277,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, m
 	for _, child := range group.Children {
 		var childCondition []string
 
-		err := BuildConditions(&child, &childCondition, params, mapper)
+		err := buildConditions(&child, &childCondition, params, mapper, textMapper)
 		if err != nil {
 			return fmt.Errorf("BuildConditions: %w", err)
 		}
@@ -283,20 +302,6 @@ func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, m
 	return nil
 }
 
-// wireIDFields are field names whose values are trace/span IDs. Signal mappers
-// convert their native UUID or UBIGINT columns to OTLP wire form for comparison,
-// and values are normalized here to match, so dashed or uppercase input still
-// works and malformed IDs match nothing instead of causing a cast error.
-var wireIDFields = map[string]struct{}{
-	"traceID":      {},
-	"traceId":      {},
-	"spanID":       {},
-	"spanId":       {},
-	"parentSpanID": {},
-	"link.traceID": {},
-	"link.spanID":  {},
-}
-
 func normalizeWireIDValue(value string) string {
 	return strings.ToLower(strings.ReplaceAll(value, "-", ""))
 }
@@ -306,29 +311,30 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 	if query == nil {
 		return "", fmt.Errorf("query cannot be nil: %w", ErrInvalidQuery)
 	}
+	if resolved.ConditionSQL != "" {
+		return resolved.ConditionSQL, nil
+	}
+	if resolved.Correlation != "" {
+		correlation := resolved.Correlation
+		resolved.Correlation = ""
+		predicate, err := BuildOperatorCondition(resolved, query, params)
+		if err != nil {
+			return "", err
+		}
+		return correlateValue(correlation, predicate), nil
+	}
+	if resolved.ValueSQL != "" {
+		return buildValueComparison(resolved, query, params)
+	}
 
 	expression := resolved.SQL
 
 	operator := query.FieldOperator
 	value := query.Value
 
-	// A mapper that already produced a complete boolean says so, and nothing
-	// further is appended to it.
-	if resolved.OperandMode == CompletePredicateOperand {
-		return expression, nil
-	}
-
 	const condToken = "{COND}"
-	const rawToken = "{RAW}"
 	hasPlaceholder := strings.Contains(expression, condToken)
-	hasRaw := strings.Contains(expression, rawToken)
 	var operatorString string
-
-	if hasRaw {
-		rawParamName := fmt.Sprintf("raw_%d", len(*params))
-		*params = append(*params, NamedParam{rawParamName, value})
-		expression = strings.ReplaceAll(expression, rawToken, rawParamName)
-	}
 
 	// Null checks are explicit operators; the literal string "NULL" remains a
 	// searchable value.
@@ -374,30 +380,34 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		bindValue, _ = strconv.ParseInt(normalized, 10, 64)
 	}
 
+	parameter := Parameter(len(*params), bindValue)
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=":
 		*params = append(*params, NamedParam{paramName, bindValue})
-		operatorString = operator + " " + paramName
+		operatorString = operator + " " + parameter
 	// DuckDB uses ~ and !~ as full-match regex operators. !~ on NULL yields
 	// NULL and excludes the row, matching NOT LIKE behavior.
 	case "REGEXP":
 		*params = append(*params, NamedParam{paramName, bindValue})
-		operatorString = "~ " + paramName
+		operatorString = "~ " + parameter
 	case "NOT REGEXP":
 		*params = append(*params, NamedParam{paramName, bindValue})
-		operatorString = "!~ " + paramName
+		operatorString = "!~ " + parameter
+	case "LIKE", "NOT LIKE":
+		*params = append(*params, NamedParam{paramName, bindValue})
+		operatorString = operator + " " + parameter
 	case "CONTAINS":
 		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
-		operatorString = "LIKE " + paramName
+		operatorString = "LIKE " + parameter
 	case "NOT CONTAINS":
 		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
-		operatorString = "NOT LIKE " + paramName
+		operatorString = "NOT LIKE " + parameter
 	case "^":
 		*params = append(*params, NamedParam{paramName, value + "%"})
-		operatorString = "LIKE " + paramName
+		operatorString = "LIKE " + parameter
 	case "$":
 		*params = append(*params, NamedParam{paramName, "%" + value})
-		operatorString = "LIKE " + paramName
+		operatorString = "LIKE " + parameter
 	case "IN", "NOT IN":
 		values, err := ParseArrayValue(value)
 		if err != nil {
@@ -423,7 +433,7 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 				return "", err
 			}
 			*params = append(*params, NamedParam{paramName, timestampValues})
-			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, paramName)
+			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, parameter)
 			break
 		} else if resolved.OperandMode == DurationOperand {
 			values, err = NormalizeDurationList(values)
@@ -435,15 +445,24 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 				values[i] = normalizeWireIDValue(value.(string))
 			}
 		}
+		if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == AttributeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
+			for i, value := range values {
+				integer, err := strconv.ParseInt(value.(string), 10, 64)
+				if err != nil {
+					return "", fmt.Errorf("integer list element %d: %w: %w", i+1, err, ErrInvalidQuery)
+				}
+				values[i] = integer
+			}
+		}
 		*params = append(*params, NamedParam{paramName, values})
 		if resolved.OperandMode == TimestampOperand {
-			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, paramName)
+			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, parameter)
 		} else if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == AttributeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
-			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, paramName)
+			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, parameter)
 		} else if resolved.OperandMode == AttributeDoubleOperand {
-			operatorString = fmt.Sprintf("%s CAST(%s AS DOUBLE[])", operator, paramName)
+			operatorString = fmt.Sprintf("%s CAST(%s AS DOUBLE[])", operator, parameter)
 		} else {
-			operatorString = operator + " " + paramName
+			operatorString = operator + " " + parameter
 		}
 	default:
 		return "", fmt.Errorf("unsupported operator %s: %w", operator, ErrInvalidQuery)
@@ -680,124 +699,6 @@ func NormalizeTimestampList(values []any) ([]uint64, error) {
 	return normalized, nil
 }
 
-func mapArrayTypeToDuckDB(frontendType string) (string, error) {
-	switch frontendType {
-	case "string[]":
-		return "VARCHAR[]", nil
-	case "int64[]":
-		return "BIGINT[]", nil
-	case "float64[]":
-		return "DOUBLE[]", nil
-	case "boolean[]":
-		return "BOOLEAN[]", nil
-	default:
-		return "", fmt.Errorf("unsupported array type %s: %w", frontendType, ErrInvalidQuery)
-	}
-}
-
-func handleArrayOperator(expression string, query *Query, params *[]NamedParam) (string, error) {
-	operator := query.FieldOperator
-	value := query.Value
-	paramName := fmt.Sprintf("value_%d", len(*params))
-
-	duckDBType, err := mapArrayTypeToDuckDB(query.Field.Type)
-	if err != nil {
-		return "", err
-	}
-	expression = fmt.Sprintf("CAST(%s AS %s)", expression, duckDBType)
-
-	switch operator {
-	case "=", "!=":
-		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
-			values, err := ParseArrayValue(value)
-			if err != nil {
-				return "", err
-			}
-			*params = append(*params, NamedParam{paramName, values})
-		} else {
-			*params = append(*params, NamedParam{paramName, value})
-		}
-		return fmt.Sprintf("%s %s %s", expression, operator, paramName), nil
-
-	case "CONTAINS":
-		convertedValue := ConvertValueForArrayType(value, query.Field.Type)
-		*params = append(*params, NamedParam{paramName, convertedValue})
-		return fmt.Sprintf("list_contains(%s, %s)", expression, paramName), nil
-
-	case "NOT CONTAINS":
-		convertedValue := ConvertValueForArrayType(value, query.Field.Type)
-		*params = append(*params, NamedParam{paramName, convertedValue})
-		return fmt.Sprintf("NOT list_contains(%s, %s)", expression, paramName), nil
-
-	case "IN":
-		values, err := ParseArrayValue(value)
-		if err != nil {
-			return "", err
-		}
-		if len(values) == 0 {
-			return "", fmt.Errorf("IN requires at least one value: %w", ErrInvalidQuery)
-		}
-		convertedValues := make([]any, len(values))
-		for i, val := range values {
-			if strVal, ok := val.(string); ok {
-				convertedValues[i] = ConvertValueForArrayType(strVal, query.Field.Type)
-			} else {
-				convertedValues[i] = val
-			}
-		}
-		*params = append(*params, NamedParam{paramName, convertedValues})
-		return fmt.Sprintf("list_has_all(%s, %s)", expression, paramName), nil
-
-	case "NOT IN":
-		values, err := ParseArrayValue(value)
-		if err != nil {
-			return "", err
-		}
-		if len(values) == 0 {
-			return "", fmt.Errorf("NOT IN requires at least one value: %w", ErrInvalidQuery)
-		}
-		convertedValues := make([]any, len(values))
-		for i, val := range values {
-			if strVal, ok := val.(string); ok {
-				convertedValues[i] = ConvertValueForArrayType(strVal, query.Field.Type)
-			} else {
-				convertedValues[i] = val
-			}
-		}
-		*params = append(*params, NamedParam{paramName, convertedValues})
-		return fmt.Sprintf("NOT list_has_all(%s, %s)", expression, paramName), nil
-
-	default:
-		return "", fmt.Errorf("unsupported operator %s for array type: %w", operator, ErrInvalidQuery)
-	}
-}
-
-// JSONValueArrayPredicate matches an element of a D06 tagged OTel array.
-// Attribute mappers wrap it in their owner-specific resource/scope lookup.
-func JSONValueArrayPredicate(attributeIDs, keyParam, kindParam string, query *Query, params *[]NamedParam) (string, error) {
-	if query.FieldOperator != "CONTAINS" && query.FieldOperator != "NOT CONTAINS" {
-		return "", fmt.Errorf("unsupported array attribute query: %w", ErrInvalidQuery)
-	}
-	valueParam := fmt.Sprintf("value_%d", len(*params))
-	*params = append(*params, NamedParam{Name: valueParam, Value: ConvertValueForArrayType(query.Value, query.Field.Type)})
-	kindPredicate := AttributeKindPredicate(kindParam)
-	arrayExists := fmt.Sprintf(`exists(
-		select 1 from unnest(%s) t(aid)
-		join attributes a on a.id = t.aid
-		where a.key = %s%s
-	)`, attributeIDs, keyParam, kindPredicate)
-	predicate := fmt.Sprintf(`exists(
-		select 1 from unnest(%s) t(aid)
-		join attributes a on a.id = t.aid, json_each(otel_value_json(a.value), '$.value') j
-		where a.key = %s%s
-			and json_extract_string(j.value, '$.value') = %s
-	)`, attributeIDs, keyParam, kindPredicate, valueParam)
-	if query.FieldOperator == "NOT CONTAINS" {
-		return arrayExists + " and not " + predicate, nil
-	}
-	return predicate, nil
-}
-
 // ParseArrayValue parses the JSON string array sent over the query wire format.
 func ParseArrayValue(value string) ([]any, error) {
 	var decoded []*string
@@ -818,46 +719,23 @@ func ParseArrayValue(value string) ([]any, error) {
 	return result, nil
 }
 
-// ConvertValueForArrayType converts a string value to the appropriate type for array operations
-func ConvertValueForArrayType(value, arrayType string) any {
-	switch arrayType {
-	case "int64[]":
-		if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return intVal
-		}
-		return value
-	case "float64[]":
-		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
-			return floatVal
-		}
-		return value
-	case "boolean[]":
-		if boolVal, err := strconv.ParseBool(value); err == nil {
-			return boolVal
-		}
-		return value
-	default:
-		return value
-	}
-}
-
 // TimePredicate builds the direct predicate for a nullable inclusive range.
 // Only concrete endpoints become parameters and SQL conditions.
 func TimePredicate(column string, startTime, endTime *uint64) (string, []NamedParam) {
 	var conditions []string
 	var params []NamedParam
 	if startTime != nil {
-		conditions = append(conditions, column+" >= time_start")
+		conditions = append(conditions, column+" >= "+Parameter(len(params), unsignedScalar(*startTime)))
 		params = append(params, NamedParam{Name: "time_start", Value: unsignedScalar(*startTime)})
 	}
 	if endTime != nil {
-		conditions = append(conditions, column+" <= time_end")
+		conditions = append(conditions, column+" <= "+Parameter(len(params), unsignedScalar(*endTime)))
 		params = append(params, NamedParam{Name: "time_end", Value: unsignedScalar(*endTime)})
 	}
 	return strings.Join(conditions, " AND "), params
 }
 
-// BuildSearchSQL builds the search_params CTE, WHERE clause, and args for any
+// BuildSearchSQL builds the WHERE clause and directly bound args for any
 // signal. timeCondition is empty when time is unbounded; timeParams contains
 // only the concrete endpoints referenced by it.
 func BuildSearchSQL(queryNode *QueryNode, mapper FieldMapper, timeCondition string, timeParams []NamedParam) (cteSQL, whereSQL string, args []any, err error) {
@@ -869,7 +747,10 @@ func BuildSearchSQL(queryNode *QueryNode, mapper FieldMapper, timeCondition stri
 			return "", "", nil, err
 		}
 	}
+	return finishSearchSQL(conditions, params, timeCondition)
+}
 
+func finishSearchSQL(conditions []string, params []NamedParam, timeCondition string) (cteSQL, whereSQL string, args []any, err error) {
 	if len(conditions) > 0 && timeCondition != "" {
 		// buildCondition and buildGroup normally append one joined element.
 		// Joining defensively keeps a multi-element list valid.
@@ -882,21 +763,5 @@ func BuildSearchSQL(queryNode *QueryNode, mapper FieldMapper, timeCondition stri
 		whereSQL = "true"
 	}
 
-	args = make([]any, len(params))
-	cteParams := make([]string, len(params))
-	for i, p := range params {
-		if value, ok := p.Value.(unsignedScalar); ok {
-			args[i] = []uint64{uint64(value)}
-			cteParams[i] = fmt.Sprintf("unnest(?::ubigint[]) as %s", p.Name)
-		} else {
-			args[i] = p.Value
-			cteParams[i] = fmt.Sprintf("? as %s", p.Name)
-		}
-	}
-	if len(cteParams) == 0 {
-		cteSQL = "with search_params as (select true as unbounded)"
-	} else {
-		cteSQL = fmt.Sprintf("with search_params as (select %s)", strings.Join(cteParams, ", "))
-	}
-	return cteSQL, whereSQL, args, nil
+	return "", whereSQL, Arguments(params), nil
 }

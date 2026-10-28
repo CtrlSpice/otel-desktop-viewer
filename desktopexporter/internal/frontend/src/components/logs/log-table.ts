@@ -150,15 +150,16 @@ export function logColumnOptions(
   }
   for (const field of fields) {
     if (
-      field.searchScope !== 'attribute' ||
-      (field.attributeScope !== 'log' &&
-        field.attributeScope !== 'resource' &&
-        field.attributeScope !== 'scope')
+      field.path.length !== 2 ||
+      field.path[0] !== 'attributes' ||
+      (field.owner !== 'log' &&
+        field.owner !== 'resource' &&
+        field.owner !== 'scope')
     )
       continue
     add(
       optionFor({
-        source: field.attributeScope,
+        source: field.owner,
         kind: 'attribute',
         key: field.name,
       })

@@ -114,9 +114,9 @@ export function serviceSignalHref(
 
 export function serviceQueryText(service: ServiceSummary, query = ''): string {
   const match = (key: string, value: string) => {
-    const field = `attr(resource, ${JSON.stringify(key)}, string)`
+    const field = `resource.attributes[${JSON.stringify(key)}]::VARCHAR`
     return value === ''
-      ? `(${field} = "" OR ${field} = NULL)`
+      ? `(${field} = "" OR ${field} IS NULL)`
       : `${field} = ${JSON.stringify(value)}`
   }
   const serviceQuery =

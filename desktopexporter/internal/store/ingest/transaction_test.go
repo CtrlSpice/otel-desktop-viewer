@@ -68,8 +68,7 @@ func TestInTransaction_RollbackDiscardsWrites(t *testing.T) {
 		txErr := ingest.InTransaction(ctx, conn, func() error {
 			exec := conn.(driver.ExecerContext)
 			if _, e := exec.ExecContext(ctx,
-				`insert into resources (id, payload_id, attribute_ids)
-					 values (gen_random_uuid(), gen_random_uuid(), [])`, nil); e != nil {
+				`insert into histogram_bounds values (gen_random_uuid(), [1.0])`, nil); e != nil {
 				return e
 			}
 			return sentinel
@@ -81,7 +80,7 @@ func TestInTransaction_RollbackDiscardsWrites(t *testing.T) {
 
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, "select count(*) from resources").Scan(&n)
+		return db.QueryRowContext(ctx, "select count(*) from histogram_bounds").Scan(&n)
 	}))
 	assert.Zero(t, n, "a rolled-back write must leave nothing behind")
 }

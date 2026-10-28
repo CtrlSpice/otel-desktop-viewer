@@ -58,7 +58,7 @@ var methodParamNames = map[string][]string{
 		"quantiles", "tzOffsetNs", "viewBuckets",
 		"selectedSeriesRefs", "tzName", "datapointRef",
 	},
-	"searchAttributeMatches":                {"term"},
+	"searchAttributeMatches":                {"term", "signal", "owner", "path", "type"},
 	"getFieldValueCompletions":              {"signal", "field", "term", "limit"},
 	"getTraceAttributeDefinitionsByTraceID": {"traceID"},
 	"getTraceSpanCount":                     {"traceID"},

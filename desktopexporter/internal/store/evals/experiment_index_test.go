@@ -9,6 +9,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/evaldecode"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,13 +76,16 @@ func TestExperimentIndexCancellationAndRetryCountsWholeExperiment(t *testing.T) 
 		require.Equal(t, int64(1), page.Total)
 		require.Equal(t, int64(130), page.Experiments[0].ResultCount)
 		require.Equal(t, int64(130), page.Experiments[0].Outcomes[0].Count)
-		for _, text := range []string{"checkout fail", "RETRY budget", "idempotency key"} {
-			found, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Query: text, Limit: 10, Sort: "name", Direction: "asc"})
+		textCriteria := func(text string) *search.QueryNode {
+			return &search.QueryNode{Type: "condition", Query: &search.Query{Field: &search.FieldDefinition{SearchScope: "global"}, FieldOperator: "CONTAINS", Value: text}}
+		}
+		for _, text := range []string{"checkout fail", "Retry budget", "idempotency key"} {
+			found, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Criteria: textCriteria(text), Limit: 10, Sort: "name", Direction: "asc"})
 			require.NoError(t, err)
 			require.Equal(t, int64(1), found.Total)
 		}
 		// JSON member names are schema, not received result text.
-		keys, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Query: "gradingResult", Limit: 10, Sort: "name", Direction: "asc"})
+		keys, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Criteria: textCriteria("gradingResult"), Limit: 10, Sort: "name", Direction: "asc"})
 		require.NoError(t, err)
 		require.Zero(t, keys.Total)
 		return nil

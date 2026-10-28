@@ -4,11 +4,9 @@ package discovery
 // must be present in the selected trace source; names and timestamps never
 // establish a connection. Service identity includes the namespace and types.
 func connectionRecords(query Query) string {
-	return `WITH identities AS (
-    SELECT r.id, ` + ServiceIdentity("r") + ` AS identity FROM resources r
-), selected_spans AS (
-    SELECT s.*, i.identity FROM (SELECT *, start_time AS time_ns FROM ` + source(query.Sources.Spans, "spans") + `) s
-    JOIN identities i ON i.id = s.resource_id
+	return `WITH selected_spans AS (
+    SELECT s.*, ` + ServiceIdentity("s.resource") + ` AS identity
+    FROM (SELECT *, start_time AS time_ns FROM ` + source(query.Sources.Spans, "spans") + `) s
     WHERE ` + Predicate(Query{StartTime: query.StartTime, EndTime: query.EndTime}) + `
 ), connections AS (
     SELECT p.identity AS source, c.identity AS target, c.trace_id, c.span_id,

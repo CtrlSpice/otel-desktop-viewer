@@ -40,7 +40,9 @@ describe('service signal links', () => {
           signal
         )
         expect(request?.predicate?.type).toBe('group')
-        expect(text).toContain('"service.namespace", string) = NULL')
+        expect(text).toContain(
+          'resource.attributes["service.namespace"]::VARCHAR IS NULL'
+        )
         expect(url.searchParams.get('time')).toBe('all')
       }
     })

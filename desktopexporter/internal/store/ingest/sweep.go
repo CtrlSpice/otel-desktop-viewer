@@ -25,59 +25,9 @@ type ExecContext interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// liveAttributeIDs is every attribute id currently referenced by anything.
-//
-// This is the price of the dictionary: DuckDB cannot put a foreign key into a
-// LIST, so there is no anti-join to run and no refcount to consult. The live set
-// has to be rebuilt by unnesting every owner array.
-//
-// UNION produces the distinct live set before deletion.
-const liveAttributeIDs = `
-	select unnest(attribute_ids) as id from spans
-	union select unnest(attribute_ids) from events
-	union select unnest(attribute_ids) from links
-	union select unnest(attribute_ids) from logs
-	union select unnest(attribute_ids) from metric_datapoints
-	union select unnest(attribute_ids) from metric_series
-	union select unnest(metadata_ids) from metrics
-	union select unnest(attribute_ids) from exemplars
-	union select unnest(attribute_ids) from resources
-	union select unnest(attribute_ids) from scopes`
-
-// sweepQueries run in this order for a reason: resources and scopes go first,
-// attributes last.
-//
-// Resources and scopes are themselves owners of attribute ids, so a resource
-// deleted *after* the attributes sweep keeps its attributes alive through that
-// sweep and leaves them behind for the next one -- correct, but a pass behind.
-// Deleting the owners first means their attributes are already unreferenced when
-// the dictionary sweep runs, so one pass collects everything.
-//
-// The failure mode of stopping halfway is orphan dictionary rows, never a
-// dangling reference. That is the same direction ingest chose (attributes
-// written before the owners that reference them), for the same reason: nothing
-// enforces this, since DuckDB cannot put a foreign key into a LIST.
-//
-// Each carries `returning id::varchar` so SweepOrphans can tell FlushedIDs
-// exactly which ids it deleted. The cast matters: scanning a uuid column
-// straight into a Go string via database/sql yields the raw 16 bytes, not hex
-// text -- DuckDB only formats it as text when asked to, which the cast does.
+// Only shared histogram bounds outlive their owning datapoints. Signal
+// attributes, resources and scopes are deleted with their rows.
 var sweepQueries = []string{
-	// A resource or scope is live if any signal still points at it. All three
-	// references are NOT NULL, so no null-safety dance is needed.
-	`delete from resources where id not in (
-		select resource_id from spans
-		union select resource_id from logs
-		union select resource_id from metrics
-	) returning id::varchar`,
-	`delete from scopes where id not in (
-		select scope_id from spans
-		union select scope_id from logs
-		union select scope_id from metrics
-	) returning id::varchar`,
-
-	`delete from attributes where id not in (` + liveAttributeIDs + `) returning id::varchar`,
-
 	// Bounds are referenced only by datapoints, and through a real foreign
 	// key rather than a LIST -- but the sweep still has to run, because a
 	// foreign key stops a bad delete, it does not collect a row nothing
@@ -88,7 +38,7 @@ var sweepQueries = []string{
 	) returning id::varchar`,
 }
 
-// SweepOrphans deletes dictionary, resource and scope rows nothing references.
+// SweepOrphans deletes histogram bounds no retained datapoint references.
 //
 // Retention sweeps before measuring so orphaned rows cannot trigger deletion of
 // live telemetry, and after pruning to collect newly orphaned rows.

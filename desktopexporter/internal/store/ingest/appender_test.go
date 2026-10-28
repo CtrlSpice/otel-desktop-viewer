@@ -35,7 +35,7 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 	t.Parallel()
 	s, _ := storetest.New(t)
 
-	tables := []string{"attributes", "nonexistent_table"}
+	tables := []string{"logs", "nonexistent_table"}
 	var appenders map[string]*duckdb.Appender
 	err := s.WithConn(func(conn driver.Conn) error {
 		var err error
@@ -51,40 +51,35 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 	var appenders2 map[string]*duckdb.Appender
 	err = s.WithConn(func(conn driver.Conn) error {
 		var err error
-		appenders2, err = ingest.NewAppenders(conn, []string{"attributes"})
+		appenders2, err = ingest.NewAppenders(conn, []string{"logs"})
 		return err
 	})
 	require.NoError(t, err)
-	ingest.CloseAppenders(appenders2, []string{"attributes"})
+	ingest.CloseAppenders(appenders2, []string{"logs"})
 }
 
 // TestFlushAppenders_MakesDataVisible verifies that FlushAppenders (not Close)
-// makes an appended log row and its attribute references visible.
-//
-// The dictionary is flushed before the owner appender. The appended
-// attribute_ids array must resolve against those dictionary rows.
+// makes an appended log and all of its owned payloads visible.
 func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
-	// Build the dictionary side the way logs.Ingest does, so the ids the
-	// appender writes are the ids the dictionary rows were keyed by.
-	dict := ingest.NewDictionary(nil)
-
 	resource := pcommon.NewResource()
 	resource.Attributes().PutStr("service.name", "flush-test")
-	resourceID := dict.AddResource(resource, "").ID
+	resourceInput, err := ingest.ResourceInput(resource, "")
+	require.NoError(t, err)
 
 	scope := pcommon.NewInstrumentationScope()
 	scope.SetName("flush-scope")
 	scope.SetVersion("v1")
-	scopeID := dict.AddScope(scope, "")
+	scopeInput, err := ingest.ScopeInput(scope, "")
+	require.NoError(t, err)
 
 	logAttrs := pcommon.NewMap()
 	logAttrs.PutStr("flush_attr", "ok")
 	logAttrs.PutStr("key", "value")
-	logAttrIDs := dict.AddAttributes(logAttrs, ingest.ScopeLog)
-	require.Len(t, logAttrIDs, 2)
+	attributes, err := ingest.AttributeBytes(logAttrs)
+	require.NoError(t, err)
 
 	// Keep the appender open so Close cannot make the row visible. Reads cannot
 	// nest inside WithConn, so the dedicated connection retains the appender
@@ -93,18 +88,14 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	logRef := duckdb.UUID(uuid.New())
 	var appenders map[string]*duckdb.Appender
 
-	err := s.WithConn(func(conn driver.Conn) error {
-		if err := dict.Flush(ctx, conn); err != nil {
-			return err
-		}
-
+	err = s.WithConn(func(conn driver.Conn) error {
 		var err error
 		appenders, err = ingest.NewAppenders(conn, tables)
 		if err != nil {
 			return err
 		}
 
-		body, err := ingest.ValueNodes(pcommon.NewValueStr("flush test"))
+		body, err := ingest.ValueBytes(pcommon.NewValueStr("flush test"))
 		if err != nil {
 			return err
 		}
@@ -113,10 +104,10 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			int64(0), int64(0), // Timestamp, ObservedTimestamp
 			nil, nil, // TraceID, SpanID
 			"INFO", int32(9), // SeverityText, SeverityNumber
-			body,                // Body typed node tree
-			resourceID, scopeID, // ResourceID, ScopeID
-			ingest.NonNil(logAttrIDs), // AttributeIDs UUID[]
-			uint32(0), uint32(0), "",  // DroppedAttributesCount, Flags, EventName
+			body, // Body Parquet Variant bytes
+			resourceInput, scopeInput,
+			attributes,
+			uint32(0), uint32(0), "", // DroppedAttributesCount, Flags, EventName
 			"flush-test", // ServiceName VARCHAR (NOT NULL, '' = unknown)
 		); err != nil {
 			return err
@@ -142,32 +133,22 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	}))
 	assert.Equal(t, 1, logCount, "log row must be visible after Flush without Close")
 
-	// The appender-written array must resolve: every id in it is a dictionary
-	// row. A join rather than a bare array-length check, so an array of
-	// plausible-looking but dangling ids fails here.
 	var resolved int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
-			select count(*)
-			from (select unnest(attribute_ids) as id from logs where id = ?) x
-			join attributes a on a.id = x.id
+			select len(variant_keys(attributes)) from logs where id = ?
 		`, logRefStr).Scan(&resolved)
 	}))
-	assert.Equal(t, 2, resolved, "attribute_ids written by the appender must resolve against the dictionary")
+	assert.Equal(t, 2, resolved, "attributes must be visible with their owner after Flush")
 
 	// Pin the id derivation itself: the row the appender pointed at must be the
 	// one ingest.AttributeID names for that canonical key/value payload.
-	flushAttrID := uuid.UUID(ingest.AttributeID("flush_attr", `{"kind":"string","value":"ok"}`)).String()
-	var key, value string
+	var value string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
-			select a.key, otel_value_json(a.value)::varchar
-			from (select unnest(attribute_ids) as id from logs where id = ?) x
-			join attributes a on a.id = x.id
-			where a.id = ?
-		`, logRefStr, flushAttrID).Scan(&key, &value)
+			select otel_value_json(attributes.flush_attr)::varchar from logs where id = ?
+		`, logRefStr).Scan(&value)
 	}))
-	assert.Equal(t, "flush_attr", key)
 	assert.JSONEq(t, `{"kind":"string","value":"ok"}`, value)
 }
 

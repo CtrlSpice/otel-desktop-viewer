@@ -8,9 +8,10 @@ create table if not exists links (
 		linked_trace_id uuid,
 		linked_span_id ubigint,
 		trace_state varchar,
-		attribute_ids uuid[] not null,
+		attributes variant not null,
 		dropped_attributes_count uinteger,
 		-- As on spans: W3C trace flags for the linked context.
 		flags uinteger,
+		ordinal uinteger not null default 0,
 		foreign key (trace_id, span_id) references spans(trace_id, span_id)
 	)

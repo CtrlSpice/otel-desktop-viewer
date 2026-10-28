@@ -32,7 +32,7 @@ func TestRegexpSearchExecutes(t *testing.T) {
 		lr.Body().SetStr(body)
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ld, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ld)
 	}))
 
 	run := func(operator, pattern string) []any {
@@ -57,4 +57,8 @@ func TestRegexpSearchExecutes(t *testing.T) {
 	assert.Len(t, run("REGEXP", "checkout.*"), 1)
 	assert.Len(t, run("NOT REGEXP", "checkout.*"), 1)
 	assert.Len(t, run("REGEXP", ".*"), 2)
+	assert.Len(t, run("LIKE", "checkout%"), 1)
+	assert.Len(t, run("NOT LIKE", "checkout%"), 1)
+	assert.Len(t, run("LIKE", "payment o_"), 1)
+	assert.Len(t, run("LIKE", "checkout"), 0)
 }

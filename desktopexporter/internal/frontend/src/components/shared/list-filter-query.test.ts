@@ -7,13 +7,13 @@ describe('query-backed telemetry list filters', () => {
   it('uses the metric search type field, not the summary property name', () => {
     const fields = getStaticFieldsForSearch('metrics')
     const query = setListFilter(
-      'name CONTAINS "request" | LIMIT 17',
+      'name CONTAINS "request" LIMIT 17',
       fields,
       'metricType',
       ['Sum', 'Histogram'],
       'metrics'
     )!
-    expect(query).toContain('type IN ["Sum", "Histogram"]')
+    expect(query).toContain("type IN ('Sum', 'Histogram')")
     expect(query).toContain('name CONTAINS "request"')
     expect(parseSearchRequest(query, fields, 'metrics')?.limit).toBe(17)
     expect(readListFilters(query, fields, 'metrics').metricType).toEqual({
@@ -36,7 +36,7 @@ describe('query-backed telemetry list filters', () => {
       'traces'
     )!
     expect(query).toContain(
-      'attr(resource, "service.name", string) IN ["worker"]'
+      "resource.attributes['service.name']::VARCHAR IN ('worker')"
     )
     expect(query).toContain('statusCodeValue = 2')
     expect(readListFilters(query, fields, 'traces')).toMatchObject({
@@ -60,11 +60,11 @@ describe('query-backed telemetry list filters', () => {
   it('preserves an unrelated complex expression and differently typed service attribute', () => {
     const fields = getStaticFieldsForSearch('traces')
     const original =
-      '(name = "a" OR name = "b") AND attr(resource, "service.name", int64) = 0'
+      '(name = "a" OR name = "b") AND resource.attributes["service.name"]::BIGINT = 0'
     const query = setListFilter(original, fields, 'service', ['api'], 'traces')!
     expect(query).toContain(original)
     const cleared = setListFilter(query, fields, 'service', [], 'traces')
     expect(cleared).toContain('name = "a" OR name = "b"')
-    expect(cleared).toContain('attr(resource, "service.name", int64) = 0')
+    expect(cleared).toContain('resource.attributes["service.name"]::BIGINT = 0')
   })
 })

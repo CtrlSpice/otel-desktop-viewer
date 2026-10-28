@@ -99,9 +99,11 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 			}
 			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_datapoints`))
 			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_series`))
-			require.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
-			require.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))
-			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from attributes where key like 'rejected.%'`))
+			require.Equal(t, 1, countRows(t, s, ctx, `select count(distinct resource.id) from metrics`))
+			require.Equal(t, 1, countRows(t, s, ctx, `select count(distinct scope.id) from metrics`))
+			require.Zero(t, countRows(t, s, ctx, `select count(*) from metrics m,
+				unnest(variant_keys(m.resource.attributes) || variant_keys(m.scope.attributes) || variant_keys(m.metadata)) t(key)
+				where key like 'rejected.%'`))
 		})
 	}
 }

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { evalAPI } from '@/services/eval-service'
-  import { onDestroy, onMount } from 'svelte'
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon } from '@hugeicons/core-free-icons'
-  import { QuestionMarkIcon } from '@/icons'
+  import { onMount } from 'svelte'
+  import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
+  import { evalSearchDefinition } from '@/components/evals/search-fields'
+  import type { ParsedSearchRequest } from '@/search/model'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import EvalDetailPlaceholder from '@/components/evals/EvalDetailPlaceholder.svelte'
   import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
@@ -73,21 +73,9 @@
   const route = getRouteContext()
   const query = $derived(evalQuery(route.route.query))
   const selectedExperimentID = $derived(query.experiment)
-  const searchQuery = $derived(query.q ?? '')
   const outcomeQuery = $derived(query.outcomes)
-  let searchText = $state('')
-  let searchTimer: ReturnType<typeof setTimeout> | undefined
-  $effect(() => {
-    searchText = searchQuery
-    clearTimeout(searchTimer)
-  })
-  onDestroy(() => clearTimeout(searchTimer))
-  function search(value: string, immediate = false) {
-    searchText = value
-    clearTimeout(searchTimer)
-    if (immediate) update({ q: value || null }, true)
-    else searchTimer = setTimeout(() => update({ q: value || null }, true), 250)
-  }
+  let searchRequest = $state<ParsedSearchRequest | null | undefined>()
+  const resultLimit = $derived(searchRequest?.limit ?? Infinity)
   $effect(() => {
     if (buildSearch(query) !== buildSearch(route.route.query))
       navigate(`/evals${buildSearch(query)}`, 'replace')
@@ -297,12 +285,13 @@
   )
   $effect(() => {
     const enabled = databaseMode
-    const text = searchQuery
+    const request = searchRequest
+    const cap = resultLimit
     const outcomes = requestedOutcomes(outcomeQuery)
     const sort = experimentSort
     const direction = experimentSortDirection
     void experimentListRevision
-    if (!enabled) {
+    if (!enabled || request === undefined) {
       experimentListLoading = false
       return
     }
@@ -318,11 +307,11 @@
         do {
           page = await evalAPI.searchEvalExperiments(
             {
-              query: text,
+              criteria: request?.predicate,
               outcomes,
               sort,
               direction,
-              limit: 100,
+              limit: Math.min(100, cap),
               offset: 0,
             },
             controller.signal
@@ -334,7 +323,7 @@
             return
           storedExperiments = page.experiments
           storedFacets = page.facets
-          experimentListHasMore = page.hasMore
+          experimentListHasMore = page.hasMore && page.experiments.length < cap
           experimentIndexing = page.indexing
         } while (page.indexing.remaining > 0)
       } catch (error) {
@@ -461,11 +450,11 @@
     experimentListError = ''
     try {
       const page = await evalAPI.searchEvalExperiments({
-        query: query.q,
+        criteria: searchRequest?.predicate,
         outcomes: requestedOutcomes(query.outcomes),
         sort: experimentSort,
         direction: experimentSortDirection,
-        limit: 100,
+        limit: Math.min(100, resultLimit - storedExperiments.length),
         offset: storedExperiments.length,
       })
       if (requestVersion !== experimentListRequestVersion) return
@@ -475,7 +464,8 @@
         ...page.experiments.filter(item => !seen.has(item.id)),
       ]
       storedFacets = page.facets
-      experimentListHasMore = page.hasMore
+      experimentListHasMore =
+        page.hasMore && storedExperiments.length < resultLimit
       experimentIndexing = page.indexing
     } catch (error) {
       if (
@@ -505,42 +495,15 @@
   itemKey={item => item.id}
 >
   {#snippet drawerSearch()}
-    <div class="flex w-full min-w-0 items-center gap-1">
-      <input
-        class="input typed-field typed-field--pill min-w-0 flex-1"
-        type="search"
-        aria-label="Search evals"
-        placeholder="Search evals…"
-        value={searchText}
-        oninput={event => search(event.currentTarget.value)}
-        onkeydown={event => {
-          if (event.key === 'Enter') search(event.currentTarget.value, true)
-        }}
-      />
-      <button
-        type="button"
-        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
-        aria-label="Clear search"
-        onclick={() => search('', true)}
-      >
-        <HugeiconsIcon
-          icon={Cancel01Icon}
-          size={17}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      </button>
-      <button
-        type="button"
-        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
-        aria-label="Search query help"
-      >
-        <QuestionMarkIcon
-          class="h-[17px] w-[17px] shrink-0"
-          aria-hidden="true"
-        />
-      </button>
-    </div>
+    <SearchEditor
+      definition={evalSearchDefinition}
+      sortValue={experimentSort}
+      sortDirection={experimentSortDirection}
+      variant="drawer"
+      onSearchRequest={request => {
+        searchRequest = request
+      }}
+    />
   {/snippet}
   {#snippet drawerControls()}
     <ListHeaderControls label="Experiment controls">

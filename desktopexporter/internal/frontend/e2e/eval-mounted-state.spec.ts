@@ -103,7 +103,8 @@ async function openWorkspace(page: Page, legacyBookmark = false) {
     const source = url.pathname.match(
       /^\/api\/evals\/experiments\/([^/]+)\/rows$/
     )
-    const query = url.searchParams.get('q') ?? ''
+    const criteria = JSON.parse(url.searchParams.get('criteria') ?? 'null')
+    const query = criteria?.type === 'text' ? criteria.query.value : ''
     const gate = source ? sourceGates.get(source[1]) : listGates.get(query)
     if (source) sourceRequests.push(source[1])
     else if (url.searchParams.get('limit') !== '1') listRequests.push(query)
@@ -316,7 +317,7 @@ test('a delayed experiment source keeps Results mounted through loading and repl
     expect(await viewport.evaluate(element => element.scrollTop)).toBe(
       scrollTop
     )
-    const search = page.getByRole('searchbox', { name: 'Search evals' })
+    const search = page.getByRole('textbox', { name: 'Search evals' })
     await search.focus()
     gate.released.resolve()
     const nextTable = page.getByRole('table', {
@@ -342,7 +343,7 @@ test('a delayed experiment source keeps Results mounted through loading and repl
   }
 })
 
-test('fast typing sends one list search and no source loads, preserving nodes, scroll and focus', async ({
+test('typing waits for submission and sends no source loads, preserving nodes, scroll and focus', async ({
   page,
 }) => {
   const fixture = await openWorkspace(page)
@@ -361,7 +362,7 @@ test('fast typing sends one list search and no source loads, preserving nodes, s
   await viewport.evaluate(element => (element.scrollTop = 240))
   const scrollTop = await viewport.evaluate(element => element.scrollTop)
   expect(scrollTop).toBeGreaterThan(0)
-  const search = page.getByRole('searchbox', { name: 'Search evals' })
+  const search = page.getByRole('textbox', { name: 'Search evals' })
   const sameSearch = await rememberNode(search)
   const initialSourceRequests = [...fixture.sourceRequests]
   fixture.listRequests.length = 0
@@ -371,9 +372,9 @@ test('fast typing sends one list search and no source loads, preserving nodes, s
   try {
     await search.focus()
     await search.pressSequentially('Alpha')
-    await page.clock.fastForward(249)
+    await page.clock.fastForward(500)
     expect(fixture.listRequests).toEqual([])
-    await page.clock.fastForward(1)
+    await search.press('Enter')
     await gate.requested.promise
     expect(fixture.listRequests).toEqual(['Alpha'])
     await sameTable()
@@ -398,7 +399,7 @@ test('fast typing sends one list search and no source loads, preserving nodes, s
       scrollTop
     )
 
-    // Enter and Clear must flush immediately and cancel their queued debounce.
+    // Enter and Clear submit immediately, without loading experiment sources.
     await search.fill('Al')
     await search.press('Enter')
     await expect.poll(() => fixture.listRequests).toEqual(['Alpha', 'Al'])
@@ -411,7 +412,7 @@ test('fast typing sends one list search and no source loads, preserving nodes, s
     await page.clock.fastForward(500)
     expect(fixture.listRequests).toEqual(['Alpha', 'Al', ''])
     expect(fixture.sourceRequests).toEqual(initialSourceRequests)
-    await expect(search).toHaveValue('')
+    await expect(search.locator('.cm-placeholder')).toBeVisible()
     await sameTable()
     await sameStack()
   } finally {

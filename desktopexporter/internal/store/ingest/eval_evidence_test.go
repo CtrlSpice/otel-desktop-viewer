@@ -24,7 +24,7 @@ func evalDeletionFixture(t *testing.T) (*sql.DB, string) {
 	_, err = db.Exec(`create table logs(id uuid primary key, timestamp ubigint)`)
 	require.NoError(t, err)
 	for _, q := range queries.Tables() {
-		if strings.HasSuffix(q.Name, "eval_ingestion.sql") || strings.HasSuffix(q.Name, "eval_experiments.sql") {
+		if strings.HasSuffix(q.Name, "eval_ingestion.sql") || strings.HasSuffix(q.Name, "eval_experiments.sql") || strings.HasSuffix(q.Name, "search_catalogue.sql") {
 			_, err := db.Exec(q.SQL)
 			require.NoError(t, err)
 		}
@@ -41,6 +41,7 @@ func evalDeletionFixture(t *testing.T) (*sql.DB, string) {
 		`insert into eval_experiments values ('experiment','dataset','adapter','name','key','eval','json-import','promptfoo-v3',null,null,0,0,0,0,0,1)`,
 		`insert into eval_experiment_rows values ('dataset',0,'experiment')`,
 		`insert into eval_experiment_search values ('dataset',0,'experiment','retained-search')`,
+		`insert into search_owners(ref,signal,owner,root_key,record_key,fingerprint) values('log:log:00000000-0000-0000-0000-000000000001','log','log','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001',''),('experiment:result:dataset:0','experiment','result','experiment','dataset:0','')`,
 	} {
 		_, err := db.Exec(q)
 		require.NoError(t, err)
@@ -67,7 +68,7 @@ func (tx *interruptedEvalDeletion) ExecContext(ctx context.Context, q string, ar
 	return result, err
 }
 
-var evalDeletionTables = []string{"logs", "eval_imports", "eval_transfers", "eval_evidence", "eval_parts", "eval_datasets", "eval_records", "eval_experiments", "eval_experiment_rows", "eval_experiment_search", "eval_experiment_indexes"}
+var evalDeletionTables = []string{"logs", "eval_imports", "eval_transfers", "eval_evidence", "eval_parts", "eval_datasets", "eval_records", "eval_experiments", "eval_experiment_rows", "eval_experiment_search", "eval_experiment_indexes", "search_owners", "search_paths", "search_values", "search_postings"}
 
 func evalDeletionSnapshot(t *testing.T, db *sql.DB) map[string]string {
 	t.Helper()
@@ -117,7 +118,7 @@ func TestEvalDeletionCommitsInvalidation(t *testing.T) {
 	reopened, err := sql.Open("duckdb", path)
 	require.NoError(t, err)
 	defer reopened.Close()
-	for _, table := range []string{"logs", "eval_evidence", "eval_parts", "eval_records", "eval_experiments", "eval_experiment_rows", "eval_experiment_search", "eval_experiment_indexes"} {
+	for _, table := range []string{"logs", "eval_evidence", "eval_parts", "eval_records", "eval_experiments", "eval_experiment_rows", "eval_experiment_search", "eval_experiment_indexes", "search_owners", "search_paths", "search_values", "search_postings"} {
 		var n int
 		require.NoError(t, reopened.QueryRow(`select count(*) from `+table).Scan(&n))
 		require.Zero(t, n, table)

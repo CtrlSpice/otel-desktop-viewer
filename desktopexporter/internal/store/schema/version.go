@@ -14,9 +14,10 @@ package schema
 // `create table if not exists` silently leaves an old table in place and the
 // mismatch first surfaces as a duckdb appender column-count error during ingest,
 // or as an index creation failure against a column that does not exist.
-// Version 25 stores attributes, log bodies, and Evals payloads as native VARIANT.
+// Version 26 requires the derived search/discovery catalogue alongside native
+// VARIANT attributes, log bodies, and Evals payloads.
 // Older databases are incompatible; select a new database or recreate the file.
-const Version = 25
+const Version = 26
 
 // VersionTableQuery creates the version table.
 //
@@ -52,11 +53,11 @@ const (
 		group by table_name
 		having (table_name = 'spans'
 			and count(*) filter (where column_name in ('trace_id', 'span_id')) = 2
-			and count(*) filter (where column_name in ('resource_id', 'resource_dropped_attributes_count')) = 1
-			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
+			and count(*) filter (where column_name in ('resource', 'resource_id', 'resource_dropped_attributes_count')) = 1
+			and count(*) filter (where column_name in ('scope', 'scope_id', 'scope_dropped_attributes_count')) = 1)
 		or (table_name = 'logs'
 			and count(*) filter (where column_name in ('trace_id', 'observed_timestamp')) = 2
-			and count(*) filter (where column_name in ('resource_id', 'resource_dropped_attributes_count')) = 1
-			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
+			and count(*) filter (where column_name in ('resource', 'resource_id', 'resource_dropped_attributes_count')) = 1
+			and count(*) filter (where column_name in ('scope', 'scope_id', 'scope_dropped_attributes_count')) = 1)
 	)`
 )

@@ -257,8 +257,7 @@ func TestGetMetricOTLPOwnershipAndEmptyValues(t *testing.T) {
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `select m.id::varchar from metrics m
-			join scopes sc on sc.id = m.scope_id
-			where m.name = 'same-metric' and m.unit = '' and sc.schema_url = 'scope-first'`).Scan(&id)
+			where m.name = 'same-metric' and m.unit = '' and m.scope.schema_url = 'scope-first'`).Scan(&id)
 	}))
 	raw := getMetricOTLP(t, s, ctx, id)
 	text := string(raw)
@@ -328,10 +327,7 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
 			insert into metrics
-				(id, resource_id, resource_payload_id, scope_id, name, description, unit,
-				 metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name)
-			select uuid(), resource_id, resource_payload_id, scope_id, name, description, unit,
-				metadata_ids, 'FutureMetric', aggregation_temporality, is_monotonic, service_name
+			select * replace(uuid() as id, 'FutureMetric' as metric_type)
 			from metrics where name = 'future-metric'`)
 		return err
 	}))

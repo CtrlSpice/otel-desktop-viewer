@@ -3,5 +3,6 @@
 create table if not exists metric_series (
 		id uuid primary key,
 		metric_id uuid not null,
-		attribute_ids uuid[] not null
+		attribute_key varchar not null,
+		attributes variant not null
 	)

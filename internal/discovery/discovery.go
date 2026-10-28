@@ -51,7 +51,7 @@ func Literal(value string) string {
 // resource is a server-owned SQL alias, never query input.
 func ServiceIdentity(resource string) string {
 	value := func(key string) string {
-		return "(SELECT otel_value_json(a.value) FROM attributes a WHERE a.key = " + Literal(key) + " AND list_contains(" + resource + ".attribute_ids, a.id))"
+		return "case when variant_exists(" + resource + ".attributes, " + Literal(key) + ") then otel_value_json(" + resource + ".attributes[" + Literal(key) + "]) end"
 	}
 	return "json_array(" + value("service.name") + ", coalesce(" + value("service.namespace") + ", '{\"kind\":\"string\",\"value\":\"\"}'::JSON))::VARCHAR"
 }
@@ -70,10 +70,10 @@ func Predicate(query Query) string {
 		p = append(p, "s.service_name = "+Literal(query.Service))
 	}
 	if query.Namespace != nil {
-		p = append(p, `coalesce((SELECT attribute_text(otel_value_json(a.value)) FROM resources r, attributes a WHERE r.id = s.resource_id AND a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') = `+Literal(*query.Namespace))
+		p = append(p, `coalesce(otel_value_text(s.resource.attributes['service.namespace']), '') = `+Literal(*query.Namespace))
 	}
 	if query.ServiceIdentity != nil {
-		p = append(p, "(SELECT "+ServiceIdentity("r")+" FROM resources r WHERE r.id = s.resource_id) = "+Literal(*query.ServiceIdentity))
+		p = append(p, ServiceIdentity("s.resource")+" = "+Literal(*query.ServiceIdentity))
 	}
 	return strings.Join(p, " AND ")
 }
@@ -88,31 +88,31 @@ func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
 	switch signal {
 	case "traces":
 		identity, timestamp, service = "struct_pack(trace_id := s.trace_id, span_id := s.span_id)", "s.start_time", "s.service_name"
-		from, directOwner, attributes, resource, scope = source(sources.Spans, "spans")+" s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
+		from, directOwner, attributes, resource, scope = source(sources.Spans, "spans")+" s", "span", "s.attributes", "s.resource", "s.scope"
 		allowed = "span, event, link, resource or scope"
 		switch ownerType {
 		case "event":
 			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
-			attributes, directOwner, timestamp = "e.attribute_ids", "event", "e.timestamp"
+			attributes, directOwner, timestamp = "e.attributes", "event", "e.timestamp"
 		case "link":
 			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
-			attributes, directOwner = "l.attribute_ids", "link"
+			attributes, directOwner = "l.attributes", "link"
 		}
 	case "logs":
 		identity, timestamp, service = "l.id", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)", "l.service_name"
-		from, directOwner, attributes, resource, scope = source(sources.Logs, "logs")+" l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
+		from, directOwner, attributes, resource, scope = source(sources.Logs, "logs")+" l", "log", "l.attributes", "l.resource", "l.scope"
 		allowed = "log, resource or scope"
 	case "metrics":
 		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
 		from, directOwner = "metric_datapoints d JOIN "+source(sources.Metrics, "metrics")+" m ON m.id = d.metric_id", "datapoint"
-		attributes, resource, scope = "d.attribute_ids", "m.resource_id", "m.scope_id"
+		attributes, resource, scope = "d.attributes", "d.resource", "d.scope"
 		allowed = "datapoint, exemplar, metadata, resource or scope"
 		switch ownerType {
 		case "exemplar":
 			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
-			attributes, directOwner, timestamp = "e.attribute_ids", "exemplar", "e.timestamp"
+			attributes, directOwner, timestamp = "e.attributes", "exemplar", "e.timestamp"
 		case "metadata":
-			attributes, directOwner = "m.metadata_ids", "metadata"
+			attributes, directOwner = "m.metadata", "metadata"
 		}
 	default:
 		return "", fmt.Errorf("unsupported --signal %q: use traces, logs or metrics", signal)
@@ -120,15 +120,13 @@ func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
 	switch ownerType {
 	case directOwner:
 	case "resource":
-		from += " JOIN resources r ON r.id = " + resource
-		attributes = "r.attribute_ids"
+		attributes = resource + ".attributes"
 	case "scope":
-		from += " JOIN scopes sc ON sc.id = " + scope
-		attributes = "sc.attribute_ids"
+		attributes = scope + ".attributes"
 	default:
 		return "", fmt.Errorf("--signal %s supports --owner-type %s; got %q", signal, allowed, ownerType)
 	}
-	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service + " AS service_name, " + resource + " AS resource_id, " + attributes + " AS attribute_ids FROM " + from, nil
+	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service + " AS service_name, " + resource + " AS resource, " + attributes + " AS attributes FROM " + from, nil
 }
 
 func foundOn(location Location) string {
@@ -137,22 +135,19 @@ func foundOn(location Location) string {
 
 func Keys(query Query, location Location, records string) string {
 	return `WITH records AS (` + records + `)
-SELECT json_object('key', a.key, 'kind', otel_value_kind(a.value),
+SELECT json_object('key', a.value->>'key', 'kind', a.value->'value'->>'kind',
     'foundOn', ` + foundOn(location) + `) AS entry
 FROM records s
-CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
-JOIN attributes a ON a.id = owned.attribute_id
+CROSS JOIN json_each(otel_value_json(s.attributes), '$.value') a
 WHERE ` + Predicate(query) + `
-GROUP BY a.key, otel_value_kind(a.value)
-ORDER BY a.key, otel_value_kind(a.value)`
+GROUP BY a.value->>'key', a.value->'value'->>'kind'
+ORDER BY a.value->>'key', a.value->'value'->>'kind'`
 }
 
 func Values(query Query, location Location, records, key string) string {
 	return `WITH records AS (` + records + `), owned_values AS (
-    SELECT s.record_id, otel_value_json(a.value) AS value FROM records s
-    CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
-    JOIN attributes a ON a.id = owned.attribute_id
-    WHERE ` + Predicate(query) + ` AND a.key = ` + Literal(key) + `
+    SELECT s.record_id, otel_value_json(s.attributes[` + Literal(key) + `]) AS value FROM records s
+    WHERE ` + Predicate(query) + ` AND variant_exists(s.attributes, ` + Literal(key) + `)
 ), value_counts AS (
     SELECT value, count(DISTINCT record_id) AS count FROM owned_values GROUP BY value
 ), kind_counts AS (
@@ -171,19 +166,24 @@ ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
 
 func Services(query Query) string {
 	predicate := Predicate(query)
-	return `WITH identities AS (
-    SELECT id, service_identity,
-        coalesce(attribute_text(json_extract(service_identity, '$[0]')), '') AS service_name,
-        coalesce(attribute_text(json_extract(service_identity, '$[1]')), '') AS service_namespace
-    FROM (SELECT r.id, ` + ServiceIdentity("r") + ` AS service_identity FROM resources r)
+	identity := `JOIN service_identities i ON i.resource_id = s.resource.id`
+	return `WITH resource_payloads AS (
+    SELECT resource FROM ` + source(query.Sources.Spans, "spans") + `
+    UNION SELECT resource FROM ` + source(query.Sources.Logs, "logs") + `
+    UNION SELECT resource FROM ` + source(query.Sources.Metrics, "metrics") + `
+), service_identities AS MATERIALIZED (
+    SELECT resource.id AS resource_id, ` + ServiceIdentity("resource") + ` AS service_identity,
+        coalesce(otel_value_text(resource.attributes['service.name']), '') AS service_name,
+        coalesce(otel_value_text(resource.attributes['service.namespace']), '') AS service_namespace
+    FROM resource_payloads
 ), exemplar_counts AS (
     SELECT metric_datapoint_id, count(*) AS exemplar_count FROM exemplars GROUP BY metric_datapoint_id
 ), service_counts AS (
     SELECT i.service_identity, i.service_namespace, i.service_name, count(DISTINCT trace_id) AS trace_count, count(*) AS span_count,
         count(*) FILTER (WHERE status_code = 2) AS error_span_count,
         max(time_ns) AS last_seen
-    FROM (SELECT resource_id, service_name, trace_id, start_time AS time_ns, status_code FROM ` + source(query.Sources.Spans, "spans") + `) s
-    JOIN identities i ON i.id = s.resource_id
+    FROM (SELECT resource, service_name, trace_id, start_time AS time_ns, status_code FROM ` + source(query.Sources.Spans, "spans") + `) s
+    ` + identity + `
     WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
     UNION ALL BY NAME
     SELECT i.service_identity, i.service_namespace, i.service_name, count(*) AS log_count,
@@ -196,16 +196,16 @@ func Services(query Query) string {
         count(*) FILTER (WHERE severity_number BETWEEN 21 AND 24) AS fatal_log_count,
         count(*) FILTER (WHERE severity_number IS NULL OR severity_number NOT BETWEEN 1 AND 24) AS other_log_count,
         max(time_ns) AS last_seen
-    FROM (SELECT resource_id, service_name,
+    FROM (SELECT resource, service_name,
         coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM ` + source(query.Sources.Logs, "logs") + `) s
-    JOIN identities i ON i.id = s.resource_id
+    ` + identity + `
     WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
     UNION ALL BY NAME
     SELECT i.service_identity, i.service_namespace, i.service_name, count(DISTINCT metric_id) AS metric_count,
         count(*) AS data_point_count, sum(coalesce(e.exemplar_count, 0)) AS exemplar_count, max(time_ns) AS last_seen
-    FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.id AS datapoint_id, d.timestamp AS time_ns
+    FROM (SELECT d.resource, m.service_name, m.id AS metric_id, d.id AS datapoint_id, d.timestamp AS time_ns
         FROM metric_datapoints d JOIN ` + source(query.Sources.Metrics, "metrics") + ` m ON m.id = d.metric_id) s
-    JOIN identities i ON i.id = s.resource_id
+    ` + identity + `
     LEFT JOIN exemplar_counts e ON e.metric_datapoint_id = s.datapoint_id
     WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
 )

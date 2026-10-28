@@ -48,7 +48,7 @@ func TestEvidenceArrivalBeforePublication(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				return s.WithConn(func(conn driver.Conn) error { return logs.Ingest(t.Context(), conn, data, s.FlushedIDs()) })
+				return s.WithConn(func(conn driver.Conn) error { return logs.Ingest(t.Context(), conn, data) })
 			}
 			row := evaldecode.IngestPart{Payload: json.RawMessage(`{"provider":{"id":"p"},"promptId":"p","value":1}`)}
 			require.NoError(t, put(id, row))

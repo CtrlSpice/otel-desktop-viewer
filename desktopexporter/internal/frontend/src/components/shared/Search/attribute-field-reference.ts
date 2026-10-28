@@ -1,28 +1,31 @@
 import {
   getOperatorsForFieldType,
+  fieldIdentity,
   type AttributeScope,
   type FieldDefinition,
   type FieldType,
   type SearchSignal,
+  type ValuePath,
 } from '@/search/model'
+import type { JsonAttributeDefinition } from '@/types/wire-types'
+import { unquoteQueryString } from './query-literals'
 
-export type AttributeField = Extract<
-  FieldDefinition,
-  { searchScope: 'attribute' }
->
+export type AttributeField = FieldDefinition
 
 export function attributeMetadata(field: AttributeField): string {
   const scope =
-    field.attributeScope === 'scope'
-      ? 'Instrumentation scope'
-      : field.attributeScope[0].toUpperCase() + field.attributeScope.slice(1)
+    field.owner === ''
+      ? 'Any owner'
+      : field.owner === 'scope'
+        ? 'Instrumentation scope'
+        : field.owner[0].toUpperCase() + field.owner.slice(1)
   const type =
     field.type === 'int64'
       ? 'Integer'
       : field.type === 'float64'
         ? 'Float'
         : field.type[0].toUpperCase() + field.type.slice(1)
-  return `${scope} · ${type}`
+  return `${scope} · ${type}${field.path.length > 2 || field.path[0] === 'body' ? ' · Nested' : ''}`
 }
 
 const SCOPES_BY_SIGNAL: Record<SearchSignal, ReadonlySet<AttributeScope>> = {
@@ -62,16 +65,52 @@ export function storedKindForField(field: AttributeField): string {
 }
 
 export function attributeFieldIdentity(field: AttributeField): string {
-  return `${field.attributeScope}\u0000${field.name}\u0000${storedKindForField(field)}`
+  return fieldIdentity(field)
 }
 
+const SQL_TYPES_BY_KIND = new Map([
+  ['string', 'VARCHAR'],
+  ['int64', 'BIGINT'],
+  ['double', 'DOUBLE'],
+  ['bool', 'BOOLEAN'],
+  ['bytes', 'BLOB'],
+  ['empty', 'EMPTY'],
+  ['map', 'MAP'],
+  ['array', 'ARRAY'],
+])
+const KINDS_BY_SQL_TYPE = new Map(
+  [...SQL_TYPES_BY_KIND].map(([kind, type]) => [type.toLowerCase(), kind])
+)
+
 export function formatAttributeFieldReference(field: AttributeField): string {
-  return `attr(${field.attributeScope}, ${JSON.stringify(field.name)}, ${storedKindForField(field)})`
+  const prefix = field.owner ? `${field.owner}.` : ''
+  const path = field.path
+    .slice(1)
+    .map(segment => `[${JSON.stringify(segment)}]`)
+    .join('')
+  const type = SQL_TYPES_BY_KIND.get(storedKindForField(field))
+  if (!type)
+    throw new Error(`Attribute field type has no SQL spelling: ${field.type}`)
+  return `${prefix}${field.path[0]}${path}::${type}`
 }
 
 export function createAttributeFieldReference(
   scope: string,
   name: string,
+  kind: string,
+  signal?: SearchSignal
+): AttributeField | null {
+  return createPathFieldReference(
+    scope,
+    [scope === 'metadata' ? 'metadata' : 'attributes', name],
+    kind,
+    signal
+  )
+}
+
+export function createPathFieldReference(
+  scope: string,
+  path: ValuePath,
   kind: string,
   signal?: SearchSignal
 ): AttributeField | null {
@@ -81,41 +120,86 @@ export function createAttributeFieldReference(
   // SAFETY: The membership checks below reject unknown scopes and scopes that
   // do not belong to the selected signal before a search field is constructed.
   const attributeScope = scope as AttributeScope
-  if (signal && !SCOPES_BY_SIGNAL[signal].has(attributeScope)) {
+  if (scope && signal && !SCOPES_BY_SIGNAL[signal].has(attributeScope)) {
     return null
   }
   if (
+    scope &&
     !Object.values(SCOPES_BY_SIGNAL).some(scopes => scopes.has(attributeScope))
   ) {
     return null
   }
 
+  if (path[0] === 'body' && attributeScope !== 'log') return null
+  if (path[0] === 'metadata' && attributeScope !== 'metadata') return null
+  if (attributeScope === 'metadata' && path[0] !== 'metadata') return null
+  const displayPath = path[0] === 'body' ? path : path.slice(1)
   return {
-    name,
+    name:
+      displayPath.length === 1
+        ? String(displayPath[0])
+        : JSON.stringify(displayPath),
     type,
-    searchScope: 'attribute',
-    attributeScope,
+    owner:
+      scope === ''
+        ? ''
+        : attributeScope === 'metadata'
+          ? 'metric'
+          : attributeScope,
+    path,
     operators: getOperatorsForFieldType(type),
   }
 }
 
+export function fieldFromDiscovery(
+  attribute: JsonAttributeDefinition
+): AttributeField | null {
+  return attribute.path
+    ? createPathFieldReference(
+        attribute.path[0] === 'metadata'
+          ? 'metadata'
+          : (attribute.owner ?? attribute.attributeScope),
+        attribute.path,
+        attribute.type
+      )
+    : createAttributeFieldReference(
+        attribute.attributeScope,
+        attribute.name,
+        attribute.type
+      )
+}
+
 export function parseAttributeFieldReference(
   text: string,
-  signal?: SearchSignal
+  signal?: SearchSignal,
+  inferredKind = 'string'
 ): AttributeField | null {
-  const match =
-    /^attr\(\s*([a-z]+)\s*,\s*("(?:\\.|[^"\\])*")\s*,\s*([a-z0-9]+)\s*\)$/.exec(
-      text
-    )
+  const match = /^(?:(\w+)\.)?(attributes|body|metadata)(.*)$/.exec(text.trim())
   if (!match) return null
-
-  let name: string
-  try {
-    // SAFETY: The regex captures a quoted JSON string. Parsing returns a
-    // string or throws; the catch rejects invalid JSON.
-    name = JSON.parse(match[2]) as string
-  } catch {
-    return null
+  let rest = match[3]
+  const path: (string | number)[] = [match[2]]
+  while (rest.trimStart().startsWith('[')) {
+    const part =
+      /^\s*\[\s*('(?:''|\\.|[^'\\])*'|"(?:""|\\.|[^"\\])*"|\d+)\s*\]/.exec(rest)
+    if (!part) return null
+    if (/^\d+$/.test(part[1])) {
+      const index = Number(part[1])
+      if (index >= 4294967295 || (path.length === 1 && match[2] !== 'body'))
+        return null
+      path.push(index)
+    } else path.push(unquoteQueryString(part[1]))
+    rest = rest.slice(part[0].length)
   }
-  return createAttributeFieldReference(match[1], name, match[3], signal)
+  const annotation = /^\s*::\s*([a-zA-Z0-9]+)\s*$/.exec(rest)
+  if (rest.trim() && !annotation) return null
+  const kind = annotation
+    ? KINDS_BY_SQL_TYPE.get(annotation[1].toLowerCase())
+    : inferredKind
+  if (!kind || path.length < 2) return null
+  const owner =
+    match[1] ??
+    (match[2] === 'body' ? 'log' : match[2] === 'metadata' ? 'metric' : '')
+  const scope =
+    owner === 'metric' && match[2] === 'metadata' ? 'metadata' : owner
+  return createPathFieldReference(scope, path, kind, signal)
 }

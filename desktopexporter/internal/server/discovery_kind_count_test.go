@@ -71,7 +71,7 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 		}
 	}
 	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, h.store.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 	for index := range 3 {
 		ld := buildTestLogs()
@@ -85,7 +85,7 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 			scope.Scope().Attributes().PutInt("attempt", 1)
 		}
 		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-			return logs.Ingest(ctx, conn, ld, h.store.FlushedIDs())
+			return logs.Ingest(ctx, conn, ld)
 		}))
 		md := buildTestMetrics()
 		rm := md.ResourceMetrics().At(0)

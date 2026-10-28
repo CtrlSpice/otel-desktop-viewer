@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 )
 
@@ -96,7 +97,7 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 		return nil
 	}
 
-	// Orphaned dictionary rows count toward the size the cap is compared
+	// Orphaned histogram bounds count toward the size the cap is compared
 	// against, so garbage left by a Clear or a delete-by-id must never be what
 	// tips the store over and triggers pruning of real telemetry. That requires
 	// sweeping before any prune -- but not before the measurement that decides
@@ -217,9 +218,7 @@ func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (uint
 // pruneOldestSpans deletes the oldest fraction of spans along with their
 // events and links. Leaves first, spans last.
 //
-// Attributes are not touched here: they are shared dictionary rows, and whether
-// a given one is still referenced is not a question a span predicate can answer.
-// enforceRound sweeps once after all three prunes.
+// Owned attributes and context are removed with their rows.
 func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
 		`select quantile_disc(start_time, ?) from spans`)
@@ -229,14 +228,17 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 
 	// Children use the full span identity because span IDs are unique only
 	// within a trace.
-	for _, q := range []string{
-		`delete from links where (trace_id, span_id) in
+	for _, q := range [][2]string{
+		{`delete from links where (trace_id, span_id) in
 			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
-		`delete from events where (trace_id, span_id) in
+			`delete from search_owners where signal='span' and owner='link' and record_key in (select l.id::varchar from links l join spans s on s.trace_id=l.trace_id and s.span_id=l.span_id where s.start_time <= (select unnest(?::ubigint[])))`},
+		{`delete from events where (trace_id, span_id) in
 			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
-		`delete from spans where start_time <= (select unnest(?::ubigint[]))`,
+			`delete from search_owners where signal='span' and owner='event' and record_key in (select e.id::varchar from events e join spans s on s.trace_id=e.trace_id and s.span_id=e.span_id where s.start_time <= (select unnest(?::ubigint[])))`},
+		{`delete from spans where start_time <= (select unnest(?::ubigint[]))`,
+			`delete from search_owners where signal='span' and root_key in (select replace(trace_id::varchar,'-','')||':'||span_id_wire(span_id) from spans where start_time <= (select unnest(?::ubigint[])))`},
 	} {
-		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
+		if err := searchindex.DeleteRows(ctx, db, q[0], q[1], []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestSpans: %w: %w", ErrRetentionInternal, err)
 		}
 	}
@@ -273,11 +275,13 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 	}
 
 	doomed := `(select id from metric_datapoints where timestamp <= (select unnest(?::ubigint[])))`
-	for _, q := range []string{
-		`delete from exemplars where metric_datapoint_id in ` + doomed,
-		`delete from metric_datapoints where timestamp <= (select unnest(?::ubigint[]))`,
+	for _, q := range [][2]string{
+		{`delete from exemplars where metric_datapoint_id in ` + doomed,
+			`delete from search_owners where signal='metric' and owner='exemplar' and record_key in (select id::varchar from exemplars where metric_datapoint_id in ` + doomed + `)`},
+		{`delete from metric_datapoints where timestamp <= (select unnest(?::ubigint[]))`,
+			`delete from search_owners where signal='metric' and owner='datapoint' and record_key in (select id::varchar from metric_datapoints where timestamp <= (select unnest(?::ubigint[])))`},
 	} {
-		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
+		if err := searchindex.DeleteRows(ctx, db, q[0], q[1], []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
 		}
 	}

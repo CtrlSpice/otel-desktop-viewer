@@ -208,7 +208,7 @@ func discoverySearchSources(options discoveryOptions) (string, []any, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		ctes = append(ctes, signal.name+" AS ("+statement+")")
+		ctes = append(ctes, signal.name+" AS ("+search.RebaseParameters(statement, len(args))+")")
 		args = append(args, params...)
 	}
 	return "WITH " + strings.Join(ctes, ", "), args, nil

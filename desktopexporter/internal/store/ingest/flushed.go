@@ -9,11 +9,10 @@ import (
 	"github.com/duckdb/duckdb-go/v2"
 )
 
-// FlushedIDs remembers which dictionary rows are already in the database, so a
-// batch whose attributes, resource and scope have all been seen before can skip
-// its insert entirely.
+// FlushedIDs remembers shared histogram bounds already present in the database.
+// Signal attributes and owned resource/scope payloads do not use this cache.
 //
-// SweepOrphans is the only dictionary-row deleter and invalidates this cache.
+// SweepOrphans deletes unreferenced bounds and invalidates this cache.
 // If precise invalidation fails, forgetting extra IDs is safe because their
 // inserts conflict; retaining a deleted ID would create a dangling reference.
 // A nil *FlushedIDs disables the optimization.
@@ -32,10 +31,10 @@ type idQueryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// LoadFlushedIDs builds a cache from every retained dictionary ID.
+// LoadFlushedIDs builds a cache from every retained histogram-bounds ID.
 func LoadFlushedIDs(ctx context.Context, db idQueryer) (*FlushedIDs, error) {
 	f := NewFlushedIDs()
-	for _, table := range [...]string{"attributes", "resources", "scopes", "histogram_bounds"} {
+	for _, table := range [...]string{"histogram_bounds"} {
 		if err := warmFlushedFrom(ctx, db, table, f); err != nil {
 			return nil, fmt.Errorf("LoadFlushedIDs: %w: %w", ErrIngestInternal, err)
 		}
@@ -43,7 +42,7 @@ func LoadFlushedIDs(ctx context.Context, db idQueryer) (*FlushedIDs, error) {
 	return f, nil
 }
 
-// warmFlushedFrom reads every id out of one dictionary table and records it.
+// warmFlushedFrom reads and records retained shared-payload IDs.
 //
 // Cast to varchar in the query rather than scanning the uuid column directly:
 // scanning a uuid straight into a Go string via database/sql yields the raw

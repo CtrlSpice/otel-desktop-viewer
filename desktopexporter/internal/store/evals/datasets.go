@@ -68,8 +68,7 @@ func AppendParts(ctx context.Context, db *sql.DB, importID, name string, parts [
 		payload := nativeJSON(part.Payload)
 		if part.Row >= 0 {
 			_, err = tx.ExecContext(ctx, `insert into eval_records
-			 select ?, ?, ?, greatest(?, octet_length(encode(to_json(value)::varchar))), value
-			 from (select ?::json::variant as value)`, importID, part.Envelope, part.Row, len(part.Payload), payload)
+			 values ($1, $2, $3, greatest($4, octet_length(encode(to_json($5::json::variant)::varchar))), $5::json::variant)`, importID, part.Envelope, part.Row, len(part.Payload), payload)
 		} else {
 			_, err = tx.ExecContext(ctx, `insert into eval_datasets (id, import_id, envelope, source, format, name, byte_size, row_count, context) values (?, ?, ?, 'json-import', ?, ?, ?, ?, ?::json::variant) on conflict(id) do update set format=excluded.format, byte_size=excluded.byte_size, row_count=excluded.row_count, context=excluded.context`, DatasetID(importID, part.Envelope), importID, part.Envelope, part.Format, name, part.Bytes, part.Count, payload)
 		}

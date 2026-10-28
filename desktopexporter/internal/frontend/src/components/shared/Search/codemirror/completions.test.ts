@@ -23,22 +23,22 @@ const caseDistinctFields: FieldDefinition[] = [
   {
     name: 'env',
     type: 'string',
-    searchScope: 'attribute',
-    attributeScope: 'resource',
+    owner: 'resource',
+    path: ['attributes', 'env'],
     operators: [OPERATORS.CONTAINS],
   },
   {
     name: 'Env',
     type: 'boolean',
-    searchScope: 'attribute',
-    attributeScope: 'span',
+    owner: 'span',
+    path: ['attributes', 'Env'],
     operators: [OPERATORS.EQUALS],
   },
   {
     name: 'ENV',
     type: 'int64',
-    searchScope: 'attribute',
-    attributeScope: 'event',
+    owner: 'event',
+    path: ['attributes', 'ENV'],
     operators: [OPERATORS.GREATER_THAN],
   },
 ]
@@ -60,9 +60,9 @@ describe('case-distinct attribute completions', () => {
 
     expect(result?.options.map(option => [option.label, option.apply])).toEqual(
       [
-        ['ENV', 'attr(event, "ENV", int64) '],
-        ['Env', 'attr(span, "Env", bool) '],
-        ['env', 'attr(resource, "env", string) '],
+        ['ENV', 'event.attributes["ENV"]::BIGINT '],
+        ['Env', 'span.attributes["Env"]::BOOLEAN '],
+        ['env', 'resource.attributes["env"]::VARCHAR '],
       ]
     )
   })
@@ -70,7 +70,7 @@ describe('case-distinct attribute completions', () => {
   it('offers operators for the exact selected attribute only', () => {
     expect(caseDistinctLabels('env ')).toContain('CONTAINS')
     expect(caseDistinctLabels('env ')).not.toContain('>')
-    expect(caseDistinctLabels('Env ')).toEqual(['='])
+    expect(caseDistinctLabels('Env ')).toEqual(['=', 'IS NULL'])
     expect(caseDistinctLabels('ENV ')).toEqual(['>'])
   })
 
@@ -84,15 +84,16 @@ describe('case-distinct attribute completions', () => {
     const native: FieldDefinition = {
       name: 'name',
       type: 'string',
-      searchScope: 'field',
+      owner: 'span',
+      path: ['name'],
       description: 'span name',
       operators: [OPERATORS.EQUALS],
     }
     const attribute: FieldDefinition = {
       name: 'Name',
       type: 'string',
-      searchScope: 'attribute',
-      attributeScope: 'span',
+      owner: 'span',
+      path: ['attributes', 'Name'],
       operators: [OPERATORS.EQUALS],
     }
     const state = EditorState.create({ doc: 'na', extensions: [queryLanguage] })
@@ -102,7 +103,7 @@ describe('case-distinct attribute completions', () => {
 
     expect(result?.options.map(option => option.label)).toContain('name')
     expect(result?.options.find(option => option.label === 'Name')?.apply).toBe(
-      'attr(span, "Name", string) '
+      'span.attributes["Name"]::VARCHAR '
     )
   })
 })
@@ -112,22 +113,22 @@ describe('attribute identity completions', () => {
     {
       name: 'attempts',
       type: 'string',
-      searchScope: 'attribute',
-      attributeScope: 'span',
+      owner: 'span',
+      path: ['attributes', 'attempts'],
       operators: [OPERATORS.EQUALS, OPERATORS.CONTAINS],
     },
     {
       name: 'attempts',
       type: 'int64',
-      searchScope: 'attribute',
-      attributeScope: 'span',
+      owner: 'span',
+      path: ['attributes', 'attempts'],
       operators: [OPERATORS.EQUALS, OPERATORS.GREATER_THAN],
     },
     {
       name: 'attempts',
       type: 'int64',
-      searchScope: 'attribute',
-      attributeScope: 'resource',
+      owner: 'resource',
+      path: ['attributes', 'attempts'],
       operators: [OPERATORS.EQUALS],
     },
   ]
@@ -148,14 +149,14 @@ describe('attribute identity completions', () => {
       variants[1],
     ])
     expect(result?.options.map(option => option.apply)).toEqual([
-      'attr(resource, "attempts", int64) ',
-      'attr(span, "attempts", int64) ',
-      'attr(span, "attempts", string) ',
+      'resource.attributes["attempts"]::BIGINT ',
+      'span.attributes["attempts"]::BIGINT ',
+      'span.attributes["attempts"]::VARCHAR ',
     ])
   })
 
   it('offers operators for the inserted identity', () => {
-    const text = 'attr(span, "attempts", string) '
+    const text = "span.attributes['attempts']::VARCHAR "
     const result = variantCompletions(variants, text)
     expect(result?.options.map(option => option.label)).toContain('CONTAINS')
     expect(result?.options.map(option => option.label)).not.toContain('>')
@@ -163,6 +164,15 @@ describe('attribute identity completions', () => {
 })
 
 describe('field positions', () => {
+  it('offers fields and operators after WHERE', () => {
+    expect(labels('WHERE na')).toContain('name')
+    expect(labels('WHERE name ')).toContain('LIKE')
+  })
+
+  it('completes the required range separator', () => {
+    expect(labels('duration BETWEEN 1s ')).toEqual(['AND'])
+    expect(labels('duration BETWEEN 1s A')).toEqual(['AND'])
+  })
   it('offers fields at the start of a word', () => {
     expect(labels('dur')).toContain('duration')
   })
@@ -268,23 +278,23 @@ describe('operator positions', () => {
     expect(validFor.test('!=')).toBe(true)
   })
 
-  it('never offers the derived wire operators', () => {
+  it('offers SQL null and negated regexp operators', () => {
     const r = complete('name C')
     const syms = r!.options.map(o => o.label)
-    expect(syms).not.toContain('IS NULL')
-    expect(syms).not.toContain('IS NOT NULL')
-    expect(syms).not.toContain('NOT REGEXP')
+    expect(syms).toContain('IS NULL')
+    expect(syms).toContain('IS NOT NULL')
+    expect(syms).toContain('NOT REGEXP')
   })
 })
 
 describe('after a complete expression', () => {
   it('offers boolean continuations and a result limit', () => {
-    expect(labels('kind = Server ')).toEqual(['AND', 'OR', '| LIMIT'])
+    expect(labels('kind = Server ')).toEqual(['AND', 'OR', 'LIMIT'])
   })
 
   it('filters to AND while typing it', () => {
     const r = complete('kind = Server A')
-    expect(r!.options.map(o => o.label)).toEqual(['AND', 'OR', '| LIMIT'])
+    expect(r!.options.map(o => o.label)).toEqual(['AND', 'OR', 'LIMIT'])
     expect(r!.from).toBe('kind = Server '.length)
   })
 
@@ -293,19 +303,18 @@ describe('after a complete expression', () => {
   })
 
   it('but an empty open group is not a complete expression', () => {
-    expect(labels('(ki')).not.toEqual(['AND', 'OR', '| LIMIT'])
+    expect(labels('(ki')).not.toEqual(['AND', 'OR', 'LIMIT'])
   })
 
   it('ignores parentheses inside an explicit quoted attribute key', () => {
-    expect(labels('attr(span, "open(key", string) = "value" ')).toEqual([
+    expect(labels('span.attributes["open(key"]::VARCHAR = "value" ')).toEqual([
       'AND',
       'OR',
-      '| LIMIT',
+      'LIMIT',
     ])
-    expect(labels('(attr(span, "close)key", string) = "value" ')).toEqual([
-      'AND',
-      'OR',
-    ])
+    expect(labels('(span.attributes["close)key"]::VARCHAR = "value" ')).toEqual(
+      ['AND', 'OR']
+    )
   })
 })
 
@@ -330,12 +339,12 @@ describe('id shapes', () => {
 
 describe('review findings', () => {
   it('array item completions anchor at the item, not the bracket', () => {
-    const first = complete('statusCode IN [O')
+    const first = complete('statusCode IN (O')
     expect(first).not.toBeNull()
-    expect(first!.from).toBe('statusCode IN ['.length)
-    const later = complete('statusCode IN [Ok, E')
+    expect(first!.from).toBe('statusCode IN ('.length)
+    const later = complete('statusCode IN (Ok, E')
     expect(later).not.toBeNull()
-    expect(later!.from).toBe('statusCode IN [Ok, '.length)
+    expect(later!.from).toBe('statusCode IN (Ok, '.length)
   })
 
   it('offers fields immediately after AND, before any typing', () => {
@@ -349,20 +358,20 @@ describe('array quote and group edges', () => {
   it('offers nothing right after a closed quoted item', () => {
     // `["Ok"|` -- the only valid next characters are `,` or `]`; anything
     // accepted here would glue onto the closed string.
-    expect(complete('statusCode IN ["Ok"')).toBeNull()
+    expect(complete('statusCode IN ("Ok"')).toBeNull()
   })
 
   it('closes a manually typed opening quote on accept', () => {
-    const r = complete('statusCode IN ["O')
+    const r = complete('statusCode IN ("O')
     expect(r).not.toBeNull()
     const ok = r!.options.find(o => o.label === 'Ok')
     expect(ok?.apply).toBe('Ok"')
   })
 
   it('still anchors per item after a closed item and comma', () => {
-    const r = complete('statusCode IN ["Ok", E')
+    const r = complete('statusCode IN ("Ok", E')
     expect(r).not.toBeNull()
-    expect(r!.from).toBe('statusCode IN ["Ok", '.length)
+    expect(r!.from).toBe('statusCode IN ("Ok", '.length)
   })
 
   it('offers fields after AND followed by an open paren', () => {

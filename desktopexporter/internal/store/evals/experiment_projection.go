@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"strconv"
 	"strings"
 	"time"
@@ -44,10 +45,11 @@ var outcomeDefinitions = []OutcomeCount{
 }
 
 type projectedExperimentRow struct {
-	Summary    ExperimentSummary
-	Ordinal    int64
-	Outcome    int
-	SearchText string
+	Summary      ExperimentSummary
+	Ordinal      int64
+	Outcome      int
+	SearchText   string
+	SearchValues []searchindex.TextValue
 }
 
 type sourceObject map[string]json.RawMessage
@@ -67,11 +69,17 @@ func sourceText(raw json.RawMessage) string {
 // re-encoding numbers or assigning producer-specific meaning. Object keys are
 // schema, not result text. Newline separators prevent adjacent values merging.
 func sourceSearchText(raw json.RawMessage) (string, error) {
+	text, _, err := sourceSearchValues(raw)
+	return text, err
+}
+
+func sourceSearchValues(raw json.RawMessage) (string, []searchindex.TextValue, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var out strings.Builder
-	var appendValue func() error
-	appendValue = func() error {
+	var values []searchindex.TextValue
+	var appendValue func([]any) error
+	appendValue = func(path []any) error {
 		token, err := decoder.Token()
 		if err != nil {
 			return err
@@ -81,25 +89,29 @@ func sourceSearchText(raw json.RawMessage) (string, error) {
 			switch value {
 			case '{':
 				for decoder.More() {
-					if _, err := decoder.Token(); err != nil { // object key
+					key, err := decoder.Token()
+					if err != nil { // object key
 						return err
 					}
-					if err := appendValue(); err != nil {
+					if err := appendValue(append(append([]any(nil), path...), key.(string))); err != nil {
 						return err
 					}
 				}
 				_, err = decoder.Token()
 				return err
 			case '[':
+				index := 0
 				for decoder.More() {
-					if err := appendValue(); err != nil {
+					if err := appendValue(append(append([]any(nil), path...), index)); err != nil {
 						return err
 					}
+					index++
 				}
 				_, err = decoder.Token()
 				return err
 			}
 		case string:
+			values = append(values, searchindex.TextValue{Path: append([]any(nil), path...), Text: value})
 			if out.Len() > 0 {
 				out.WriteByte('\n')
 			}
@@ -107,10 +119,10 @@ func sourceSearchText(raw json.RawMessage) (string, error) {
 		}
 		return nil
 	}
-	if err := appendValue(); err != nil {
-		return "", err
+	if err := appendValue(nil); err != nil {
+		return "", nil, err
 	}
-	return out.String(), nil
+	return out.String(), values, nil
 }
 func sourceBool(raw json.RawMessage, want bool) bool { return string(raw) == fmt.Sprint(want) }
 
@@ -250,7 +262,7 @@ func sourceIndex(raw json.RawMessage) (any, error) {
 // assessment precedence. It never parses unrelated source numbers.
 func (p experimentProjector) row(row json.RawMessage, ordinal int64) (projectedExperimentRow, error) {
 	dataset := p.dataset
-	searchText, err := sourceSearchText(row)
+	searchText, searchValues, err := sourceSearchValues(row)
 	if err != nil {
 		return projectedExperimentRow{}, fmt.Errorf("result row is invalid JSON: %w", err)
 	}
@@ -316,7 +328,7 @@ func (p experimentProjector) row(row json.RawMessage, ordinal int64) (projectedE
 	} else if sourceBool(record["success"], true) || sourceBool(grading["pass"], true) {
 		outcome = 0
 	}
-	return projectedExperimentRow{Summary: summary, Ordinal: ordinal, Outcome: outcome, SearchText: searchText}, nil
+	return projectedExperimentRow{Summary: summary, Ordinal: ordinal, Outcome: outcome, SearchText: searchText, SearchValues: searchValues}, nil
 }
 
 func naturalExperimentKey(value string) string {

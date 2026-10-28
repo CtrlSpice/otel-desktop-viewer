@@ -311,7 +311,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   // select Details; individual telemetry cards navigate to exact records.
   const search = page.getByRole('searchbox', { name: 'Search telemetry' })
   await search.fill(
-    'attr(resource, "service.namespace", string) = "storefront"'
+    'resource.attributes["service.namespace"]::VARCHAR = "storefront"'
   )
   await search.press('Enter')
   const logs = page

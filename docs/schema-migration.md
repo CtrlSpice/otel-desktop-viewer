@@ -1,6 +1,6 @@
 # Schema compatibility
 
-The store uses schema version 25. It does not migrate databases.
+The store uses schema version 26. It does not migrate databases.
 
 The viewer uses DuckDB 2.0.0. Attributes, log bodies, and Evals payloads use
 native VARIANT storage. Schema-24 databases require a fresh database and reloading
