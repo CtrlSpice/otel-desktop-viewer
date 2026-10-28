@@ -7,17 +7,16 @@
 		),
 		-- Attach parent Metric descriptor fields to datapoints.
 		filtered_dps as (
-			-- Resolve the shared bounds vector once at the datapoint boundary.
-			select d.* exclude (bounds_id),
-				hb.bounds as explicit_bounds,
+			select d.*,
 				-- Per-instant zone offset, falling back to the fixed caller offset.
 				coalesce(tz_offset_ns_at(d.timestamp, {{bind "tz_name"}}::varchar),
 				         {{bind "tz_offset_ns"}}::bigint) as tz_shift,
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
-			from metric_datapoints d
-			left join histogram_bounds hb on hb.id = d.bounds_id,
+			from metric_points_for({{bind "metric_id"}}::uuid,
+				list_extract({{bind "time_start"}}::ubigint[], 1),
+				list_extract({{bind "time_end"}}::ubigint[], 1)) d,
 				selected_metric s
 			where d.metric_id = {{bind "metric_id"}}::uuid
 			  {{if .HasStart}}and d.timestamp >= list_extract({{bind "time_start"}}::ubigint[], 1){{end}}
@@ -41,7 +40,11 @@
 						exact_int := try_cast(e.double_value as hugeint)
 					)
 				end as value_order
-			from exemplars e
+			from (
+				select e.id, point_id as metric_datapoint_id, e.timestamp, e.double_value,
+				       e.int_value, e.trace_id, e.span_id, e.attributes
+				from (select id as point_id, unnest(exemplars) as e from filtered_dps) points
+			) e
 			where e.metric_datapoint_id in (select id from filtered_dps)
 		),
 		exemplars_ranked as (

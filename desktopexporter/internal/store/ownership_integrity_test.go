@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -151,7 +150,7 @@ func ingestAll(t *testing.T, s *Store, seed byte) {
 		return logs.Ingest(ctx, conn, integrityLogs(seed))
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, integrityMetrics(seed), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, integrityMetrics(seed))
 	}))
 }
 
@@ -176,7 +175,7 @@ func TestResourceSchemaURLIdentityIsSharedAcrossSignals(t *testing.T) {
 		return logs.Ingest(ctx, conn, logData)
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, metricData)
 	}))
 
 	other := integrityTraces(34)
@@ -223,7 +222,7 @@ func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 		return logs.Ingest(ctx, conn, logData)
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, metricData)
 	}))
 
 	assert.Equal(t, 3, countIn(t, s, `select count(*) from (select resource.id from spans union select resource.id from logs union select resource.id from metrics)`),
@@ -241,13 +240,6 @@ func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 			assert.Equal(t, tc.want, got, tc.name)
 		}
 		return nil
-	}))
-}
-
-func sweep(t *testing.T, s *Store) {
-	t.Helper()
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(context.Background(), db, s.FlushedIDs())
 	}))
 }
 
@@ -275,7 +267,6 @@ func TestOwnershipAcrossClearAndReingest(t *testing.T) {
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		return spans.Clear(ctx, db)
 	}))
-	sweep(t, s)
 	assertOwnedMaps(t, s, "after clearing traces")
 
 	assert.Equal(t, 1, countIn(t, s, `select count(distinct resource.id) from logs`),
@@ -306,16 +297,13 @@ func TestClearKeepsOtherSignalsOwnedContext(t *testing.T) {
 	ingestAll(t, s, 1)
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error { return spans.Clear(ctx, db) }))
-	sweep(t, s)
 	assert.Equal(t, 1, countIn(t, s, `select count(distinct resource.id) from logs`), "logs retain their resource")
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error { return logs.Clear(ctx, db) }))
-	sweep(t, s)
 	assert.Equal(t, 1, countIn(t, s, `select count(distinct resource.id) from metrics`), "metrics retain their resource")
 	assertOwnedMaps(t, s, "after clearing traces and logs")
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error { return metrics.Clear(ctx, db) }))
-	sweep(t, s)
 	assert.Zero(t, countIn(t, s, `select count(*) from metrics`))
 	assert.Zero(t, countIn(t, s, `select count(*) from duckdb_tables() where table_name in ('attributes','resources','scopes')`))
 }
@@ -339,32 +327,6 @@ func TestOwnershipAfterRetention(t *testing.T) {
 	assertOwnedMaps(t, s, "after retention")
 }
 
-func TestOwnedSignalsDoNotPopulateBoundsCache(t *testing.T) {
-	ctx := context.Background()
-	s, err := NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	defer s.Close()
-
-	assert.Zero(t, s.FlushedIDs().Len(), "nothing written yet")
-
-	ingestAll(t, s, 1)
-	first := s.FlushedIDs().Len()
-	assert.Zero(t, first, "non-histogram signals need no shared payload cache")
-
-	ingestAll(t, s, 2)
-	assert.Equal(t, first, s.FlushedIDs().Len(),
-		"owned payloads do not enter the bounds cache")
-
-	// Clear traces while logs and metrics retain their own context.
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return spans.Clear(ctx, db)
-	}))
-	sweep(t, s)
-
-	after := s.FlushedIDs().Len()
-	assert.Zero(t, after, "clearing spans requires no payload cache invalidation")
-}
-
 // Metadata can be re-ingested after clearing metrics while other signals remain.
 func TestMetricMetadataClearAndReingest(t *testing.T) {
 	ctx := context.Background()
@@ -373,30 +335,24 @@ func TestMetricMetadataClearAndReingest(t *testing.T) {
 	defer s.Close()
 
 	ingestAll(t, s, 1)
-	before := s.FlushedIDs().Len()
 	require.Equal(t, 1, countIn(t, s, `
 		select count(*) from metrics m, unnest(variant_keys(m.metadata)) t(key)`))
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
 	}))
-	sweep(t, s)
 
-	afterSweep := s.FlushedIDs().Len()
-	assert.Equal(t, before, afterSweep, "owned metadata requires no cache invalidation")
 	assert.Zero(t, countIn(t, s, `
 		select count(*) from metrics m, unnest(variant_keys(m.metadata)) t(key)`),
 		"metadata with no metric ingest owner must be collected")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, integrityMetrics(1), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, integrityMetrics(1))
 	}))
 	assertOwnedMaps(t, s, "after re-ingesting metric metadata")
 	assert.Equal(t, 1, countIn(t, s, `
 		select count(*) from metrics m, unnest(variant_keys(m.metadata)) t(key)`),
 		"re-ingest must restore metadata removed with its metric")
-	assert.Equal(t, before, s.FlushedIDs().Len(),
-		"owned metadata does not enter the bounds cache")
 }
 
 // Receiving identical data in one store cannot suppress payloads in another.
@@ -409,10 +365,8 @@ func TestOwnedPayloadsAreIndependentBetweenStores(t *testing.T) {
 	require.NoError(t, err)
 	defer b.Close()
 
-	assert.NotSame(t, a.FlushedIDs(), b.FlushedIDs(), "each store owns its own set")
-
 	ingestAll(t, a, 1)
-	assert.Zero(t, b.FlushedIDs().Len(), "writing to one store must not mark the other")
+	assert.Zero(t, countIn(t, b, `select count(*) from metric_records`), "writing to one store must not populate the other")
 
 	// b has seen nothing, so it writes everything and stays self-consistent.
 	ingestAll(t, b, 1)

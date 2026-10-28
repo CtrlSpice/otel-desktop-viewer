@@ -1602,7 +1602,7 @@ func setupHandlerWithMetrics(t *testing.T) *JSONRPCHandler {
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
 	})
 	require.NoError(t, err, "ingest metrics")
 

@@ -23,7 +23,6 @@ func TestHomeAttributeMatchesSQL(t *testing.T) {
 	db := freshDB(t)
 	const trace = "00000000-0000-0000-0000-000000000001"
 	const metric = "00000000-0000-0000-0000-000000000002"
-	const series = "00000000-0000-0000-0000-000000000003"
 	const point = "00000000-0000-0000-0000-000000000004"
 	const logID = "00000000-0000-0000-0000-000000000005"
 	attrs := func(owner string) string {
@@ -58,25 +57,23 @@ func TestHomeAttributeMatchesSQL(t *testing.T) {
 		trace, resource("other"), scope("other"), trace, attrs("span"), resource("resource"), scope("scope")))
 	for _, table := range []string{"events", "links"} {
 		owner := strings.TrimSuffix(table, "s")
-		columns, timestamp := "", ""
+		timestamp := ""
 		if table == "events" {
-			columns, timestamp = ", timestamp", ", 110"
+			timestamp = ", timestamp:=110::ubigint"
 		}
-		execSQL(fmt.Sprintf(`insert into %s(id, trace_id, span_id, attributes%s)
-			values (uuid(), '%s', 1, %s%s), (uuid(), '%s', 1, %s%s),
-			(uuid(), '%s', 2, %s%s), (uuid(), '%s', 3, %s%s)`,
-			table, columns, trace, attrs(owner), timestamp, trace, attrs(owner), timestamp,
-			trace, attrs("other"), timestamp, trace, attrs(owner), timestamp))
+		execSQL(fmt.Sprintf(`update spans set %s=case when span_id=1 then
+			[struct_pack(id:=uuid(),attributes:=%s%s),struct_pack(id:=uuid(),attributes:=%s%s)]
+			else [struct_pack(id:=uuid(),attributes:=case when span_id=2 then %s else %s end%s)] end`,
+			table, attrs(owner), timestamp, attrs(owner), timestamp, attrs("other"), attrs(owner), timestamp))
 	}
 	execSQL(fmt.Sprintf(`insert into logs(id, timestamp, observed_timestamp, attributes, resource, scope)
 		values ('%s', 0, 100, %s, %s, %s)`, logID, attrs("log"), resource("resource"), scope("scope")))
-	execSQL(fmt.Sprintf(`insert into metrics(id, resource_id, resource_payload_id, scope_id, name, metric_type, metadata, resource, scope)
-		values ('%s', uuid(), uuid(), uuid(), 'test', 'Gauge', %s, %s, %s)`, metric, attrs("metadata"), resource("descriptor"), scope("descriptor")))
-	execSQL(fmt.Sprintf(`insert into metric_series values ('%s', '%s', 'test', %s)`, series, metric, attrs("datapoint")))
-	execSQL(fmt.Sprintf(`insert into metric_datapoints(id, metric_id, series_id, timestamp, attributes, resource, scope)
-		values ('%s', '%s', '%s', 100, %s, %s, %s)`, point, metric, series, attrs("datapoint"), resource("resource"), scope("scope")))
-	execSQL(fmt.Sprintf(`insert into exemplars(id, metric_datapoint_id, timestamp, attributes)
-		values (uuid(), '%s', 110, %s), (uuid(), '%s', 110, %s)`, point, attrs("exemplar"), point, attrs("exemplar")))
+	execSQL(fmt.Sprintf(`insert into metric_records(record_id,id,resource_id,resource_payload_id,scope_id,name,metric_type,metadata,resource,scope,datapoints,point_time_min,point_time_max)
+		values (uuid(),'%s',uuid(),uuid(),uuid(),'test','Gauge',%s,%s,%s,
+		[struct_pack(id:='%s'::uuid,timestamp:=100::ubigint,attribute_key:='test',attributes:=%s,
+		exemplars:=[struct_pack(id:=uuid(),timestamp:=110::ubigint,attributes:=%s),
+		struct_pack(id:=uuid(),timestamp:=110::ubigint,attributes:=%s)])],100,100)`,
+		metric, attrs("metadata"), resource("resource"), scope("scope"), point, attrs("datapoint"), attrs("exemplar"), attrs("exemplar")))
 
 	type matchCase struct {
 		name    string

@@ -109,7 +109,7 @@ func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metric
 	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
 		var iErr error
-		rejected, iErr = metrics.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		rejected, iErr = metrics.IngestReport(ctx, conn, source)
 		return iErr
 	})
 	end(err)

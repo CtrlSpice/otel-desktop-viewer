@@ -1,22 +1,16 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
-with export_selection as (
-	select try_cast(? as uuid) as series_id, try_cast(? as uuid) as datapoint_id,
-		?::boolean as include_datapoints
-),
-selected_metric as materialized (
-	select * from metrics where id = try_cast(? as uuid)
+with selected_metric as materialized (
+	select * from metric_records where id = try_cast($4 as uuid)
 ),
 matching_datapoints as not materialized (
-	select d.*
-	from metric_datapoints d
-	join selected_metric s on s.id = d.metric_id
-	cross join export_selection e
-	where (e.series_id is null or d.series_id = e.series_id)
-	  and (e.datapoint_id is null or d.id = e.datapoint_id)
+	select d.*, r.record_id, r.resource, r.scope
+	from (select id, record_id, resource, scope, unnest(datapoints) as d from selected_metric) r
+	where (try_cast($1 as uuid) is null or md5(r.id::varchar||':'||d.attribute_key)::uuid = try_cast($1 as uuid))
+	  and (try_cast($2 as uuid) is null or d.id = try_cast($2 as uuid))
 ),
 selected_datapoints as materialized (
 	select * from matching_datapoints
-	where (select include_datapoints from export_selection)
+	where $3::boolean
 ),
 exemplar_documents_unaggregated as materialized (
 	select e.metric_datapoint_id, e.timestamp, e.id,
@@ -41,7 +35,7 @@ exemplar_documents as materialized (
 	group by metric_datapoint_id
 ),
 datapoint_documents as materialized (
-	select d.id, d.timestamp, d.resource, d.scope,
+	select d.id, d.timestamp, d.record_id, d.resource, d.scope,
 		case s.metric_type
 			when 'Gauge' then json_merge_patch(
 				json_object(
@@ -76,7 +70,7 @@ datapoint_documents as materialized (
 					'timeUnixNano', d.timestamp::varchar,
 					'count', d.count::varchar,
 					'bucketCounts', list_transform(d.bucket_counts, lambda count: count::varchar),
-					'explicitBounds', list_transform(hb.bounds, lambda bound: otlp_double_json(bound)),
+					'explicitBounds', list_transform(d.explicit_bounds, lambda bound: otlp_double_json(bound)),
 					'exemplars', coalesce(e.documents, []::json[]),
 					'flags', d.flags),
 				case when d.sum is null then json('{}') else json_object('sum', otlp_double_json(d.sum)) end,
@@ -101,8 +95,7 @@ datapoint_documents as materialized (
 			else null::json
 		end as document
 	from selected_datapoints d
-	cross join selected_metric s
-	left join histogram_bounds hb on hb.id = d.bounds_id
+	join selected_metric s on s.record_id = d.record_id
 	left join exemplar_documents e on e.metric_datapoint_id = d.id
 ),
 grouped_metrics as materialized (
@@ -113,12 +106,14 @@ grouped_metrics as materialized (
 		coalesce(d.resource, s.resource) as resource, coalesce(d.scope, s.scope) as scope,
 		s.description, s.metadata, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
-		case when (select include_datapoints from export_selection)
+		case when $3::boolean
 			then json_object('dataPoints', coalesce(list(d.document order by d.timestamp, d.id)
 				filter (where d.id is not null), []::json[]))
 			else json('{}') end as datapoints_document
 	from selected_metric s
-	left join datapoint_documents d on true
+	left join datapoint_documents d on d.record_id = s.record_id
+	where (try_cast($1 as uuid) is null and try_cast($2 as uuid) is null)
+	   or s.record_id in (select record_id from matching_datapoints)
 	group by coalesce(d.resource, s.resource), coalesce(d.scope, s.scope),
 		s.description, s.metadata, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic
@@ -165,8 +160,8 @@ select s.metric_type,
 			'resourceMetrics', coalesce(list(r.document order by r.resource_id, r.resource_schema_url)
 				filter (where r.document is not null), []::json[])))
 	end as document
-from selected_metric s
+from (select distinct metric_type from selected_metric) s
 left join resource_documents r on true
-where ((select series_id from export_selection) is null and (select datapoint_id from export_selection) is null)
+where (try_cast($1 as uuid) is null and try_cast($2 as uuid) is null)
    or exists (select 1 from matching_datapoints)
 group by s.metric_type

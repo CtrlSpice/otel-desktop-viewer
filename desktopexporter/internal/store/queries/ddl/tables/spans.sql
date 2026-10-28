@@ -21,6 +21,10 @@ create table if not exists spans (
 		status_message varchar,
 		-- Derived Resource service.name for indexed search.
 		service_name varchar not null default '',
+		events struct(id uuid, name varchar, timestamp ubigint, attributes variant,
+			dropped_attributes_count uinteger, ordinal uinteger)[],
+		links struct(id uuid, linked_trace_id uuid, linked_span_id ubigint, trace_state varchar,
+			attributes variant, dropped_attributes_count uinteger, flags uinteger, ordinal uinteger)[],
 		-- OTLP requires span IDs to be unique only within a trace.
 		primary key (trace_id, span_id)
 	)

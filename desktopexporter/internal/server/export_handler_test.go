@@ -37,7 +37,7 @@ func TestExportPreviewBoundsAndMetricSelection(t *testing.T) {
 	other.SetName("other-metric")
 	other.SetEmptyGauge().DataPoints().AppendEmpty().SetIntValue(1)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(context.Background(), conn, data, s.FlushedIDs())
+		return metrics.Ingest(context.Background(), conn, data)
 	}))
 	var metricID, otherMetricID, seriesID, pointID string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -162,7 +162,7 @@ func TestExportReconstructionFailuresAreNotAttachments(t *testing.T) {
 	metric.SetName("export-errors")
 	metric.SetEmptyGauge().DataPoints().AppendEmpty().SetDoubleValue(1)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(context.Background(), conn, data, s.FlushedIDs())
+		return metrics.Ingest(context.Background(), conn, data)
 	}))
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -172,11 +172,11 @@ func TestExportReconstructionFailuresAreNotAttachments(t *testing.T) {
 		name, sql string
 		status    int
 	}{
-		{"unsupported", "update metrics set metric_type = 'Summary'", http.StatusUnprocessableEntity},
-		{"malformed", "update metrics set metric_type = 'Gauge'; update metric_datapoints set value_type = 'Double', double_value = null, int_value = null", http.StatusInternalServerError},
+		{"unsupported", "update metric_records set metric_type = 'Summary'", http.StatusUnprocessableEntity},
+		{"malformed", "update metric_records set metric_type = 'Gauge', datapoints=list_transform(datapoints,lambda d:struct_update(d,value_type:='Double',double_value:=null,int_value:=null))", http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 				_, err := db.Exec(tc.sql)
 				return err
 			}))

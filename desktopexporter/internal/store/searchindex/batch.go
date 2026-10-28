@@ -13,7 +13,7 @@ import (
 // Batch contains only rows selected by one native append pass. A failed pass
 // discards it; Write runs after the final appender close in that transaction.
 type Batch struct {
-	objects  []Object
+	stream   *streamCatalogue
 	contexts map[string]bool
 }
 
@@ -85,15 +85,15 @@ func (b *Batch) Contexts(resource, scope map[string]any) (string, string, error)
 		if err := o.AddStrings(fields); err != nil {
 			return "", "", err
 		}
-		b.objects = append(b.objects, o)
+		b.addStream(o)
 		b.contexts[refs[i]] = true
 	}
 	return refs[0], refs[1], nil
 }
 
-func (b *Batch) Add(o Object) { o.NewOwner = true; b.objects = append(b.objects, o) }
+func (b *Batch) Add(o Object) { o.NewOwner = true; b.addStream(o) }
 func (b *Batch) Write(ctx context.Context, conn driver.Conn) error {
-	return Write(ctx, connection{conn}, b.objects)
+	return b.writeStream(ctx, conn)
 }
 
 func (b *Batch) Metric(id duckdb.UUID, metadata []byte, resource, scope map[string]any, name, description, unit string) error {
@@ -109,7 +109,7 @@ func (b *Batch) Metric(id duckdb.UUID, metadata []byte, resource, scope map[stri
 	if err := o.AddStrings(map[string]any{"name": name, "description": description, "unit": unit}); err != nil {
 		return err
 	}
-	b.objects = append(b.objects, o)
+	b.addStream(o)
 	return nil
 }
 

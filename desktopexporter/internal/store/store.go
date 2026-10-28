@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowbridge"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
@@ -42,10 +42,6 @@ type Store struct {
 
 	// ingestMu serializes appender use on the dedicated ingest connection.
 	ingestMu sync.Mutex
-
-	// flushed tracks retained histogram bounds for this database. It is warmed
-	// from disk on open and invalidated when SweepOrphans deletes bounds.
-	flushed *ingest.FlushedIDs
 
 	// retentionCapBytes is the store size cap enforced by EnforceRetention
 	// and reported by getStats. 0 means retention is disabled. Set once via
@@ -107,6 +103,9 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 			_ = conn.Close()
 		}
 	}()
+	if err := arrowbridge.Load(ctx, conn); err != nil {
+		return nil, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
+	}
 	schemaInitializationMu.Lock()
 	defer schemaInitializationMu.Unlock()
 
@@ -159,12 +158,6 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		}
 	}
 
-	// Warm the bounds cache with every retained ID.
-	flushed, err := ingest.LoadFlushedIDs(ctx, db)
-	if err != nil {
-		return nil, fmt.Errorf("%w while warming the bounds cache: %w", ErrStoreInitFailed, err)
-	}
-
 	initialized = true
 	return &Store{
 		db:           db,
@@ -172,18 +165,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		dbPath:       dbPath,
 		logger:       logger,
 		schemaCompat: schemaCompat,
-		flushed:      flushed,
 	}, nil
-}
-
-// FlushedIDs tracks histogram bounds already written to this store, allowing
-// metric ingestion to skip repeated bounds inserts.
-//
-// Passing nil instead is always safe -- it just reinserts every time -- but
-// passing *another* store's set is not, which is why this hangs off the store
-// rather than being a package-level singleton.
-func (s *Store) FlushedIDs() *ingest.FlushedIDs {
-	return s.flushed
 }
 
 // Close closes the store and the underlying database connection.

@@ -283,7 +283,7 @@ func TestExecuteReturnsCurrentMetricDatapointFields(t *testing.T) {
 	point.SetIntValue(9_007_199_254_740_993)
 	point.Attributes().PutStr("queue", "payments")
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
-		return storemetrics.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+		return storemetrics.Ingest(context.Background(), conn, telemetry)
 	}))
 
 	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {

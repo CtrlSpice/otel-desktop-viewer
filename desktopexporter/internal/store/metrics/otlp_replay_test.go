@@ -16,7 +16,7 @@ import (
 func TestGetMetricOTLPJSONReplay(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, otlpMetricFixture())
 	}))
 	for name, id := range metricMetricIDs(t, s, ctx) {
 		t.Run(name, func(t *testing.T) {
@@ -52,7 +52,7 @@ func TestGetMetricOTLPJSONReplay(t *testing.T) {
 			// A second real store must retain the same negative zero after replay.
 			target, targetCtx := storetest.New(t)
 			require.NoError(t, target.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(targetCtx, conn, decoded, target.FlushedIDs())
+				return metrics.Ingest(targetCtx, conn, decoded)
 			}))
 			replayed := getMetricOTLP(t, target, targetCtx, metricMetricIDs(t, target, targetCtx)[name])
 			assert.JSONEq(t, string(getMetricOTLP(t, s, ctx, id)), string(replayed))

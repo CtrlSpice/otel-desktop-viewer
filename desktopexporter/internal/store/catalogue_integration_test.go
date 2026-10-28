@@ -191,7 +191,7 @@ func TestCatalogueMetricContextUpdatesAndRetention(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 	ingestMetric := func(m pmetric.Metrics) error {
-		return s.WithConn(func(c driver.Conn) error { return metrics.Ingest(t.Context(), c, m, s.FlushedIDs()) })
+		return s.WithConn(func(c driver.Conn) error { return metrics.Ingest(t.Context(), c, m) })
 	}
 	require.NoError(t, ingestMetric(ftsMetric("oldcontext", "alpha", "beta")))
 	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("metaword")))
@@ -199,8 +199,9 @@ func TestCatalogueMetricContextUpdatesAndRetention(t *testing.T) {
 	require.Zero(t, ftsSummaryCount(t, s, "metric", ftsAnd("eone", "etwo")))
 	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("alpha", "eone")))
 	require.NoError(t, ingestMetric(ftsMetric("newcontext", "gamma")))
-	require.Zero(t, ftsSummaryCount(t, s, "metric", ftsAnd("oldcontext")))
-	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("newcontext", "alpha")))
+	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("oldcontext", "alpha")))
+	require.Zero(t, ftsSummaryCount(t, s, "metric", ftsAnd("newcontext", "alpha")), "a received descriptor cannot borrow another record's point")
+	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("newcontext", "gamma")))
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		_, err := db.Exec(`alter table search_paths rename to unavailable_search_paths`)
 		return err
@@ -211,7 +212,7 @@ func TestCatalogueMetricContextUpdatesAndRetention(t *testing.T) {
 		return err
 	}))
 	require.Zero(t, ftsSummaryCount(t, s, "metric", ftsAnd("rolledbackcontext")))
-	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("newcontext", "alpha")))
+	require.Equal(t, 1, ftsSummaryCount(t, s, "metric", ftsAnd("newcontext", "gamma")))
 	assertFTSIntegrity(t, s)
 	l := plog.NewLogs()
 	l.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().Body().SetStr("logword")
@@ -219,6 +220,8 @@ func TestCatalogueMetricContextUpdatesAndRetention(t *testing.T) {
 	require.Equal(t, 1, ftsSummaryCount(t, s, "log", ftsAnd("logword")))
 	require.NoError(t, s.EnforceRetention(t.Context(), 1))
 	assertFTSIntegrity(t, s)
+	require.Zero(t, ftsSummaryCount(t, s, "metric", ftsAnd("oldcontext")))
+	require.NoError(t, ingestMetric(ftsMetric("afterretention", "fresh")))
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error { return db.QueryRow(`select id::varchar from metrics limit 1`).Scan(&id) }))
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error { return metrics.DeleteMetric(t.Context(), db, strings.ToUpper(id)) }))
@@ -268,12 +271,12 @@ func TestCatalogueNativePreparationDoesNotSerializePayloads(t *testing.T) {
 	}))
 }
 
-func TestCatalogueMetricDescriptorExactChangesAndUnchangedFastPath(t *testing.T) {
+func TestCatalogueMetricReceivedDescriptorsPreserveExactChanges(t *testing.T) {
 	s, err := store.NewStore(t.Context(), "", nil)
 	require.NoError(t, err)
 	defer s.Close()
 	ingestMetric := func(m pmetric.Metrics) error {
-		return s.WithConn(func(c driver.Conn) error { return metrics.Ingest(t.Context(), c, m, s.FlushedIDs()) })
+		return s.WithConn(func(c driver.Conn) error { return metrics.Ingest(t.Context(), c, m) })
 	}
 	makeMetric := func(value float64) pmetric.Metrics {
 		m := ftsMetric("samecontext")
@@ -285,17 +288,17 @@ func TestCatalogueMetricDescriptorExactChangesAndUnchangedFastPath(t *testing.T)
 		_, err := db.Exec(`alter table search_paths rename to unavailable_search_paths`)
 		return err
 	}))
-	require.NoError(t, ingestMetric(makeMetric(0)), "unchanged empty descriptor must not touch catalogue dictionary/link tables")
+	require.Error(t, ingestMetric(makeMetric(0)), "each received record needs its own catalogue owner")
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		_, err := db.Exec(`alter table unavailable_search_paths rename to search_paths`)
 		return err
 	}))
 	require.NoError(t, ingestMetric(makeMetric(math.Copysign(0, -1))))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		var value string
-		err := db.QueryRow(`select v.value from search_owners o join search_postings l on l.owner_id=o.id join search_paths p on p.id=l.path_id join search_values v on v.id=l.value_id where o.owner='metric' and p.key='zero' and p.kind='double'`).Scan(&value)
+		var values string
+		err := db.QueryRow(`select string_agg(v.value, ',' order by v.value) from search_owners o join search_postings l on l.owner_id=o.id join search_paths p on p.id=l.path_id join search_values v on v.id=l.value_id where o.owner='metric' and p.key='zero' and p.kind='double'`).Scan(&values)
 		require.NoError(t, err)
-		require.Equal(t, "-0", value, "unchanged detection must compare float bits, not SQL numeric equality")
+		require.Equal(t, "-0,0", values, "both received descriptors retain their float bits")
 		return nil
 	}))
 }

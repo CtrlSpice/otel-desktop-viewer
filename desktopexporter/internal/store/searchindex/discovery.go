@@ -188,7 +188,8 @@ func nativeSamples(ctx context.Context, db *sql.DB, owner string, path []any, re
 			document = "t.body"
 		}
 	case "metric":
-		from = "metrics t"
+		from = "metric_records t"
+		identity = "t.record_id::varchar"
 		document = "t.metadata"
 	case "datapoint":
 		from = "metric_datapoints t"
@@ -204,9 +205,9 @@ func nativeSamples(ctx context.Context, db *sql.DB, owner string, path []any, re
 		case "log":
 			sources = []string{"logs"}
 		case "metric":
-			sources = []string{"metrics", "metric_datapoints"}
+			sources = []string{"metric_records"}
 		default:
-			sources = []string{"spans", "logs", "metrics", "metric_datapoints"}
+			sources = []string{"spans", "logs", "metric_records"}
 		}
 		for _, table := range sources {
 			if from != "" {

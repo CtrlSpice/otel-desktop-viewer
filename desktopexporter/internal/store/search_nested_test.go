@@ -167,7 +167,7 @@ func TestNestedSearchRetainsChildOwnership(t *testing.T) {
 		point := metric.Gauge().DataPoints().At(0)
 		put(point.Attributes(), "datapoint")
 		put(point.Exemplars().At(0).FilteredAttributes(), "exemplar")
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
 	}
 	condition := func(owner, value string) search.QueryNode {
 		root := "attributes"

@@ -35,7 +35,7 @@ func TestGetMetricOTLP(t *testing.T) {
 	input := otlpMetricFixture()
 	for range 2 {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, input, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, input)
 		}))
 	}
 
@@ -140,7 +140,7 @@ func TestGetMetricOTLP(t *testing.T) {
 func TestGetMetricOTLPWithoutDatapoints(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, otlpMetricFixture())
 	}))
 	ids := metricMetricIDs(t, s, ctx)
 	for _, name := range []string{"otlp.gauge", "otlp.sum", "otlp.histogram", "otlp.exponential"} {
@@ -177,7 +177,7 @@ func TestGetMetricOTLPWithoutDatapoints(t *testing.T) {
 	}
 	// Metadata must not reconstruct datapoints, including invalid stored oneofs.
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		_, err := db.Exec("update metric_datapoints set value_type = 'Double', double_value = null, int_value = null")
+		_, err := db.Exec("update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,value_type:='Double',double_value:=null,int_value:=null))")
 		return err
 	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -189,7 +189,7 @@ func TestGetMetricOTLPWithoutDatapoints(t *testing.T) {
 func TestValidateMetricOTLPRejectsInvalidWireShapes(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, otlpMetricFixture())
 	}))
 	ids := metricMetricIDs(t, s, ctx)
 	gaugeText := string(getMetricOTLP(t, s, ctx, ids["otlp.gauge"]))
@@ -238,7 +238,7 @@ func TestGetMetricOTLPOwnershipAndEmptyValues(t *testing.T) {
 		dp.Attributes().PutStr("datapoint.owner", owner)
 		dp.Exemplars().AppendEmpty().FilteredAttributes().PutStr("exemplar.owner", owner)
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, batch, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, batch)
 		}))
 	}
 	other := pmetric.NewMetrics()
@@ -251,7 +251,7 @@ func TestGetMetricOTLPOwnershipAndEmptyValues(t *testing.T) {
 	otherMetric.SetDescription("must-not-leak")
 	otherMetric.SetEmptyGauge().DataPoints().AppendEmpty().SetTimestamp(999)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, other, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, other)
 	}))
 
 	var id string
@@ -279,7 +279,7 @@ func TestGetMetricOTLPOwnershipAndEmptyValues(t *testing.T) {
 	em.SetName("empty-occurrence")
 	em.SetEmptyGauge()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, empty, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, empty)
 	}))
 	emptyID := metricMetricIDs(t, s, ctx)["empty-occurrence"]
 	emptyRaw := getMetricOTLP(t, s, ctx, emptyID)
@@ -309,7 +309,7 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 	var rejected ingest.Rejected
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		var err error
-		rejected, err = metrics.IngestReport(ctx, conn, summary, s.FlushedIDs())
+		rejected, err = metrics.IngestReport(ctx, conn, summary)
 		return err
 	}))
 	require.Equal(t, 1, rejected.Count())
@@ -321,14 +321,14 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 	gm.SetName("future-metric")
 	gm.SetEmptyGauge()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, gauge, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, gauge)
 	}))
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
-			insert into metrics
-			select * replace(uuid() as id, 'FutureMetric' as metric_type)
-			from metrics where name = 'future-metric'`)
+			insert into metric_records
+			select * replace(uuid() as id, uuid() as record_id, 'FutureMetric' as metric_type)
+			from metric_records where name = 'future-metric'`)
 		return err
 	}))
 	var summaryID string
@@ -343,9 +343,9 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 
 func TestGetMetricOTLPRejectsStoredNullAndInvalidOneof(t *testing.T) {
 	for name, mutation := range map[string]string{
-		"SQL null":      `update metric_datapoints set timestamp = null`,
-		"invalid oneof": `update metric_datapoints set value_type = 'Int', int_value = null`,
-		"unknown oneof": `update metric_datapoints set value_type = 'FutureValue'`,
+		"SQL null":      `update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,timestamp:=null))`,
+		"invalid oneof": `update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,value_type:='Int',int_value:=null))`,
+		"unknown oneof": `update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,value_type:='FutureValue'))`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, ctx := storetest.New(t)
@@ -356,7 +356,7 @@ func TestGetMetricOTLPRejectsStoredNullAndInvalidOneof(t *testing.T) {
 			dp.SetTimestamp(1)
 			dp.SetIntValue(1)
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, data)
 			}))
 			id := metricMetricIDs(t, s, ctx)["guard"]
 			err := s.WithDBRead(func(db *sql.DB) error {
@@ -655,7 +655,7 @@ func BenchmarkGetMetricOTLP(b *testing.B) {
 				}
 			}
 			require.NoError(b, s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, data)
 			}))
 			var id string
 			require.NoError(b, s.WithDBRead(func(db *sql.DB) error {

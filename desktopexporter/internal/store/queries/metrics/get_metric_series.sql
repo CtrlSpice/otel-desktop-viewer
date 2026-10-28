@@ -9,10 +9,9 @@ selected_series as materialized (
 	where s.id = $2::uuid and s.metric_id = $1::uuid
 ),
 selected_datapoints as materialized (
-	select d.*, hb.bounds as explicit_bounds
+	select d.*
 	from metric_datapoints d
 	join selected_series s on s.id = d.series_id
-	left join histogram_bounds hb on hb.id = d.bounds_id
 	where (list_extract($3::ubigint[], 1) is null or d.timestamp >= list_extract($3::ubigint[], 1))
 	  and (list_extract($4::ubigint[], 1) is null or d.timestamp <= list_extract($4::ubigint[], 1))
 ),

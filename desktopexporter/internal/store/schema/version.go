@@ -14,10 +14,10 @@ package schema
 // `create table if not exists` silently leaves an old table in place and the
 // mismatch first surfaces as a duckdb appender column-count error during ingest,
 // or as an index creation failure against a column that does not exist.
-// Version 26 requires the derived search/discovery catalogue alongside native
-// VARIANT attributes, log bodies, and Evals payloads.
+// Version 27 stores span children and metric points/exemplars/bounds inside
+// their owning rows, alongside the derived search/discovery catalogue.
 // Older databases are incompatible; select a new database or recreate the file.
-const Version = 26
+const Version = 27
 
 // VersionTableQuery creates the version table.
 //

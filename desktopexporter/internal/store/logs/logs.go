@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
@@ -39,10 +40,6 @@ var (
 	ErrLogsStoreInternal = errors.New("logs store internal error")
 	ErrLogRefNotFound    = errors.New("log ID not found")
 )
-
-// flushIntervalLogs bounds how many log records accumulate in the appenders before
-// they are pushed to DuckDB, limiting memory used by large batches.
-const flushIntervalLogs = 500
 
 type queryRower interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
@@ -86,13 +83,19 @@ func appendPass(
 	keep func(ordinal int) bool,
 ) (err error) {
 	tables := []string{"logs"}
-	appenders, err := ingest.NewAppenders(conn, tables)
+	appenders, err := arrowingest.NewAppenders(ctx, conn, tables)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 	}
 	var catalogue searchindex.Batch
 	defer func() {
-		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+		if err != nil {
+			for _, appender := range appenders {
+				appender.Discard()
+			}
+			return
+		}
+		err = errors.Join(err, arrowingest.CloseAppenders(appenders, tables))
 		if err == nil {
 			if indexErr := catalogue.Write(ctx, conn); indexErr != nil {
 				err = fmt.Errorf("%w: %w", ingest.ErrNotRowFault, indexErr)
@@ -100,7 +103,6 @@ func appendPass(
 		}
 	}()
 
-	logCount := 0
 	logCur := 0
 	for _, resourceLogs := range logs.ResourceLogs().All() {
 		resource := resourceLogs.Resource()
@@ -116,6 +118,7 @@ func appendPass(
 				return err
 			}
 
+			appenders["logs"].SetContext(resourceInput, scopeInput)
 			for _, log := range scopeLogs.LogRecords().All() {
 				if err := ctx.Err(); err != nil {
 					return err
@@ -147,23 +150,7 @@ func appendPass(
 				logCur++
 
 				id := uuid.New()
-				err = appenders["logs"].AppendRow(
-					duckdb.UUID(id),                 // ID UUID
-					uint64(log.Timestamp()),         // Timestamp UBIGINT
-					uint64(log.ObservedTimestamp()), // ObservedTimestamp UBIGINT
-					traceUUID,                       // TraceID UUID
-					spanID,                          // SpanID UBIGINT or NULL
-					log.SeverityText(),              // SeverityText VARCHAR
-					int32(log.SeverityNumber()),     // SeverityNumber INTEGER
-					body,                            // Body Parquet Variant bytes
-					resourceInput,
-					scopeInput,
-					attributes,
-					log.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-					uint32(log.Flags()),          // Flags UINTEGER
-					log.EventName(),              // EventName VARCHAR
-					serviceName,                  // ServiceName VARCHAR (NOT NULL, '' = unknown)
-				)
+				err = appenders["logs"].AppendLog(log, id, body, attributes, serviceName)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 				}
@@ -190,12 +177,6 @@ func appendPass(
 				}
 				catalogue.Add(o)
 
-				logCount++
-				if logCount%flushIntervalLogs == 0 {
-					if err := ingest.FlushAppenders(appenders, tables); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
-					}
-				}
 			}
 		}
 	}

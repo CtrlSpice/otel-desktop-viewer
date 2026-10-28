@@ -457,10 +457,6 @@ func TestClearTraces(t *testing.T) {
 
 	assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"))
 
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
-
 	// Spans were the only signal ingested, so after the sweep nothing is
 	// referenced and the three tables empty out completely.
 	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
@@ -1253,12 +1249,12 @@ func TestSearchTraceSummaries(t *testing.T) {
 	})
 }
 
-// TestIngestSpans_LargeBatchStaysConsistent checks owned payloads across flushes.
+// TestIngestSpans_LargeBatchStaysConsistent checks owned payloads across Arrow chunks.
 func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
-	const batchSize = spans.FlushInterval + 1
+	const batchSize = 8193
 	traces := createTestTracesPdataN(batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces)
@@ -1272,12 +1268,9 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
 
-	// Sample the first span, the last one before the mid-batch flush, and the
-	// first one after it -- the boundary is where a split-brain would show.
+	// Sample the first span and both sides of a 2048-row Arrow scan chunk.
 	// SpanID for index i is stored as the native integer i+1.
-	//
-	// Inspect the native attribute maps on each side of the flush boundary.
-	for _, spanIndex := range []int{0, spans.FlushInterval - 1, spans.FlushInterval} {
+	for _, spanIndex := range []int{0, 2047, 2048, batchSize - 1} {
 		spanID := fmt.Sprintf("%d", spanIndex+1)
 		attrCount := countRows(t, s, ctx, `
 			select count(*)
@@ -1395,10 +1388,6 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	// Deleting spans removes their attributes immediately.
 	assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"),
 		"attributes are removed with their spans")
-
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
 
 	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }

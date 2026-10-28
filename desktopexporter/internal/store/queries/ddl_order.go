@@ -11,11 +11,10 @@ import (
 //
 // # What constrains it
 //
-// Declared foreign keys, and only those:
+// Owning tables must precede their child views:
 //
 //	events, links      -> spans
-//	datapoints         -> metric_series, histogram_bounds
-//	exemplars          -> datapoints
+//	metrics, metric_series, metric_datapoints, exemplars -> metric_records
 //
 // Each signal is created before its children.
 //

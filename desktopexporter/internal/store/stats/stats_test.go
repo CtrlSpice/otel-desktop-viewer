@@ -205,7 +205,7 @@ func TestGetStats_WithMetrics(t *testing.T) {
 	m := buildTestMetrics()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, m, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, m)
 	})
 	require.NoError(t, err)
 
@@ -231,7 +231,7 @@ func TestGetStats_AllSignals(t *testing.T) {
 		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime)); err != nil {
 			return err
 		}
-		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
 	})
 	require.NoError(t, err)
 

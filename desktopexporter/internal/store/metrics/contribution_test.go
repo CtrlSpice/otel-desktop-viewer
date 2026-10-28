@@ -40,7 +40,7 @@ func TestHistogramContribution(t *testing.T) {
 						{timestamp: later, attrs: b, scale: 0, posCounts: []uint64{2}, zeroThreshold: 1, count: 2},
 					})
 				}
-				require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs()) }))
+				require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, fixture) }))
 				metricID := findMetricRef(t, s, ctx, "contribution")
 				var sourceID, seriesID string
 				require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -138,7 +138,7 @@ func TestHistogramContributionCumulativeReset(t *testing.T) {
 					{timestamp: later, attrs: b, zeroCount: 4, count: 4},
 				})
 			}
-			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs()) }))
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, fixture) }))
 			metricID := findMetricRef(t, s, ctx, "reset.contribution")
 			var sourceID string
 			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
