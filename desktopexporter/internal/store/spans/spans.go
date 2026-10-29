@@ -632,26 +632,6 @@ func GetTraceAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMess
 	return traceAttributeKeys(ctx, db)
 }
 
-// fieldValueQueries names the span columns whose values the search box may
-// complete, keyed by the search grammar's field name. An allowlist of whole
-// baked queries rather than an identifier spliced into one: a field name from
-// the wire never becomes SQL.
-var fieldValueQueries = map[string]string{
-	"name": `
-		select cast(coalesce(
-			to_json(list(sub.v order by sub.cnt desc, sub.v)),
-			to_json([])) as varchar)
-		from (
-			select name as v, count(*) as cnt
-			from spans
-			where name <> '' and name ilike '%' || ? || '%' escape '\'
-			group by name
-			order by cnt desc, name
-			limit ?
-		) sub
-	`,
-}
-
 // GetFieldValueCompletions returns distinct values of one completable span column
 // matching term, most frequent first, as a JSON string array. Backs value
 // completion in the search box.
@@ -662,16 +642,15 @@ var fieldValueQueries = map[string]string{
 // clamped by the caller. A field not in the allowlist is an error rather than
 // an empty result, so a typo in a caller shows up as one.
 func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
-	query, ok := fieldValueQueries[field]
-	if !ok {
+	query, args, err := searchindex.FieldValuesSQL("traces", field, term, limit)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidTraceQuery, field)
 	}
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+	raw, err := searchindex.FieldValuesJSON(ctx, db, query, args)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrSpansStoreInternal, err)
 	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 func GetTraceAttributeDefinitionsByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {

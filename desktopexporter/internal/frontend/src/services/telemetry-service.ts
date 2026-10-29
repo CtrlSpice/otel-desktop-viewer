@@ -358,11 +358,11 @@ export let telemetryAPI = {
     term: string,
     limit: number
   ): Promise<string[]> => {
-    const rawData = await callRPC<string[]>(
+    const rawData = await callArrow(
       'getFieldValueCompletions',
       named({ signal, field, term, limit })
     )
-    return Array.isArray(rawData) ? rawData : []
+    return rowViews(rawData, (frame, row) => frame.cell('value', row).text())
   },
 
   searchAttributeMatches: async (
