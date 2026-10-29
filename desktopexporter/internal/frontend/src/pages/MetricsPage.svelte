@@ -234,12 +234,12 @@
     )
       return
     // A shared URL selects an identity independently of filtered-list membership.
-    let cancelled = false
+    const controller = new AbortController()
     summaryLoading = true
     void telemetryAPI
-      .getMetric(id)
+      .getMetric(id, controller.signal)
       .then(metric => {
-        if (cancelled) return
+        if (controller.signal.aborted) return
         if (!metric) {
           summaryError = 'The selected metric was not found.'
           return
@@ -268,16 +268,16 @@
         }
       })
       .catch(error => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           summaryError = 'Could not load the selected metric.'
           console.error('Failed to fetch selected metric:', error)
         }
       })
       .finally(() => {
-        if (!cancelled) summaryLoading = false
+        if (!controller.signal.aborted) summaryLoading = false
       })
     return () => {
-      cancelled = true
+      controller.abort()
     }
   })
 
@@ -303,17 +303,23 @@
   let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
   let seriesDatapointErrors = new SvelteMap<string, string>()
   let seriesDatapointsKey = ''
-  let seriesDatapointsScopeKey = ''
-  let inspectedSeriesSnapshot: string | null = null
   let seriesRetry = $state(0)
-  let seriesRetrySnapshot = 0
   let seriesDatapointsMetricID = $derived(selectedMetric?.metricRef ?? null)
   let displayedDatapointScope = $state<{
     selection: typeof timeContext.selection
     timezone: typeof timeContext.tz
     timezoneOffsetNs: number
     timezoneName: string | undefined
+    revision: number
   }>()
+  const seriesScopeKey = $derived(
+    JSON.stringify([
+      seriesDatapointsMetricID,
+      displayedDatapointScope?.selection,
+      displayedDatapointScope?.timezone,
+      displayedDatapointScope?.revision,
+    ])
+  )
 
   // Per-series distributions for the selected heatmap column.
   let columnDistribution = $state<MetricViewData | undefined>(undefined)
@@ -387,19 +393,32 @@
   )
 
   // Polling may replace a summary object without changing its metric identity.
+  const selectedMetricRef = $derived(selectedSummary?.metricRef)
+  let detailRefresh = $state(0)
+  function refreshMetrics() {
+    detailRefresh++
+    page.handleRefresh()
+  }
   $effect(() => {
     void timeContext.selection
+    void timeContext.tz
+    void detailRefresh
     const requestedID = page.selectedID
-    const id = selectedSummary?.metricRef
+    const id = selectedMetricRef
+    detailController?.abort()
+    ++detailToken
     if (!id) {
-      ++detailToken
       detailLoading = false
       detailError = ''
       if (!requestedID) selectedMetric = undefined
       return
     }
     const summary = untrack(() => selectedSummary)
-    if (summary) fetchMetricDetail(summary)
+    if (summary) void fetchMetricDetail(summary)
+    return () => {
+      detailController?.abort()
+      ++detailToken
+    }
   })
 
   // Aggregates depend on legend selection; metric detail depends on metric identity.
@@ -449,19 +468,35 @@
     selectedAggregateSummary = null
     selectedScalarAggregate = null
     const requestAggregates = () => {
-      void fetchAggregate(summary, visibleKeys, bounds, token, false)
+      void fetchAggregate(
+        summary,
+        visibleKeys,
+        bounds,
+        token,
+        false,
+        controller.signal
+      )
       if (
         summary.metricType === 'Histogram' ||
         summary.metricType === 'ExponentialHistogram'
       ) {
-        void fetchAggregate(summary, visibleKeys, bounds, token, true)
+        void fetchAggregate(
+          summary,
+          visibleKeys,
+          bounds,
+          token,
+          true,
+          controller.signal
+        )
       }
     }
+    const controller = new AbortController()
     if (debounce) aggregateTimer = setTimeout(requestAggregates, 120)
     else untrack(requestAggregates)
 
     return () => {
       clearTimeout(aggregateTimer)
+      controller.abort()
       ++aggregateToken
     }
   })
@@ -471,7 +506,8 @@
     visibleKeys: string[],
     bounds: { startTime: bigint; endTime: bigint },
     token: number,
-    wholeWindow: boolean
+    wholeWindow: boolean,
+    signal: AbortSignal
   ) {
     try {
       const { startTime, endTime } = bounds
@@ -490,10 +526,12 @@
         // Keep pooled and per-series lines on the same bucket grid.
         wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
         wholeWindow ? undefined : [],
-        displayedDatapointScope?.timezoneName
+        displayedDatapointScope?.timezoneName,
+        undefined,
+        signal
       )
       // A slower earlier request must not overwrite a newer answer.
-      if (token === aggregateToken) {
+      if (!signal.aborted && token === aggregateToken) {
         if (wholeWindow) {
           selectedAggregateSummary = result?.aggregate?.[0] ?? null
         } else {
@@ -502,6 +540,7 @@
         }
       }
     } catch (err) {
+      if (signal.aborted) return
       console.error('Failed to fetch metric aggregate:', err)
       if (token === aggregateToken) {
         if (wholeWindow) {
@@ -528,26 +567,12 @@
 
   // Series selection loads received datapoints independently of chart visibility.
   $effect(() => {
+    const scopeKey = seriesScopeKey
     const metricRef = seriesDatapointsMetricID
     const selectedSeries = metricCtx.selectedSeriesKey
-    const retryChanged = seriesRetry !== seriesRetrySnapshot
-    seriesRetrySnapshot = seriesRetry
-    const scope = displayedDatapointScope
-    const scopeKey =
-      metricRef && scope
-        ? JSON.stringify([metricRef, scope.selection, scope.timezone])
-        : ''
-    const scopeChanged = scopeKey !== seriesDatapointsScopeKey
-    if (scopeChanged) {
-      seriesDatapointsScopeKey = scopeKey
-      seriesDatapointsKey = ''
-      seriesDatapoints.clear()
-      seriesDatapointErrors.clear()
-    }
-    const selectionChanged = selectedSeries !== inspectedSeriesSnapshot
-    inspectedSeriesSnapshot = selectedSeries
+    void seriesRetry
+    const scope = untrack(() => displayedDatapointScope)
     if (!metricRef || !selectedSeries || !scope) return
-    if (!scopeChanged && !selectionChanged && !retryChanged) return
 
     const now = Date.now()
     const { startTime, endTime } = selectionToQueryRangeNs(scope.selection, now)
@@ -557,6 +582,7 @@
     // Capture every input that can change the store's answer. A structured key
     // avoids collisions with attribute-derived series and metric identifiers.
     const key = JSON.stringify([
+      scopeKey,
       metricRef,
       startTime?.toString() ?? null,
       endTime?.toString() ?? null,
@@ -570,22 +596,23 @@
       seriesDatapointErrors.clear()
     }
 
-    for (const seriesKey of [selectedSeries]) {
-      // Cache publication must not trigger another live-window request.
-      if (untrack(() => seriesDatapoints.has(seriesKey))) continue
-      void fetchSeriesDatapoints({
+    // Cache publication must not trigger another live-window request.
+    if (untrack(() => seriesDatapoints.has(selectedSeries))) return
+    const controller = new AbortController()
+    void fetchSeriesDatapoints(
+      {
         metricRef,
-        seriesKey,
+        seriesKey: selectedSeries,
         startTime,
         endTime,
         timezoneOffsetNs,
         timezoneName,
         cacheKey: key,
-      })
-    }
+      },
+      controller.signal
+    )
+    return () => controller.abort()
   })
-
-  const seriesInFlight = new Set<string>()
 
   type SeriesDatapointsRequest = {
     metricRef: string
@@ -597,7 +624,10 @@
     cacheKey: string
   }
 
-  async function fetchSeriesDatapoints(request: SeriesDatapointsRequest) {
+  async function fetchSeriesDatapoints(
+    request: SeriesDatapointsRequest,
+    signal: AbortSignal
+  ) {
     const {
       metricRef,
       seriesKey,
@@ -607,9 +637,6 @@
       timezoneName,
       cacheKey,
     } = request
-    const requestKey = JSON.stringify([cacheKey, seriesKey])
-    if (seriesInFlight.has(requestKey)) return
-    seriesInFlight.add(requestKey)
     seriesDatapointErrors.delete(seriesKey)
     try {
       const result = await telemetryAPI.getMetricView(
@@ -623,19 +650,21 @@
         undefined,
         undefined,
         undefined,
-        timezoneName
+        timezoneName,
+        undefined,
+        undefined,
+        signal
       )
       // Do not publish a response into a different metric or window scope.
-      if (cacheKey !== seriesDatapointsKey) return
+      if (signal.aborted || cacheKey !== seriesDatapointsKey) return
       const series = result?.timeseries.find(t => t.seriesRef === seriesKey)
       // Cache terminal empty results so pending URL selections can resolve.
       seriesDatapoints.set(seriesKey, series?.datapoints ?? [])
     } catch (err) {
+      if (signal.aborted) return
       if (cacheKey === seriesDatapointsKey)
         seriesDatapointErrors.set(seriesKey, 'Could not load datapoints.')
       console.error('Failed to fetch series datapoints:', err)
-    } finally {
-      seriesInFlight.delete(requestKey)
     }
   }
 
@@ -673,7 +702,7 @@
       return
     const bounds = effectiveMetricBounds(metric)
     if (!bounds) return
-    let cancelled = false
+    const controller = new AbortController()
     void telemetryAPI
       .getMetricAggregateView(
         metric.metricRef,
@@ -686,10 +715,11 @@
         0,
         undefined,
         zone,
-        datapointID
+        datapointID,
+        controller.signal
       )
       .then(result => {
-        if (!cancelled && result?.contribution !== undefined) {
+        if (!controller.signal.aborted && result?.contribution !== undefined) {
           histogramContribution = {
             datapointID,
             point: aggregateToSlices(result.contribution)[0] ?? null,
@@ -697,11 +727,11 @@
         }
       })
       .catch(error => {
-        if (!cancelled)
+        if (!controller.signal.aborted)
           console.error('Failed to fetch histogram contribution:', error)
       })
     return () => {
-      cancelled = true
+      controller.abort()
     }
   })
 
@@ -711,6 +741,7 @@
     const startNs = metricCtx.heatmapColumnStartNs
     const endNs = metricCtx.heatmapColumnEndNs
     const summary = displayedMetricSummary
+    const scope = displayedDatapointScope
     const token = ++columnToken
     if (startNs === null || endNs === null || !summary) {
       columnDistribution = undefined
@@ -718,6 +749,7 @@
     }
     // Clear stale column data while the new request is in flight.
     columnDistribution = undefined
+    const controller = new AbortController()
     void (async () => {
       try {
         const result = await telemetryAPI.getMetricView(
@@ -728,24 +760,30 @@
           1,
           undefined,
           DEFAULT_HISTOGRAM_QUANTILES,
-          displayedDatapointScope?.timezoneOffsetNs ?? 0,
+          scope?.timezoneOffsetNs ?? 0,
           0,
           0,
           undefined,
-          displayedDatapointScope?.timezoneName
+          scope?.timezoneName,
+          undefined,
+          undefined,
+          controller.signal
         )
-        if (token !== columnToken) return
+        if (controller.signal.aborted || token !== columnToken) return
         columnDistribution = result ?? undefined
       } catch (err) {
-        if (token !== columnToken) return
+        if (controller.signal.aborted || token !== columnToken) return
         console.error('Failed to fetch heatmap column distribution:', err)
         columnDistribution = undefined
       }
     })()
+    return () => controller.abort()
   })
 
   // Identifies the current detail request so stale responses cannot replace it.
   let detailToken = 0
+  let detailController: AbortController | undefined
+  let detailRevision = 0
 
   // Fetch datapoints for newly visible series and coalesce rapid legend changes.
   let datapointTimer: ReturnType<typeof setTimeout> | undefined
@@ -788,6 +826,9 @@
     reseed = true
   ) {
     const token = ++detailToken
+    detailController?.abort()
+    const controller = new AbortController()
+    detailController = controller
     const requestedDatapointSeries =
       datapointSeries ?? persistedVisibleKeys(summary.metricRef) ?? undefined
     try {
@@ -802,6 +843,7 @@
         timezone: timeContext.tz,
         timezoneOffsetNs: tzOffsetNs(),
         timezoneName: tzName(),
+        revision: detailRevision + (reseed ? 1 : 0),
       }
       // Scalar lines and histogram heatmaps use different display resolutions.
       const isHistogramMetric =
@@ -829,10 +871,16 @@
           scope.timezoneName,
           // Include datapoints only for drawn series; keep all series metadata.
           requestedDatapointSeries,
-          DEFAULT_VISIBLE_TIMESERIES
+          DEFAULT_VISIBLE_TIMESERIES,
+          controller.signal
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
-      if (token !== detailToken || page.selectedID !== summary.metricRef) return
+      if (
+        controller.signal.aborted ||
+        token !== detailToken ||
+        page.selectedID !== summary.metricRef
+      )
+        return
       // The store's default limit uses the response's own series order. Replace
       // this set with each response so a refresh or scope change loads afresh.
       loadedDatapointSeries = new Set(
@@ -847,16 +895,18 @@
       selectedScalarAggregate = null
       selectedMetric = result
       displayedDatapointScope = scope
+      detailRevision = scope.revision
       displayedMetricSummary = summary
       // Seed state before the result renders.
       if (reseed) metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
+      if (controller.signal.aborted || token !== detailToken) return
       console.error('Failed to fetch metric detail:', err)
-      if (token !== detailToken) return
       detailError = 'Could not load the selected metric.'
     } finally {
       // Only the current request owns the loading state.
-      if (token === detailToken) detailLoading = false
+      if (!controller.signal.aborted && token === detailToken)
+        detailLoading = false
     }
   }
 
@@ -897,7 +947,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Metrics"
-  onRefresh={page.handleRefresh}
+  onRefresh={refreshMetrics}
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}

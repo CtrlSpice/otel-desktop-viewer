@@ -25,12 +25,14 @@
     wholeURL,
     status = $bindable<RawJsonStatusData>(),
     showStatus = true,
+    refreshKey,
   }: {
     scopes: RawJsonScope[]
     active: boolean
     wholeURL: string
     status?: RawJsonStatusData
     showStatus?: boolean
+    refreshKey?: unknown
   } = $props()
   const PREVIEW_BYTES = 2 * 1024 * 1024
   const formatDescription =
@@ -52,6 +54,7 @@
   let partial = $state(false)
   let requestedURL = $state('')
   let currentURL = $state('')
+  let currentRefreshKey: unknown
   let retry = $state(0)
   let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
   const sizeLabel = (size: number) =>
@@ -71,8 +74,15 @@
 
   $effect(() => {
     void retry
+    const revision = refreshKey
     const url = previewURL
-    if (url && (!active || url === untrack(() => currentURL))) return
+    if (
+      url &&
+      (!active ||
+        (url === untrack(() => currentURL) && revision === currentRefreshKey))
+    )
+      return
+    currentRefreshKey = revision
     currentURL = url ?? ''
     requestedURL = ''
     formatted = ''
@@ -122,6 +132,7 @@
   })
 
   $effect(() => {
+    void refreshKey
     const url = requestedURL
     if (!active || !url || url !== previewURL) return
     if (untrack(() => formatted && currentURL === url)) return

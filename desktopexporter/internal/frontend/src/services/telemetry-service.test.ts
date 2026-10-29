@@ -253,6 +253,76 @@ describe('JSON-RPC response identity', () => {
 })
 
 describe('request cancellation', () => {
+  it.each([
+    [
+      'getMetric',
+      (signal: AbortSignal) => telemetryAPI.getMetric('metric', signal),
+    ],
+    [
+      'getMetricSeries',
+      (signal: AbortSignal) =>
+        telemetryAPI.getMetricSeries(
+          'metric',
+          'series',
+          null,
+          null,
+          false,
+          signal
+        ),
+    ],
+    [
+      'getMetricView',
+      (signal: AbortSignal) =>
+        telemetryAPI.getMetricView(
+          'metric',
+          null,
+          null,
+          0,
+          undefined,
+          undefined,
+          0,
+          0,
+          0,
+          undefined,
+          undefined,
+          [],
+          0,
+          signal
+        ),
+    ],
+    [
+      'getMetricAggregateView',
+      (signal: AbortSignal) =>
+        telemetryAPI.getMetricAggregateView(
+          'metric',
+          null,
+          null,
+          1,
+          [],
+          [],
+          0,
+          0,
+          undefined,
+          undefined,
+          undefined,
+          signal
+        ),
+    ],
+  ] as const)('forwards cancellation through %s', async (method, invoke) => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new DOMException('aborted', 'AbortError'))
+    vi.stubGlobal('fetch', fetch)
+    const controller = new AbortController()
+    await expect(invoke(controller.signal)).rejects.toBeInstanceOf(
+      RequestAbortedError
+    )
+    expect(fetch).toHaveBeenCalledWith(
+      `/api/data/${method}`,
+      expect.objectContaining({ signal: controller.signal })
+    )
+  })
+
   it('recognizes only service and platform abort errors', () => {
     expect(isAbortError(new RequestAbortedError())).toBe(true)
     expect(isAbortError(new DOMException('aborted', 'AbortError'))).toBe(true)

@@ -845,9 +845,12 @@ LIMIT ${batch.length}`,
     return rowViews(rawData, metricSummary)
   },
 
-  getMetric: async (metricRef: string): Promise<ExactMetric | null> => {
+  getMetric: async (
+    metricRef: string,
+    signal?: AbortSignal
+  ): Promise<ExactMetric | null> => {
     try {
-      const rawData = await callArrow('getMetric', named({ metricRef }))
+      const rawData = await callArrow('getMetric', named({ metricRef }), signal)
       return exactMetric(rawData)
     } catch (error) {
       if (
@@ -865,7 +868,8 @@ LIMIT ${batch.length}`,
     seriesRef: string,
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
-    includeDatapoints?: boolean
+    includeDatapoints?: boolean,
+    signal?: AbortSignal
   ): Promise<ExactMetricSeries | null> => {
     try {
       const rawData = await callArrow(
@@ -876,7 +880,8 @@ LIMIT ${batch.length}`,
           includeDatapoints,
           startTime: serializeNanoseconds(startTime),
           endTime: serializeNanoseconds(endTime),
-        })
+        }),
+        signal
       )
       return exactMetricSeries(rawData)
     } catch (error) {
@@ -916,7 +921,8 @@ LIMIT ${batch.length}`,
      *  empty array requests none. */
     datapointSeriesRefs?: string[],
     /** Number of leading series that include datapoints when refs are omitted. */
-    datapointSeriesLimit?: number
+    datapointSeriesLimit?: number,
+    signal?: AbortSignal
   ): Promise<MetricViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -940,7 +946,8 @@ LIMIT ${batch.length}`,
           tzName,
           datapointSeriesRefs,
           datapointSeriesLimit,
-        })
+        }),
+        signal
       )
       return metricView(rawData)
     } catch (error) {
@@ -970,7 +977,8 @@ LIMIT ${batch.length}`,
     /** Bucket time zone. It must match the per-series view. */
     tzName?: string,
     /** Highlight this source's interval activity inside the aggregate. */
-    datapointRef?: string
+    datapointRef?: string,
+    signal?: AbortSignal
   ): Promise<MetricAggregateViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -989,7 +997,8 @@ LIMIT ${batch.length}`,
           selectedSeriesRefs: selectedSeriesRefs ?? null,
           tzName,
           datapointRef,
-        })
+        }),
+        signal
       )
       return raw.length ? metricAggregateView(raw) : null
     } catch (error) {

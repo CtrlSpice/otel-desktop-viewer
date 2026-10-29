@@ -17,6 +17,7 @@
     view = $bindable<DetailViewMode>('fields'),
     rawStatus = $bindable<RawJsonStatusData>(),
     showRawStatus = true,
+    refreshKey,
   }: {
     scopes: RawJsonScope[]
     wholeURL: string
@@ -27,6 +28,7 @@
     view?: DetailViewMode
     rawStatus?: RawJsonStatusData
     showRawStatus?: boolean
+    refreshKey?: unknown
   } = $props()
   let mountedRaw = $state(false)
   $effect(() => {
@@ -55,6 +57,7 @@
   {#if mountedRaw}<RawJsonInspector
       {scopes}
       {wholeURL}
+      {refreshKey}
       bind:status={rawStatus}
       showStatus={showRawStatus}
       active={view === 'raw'}

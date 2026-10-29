@@ -2018,6 +2018,13 @@ test.describe('independent histogram aggregate loading', () => {
       page,
     }) => {
       const pending = await holdAggregates(page)
+      const cancelled = Promise.all(
+        pending.map(({ route }) =>
+          page.waitForEvent('requestfailed', {
+            predicate: request => request === route.originalRequest(),
+          })
+        )
+      )
       await page
         .getByRole('checkbox', {
           name: 'Show route: /second in chart',
@@ -2027,17 +2034,6 @@ test.describe('independent histogram aggregate loading', () => {
       await expect.poll(() => pending.length).toBe(4)
       for (const request of pending.slice(2)) await respond(request.route)
       await expect(page.locator('.heatmap-cell')).toHaveCount(3)
-      const finished = Promise.all(
-        pending
-          .slice(0, 2)
-          .map(({ route }) =>
-            page
-              .waitForResponse(
-                response => response.request() === route.originalRequest()
-              )
-              .then(response => response.finished())
-          )
-      )
       for (const request of pending.slice(0, 2)) {
         await respond(
           request.route,
@@ -2045,7 +2041,8 @@ test.describe('independent histogram aggregate loading', () => {
           fail
         )
       }
-      await finished
+      for (const request of await cancelled)
+        expect(request.failure()?.errorText).toContain('ABORTED')
       await page.evaluate(
         () =>
           new Promise(resolve =>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -32,6 +33,7 @@
   const receivedAttributes = new SvelteMap<string, Attribute[]>()
   const attributeErrors = new SvelteMap<string, string>()
   const loadingAttributes = new SvelteSet<string>()
+  const attributeRequests = new Map<string, AbortController>()
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
@@ -45,6 +47,25 @@
     receivedAttributes.clear()
     attributeErrors.clear()
     loadingAttributes.clear()
+  })
+  // A refreshed response can have the same metric/series IDs and new context.
+  // Keep disclosures, but replace exact values and reject every older request.
+  $effect.pre(() => {
+    void ctx.metric
+    receivedAttributes.clear()
+    attributeErrors.clear()
+    loadingAttributes.clear()
+    return () => {
+      for (const controller of attributeRequests.values()) controller.abort()
+      attributeRequests.clear()
+    }
+  })
+  $effect(() => {
+    void ctx.metric
+    const expanded = [...expandedAttributes]
+    untrack(() => {
+      for (const key of expanded) void loadAttributes(key)
+    })
   })
   $effect(() => {
     ctx.previewSeriesKey = ctx.isHistogramKind
@@ -72,10 +93,13 @@
   )
 
   function toggleAttributes(key: string) {
-    if (expandedAttributes.has(key)) expandedAttributes.delete(key)
-    else {
+    if (expandedAttributes.has(key)) {
+      expandedAttributes.delete(key)
+      attributeRequests.get(key)?.abort()
+      attributeRequests.delete(key)
+      loadingAttributes.delete(key)
+    } else {
       expandedAttributes.add(key)
-      void loadAttributes(key)
     }
   }
   async function loadAttributes(key: string) {
@@ -90,6 +114,8 @@
     )
       return
     loadingAttributes.add(key)
+    const controller = new AbortController()
+    attributeRequests.set(key, controller)
     attributeErrors.delete(key)
     try {
       const received = await telemetryAPI.getMetricSeries(
@@ -97,13 +123,14 @@
         key,
         null,
         null,
-        false
+        false,
+        controller.signal
       )
-      if (metricRef !== owner) return
+      if (controller.signal.aborted) return
       if (!received) throw new Error('Series is no longer available')
       receivedAttributes.set(key, received.attributes)
     } catch (error) {
-      if (metricRef === owner)
+      if (!controller.signal.aborted)
         attributeErrors.set(
           key,
           error instanceof Error
@@ -111,7 +138,10 @@
             : 'Failed to load series attributes'
         )
     } finally {
-      if (metricRef === owner) loadingAttributes.delete(key)
+      if (attributeRequests.get(key) === controller) {
+        attributeRequests.delete(key)
+        loadingAttributes.delete(key)
+      }
     }
   }
   const identityColumn = $derived(
