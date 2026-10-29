@@ -2,13 +2,19 @@
 with selected_metric as materialized (
     select * from metrics where id = ?::uuid
 ), series_catalogue as (
-    select ms.id, ms.attributes, count(d.id)::varchar as datapoint_count,
-        min(d.timestamp)::varchar as first_datapoint_timestamp,
-        max(d.timestamp)::varchar as last_datapoint_timestamp
+    select ms.id, ms.attributes, count(d.id){{if not arrow}}::varchar{{end}} as datapoint_count,
+        min(d.timestamp){{if not arrow}}::varchar{{end}} as first_datapoint_timestamp,
+        max(d.timestamp){{if not arrow}}::varchar{{end}} as last_datapoint_timestamp
     from metric_series ms join selected_metric m on m.id = ms.metric_id
     left join metric_datapoints d on d.series_id = ms.id
     group by ms.id, ms.attributes
-), series_documents as (
+){{if arrow}}
+select {{template "metricColumns"}},
+    (select coalesce(list(struct_pack(seriesRef := id::varchar, attributes := attributes,
+        datapointCount := datapoint_count, firstDatapointTimestamp := first_datapoint_timestamp,
+        lastDatapointTimestamp := last_datapoint_timestamp) order by id), []) from series_catalogue) as series
+from selected_metric m
+{{else}}, series_documents as (
     select to_json(list(json_object('seriesRef', id::varchar,
         'attributes', attribute_document(attributes), 'datapointCount', datapoint_count,
         'firstDatapointTimestamp', first_datapoint_timestamp,
@@ -29,4 +35,4 @@ select m.metric_type, json_merge_patch(json_object(
         when 'Histogram' then json_object('aggregationTemporalityCode', m.aggregation_temporality)
         when 'ExponentialHistogram' then json_object('aggregationTemporalityCode', m.aggregation_temporality)
         else '{}'::json end)::varchar as document
-from selected_metric m cross join series_documents sd
+from selected_metric m cross join series_documents sd{{end}}

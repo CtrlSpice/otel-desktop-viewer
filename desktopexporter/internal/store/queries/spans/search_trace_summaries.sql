@@ -48,11 +48,24 @@
 			from ranked_services where rank > 8 group by trace_id
 		),
 		service_breakdowns as (
-			select trace_id, to_json(list(json_object(
+			select trace_id, {{if arrow}}list(struct_pack(
+				key := key, label := label, count := span_count, other := other
+			) order by other, span_count desc, key){{else}}to_json(list(json_object(
 				'key', key, 'label', label, 'count', span_count, 'other', other
-			) order by other, span_count desc, key)) as parts
+			) order by other, span_count desc, key)){{end}} as parts
 			from service_parts group by trace_id
 		)
+		{{if arrow}}select trace_id_wire(sub.trace_id) as traceID,
+			sub.has_root_span as hasRootSpan,
+			case when sub.has_root_span then struct_pack(
+				serviceName := coalesce(sub.service_name, ''), name := sub.root_name
+			) end as rootSpan,
+			sub.trace_start_time as startTime, sub.trace_end_time as endTime,
+			sub.span_count as spanCount, sub.error_count as errorCount,
+			(select parts from service_breakdowns where trace_id = sub.trace_id) as serviceBreakdown
+			{{if .MatchJoin}}, matches.matched_spans as matchedSpans{{end}}
+		from selected_summaries sub{{.MatchJoin}}
+		order by {{.Order}}{{else -}}
 		select cast(coalesce(to_json(list(json_object(
 			'traceID',      replace(sub.trace_id::varchar, '-', ''),
 			'hasRootSpan',  sub.has_root_span,
@@ -72,4 +85,4 @@
 			'serviceBreakdown', (select parts from service_breakdowns where trace_id = sub.trace_id){{.MatchProjection}}
 		) order by {{.Order}}
 		)), '[]') as varchar) as summaries
-		from selected_summaries sub{{.MatchJoin}}
+		from selected_summaries sub{{.MatchJoin}}{{end}}

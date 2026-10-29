@@ -303,6 +303,10 @@ func searchTraceSummaries(ctx context.Context, db *sql.DB, timeRange timerange.T
 // Split out for the same reason as getTraceViewSQL: so a golden test can pin the
 // rendered text without standing up a store.
 func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
+	return traceSummariesSQL(timeRange, criteria, options, false)
+}
+
+func traceSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions, native bool) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -346,6 +350,13 @@ func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, option
 	matchJoin := ""
 	matchProjection := ""
 	if searchTree != nil {
+		identity := `json_object(
+				'traceID', replace(trace_id::varchar, '-', ''),
+				'spanID', span_id_wire(span_id)
+			)`
+		if native {
+			identity = `struct_pack(traceID := trace_id_wire(trace_id), spanID := span_id_wire(span_id))`
+		}
 		matchCTEs = fmt.Sprintf(`
 		query_matches as materialized (
 			select distinct s.trace_id, s.span_id, s.start_time
@@ -354,18 +365,19 @@ func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, option
 			where %s
 		),
 		matched_span_lists as (
-			select trace_id as matched_trace_id, list(json_object(
-				'traceID', replace(trace_id::varchar, '-', ''),
-				'spanID', span_id_wire(span_id)
-			) order by start_time, span_id) as matched_spans
+			select trace_id as matched_trace_id, list(%s order by start_time, span_id) as matched_spans
 			from query_matches
 			group by trace_id
-		),`, spanSearchFrom, queryWhere)
+		),`, spanSearchFrom, queryWhere, identity)
 		matchJoin = "\n\t\tjoin matched_span_lists matches on matches.matched_trace_id = sub.trace_id"
 		matchProjection = ",\n\t\t\t'matchedSpans', to_json(matches.matched_spans)"
 	}
 
-	finalQuery, err := queries.Render(queries.SearchTraceSummaries, searchTraceSummariesParams{
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	finalQuery, err := render(queries.SearchTraceSummaries, searchTraceSummariesParams{
 		CTEs:             cteSQL,
 		From:             spanSearchFrom,
 		EligibilityWhere: eligibilityWhere,
@@ -553,6 +565,10 @@ func getTraceViewSQL(traceID string, criteria any) (string, []any, error) {
 // parameters and differ only in whether they carry the salvage walk, so the
 // search-predicate plumbing is shared rather than duplicated.
 func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs ...uint64) (string, []any, error) {
+	return spansQuery(name, traceID, criteria, false, spanIDs...)
+}
+
+func spansQuery(name queries.Name, traceID string, criteria any, native bool, spanIDs ...uint64) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -592,12 +608,17 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs .
 		selectedIDs = fmt.Sprintf("$%d::ubigint[]", len(args)+1)
 		args = append(args, spanIDs)
 	}
-	query, err := queries.Render(name, getTraceViewParams{
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	query, err := render(name, getTraceViewParams{
 		SelectedIDs: selectedIDs,
 		MatchedCTE:  matchedCTE,
 		MatchedExpr: matchedExpr,
 		MatchedJoin: matchedJoin,
 		Selected:    len(spanIDs) > 0,
+		Salvage:     name == queries.SalvageSpans,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)

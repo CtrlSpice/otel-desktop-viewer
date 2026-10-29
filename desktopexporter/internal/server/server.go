@@ -151,6 +151,7 @@ func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
+	mux.HandleFunc("POST /api/data/{method}", s.arrowHandler)
 	mux.HandleFunc("GET /api/features", s.featureConfig)
 	discovery, err := openRPCHandler()
 	if err != nil {
@@ -176,6 +177,7 @@ func (s *Server) initHandler() error {
 		AllowedOrigins: []string{"http://*", "https://*"},
 		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders: []string{"*"},
+		ExposedHeaders: []string{"X-Arrow-Rows"},
 	})
 	s.server.Handler = c.Handler(mux)
 	return nil

@@ -8,7 +8,17 @@ page as (
     select l.* from filtered l
     order by {{.Order}}
     limit ? offset ?
-), page_values as materialized (
+){{if arrow}}
+select (select count(*) from filtered) as total,
+    (select coalesce(list(struct_pack(
+        logRef := l.id::varchar,
+        timestamp := coalesce(nullif(l.timestamp, 0), l.observed_timestamp),
+        severityText := l.severity_text, severityNumber := l.severity_number,
+        eventName := l.event_name, serviceName := l.service_name, body := l.body
+        {{if .Columns}}, columnValues := [{{.NativeColumns}}]{{end}}
+    ) order by {{.Order}}), []) from page l
+    ) as logs
+{{else}}, page_values as materialized (
     select l.*, otel_value_json(l.body) as body_wire from page l
 )
 {{if .Columns}}, requested_columns as (
@@ -56,4 +66,4 @@ select cast(json_object(
         {{if .Columns}}, 'columnValues', p.values{{end}}
     ) order by {{.Order}})), '[]'::json) from page_values l
     {{if .Columns}}left join projected_columns p on p.id = l.id{{end}})
-) as varchar)
+) as varchar){{end}}

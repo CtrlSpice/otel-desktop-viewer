@@ -273,6 +273,26 @@ func GetErrorNavigation(ctx context.Context, db *sql.DB, timeRange timerange.Tim
 }
 
 func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page *PageOptions, selectedID *string) (json.RawMessage, error) {
+	query, err := logResultsSQL(timeRange, criteria, options, page, selectedID, false)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query.sql, query.args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+type logQuery struct {
+	sql  string
+	args []any
+}
+
+func logResultsSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page *PageOptions, selectedID *string, native bool) (*logQuery, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -302,10 +322,16 @@ func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeR
 		args = append(args, *options.Limit)
 	}
 	queryName := queries.SearchLogSummaries
+	nativeColumns := ""
 	if page != nil {
 		queryName = queries.SearchLogPage
 		args = append(args, page.Size, page.Offset)
-		if len(page.Columns) > 0 {
+		if len(page.Columns) > 0 && native {
+			nativeColumns, args, err = arrowColumns(page.Columns, args)
+			if err != nil {
+				return nil, err
+			}
+		} else if len(page.Columns) > 0 {
 			columns, err := json.Marshal(page.Columns)
 			if err != nil {
 				return nil, err
@@ -317,26 +343,24 @@ func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeR
 		queryName = queries.GetLogErrorNavigation
 		args = append(args, *selectedID)
 	}
-	finalQuery, err := queries.Render(queryName, searchLogSummariesParams{
-		CTEs:    cteSQL,
-		From:    logSearchFrom,
-		Where:   whereWithTime,
-		Order:   orderBy,
-		Limit:   limitClause,
-		Columns: page != nil && len(page.Columns) > 0,
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	finalQuery, err := render(queryName, searchLogSummariesParams{
+		CTEs:          cteSQL,
+		From:          logSearchFrom,
+		Where:         whereWithTime,
+		Order:         orderBy,
+		Limit:         limitClause,
+		Columns:       page != nil && len(page.Columns) > 0,
+		NativeColumns: nativeColumns,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return &logQuery{sql: finalQuery, args: args}, nil
 }
 
 func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
@@ -587,10 +611,11 @@ func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpres
 //
 // SQL fragments and projection switches; values travel as bound arguments.
 type searchLogSummariesParams struct {
-	CTEs    string
-	From    string
-	Where   string
-	Order   string
-	Limit   string
-	Columns bool
+	CTEs          string
+	From          string
+	Where         string
+	Order         string
+	Limit         string
+	Columns       bool
+	NativeColumns string
 }
