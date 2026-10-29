@@ -95,7 +95,9 @@ test.beforeEach(async ({ page }) => {
                   },
                   rejections: [],
                 }
-              : []
+              : method === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto(`/logs/${firstID}?time=all`)

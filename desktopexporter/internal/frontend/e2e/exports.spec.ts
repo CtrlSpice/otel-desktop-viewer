@@ -27,6 +27,7 @@ const log: JsonLogData = {
 }
 
 function rpcFixture(method: string) {
+  if (method === 'discoverTelemetry') return { rows: [], truncated: false }
   if (method === 'getLog') return log
   if (method === 'getLogErrorNavigation')
     return { count: 0, index: null, previous: null, next: null }

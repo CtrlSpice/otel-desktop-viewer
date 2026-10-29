@@ -126,7 +126,9 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     const fulfill = () =>
       route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     if (method === 'getTraceView' && params.traceID === next.traceID)
@@ -216,7 +218,9 @@ test('waterfall column groups toggle together without changing span selection', 
                     },
                     rejections: [],
                   }
-                : [],
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
@@ -301,7 +305,9 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${rootID}&time=all`)
@@ -431,7 +437,9 @@ for (const { id: theme } of THEMES) {
                   },
                   rejections: [],
                 }
-              : []
+              : request.method === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
       await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
     })
     for (const code of [2, 0, 1, 99]) {
@@ -541,7 +549,9 @@ test('Waterfall columns persist across traces and align through resizing and ove
                 },
                 rejections: [],
               }
-            : []
+            : request.method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
@@ -818,7 +828,9 @@ test('selected-span Copy and Download preserve schema URLs and exact numeric tex
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     return route.fulfill({
       json: {
         jsonrpc: '2.0',
@@ -938,7 +950,9 @@ test('Copy span shares the section heading row and copies only the selected span
                 },
                 rejections: [],
               }
-            : []
+            : request.method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}`)

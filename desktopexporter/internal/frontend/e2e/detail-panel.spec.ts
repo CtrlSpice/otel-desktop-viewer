@@ -140,7 +140,9 @@ for (const kind of ['event', 'log'] as const) {
                     },
                     rejections: [],
                   }
-                : []
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : []
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
     await page.goto(`/traces/${traceID}?span=${spanID}`)
@@ -294,7 +296,9 @@ test('detail headers keep fixed order and resize without collapsing while retain
                     },
                     rejections: [],
                   }
-                : [],
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
@@ -649,6 +653,7 @@ test('associated logs reuse summary cards and open the full log without losing t
         metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
         rejections: [],
       }
+    if (method === 'discoverTelemetry') return { rows: [], truncated: false }
     return []
   }
   await routeTelemetry(page, async route => {
@@ -897,7 +902,9 @@ test('detail targets reopen the panel with independent native disclosures', asyn
                     },
                     rejections: [],
                   }
-                : [],
+                : request.method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
