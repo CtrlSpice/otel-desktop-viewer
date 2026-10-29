@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,14 +77,23 @@ func TestNestedComparisonPayloadLoadsOnlyOnDemand(t *testing.T) {
 			return wire.Len(), nil
 		})
 		require.NoError(t, err)
-		column, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricSeriesColumn(ctx, db, id, refs, key)
+		order, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesOrder(ctx, db, id, store.BoundedTimeRange(100, 100), refs, key, false)
 		})
 		require.NoError(t, err)
-		require.Contains(t, string(column), strings.Repeat("x", size))
-		require.Contains(t, string(column), "9007199254740995")
-		require.NotContains(t, string(column), "unrelated")
-		t.Logf("nested bytes/value=%d initial JSON=%d Arrow=%d exact-column JSON=%d", size, len(raw), viewBytes[len(viewBytes)-1], len(column))
+		require.Less(t, len(order), 200, "sorting transfers IDs only regardless of nested value size")
+		var orderedIDs []string
+		require.NoError(t, json.Unmarshal(order, &orderedIDs))
+		require.ElementsMatch(t, refs, orderedIDs)
+		for index, ref := range orderedIDs {
+			exact, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetricSeries(ctx, db, id, ref, store.BoundedTimeRange(100, 100), false)
+			})
+			require.NoError(t, err)
+			require.Contains(t, string(exact), strings.Repeat("x", size))
+			require.Contains(t, string(exact), strconv.FormatInt(9007199254740992+int64(index), 10))
+		}
+		t.Logf("nested bytes/value=%d initial JSON=%d Arrow=%d sort-order JSON=%d", size, len(raw), viewBytes[len(viewBytes)-1], len(order))
 	}
 	// Increasing each comparison value by 63KiB must not increase the initial
 	// response proportionally. IDs/previews have the same bounded shape.
@@ -149,20 +159,6 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 		for i, series := range view.Timeseries {
 			ids[i] = series.SeriesRef
 		}
-		column, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricSeriesColumn(ctx, db, metricID, ids, "varying")
-		})
-		require.NoError(t, err)
-		var cells []struct {
-			SeriesRef  string           `json:"seriesRef"`
-			Attributes []map[string]any `json:"attributes"`
-		}
-		require.NoError(t, json.Unmarshal(column, &cells))
-		require.Len(t, cells, len(view.Timeseries))
-		bySeries := make(map[string][]map[string]any)
-		for _, cell := range cells {
-			bySeries[cell.SeriesRef] = cell.Attributes
-		}
 		signatures := make(map[string]bool)
 		previews := make(map[string]bool)
 		for _, series := range view.Timeseries {
@@ -173,13 +169,6 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 			require.Less(t, len(series.Previews[0].Text), 512)
 			require.False(t, previews[series.Previews[0].Text], "bounded preview collisions must be disambiguated")
 			previews[series.Previews[0].Text] = true
-			for _, attr := range bySeries[series.SeriesRef] {
-				require.Equal(t, "varying", attr["key"])
-			}
-			encoded, err := json.Marshal(bySeries[series.SeriesRef])
-			require.NoError(t, err)
-			require.False(t, signatures[string(encoded)], "typed label candidates collapsed")
-			signatures[string(encoded)] = true
 			received, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 				return metrics.GetMetricSeries(ctx, db, metricID, series.SeriesRef, store.BoundedTimeRange(0, maxNano))
 			})
@@ -196,7 +185,10 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 					selected = append(selected, attr)
 				}
 			}
-			require.Equal(t, selected, bySeries[series.SeriesRef])
+			encoded, err := json.Marshal(selected)
+			require.NoError(t, err)
+			require.False(t, signatures[string(encoded)], "typed label candidates collapsed")
+			signatures[string(encoded)] = true
 			contextOnly, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 				return metrics.GetMetricSeries(ctx, db, metricID, series.SeriesRef, store.BoundedTimeRange(0, maxNano), false)
 			})
@@ -206,20 +198,20 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 		}
 		for _, refs := range [][]string{{}, {"00000000-0000-0000-0000-000000000000"}} {
 			empty, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetricSeriesColumn(ctx, db, metricID, refs, "varying")
+				return metrics.GetMetricSeriesOrder(ctx, db, metricID, store.BoundedTimeRange(0, maxNano), refs, "varying", false)
 			})
 			require.NoError(t, err)
 			require.JSONEq(t, "[]", string(empty))
 		}
 		foreign, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricSeriesColumn(ctx, db, "00000000-0000-0000-0000-000000000000", ids, "varying")
+			return metrics.GetMetricSeriesOrder(ctx, db, "00000000-0000-0000-0000-000000000000", store.BoundedTimeRange(0, maxNano), ids, "varying", false)
 		})
 		require.NoError(t, err)
 		require.JSONEq(t, "[]", string(foreign))
 		missing, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricSeriesColumn(ctx, db, metricID, []string{ids[0], ids[0]}, "'; select 1; --")
+			return metrics.GetMetricSeriesOrder(ctx, db, metricID, store.BoundedTimeRange(0, maxNano), []string{ids[0], ids[0]}, "'; select 1; --", false)
 		})
 		require.NoError(t, err)
-		require.JSONEq(t, `[{"seriesRef":"`+ids[0]+`","attributes":[]}]`, string(missing))
+		require.JSONEq(t, `["`+ids[0]+`"]`, string(missing))
 	}
 }

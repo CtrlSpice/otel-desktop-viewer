@@ -1,8 +1,4 @@
-import type {
-  AttributeValue,
-  MetricSeriesViewData,
-  MetricSeriesColumnValue,
-} from '@/types/api-types'
+import type { AttributeValue, MetricSeriesViewData } from '@/types/api-types'
 import type { LegendTimeseries } from '@/types/metric-chart-types'
 import { attributeValueLabel } from '@/components/shared/attribute-label'
 
@@ -25,7 +21,6 @@ export type SeriesColumn = { key: string; cells: Map<string, SeriesCell> }
 export type SeriesTable = {
   columns: SeriesColumn[]
   labels: Map<string, SeriesLabel>
-  comparisonRequired?: boolean
 }
 
 function valueSignature(value: AttributeValue): string {
@@ -275,7 +270,7 @@ export function minimalSeriesLabels(
   return minimalSeriesTable(rows).labels
 }
 
-/** Render server-selected previews. Exact comparison values load on sort. */
+/** Render server-selected previews without opening exact sort values. */
 export function compactSeriesTable(
   series: readonly Pick<MetricSeriesViewData, 'seriesRef' | 'labelPreviews'>[]
 ): SeriesTable {
@@ -292,7 +287,6 @@ export function compactSeriesTable(
   const counts = new Map<string, number>()
   for (const text of texts) counts.set(text, (counts.get(text) ?? 0) + 1)
   return {
-    comparisonRequired: true,
     labels: new Map(
       series.map((row, index) => [
         row.seriesRef,
@@ -315,56 +309,4 @@ export function compactSeriesTable(
       ),
     })),
   }
-}
-
-/** Validate the complete displayed cohort before applying the established sorter. */
-export function comparisonSeriesColumn(
-  series: readonly MetricSeriesColumnValue[],
-  seriesRefs: readonly string[],
-  key: string
-): SeriesColumn {
-  const expected = new Set(seriesRefs)
-  const rows = series.map(series => {
-    const id = series.seriesRef
-    if (!expected.delete(id))
-      throw new Error('Comparison series changed. Refresh the metric.')
-    const attributes = series.attributes
-    if (attributes.some(attribute => attribute.key !== key))
-      throw new Error('Unexpected comparison attribute.')
-    return { key: id, attributes }
-  })
-  if (expected.size)
-    throw new Error('Comparison series changed. Refresh the metric.')
-  return (
-    minimalSeriesTable(rows, true).columns[0] ?? {
-      key,
-      // Identical values (including all absent) sort only by stable series identity.
-      cells: new Map(
-        rows.map(row => [row.key, { label: '', signature: '', values: [] }])
-      ),
-    }
-  )
-}
-
-/** Numeric telemetry sorts numerically; other values use deterministic natural text order. */
-export function compareSeriesCells(a: SeriesCell, b: SeriesCell): number {
-  const leftValues = a.values
-  const rightValues = b.values
-  const left = leftValues[0]
-  const right = rightValues[0]
-  if (
-    leftValues.length === 1 &&
-    rightValues.length === 1 &&
-    left &&
-    right &&
-    (left.kind === 'int64' || left.kind === 'double') &&
-    (right.kind === 'int64' || right.kind === 'double')
-  ) {
-    if (left.value < right.value) return -1
-    if (left.value > right.value) return 1
-  }
-  return (
-    a.label.localeCompare(b.label, 'en', { numeric: true }) ||
-    a.signature.localeCompare(b.signature, 'en')
-  )
 }

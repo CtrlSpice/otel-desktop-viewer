@@ -94,6 +94,24 @@ func RegisterFunctions(ctx context.Context, db *sql.DB) error {
 			})
 		}
 	}
+	if err == nil {
+		var result duckdb.TypeInfo
+		result, err = metricSortInfoType(text, blob)
+		if err == nil {
+			err = duckdb.RegisterScalarUDF(conn, "otel_metric_sort_info", &metricSortInfo{
+				config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: result},
+			})
+		}
+	}
+	if err == nil {
+		var boolean duckdb.TypeInfo
+		boolean, err = duckdb.NewTypeInfo(duckdb.TYPE_BOOLEAN)
+		if err == nil {
+			err = duckdb.RegisterScalarUDF(conn, "otel_metric_text_sort_key", &metricTextSortKey{
+				config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{text, boolean}, ResultTypeInfo: blob},
+			})
+		}
+	}
 	return errors.Join(err, conn.Close())
 }
 

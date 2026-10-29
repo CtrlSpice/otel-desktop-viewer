@@ -253,73 +253,52 @@ describe('JSON-RPC response identity', () => {
 })
 
 describe('request cancellation', () => {
-  it('decodes exact comparison values with native nested types and missing attributes', async () => {
-    stubRpcResult([
-      {
-        seriesRef: 'a',
-        attributes: [
-          {
-            key: '',
-            value: {
-              kind: 'map',
-              value: [
-                {
-                  key: 'large',
-                  value: { kind: 'int64', value: '9007199254740993' },
-                },
-                {
-                  key: 'zero',
-                  value: { kind: 'double', value: '0x8000000000000000' },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      { seriesRef: 'b', attributes: [] },
-    ])
-    const rows = await telemetryAPI.getMetricSeriesColumn(
-      'metric',
-      ['a', 'b'],
-      ''
-    )
-    expect(rows[0]).toMatchObject({
-      seriesRef: 'a',
-      attributes: [
-        {
+  it('reads ordered IDs and sends exact inclusive timestamp bounds', async () => {
+    stubRpcResult(['b', 'a'])
+    expect(
+      await telemetryAPI.getMetricSeriesOrder(
+        'metric',
+        9007199254740993n,
+        18446744073709551615n,
+        ['a', 'b'],
+        '',
+        'desc'
+      )
+    ).toEqual(['b', 'a'])
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/data/getMetricSeriesOrder',
+      expect.objectContaining({
+        body: JSON.stringify({
+          metricRef: 'metric',
+          startTime: '9007199254740993',
+          endTime: '18446744073709551615',
+          seriesRefs: ['a', 'b'],
           key: '',
-          value: {
-            kind: 'map',
-            value: [
-              {
-                key: 'large',
-                value: { kind: 'int64', value: 9007199254740993n },
-              },
-              { key: 'zero', value: { kind: 'double', value: -0 } },
-            ],
-          },
-        },
-      ],
-    })
-    expect(rows[1]).toMatchObject({ seriesRef: 'b', attributes: [] })
+          direction: 'desc',
+        }),
+      })
+    )
   })
 
-  it('cancels an exact comparison-column load', async () => {
+  it('cancels a database sort request', async () => {
     const fetch = vi
       .fn()
       .mockRejectedValue(new DOMException('aborted', 'AbortError'))
     vi.stubGlobal('fetch', fetch)
     const controller = new AbortController()
     await expect(
-      telemetryAPI.getMetricSeriesColumn(
+      telemetryAPI.getMetricSeriesOrder(
         'metric',
+        null,
+        null,
         ['series'],
         'key',
+        'asc',
         controller.signal
       )
     ).rejects.toBeInstanceOf(RequestAbortedError)
     expect(fetch).toHaveBeenCalledWith(
-      '/api/data/getMetricSeriesColumn',
+      '/api/data/getMetricSeriesOrder',
       expect.objectContaining({ signal: controller.signal })
     )
   })

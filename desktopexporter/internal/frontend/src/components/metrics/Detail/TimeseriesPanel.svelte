@@ -17,12 +17,8 @@
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import { selectableTableRow } from '@/components/shared/utils/selectable-table-row'
-  import {
-    compareSeriesCells,
-    comparisonSeriesColumn,
-    type SeriesColumn,
-    type SeriesCell,
-  } from '@/components/metrics/utils/minimal-series-labels'
+  import type { SeriesCell } from '@/components/metrics/utils/minimal-series-labels'
+  import { validateSeriesOrder } from '@/components/metrics/utils/series-order'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import { telemetryAPI } from '@/services/telemetry-service'
@@ -39,8 +35,11 @@
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
-  const sortKey = $derived(sort?.key)
-  let comparisonColumn = $state.raw<SeriesColumn>()
+  let seriesOrder = $state.raw<{
+    key: string
+    asc?: string[]
+    desc?: string[]
+  }>()
   let sortLoading = $state(false)
   let sortError = $state('')
   let sortRetry = $state(0)
@@ -59,7 +58,7 @@
   // Keep disclosures, but replace exact values and reject every older request.
   $effect.pre(() => {
     void ctx.metric
-    comparisonColumn = undefined
+    seriesOrder = undefined
     receivedAttributes.clear()
     attributeErrors.clear()
     loadingAttributes.clear()
@@ -92,43 +91,57 @@
   const table = $derived(ctx.seriesTable)
   $effect(() => {
     const metric = ctx.metric
-    const key = sortKey
-    const required = table.comparisonRequired
+    const key = sort?.key
+    const direction = sort?.direction
     void sortRetry
     sortLoading = false
     sortError = ''
     if (
       !metric ||
       key === undefined ||
-      !required ||
+      !direction ||
       !table.columns.some(column => column.key === key)
     )
       return
-    if (untrack(() => comparisonColumn?.key) === key) return
+    if (untrack(() => seriesOrder?.key === key && seriesOrder[direction]))
+      return
     const refs = metric.timeseries.map(series => series.seriesRef)
     const controller = new AbortController()
     sortLoading = true
     void telemetryAPI
-      .getMetricSeriesColumn(metric.metricRef, refs, key, controller.signal)
-      .then(values => {
+      .getMetricSeriesOrder(
+        metric.metricRef,
+        metric.window.requested.startNs,
+        metric.window.requested.endNs,
+        refs,
+        key,
+        direction,
+        controller.signal
+      )
+      .then(order => {
         if (controller.signal.aborted) return
-        comparisonColumn = comparisonSeriesColumn(values, refs, key)
+        validateSeriesOrder(order, refs)
+        seriesOrder = {
+          ...(seriesOrder?.key === key ? seriesOrder : { key }),
+          [direction]: order,
+        }
       })
       .catch(error => {
         if (!controller.signal.aborted)
           sortError =
-            error instanceof Error
-              ? error.message
-              : 'Could not load comparison values.'
+            error instanceof Error ? error.message : 'Could not sort series.'
       })
       .finally(() => {
         if (!controller.signal.aborted) sortLoading = false
       })
     return () => controller.abort()
   })
-  const sortApplied = $derived(
-    sort && (!table.comparisonRequired || comparisonColumn?.key === sort.key)
+  const appliedOrder = $derived(
+    sort && seriesOrder?.key === sort.key
+      ? seriesOrder[sort.direction]
+      : undefined
   )
+  const sortApplied = $derived(appliedOrder !== undefined)
   const checkedKeys = $derived(ctx.visibleSeries)
   const capReached = $derived(
     !ctx.isHistogramKind && checkedKeys.size >= MAX_VISIBLE_TIMESERIES
@@ -224,19 +237,12 @@
     { id: 'show', label: 'Show', min: 56, width: 56, fixed: true },
   ])
   const sortedRows = $derived.by(() => {
-    const column = table.comparisonRequired
-      ? comparisonColumn
-      : table.columns.find(column => column.key === sort?.key)
-    if (!column || !sort || column.key !== sort.key) return rows
-    const direction = sort.direction === 'asc' ? 1 : -1
-    return [...rows].sort(
-      (a, b) =>
-        direction *
-          compareSeriesCells(
-            column.cells.get(a.key)!,
-            column.cells.get(b.key)!
-          ) || a.key.localeCompare(b.key)
-    )
+    if (!appliedOrder) return rows
+    const byKey = new Map(rows.map(row => [row.key, row]))
+    return appliedOrder.flatMap(id => {
+      const row = byKey.get(id)
+      return row ? [row] : []
+    })
   })
 
   function sortBy(key: string) {
@@ -297,7 +303,7 @@
   aria-busy={sortLoading}
 >
   {#if sortLoading}<p role="status" class="px-3 py-2 text-subtle">
-      Loading comparison values…
+      Sorting series…
     </p>{/if}
   {#if sortError}<p role="alert" class="px-3 py-2 text-papaya">{sortError}</p>
     <button type="button" class="btn btn-ghost mx-3" onclick={() => sortRetry++}

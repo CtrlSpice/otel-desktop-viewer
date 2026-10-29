@@ -219,8 +219,8 @@ func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term strin
 // this very response; it takes the first N in the response's own order. Nil
 // and 0 mean every series ships them.
 // Series attributes are empty; attributesComplete=false marks this projection.
-// labelPreviews contain bounded distinguishing-column text. GetMetricSeriesColumn
-// returns exact comparison values for a displayed cohort; GetMetricSeries returns
+// labelPreviews contain bounded distinguishing-column text. GetMetricSeriesOrder
+// sorts the timestamp-clamped cohort in the database; GetMetricSeries returns
 // complete received context on demand.
 // A null endpoint is omitted from filtering and derived from the filtered data
 // extent. A concrete endpoint remains the effective endpoint.
