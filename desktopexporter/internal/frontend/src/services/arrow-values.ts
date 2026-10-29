@@ -81,9 +81,6 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
         get previewChildren() {
           return attributes(cell, 3)
         },
-        get conflictingKeys() {
-          return [...mapConflicts(cell.map())]
-        },
       }
     case 'array':
       return {
@@ -110,7 +107,6 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
 export function attributes(cell: ArrowCell, limit = Infinity): Attribute[] {
   if (cell.isNull) return []
   const entries = cell.map()
-  let conflicts: Set<string> | undefined
   return Array.from({ length: Math.min(entries.length, limit) }, (_, row) => ({
     get key() {
       return entries.cell('key', row).text()
@@ -118,72 +114,5 @@ export function attributes(cell: ArrowCell, limit = Infinity): Attribute[] {
     get value() {
       return attributeValue(entries.cell('value', row))
     },
-    get hasConflict() {
-      conflicts ??= mapConflicts(entries)
-      return conflicts.has(entries.cell('key', row).text())
-    },
   }))
-}
-
-function mapConflicts(frame: ArrowFrame): Set<string> {
-  const first = new Map<string, number>()
-  const conflicts = new Set<string>()
-  for (let row = 0; row < frame.length; row++) {
-    const key = frame.cell('key', row).text()
-    const previous = first.get(key)
-    if (previous === undefined) first.set(key, row)
-    else if (
-      !conflicts.has(key) &&
-      !equalValue(frame.cell('value', previous), frame.cell('value', row))
-    )
-      conflicts.add(key)
-  }
-  return conflicts
-}
-
-/** Compare only duplicate-key values, preserving numeric kinds and NaN bits. */
-function equalValue(left: ArrowCell, right: ArrowCell): boolean {
-  const kind = valueKind(left)
-  if (kind !== valueKind(right)) return false
-  switch (kind) {
-    case 'empty':
-      return true
-    case 'string':
-      return left.text() === right.text()
-    case 'int64':
-      return left.integer() === right.integer()
-    case 'bool':
-      return left.boolean() === right.boolean()
-    case 'double': {
-      const bits = new DataView(new ArrayBuffer(16))
-      bits.setFloat64(0, left.number())
-      bits.setFloat64(8, right.number())
-      return bits.getBigUint64(0) === bits.getBigUint64(8)
-    }
-    case 'bytes': {
-      const a = left.bytes(),
-        b = right.bytes()
-      return a.length === b.length && a.every((byte, i) => byte === b[i])
-    }
-    case 'array': {
-      const a = left.list(),
-        b = right.list()
-      if (a.length !== b.length) return false
-      for (let i = 0; i < a.length; i++)
-        if (!equalValue(new ArrowCell(a, i), new ArrowCell(b, i))) return false
-      return true
-    }
-    case 'map': {
-      const a = left.map(),
-        b = right.map()
-      if (a.length !== b.length) return false
-      for (let i = 0; i < a.length; i++)
-        if (
-          a.cell('key', i).text() !== b.cell('key', i).text() ||
-          !equalValue(a.cell('value', i), b.cell('value', i))
-        )
-          return false
-      return true
-    }
-  }
 }

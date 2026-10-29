@@ -29,25 +29,16 @@ const evidenceEvent = (name: string) =>
   /^(tool\.|gen_ai\.tool\.|gen_ai\.evaluation\.)/.test(name)
 
 function attributeString(attributes: Attributes, key: string) {
-  const values = attributes.filter(attribute => attribute.key === key)
-  const attribute = values.length === 1 ? values[0] : undefined
-  return attribute?.value.kind === 'string' && !attribute.hasConflict
-    ? attribute.value.value
-    : undefined
+  const attribute = attributes.find(attribute => attribute.key === key)
+  return attribute?.value.kind === 'string' ? attribute.value.value : undefined
 }
 
 const stringAttribute = (span: SpanData, key: string) =>
   attributeString(span.attributes, key)
 export function recordedToolCallID(attributes: Attributes) {
   for (const key of ['gen_ai.tool.call.id', 'tool_use_id']) {
-    const matches = attributes.filter(attribute => attribute.key === key)
-    if (
-      matches.length > 1 ||
-      matches.some(
-        attribute => attribute.hasConflict || attribute.value.kind !== 'string'
-      )
-    )
-      return undefined
+    const attribute = attributes.find(attribute => attribute.key === key)
+    if (attribute && attribute.value.kind !== 'string') return undefined
   }
   const canonical = attributeString(attributes, 'gen_ai.tool.call.id')
   const alias = attributeString(attributes, 'tool_use_id')

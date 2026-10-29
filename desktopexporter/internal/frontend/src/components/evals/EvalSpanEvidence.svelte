@@ -104,9 +104,6 @@
           fieldType={attribute.value.kind}
           typedValue={attribute.value}
           fieldKind="attribute"
-          defectLabel={attribute.hasConflict
-            ? `Conflicting typed values retained for ${attribute.key}.`
-            : undefined}
         />
       {/each}
     </tbody>

@@ -63,11 +63,8 @@ export function resolveEvalReference(
 }
 
 export function spanAttribute(node: SpanNode, key: string): string | undefined {
-  const attributes = node.spanData.attributes.filter(item => item.key === key)
-  const attribute = attributes.length === 1 ? attributes[0] : undefined
-  return attribute?.value.kind === 'string' && !attribute.hasConflict
-    ? attribute.value.value
-    : undefined
+  const attribute = node.spanData.attributes.find(item => item.key === key)
+  return attribute?.value.kind === 'string' ? attribute.value.value : undefined
 }
 
 /** Available trace branches, preserving missing parent IDs and start-ordered siblings. */

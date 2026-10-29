@@ -2,10 +2,7 @@ import type { Attributes, LogData, SpanNode } from '@/types/api-types'
 import type { EvalEventTool } from './model'
 
 function value(attributes: Attributes, key: string) {
-  const matches = attributes.filter(attribute => attribute.key === key)
-  return matches.length === 1 && !matches[0]!.hasConflict
-    ? matches[0]!.value
-    : undefined
+  return attributes.find(attribute => attribute.key === key)?.value
 }
 function text(attributes: Attributes, key: string) {
   const item = value(attributes, key)
