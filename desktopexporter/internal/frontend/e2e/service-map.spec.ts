@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 import type {
   ServiceSummary,
@@ -56,7 +57,7 @@ test('service cards are unique graph nodes with standalone services, stable insp
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {
       if (method === 'getStats')
@@ -306,7 +307,7 @@ test('service cards are unique graph nodes with standalone services, stable insp
   let refreshedEdges: ServiceConnection[] = [
     { ...edge(api, worker), spanCount: 7, traceCount: 3, errorSpanCount: 2 },
   ]
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'discoverTelemetry' || params.options.kind !== 'connections')
       return route.fallback()
@@ -365,7 +366,7 @@ test('force layout fits a fan-out, reflows on resize and bounds pan without drif
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const { id, method, params } = route.request().postDataJSON()
     const items =
       method === 'discoverTelemetry'

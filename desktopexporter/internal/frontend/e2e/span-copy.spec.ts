@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
@@ -88,7 +89,7 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
   next.traceID = 'abcdefabcdefabcdefabcdefabcdefab'
   next.spans[0]!.spanData.name = 'replacement trace'
   let release: (() => Promise<void>) | undefined
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -176,7 +177,7 @@ test('waterfall column groups toggle together without changing span selection', 
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     await route.fulfill({
       json: {
@@ -265,7 +266,7 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
       },
     ],
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -369,7 +370,7 @@ for (const { id: theme } of THEMES) {
       theme
     )
     await page.setViewportSize({ width: 1920, height: 1100 })
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON() as {
         id: number
         method: string
@@ -482,7 +483,7 @@ test('Waterfall columns persist across traces and align through resizing and ove
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
   const nextTraceID = 'abcdefabcdefabcdefabcdefabcdefab'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -782,7 +783,7 @@ test('selected-span Copy and Download preserve schema URLs and exact numeric tex
     })
   })
   await page.route('**/api/features', route => route.fulfill({ json: {} }))
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -899,7 +900,7 @@ test('Copy span shares the section heading row and copies only the selected span
       headers: { 'Content-Length': String(Buffer.byteLength(selectedExport)) },
     })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string

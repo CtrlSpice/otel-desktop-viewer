@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 import type { JsonLogData, JsonTraceData } from '../src/types/wire-types'
 
@@ -88,7 +89,7 @@ for (const kind of ['event', 'log'] as const) {
       droppedAttributesCount: 0,
     })
     const logRef = '00000000-0000-0000-0000-000000000001'
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const { id, method } = route.request().postDataJSON()
       const result =
         method === 'getTraceView'
@@ -251,7 +252,7 @@ test('detail headers keep fixed order and resize without collapsing while retain
     attributes: [],
     droppedAttributesCount: 0,
   })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     await route.fulfill({
       json: {
@@ -650,7 +651,7 @@ test('associated logs reuse summary cards and open the full log without losing t
       }
     return []
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -854,7 +855,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'false')
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -1031,7 +1032,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(span).toBeVisible()
   await expect(detail).toBeHidden()
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string

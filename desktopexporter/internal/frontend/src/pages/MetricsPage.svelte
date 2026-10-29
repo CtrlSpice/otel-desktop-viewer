@@ -44,7 +44,7 @@
         cmp = a.seriesCount - b.seriesCount
         break
       case 'lastSeen':
-        cmp = compareByTimestampField(a, b, m => m.lastSeen)
+        cmp = compareByTimestampField(a, b, m => m.lastSeen ?? undefined)
         break
       default:
         cmp = 0

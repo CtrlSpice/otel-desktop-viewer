@@ -254,22 +254,23 @@
             style:left="{layout.pinned.controls}px"
           >
             <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="ts-row__caret"
-                disabled={!attributes.length}
-                aria-label={`${expanded ? 'Collapse' : 'Expand'} attributes for ${headerLabel}`}
-                aria-expanded={expanded}
-                aria-controls={detailID}
-                onclick={() => toggleAttributes(ts.key)}
-              >
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  size={16}
-                  strokeWidth={1.5}
-                  class={expanded ? 'rotate-90' : ''}
-                />
-              </button>
+              {#if attributes.length}
+                <button
+                  type="button"
+                  class="ts-row__caret"
+                  aria-label={`${expanded ? 'Collapse' : 'Expand'} attributes for ${headerLabel}`}
+                  aria-expanded={expanded}
+                  aria-controls={detailID}
+                  onclick={() => toggleAttributes(ts.key)}
+                >
+                  <HugeiconsIcon
+                    icon={ArrowRight01Icon}
+                    size={16}
+                    strokeWidth={1.5}
+                    class={expanded ? 'rotate-90' : ''}
+                  />
+                </button>
+              {/if}
             </div>
           </td>
           {#if !ctx.isHistogramKind}<td
@@ -380,7 +381,7 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
   .ts-row__caret {
-    @apply inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle focus-visible:outline-2 focus-visible:outline-primary disabled:text-muted disabled:cursor-default;
+    @apply inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle focus-visible:outline-2 focus-visible:outline-primary;
   }
   .ts-row__attrs {
     @apply text-sm;

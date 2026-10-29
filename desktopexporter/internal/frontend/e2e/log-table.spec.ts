@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 import type {
   JsonLogData,
@@ -44,7 +45,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'true')
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
       method === 'getLog'
@@ -116,7 +117,7 @@ test('log selection retains the inspector, delays loading feedback and rejects s
   await page.clock.install()
   await page.clock.pauseAt(new Date())
   const pending: Array<() => Promise<void>> = []
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'getLog') return route.fallback()
     const log = logs.find(record => record.logRef === params.logRef)!
@@ -173,7 +174,7 @@ test('a failed log replacement keeps the displayed record and its Download targe
   const detail = page.getByRole('table', { name: 'Log fields' })
   await expect(detail).toContainText('Full body 0: exact retained text')
   let fail = true
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'getLog' || params.logRef !== secondID || !fail)
       return route.fallback()
@@ -355,7 +356,7 @@ test('Details pins enriched trace context above scrolling fields', async ({
   }
   let waterfallFetches = 0
   let associatedFetches = 0
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getLog' && params.logRef === firstID) {
       return route.fulfill({
@@ -741,7 +742,7 @@ test('field Copy fallback preserves CRLF and lone carriage returns', async ({
 }) => {
   const received = 'first\r\nsecond\rthird\nfourth'
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'getLog' || params.logRef !== firstID)
       return route.fallback()
@@ -1080,7 +1081,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
     ],
   }
   const preview = `["loading", ${JSON.stringify(inner.slice(0, 48) + '…')}]`
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'getLog')
       return route.fulfill({
@@ -1102,6 +1103,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
                 serviceName: 'api',
                 bodyPreview: preview,
                 bodyType: 'array',
+                body,
                 eventName: '',
               },
             ],
@@ -1319,7 +1321,7 @@ test('structured previews have static syntax colours and Details folds Body and 
     ],
   }
   const preview = '{message: "ready", request: object (1 fields)}'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getLog' && params.logRef === firstID) {
       return route.fulfill({ json: { jsonrpc: '2.0', id, result: structured } })
@@ -1340,6 +1342,7 @@ test('structured previews have static syntax colours and Details folds Body and 
                 serviceName: 'api',
                 bodyPreview: preview,
                 bodyType: 'map',
+                body: structured.body,
               },
             ],
           },
@@ -1536,7 +1539,7 @@ test('Severity header sorts by the severity number rather than the received labe
     bodyType: 'string',
   }))
   const sorts: { field: string; direction: string }[] = []
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     sorts.push(params.sort)
@@ -1577,7 +1580,7 @@ test('Severity fits the longest received label without adding a resize handle', 
   page,
 }) => {
   const longest = 'REMOTE_PROVIDER_TIMEOUT'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     await route.fulfill({
@@ -1641,7 +1644,7 @@ test('extreme severity labels have bounded width and retain their exact inspecta
 }) => {
   const label = 'VERY_LONG_ERROR_LABEL_'.repeat(25)
   await page.setViewportSize({ width: 1700, height: 900 })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'getLog')
       return route.fulfill({
@@ -1761,7 +1764,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
   }
   const requests: { columns?: LogColumn[]; query?: unknown }[] = []
   let discovery = true
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     let result
     if (method === 'getLog') result = detail
@@ -1885,11 +1888,7 @@ test('toolbar filters draft service and severity selections and search once on A
   })
   let searches = 0
   page.on('request', request => {
-    if (
-      request.url().endsWith('/rpc') &&
-      request.postDataJSON().method === 'searchLogPage'
-    )
-      searches++
+    if (request.url().endsWith('/api/data/searchLogPage')) searches++
   })
   await expect(page.locator('.drawer-side')).toBeHidden()
   await expect(page.locator('.log-table__row').first()).toHaveCSS(
@@ -1956,14 +1955,13 @@ test('toolbar filters draft service and severity selections and search once on A
   await editor.fill('body CONTAINS "exact" LIMIT 10')
   const search = page.waitForRequest(
     request =>
-      request.url().endsWith('/rpc') &&
-      request.postDataJSON().method === 'searchLogPage' &&
-      request.postDataJSON().params.limit === 10
+      request.url().endsWith('/api/data/searchLogPage') &&
+      request.postDataJSON().limit === 10
   )
   await filtersToggle.click()
   await service.click()
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
-  expect((await search).postDataJSON().params.query).toBeTruthy()
+  expect((await search).postDataJSON().query).toBeTruthy()
   await expect(editor).toContainText('body CONTAINS "exact"')
   await expect(editor).toContainText('LIMIT 10')
   await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
@@ -1991,7 +1989,7 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
     serviceName: 'api',
     bodyPreview: `Record ${index + 1}`,
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     requests.push(params)
@@ -2261,7 +2259,7 @@ test('narrow panes expose every column by scrolling instead of overlapping pinne
 }) => {
   await page.setViewportSize({ width: 1024, height: 900 })
   const preview = 'id: abc123-END'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     await route.fulfill({
@@ -2434,7 +2432,7 @@ test('explicit selection mode supports all, some and none and deletes only check
   const calls: string[][] = []
   let fail = true
   let deleted = false
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'deleteLogsByRefs') {
       calls.push(params)
@@ -2533,7 +2531,7 @@ test('footer delete controls dispatch only their intended mocked operations', as
 }) => {
   let deleted = false
   let cleared = false
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'deleteLogsByRefs') {
       expect(params).toEqual([firstID])
@@ -2642,7 +2640,7 @@ test('header error navigation crosses pages within the current result', async ({
     bodyPreview: `Record ${index + 1}`,
     bodyType: 'string',
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     let result:
       { total: number; logs: typeof records } | JsonLogData | LogErrorNavigation
@@ -2765,10 +2763,8 @@ test('header error navigation crosses pages within the current result', async ({
     .toBe(0)
   // A same-selection rerender must not pull the viewport back to the error.
   await viewport.evaluate(element => (element.scrollTop = 320))
-  const refreshed = page.waitForResponse(
-    response =>
-      response.url().endsWith('/rpc') &&
-      response.request().postDataJSON().method === 'searchLogPage'
+  const refreshed = page.waitForResponse(response =>
+    response.url().endsWith('/api/data/searchLogPage')
   )
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await refreshed

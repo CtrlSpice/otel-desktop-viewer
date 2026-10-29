@@ -105,6 +105,33 @@ async function renderSelectedLog() {
 }
 
 describe('LogsPage refresh', () => {
+  it('cancels superseded and unmounted detail requests', async () => {
+    searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
+    getStats.mockResolvedValue(makeStats())
+    const signals: AbortSignal[] = []
+    const resolve: ((data: LogData) => void)[] = []
+    getLog.mockImplementation((_id: string, signal: AbortSignal) => {
+      signals.push(signal)
+      return new Promise<LogData>(done => resolve.push(done))
+    })
+    setTestUrl('/logs/log-1')
+    const view = renderWithContexts(LogsPage)
+    await waitFor(() => expect(signals).toHaveLength(1))
+    screen.getByRole('button', { name: /refresh/i }).click()
+    await waitFor(() => expect(signals).toHaveLength(2))
+    expect(signals[0].aborted).toBe(true)
+    expect(signals[1].aborted).toBe(false)
+    resolve[1](makeLogData('replacement'))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('table', { name: 'Log fields' })
+      ).toHaveTextContent('replacement')
+    )
+    resolve[0](makeLogData('stale'))
+    await view.unmount()
+    expect(signals[1].aborted).toBe(true)
+  })
+
   it('queries all logs with numeric severity descending by default', async () => {
     await renderSelectedLog()
     expect(searchLogPage).toHaveBeenCalledWith(
@@ -197,7 +224,9 @@ describe('LogsPage direct selection outside the list range', () => {
 
     renderWithContexts(LogsPage)
 
-    await waitFor(() => expect(getLog).toHaveBeenCalledWith('log-1'))
+    await waitFor(() =>
+      expect(getLog).toHaveBeenCalledWith('log-1', expect.any(AbortSignal))
+    )
     expect(window.location.pathname).toBe('/logs/log-1')
     await waitFor(() =>
       expect(

@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { routeTelemetry, type FixtureRoute } from './telemetry-fixtures'
+import { expect, test, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { ThemeName } from '../src/themes'
 import heatmapPalette from '../src/themes/heatmap-palette.json' with { type: 'json' }
@@ -135,7 +136,7 @@ const summary: JsonMetricSummary = {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -183,7 +184,7 @@ test('metric replacement keeps its displayed identity and mounted headers during
     name: 'replacement.metric',
   }
   let release: (() => Promise<void>) | undefined
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries') {
       await route.fulfill({
@@ -248,7 +249,7 @@ test('series IDs stay on one line beside a separate compact colour column', asyn
     '888d17a7-2d32-4945-bc9c-2f4bd2aab16f',
     '47801e24-eb28-4964-b691-79ca4638f84e',
   ]
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method !== 'getMetricView') return route.fallback()
     await route.fulfill({
@@ -412,7 +413,7 @@ test('metric descriptions stay in Details rather than summary cards', async ({
 }) => {
   const description =
     'Synthetic heatmap playground, same samples as the explicit histogram: Load burst'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries')
       return route.fulfill({
@@ -568,7 +569,7 @@ for (const { id: theme } of THEMES) {
 test('series colour picker overrides persist independently of visibility and disclosure and reset to automatic', async ({
   page,
 }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method !== 'getMetricView') return route.fallback()
     await route.fulfill({
@@ -726,7 +727,7 @@ test('series table sorts attributes while retaining checked choices and colours'
     })),
   }
   let requested: string[] = []
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method === 'getMetricView')
       return route.fulfill({
@@ -831,7 +832,7 @@ test.describe('independent histogram aggregate loading', () => {
     includeNextMetric = false,
     cumulativeReadings?: number
   ) {
-    const pending: { route: Route; wholeWindow: boolean }[] = []
+    const pending: { route: FixtureRoute; wholeWindow: boolean }[] = []
     const temporality =
       cumulativeReadings === undefined
         ? { aggregationTemporalityCode: 1, aggregationTemporality: 'Delta' }
@@ -867,7 +868,7 @@ test.describe('independent histogram aggregate loading', () => {
       metricType: 'Histogram',
       ...temporality,
     }
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON()
       if (request.method === 'getMetricAggregateView') {
         pending.push({ route, wholeWindow: request.params.targetBuckets === 1 })
@@ -930,7 +931,7 @@ test.describe('independent histogram aggregate loading', () => {
     return pending
   }
 
-  async function respond(route: Route, value = bucket, fail = false) {
+  async function respond(route: FixtureRoute, value = bucket, fail = false) {
     await route.fulfill({
       json: {
         jsonrpc: '2.0',
@@ -953,8 +954,8 @@ test.describe('independent histogram aggregate loading', () => {
     const before = await bars.evaluateAll(elements =>
       elements.map(element => element.getAttribute('fill'))
     )
-    let replacement: Route | undefined
-    await page.route('**/rpc', route => {
+    let replacement: FixtureRoute | undefined
+    await routeTelemetry(page, route => {
       const request = route.request().postDataJSON()
       if (
         request.method === 'getMetricView' &&
@@ -1026,7 +1027,7 @@ test.describe('independent histogram aggregate loading', () => {
     const pending = await holdAggregates(page)
     for (const { route } of pending) await respond(route)
     // Fulfil subsequent navigation/reload requests with the same distribution.
-    await page.route('**/rpc', route =>
+    await routeTelemetry(page, route =>
       route.request().postDataJSON().method === 'getMetricAggregateView'
         ? respond(route)
         : route.fallback()
@@ -1310,7 +1311,7 @@ test.describe('independent histogram aggregate loading', () => {
       )
     const originalCells = await cellGeometry()
     const originalPaths = await paths()
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON()
       if (request.method !== 'getMetricAggregateView') return route.fallback()
       await route.fulfill({
@@ -2040,7 +2041,7 @@ for (const { id: theme } of THEMES) {
         datapointCount: 2,
         timeseries: [{ ...timeseries[0]!, datapoints, datapointCount: 2 }],
       }
-      await page.route('**/rpc', async route => {
+      await routeTelemetry(page, async route => {
         const request = route.request().postDataJSON() as {
           id: number
           method: string
@@ -2527,7 +2528,7 @@ for (const { id: theme } of THEMES) {
 test('line stickies stay near their marker and avoid measured stat labels after resizing', async ({
   page,
 }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -2621,7 +2622,7 @@ test('extrema use the series colour and the backed average stays behind the seri
   await page.addInitScript(() =>
     localStorage.setItem('theme', 'madoromi-aki-hiru')
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -2803,7 +2804,7 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
     datapointCount: 1,
     timeseries: [{ ...timeseries[0]!, datapoints: [point], datapointCount: 1 }],
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -2863,7 +2864,7 @@ test('combined average labels avoid source statistics while staying near their e
     slope: null,
     hasReset: false,
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getMetricView'
@@ -2957,7 +2958,7 @@ test('combined sum and average toggle independently and labels emphasize without
     slope: null,
     hasReset: false,
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getMetricView'
@@ -3067,7 +3068,7 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
       },
     ],
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string

@@ -134,14 +134,14 @@ describe('MetricCard', () => {
     const metric = makeMetric()
     renderCard({ metric })
     const lastSeenParts = formatTimestampParts(
-      metric.lastSeen,
+      metric.lastSeen!,
       'local',
       'nanoseconds'
     )
     expect(screen.getByText('Last seen:')).toBeInTheDocument()
     expect(
       screen.getByText(
-        formatRelativeTime(metric.lastSeen, BigInt(Date.now()) * 1_000_000n)
+        formatRelativeTime(metric.lastSeen!, BigInt(Date.now()) * 1_000_000n)
       )
     ).toBeInTheDocument()
     const date = document.querySelector('.signal-date')

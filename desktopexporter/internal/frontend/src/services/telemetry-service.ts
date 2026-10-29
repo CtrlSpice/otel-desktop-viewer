@@ -29,16 +29,10 @@ import type {
   JsonDataPoint,
   JsonDeleteResult,
   JsonExemplar,
-  JsonLogData,
-  JsonLogSummary,
-  JsonLogTableRow,
-  JsonTraceLogSummary,
   JsonMetricViewData,
-  JsonMetricSummary,
   JsonMetricSeriesViewData,
   JsonStats,
   JsonTraceData,
-  JsonTraceSummary,
   JsonQueryNode,
   JsonAttributeMatch,
   JsonAttribute,
@@ -71,6 +65,19 @@ import {
 } from './attribute-matches'
 import type { FieldDefinition, QueryNode } from '@/search/model'
 import { fieldFromDiscovery } from '@/components/shared/Search/attribute-field-reference'
+import { fetchArrow } from './arrow-fetch'
+import { rowViews } from './arrow-values'
+import { ArrowFrame } from './arrow-data'
+import {
+  logData,
+  logSummary,
+  logTableRow,
+  traceLogSummary,
+  traceSummary,
+  metricSummary,
+} from './arrow-summaries'
+import { JsonRpcError } from './service-error'
+export { JsonRpcError } from './service-error'
 
 type JsonRpcParamValue =
   | string
@@ -106,16 +113,6 @@ interface JsonRpcResponse {
     message: string
   }
   id: number
-}
-
-/** Preserves the JSON-RPC code for error-specific UI. */
-export class JsonRpcError extends Error {
-  code: number
-  constructor(code: number, message: string) {
-    super(message)
-    this.name = 'JsonRpcError'
-    this.code = code
-  }
 }
 
 export type SearchSort = {
@@ -312,27 +309,17 @@ async function callRPC<T>(
   return data.result as T
 }
 
-function traceSummaryFromJSON(json: JsonTraceSummary): TraceSummary {
-  return {
-    ...json,
-    // The wire sends null for orphaned traces and for an empty root
-    // service name (nullif in the projection); the domain wants
-    // undefined / '' respectively.
-    rootSpan: json.rootSpan
-      ? {
-          serviceName: json.rootSpan.serviceName ?? '',
-          name: json.rootSpan.name,
-        }
-      : undefined,
-    startTime: bigintFromWire(json.startTime),
-    // durationNs arrives as a varchar-encoded int64 (ns precision
-    // would otherwise be clipped by JSON's float64 numbers).
-    durationNs: nullableBigintFromWire(json.durationNs),
+async function callArrow(
+  method: string,
+  params: JsonRpcNamedParams,
+  signal?: AbortSignal
+): Promise<ArrowFrame> {
+  try {
+    return await fetchArrow(method, JSON.stringify(params), signal)
+  } catch (error) {
+    if (signal?.aborted || isAbortError(error)) throw new RequestAbortedError()
+    throw error
   }
-}
-
-function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
-  return json.map(traceSummaryFromJSON)
 }
 
 // Decodes compressed spans and shares each resolved resource and scope object.
@@ -386,41 +373,6 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
       }
       return node
     }),
-  }
-}
-
-function logSummaryFromJSON(json: JsonLogSummary): LogSummary {
-  return {
-    ...json,
-    timestamp: bigintFromWire(json.timestamp),
-  }
-}
-
-function logSummariesFromJSON(json: JsonLogSummary[]): LogSummary[] {
-  return json.map(logSummaryFromJSON)
-}
-
-function traceLogSummariesFromJSON(
-  json: JsonTraceLogSummary[]
-): TraceLogSummary[] {
-  return json.map(log => ({ ...log, timestamp: bigintFromWire(log.timestamp) }))
-}
-
-function logDataFromJSON(json: JsonLogData): LogData {
-  return {
-    ...json,
-    body: attributeValueFromJSON(json.body),
-    attributes: attributesFromJSON(json.attributes),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-    timestamp: bigintFromWire(json.timestamp),
-    observedTimestamp: bigintFromWire(json.observedTimestamp),
   }
 }
 
@@ -789,19 +741,6 @@ function exactMetricSeriesFromJSON(
   }
 }
 
-function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
-  return {
-    ...json,
-    description: json.description ?? '',
-    lastValue: nullableDoubleFromWire(json.lastValue),
-    lastSeen: bigintFromWire(json.lastSeen),
-  }
-}
-
-function metricSummariesFromJSON(json: JsonMetricSummary[]): MetricSummary[] {
-  return json.map(metricSummaryFromJSON)
-}
-
 function statsFromJSON(json: JsonStats): Stats {
   return {
     storage: json.storage,
@@ -1024,7 +963,7 @@ export let telemetryAPI = {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
 
-    const rawData = await callRPC<JsonTraceSummary[]>(
+    const rawData = await callArrow(
       'searchTraceSummaries',
       named({
         startTime: startTimeNs,
@@ -1035,7 +974,7 @@ export let telemetryAPI = {
       }),
       signal
     )
-    return traceSummariesFromJSON(rawData)
+    return rowViews(rawData, traceSummary)
   },
 
   /** Fetch only timing fields for exact span references, in bounded batches. */
@@ -1190,7 +1129,7 @@ LIMIT ${batch.length}`,
     traceID: string,
     signal?: AbortSignal
   ): Promise<TraceSummary | null> => {
-    const result = await callRPC<JsonTraceSummary[]>(
+    const result = await callArrow(
       'searchTraceSummaries',
       named({
         startTime: null,
@@ -1208,7 +1147,7 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return traceSummariesFromJSON(result)[0] ?? null
+    return result.length ? traceSummary(result, 0) : null
   },
 
   getTraceView: async (
@@ -1231,12 +1170,12 @@ LIMIT ${batch.length}`,
     traceID: string,
     signal?: AbortSignal
   ): Promise<TraceLogSummary[]> => {
-    const rawData = await callRPC<JsonTraceLogSummary[]>(
+    const rawData = await callArrow(
       'getTraceLogSummaries',
       named({ traceID }),
       signal
     )
-    return traceLogSummariesFromJSON(rawData)
+    return rowViews(rawData, traceLogSummary)
   },
 
   /** Full logs for one exact received trace/span pair. No trace-wide association. */
@@ -1245,14 +1184,12 @@ LIMIT ${batch.length}`,
     spanID: string,
     signal?: AbortSignal
   ): Promise<LogData[]> => {
-    const result = await callRPC<
-      | { status: 'found'; logs: JsonLogData[] }
-      | { status: 'notFound' | 'ambiguous' }
-    >('getSpan', named({ traceID, spanID }), signal)
-    if (result.status === 'notFound') return []
-    if (result.status !== 'found')
-      throw new Error('Span identity is ambiguous.')
-    return result.logs.map(logDataFromJSON)
+    const result = await callArrow(
+      'getSpanLogs',
+      named({ traceID, spanID }),
+      signal
+    )
+    return rowViews(result, logData)
   },
 
   clearTraces: () => callRPC<string>('clearTraces', undefined),
@@ -1269,7 +1206,7 @@ LIMIT ${batch.length}`,
   ): Promise<LogSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
-    const rawData = await callRPC<JsonLogSummary[]>(
+    const rawData = await callArrow(
       'searchLogSummaries',
       named({
         startTime: startTimeNs,
@@ -1280,7 +1217,7 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return logSummariesFromJSON(rawData)
+    return rowViews(rawData, logSummary)
   },
 
   searchLogPage: async (
@@ -1294,7 +1231,7 @@ LIMIT ${batch.length}`,
     columns?: LogColumn[],
     signal?: AbortSignal
   ): Promise<{ logs: LogTableRow[]; total: number }> => {
-    const data = await callRPC<{ logs: JsonLogTableRow[]; total: number }>(
+    const data = await callArrow(
       'searchLogPage',
       named({
         startTime: serializeNanoseconds(startTime),
@@ -1309,14 +1246,11 @@ LIMIT ${batch.length}`,
       signal
     )
     return {
-      logs: data.logs.map(log => ({
-        ...logSummaryFromJSON(log),
-        columnValues: log.columnValues?.map(column => ({
-          ...column,
-          values: column.values.map(attributeValueFromJSON),
-        })),
-      })),
-      total: data.total,
+      logs: rowViews(
+        new ArrowFrame(data.cell('logs', 0).list()),
+        (frame, row) => logTableRow(frame, row, columns ?? [])
+      ),
+      total: data.cell('total', 0).number(),
     }
   },
 
@@ -1342,9 +1276,9 @@ LIMIT ${batch.length}`,
       signal
     ),
 
-  getLog: async (logRef: string): Promise<LogData> => {
-    const rawData = await callRPC<JsonLogData>('getLog', named({ logRef }))
-    return logDataFromJSON(rawData)
+  getLog: async (logRef: string, signal?: AbortSignal): Promise<LogData> => {
+    const rawData = await callArrow('getLog', named({ logRef }), signal)
+    return logData(rawData, 0)
   },
 
   deleteLogsByRefs: (...logRefs: string[]) =>
@@ -1361,7 +1295,7 @@ LIMIT ${batch.length}`,
   ): Promise<MetricSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
-    const rawData = await callRPC<JsonMetricSummary[]>(
+    const rawData = await callArrow(
       'searchMetricSummaries',
       named({
         startTime: startTimeNs,
@@ -1372,7 +1306,7 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return metricSummariesFromJSON(rawData)
+    return rowViews(rawData, metricSummary)
   },
 
   getMetric: async (metricRef: string): Promise<ExactMetric | null> => {

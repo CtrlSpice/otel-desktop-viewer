@@ -202,7 +202,7 @@
 
   // Debouncing avoids a detail request for every row during keyboard navigation.
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
-    fetch: id => telemetryAPI.getLog(id),
+    fetch: (id, signal) => telemetryAPI.getLog(id, signal),
     keysEqual: (a, b) => a === b,
     fallbackErrorMessage: 'Failed to load log details',
   })

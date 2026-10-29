@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { exampleExperiments } from '../src/components/evals/examples'
@@ -18,7 +19,7 @@ async function showOnly(page: Page, label: 'Results' | 'Tool calls' | 'Cost') {
 }
 
 async function enableEvals(page: Page, enabled = true) {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method !== 'getTraceView') return route.fallback()
     const rows = exampleExperiments.flatMap(experiment =>

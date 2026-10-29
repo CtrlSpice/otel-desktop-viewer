@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 test('Home service nodes retain card controls and keep incoming imports out of the current reading', async ({
@@ -31,7 +32,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {
       if (method === 'searchLogPage') return { total: 0, logs: [] }

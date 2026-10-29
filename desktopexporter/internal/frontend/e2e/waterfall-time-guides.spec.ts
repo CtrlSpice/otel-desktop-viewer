@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 import type { JsonTraceData } from '../src/types/wire-types'
 
@@ -47,7 +48,7 @@ test('every labelled waterfall tick has an unclipped guide, including the end', 
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     await route.fulfill({
       json: {

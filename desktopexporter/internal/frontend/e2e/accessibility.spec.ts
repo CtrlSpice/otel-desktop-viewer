@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
@@ -79,7 +80,7 @@ async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     // SAFETY: This page's /rpc requests come from callRPC, which supplies a
     // numeric request-correlation id and a string method.
     const request = route.request().postDataJSON() as RpcRequest
@@ -120,7 +121,7 @@ const TRACE_SERVICES = ['checkout', 'payments', 'database']
 
 /** Exercise the shared cards, rows and Details with the Evals flag off. */
 async function interceptTraces(page: Page): Promise<void> {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchTraceSummaries') {
       return route.fulfill({
@@ -710,7 +711,7 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
   page.on('pageerror', error => errors.push(error.message))
   await interceptRpc(page)
   const label = `service-${'recorded-service-segment-'.repeat(240)}end`
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'getTraceLogSummaries')
       return route.fulfill({ json: { jsonrpc: '2.0', id, result: [] } })

@@ -4,6 +4,7 @@ export const arrowStreamContentType = 'application/vnd.apache.arrow.stream'
 
 /** A retained Arrow dataset. Views keep columns and row locations, not row copies. */
 export class ArrowFrame {
+  private readonly resolvedColumns = new Map<string, Vector>()
   constructor(readonly columns: Table | Vector) {
     if (!(columns instanceof Table) && !DataType.isStruct(columns.type))
       throw new Error(`Expected Arrow row columns, received ${columns.type}`)
@@ -16,9 +17,16 @@ export class ArrowFrame {
   }
 
   column(name: string): Vector {
+    const resolved = this.resolvedColumns.get(name)
+    if (resolved) return resolved
     const column = this.columns.getChild(name)
     if (!column) throw new Error(`Arrow response is missing column ${name}`)
+    this.resolvedColumns.set(name, column)
     return column
+  }
+
+  has(name: string): boolean {
+    return this.columns.getChild(name) !== null
   }
 
   cell(name: string, row: number): ArrowCell {
@@ -40,6 +48,11 @@ export class ArrowCell {
   constructor(vector: Vector, row: number) {
     if (!Number.isInteger(row) || row < 0 || row >= vector.length)
       throw new RangeError(`Arrow row ${row} is outside the vector`)
+    if (!DataType.isUnion(vector.type) && !DataType.isDictionary(vector.type)) {
+      this.vector = vector
+      this.row = row
+      return
+    }
     // Slicing retains the buffers and resolves chunk boundaries. It does not
     // turn nested values into JavaScript arrays or objects.
     const data = vector.slice(row, row + 1).data[0]!

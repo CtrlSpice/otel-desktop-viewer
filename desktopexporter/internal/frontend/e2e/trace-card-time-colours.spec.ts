@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import type { JsonTraceData } from '../src/types/wire-types'
 import { THEMES, themeRgb } from './theme-colours'
@@ -81,7 +82,7 @@ async function intercept(page: Page) {
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'

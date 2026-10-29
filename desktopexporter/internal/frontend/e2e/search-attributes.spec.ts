@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 for (const [signal, scope, method] of [
@@ -14,7 +15,7 @@ for (const [signal, scope, method] of [
     await page.route('**/api/features', route =>
       route.fulfill({ json: { evals: { enabled: false } } })
     )
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const { id, method: rpcMethod, params } = route.request().postDataJSON()
       if (params?.query) requests.push(params.query)
       const result =
