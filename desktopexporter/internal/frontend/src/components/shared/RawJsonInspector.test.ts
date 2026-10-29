@@ -82,6 +82,24 @@ function expectEmptyPreview() {
 }
 
 describe('RawJsonInspector selection changes', () => {
+  it('reloads the same export URL when the displayed record is refreshed', async () => {
+    const request = await mockExport()
+    const view = render(RawJsonInspector, {
+      active: true,
+      wholeURL: datapoint.url,
+      scopes: [datapoint],
+      refreshKey: 1,
+    })
+    await screen.findByLabelText('Raw OTLP JSON')
+    expect(request.fetch).toHaveBeenCalledTimes(2)
+    await view.rerender({ refreshKey: 2 })
+    await waitFor(() => expect(request.fetch).toHaveBeenCalledTimes(4))
+    expect(request.signals.slice(0, 2).every(signal => signal.aborted)).toBe(
+      true
+    )
+    await screen.findByLabelText('Raw OTLP JSON')
+  })
+
   it('retains the completed editor and folds across tab changes without fetching again', async () => {
     const request = await mockExport()
     const view = render(RawJsonInspector, {

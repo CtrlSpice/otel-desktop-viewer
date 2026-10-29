@@ -30,6 +30,7 @@ const {
   getStats,
   getMetricView,
   getMetric,
+  getMetricSeries,
   getMetricAggregateView,
   getMetricAttributeDefinitions,
   clearMetrics,
@@ -38,6 +39,7 @@ const {
   getStats: vi.fn(),
   getMetricView: vi.fn(),
   getMetric: vi.fn(),
+  getMetricSeries: vi.fn(),
   getMetricAggregateView: vi.fn(),
   getMetricAttributeDefinitions: vi.fn(),
   clearMetrics: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getStats,
       getMetricView,
       getMetric,
+      getMetricSeries,
       getMetricAggregateView,
       getMetricAttributeDefinitions,
       clearMetrics,
@@ -191,6 +194,7 @@ beforeEach(() => {
   getStats.mockReset()
   getMetricView.mockReset()
   getMetric.mockReset()
+  getMetricSeries.mockReset()
   getMetric.mockResolvedValue(null)
   getMetricAggregateView.mockReset()
   getMetricAttributeDefinitions.mockReset()
@@ -265,7 +269,12 @@ describe('Metric main-header range', () => {
     const pending = deferred<ReturnType<typeof makeMetric> | null>()
     getMetric.mockReturnValueOnce(pending.promise)
     navigateToItem('metrics', 'outside-list')
-    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('outside-list'))
+    await waitFor(() =>
+      expect(getMetric).toHaveBeenCalledWith(
+        'outside-list',
+        expect.any(AbortSignal)
+      )
+    )
     expect(fields.isConnected).toBe(true)
     expect(header).toHaveTextContent('demo.metric')
     expect(await screen.findByText('Loading selected metric…')).toBeVisible()
@@ -326,7 +335,12 @@ describe('Metric main-header range', () => {
     })
     setTestUrl('/metrics/metric-1?q=name%20%3D%20%22excluded%22')
     renderWithContexts(MetricsPage)
-    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('metric-1'))
+    await waitFor(() =>
+      expect(getMetric).toHaveBeenCalledWith(
+        'metric-1',
+        expect.any(AbortSignal)
+      )
+    )
     await waitFor(() => expect(getMetricView).toHaveBeenCalled())
     expect(
       await screen.findByRole('region', { name: 'Metric chart' })
@@ -563,6 +577,129 @@ describe('MetricsPage chart control keyboard navigation', () => {
   })
 })
 
+describe('Metric Details request lifecycle', () => {
+  function prepare() {
+    searchMetricSummaries.mockResolvedValue([
+      makeSummary('Gauge'),
+      { ...makeSummary('Gauge'), metricRef: 'next', name: 'next.metric' },
+    ])
+    getStats.mockResolvedValue(makeStats())
+    getMetricView.mockImplementation((id: string) =>
+      Promise.resolve({
+        ...makeMetric('Gauge'),
+        metricRef: id,
+        timeseries: [
+          {
+            ...makeMetric('Gauge').timeseries[0]!,
+            attributesComplete: false,
+            labelPreviews: [],
+          },
+        ],
+      })
+    )
+    setTestUrl('/metrics/metric-1?time=all')
+  }
+
+  async function expand() {
+    await fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Expand attributes for default series',
+      })
+    )
+  }
+
+  it('aborts replaced views and ignores an old A response after returning from B', async () => {
+    prepare()
+    const old = deferred<MetricViewData | null>()
+    getMetricView.mockImplementationOnce(() => old.promise)
+    const view = renderWithContexts(MetricsPage)
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(1))
+    const signal = getMetricView.mock.calls[0]!.at(-1) as AbortSignal
+    navigateToItem('metrics', 'next')
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(2))
+    expect(signal.aborted).toBe(true)
+    navigateToItem('metrics', 'metric-1')
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(3))
+    old.resolve({ ...makeMetric('Gauge'), description: 'stale description' })
+    await tick()
+    expect(screen.queryByText('stale description')).toBeNull()
+    const latestSignal = getMetricView.mock.calls.at(-1)!.at(-1) as AbortSignal
+    view.unmount()
+    expect(latestSignal.aborted).toBe(true)
+  })
+
+  it('rejects old attributes after A→B→A and cancels disclosure/unmount work', async () => {
+    prepare()
+    const old = deferred<unknown>()
+    const current = deferred<unknown>()
+    getMetricSeries
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(current.promise)
+    const view = renderWithContexts(MetricsPage)
+    await expand()
+    await waitFor(() => expect(getMetricSeries).toHaveBeenCalledTimes(1))
+    const oldSignal = getMetricSeries.mock.calls[0]!.at(-1) as AbortSignal
+    navigateToItem('metrics', 'next')
+    await screen.findByRole('button', {
+      name: 'Expand attributes for default series',
+    })
+    expect(oldSignal.aborted).toBe(true)
+    navigateToItem('metrics', 'metric-1')
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(3))
+    await expand()
+    await waitFor(() => expect(getMetricSeries).toHaveBeenCalledTimes(2))
+    old.resolve({
+      attributes: [
+        { key: 'context', value: { kind: 'string', value: 'stale context' } },
+      ],
+    })
+    await tick()
+    expect(screen.queryByText('stale context')).toBeNull()
+    expect(screen.getByText('Loading series attributes…')).toBeVisible()
+    const currentSignal = getMetricSeries.mock.calls[1]!.at(-1) as AbortSignal
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Collapse attributes for default series',
+      })
+    )
+    expect(currentSignal.aborted).toBe(true)
+    getMetricSeries.mockReturnValue(new Promise(() => {}))
+    await expand()
+    await waitFor(() => expect(getMetricSeries).toHaveBeenCalledTimes(3))
+    const lastSignal = getMetricSeries.mock.calls[2]!.at(-1) as AbortSignal
+    view.unmount()
+    expect(lastSignal.aborted).toBe(true)
+  })
+
+  it('refreshes same-ID expanded attributes while preserving disclosure', async () => {
+    prepare()
+    getMetricSeries
+      .mockResolvedValueOnce({
+        attributes: [
+          { key: 'context', value: { kind: 'string', value: 'old context' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        attributes: [
+          { key: 'context', value: { kind: 'string', value: 'fresh context' } },
+        ],
+      })
+    renderWithContexts(MetricsPage)
+    await expand()
+    await screen.findByText('old context')
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await screen.findByText('fresh context')
+    expect(screen.queryByText('old context')).toBeNull()
+    expect(getMetricSeries).toHaveBeenCalledTimes(2)
+    expect(getMetricView).toHaveBeenCalledTimes(2)
+    expect(
+      screen.getByRole('button', {
+        name: 'Collapse attributes for default series',
+      })
+    ).toHaveAttribute('aria-expanded', 'true')
+  })
+})
+
 describe('MetricsPage raw series fetching', () => {
   const reduced = makeSumDatapoint('dp-reduced', 1_700_000_000_000, 1)
 
@@ -709,6 +846,7 @@ describe('MetricsPage raw series fetching', () => {
     )
 
     await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
+    expect((rawSeriesCalls()[0]!.at(-1) as AbortSignal).aborted).toBe(true)
     expect(rawSeriesCalls()[1]?.slice(0, 3)).toEqual([
       'metric-1',
       300_000_000n,
@@ -732,6 +870,39 @@ describe('MetricsPage raw series fetching', () => {
 
     expect(document.querySelector('tr[data-dp-id="dp-current"]')).not.toBeNull()
     expect(document.querySelector('tr[data-dp-id="dp-stale"]')).toBeNull()
+  })
+
+  it('invalidates an in-flight raw response on a same-window refresh', async () => {
+    prepareRawSeriesTest()
+    const old = deferred<MetricViewData | null>()
+    const current = deferred<MetricViewData | null>()
+    let requests = 0
+    getMetricView.mockImplementation((...args: unknown[]) =>
+      args[3] === 0
+        ? requests++ === 0
+          ? old.promise
+          : current.promise
+        : Promise.resolve(makeMetric('Sum', [reduced]))
+    )
+    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+    const view = renderWithContexts(MetricsPage)
+    await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
+    expect((rawSeriesCalls()[0]!.at(-1) as AbortSignal).aborted).toBe(true)
+    current.resolve(
+      makeMetric('Sum', [makeSumDatapoint('fresh', 1_700_000_000_000, 7)])
+    )
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="fresh"]')).not.toBeNull()
+    )
+    old.resolve(
+      makeMetric('Sum', [makeSumDatapoint('stale', 1_700_000_000_000, 2)])
+    )
+    await tick()
+    expect(document.querySelector('[data-dp-id="stale"]')).toBeNull()
+    view.unmount()
+    expect((rawSeriesCalls()[1]!.at(-1) as AbortSignal).aborted).toBe(true)
   })
 
   const terminalResponses: Array<[string, () => MetricViewData | null]> = [

@@ -277,7 +277,7 @@ describe('App real-page composition', () => {
     navigate('/metrics/metric-1')
     await screen.findByText('The selected metric was not found.')
     expect(searchMetricSummaries).toHaveBeenCalled()
-    expect(getMetric).toHaveBeenCalledWith('metric-1')
+    expect(getMetric).toHaveBeenCalledWith('metric-1', expect.any(AbortSignal))
 
     navigate('/logs/log-1')
     await screen.findByText('No logs match this search and time range.')

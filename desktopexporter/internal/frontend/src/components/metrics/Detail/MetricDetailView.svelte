@@ -104,7 +104,7 @@
     {#snippet action()}
       <DetailViewTabs id={detailViewID} bind:view={detailView}>
         {#snippet action()}
-          {#if ctx.metric}{@const metric = ctx.metric}{#key metric.metricRef}
+          {#if ctx.metric}{@const metric = ctx.metric}{#key metric}
               <ValueCopyButton
                 grouped
                 loadText={signal =>
@@ -122,6 +122,7 @@
         bind:view={detailView}
         scopes={rawScopes}
         wholeURL={metricURL}
+        refreshKey={metric}
       >
         <table class="detail-fields w-full" aria-label="Metric fields">
           <tbody>
