@@ -68,9 +68,15 @@
     fieldSource?: string
   } = $props()
 
-  let copyText = $derived(
-    copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
-  )
+  const copyLoader = $derived.by(() => {
+    const exact = copyValue
+    const native = typedValue
+    const text = fieldValue
+    return (
+      loadText ??
+      (async () => exact ?? (native ? attributeValueCopy(native) : text))
+    )
+  })
   let structuredText = $derived(
     jsonText ??
       (!value && !valueLabel && timestampLabel === undefined && !identifier
@@ -155,8 +161,7 @@
       </div>
     {/if}
     <ValueCopyButton
-      text={copyText}
-      {loadText}
+      loadText={copyLoader}
       label={origin ? `${fieldName} (${origin})` : fieldName}
       contextual
     />
@@ -194,7 +199,10 @@
               bind:this={editor}
             />
           {:else}
-            <ExpandableValue value={copyText}>
+            <ExpandableValue
+              value={fieldValue}
+              identity={typedValue ?? copyValue ?? fieldValue}
+            >
               {#if timestampLabel !== undefined}
                 <div class="detail-property__value" title={fieldValue}>
                   {#if value}{@render value()}{:else}{timestampLabel}{/if}
