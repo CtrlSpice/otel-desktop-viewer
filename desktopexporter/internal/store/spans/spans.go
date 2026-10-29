@@ -569,6 +569,14 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs .
 }
 
 func spansQuery(name queries.Name, traceID string, criteria any, native bool, spanIDs ...uint64) (string, []any, error) {
+	return traceQuery(name, traceID, criteria, native, false, spanIDs...)
+}
+
+func traceQuery(name queries.Name, traceID string, criteria any, native, lightweight bool, spanIDs ...uint64) (string, []any, error) {
+	return traceQueryColumns(name, traceID, criteria, native, lightweight, nil, spanIDs...)
+}
+
+func traceQueryColumns(name queries.Name, traceID string, criteria any, native, lightweight bool, columns []WaterfallColumn, spanIDs ...uint64) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -612,13 +620,19 @@ func spansQuery(name queries.Name, traceID string, criteria any, native bool, sp
 	if native {
 		render = queries.RenderArrow
 	}
+	previews, args, err := waterfallColumnExpressions(columns, args, "ts")
+	if err != nil {
+		return "", nil, err
+	}
 	query, err := render(name, getTraceViewParams{
-		SelectedIDs: selectedIDs,
-		MatchedCTE:  matchedCTE,
-		MatchedExpr: matchedExpr,
-		MatchedJoin: matchedJoin,
-		Selected:    len(spanIDs) > 0,
-		Salvage:     name == queries.SalvageSpans,
+		SelectedIDs:    selectedIDs,
+		MatchedCTE:     matchedCTE,
+		MatchedExpr:    matchedExpr,
+		MatchedJoin:    matchedJoin,
+		Selected:       len(spanIDs) > 0,
+		Salvage:        name == queries.SalvageSpans,
+		Lightweight:    lightweight,
+		ColumnPreviews: previews,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)
@@ -654,35 +668,16 @@ func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term strin
 }
 
 func GetTraceAttributeDefinitionsByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	query := `
-		with owners(owner, attrs) as (
-			select 'resource', resource.attributes from spans where trace_id = ?::uuid
-			union select 'scope', scope.attributes from spans where trace_id = ?::uuid
-			union select 'span', attributes from spans where trace_id = ?::uuid
-			union select 'event', attributes from events where trace_id = ?::uuid
-			union select 'link', attributes from links where trace_id = ?::uuid
-		)` + traceAttributeDefinitions
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID, traceID, traceID, traceID, traceID).Scan(&raw); err != nil {
+	raw, err := searchindex.DefinitionsJSON(ctx, db, "span", traceID)
+	if err != nil {
 		return nil, fmt.Errorf("GetTraceAttributeDefinitionsByTraceID: %w: %w", ErrSpansStoreInternal, err)
 	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	return searchindex.Definitions(ctx, db, "span")
 }
-
-const traceAttributeDefinitions = `
-	select to_json(list(json_object('name', key, 'attributeScope', owner,
-		'owner', owner, 'path', list_prepend(to_json('attributes'::varchar), path),
-		'type', type) order by key, owner, type))::varchar
-	from (select distinct owner, entry.key, entry.path, entry.type
-		from owners, attribute_entries(attrs) entry) definitions
-`
 
 // Clear deletes owning span rows and their complete search catalogue.
 func Clear(ctx context.Context, db *sql.DB) error {

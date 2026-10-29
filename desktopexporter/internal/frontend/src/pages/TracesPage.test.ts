@@ -8,14 +8,18 @@ import type {
   Stats,
   SpanNode,
   TraceLogSummary,
+  SpanData,
 } from '@/types/api-types'
 import type { QueryNode } from '@/search/model'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import { navigate } from '@/route'
 
 const {
   searchTraceSummaries,
   getStats,
   getTraceView,
+  getSpan,
+  getTraceColumnPreviews,
   getTraceLogSummaries,
   getTraceAttributeDefinitions,
   clearTraces,
@@ -24,6 +28,8 @@ const {
   searchTraceSummaries: vi.fn(),
   getStats: vi.fn(),
   getTraceView: vi.fn(),
+  getSpan: vi.fn(),
+  getTraceColumnPreviews: vi.fn(),
   getTraceLogSummaries: vi.fn(),
   getTraceAttributeDefinitions: vi.fn(),
   clearTraces: vi.fn(),
@@ -40,6 +46,8 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       searchTraceSummaries,
       getStats,
       getTraceView,
+      getSpan,
+      getTraceColumnPreviews,
       getTraceLogSummaries,
       getTraceAttributeDefinitions,
       clearTraces,
@@ -165,6 +173,17 @@ beforeEach(() => {
   searchTraceSummaries.mockReset()
   getStats.mockReset()
   getTraceView.mockReset()
+  getSpan.mockReset()
+  getSpan.mockImplementation(async (traceID: string, spanID: string) => {
+    const trace = await getTraceView.mock.results.at(-1)?.value
+    return (
+      (trace?.traceID === traceID ? trace.spans : []).find(
+        (node: SpanNode) => node.spanData.spanID === spanID
+      )?.spanData ?? makeSpanNode(spanID, traceID).spanData
+    )
+  })
+  getTraceColumnPreviews.mockReset()
+  getTraceColumnPreviews.mockResolvedValue([])
   getTraceLogSummaries.mockReset()
   getTraceLogSummaries.mockResolvedValue([])
   getTraceAttributeDefinitions.mockReset()
@@ -279,6 +298,175 @@ describe('TracesPage unplaced spans banner', () => {
 })
 
 describe('TracesPage trace detail lifecycle', () => {
+  it('keeps same-span-ID Details and activity isolated across traces during a tree handoff', async () => {
+    const nextTree = deferred<TraceData>()
+    const old = makeTraceData(0)
+    const next = makeTraceData(0, 'trace-2')
+    next.spans[0]!.spanData.statusCodeValue = 2
+    next.spans[0]!.spanData.statusCode = 'Error'
+    next.spans[0]!.spanData.statusMessage = 'new trace Details'
+    next.spans[0]!.spanData.events = [
+      {
+        name: 'new event',
+        timestamp: 1n,
+        attributes: [],
+        droppedAttributesCount: 0,
+      },
+    ]
+    searchTraceSummaries.mockResolvedValue([
+      makeTraceSummary(),
+      makeTraceSummary({ traceID: 'trace-2' }),
+    ])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockImplementation(traceID =>
+      traceID === 'trace-1' ? Promise.resolve(old) : nextTree.promise
+    )
+    getTraceLogSummaries.mockImplementation(async traceID =>
+      traceID === 'trace-1' ? [makeTraceLog()] : []
+    )
+    getSpan.mockImplementation(
+      async traceID => (traceID === 'trace-1' ? old : next).spans[0]!.spanData
+    )
+    setTestUrl('/traces/trace-1?span=root')
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-field="spanId"]')).not.toBeNull()
+    )
+    navigate('/traces/trace-2?span=root&event=0')
+    await screen.findByText('new trace Details')
+    expect(getSpan).toHaveBeenCalledWith(
+      'trace-2',
+      'root',
+      expect.any(AbortSignal)
+    )
+    expect(
+      screen.getByText('Events', { exact: true }).closest('summary')
+    ).toHaveTextContent('Events [1]')
+    nextTree.resolve(next)
+    await waitFor(() =>
+      expect(window.location.search).toBe('?span=root&event=0')
+    )
+  })
+
+  it('starts known-span Details concurrently with the tree and hides stale identity', async () => {
+    const tree = deferred<TraceData>()
+    const detail = deferred<SpanData>()
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockReturnValue(tree.promise)
+    getSpan.mockReturnValue(detail.promise)
+    setTestUrl('/traces/trace-1?span=root')
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(getSpan).toHaveBeenCalledWith(
+        'trace-1',
+        'root',
+        expect.any(AbortSignal)
+      )
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Loading selected span'
+    )
+    detail.resolve({ ...makeSpanNode('root').spanData, name: 'Exact details' })
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Loading selected span…')
+      ).not.toBeInTheDocument()
+    )
+    tree.resolve(makeTraceData(0))
+    await waitFor(() =>
+      expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
+    )
+    expect(getSpan).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels superseded span requests and ignores a late result', async () => {
+    const root = deferred<SpanData>()
+    const child = deferred<SpanData>()
+    const trace = makeTraceData(0)
+    trace.spans.push(makeSpanNode('child'))
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockResolvedValue(trace)
+    getSpan.mockImplementation((_traceID, spanID) =>
+      spanID === 'root' ? root.promise : child.promise
+    )
+    setTestUrl('/traces/trace-1?span=root')
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(document.querySelector('tr[data-span-id="child"]')).not.toBeNull()
+    )
+    const rootSignal = getSpan.mock.calls[0]![2] as AbortSignal
+    await fireEvent.click(screen.getByRole('row', { name: /^child —/ }))
+    await waitFor(() =>
+      expect(getSpan).toHaveBeenCalledWith(
+        'trace-1',
+        'child',
+        expect.any(AbortSignal)
+      )
+    )
+    expect(rootSignal.aborted).toBe(true)
+    child.resolve({
+      ...makeSpanNode('child').spanData,
+      statusCodeValue: 2,
+      statusCode: 'Error',
+      statusMessage: 'current Details',
+    })
+    await screen.findByText('current Details')
+    root.resolve({
+      ...makeSpanNode('root').spanData,
+      statusCodeValue: 2,
+      statusCode: 'Error',
+      statusMessage: 'stale Details',
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('stale Details')).not.toBeInTheDocument()
+    )
+    expect(screen.getByText('current Details')).toBeInTheDocument()
+  })
+
+  it('reuses exact span Details from the bounded selection cache', async () => {
+    const trace = makeTraceData(0)
+    trace.spans.push(makeSpanNode('child'))
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockResolvedValue(trace)
+    getSpan.mockImplementation(
+      async (_traceID, spanID) => makeSpanNode(spanID).spanData
+    )
+    setTestUrl('/traces/trace-1?span=root')
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(document.querySelector('tr[data-span-id="child"]')).not.toBeNull()
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Loading selected span…')
+      ).not.toBeInTheDocument()
+    )
+    await fireEvent.click(screen.getByRole('row', { name: /^child —/ }))
+    await waitFor(() =>
+      expect(getSpan).toHaveBeenCalledWith(
+        'trace-1',
+        'child',
+        expect.any(AbortSignal)
+      )
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Loading selected span…')
+      ).not.toBeInTheDocument()
+    )
+    const before = getSpan.mock.calls.length
+    await fireEvent.click(screen.getByRole('row', { name: /^root —/ }))
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Loading selected span…')
+      ).not.toBeInTheDocument()
+    )
+    expect(getSpan).toHaveBeenCalledTimes(before)
+  })
+
   it('preserves valid event and log deep links until current trace detail loads', async () => {
     const trace = makeTraceData(0)
     trace.spans[0]!.spanData.events = [
@@ -305,6 +493,7 @@ describe('TracesPage trace detail lifecycle', () => {
     getStats.mockResolvedValue(makeStats())
     getTraceView.mockResolvedValue(trace)
     getTraceLogSummaries.mockResolvedValue(logs)
+    getSpan.mockResolvedValue(trace.spans[0]!.spanData)
     setTestUrl('/traces/trace-1?span=root&log=log-1')
 
     renderWithContexts(TracesPage)
@@ -330,6 +519,7 @@ describe('TracesPage trace detail lifecycle', () => {
     searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
     getTraceView.mockResolvedValue(trace)
+    getSpan.mockResolvedValue(trace.spans[0]!.spanData)
     getTraceLogSummaries.mockResolvedValue([makeTraceLog()])
     setTestUrl('/traces/trace-1?span=root&event=0&log=log-1')
 

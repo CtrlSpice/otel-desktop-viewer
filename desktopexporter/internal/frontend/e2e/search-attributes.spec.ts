@@ -51,10 +51,8 @@ for (const [signal, scope, method] of [
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
     const query = `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993`
-    const definitions = page.waitForResponse(
-      response =>
-        response.url().endsWith('/rpc') &&
-        response.request().postDataJSON().method === method
+    const definitions = page.waitForResponse(response =>
+      response.url().endsWith(`/api/data/${method}`)
     )
     await page.goto(`/${signal}?q=${encodeURIComponent(query)}`)
     await definitions

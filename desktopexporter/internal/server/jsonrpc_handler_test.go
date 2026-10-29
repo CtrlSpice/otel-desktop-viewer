@@ -1637,7 +1637,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &summaries))
 		require.Len(t, summaries, 1, "should return one metric summary")
 		assert.Equal(t, "test.gauge", summaries[0]["name"])
-		assert.Equal(t, "A test gauge", summaries[0]["description"])
+		assert.NotContains(t, summaries[0], "description")
 		assert.Equal(t, "test-svc", summaries[0]["serviceName"])
 		assert.Equal(t, "Gauge", summaries[0]["metricType"])
 		assert.Equal(t, "bytes", summaries[0]["unit"])

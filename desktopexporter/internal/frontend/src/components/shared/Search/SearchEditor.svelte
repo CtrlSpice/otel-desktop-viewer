@@ -18,6 +18,7 @@
   } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { attributeSampleText } from '@/services/arrow-search'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -424,15 +425,7 @@
                         }
                       )
                       return matches.flatMap(match =>
-                        match.sampleValues.flatMap(value =>
-                          value.kind === 'map' || value.kind === 'array'
-                            ? []
-                            : [
-                                value.kind === 'empty'
-                                  ? 'null'
-                                  : String(value.value),
-                              ]
-                        )
+                        match.sampleValues.flatMap(attributeSampleText)
                       )
                     }
                   ),

@@ -2,7 +2,7 @@
   import Identifier from '@/components/shared/Identifier.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
   import { columnLabel, type WaterfallColumn } from './waterfall-columns'
-  import type { SpanData } from '@/types/api-types'
+  import type { WaterfallSpan as SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
   import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'

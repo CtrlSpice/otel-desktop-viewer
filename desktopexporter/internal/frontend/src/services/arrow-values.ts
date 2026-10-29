@@ -75,6 +75,12 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
         get value() {
           return attributes(cell)
         },
+        get childCount() {
+          return cell.map().length
+        },
+        get previewChildren() {
+          return attributes(cell, 3)
+        },
         get conflictingKeys() {
           return [...mapConflicts(cell.map())]
         },
@@ -88,24 +94,33 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
             attributeValue(new ArrowCell(values, row))
           )
         },
+        get childCount() {
+          return cell.list().length
+        },
+        get previewChildren() {
+          const values = cell.list()
+          return Array.from({ length: Math.min(values.length, 3) }, (_, row) =>
+            attributeValue(new ArrowCell(values, row))
+          )
+        },
       }
   }
 }
 
-export function attributes(cell: ArrowCell): Attribute[] {
+export function attributes(cell: ArrowCell, limit = Infinity): Attribute[] {
   if (cell.isNull) return []
   const entries = cell.map()
   let conflicts: Set<string> | undefined
-  return rowViews(entries, (frame, row) => ({
+  return Array.from({ length: Math.min(entries.length, limit) }, (_, row) => ({
     get key() {
-      return frame.cell('key', row).text()
+      return entries.cell('key', row).text()
     },
     get value() {
-      return attributeValue(frame.cell('value', row))
+      return attributeValue(entries.cell('value', row))
     },
     get hasConflict() {
       conflicts ??= mapConflicts(entries)
-      return conflicts.has(frame.cell('key', row).text())
+      return conflicts.has(entries.cell('key', row).text())
     },
   }))
 }
@@ -170,92 +185,5 @@ function equalValue(left: ArrowCell, right: ArrowCell): boolean {
           return false
       return true
     }
-  }
-}
-
-function shorten(
-  text: string,
-  length: number,
-  ellipsisWithinLimit = false
-): string {
-  const chars: string[] = []
-  for (const char of text) {
-    if (chars.length === length) {
-      if (ellipsisWithinLimit) chars.pop()
-      return chars.join('') + '…'
-    }
-    chars.push(char)
-  }
-  return chars.join('')
-}
-
-function previewItem(cell: ArrowCell): string {
-  switch (valueKind(cell)) {
-    case 'empty':
-      return 'empty'
-    case 'string':
-      return JSON.stringify(
-        shorten(cell.text().replace(/[\t\n\f\r ]+/g, ' '), 48)
-      )
-    case 'bytes': {
-      const bytes = cell.bytes()
-      return `bytes (base64): ${base64(bytes.subarray(0, 36))}${bytes.length > 36 ? '…' : ''}`
-    }
-    case 'int64':
-      return cell.integer().toString()
-    case 'bool':
-      return String(cell.boolean())
-    case 'double': {
-      const value = cell.number()
-      if (Number.isFinite(value) && !Object.is(value, -0)) return String(value)
-      const bits = new DataView(new ArrayBuffer(8))
-      bits.setFloat64(0, value)
-      return (
-        '0x' +
-        (Number.isNaN(value) ? 0x7ff8000000000000n : bits.getBigUint64(0))
-          .toString(16)
-          .padStart(16, '0')
-      )
-    }
-    case 'map':
-      return `object (${cell.map().length} fields)`
-    case 'array':
-      return `array (${cell.list().length} items)`
-  }
-}
-
-/** Bounded summary: visit at most three children, never serialize the body. */
-export function bodyPreview(cell: ArrowCell): string {
-  switch (valueKind(cell)) {
-    case 'string':
-      return shorten(cell.text().replace(/[\t\n\f\r ]+/g, ' '), 300, true)
-    case 'map': {
-      const entries = cell.map()
-      const items: string[] = []
-      for (let row = 0; row < Math.min(3, entries.length); row++)
-        items.push(
-          `${shorten(entries.cell('key', row).text(), 32)}: ${previewItem(entries.cell('value', row))}`
-        )
-      return (
-        '{' +
-        items.join(', ') +
-        (entries.length > 3 ? `, … (+${entries.length - 3} fields)` : '') +
-        '}'
-      )
-    }
-    case 'array': {
-      const values = cell.list()
-      const items: string[] = []
-      for (let row = 0; row < Math.min(3, values.length); row++)
-        items.push(previewItem(new ArrowCell(values, row)))
-      return (
-        '[' +
-        items.join(', ') +
-        (values.length > 3 ? `, … (+${values.length - 3} items)` : '') +
-        ']'
-      )
-    }
-    default:
-      return previewItem(cell)
   }
 }

@@ -67,7 +67,7 @@ func writeArrowError(w http.ResponseWriter, err error) {
 			break
 		}
 	}
-	for _, candidate := range []error{jsonrpc2.ErrMethodNotFound, ErrTraceNotFound, ErrLogsNotFound, ErrMetricNotFound} {
+	for _, candidate := range []error{jsonrpc2.ErrMethodNotFound, ErrTraceNotFound, ErrLogsNotFound, ErrMetricNotFound, ErrHomeValueUnavailable} {
 		if errors.Is(err, candidate) {
 			mapped, status = candidate, http.StatusNotFound
 			break
@@ -88,6 +88,41 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 		return nil, err
 	}
 	switch method {
+	case "searchAttributeMatches":
+		options, err := parseAttributeMatchParams(params)
+		if err != nil {
+			return nil, err
+		}
+		query, args, err := searchindex.DiscoverArrowSQL(*options)
+		if err != nil {
+			return nil, err
+		}
+		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
+			return arrowread.Read(ctx, db, query, args...)
+		})
+	case "getTraceAttributeDefinitions", "getLogAttributeDefinitions", "getMetricAttributeDefinitions", "getTraceAttributeDefinitionsByTraceID":
+		traceID := ""
+		if method == "getTraceAttributeDefinitionsByTraceID" {
+			traceID, err = parseSingleIDParam(params, ErrInvalidTraceID, normalizeUUID)
+		} else {
+			err = validateNoParams(params)
+		}
+		if err != nil {
+			return nil, err
+		}
+		signal := "span"
+		if method == "getLogAttributeDefinitions" {
+			signal = "log"
+		} else if method == "getMetricAttributeDefinitions" {
+			signal = "metric"
+		}
+		query, args, err := searchindex.DefinitionsArrowSQL(signal, traceID)
+		if err != nil {
+			return nil, err
+		}
+		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
+			return arrowread.Read(ctx, db, query, args...)
+		})
 	case "getFieldValueCompletions":
 		p, err := parseFieldValuesParams(params)
 		if err != nil {
@@ -99,6 +134,11 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 		}
 		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) { return arrowread.Read(ctx, db, query, args...) })
 	case "discoverTelemetry":
+		if options, home, err := homeDiscoveryOptions(params); err != nil {
+			return nil, err
+		} else if home {
+			return h.homeValueArrow(ctx, options)
+		}
 		plan, err := discoveryPlanFor(params, true)
 		if err != nil {
 			return nil, err
@@ -134,7 +174,7 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 			return nil, err
 		}
 		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
-			return metrics.SeriesArrow(ctx, db, args.metricRef, args.seriesRef, args.timeRange)
+			return metrics.SeriesArrow(ctx, db, args.metricRef, args.seriesRef, args.timeRange, args.includeDatapoints)
 		})
 	case "getTraceView":
 		parsed, err := parseTraceViewParams(params)
@@ -142,7 +182,49 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 			return nil, err
 		}
 		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
-			return spans.ViewArrow(ctx, db, parsed.traceID, parsed.query, parsed.spanIDs...)
+			// Explicit bounded selections supply Evals' received evidence, not a
+			// waterfall. Ordinary trace views never include complete payloads.
+			if len(parsed.spanIDs) > 0 {
+				return spans.ViewArrow(ctx, db, parsed.traceID, parsed.query, parsed.spanIDs...)
+			}
+			return spans.WaterfallColumnsArrow(ctx, db, parsed.traceID, parsed.query, parsed.columns)
+		})
+	case "getSpan":
+		values, err := decodePositionalParams(params, 2, 2)
+		if err != nil {
+			return nil, err
+		}
+		_, spanID, err := parseSpanIDParam(values[0])
+		if err != nil {
+			return nil, err
+		}
+		traceID, err := parseIDParam(values[1], ErrInvalidTraceID, normalizeUUID)
+		if err != nil {
+			return nil, err
+		}
+		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) { return spans.GetArrow(ctx, db, traceID, spanID) })
+	case "getTraceColumnPreviews":
+		values, err := decodePositionalParams(params, 2, 2)
+		if err != nil {
+			return nil, err
+		}
+		traceID, err := parseIDParam(values[0], ErrInvalidTraceID, normalizeUUID)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(values[1])
+		if err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		var columns []spans.WaterfallColumn
+		if err := json.Unmarshal(encoded, &columns); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if err := spans.ValidateWaterfallColumns(columns); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
+			return spans.ColumnPreviewsArrow(ctx, db, traceID, columns)
 		})
 	case "searchLogPage":
 		parsed, err := parseLogPageParams(params)

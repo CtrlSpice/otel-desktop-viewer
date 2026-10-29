@@ -110,7 +110,8 @@ export function logSummaryTable(): Table {
     severityNumber: vectorFromArray([9], new Int32()),
     serviceName: vectorFromArray(['checkout'], new Utf8()),
     eventName: vectorFromArray(['order.received'], new Utf8()),
-    body: vectorFromArray(['received'], new Utf8()),
+    bodyPreview: vectorFromArray(['received'], new Utf8()),
+    bodyType: vectorFromArray(['string'], new Utf8()),
   })
 }
 

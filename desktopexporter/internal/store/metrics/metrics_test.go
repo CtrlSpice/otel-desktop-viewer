@@ -2351,7 +2351,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "gauge_card_test")
 		assert.NotEmpty(t, summary["metricRef"])
-		assert.Equal(t, "Memory used by the process", summary["description"])
+		assert.NotContains(t, summary, "description")
 		assert.EqualValues(t, 2, summary["seriesCount"])
 		assert.EqualValues(t, 2, summary["dataPointCount"])
 		assert.InDelta(t, 2.0, summary["lastValue"], 1e-9)

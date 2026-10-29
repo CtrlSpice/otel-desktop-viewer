@@ -181,6 +181,34 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 				require.NoError(t, json.Unmarshal([]byte(field("identity").(*array.String).Value(0)), &identity))
 				require.Equal(t, value.Value.Kind, identity.Kind)
 				require.Equal(t, page.Truncated, native.Column(1).(*array.Boolean).Value(0))
+				// Home uses one cross-signal page. Restrict this case to the same
+				// selected signal and pin the existing parent/kind denominators.
+				homeOptions := map[string]any{}
+				for key, value := range params["options"].(map[string]any) {
+					homeOptions[key] = value
+				}
+				queries := map[string]any{"traces": false, "metrics": false, "logs": false}
+				queries[tc.signal] = nil
+				if tc.signal == "traces" {
+					queries[tc.signal] = params["options"].(map[string]any)["queries"].(map[string]any)["traces"]
+				}
+				homeOptions["queries"] = queries
+				home := homePage(t, h, homeOptions)
+				require.Len(t, home.Values, 1)
+				homeValue := home.Values[0]
+				homeKindCount := tc.strings
+				if homeValue.Kind == "int64" {
+					homeKindCount = tc.ints
+				}
+				homeCount := homeKindCount
+				if tc.ownerType == "event" && homeValue.Kind == "string" {
+					homeCount = 2
+				}
+				require.EqualValues(t, homeKindCount, homeValue.KindCount)
+				require.EqualValues(t, homeCount, homeValue.Count)
+				require.EqualValues(t, tc.records, home.Denominator)
+				require.EqualValues(t, tc.values, home.Total)
+				require.Equal(t, offset < tc.values-1, home.Truncated)
 			}
 		})
 	}

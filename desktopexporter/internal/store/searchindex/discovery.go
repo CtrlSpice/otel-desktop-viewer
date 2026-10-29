@@ -63,29 +63,13 @@ func Discover(ctx context.Context, db *sql.DB, options DiscoveryOptions) (json.R
 	return discover(ctx, db, options, false)
 }
 func discover(ctx context.Context, db *sql.DB, options DiscoveryOptions, allKeys bool) (json.RawMessage, error) {
-	signal, err := NormalizeSignal(options.Signal)
+	q, args, err := discoverySQL(options, allKeys, discoveryOwners("$1"))
 	if err != nil {
 		return nil, err
 	}
+	signal, _ := NormalizeSignal(options.Signal)
+	pattern := args[4].(string)
 	selected := len(options.Path) > 0
-	if strings.TrimSpace(options.Term) == "" && !selected && !allKeys {
-		return json.RawMessage("[]"), nil
-	}
-	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(options.Term) + "%"
-	pathText := "null"
-	if len(options.Path) > 0 {
-		pathText = jsonText(options.Path)
-	}
-	args := []any{signal, options.Owner, pathText, options.Kind, pattern}
-	filter := `p.key ilike $5`
-	if selected {
-		filter = `(v.value ilike $5 or ($5='%%' and v.kind in('map','array','empty')))`
-	}
-	q := discoveryOwners("$1") + `select p.id,p.key,p.attribute_scope,p.owner,p.path::varchar,p.kind,count(distinct v.id)
-	 from search_paths p join search_postings l on l.path_id=p.id join discovery_owners o on o.id=l.owner_id join search_values v on v.id=l.value_id
-	 where p.is_attribute
-	 and ($2='' or p.owner=$2) and ($3='null' or p.path=$3::json) and ($4='' or p.kind=$4) and (` + filter + `)
-	 group by p.id,p.key,p.attribute_scope,p.owner,p.path,p.kind order by count(distinct v.id) desc,p.key,p.attribute_scope,p.kind,p.path::varchar`
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -116,7 +100,7 @@ func discover(ctx context.Context, db *sql.DB, options DiscoveryOptions, allKeys
 			m := &out[i]
 			r, err := db.QueryContext(ctx, discoveryOwners("$3")+`select min(o.record_key) from search_postings l join discovery_owners o on o.id=l.owner_id join search_values v on v.id=l.value_id
 			 where l.path_id=$1 and (v.value ilike $2 or ($2='%%' and v.kind in('map','array','empty')))
-		 group by v.identity,v.value order by v.value,v.identity limit 3`, m.pathID, pattern, signal)
+			group by v.identity,v.value order by v.value,v.identity limit 3`, m.pathID, pattern, signal)
 			if err != nil {
 				return nil, err
 			}
@@ -144,30 +128,41 @@ func discover(ctx context.Context, db *sql.DB, options DiscoveryOptions, allKeys
 	return json.Marshal(out)
 }
 
-func Definitions(ctx context.Context, db *sql.DB, signal string) (json.RawMessage, error) {
-	raw, err := discover(ctx, db, DiscoveryOptions{Signal: signal}, true)
+func discoverySQL(options DiscoveryOptions, allKeys bool, owners string) (string, []any, error) {
+	signal, err := NormalizeSignal(options.Signal)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	var rows []map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &rows); err != nil {
-		return nil, err
+	selected := len(options.Path) > 0
+	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(options.Term) + "%"
+	pathText := "null"
+	if len(options.Path) > 0 {
+		pathText = jsonText(options.Path)
 	}
-	for _, row := range rows {
-		delete(row, "matchCount")
-		delete(row, "sampleValues")
+	args := []any{signal, options.Owner, pathText, options.Kind, pattern}
+	filter := `p.key ilike $5`
+	if selected {
+		filter = `(v.value ilike $5 or ($5='%%' and v.kind in('map','array','empty')))`
+	} else if strings.TrimSpace(options.Term) == "" && !allKeys {
+		filter = "($5 IS NULL AND false)"
 	}
-	return json.Marshal(rows)
+	q := owners + `select p.id,p.key,p.attribute_scope,p.owner,p.path::varchar as path,p.kind,count(distinct v.id) as match_count
+	 from search_paths p join search_postings l on l.path_id=p.id join discovery_owners o on o.id=l.owner_id join search_values v on v.id=l.value_id
+	 where p.is_attribute
+	 and ($2='' or p.owner=$2) and ($3='null' or p.path=$3::json) and ($4='' or p.kind=$4) and (` + filter + `)
+	 group by p.id,p.key,p.attribute_scope,p.owner,p.path,p.kind order by count(distinct v.id) desc,p.key,p.attribute_scope,p.kind,p.path::varchar`
+	return q, args, nil
+}
+
+func Definitions(ctx context.Context, db *sql.DB, signal string) (json.RawMessage, error) {
+	return DefinitionsJSON(ctx, db, signal, "")
 }
 
 // Fetch the selected representatives together. Child views can expand nested
 // records, so a query per representative repeats the same native payload scan.
-func nativeSamples(ctx context.Context, db *sql.DB, owner string, path []any, records []string, signal string) ([]json.RawMessage, error) {
+func nativeSampleSource(owner string, path []any, signal string) (string, string, string, error) {
 	if len(path) == 0 {
-		return nil, fmt.Errorf("missing selected path")
-	}
-	if len(records) == 0 {
-		return []json.RawMessage{}, nil
+		return "", "", "", fmt.Errorf("missing selected path")
 	}
 	document, from, identity := "", "", "t.id::varchar"
 	switch owner {
@@ -219,7 +214,18 @@ func nativeSamples(ctx context.Context, db *sql.DB, owner string, path []any, re
 		document = "t.context.attributes"
 		identity = "t.context.id::varchar"
 	default:
-		return nil, fmt.Errorf("unsupported discovery owner %q", owner)
+		return "", "", "", fmt.Errorf("unsupported discovery owner %q", owner)
+	}
+	return document, from, identity, nil
+}
+
+func nativeSamples(ctx context.Context, db *sql.DB, owner string, path []any, records []string, signal string) ([]json.RawMessage, error) {
+	if len(records) == 0 {
+		return []json.RawMessage{}, nil
+	}
+	document, from, identity, err := nativeSampleSource(owner, path, signal)
+	if err != nil {
+		return nil, err
 	}
 	params := make([]search.NamedParam, len(records))
 	wanted := make([]string, len(records))

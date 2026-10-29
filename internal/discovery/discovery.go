@@ -82,10 +82,21 @@ func Predicate(query Query) string {
 
 // Records keeps counted record identity distinct from the attribute owner.
 func Records(signal, ownerType string) (string, error) {
-	return RecordsFrom(signal, ownerType, Sources{})
+	return RecordsFrom(signal, ownerType, Query{})
 }
 
-func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
+func RecordsFrom(signal, ownerType string, query Query) (string, error) {
+	sources := query.Sources
+	window := func(field string) string {
+		p := []string{"true"}
+		if query.StartTime != nil {
+			p = append(p, field+" >= "+Literal(*query.StartTime)+"::UBIGINT")
+		}
+		if query.EndTime != nil {
+			p = append(p, field+" <= "+Literal(*query.EndTime)+"::UBIGINT")
+		}
+		return strings.Join(p, " AND ")
+	}
 	var identity, timestamp, service, from, directOwner, attributes, resource, scope, allowed string
 	switch signal {
 	case "traces":
@@ -94,10 +105,10 @@ func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
 		allowed = "span, event, link, resource or scope"
 		switch ownerType {
 		case "event":
-			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
+			from += " CROSS JOIN unnest(list_filter(s.events, lambda e: " + window("e.timestamp") + ")) AS child(e)"
 			attributes, directOwner, timestamp = "e.attributes", "event", "e.timestamp"
 		case "link":
-			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
+			from += " CROSS JOIN unnest(s.links) AS child(l)"
 			attributes, directOwner = "l.attributes", "link"
 		}
 	case "logs":
@@ -105,16 +116,36 @@ func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
 		from, directOwner, attributes, resource, scope = source(sources.Logs, "logs")+" l", "log", "l.attributes", "l.resource", "l.scope"
 		allowed = "log, resource or scope"
 	case "metrics":
-		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
-		from, directOwner = "metric_datapoints d JOIN "+source(sources.Metrics, "metrics")+" m ON m.id = d.metric_id", "datapoint"
-		attributes, resource, scope = "d.attributes", "d.resource", "d.scope"
+		// Select logical metrics before expanding their received owning records.
+		// The selected relation owns whole-expression search semantics; do not
+		// rewrite its predicate against individual points or received descriptors.
+		selected := source(sources.Metrics, "metrics")
+		selection := "true"
+		if sources.Metrics != "" {
+			selection = "EXISTS (SELECT 1 FROM " + selected + " m WHERE m.id = r.id)"
+		}
+		identity, timestamp, service = "r.d.id", "r.d.timestamp", "r.service_name"
+		points, overlap := "r.datapoints", "true"
+		if ownerType != "exemplar" {
+			points = "list_filter(r.datapoints, lambda d: " + window("d.timestamp") + ")"
+			if query.StartTime != nil {
+				overlap += " AND r.point_time_max >= " + Literal(*query.StartTime) + "::UBIGINT"
+			}
+			if query.EndTime != nil {
+				overlap += " AND r.point_time_min <= " + Literal(*query.EndTime) + "::UBIGINT"
+			}
+		}
+		from, directOwner = "(SELECT r.*, unnest("+points+") AS d FROM metric_records r WHERE "+overlap+" AND "+selection+") r", "datapoint"
+		attributes, resource, scope = "r.d.attributes", "r.resource", "r.scope"
 		allowed = "datapoint, exemplar, metadata, resource or scope"
 		switch ownerType {
 		case "exemplar":
-			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
+			from += " CROSS JOIN unnest(list_filter(r.d.exemplars, lambda e: " + window("e.timestamp") + ")) AS child(e)"
 			attributes, directOwner, timestamp = "e.attributes", "exemplar", "e.timestamp"
 		case "metadata":
-			attributes, directOwner = "m.metadata", "metadata"
+			// Existing discovery exposes the latest logical descriptor's metadata,
+			// not received-record metadata. Preserve that contract explicitly.
+			attributes, directOwner = "(SELECT m.metadata FROM "+selected+" m WHERE m.id = r.id)", "metadata"
 		}
 	default:
 		return "", fmt.Errorf("unsupported --signal %q: use traces, logs or metrics", signal)
@@ -155,22 +186,18 @@ func object(query Query, fields ...string) string {
 }
 
 func Keys(query Query, location Location, records string) string {
-	if query.Native {
-		return `WITH records AS (` + records + `)
-SELECT struct_pack(key := a.key, kind := otel_value_kind(attribute_native_field(s.parts, a.key)), foundOn := ` + foundOn(query, location) + `) AS entry
-FROM (SELECT *, variant_to_parquet_variant(variant_normalize(attributes))::struct(metadata blob, value blob) AS parts FROM records) s, unnest(variant_keys(s.attributes)) a(key)
-WHERE ` + Predicate(query) + `
-GROUP BY a.key, otel_value_kind(attribute_native_field(s.parts, a.key))
-ORDER BY a.key, otel_value_kind(attribute_native_field(s.parts, a.key))`
-	}
-	return `WITH records AS (` + records + `)
-SELECT json_object('key', a.value->>'key', 'kind', a.value->'value'->>'kind',
-    'foundOn', ` + foundOn(query, location) + `) AS entry
-FROM records s
-CROSS JOIN json_each(otel_value_json(s.attributes), '$.value') a
-WHERE ` + Predicate(query) + `
-GROUP BY a.value->>'key', a.value->'value'->>'kind'
-ORDER BY a.value->>'key', a.value->'value'->>'kind'`
+	// Keys need no record denominators. Enumerate each exact received attribute
+	// context once, rather than encode the entire context as JSON per record.
+	return `WITH scoped_records AS (` + records + `), contexts AS (
+    SELECT DISTINCT variant_to_parquet_variant(s.attributes)::struct(metadata blob, value blob) AS parts
+    FROM scoped_records s WHERE ` + Predicate(query) + `
+), keys AS (
+    SELECT a.key, otel_value_kind(attribute_native_field(c.parts, a.key)) AS kind
+    FROM contexts c, unnest(variant_keys(variant_bytes_to_variant(c.parts.metadata || c.parts.value))) a(key)
+    GROUP BY a.key, kind
+)
+SELECT ` + object(query, "key", "key", "kind", "kind", "foundOn", foundOn(query, location)) + ` AS entry
+FROM keys ORDER BY key, kind`
 }
 
 func Values(query Query, location Location, records, key string) string {
@@ -212,7 +239,18 @@ ORDER BY v.count DESC, otel_value_kind(v.value), v.identity`
 
 func Services(query Query) string {
 	predicate := Predicate(query)
-	identity := `JOIN service_identities i ON i.resource_id = s.resource.id`
+	// Group only the two needed native service fields, not whole Resource
+	// payloads. Encode labels once per native pair after counting owning rows.
+	// Exact trace/metric ID lists are unioned after canonical NaN equivalence;
+	// summing per-native-pair distinct counts would double-count shared IDs.
+	nativeFields := `variant_exists(s.resource.attributes, 'service.name') AS name_present,
+        variant_to_parquet_variant(s.resource.attributes['service.name'])::struct(metadata blob, value blob) AS name_parts,
+        variant_exists(s.resource.attributes, 'service.namespace') AS namespace_present,
+        variant_to_parquet_variant(s.resource.attributes['service.namespace'])::struct(metadata blob, value blob) AS namespace_parts`
+	metricSelection := "true"
+	if query.Sources.Metrics != "" {
+		metricSelection = "EXISTS (SELECT 1 FROM " + query.Sources.Metrics + " m WHERE m.id=r.id)"
+	}
 	lastSeen := "max(c.last_seen)::VARCHAR"
 	if query.Native {
 		lastSeen = "max(c.last_seen)"
@@ -221,32 +259,20 @@ func Services(query Query) string {
 		"serviceNamespace", "c.service_namespace", "serviceName", "c.service_name", "serviceIdentity", "c.service_identity",
 		"serviceNameKind", "coalesce(json_extract_string(c.service_identity, '$[0].kind'), 'missing')",
 		"serviceNamespaceKind", "json_extract_string(c.service_identity, '$[1].kind')",
-		"traceCount", "coalesce(sum(c.trace_count),0)", "spanCount", "coalesce(sum(c.span_count),0)", "errorSpanCount", "coalesce(sum(c.error_span_count),0)",
+		"traceCount", "len(list_distinct(flatten(list(coalesce(c.trace_ids, []::UUID[])))))", "spanCount", "coalesce(sum(c.span_count),0)", "errorSpanCount", "coalesce(sum(c.error_span_count),0)",
 		"logCount", "coalesce(sum(c.log_count),0)", "errorLogCount", "coalesce(sum(c.error_log_count),0)",
 		"logSeverityCounts", object(query, "trace", "coalesce(sum(c.trace_log_count),0)", "debug", "coalesce(sum(c.debug_log_count),0)",
 			"info", "coalesce(sum(c.info_log_count),0)", "warn", "coalesce(sum(c.warn_log_count),0)", "error", "coalesce(sum(c.error_severity_log_count),0)",
 			"fatal", "coalesce(sum(c.fatal_log_count),0)", "other", "coalesce(sum(c.other_log_count),0)"),
-		"metricCount", "coalesce(sum(c.metric_count),0)", "dataPointCount", "coalesce(sum(c.data_point_count),0)", "exemplarCount", "coalesce(sum(c.exemplar_count),0)", "lastSeen", lastSeen)
-	return `WITH resource_payloads AS (
-    SELECT resource FROM ` + source(query.Sources.Spans, "spans") + `
-    UNION SELECT resource FROM ` + source(query.Sources.Logs, "logs") + `
-    UNION SELECT resource FROM ` + source(query.Sources.Metrics, "metrics") + `
-), service_identities AS MATERIALIZED (
-    SELECT resource.id AS resource_id, ` + ServiceIdentity("resource") + ` AS service_identity,
-        coalesce(otel_value_text(resource.attributes['service.name']), '') AS service_name,
-        coalesce(otel_value_text(resource.attributes['service.namespace']), '') AS service_namespace
-    FROM resource_payloads
-), exemplar_counts AS (
-    SELECT metric_datapoint_id, count(*) AS exemplar_count FROM exemplars GROUP BY metric_datapoint_id
-), service_counts AS (
-    SELECT i.service_identity, i.service_namespace, i.service_name, count(DISTINCT trace_id) AS trace_count, count(*) AS span_count,
+		"metricCount", "len(list_distinct(flatten(list(coalesce(c.metric_ids, []::UUID[])))))", "dataPointCount", "coalesce(sum(c.data_point_count),0)", "exemplarCount", "coalesce(sum(c.exemplar_count),0)", "lastSeen", lastSeen)
+	return `WITH native_service_counts AS (
+    SELECT ` + nativeFields + `, list(DISTINCT trace_id) AS trace_ids, count(*) AS span_count,
         count(*) FILTER (WHERE status_code = 2) AS error_span_count,
         max(time_ns) AS last_seen
     FROM (SELECT resource, service_name, trace_id, start_time AS time_ns, status_code FROM ` + source(query.Sources.Spans, "spans") + `) s
-    ` + identity + `
-    WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
+    WHERE ` + predicate + ` GROUP BY ALL
     UNION ALL BY NAME
-    SELECT i.service_identity, i.service_namespace, i.service_name, count(*) AS log_count,
+    SELECT ` + nativeFields + `, count(*) AS log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24) AS error_log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 1 AND 4) AS trace_log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 5 AND 8) AS debug_log_count,
@@ -258,16 +284,21 @@ func Services(query Query) string {
         max(time_ns) AS last_seen
     FROM (SELECT resource, service_name,
         coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM ` + source(query.Sources.Logs, "logs") + `) s
-    ` + identity + `
-    WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
+    WHERE ` + predicate + ` GROUP BY ALL
     UNION ALL BY NAME
-    SELECT i.service_identity, i.service_namespace, i.service_name, count(DISTINCT metric_id) AS metric_count,
-        count(*) AS data_point_count, sum(coalesce(e.exemplar_count, 0)) AS exemplar_count, max(time_ns) AS last_seen
-    FROM (SELECT d.resource, m.service_name, m.id AS metric_id, d.id AS datapoint_id, d.timestamp AS time_ns
-        FROM metric_datapoints d JOIN ` + source(query.Sources.Metrics, "metrics") + ` m ON m.id = d.metric_id) s
-    ` + identity + `
-    LEFT JOIN exemplar_counts e ON e.metric_datapoint_id = s.datapoint_id
-    WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
+    SELECT ` + nativeFields + `, list(DISTINCT metric_id) AS metric_ids,
+        count(*) AS data_point_count, sum(len(exemplars)) AS exemplar_count, max(time_ns) AS last_seen
+    FROM (SELECT r.resource, r.service_name, r.id AS metric_id, r.d.timestamp AS time_ns, r.d.exemplars AS exemplars
+        FROM (SELECT r.*, unnest(r.datapoints) AS d FROM metric_records r WHERE ` + metricSelection + `) r) s
+    WHERE ` + predicate + ` GROUP BY ALL
+), service_counts AS (
+    SELECT * EXCLUDE(name_present, name_parts, namespace_present, namespace_parts),
+        json_array(case when name_present then otel_value_json(variant_bytes_to_variant(name_parts.metadata || name_parts.value)) end,
+            case when namespace_present then otel_value_json(variant_bytes_to_variant(namespace_parts.metadata || namespace_parts.value))
+                else '{"kind":"string","value":""}'::JSON end)::VARCHAR AS service_identity,
+        coalesce(otel_value_text(variant_bytes_to_variant(name_parts.metadata || name_parts.value)), '') AS service_name,
+        coalesce(otel_value_text(variant_bytes_to_variant(namespace_parts.metadata || namespace_parts.value)), '') AS service_namespace
+    FROM native_service_counts
 )
 SELECT ` + entry + ` AS entry
 FROM service_counts c

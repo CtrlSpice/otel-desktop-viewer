@@ -1,4 +1,7 @@
-import type { SpanData, SpanNode } from '@/types/api-types'
+import type {
+  WaterfallSpan as SpanData,
+  WaterfallSpanNode as SpanNode,
+} from '@/types/api-types'
 
 export interface StructuralMaps {
   parentBySpanID: Map<string, string | null>

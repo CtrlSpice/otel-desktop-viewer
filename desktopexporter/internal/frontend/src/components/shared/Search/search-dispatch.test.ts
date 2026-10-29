@@ -31,7 +31,6 @@ const metricResults = [
   {
     metricRef: 'metric-1',
     name: 'orders',
-    description: 'Orders placed',
     unit: '{order}',
     metricType: 'Sum',
     aggregationTemporality: 'Cumulative',

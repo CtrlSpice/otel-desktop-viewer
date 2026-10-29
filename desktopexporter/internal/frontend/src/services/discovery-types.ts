@@ -14,7 +14,14 @@ export type DiscoveryOwner =
   | 'exemplar'
   | 'metadata'
 export type DiscoveryOptions = {
-  kind: 'services' | 'keys' | 'values' | 'connections' | 'connection-spans'
+  kind:
+    | 'services'
+    | 'keys'
+    | 'values'
+    | 'connections'
+    | 'connection-spans'
+    | 'home-values'
+    | 'home-value'
   signal?: DiscoverySignal
   ownerType?: DiscoveryOwner
   serviceName?: string
@@ -30,6 +37,9 @@ export type DiscoveryOptions = {
   sortBy?: 'name' | 'frequency'
   sortDirection?: 'asc' | 'desc'
   queries?: HomeQueries
+  valueKind?: string
+  valueRef?: string
+  locale?: string
 }
 export type ServiceSummary = {
   serviceName: string
@@ -94,6 +104,31 @@ export type DiscoveryPage<T> = {
   items: T[]
   truncated: boolean
   totals?: DiscoveryTotals
+}
+
+export type HomeRecordCounts = Record<DiscoverySignal, number>
+export type HomeCoverageValue = {
+  /** Database-scoped exact reference. Never a preview or content hash. */
+  identity: string
+  /** Exact received representative; canonical row identity can span NaN payloads. */
+  valueRef: string
+  kind: AttributeValue['kind']
+  preview: string
+  colorHash: number
+  counts: HomeRecordCounts
+  count: number
+  kindCount: number
+  denominator: number
+  relativeFrequency: number
+  foundOn: AttributeKey['foundOn']
+}
+export type HomeCoveragePage = {
+  values: HomeCoverageValue[]
+  kinds: { kind: string; count: number; counts: HomeRecordCounts }[]
+  denominators: HomeRecordCounts
+  denominator: number
+  total: number
+  truncated: boolean
 }
 
 export function serviceIdentity(service: ServiceSummary): string {

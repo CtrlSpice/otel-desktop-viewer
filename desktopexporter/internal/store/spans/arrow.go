@@ -19,7 +19,20 @@ func SearchArrow(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange,
 }
 
 func ViewArrow(ctx context.Context, db *sql.DB, traceID string, criteria any, spanIDs ...uint64) (*arrowread.Result, error) {
-	query, args, err := spansQuery(queries.GetTraceView, traceID, criteria, true, spanIDs...)
+	return viewArrow(ctx, db, traceID, criteria, false, nil, spanIDs...)
+}
+
+// WaterfallArrow returns complete tree geometry without received nested payloads.
+func WaterfallArrow(ctx context.Context, db *sql.DB, traceID string, criteria any, spanIDs ...uint64) (*arrowread.Result, error) {
+	return viewArrow(ctx, db, traceID, criteria, true, nil, spanIDs...)
+}
+
+func WaterfallColumnsArrow(ctx context.Context, db *sql.DB, traceID string, criteria any, columns []WaterfallColumn) (*arrowread.Result, error) {
+	return viewArrow(ctx, db, traceID, criteria, true, columns)
+}
+
+func viewArrow(ctx context.Context, db *sql.DB, traceID string, criteria any, lightweight bool, columns []WaterfallColumn, spanIDs ...uint64) (*arrowread.Result, error) {
+	query, args, err := traceQueryColumns(queries.GetTraceView, traceID, criteria, true, lightweight, columns, spanIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +52,7 @@ func ViewArrow(ctx context.Context, db *sql.DB, traceID string, criteria any, sp
 	if unplaced == 0 {
 		return result, nil
 	}
-	query, args, err = spansQuery(queries.SalvageSpans, traceID, criteria, true, spanIDs...)
+	query, args, err = traceQueryColumns(queries.SalvageSpans, traceID, criteria, true, lightweight, columns, spanIDs...)
 	if err != nil {
 		result.Close()
 		return nil, err

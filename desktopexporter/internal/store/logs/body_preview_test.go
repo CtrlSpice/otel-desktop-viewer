@@ -35,3 +35,42 @@ func TestBodyPreview(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeBodyPreviewMatchesJSON(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	cases := []struct{ name, expression string }{
+		{"string", `'hello\n  world'::variant`},
+		{"JSON string", `'{"message":"hello"}'::variant`},
+		{"Unicode limit", `repeat('雪😀', 151)::variant`},
+		{"long string child", `[repeat('雪😀', 30)]::variant`},
+		{"JSON quoting", `['<>&"\\雪' || chr(8) || chr(11) || chr(31) || chr(8232) || chr(8233)]::variant`},
+		{"boolean", `[true, false]::variant`},
+		{"long key", `map([repeat('雪😀', 20)], ['value'])::variant`},
+		{"map order and count", `{'z': 'last', 'a': 9007199254740993::bigint, 'c': {'nested': [1,2,3]}, 'b': 'text'}::variant`},
+		{"empty map", `map([]::varchar[], []::varchar[])::variant`},
+		{"empty array", `[]::variant`},
+		{"empty", `NULL::variant`},
+		{"empty child", `[NULL::variant, 1::variant]::variant`},
+		{"integer", `9223372036854775807::bigint::variant`},
+		{"double", `1.5::double::variant`},
+		{"negative zero", `'-0'::double::variant`},
+		{"nonfinite", `['NaN'::double, 'Infinity'::double, '-Infinity'::double]::variant`},
+		{"bytes", `'\x00\x01\x02'::blob::variant`},
+		{"long bytes", `repeat('a', 40)::blob::variant`},
+		{"array count", `[1,2,3,4,5]::variant`},
+		{"nested array", `[[[1,2,3]]]::variant`},
+		{"nested map", `{'context': {'messages': [repeat('nested',10000)]}}::variant`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+				var native, legacy string
+				err := db.QueryRowContext(ctx, `select native_body_preview(body), body_preview(otel_value_json(body)) from (select `+tc.expression+` as body)`).Scan(&native, &legacy)
+				require.NoError(t, err)
+				require.Equal(t, legacy, native)
+				return nil
+			}))
+		})
+	}
+}

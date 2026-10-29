@@ -36,7 +36,10 @@ export function distinguishingResourceAttributes(
   timeseries: MetricSeriesViewData[]
 ): Map<string, Attribute[]> {
   const result = new Map<string, Attribute[]>()
-  if (timeseries.length < 2) {
+  if (
+    timeseries.length < 2 ||
+    timeseries.every(ts => ts.attributesComplete === false)
+  ) {
     // A single series has nothing to be distinguished from.
     for (const ts of timeseries) result.set(ts.seriesRef, [])
     return result

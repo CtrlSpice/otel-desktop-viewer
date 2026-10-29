@@ -51,6 +51,49 @@ func RegisterFunctions(ctx context.Context, db *sql.DB) error {
 			config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob, text}, ResultTypeInfo: blob},
 		})
 	}
+	if err == nil {
+		err = duckdb.RegisterScalarUDF(conn, "otel_native_preview", &variantPreview{
+			config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: text},
+		})
+	}
+	if err == nil {
+		err = duckdb.RegisterScalarUDF(conn, "otel_native_column_preview", &variantPreview{
+			config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: text},
+			column: true,
+		})
+	}
+	if err == nil {
+		err = duckdb.RegisterScalarUDF(conn, "otel_home_value_text", &variantHomeText{
+			config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: text},
+		})
+	}
+	if err == nil {
+		var keys duckdb.TypeInfo
+		keys, err = duckdb.NewListInfo(text)
+		if err == nil {
+			err = duckdb.RegisterScalarUDF(conn, "otel_metric_label_columns", &metricLabelColumns{
+				config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{text}, ResultTypeInfo: keys},
+			})
+		}
+	}
+	if err == nil {
+		var result duckdb.TypeInfo
+		result, err = metricLabelInfoType(text)
+		if err == nil {
+			err = duckdb.RegisterScalarUDF(conn, "otel_metric_label_info", &metricLabelInfo{
+				config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob}, ResultTypeInfo: result},
+			})
+		}
+	}
+	if err == nil {
+		var result duckdb.TypeInfo
+		result, err = attributePreviewType(text)
+		if err == nil {
+			err = duckdb.RegisterScalarUDF(conn, "otel_native_attribute_previews", &variantAttributePreviews{
+				config: duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{blob, blob, text}, ResultTypeInfo: result},
+			})
+		}
+	}
 	return errors.Join(err, conn.Close())
 }
 

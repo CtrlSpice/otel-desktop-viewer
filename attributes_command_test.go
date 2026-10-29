@@ -34,7 +34,11 @@ func attributeTestViewer(t *testing.T) (*sql.DB, *httptest.Server) {
 CREATE MACRO otel_value_json(v) AS case when variant_exists(v, 'kind') then v::json else
     json_object('kind', 'map', 'value', coalesce((select list(json_object('key', key, 'value', value) order by key)
         from json_each(v::json)), []::json[])) end;
-CREATE MACRO otel_value_kind(v) AS case when variant_typeof(v) = 'VARCHAR' then 'string' else v.kind::varchar end`)
+CREATE MACRO otel_value_kind(v) AS case when variant_typeof(v) = 'VARCHAR' then 'string' else v.kind::varchar end;
+-- Mirror the native field accessor's contract for this tagged-value fixture.
+CREATE MACRO attribute_native_field(parts, key_) AS json_extract(
+    variant_bytes_to_variant(parts.metadata || parts.value)::JSON,
+    '/' || replace(replace(key_, '~', '~0'), '/', '~1'))::VARIANT`)
 	require.NoError(t, err)
 	viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {

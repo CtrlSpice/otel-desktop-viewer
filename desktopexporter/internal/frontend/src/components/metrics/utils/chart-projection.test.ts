@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   rateBucketStartForSourceDatapoint,
   timeseriesToChartTimeseries,
@@ -83,7 +83,7 @@ describe('timeseriesToChartTimeseries', () => {
     expect(datapoint.delta).toBe(9_007_199_254_740_993n)
   })
 
-  it('preserves exact source identity when Date coordinates collide', () => {
+  it('opens datapoints once and preserves exact source identity when Date coordinates collide', () => {
     const base = 1_700_000_000_000_000_000n
     const timeseries = [
       {
@@ -125,8 +125,12 @@ describe('timeseriesToChartTimeseries', () => {
       },
     ] satisfies MetricSeriesViewData[]
 
+    const datapoints = timeseries[0]!.datapoints
+    const readDatapoints = vi.fn(() => datapoints)
+    Object.defineProperty(timeseries[0], 'datapoints', { get: readDatapoints })
     const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
 
+    expect(readDatapoints).toHaveBeenCalledTimes(1)
     expect(line!.points.map(point => point.date.getTime())).toEqual([
       1_700_000_000_000, 1_700_000_000_000,
     ])
@@ -227,7 +231,12 @@ describe('timeseriesToChartTimeseries', () => {
       sparkline: null,
     } satisfies MetricSeriesViewData
 
+    const views = series.views
+    const readViews = vi.fn(() => views)
+    Object.defineProperty(series, 'views', { get: readViews })
+
     expect(rateBucketStartForSourceDatapoint(series, 'later')).toBe(base + 600n)
+    expect(readViews).toHaveBeenCalledTimes(1)
     expect(rateBucketStartForSourceDatapoint(series, 'middle')).toBe(
       base + 300n
     )
@@ -235,5 +244,6 @@ describe('timeseriesToChartTimeseries', () => {
     expect(
       rateBucketStartForSourceDatapoint(series, 'raw-only-at-same-time')
     ).toBeUndefined()
+    expect(readViews).toHaveBeenCalledTimes(3)
   })
 })

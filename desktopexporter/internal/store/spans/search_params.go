@@ -11,8 +11,10 @@ type getTraceViewParams struct {
 	MatchedExpr string
 	MatchedJoin string
 	// Selected limits payload enrichment to requested IDs after ancestry traversal.
-	Selected bool
-	Salvage  bool
+	Selected       bool
+	Salvage        bool
+	Lightweight    bool
+	ColumnPreviews string
 }
 
 // searchTraceSummariesParams are the fragments searchTraceSummariesSQL assembles into

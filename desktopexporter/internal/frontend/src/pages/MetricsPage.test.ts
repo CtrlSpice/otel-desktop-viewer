@@ -73,7 +73,6 @@ function makeSummary(metricType: MetricType): MetricSummary {
   return {
     metricRef: 'metric-1',
     name: 'demo.metric',
-    description: '',
     unit: 'ms',
     metricType,
     aggregationTemporality: metricType === 'Gauge' ? null : 'Cumulative',

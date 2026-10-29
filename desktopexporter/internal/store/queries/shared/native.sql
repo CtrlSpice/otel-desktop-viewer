@@ -14,7 +14,11 @@
 {{define "traceNative"}}
 event_data as (
     select e.trace_id, e.span_id, list(struct_pack(name := e.name, timestamp := e.timestamp,
-        droppedAttributesCount := e.dropped_attributes_count, attributes := e.attributes)
+        droppedAttributesCount := e.dropped_attributes_count, {{if .Lightweight}}summaryAttributes := variant_normalize(struct_pack(
+            "gen_ai.tool.name" := case when variant_type(e.attributes['gen_ai.tool.name']) = 'VARCHAR' then e.attributes['gen_ai.tool.name'] end,
+            "tool.is_error" := case when starts_with(variant_type(e.attributes['tool.is_error']), 'BOOL') then e.attributes['tool.is_error'] end,
+            "pi.event.timestamp.source" := case when variant_type(e.attributes['pi.event.timestamp.source']) = 'VARCHAR' then e.attributes['pi.event.timestamp.source'] end,
+            "opencode.event.timestamp.source" := case when variant_type(e.attributes['opencode.event.timestamp.source']) = 'VARCHAR' then e.attributes['opencode.event.timestamp.source'] end)::variant){{else}}attributes := e.attributes{{end}})
         order by e.timestamp, e.ordinal) as events
     from events e where exists (select 1 from tree t where t.trace_id = e.trace_id and t.span_id = e.span_id)
     group by e.trace_id, e.span_id
@@ -30,22 +34,24 @@ event_data as (
     group by l.trace_id, l.span_id
 ), resource_data as (
     select resource.id as id, row_number() over (order by resource.id) as seq,
-        {{template "resource" "resource"}} as obj
+        {{if .Lightweight}}struct_pack(serviceName := case when variant_type(resource.attributes['service.name']) = 'VARCHAR' then resource.attributes['service.name']::varchar else '' end, droppedAttributesCount := resource.dropped_attributes_count){{else}}{{template "resource" "resource"}}{{end}} as obj
     from (select distinct resource from tree)
 ), scope_data as (
     select scope.id as id, row_number() over (order by scope.id) as seq,
-        {{template "scope" "scope"}} as obj
+        {{if .Lightweight}}struct_pack(name := left(scope.name, 299) || case when length(scope.name) > 300 then '…' else substring(scope.name, 300, 1) end,
+            version := left(scope.version, 299) || case when length(scope.version) > 300 then '…' else substring(scope.version, 300, 1) end,
+            droppedAttributesCount := scope.dropped_attributes_count){{else}}{{template "scope" "scope"}}{{end}} as obj
     from (select distinct scope from tree)
 ), ordered_spans as (
     select struct_pack(spanData := struct_pack(
-        traceState := ts.trace_state, spanID := span_id_wire(ts.span_id), parentSpanID := span_id_wire(ts.parent_span_id),
+        traceState := {{if .Lightweight}}left(ts.trace_state, 299) || case when length(ts.trace_state) > 300 then '…' else substring(ts.trace_state, 300, 1) end{{else}}ts.trace_state{{end}}, spanID := span_id_wire(ts.span_id), parentSpanID := span_id_wire(ts.parent_span_id),
         flags := ts.flags, name := ts.name, kindCode := ts.kind,
         startTime := ts.start_time, endTime := ts.end_time,
-        attributes := ts.attributes, events := coalesce(ed.events, []), links := coalesce(ld.links, []),
+        {{if .Lightweight}}columnValues := [{{.ColumnPreviews}}],{{else}}attributes := ts.attributes, links := coalesce(ld.links, []),{{end}} events := coalesce(ed.events, []),
         r := rd.seq, s := scd.seq,
         droppedAttributesCount := ts.dropped_attributes_count,
         droppedEventsCount := ts.dropped_events_count, droppedLinksCount := ts.dropped_links_count,
-        statusCodeValue := ts.status_code, statusMessage := ts.status_message),
+        statusCodeValue := ts.status_code, statusMessage := {{if .Lightweight}}left(ts.status_message, 299) || case when length(ts.status_message) > 300 then '…' else substring(ts.status_message, 300, 1) end{{else}}ts.status_message{{end}}),
         depth := ts.depth, matched := {{.MatchedExpr}}
         {{if .Salvage}}, salvaged := ts.salvaged, cyclePoint := ts.cycle_point{{end}}) as node,
         ts.sort_path
@@ -54,9 +60,16 @@ event_data as (
     join scope_data scd on scd.id = ts.scope.id
     {{.MatchedJoin}}
     left join event_data ed on ed.trace_id = ts.trace_id and ed.span_id = ts.span_id
-    left join link_data ld on ld.trace_id = ts.trace_id and ld.span_id = ts.span_id
+    {{if not .Lightweight}}left join link_data ld on ld.trace_id = ts.trace_id and ld.span_id = ts.span_id{{end}}
 )
 select trace_id_wire(try_cast($1 as uuid)) as traceID,
+    {{if .Lightweight}}(select coalesce(list(struct_pack(source := source, kind := 'attribute', key := key, count := n) order by source, key), []) from (
+        select source, key, count(distinct span_id) as n from (
+            select span_id, 'span' as source, unnest(list_distinct(variant_keys(attributes))) as key from tree
+            union all select span_id, 'resource', unnest(list_distinct(variant_keys(resource.attributes))) from tree
+            union all select span_id, 'scope', unnest(list_distinct(variant_keys(scope.attributes))) from tree
+        ) group by source, key
+    )) as availableColumns,{{end}}
     (select coalesce(min(start_time), 0) from tree) as traceStart,
     (select coalesce(list(obj order by seq), []) from resource_data) as resources,
     (select coalesce(list(obj order by seq), []) from scope_data) as scopes,
@@ -91,7 +104,6 @@ where exists (select 1 from trace_spans)
     exemplars := coalesce(ea.exemplars, []),
     exemplarCount := case when ea.exemplar_count > len(coalesce(ea.exemplars, [])) then ea.exemplar_count end,
     valueType := d.value_type, doubleValue := d.double_value, intValue := d.int_value,
-    attributes := d.attributes,
     count := d.count, sum := d.sum, min := d.min, max := d.max,
     bucketCounts := d.bucket_counts, explicitBounds := d.explicit_bounds,
     scale := d.scale, zeroCount := d.zero_count, zeroThreshold := d.zero_threshold,
@@ -102,8 +114,10 @@ where exists (select 1 from trace_spans)
     deltaDouble := case when d.aggregation_temporality = 2 then d.delta_double end,
     isReset := case when d.aggregation_temporality = 2 then d.is_reset end,
     quantiles := {{if .NoHistogramMerge}}null{{else}}dq.quantiles{{end}}){{end}}
-{{define "viewSeries"}}struct_pack(seriesRef := t.attrs_key, attributes := t.attributes,
-    resource := s.resource_json, datapoints := coalesce(tj.datapoints, []),
+{{define "viewSeries"}}struct_pack(seriesRef := t.attrs_key,
+    attributes := coalesce(sla.attributes, '{}'::json::variant), attributesComplete := false,
+    labelPreviews := coalesce(slp.previews, []),
+    datapoints := coalesce(tj.datapoints, []),
     stats := case when t.value_count > 0 then struct_pack(count := t.value_count,
         min := t.value_min, max := t.value_max, sum := t.value_sum, avg := t.value_sum / t.value_count) end,
     datapointCount := swc.datapoint_count, lastSeenNs := swc.latest_ns,
