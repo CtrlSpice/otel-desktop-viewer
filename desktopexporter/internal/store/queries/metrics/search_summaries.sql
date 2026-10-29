@@ -1,4 +1,8 @@
-{{if .CTEs}}{{.CTEs}},{{else}}with{{end}}
+-- Share the flattened point projection across native search hits, window counts,
+-- last values and all-time series cardinality. Re-expanding the owning lists for
+-- each consumer repeatedly decodes the same nested VARIANT payloads.
+with metric_datapoints as materialized (select * from main.metric_datapoints),
+{{if .CTEs}}{{.CTEs}},{{end}}
 		filtered_metrics as (
 			select s.*
 			{{.From}}

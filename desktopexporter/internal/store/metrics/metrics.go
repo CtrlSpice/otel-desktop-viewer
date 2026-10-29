@@ -114,7 +114,7 @@ func searchSummariesSQL(timeRange timerange.TimeRange, criteria any, options sea
 		args = append(args, *options.Limit)
 	}
 	query, err := queries.Render(queries.SearchMetricSummaries, searchSummariesParams{
-		CTEs:           cteSQL,
+		CTEs:           strings.TrimPrefix(cteSQL, "with "),
 		From:           metricSearchFrom,
 		Where:          whereClause,
 		DatapointWhere: metricDatapointWhere(timeRange),
