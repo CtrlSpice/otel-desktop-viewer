@@ -6,7 +6,6 @@ import type {
   ExactMetricSeries,
   Exemplar,
   MetricSeriesSummary,
-  MetricSeriesColumnValue,
   ReceivedNumberDataPoint,
   ReceivedHistogramDataPoint,
   ReceivedExponentialHistogramDataPoint,
@@ -96,15 +95,8 @@ function seriesSummary(frame: ArrowFrame, row: number): MetricSeriesSummary {
   })
 }
 
-export function metricSeriesColumn(
-  frame: ArrowFrame
-): MetricSeriesColumnValue[] {
-  return rowViews(frame, (frame, row) =>
-    columnView(frame, row, {
-      seriesRef: text,
-      attributes,
-    })
-  )
+export function metricSeriesOrder(frame: ArrowFrame): string[] {
+  return rowViews(frame, (frame, row) => text(frame.cell('seriesRef', row)))
 }
 
 export function exactMetric(frame: ArrowFrame): ExactMetric {

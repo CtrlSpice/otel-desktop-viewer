@@ -209,24 +209,16 @@ test('compact series labels retain hidden rows and load exact context only on di
           },
         },
       })
-    } else if (method === 'getMetricSeriesColumn') {
+    } else if (method === 'getMetricSeriesOrder') {
       comparisonRequests.push(params)
       await route.fulfill({
         json: {
           jsonrpc: '2.0',
           id,
-          result: timeseries.flatMap(series =>
-            params.seriesRefs.includes(series.seriesRef)
-              ? [
-                  {
-                    seriesRef: series.seriesRef,
-                    attributes: series.attributes.filter(
-                      attribute => attribute.key === params.key
-                    ),
-                  },
-                ]
-              : []
-          ),
+          result:
+            params.direction === 'asc'
+              ? ['first', 'second']
+              : ['second', 'first'],
         },
       })
     } else if (method === 'getMetricSeries') {
@@ -275,15 +267,18 @@ test('compact series labels retain hidden rows and load exact context only on di
   )
   expect(comparisonRequests[0]).toEqual({
     metricRef: metric.metricRef,
+    startTime: metric.window.requested.startNs,
+    endTime: metric.window.requested.endNs,
     seriesRefs: ['first', 'second'],
     key: 'route',
+    direction: 'asc',
   })
   await sort.click()
   await expect(table.locator('tr[data-series-key]').first()).toHaveAttribute(
     'data-series-key',
     'second'
   )
-  expect(comparisonRequests).toHaveLength(1)
+  expect(comparisonRequests).toHaveLength(2)
   await expect(
     table.getByRole('checkbox', { name: 'Show route: /second in chart' })
   ).not.toBeChecked()
@@ -864,6 +859,20 @@ test('series table sorts attributes while retaining checked choices and colours'
       return route.fulfill({
         json: { jsonrpc: '2.0', id: request.id, result: received },
       })
+    if (request.method === 'getMetricSeriesOrder') {
+      const { key, direction } = request.params
+      const order =
+        key === 'model'
+          ? direction === 'asc'
+            ? ['a', 'b', 'c']
+            : ['c', 'a', 'b']
+          : direction === 'asc'
+            ? ['a', 'c', 'b']
+            : ['b', 'a', 'c']
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id: request.id, result: order },
+      })
+    }
     if (request.method === 'getMetricAggregateView') {
       requested = request.params.seriesRefs
       expect(request.params.selectedSeriesRefs).toEqual([])

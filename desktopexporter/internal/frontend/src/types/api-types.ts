@@ -424,7 +424,7 @@ export type MetricSeriesViewData = {
   attributes: Attributes
   /** False when received attributes were withheld. */
   attributesComplete?: boolean
-  /** Bounded server-selected columns; getMetricSeriesColumn supplies exact comparisons. */
+  /** Bounded server-selected columns; getMetricSeriesOrder sorts exact values in the database. */
   labelPreviews?: { key: string; text: string; kind?: string }[]
   /** Resource associated with the parent Metric. */
   resource: ResourceData
@@ -547,12 +547,6 @@ export type MetricViewData = {
     effective: { startNs: bigint | null; endNs: bigint | null }
   }
 } & OptionalMetricTemporality
-
-/** One exact attribute, or an empty attribute list when absent, per retained series. */
-export type MetricSeriesColumnValue = Pick<
-  MetricSeriesViewData,
-  'seriesRef' | 'attributes'
->
 
 export type ExactMetricResource = {
   attributes: Attributes

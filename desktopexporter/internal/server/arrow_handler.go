@@ -168,13 +168,13 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 			return nil, err
 		}
 		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) { return metrics.GetArrow(ctx, db, id) })
-	case "getMetricSeriesColumn":
-		args, err := parseMetricSeriesColumnParams(params)
+	case "getMetricSeriesOrder":
+		args, err := parseMetricSeriesOrderParams(params)
 		if err != nil {
 			return nil, err
 		}
 		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
-			return metrics.SeriesColumnArrow(ctx, db, args.metricRef, args.seriesRefs, args.key)
+			return metrics.SeriesOrderArrow(ctx, db, args.metricRef, args.timeRange, args.seriesRefs, args.key, args.descending)
 		})
 	case "getMetricSeries":
 		args, err := parseGetMetricSeriesParams(params)

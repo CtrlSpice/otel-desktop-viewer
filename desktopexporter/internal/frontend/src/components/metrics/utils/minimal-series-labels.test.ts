@@ -4,9 +4,7 @@ import type { Attribute } from '@/types/api-types'
 import {
   minimalSeriesLabels,
   minimalSeriesTable,
-  compareSeriesCells,
   compactSeriesTable,
-  comparisonSeriesColumn,
 } from './minimal-series-labels'
 
 it('renders server previews without opening structured comparison values', () => {
@@ -42,80 +40,10 @@ it('renders server previews without opening structured comparison values', () =>
   expect(table.labels.get('1')!.text).toContain('array (1 items)')
   expect(table.columns[0]!.cells.get('2')!.preview).toContain('(value 2)')
   expect(opened).toBe(0)
-  expect(table.comparisonRequired).toBe(true)
   expect(table.columns[0]!.cells.get('1')!.kind).toBe('map')
-  const cells = comparisonSeriesColumn(series, ['1', '2'], 'context').cells
-  expect(compareSeriesCells(cells.get('1')!, cells.get('2')!)).toBeLessThan(0)
-  expect(opened).toBeGreaterThan(0)
-  expect(table.labels.get('1')!.text).toContain('array (1 items)')
 })
 
-it('keeps on-demand comparisons identical to full typed comparisons', () => {
-  const values: Attribute['value'][] = [
-    { kind: 'int64', value: 9007199254740993n },
-    { kind: 'int64', value: 9007199254740992n },
-    { kind: 'double', value: -0 },
-    { kind: 'double', value: Infinity },
-    { kind: 'double', value: NaN },
-    { kind: 'string', value: 'NaN' },
-    { kind: 'double', value: -Infinity },
-    { kind: 'double', value: 0 },
-    { kind: 'bool', value: false },
-    { kind: 'empty', value: null },
-    { kind: 'string', value: '' },
-    { kind: 'string', value: '雪2' },
-    { kind: 'string', value: '雪10' },
-    ...[10n, 2n].map(value => ({
-      kind: 'map' as const,
-      value: [
-        {
-          key: 'prefix',
-          value: { kind: 'string' as const, value: 'same'.repeat(10000) },
-        },
-        { key: 'tail', value: { kind: 'int64' as const, value } },
-      ],
-    })),
-    { kind: 'array', value: [{ kind: 'double', value: -0 }] },
-  ]
-  const series = values.map((value, index) => ({
-    seriesRef: String(index),
-    attributes: [{ key: 'n', value }],
-    labelPreviews: [{ key: 'n', text: String(index) }],
-  }))
-  series.push({
-    seriesRef: 'missing',
-    attributes: [],
-    labelPreviews: [{ key: 'n', text: '[absent]' }],
-  })
-  const compact = comparisonSeriesColumn(
-    series,
-    series.map(row => row.seriesRef),
-    'n'
-  ).cells
-  const exact = minimalSeriesTable(
-    series.map(row => ({ key: row.seriesRef, attributes: row.attributes })),
-    true
-  ).columns[0]!.cells
-  for (const left of series)
-    for (const right of series)
-      expect(
-        Math.sign(
-          compareSeriesCells(
-            compact.get(left.seriesRef)!,
-            compact.get(right.seriesRef)!
-          )
-        )
-      ).toBe(
-        Math.sign(
-          compareSeriesCells(
-            exact.get(left.seriesRef)!,
-            exact.get(right.seriesRef)!
-          )
-        )
-      )
-})
-
-it('reads no exact attributes for previews and prepares only the requested column once', () => {
+it('reads no exact attributes for previews', () => {
   let arraysRead = 0
   let keysRead = 0
   let unrelatedOpened = 0
@@ -155,43 +83,7 @@ it('reads no exact attributes for previews and prepares only the requested colum
   expect(table.columns).toHaveLength(2)
   expect(arraysRead).toBe(0)
   expect(keysRead).toBe(0)
-  const columnValues = series.map((row, index) => ({
-    seriesRef: row.seriesRef,
-    get attributes(): Attribute[] {
-      arraysRead++
-      return [
-        { key: 'route', value: { kind: 'string', value: `/route/${index}` } },
-      ]
-    },
-  }))
-  const cells = comparisonSeriesColumn(
-    columnValues,
-    series.map(row => row.seriesRef),
-    'route'
-  ).cells
-  for (let repeat = 0; repeat < 3; repeat++) {
-    expect([...cells.values()].sort(compareSeriesCells)[0]!.label).toBe(
-      '/route/0'
-    )
-  }
-  expect(arraysRead).toBe(32)
-  expect(keysRead).toBe(0)
   expect(unrelatedOpened).toBe(0)
-})
-
-it('rejects incomplete, duplicate, foreign or wrong-column comparison responses', () => {
-  const cell = {
-    seriesRef: 'one',
-    attributes: [{ key: 'k', value: { kind: 'string' as const, value: 'v' } }],
-  }
-  for (const rows of [
-    [],
-    [cell, cell],
-    [{ ...cell, seriesRef: 'foreign' }],
-    [{ ...cell, attributes: [{ ...cell.attributes[0]!, key: 'wrong' }] }],
-  ]) {
-    expect(() => comparisonSeriesColumn(rows, ['one'], 'k')).toThrow()
-  }
 })
 
 function row(key: string, values: Record<string, string>): LegendTimeseries {
@@ -230,7 +122,7 @@ it('bounds high-dimensional parity search while preserving every series distinct
   ).toEqual(table.columns.map(column => column.key))
 })
 
-it('sorts numeric attributes without losing int64 precision and keeps typed filter identities', () => {
+it('keeps exact numeric labels and typed filter identities', () => {
   const rows: LegendTimeseries[] = [
     {
       key: 'big',
@@ -254,15 +146,8 @@ it('sorts numeric attributes without losing int64 precision and keeps typed filt
     },
   ]
   const column = minimalSeriesTable(rows).columns[0]!
-  expect(
-    compareSeriesCells(column.cells.get('big')!, column.cells.get('small')!)
-  ).toBeGreaterThan(0)
-  expect(
-    compareSeriesCells(
-      column.cells.get('negative')!,
-      column.cells.get('small')!
-    )
-  ).toBeLessThan(0)
+  expect(column.cells.get('big')!.label).toBe('9007199254740993')
+  expect(column.cells.get('small')!.label).toBe('9007199254740992')
   expect(column.cells.get('negative')!.signature).not.toBe(
     column.cells.get('string')!.signature
   )

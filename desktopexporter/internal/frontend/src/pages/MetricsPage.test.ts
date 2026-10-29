@@ -31,7 +31,7 @@ const {
   getMetricView,
   getMetric,
   getMetricSeries,
-  getMetricSeriesColumn,
+  getMetricSeriesOrder,
   getMetricAggregateView,
   getMetricAttributeDefinitions,
   clearMetrics,
@@ -41,7 +41,7 @@ const {
   getMetricView: vi.fn(),
   getMetric: vi.fn(),
   getMetricSeries: vi.fn(),
-  getMetricSeriesColumn: vi.fn(),
+  getMetricSeriesOrder: vi.fn(),
   getMetricAggregateView: vi.fn(),
   getMetricAttributeDefinitions: vi.fn(),
   clearMetrics: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getMetricView,
       getMetric,
       getMetricSeries,
-      getMetricSeriesColumn,
+      getMetricSeriesOrder,
       getMetricAggregateView,
       getMetricAttributeDefinitions,
       clearMetrics,
@@ -198,7 +198,7 @@ beforeEach(() => {
   getMetricView.mockReset()
   getMetric.mockReset()
   getMetricSeries.mockReset()
-  getMetricSeriesColumn.mockReset()
+  getMetricSeriesOrder.mockReset()
   getMetric.mockResolvedValue(null)
   getMetricAggregateView.mockReset()
   getMetricAttributeDefinitions.mockReset()
@@ -704,9 +704,13 @@ describe('Metric Details request lifecycle', () => {
   })
 })
 
-describe('Metric comparison column loading', () => {
+describe('Database metric series sorting', () => {
   function prepare() {
     const metric = makeMetric('Gauge')
+    metric.window.requested = {
+      startNs: 9007199254740993n,
+      endNs: 9007199254741993n,
+    }
     metric.timeseries = ['a', 'b', 'c'].map(seriesRef => ({
       ...metric.timeseries[0]!,
       seriesRef,
@@ -723,76 +727,68 @@ describe('Metric comparison column loading', () => {
     setTestUrl('/metrics/metric-1?time=all')
     return { ...renderWithContexts(MetricsPage), metric }
   }
-  const values = ['a', 'b', 'c'].map((seriesRef, index) => ({
-    seriesRef,
-    attributes: [
-      {
-        key: 'n',
-        value: { kind: 'int64' as const, value: [10n, 2n, 11n][index]! },
-      },
-    ],
-  }))
+  const values = ['b', 'a', 'c']
   const order = () =>
     [...document.querySelectorAll('tr[data-series-key]')].map(row =>
       row.getAttribute('data-series-key')
     )
 
-  it('fetches one complete cohort on sort, caches direction changes and reloads on refresh', async () => {
-    const pending = deferred<typeof values>()
-    getMetricSeriesColumn
-      .mockReturnValueOnce(pending.promise)
-      .mockResolvedValue(values)
+  it('sends the displayed window and cohort, caches each direction and reloads on refresh', async () => {
+    getMetricSeriesOrder.mockImplementation(
+      (_metric, _start, _end, _refs, _key, direction) =>
+        Promise.resolve(direction === 'asc' ? values : ['c', 'a', 'b'])
+    )
     prepare()
     const sort = await screen.findByRole('button', {
       name: 'Sort by n',
     })
-    expect(getMetricSeriesColumn).not.toHaveBeenCalled()
+    expect(getMetricSeriesOrder).not.toHaveBeenCalled()
     await fireEvent.click(sort)
-    await waitFor(() => expect(getMetricSeriesColumn).toHaveBeenCalledTimes(1))
-    expect(getMetricSeriesColumn.mock.calls[0]!.slice(0, 3)).toEqual([
+    await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(1))
+    expect(getMetricSeriesOrder.mock.calls[0]!.slice(0, 6)).toEqual([
       'metric-1',
+      9007199254740993n,
+      9007199254741993n,
       ['a', 'b', 'c'],
       'n',
+      'asc',
     ])
+    await waitFor(() => expect(order()).toEqual(values))
+    await fireEvent.click(sort)
+    await waitFor(() => expect(order()).toEqual(['c', 'a', 'b']))
+    expect(getMetricSeriesOrder).toHaveBeenCalledTimes(2)
+    await fireEvent.click(sort)
     expect(order()).toEqual(['a', 'b', 'c'])
     await fireEvent.click(sort)
-    expect(getMetricSeriesColumn).toHaveBeenCalledTimes(1)
-    pending.resolve(values)
-    await waitFor(() => expect(order()).toEqual(['c', 'a', 'b']))
+    await waitFor(() => expect(order()).toEqual(values))
+    expect(getMetricSeriesOrder).toHaveBeenCalledTimes(2)
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => expect(getMetricSeriesColumn).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(order()).toEqual(['c', 'a', 'b']))
+    await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(order()).toEqual(values))
   })
 
   it('rejects a pending comparison from before a same-ID refresh', async () => {
     const stale = deferred<typeof values>()
-    getMetricSeriesColumn
+    getMetricSeriesOrder
       .mockReturnValueOnce(stale.promise)
       .mockResolvedValue(values)
     prepare()
     await fireEvent.click(
       await screen.findByRole('button', { name: 'Sort by n' })
     )
-    await waitFor(() => expect(getMetricSeriesColumn).toHaveBeenCalledTimes(1))
-    const signal = getMetricSeriesColumn.mock.calls[0]!.at(-1) as AbortSignal
+    await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(1))
+    const signal = getMetricSeriesOrder.mock.calls[0]!.at(-1) as AbortSignal
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => expect(getMetricSeriesColumn).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(2))
     expect(signal.aborted).toBe(true)
     await waitFor(() => expect(order()).toEqual(['b', 'a', 'c']))
-    stale.resolve(
-      values.map((row, index) => ({
-        ...row,
-        attributes: [
-          { key: 'n', value: { kind: 'int64', value: BigInt(index) } },
-        ],
-      }))
-    )
+    stale.resolve(['a', 'b', 'c'])
     await tick()
     expect(order()).toEqual(['b', 'a', 'c'])
   })
 
   it('does not retain an invisible sort when refresh removes its discriminator', async () => {
-    getMetricSeriesColumn.mockResolvedValue(values)
+    getMetricSeriesOrder.mockResolvedValue(values)
     const { metric } = prepare()
     await fireEvent.click(
       await screen.findByRole('button', { name: 'Sort by n' })
@@ -810,31 +806,23 @@ describe('Metric comparison column loading', () => {
       expect(screen.queryByRole('button', { name: 'Sort by n' })).toBeNull()
     )
     expect(order()).toEqual(['a', 'b', 'c'])
-    expect(getMetricSeriesColumn).toHaveBeenCalledTimes(1)
+    expect(getMetricSeriesOrder).toHaveBeenCalledTimes(1)
   })
 
   it('rejects incomplete cohorts and cancels a superseded column without accepting its late result', async () => {
     const stale = deferred<typeof values>()
-    getMetricSeriesColumn
+    getMetricSeriesOrder
       .mockReturnValueOnce(stale.promise)
       .mockResolvedValueOnce([])
-      .mockResolvedValue(
-        values.map(row => ({
-          ...row,
-          attributes: row.attributes.map(attribute => ({
-            ...attribute,
-            key: 'other',
-          })),
-        }))
-      )
+      .mockResolvedValue(values)
     const view = prepare()
     await fireEvent.click(
       await screen.findByRole('button', { name: 'Sort by n' })
     )
-    await waitFor(() => expect(getMetricSeriesColumn).toHaveBeenCalledTimes(1))
-    const signal = getMetricSeriesColumn.mock.calls[0]!.at(-1) as AbortSignal
+    await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(1))
+    const signal = getMetricSeriesOrder.mock.calls[0]!.at(-1) as AbortSignal
     await fireEvent.click(screen.getByRole('button', { name: 'Sort by other' }))
-    await screen.findByText('Comparison series changed. Refresh the metric.')
+    await screen.findByText('Series changed. Refresh the metric.')
     expect(signal.aborted).toBe(true)
     expect(order()).toEqual(['a', 'b', 'c'])
     stale.resolve(values)
@@ -842,12 +830,10 @@ describe('Metric comparison column loading', () => {
     expect(order()).toEqual(['a', 'b', 'c'])
     await fireEvent.click(screen.getByRole('button', { name: 'Retry sort' }))
     await waitFor(() => expect(order()).toEqual(['b', 'a', 'c']))
-    getMetricSeriesColumn.mockReturnValue(new Promise(() => {}))
+    getMetricSeriesOrder.mockReturnValue(new Promise(() => {}))
     await fireEvent.click(screen.getByRole('button', { name: 'Sort by n' }))
-    await waitFor(() => expect(getMetricSeriesColumn).toHaveBeenCalledTimes(4))
-    const lastSignal = getMetricSeriesColumn.mock.calls[3]!.at(
-      -1
-    ) as AbortSignal
+    await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(4))
+    const lastSignal = getMetricSeriesOrder.mock.calls[3]!.at(-1) as AbortSignal
     view.unmount()
     expect(lastSignal.aborted).toBe(true)
   })

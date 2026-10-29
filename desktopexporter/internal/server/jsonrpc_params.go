@@ -48,7 +48,7 @@ var methodParamNames = map[string][]string{
 	"searchMetricSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
 	"getMetric":              {"metricRef"},
 	"getMetricSeries":        {"metricRef", "seriesRef", "startTime", "endTime", "includeDatapoints"},
-	"getMetricSeriesColumn":  {"metricRef", "seriesRefs", "key"},
+	"getMetricSeriesOrder":   {"metricRef", "startTime", "endTime", "seriesRefs", "key", "direction"},
 	"getMetricView": {
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
@@ -449,15 +449,17 @@ type getMetricSeriesParams struct {
 	includeDatapoints bool
 }
 
-type metricSeriesColumnParams struct {
+type metricSeriesOrderParams struct {
 	metricRef  string
 	seriesRefs []string
 	key        string
+	timeRange  store.TimeRange
+	descending bool
 }
 
-func parseMetricSeriesColumnParams(raw json.RawMessage) (metricSeriesColumnParams, error) {
-	var result metricSeriesColumnParams
-	params, err := decodePositionalParams(raw, 3, 3)
+func parseMetricSeriesOrderParams(raw json.RawMessage) (metricSeriesOrderParams, error) {
+	var result metricSeriesOrderParams
+	params, err := decodePositionalParams(raw, 6, 6)
 	if err != nil {
 		return result, err
 	}
@@ -465,10 +467,14 @@ func parseMetricSeriesColumnParams(raw json.RawMessage) (metricSeriesColumnParam
 	if err != nil {
 		return result, err
 	}
-	if params[1] == nil {
+	result.timeRange, err = parseTimeRange(params[1], params[2])
+	if err != nil {
+		return result, err
+	}
+	if params[3] == nil {
 		return result, jsonrpc2.ErrInvalidParams
 	}
-	result.seriesRefs, err = parseOptionalStringList(params, 1)
+	result.seriesRefs, err = parseOptionalStringList(params, 3)
 	if err != nil {
 		return result, err
 	}
@@ -478,11 +484,16 @@ func parseMetricSeriesColumnParams(raw json.RawMessage) (metricSeriesColumnParam
 			return result, ErrInvalidMetricRef
 		}
 	}
-	key, ok := params[2].(string)
+	key, ok := params[4].(string)
 	if !ok {
 		return result, jsonrpc2.ErrInvalidParams
 	}
 	result.key = key
+	direction, ok := params[5].(string)
+	if !ok || (direction != "asc" && direction != "desc") {
+		return result, jsonrpc2.ErrInvalidParams
+	}
+	result.descending = direction == "desc"
 	return result, nil
 }
 

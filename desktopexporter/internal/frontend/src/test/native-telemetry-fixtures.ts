@@ -266,11 +266,8 @@ function log(r: RecordFixture) {
 export function telemetryDataset(method: string, result: any): Table {
   let rows: Record<string, Value>[]
   switch (method) {
-    case 'getMetricSeriesColumn':
-      rows = result.map((row: RecordFixture) => ({
-        seriesRef: row.seriesRef,
-        attributes: attrs(row.attributes),
-      }))
+    case 'getMetricSeriesOrder':
+      rows = result.map((seriesRef: string) => ({ seriesRef }))
       break
     case 'getTraceAttributeDefinitions':
     case 'getTraceAttributeDefinitionsByTraceID':
