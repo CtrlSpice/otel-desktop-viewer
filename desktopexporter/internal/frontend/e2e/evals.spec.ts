@@ -154,12 +154,18 @@ test('Evals submits the shared grammar, validates errors, restores URLs and open
     })
   })
   const text =
-    '(result.score < 0.5 or result.success = false) and search("idempotency key") | limit 25'
+    '(result.score < 0.5 or result.success = false) and search("idempotency key") limit 25'
   await page.goto(`/evals?q=${encodeURIComponent(text)}`)
   const editor = page.getByRole('textbox', { name: 'Search evals' })
   await expect(editor).toHaveText(text)
-  await expect.poll(() => requests.length).toBeGreaterThan(0)
-  const submitted = requests.at(-1)!
+  // Navigation also requests a one-row count probe. Inspect the actual list
+  // request rather than whichever request happens to finish last.
+  await expect
+    .poll(() => requests.some(url => url.searchParams.get('limit') === '25'))
+    .toBe(true)
+  const submitted = requests.find(
+    url => url.searchParams.get('limit') === '25'
+  )!
   expect(submitted.searchParams.get('limit')).toBe('25')
   expect(JSON.parse(submitted.searchParams.get('criteria')!)).toMatchObject({
     type: 'group',
