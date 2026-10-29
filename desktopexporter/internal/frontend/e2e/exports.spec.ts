@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import type { JsonLogData } from '../src/types/wire-types'
@@ -61,7 +62,7 @@ function rpcFixture(method: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string

@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
 
@@ -98,7 +99,7 @@ async function openSource(
       },
     })
   })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     const result =
       request.method === 'getStats'

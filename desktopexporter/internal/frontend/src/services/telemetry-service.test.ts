@@ -14,14 +14,26 @@ import {
 } from '@/search/model'
 import type {
   JsonMetricViewData,
-  JsonLogData,
   JsonTraceLogSummary,
   JsonTraceData,
-  JsonTraceSummary,
 } from '@/types/wire-types'
 import { parseDuration } from '@/utils/time'
 import { parseQuery } from '@/components/shared/Search/queryParser'
 import type { ReceivedHistogramDataPoint } from '@/types/api-types'
+import {
+  arrowResponse,
+  traceSummaryTable,
+  logSummaryTable,
+  logDetailTable,
+} from '@/test/arrow-fixtures'
+import { Table, Bool, vectorFromArray } from 'apache-arrow'
+
+function stubArrowResult(table: Table) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async () => arrowResponse(table))
+  )
+}
 
 type StubRpcResponse<T> = {
   jsonrpc?: unknown
@@ -250,28 +262,7 @@ describe('request cancellation', () => {
 
 describe('telemetryAPI.getLog', () => {
   it('revives an int64 body value as bigint', async () => {
-    const result: JsonLogData = {
-      logRef: 'log-1',
-      timestamp: '100',
-      observedTimestamp: '101',
-      traceID: null,
-      spanID: null,
-      severityText: 'INFO',
-      severityNumber: 9,
-      body: { kind: 'int64', value: '9223372036854775807' },
-      resource: { attributes: [], droppedAttributesCount: 0 },
-      scope: {
-        name: '',
-        version: '',
-        attributes: [],
-        droppedAttributesCount: 0,
-      },
-      droppedAttributesCount: 0,
-      flags: 0,
-      eventName: '',
-      attributes: [],
-    }
-    stubRpcResult(result)
+    stubArrowResult(logDetailTable())
 
     const log = await telemetryAPI.getLog('log-1')
 
@@ -279,7 +270,7 @@ describe('telemetryAPI.getLog', () => {
       kind: 'int64',
       value: 9_223_372_036_854_775_807n,
     })
-    stubRpcResult({ status: 'found', logs: [result] })
+    stubArrowResult(logDetailTable())
     const traceID = 'a'.repeat(32)
     const spanID = 'b'.repeat(16)
     const controller = new AbortController()
@@ -288,10 +279,8 @@ describe('telemetryAPI.getLog', () => {
         .body
     ).toEqual(log.body)
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]!.body))
-    expect(request).toMatchObject({
-      method: 'getSpan',
-      params: { traceID, spanID },
-    })
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/data/getSpanLogs')
+    expect(request).toEqual({ traceID, spanID })
     expect(vi.mocked(fetch).mock.calls[0][1]!.signal).toBe(controller.signal)
   })
 })
@@ -310,10 +299,16 @@ describe('telemetryAPI.getTraceLogSummaries', () => {
         bodyPreview: 'received',
       },
     ]
-    stubRpcResult(result)
+    stubArrowResult(logSummaryTable())
 
     await expect(telemetryAPI.getTraceLogSummaries('trace-1')).resolves.toEqual(
-      [{ ...result[0], timestamp: 9_223_372_036_854_775_807n }]
+      [
+        {
+          ...result[0],
+          timestamp: 9_223_372_036_854_775_807n,
+          bodyType: 'string',
+        },
+      ]
     )
   })
 })
@@ -1245,19 +1240,19 @@ describe('attribute discovery', () => {
 })
 
 describe('telemetryAPI.searchTraceSummaries', () => {
-  it('promotes wire timestamps and durations to bigint values', async () => {
-    const summaries: JsonTraceSummary[] = [
+  it('reads native timestamps and computes exact durations', async () => {
+    const summaries = [
       {
         traceID: 'trace-1',
         hasRootSpan: true,
         rootSpan: { serviceName: 'checkout', name: 'GET /checkout' },
-        startTime: '1700000000000000000',
-        durationNs: '12345',
+        startTime: 1700000000000000000n,
+        endTime: 1700000000000012345n,
         spanCount: 2,
         errorCount: 0,
       },
     ]
-    stubRpcResult(summaries)
+    stubArrowResult(traceSummaryTable(summaries))
 
     await expect(
       telemetryAPI.searchTraceSummaries(0n, 1n)
@@ -1277,80 +1272,74 @@ describe('telemetryAPI.searchTraceSummaries', () => {
         spanID: '0000000000000002',
       },
     ]
-    stubRpcResult([
-      {
-        traceID: '00000000000000000000000000000001',
-        hasRootSpan: true,
-        rootSpan: { serviceName: 'service-a', name: 'root' },
-        startTime: '1',
-        durationNs: '10',
-        spanCount: 2,
-        errorCount: 1,
-        matchedSpans,
-      },
-      {
-        traceID: '00000000000000000000000000000002',
-        hasRootSpan: false,
-        rootSpan: null,
-        startTime: '2',
-        durationNs: null,
-        spanCount: 1,
-        errorCount: 0,
-      },
-    ] satisfies JsonTraceSummary[])
+    stubArrowResult(
+      traceSummaryTable([
+        {
+          traceID: '00000000000000000000000000000001',
+          hasRootSpan: true,
+          rootSpan: { serviceName: 'service-a', name: 'root' },
+          startTime: 1n,
+          endTime: 11n,
+          spanCount: 2,
+          errorCount: 1,
+          matchedSpans,
+        },
+        {
+          traceID: '00000000000000000000000000000002',
+          hasRootSpan: false,
+          rootSpan: null,
+          startTime: 2n,
+          endTime: null,
+          spanCount: 1,
+          errorCount: 0,
+        },
+      ])
+    )
 
     const summaries = await telemetryAPI.searchTraceSummaries(0n, 10n)
 
     expect(summaries[0]?.matchedSpans).toEqual(matchedSpans)
-    expect(summaries[1]).not.toHaveProperty('matchedSpans')
+    expect(summaries[1]?.matchedSpans).toBeUndefined()
   })
 
-  it('preserves native bigint string parsing and nullable durations', async () => {
-    stubRpcResult([
-      {
-        traceID: 'trace-1',
-        hasRootSpan: false,
-        rootSpan: null,
-        startTime: '-9223372036854775808',
-        durationNs: null,
-        spanCount: 0,
-        errorCount: 0,
-      },
-      {
-        traceID: 'trace-2',
-        hasRootSpan: false,
-        rootSpan: null,
-        startTime: '0x10',
-        durationNs: '+12',
-        spanCount: 0,
-        errorCount: 0,
-      },
-    ] satisfies JsonTraceSummary[])
+  it('preserves unsigned nanoseconds and nullable durations', async () => {
+    stubArrowResult(
+      traceSummaryTable([
+        {
+          traceID: 'trace-1',
+          hasRootSpan: false,
+          rootSpan: null,
+          startTime: 18446744073709551615n,
+          endTime: null,
+          spanCount: 0,
+          errorCount: 0,
+        },
+        {
+          traceID: 'trace-2',
+          hasRootSpan: false,
+          rootSpan: null,
+          startTime: 16n,
+          endTime: 28n,
+          spanCount: 0,
+          errorCount: 0,
+        },
+      ])
+    )
 
     await expect(
       telemetryAPI.searchTraceSummaries(0n, 1n)
     ).resolves.toMatchObject([
-      { startTime: -9_223_372_036_854_775_808n, durationNs: null },
+      { startTime: 18_446_744_073_709_551_615n, durationNs: null },
       { startTime: 16n, durationNs: 12n },
     ])
   })
 
-  it('rejects non-string bigint wire values before native coercion', async () => {
-    stubRpcResult([
-      {
-        traceID: 'trace-1',
-        hasRootSpan: false,
-        rootSpan: null,
-        startTime: true,
-        durationNs: null,
-        spanCount: 0,
-        errorCount: 0,
-      },
-    ])
-
-    await expect(telemetryAPI.searchTraceSummaries(0n, 1n)).rejects.toThrow(
-      'Invalid bigint wire value: expected string, got boolean'
+  it('rejects a wrongly typed scalar when read instead of coercing it', async () => {
+    stubArrowResult(
+      new Table({ startTime: vectorFromArray([true], new Bool()) })
     )
+    const summaries = await telemetryAPI.searchTraceSummaries(0n, 1n)
+    expect(() => summaries[0].startTime).toThrow('Expected an Arrow integer')
   })
 })
 
@@ -1569,17 +1558,19 @@ describe('telemetryAPI.getReferencedTraceViews', () => {
 
 describe('telemetryAPI.getTraceSummary', () => {
   it('looks up one exact trace independently of the Logs time range and preserves exact times', async () => {
-    stubRpcResult([
-      {
-        traceID: '00000000000000000000000000000011',
-        hasRootSpan: true,
-        rootSpan: { name: 'checkout', serviceName: 'api' },
-        startTime: '1700000000000000001',
-        durationNs: '9007199254740993',
-        spanCount: 5,
-        errorCount: 2,
-      },
-    ] satisfies JsonTraceSummary[])
+    stubArrowResult(
+      traceSummaryTable([
+        {
+          traceID: '00000000000000000000000000000011',
+          hasRootSpan: true,
+          rootSpan: { name: 'checkout', serviceName: 'api' },
+          startTime: 1700000000000000001n,
+          endTime: 1709007199254740994n,
+          spanCount: 5,
+          errorCount: 2,
+        },
+      ])
+    )
     const result = await telemetryAPI.getTraceSummary(
       '00000000000000000000000000000011'
     )
@@ -1588,26 +1579,26 @@ describe('telemetryAPI.getTraceSummary', () => {
       durationNs: 9007199254740993n,
     })
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+      '/api/data/searchTraceSummaries'
+    )
     expect(request).toMatchObject({
-      method: 'searchTraceSummaries',
-      params: {
-        startTime: null,
-        endTime: null,
-        limit: 1,
+      startTime: null,
+      endTime: null,
+      limit: 1,
+      query: {
+        type: 'condition',
         query: {
-          type: 'condition',
-          query: {
-            field: { owner: 'span', path: ['traceID'] },
-            fieldOperator: '=',
-            value: '00000000000000000000000000000011',
-          },
+          field: { owner: 'span', path: ['traceID'] },
+          fieldOperator: '=',
+          value: '00000000000000000000000000000011',
         },
       },
     })
   })
 
   it('reports no stored trace without fabricating a summary', async () => {
-    stubRpcResult([])
+    stubArrowResult(traceSummaryTable([]))
     expect(
       await telemetryAPI.getTraceSummary('00000000000000000000000000000011')
     ).toBeNull()
@@ -1951,7 +1942,14 @@ function captureRequest() {
       }
     })
   vi.stubGlobal('fetch', fetchMock)
-  return () => JSON.parse(fetchMock.mock.calls[0][1].body)
+  return () => {
+    const [url, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(init.body)
+    // The parameter contract is shared; Arrow addresses the method in the URL.
+    return url.startsWith('/api/data/')
+      ? { method: url.slice('/api/data/'.length), params: body }
+      : body
+  }
 }
 
 describe('request parameters', () => {

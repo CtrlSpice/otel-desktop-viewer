@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
 
@@ -80,7 +81,7 @@ async function openWorkspace(page: Page, legacyBookmark = false) {
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: true } } })
   )
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const request = route.request().postDataJSON()
     return route.fulfill({
       json: {

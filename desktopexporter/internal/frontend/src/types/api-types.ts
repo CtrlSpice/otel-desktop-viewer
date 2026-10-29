@@ -179,7 +179,7 @@ export type LogData = {
 }
 
 // LogSummary is the lightweight card-shaped projection returned by
-// the searchLogSummaries JSON-RPC method. Full LogData (with body, attributes,
+// the searchLogSummaries dataset. Full LogData (with body, attributes,
 // resource, scope, etc) is fetched on demand via getLog(logRef).
 //
 // `logRef` is a tool-minted UUID -- in the wire payload because the UI
@@ -620,7 +620,7 @@ export type MetricSummary = {
    * histograms. */
   lastValue: number | null
   // Timestamp of the most recent in-range datapoint (nanoseconds).
-  lastSeen: bigint
+  lastSeen: bigint | null
 }
 
 export function metricSummaryKey(s: MetricSummary): string {

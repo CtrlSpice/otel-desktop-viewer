@@ -13,7 +13,7 @@ export type DebouncedDetailFetcher<K, D> = {
 }
 
 export type CreateDebouncedDetailFetcherOptions<K, D> = {
-  fetch: (key: K) => Promise<D>
+  fetch: (key: K, signal: AbortSignal) => Promise<D>
   keysEqual: (a: K, b: K) => boolean
   /** Quiet period after a key change, in milliseconds. */
   delayMs?: number
@@ -33,14 +33,18 @@ export function createDebouncedDetailFetcher<K, D>(
 
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
   let generation = 0
+  let activeRequest: AbortController | null = null
 
   onDestroy(() => {
     ++generation
+    activeRequest?.abort()
     if (pendingTimer !== null) clearTimeout(pendingTimer)
   })
 
   function clear() {
     ++generation
+    activeRequest?.abort()
+    activeRequest = null
     if (pendingTimer !== null) {
       clearTimeout(pendingTimer)
       pendingTimer = null
@@ -52,13 +56,16 @@ export function createDebouncedDetailFetcher<K, D>(
 
   function schedule(forKey: K, debounce = false) {
     const request = ++generation
+    activeRequest?.abort()
+    activeRequest = null
     if (pendingTimer !== null) clearTimeout(pendingTimer)
     loading = true
     error = null
     const run = () => {
       pendingTimer = null
       if (request !== generation) return
-      opts.fetch(forKey).then(
+      activeRequest = new AbortController()
+      opts.fetch(forKey, activeRequest.signal).then(
         result => {
           if (request !== generation) return
           data = result

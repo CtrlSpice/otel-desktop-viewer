@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import type { JsonLogData } from '../src/types/wire-types'
 
@@ -28,7 +29,7 @@ async function openCopyField(
     localStorage.setItem('signal-drawer:open', 'false')
   })
   await page.route('**/api/features', route => route.fulfill({ json: {} }))
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getLog'
