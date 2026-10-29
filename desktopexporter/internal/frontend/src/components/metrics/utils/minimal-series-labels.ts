@@ -1,7 +1,7 @@
 import type {
-  Attribute,
   AttributeValue,
   MetricSeriesViewData,
+  MetricSeriesColumnValue,
 } from '@/types/api-types'
 import type { LegendTimeseries } from '@/types/metric-chart-types'
 import { attributeValueLabel } from '@/components/shared/attribute-label'
@@ -17,6 +17,7 @@ export type SeriesLabel = { text: string; needsIdentity: boolean }
 export type SeriesCell = {
   label: string
   preview?: string
+  kind?: string
   signature: string
   values: readonly AttributeValue[]
 }
@@ -24,6 +25,7 @@ export type SeriesColumn = { key: string; cells: Map<string, SeriesCell> }
 export type SeriesTable = {
   columns: SeriesColumn[]
   labels: Map<string, SeriesLabel>
+  comparisonRequired?: boolean
 }
 
 function valueSignature(value: AttributeValue): string {
@@ -273,51 +275,24 @@ export function minimalSeriesLabels(
   return minimalSeriesTable(rows).labels
 }
 
-/** Render SQL/Go-selected bounded previews without opening structured values.
- * Exact labels/signatures are materialized only if a sort needs them. */
+/** Render server-selected previews. Exact comparison values load on sort. */
 export function compactSeriesTable(
-  series: readonly Pick<
-    MetricSeriesViewData,
-    'seriesRef' | 'attributes' | 'labelPreviews'
-  >[]
+  series: readonly Pick<MetricSeriesViewData, 'seriesRef' | 'labelPreviews'>[]
 ): SeriesTable {
   const previews = series.map(
-    row => new Map(row.labelPreviews?.map(cell => [cell.key, cell.text]))
+    row => new Map(row.labelPreviews?.map(cell => [cell.key, cell]))
   )
   const keys = [...new Set(previews.flatMap(row => [...row.keys()]))].sort()
-  const rows = series.map(row => {
-    const byKey = new Map<string, Attribute[]>()
-    for (const attribute of row.attributes) {
-      const key = attribute.key
-      const entries = byKey.get(key)
-      if (entries) entries.push(attribute)
-      else byKey.set(key, [attribute])
-    }
-    return { key: row.seriesRef, byKey }
-  })
-  const exactColumns = new Map<string, SeriesColumn>()
-  function exactCell(key: string, row: string): SeriesCell {
-    if (!exactColumns.has(key)) {
-      const column = minimalSeriesTable(
-        rows.map(row => ({
-          key: row.key,
-          attributes: row.byKey.get(key) ?? [],
-        })),
-        true
-      ).columns[0]!
-      exactColumns.set(key, column)
-    }
-    return exactColumns.get(key)!.cells.get(row)!
-  }
   const texts = series.map(
     (_, index) =>
       keys
-        .map(key => `${key}: ${previews[index]!.get(key) ?? '[absent]'}`)
+        .map(key => `${key}: ${previews[index]!.get(key)?.text ?? '[absent]'}`)
         .join(' · ') || 'default series'
   )
   const counts = new Map<string, number>()
   for (const text of texts) counts.set(text, (counts.get(text) ?? 0) + 1)
   return {
+    comparisonRequired: true,
     labels: new Map(
       series.map((row, index) => [
         row.seriesRef,
@@ -330,21 +305,45 @@ export function compactSeriesTable(
         series.map((row, index) => [
           row.seriesRef,
           {
-            preview: previews[index]!.get(key) ?? '[absent]',
-            values: (rows[index]!.byKey.get(key) ?? []).map(
-              attribute => attribute.value
-            ),
-            get label() {
-              return exactCell(key, row.seriesRef).label
-            },
-            get signature() {
-              return exactCell(key, row.seriesRef).signature
-            },
+            preview: previews[index]!.get(key)?.text ?? '[absent]',
+            kind: previews[index]!.get(key)?.kind,
+            values: [],
+            label: previews[index]!.get(key)?.text ?? '[absent]',
+            signature: '',
           },
         ])
       ),
     })),
   }
+}
+
+/** Validate the complete displayed cohort before applying the established sorter. */
+export function comparisonSeriesColumn(
+  series: readonly MetricSeriesColumnValue[],
+  seriesRefs: readonly string[],
+  key: string
+): SeriesColumn {
+  const expected = new Set(seriesRefs)
+  const rows = series.map(series => {
+    const id = series.seriesRef
+    if (!expected.delete(id))
+      throw new Error('Comparison series changed. Refresh the metric.')
+    const attributes = series.attributes
+    if (attributes.some(attribute => attribute.key !== key))
+      throw new Error('Unexpected comparison attribute.')
+    return { key: id, attributes }
+  })
+  if (expected.size)
+    throw new Error('Comparison series changed. Refresh the metric.')
+  return (
+    minimalSeriesTable(rows, true).columns[0] ?? {
+      key,
+      // Identical values (including all absent) sort only by stable series identity.
+      cells: new Map(
+        rows.map(row => [row.key, { label: '', signature: '', values: [] }])
+      ),
+    }
+  )
 }
 
 /** Numeric telemetry sorts numerically; other values use deterministic natural text order. */

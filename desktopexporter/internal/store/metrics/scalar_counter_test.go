@@ -158,8 +158,8 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	bySeries := make(map[string]map[string]any)
 	for _, rawSeries := range raw["timeseries"].([]any) {
 		series := rawSeries.(map[string]any)
-		attribute := series["attributes"].([]any)[0].(map[string]any)
-		name := attribute["value"].(map[string]any)["value"].(string)
+		attribute := series["labelPreviews"].([]any)[0].(map[string]any)
+		name := attribute["text"].(string)
 		bySeries[name] = series
 	}
 	latestFor := func(name string) map[string]any {
@@ -223,8 +223,8 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.NoError(t, json.Unmarshal(withViews, &viewsMetric))
 	for _, rawSeries := range viewsMetric["timeseries"].([]any) {
 		series := rawSeries.(map[string]any)
-		attribute := series["attributes"].([]any)[0].(map[string]any)
-		switch attribute["value"].(map[string]any)["value"] {
+		attribute := series["labelPreviews"].([]any)[0].(map[string]any)
+		switch attribute["text"] {
 		case "above-2^53":
 			views := series["views"].([]any)
 			require.NotEmpty(t, views)

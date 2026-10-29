@@ -218,10 +218,10 @@ func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term strin
 // for a caller that cannot name the series it wants because it picks them from
 // this very response; it takes the first N in the response's own order. Nil
 // and 0 mean every series ships them.
-// Series attributes contain only the bounded-selector's distinguishing columns;
-// attributesComplete=false marks this projection. labelPreviews are bounded
-// display text. Selected typed attribute values retain exact sorting semantics;
-// GetMetricSeries returns the complete received context on demand.
+// Series attributes are empty; attributesComplete=false marks this projection.
+// labelPreviews contain bounded distinguishing-column text. GetMetricSeriesColumn
+// returns exact comparison values for a displayed cohort; GetMetricSeries returns
+// complete received context on demand.
 // A null endpoint is omitted from filtering and derived from the filtered data
 // extent. A concrete endpoint remains the effective endpoint.
 func GetMetricView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {

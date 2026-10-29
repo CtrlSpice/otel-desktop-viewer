@@ -115,7 +115,7 @@ where exists (select 1 from trace_spans)
     isReset := case when d.aggregation_temporality = 2 then d.is_reset end,
     quantiles := {{if .NoHistogramMerge}}null{{else}}dq.quantiles{{end}}){{end}}
 {{define "viewSeries"}}struct_pack(seriesRef := t.attrs_key,
-    attributes := coalesce(sla.attributes, '{}'::json::variant), attributesComplete := false,
+    attributes := '{}'::json::variant, attributesComplete := false,
     labelPreviews := coalesce(slp.previews, []),
     datapoints := coalesce(tj.datapoints, []),
     stats := case when t.value_count > 0 then struct_pack(count := t.value_count,

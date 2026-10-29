@@ -19,6 +19,8 @@
   import { selectableTableRow } from '@/components/shared/utils/selectable-table-row'
   import {
     compareSeriesCells,
+    comparisonSeriesColumn,
+    type SeriesColumn,
     type SeriesCell,
   } from '@/components/metrics/utils/minimal-series-labels'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
@@ -37,6 +39,11 @@
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
+  const sortKey = $derived(sort?.key)
+  let comparisonColumn = $state.raw<SeriesColumn>()
+  let sortLoading = $state(false)
+  let sortError = $state('')
+  let sortRetry = $state(0)
 
   $effect.pre(() => {
     void metricRef
@@ -52,6 +59,7 @@
   // Keep disclosures, but replace exact values and reject every older request.
   $effect.pre(() => {
     void ctx.metric
+    comparisonColumn = undefined
     receivedAttributes.clear()
     attributeErrors.clear()
     loadingAttributes.clear()
@@ -82,6 +90,45 @@
       : ctx.gaugeSumLegendTimeseries
   )
   const table = $derived(ctx.seriesTable)
+  $effect(() => {
+    const metric = ctx.metric
+    const key = sortKey
+    const required = table.comparisonRequired
+    void sortRetry
+    sortLoading = false
+    sortError = ''
+    if (
+      !metric ||
+      key === undefined ||
+      !required ||
+      !table.columns.some(column => column.key === key)
+    )
+      return
+    if (untrack(() => comparisonColumn?.key) === key) return
+    const refs = metric.timeseries.map(series => series.seriesRef)
+    const controller = new AbortController()
+    sortLoading = true
+    void telemetryAPI
+      .getMetricSeriesColumn(metric.metricRef, refs, key, controller.signal)
+      .then(values => {
+        if (controller.signal.aborted) return
+        comparisonColumn = comparisonSeriesColumn(values, refs, key)
+      })
+      .catch(error => {
+        if (!controller.signal.aborted)
+          sortError =
+            error instanceof Error
+              ? error.message
+              : 'Could not load comparison values.'
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) sortLoading = false
+      })
+    return () => controller.abort()
+  })
+  const sortApplied = $derived(
+    sort && (!table.comparisonRequired || comparisonColumn?.key === sort.key)
+  )
   const checkedKeys = $derived(ctx.visibleSeries)
   const capReached = $derived(
     !ctx.isHistogramKind && checkedKeys.size >= MAX_VISIBLE_TIMESERIES
@@ -177,8 +224,10 @@
     { id: 'show', label: 'Show', min: 56, width: 56, fixed: true },
   ])
   const sortedRows = $derived.by(() => {
-    const column = table.columns.find(column => column.key === sort?.key)
-    if (!column || !sort) return rows
+    const column = table.comparisonRequired
+      ? comparisonColumn
+      : table.columns.find(column => column.key === sort?.key)
+    if (!column || !sort || column.key !== sort.key) return rows
     const direction = sort.direction === 'asc' ? 1 : -1
     return [...rows].sort(
       (a, b) =>
@@ -211,6 +260,7 @@
   }
   function identifierValue(key: string, cell: SeriesCell): string | undefined {
     if (!/(?:^|[._])(?:id|uuid)$/i.test(key)) return undefined
+    if (cell.kind === 'string') return cell.preview
     const values = cell.values
     const value = values[0]
     return values.length === 1 && value?.kind === 'string'
@@ -240,7 +290,20 @@
   {/if}
 {/snippet}
 
-<div class="ts-panel" role="region" aria-label="Timeseries">
+<div
+  class="ts-panel"
+  role="region"
+  aria-label="Timeseries"
+  aria-busy={sortLoading}
+>
+  {#if sortLoading}<p role="status" class="px-3 py-2 text-subtle">
+      Loading comparison values…
+    </p>{/if}
+  {#if sortError}<p role="alert" class="px-3 py-2 text-papaya">{sortError}</p>
+    <button type="button" class="btn btn-ghost mx-3" onclick={() => sortRetry++}
+      >Retry sort</button
+    >
+  {/if}
   <ResizableTable
     {columns}
     caption="Metric series"
@@ -273,7 +336,7 @@
             class:table-cell--pinned={layout.pinned[`attr:${column.key}`] !==
               undefined}
             style:left="{layout.pinned[`attr:${column.key}`]}px"
-            aria-sort={sort?.key === column.key
+            aria-sort={sortApplied && sort?.key === column.key
               ? sort.direction === 'asc'
                 ? 'ascending'
                 : 'descending'

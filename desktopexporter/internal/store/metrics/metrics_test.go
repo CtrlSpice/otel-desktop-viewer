@@ -3196,13 +3196,13 @@ func TestGetMetricView_MergedSeriesKeepTheirLabels(t *testing.T) {
 
 	drivers := map[string]bool{}
 	for _, entry := range series {
-		attrs, _ := entry.(map[string]any)["attributes"].([]any)
+		attrs, _ := entry.(map[string]any)["labelPreviews"].([]any)
 		require.NotEmpty(t, attrs,
-			"a merged series must carry the attributes that identify it")
+			"a merged series must carry the previews that identify it")
 		for _, a := range attrs {
 			m := a.(map[string]any)
 			if m["key"] == "driver" {
-				drivers[m["value"].(map[string]any)["value"].(string)] = true
+				drivers[m["text"].(string)] = true
 			}
 		}
 	}
@@ -3279,9 +3279,9 @@ func TestGetMetricView_ScalarViewBuckets(t *testing.T) {
 	for _, entry := range series {
 		ts := entry.(map[string]any)
 		var pod string
-		for _, a := range ts["attributes"].([]any) {
+		for _, a := range ts["labelPreviews"].([]any) {
 			if a.(map[string]any)["key"] == "pod" {
-				pod = a.(map[string]any)["value"].(map[string]any)["value"].(string)
+				pod = a.(map[string]any)["text"].(string)
 			}
 		}
 		v, _ := ts["views"].([]any)
@@ -4203,9 +4203,9 @@ func TestGetMetricView_Deterministic(t *testing.T) {
 		for _, entry := range m["timeseries"].([]any) {
 			ts := entry.(map[string]any)
 			var pod string
-			for _, a := range ts["attributes"].([]any) {
+			for _, a := range ts["labelPreviews"].([]any) {
 				if a.(map[string]any)["key"] == "pod" {
-					pod = a.(map[string]any)["value"].(map[string]any)["value"].(string)
+					pod = a.(map[string]any)["text"].(string)
 				}
 			}
 			for _, dp := range ts["datapoints"].([]any) {
@@ -4323,7 +4323,7 @@ func TestGetMetricView_DatapointNarrowing(t *testing.T) {
 		assert.NotNil(t, ts["stats"], "stats describe the window, not the sample")
 		assert.NotEmpty(t, ts["views"], "view buckets feed the All aggregate")
 		assert.NotEmpty(t, ts["sparkline"], "the row still draws a shape")
-		assert.NotEmpty(t, ts["attributes"], "and still names itself")
+		assert.NotEmpty(t, ts["labelPreviews"], "and still names itself")
 	}
 	assert.Equal(t, 1, withPoints)
 	assert.Equal(t, 2, withoutPoints)
@@ -4422,10 +4422,10 @@ func TestGetMetricView_ScalarPoolAggregate(t *testing.T) {
 	idByPod := map[string]string{}
 	for _, entry := range all["timeseries"].([]any) {
 		ts := entry.(map[string]any)
-		for _, a := range ts["attributes"].([]any) {
+		for _, a := range ts["labelPreviews"].([]any) {
 			attr := a.(map[string]any)
 			if attr["key"] == "pod" {
-				idByPod[attr["value"].(map[string]any)["value"].(string)] = ts["seriesRef"].(string)
+				idByPod[attr["text"].(string)] = ts["seriesRef"].(string)
 			}
 		}
 	}
