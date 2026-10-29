@@ -5,11 +5,15 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"math"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.uber.org/zap/zaptest"
@@ -44,6 +48,8 @@ func TestDiscoveryQueryResultColumns(t *testing.T) {
 
 func TestDiscoveryNULStrings(t *testing.T) {
 	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
 	ctx := context.Background()
 	data := buildTestTraces()
 	resource := data.ResourceSpans().At(0)
@@ -69,6 +75,81 @@ func TestDiscoveryNULStrings(t *testing.T) {
 		require.NotEmpty(t, page.Rows, kind)
 		if kind == "values" {
 			require.Contains(t, string(page.Rows[0][0]), `value\u0000'雪`)
+		}
+		wire, err := json.Marshal(map[string]any{"options": options})
+		require.NoError(t, err)
+		native := readArrowDataset(t, s, "discoverTelemetry", string(wire))
+		require.Equal(t, len(page.Rows), native.Column(0).(*array.List).ListValues().Len())
+	}
+}
+
+func TestArrowDiscoveryReceivedValues(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
+	values := []any{int64(9007199254740993), float64(0), math.Copysign(0, -1), math.Float64frombits(0x7ff8000000000001), math.Float64frombits(0x7ff8000000000002), []any{int64(9007199254740993)}, nil}
+	for index, value := range values {
+		data := buildTestTraces()
+		span := data.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+		span.SetTraceID(pcommon.TraceID{15: byte(index + 1)})
+		require.NoError(t, span.Attributes().PutEmpty("exact").FromRaw(value))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	}
+	params := map[string]any{"options": map[string]any{"kind": "values", "signal": "traces", "ownerType": "span", "key": "exact", "sortBy": "name", "sortDirection": "desc"}}
+	legacy, err := h.Handle(t.Context(), createRequest("discoverTelemetry", params))
+	require.NoError(t, err)
+	var page struct {
+		Rows [][]struct {
+			Value json.RawMessage `json:"value"`
+		}
+	}
+	require.NoError(t, json.Unmarshal(legacy.(json.RawMessage), &page))
+	wire, err := json.Marshal(params)
+	require.NoError(t, err)
+	native := readArrowDataset(t, s, "discoverTelemetry", string(wire))
+	items := native.Column(0).(*array.List).ListValues().(*array.Struct)
+	// Discovery groups NaNs by canonical content identity, as the JSON endpoint
+	// does. The representative native value must still retain received bits.
+	require.Equal(t, len(values)-1, items.Len())
+	require.Len(t, page.Rows, items.Len())
+	index, ok := items.DataType().(*arrow.StructType).FieldIdx("identity")
+	require.True(t, ok)
+	identities := items.Field(index).(*array.String)
+	index, ok = items.DataType().(*arrow.StructType).FieldIdx("value")
+	require.True(t, ok)
+	union := items.Field(index).(*array.DenseUnion)
+	for row := range items.Len() {
+		require.JSONEq(t, string(page.Rows[row][0].Value), identities.Value(row))
+		var identity struct {
+			Kind  string          `json:"kind"`
+			Value json.RawMessage `json:"value"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(identities.Value(row)), &identity))
+		child, offset := union.Field(union.ChildID(row)), int(union.ValueOffset(row))
+		switch identity.Kind {
+		case "int64":
+			require.Equal(t, int64(9007199254740993), child.(*array.Int64).Value(offset))
+		case "double":
+			var expected float64
+			if string(identity.Value) == "0" {
+				expected = 0
+			} else {
+				var text string
+				require.NoError(t, json.Unmarshal(identity.Value, &text))
+				bits, err := strconv.ParseUint(strings.TrimPrefix(text, "0x"), 16, 64)
+				require.NoError(t, err)
+				expected = math.Float64frombits(bits)
+			}
+			if math.IsNaN(expected) {
+				expected = math.Float64frombits(0x7ff8000000000001)
+			}
+			require.Equal(t, math.Float64bits(expected), math.Float64bits(child.(*array.Float64).Value(offset)))
+		case "array":
+			require.Equal(t, int64(9007199254740993), child.(*array.List).ListValues().(*array.Int64).Value(0))
+		case "empty":
+			require.Equal(t, arrow.NULL, child.DataType().ID())
+		default:
+			t.Fatalf("unexpected received kind %s", identity.Kind)
 		}
 	}
 }

@@ -264,6 +264,17 @@ function log(r: RecordFixture) {
 export function telemetryDataset(method: string, result: any): Table {
   let rows: Record<string, Value>[]
   switch (method) {
+    case 'discoverTelemetry':
+      rows = [
+        {
+          items: result.rows.map(([entry]: [RecordFixture]) =>
+            discoveryEntry(entry)
+          ),
+          truncated: result.truncated ?? false,
+          totals: result.totals ?? null,
+        },
+      ]
+      break
     case 'getMetric':
       rows = [
         {
@@ -410,6 +421,59 @@ export function telemetryDataset(method: string, result: any): Table {
   return new Table(
     new RecordBatch(new Schema(data.type.children), data as Data<Struct>)
   )
+}
+
+function discoveryEntry(entry: RecordFixture) {
+  if ('source' in entry)
+    return {
+      ...entry,
+      source: discoveryService(entry.source),
+      target: discoveryService(entry.target),
+    }
+  if ('value' in entry)
+    return {
+      ...entry,
+      value: value(entry.value),
+      identity: JSON.stringify(entry.value),
+    }
+  if ('startTime' in entry)
+    return {
+      ...entry,
+      startTime: BigInt(entry.startTime),
+      endTime: BigInt(entry.endTime),
+    }
+  if ('serviceName' in entry) return discoveryService(entry)
+  return entry
+}
+
+function discoveryService(entry: RecordFixture) {
+  return {
+    serviceIdentity: JSON.stringify([
+      entry.serviceNamespace,
+      entry.serviceName,
+    ]),
+    serviceNameKind: 'string',
+    serviceNamespaceKind: 'string',
+    traceCount: 0,
+    spanCount: 0,
+    errorSpanCount: 0,
+    logCount: 0,
+    errorLogCount: 0,
+    metricCount: 0,
+    dataPointCount: 0,
+    exemplarCount: 0,
+    logSeverityCounts: {
+      trace: 0,
+      debug: 0,
+      info: 0,
+      warn: 0,
+      error: 0,
+      fatal: 0,
+      other: 0,
+    },
+    ...entry,
+    lastSeen: big(entry.lastSeen),
+  }
 }
 
 function trace(data: JsonTraceData) {

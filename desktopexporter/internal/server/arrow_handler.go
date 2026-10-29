@@ -87,6 +87,14 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 		return nil, err
 	}
 	switch method {
+	case "discoverTelemetry":
+		plan, err := discoveryPlanFor(params, true)
+		if err != nil {
+			return nil, err
+		}
+		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) {
+			return arrowread.Read(ctx, db, plan.statement, plan.args...)
+		})
 	case "getMetricView", "getMetricAggregateView":
 		aggregateOnly := method == "getMetricAggregateView"
 		args, err := parseGetMetricViewParams(params, aggregateOnly)

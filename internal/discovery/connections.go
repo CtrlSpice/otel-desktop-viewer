@@ -22,25 +22,30 @@ func ServiceConnections(query Query) string {
 	identity := Literal(*query.ServiceIdentity)
 	unscoped := query
 	unscoped.ServiceIdentity, unscoped.ServiceName, unscoped.Namespace = nil, nil, nil
+	entry := object(query, "source", "s.entry", "target", "t.entry", "spanCount", "g.span_count", "traceCount", "g.trace_count", "errorSpanCount", "g.error_count")
+	sourceID, targetID := "json_extract_string(s.entry, '$.serviceIdentity')", "json_extract_string(t.entry, '$.serviceIdentity')"
+	if query.Native {
+		sourceID, targetID = "s.entry.serviceIdentity", "t.entry.serviceIdentity"
+	}
 	return connectionRecords(query) + `, summaries AS (` + Services(unscoped) + `), grouped AS (
     SELECT source, target, count(*) AS span_count, count(DISTINCT trace_id) AS trace_count,
         count(*) FILTER (WHERE status_code = 2) AS error_count
     FROM connections WHERE source = ` + identity + ` OR target = ` + identity + `
     GROUP BY source, target
 )
-SELECT json_object('source', s.entry, 'target', t.entry,
-    'spanCount', g.span_count, 'traceCount', g.trace_count, 'errorSpanCount', g.error_count) AS entry
+SELECT ` + entry + ` AS entry
 FROM grouped g
-JOIN summaries s ON json_extract_string(s.entry, '$.serviceIdentity') = g.source
-JOIN summaries t ON json_extract_string(t.entry, '$.serviceIdentity') = g.target`
+JOIN summaries s ON ` + sourceID + ` = g.source
+JOIN summaries t ON ` + targetID + ` = g.target`
 }
 
 // ServiceConnectionSpans returns the received child spans behind one edge.
 func ServiceConnectionSpans(query Query, targetIdentity string) string {
-	return connectionRecords(query) + `SELECT json_object(
-    'traceID', replace(trace_id::VARCHAR, '-', ''),
-    'spanID', lower(lpad(hex(span_id), 16, '0')), 'name', name,
-    'startTime', start_time::VARCHAR, 'endTime', end_time::VARCHAR,
-    'statusCode', status_code) AS entry
+	start, end := "start_time::VARCHAR", "end_time::VARCHAR"
+	if query.Native {
+		start, end = "start_time", "end_time"
+	}
+	entry := object(query, "traceID", "replace(trace_id::VARCHAR, '-', '')", "spanID", "lower(lpad(hex(span_id),16,'0'))", "name", "name", "startTime", start, "endTime", end, "statusCode", "status_code")
+	return connectionRecords(query) + `SELECT ` + entry + ` AS entry
 FROM connections WHERE source = ` + Literal(*query.ServiceIdentity) + ` AND target = ` + Literal(targetIdentity)
 }

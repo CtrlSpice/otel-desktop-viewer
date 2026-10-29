@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -19,6 +19,26 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap/zaptest"
 )
+
+func readArrowDataset(t *testing.T, s *Server, method, params string) arrow.RecordBatch {
+	t.Helper()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/data/"+method, strings.NewReader(params))
+	s.server.Handler.ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, arrowStreamContentType, w.Header().Get("Content-Type"))
+	require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+	data := w.Body.Bytes()
+	require.True(t, bytes.HasSuffix(data, []byte{255, 255, 255, 255, 0, 0, 0, 0}))
+	reader, err := ipc.NewReader(bytes.NewReader(data))
+	require.NoError(t, err)
+	defer reader.Release()
+	require.True(t, reader.Next())
+	record := reader.RecordBatch()
+	record.Retain()
+	t.Cleanup(record.Release)
+	return record
+}
 
 func TestArrowDatasetReads(t *testing.T) {
 	h := setupHandlerWithData(t)
@@ -52,24 +72,32 @@ func TestArrowDatasetReads(t *testing.T) {
 	require.NoError(t, err)
 	read := func(method, params string) arrow.RecordBatch {
 		t.Helper()
-		w := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodPost, "/api/data/"+method, strings.NewReader(params))
-		s.server.Handler.ServeHTTP(w, r)
-		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-		require.Equal(t, arrowStreamContentType, w.Header().Get("Content-Type"))
-		require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-		data := w.Body.Bytes()
-		require.True(t, bytes.HasSuffix(data, []byte{255, 255, 255, 255, 0, 0, 0, 0}))
-		reader, err := ipc.NewReader(bytes.NewReader(data))
-		require.NoError(t, err)
-		defer reader.Release()
-		require.True(t, reader.Next())
-		record := reader.RecordBatch()
-		record.Retain()
-		t.Cleanup(record.Release)
-		return record
+		return readArrowDataset(t, s, method, params)
 	}
 	trace := read("getTraceView", `{"traceID":"`+testTraceIDHex+`"}`)
+	services := read("discoverTelemetry", `{"options":{"kind":"services","queries":{"traces":null,"logs":null,"metrics":null},"limit":1}}`)
+	serviceRows := services.Column(0).(*array.List).ListValues().(*array.Struct)
+	require.Equal(t, 1, serviceRows.Len())
+	require.False(t, services.Column(2).IsNull(0))
+	serviceType := serviceRows.DataType().(*arrow.StructType)
+	identityIndex, ok := serviceType.FieldIdx("serviceIdentity")
+	require.True(t, ok)
+	serviceIdentity := serviceRows.Field(identityIndex).(*array.String).Value(0)
+	for _, kind := range []string{"connections", "connection-spans"} {
+		params, err := json.Marshal(map[string]any{"options": map[string]any{"kind": kind, "serviceIdentity": serviceIdentity, "targetIdentity": serviceIdentity}})
+		require.NoError(t, err)
+		read("discoverTelemetry", string(params))
+	}
+	read("discoverTelemetry", `{"options":{"kind":"services","offset":1000}}`)
+	keys := read("discoverTelemetry", `{"options":{"kind":"keys","signal":"logs","ownerType":"resource"}}`)
+	require.Positive(t, keys.Column(0).(*array.List).ListValues().Len())
+	values := read("discoverTelemetry", `{"options":{"kind":"values","signal":"logs","ownerType":"resource","key":"service.name","sortBy":"name","sortDirection":"asc"}}`)
+	valueRows := values.Column(0).(*array.List).ListValues().(*array.Struct)
+	require.Positive(t, valueRows.Len())
+	valueType := valueRows.DataType().(*arrow.StructType)
+	valueIndex, ok := valueType.FieldIdx("value")
+	require.True(t, ok)
+	require.Equal(t, arrow.STRING, valueRows.Field(valueIndex).DataType().ID())
 	require.Equal(t, int64(1), trace.NumRows())
 	require.Positive(t, trace.Column(5).(*array.List).ListValues().Len())
 	metricRows := read("searchMetricSummaries", `{"startTime":null,"endTime":null}`)
