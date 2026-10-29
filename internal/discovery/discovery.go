@@ -238,15 +238,11 @@ ORDER BY v.count DESC, otel_value_kind(v.value), v.identity`
 }
 
 func Services(query Query) string {
-	predicate := Predicate(query)
-	// Group only the two needed native service fields, not whole Resource
-	// payloads. Encode labels once per native pair after counting owning rows.
-	// Exact trace/metric ID lists are unioned after canonical NaN equivalence;
-	// summing per-native-pair distinct counts would double-count shared IDs.
-	nativeFields := `variant_exists(s.resource.attributes, 'service.name') AS name_present,
-        variant_to_parquet_variant(s.resource.attributes['service.name'])::struct(metadata blob, value blob) AS name_parts,
-        variant_exists(s.resource.attributes, 'service.namespace') AS namespace_present,
-        variant_to_parquet_variant(s.resource.attributes['service.namespace'])::struct(metadata blob, value blob) AS namespace_parts`
+	// Time/search eligibility precedes grouping. Binary resource attributes retain
+	// typed distinctions, including signed zero, without decoding service fields
+	// per span/log/point. Scope is not part of service identity.
+	predicate := Predicate(Query{StartTime: query.StartTime, EndTime: query.EndTime})
+	resourceParts := `variant_to_parquet_variant(s.resource.attributes)::struct(metadata blob, value blob) AS resource_parts`
 	metricSelection := "true"
 	if query.Sources.Metrics != "" {
 		metricSelection = "EXISTS (SELECT 1 FROM " + query.Sources.Metrics + " m WHERE m.id=r.id)"
@@ -265,14 +261,14 @@ func Services(query Query) string {
 			"info", "coalesce(sum(c.info_log_count),0)", "warn", "coalesce(sum(c.warn_log_count),0)", "error", "coalesce(sum(c.error_severity_log_count),0)",
 			"fatal", "coalesce(sum(c.fatal_log_count),0)", "other", "coalesce(sum(c.other_log_count),0)"),
 		"metricCount", "len(list_distinct(flatten(list(coalesce(c.metric_ids, []::UUID[])))))", "dataPointCount", "coalesce(sum(c.data_point_count),0)", "exemplarCount", "coalesce(sum(c.exemplar_count),0)", "lastSeen", lastSeen)
-	return `WITH native_service_counts AS (
-    SELECT ` + nativeFields + `, list(DISTINCT trace_id) AS trace_ids, count(*) AS span_count,
+	return `WITH resource_counts AS MATERIALIZED (
+    SELECT ` + resourceParts + `, list(DISTINCT trace_id) AS trace_ids, count(*) AS span_count,
         count(*) FILTER (WHERE status_code = 2) AS error_span_count,
         max(time_ns) AS last_seen
     FROM (SELECT resource, service_name, trace_id, start_time AS time_ns, status_code FROM ` + source(query.Sources.Spans, "spans") + `) s
     WHERE ` + predicate + ` GROUP BY ALL
     UNION ALL BY NAME
-    SELECT ` + nativeFields + `, count(*) AS log_count,
+    SELECT ` + resourceParts + `, count(*) AS log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24) AS error_log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 1 AND 4) AS trace_log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 5 AND 8) AS debug_log_count,
@@ -286,22 +282,72 @@ func Services(query Query) string {
         coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM ` + source(query.Sources.Logs, "logs") + `) s
     WHERE ` + predicate + ` GROUP BY ALL
     UNION ALL BY NAME
-    SELECT ` + nativeFields + `, list(DISTINCT metric_id) AS metric_ids,
+    SELECT ` + resourceParts + `, list(DISTINCT metric_id) AS metric_ids,
         count(*) AS data_point_count, sum(len(exemplars)) AS exemplar_count, max(time_ns) AS last_seen
     FROM (SELECT r.resource, r.service_name, r.id AS metric_id, r.d.timestamp AS time_ns, r.d.exemplars AS exemplars
         FROM (SELECT r.*, unnest(r.datapoints) AS d FROM metric_records r WHERE ` + metricSelection + `) r) s
     WHERE ` + predicate + ` GROUP BY ALL
-), service_counts AS (
-    SELECT * EXCLUDE(name_present, name_parts, namespace_present, namespace_parts),
-        json_array(case when name_present then otel_value_json(variant_bytes_to_variant(name_parts.metadata || name_parts.value)) end,
-            case when namespace_present then otel_value_json(variant_bytes_to_variant(namespace_parts.metadata || namespace_parts.value))
-                else '{"kind":"string","value":""}'::JSON end)::VARCHAR AS service_identity,
-        coalesce(otel_value_text(variant_bytes_to_variant(name_parts.metadata || name_parts.value)), '') AS service_name,
-        coalesce(otel_value_text(variant_bytes_to_variant(namespace_parts.metadata || namespace_parts.value)), '') AS service_namespace
-    FROM native_service_counts
+), ` + serviceResourceLabels(`SELECT DISTINCT resource_parts FROM resource_counts`, true) + `, service_counts AS (
+    SELECT c.* EXCLUDE(resource_parts), s.service_identity, s.service_name, s.service_namespace
+    FROM resource_counts c JOIN service_labels s USING(resource_parts)
+    WHERE ` + serviceLabelPredicate(query) + `
 )
 SELECT ` + entry + ` AS entry
 FROM service_counts c
 GROUP BY c.service_identity, c.service_namespace, c.service_name
 ORDER BY c.service_namespace, c.service_name, c.service_identity`
+}
+
+// Decode each distinct received resource context once across all three signals.
+// The parts helpers consume the existing binary fields directly; reconstructing
+// and re-encoding the same values for each output label is unnecessary.
+func serviceResourceLabels(contexts string, labels bool) string {
+	display := ""
+	if labels {
+		display = `,
+        coalesce(otel_value_text_parts(name_parts), '') AS service_name,
+        coalesce(otel_value_text_parts(namespace_parts), '') AS service_namespace`
+	}
+	return `service_resources AS MATERIALIZED (` + contexts + `), service_fields AS MATERIALIZED (
+    SELECT resource_parts,
+        variant_exists(attributes, 'service.name') AS name_present,
+        variant_to_parquet_variant(attributes['service.name'])::struct(metadata blob, value blob) AS name_parts,
+        variant_exists(attributes, 'service.namespace') AS namespace_present,
+        variant_to_parquet_variant(attributes['service.namespace'])::struct(metadata blob, value blob) AS namespace_parts
+    FROM (SELECT resource_parts, variant_bytes_to_variant(resource_parts.metadata || resource_parts.value) AS attributes FROM service_resources)
+), service_labels AS MATERIALIZED (
+    SELECT resource_parts,
+        json_array(case when name_present then otel_value_json_parts(name_parts) end,
+            case when namespace_present then otel_value_json_parts(namespace_parts)
+                else '{"kind":"string","value":""}'::JSON end)::VARCHAR AS service_identity` + display + `
+    FROM service_fields
+)`
+}
+
+func serviceLabelPredicate(query Query) string {
+	p := []string{"true"}
+	if query.ServiceName != nil {
+		p = append(p, "s.service_name = "+Literal(*query.ServiceName))
+	} else if query.Service != "" {
+		p = append(p, "s.service_name = "+Literal(query.Service))
+	}
+	if query.Namespace != nil {
+		p = append(p, "s.service_namespace = "+Literal(*query.Namespace))
+	}
+	if query.ServiceIdentity != nil {
+		p = append(p, "s.service_identity = "+Literal(*query.ServiceIdentity))
+	}
+	return strings.Join(p, " AND ")
+}
+
+// ServiceCount is database-wide, like navigation's signal counts. It does not
+// construct service summaries, sort/page them, or expand metric datapoints.
+func ServiceCount() string {
+	return `WITH ` + serviceResourceLabels(`
+    SELECT variant_to_parquet_variant(resource.attributes)::struct(metadata blob, value blob) AS resource_parts FROM spans
+    UNION
+    SELECT variant_to_parquet_variant(resource.attributes)::struct(metadata blob, value blob) FROM logs
+    UNION
+    SELECT variant_to_parquet_variant(resource.attributes)::struct(metadata blob, value blob) FROM metric_records WHERE len(datapoints)>0
+`, false) + ` SELECT count(DISTINCT service_identity) FROM service_labels`
 }

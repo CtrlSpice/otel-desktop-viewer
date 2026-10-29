@@ -46,6 +46,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
+      getServiceCount: vi.fn().mockResolvedValue(0),
       discoverServices: vi
         .fn()
         .mockResolvedValue({ items: [], truncated: false }),

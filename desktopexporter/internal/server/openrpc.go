@@ -176,6 +176,7 @@ func openRPCDocument() map[string]any {
 		{"searchAttributeMatches", "ObjectList", "Scoped keys/owners-first discovery without time bounds. Supply signal where known; owner+exact path requests matching typed value samples after selection. Without a selected path, only key names match and sampleValues is empty.", 1},
 		{"getStats", "Stats", "Returns computed signal counts, source recency, storage byte size/retention cap and ingestion rejections. Counts are retained records, not request volume. traces.lastReceived = max(start_time); logs.lastReceived = max(nonzero timestamp), falling back to max(observed_timestamp) only when no nonzero timestamp exists; metrics.lastReceived = max(datapoint timestamp). These are nullable decimal Unix nanoseconds, not wall-clock arrival times. maxSizeBytes=0 disables retention.", 0},
 		{"getTraceSpanCount", "Integer", "Returns computed retained span count for a received trace ID as a JSON integer token. A trace with no spans has count 0.", 1},
+		{"getServiceCount", "Integer", "Returns the database-wide distinct typed service identity count across retained spans, logs and metric points. No parameters. Missing namespace is equivalent to an empty string; missing service name remains distinct. Returns only an integer, without constructing or paging service summaries.", 0},
 	}
 	methods := make([]rpcMethodDescription, 0, len(specs))
 	for _, spec := range specs {

@@ -192,8 +192,18 @@ func TestServiceIdentityRetainsTypesAcrossDiscoveryAndSignalSearch(t *testing.T)
 	}
 	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
 	require.Len(t, page.Rows, len(values))
+	count, err := h.Handle(ctx, createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, len(values), count)
 	for _, row := range page.Rows {
 		service := row[0]
+		filtered, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "services", "serviceIdentity": service.Identity}}))
+		require.NoError(t, err)
+		var filteredPage struct {
+			Rows [][]json.RawMessage `json:"rows"`
+		}
+		require.NoError(t, json.Unmarshal(filtered.(json.RawMessage), &filteredPage))
+		require.Len(t, filteredPage.Rows, 1)
 		require.Equal(t, 1, service.SpanCount)
 		require.Equal(t, 1, service.LogCount)
 		require.Equal(t, 1, service.MetricCount)

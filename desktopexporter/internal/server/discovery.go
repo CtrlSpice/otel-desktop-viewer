@@ -70,6 +70,17 @@ type discoveryPlan struct {
 	args      []any
 }
 
+func (h *JSONRPCHandler) getServiceCount(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	if err := validateNoParams(req.Params); err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (int64, error) {
+		var count int64
+		err := db.QueryRowContext(ctx, discovery.ServiceCount()).Scan(&count)
+		return count, err
+	})
+}
+
 func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) {
 	var params []json.RawMessage
 	if err := json.Unmarshal(raw, &params); err != nil || len(params) != 1 || bytes.Equal(bytes.TrimSpace(params[0]), []byte("null")) {
