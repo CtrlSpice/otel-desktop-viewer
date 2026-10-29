@@ -1,8 +1,4 @@
-import type {
-  JsonAggregateBucket,
-  JsonLinkSummary,
-  JsonLogColumn,
-} from '@/types/wire-types'
+import type { JsonLinkSummary, JsonLogColumn } from '@/types/wire-types'
 
 export type RootSpan = {
   serviceName: string
@@ -252,8 +248,7 @@ export type Exemplar = ExemplarBase &
 type BaseDataPoint = {
   id: string
   timestamp: bigint
-  /** The same instant in epoch milliseconds, from the store. Charts read this
-   *  rather than dividing `timestamp` per datapoint. */
+  /** The same instant truncated to epoch milliseconds for chart coordinates. */
   timestampMs: number
   startTime: bigint
   flags: number
@@ -416,15 +411,22 @@ export type ScalarAggregate = {
   all: ScalarViewBucket[]
 }
 
-export type AggregateBucket = Omit<
-  JsonAggregateBucket,
-  'sum' | 'min' | 'max' | 'explicitBounds' | 'zeroThreshold' | 'quantiles'
-> & {
+export type AggregateBucket = {
+  timestamp: bigint
+  startTime: bigint
+  count: bigint
   sum: number | null
   min?: number
   max?: number
   explicitBounds?: number[]
   zeroThreshold?: number
+  bucketCounts?: bigint[]
+  scale?: number
+  zeroCount?: bigint
+  positiveBucketOffset?: number
+  positiveBucketCounts?: bigint[]
+  negativeBucketOffset?: number
+  negativeBucketCounts?: bigint[]
   quantiles: Record<string, number | null> | null
 }
 

@@ -1258,9 +1258,9 @@ test.describe('independent histogram aggregate loading', () => {
     })
     const requests: { datapointSeriesRefs?: string[] }[] = []
     page.on('request', request => {
-      if (!request.url().endsWith('/rpc')) return
+      if (!request.url().endsWith('/api/data/getMetricView')) return
       const body = request.postDataJSON()
-      if (body.method === 'getMetricView') requests.push(body.params)
+      requests.push(body)
     })
     await holdAggregates(page, false, 1)
     const checkbox = page.getByRole('checkbox', {
@@ -1944,7 +1944,7 @@ test.describe('independent histogram aggregate loading', () => {
           .map(({ route }) =>
             page
               .waitForResponse(
-                response => response.request() === route.request()
+                response => response.request() === route.originalRequest()
               )
               .then(response => response.finished())
           )

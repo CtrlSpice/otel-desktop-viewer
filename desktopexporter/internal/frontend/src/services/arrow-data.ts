@@ -6,7 +6,13 @@ export const arrowStreamContentType = 'application/vnd.apache.arrow.stream'
 export class ArrowFrame {
   private readonly resolvedColumns = new Map<string, Vector>()
   constructor(readonly columns: Table | Vector) {
-    if (!(columns instanceof Table) && !DataType.isStruct(columns.type))
+    // A branch returning only [] has Arrow List<Null>, with no row fields to
+    // infer. It is a valid empty dataset; nonempty values still require Struct.
+    if (
+      !(columns instanceof Table) &&
+      !DataType.isStruct(columns.type) &&
+      !(columns.length === 0 && DataType.isNull(columns.type))
+    )
       throw new Error(`Expected Arrow row columns, received ${columns.type}`)
   }
 

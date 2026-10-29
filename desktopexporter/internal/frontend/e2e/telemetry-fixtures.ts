@@ -16,6 +16,7 @@ export function telemetryRequest(request: Request) {
 }
 
 export type FixtureRoute = Pick<Route, 'fallback' | 'continue' | 'abort'> & {
+  originalRequest(): Request
   request(): { postDataJSON(): ReturnType<typeof telemetryRequest> }
   fulfill(options: Parameters<Route['fulfill']>[0]): Promise<void>
 }
@@ -28,8 +29,8 @@ export async function routeTelemetry(
     const nativeMethod = new URL(route.request().url()).pathname.match(
       /^\/api\/data\/(.+)$/
     )?.[1]
-    if (!nativeMethod) return handler(route)
     return handler({
+      originalRequest: () => route.request(),
       request: () => ({
         postDataJSON: () => telemetryRequest(route.request()),
       }),
@@ -37,6 +38,7 @@ export async function routeTelemetry(
       continue: options => route.continue(options),
       abort: code => route.abort(code),
       fulfill: async options => {
+        if (!nativeMethod) return route.fulfill(options)
         const response = options?.json ?? JSON.parse(String(options?.body))
         if (response.error)
           return route.fulfill({ status: 400, json: response.error })
