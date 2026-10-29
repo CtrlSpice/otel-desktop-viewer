@@ -7,6 +7,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   let serviceReads = 0
+  let serviceCountReads = 0
   const services = Array.from({ length: 8 }, (_, index) => ({
     serviceName: index === 0 ? 'checkout' : `worker-${index}`,
     serviceNamespace: 'storefront',
@@ -35,6 +36,10 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {
+      if (method === 'getServiceCount') {
+        serviceCountReads++
+        return services.length
+      }
       if (method === 'searchLogPage') return { total: 0, logs: [] }
       if (method === 'getImportConfig') return { otlpHttpPort: 54318 }
       if (method === 'getStats')
@@ -83,6 +88,8 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await expect(serviceCards).toHaveCount(8)
   const homeTab = page.getByRole('link', { name: /^Home(?: \[|$)/ })
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
+  await expect.poll(() => serviceCountReads).toBe(1)
+  expect(serviceReads).toBe(1)
   const card = page
     .locator('.service-map__node')
     .getByRole('button', { name: /^checkout/ })
@@ -301,11 +308,13 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   })
   await imported
   await expect(page).toHaveURL(/\/\?time=all$/)
-  expect(serviceReads).toBe(4) // Home and tab totals, including the persistence reload.
+  expect(serviceReads).toBe(2) // Home pages only, including the persistence reload.
+  expect(serviceCountReads).toBe(2)
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   await expect(serviceCards).toHaveCount(8)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expect.poll(() => serviceReads).toBe(6)
+  await expect.poll(() => serviceReads).toBe(3)
+  await expect.poll(() => serviceCountReads).toBe(3)
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [9]')
   await expect(serviceCards).toHaveCount(9)
   // Workspace navigation carries the submitted Home query. Service cards

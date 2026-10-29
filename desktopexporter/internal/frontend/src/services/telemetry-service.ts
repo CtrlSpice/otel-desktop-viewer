@@ -385,6 +385,8 @@ export let telemetryAPI = {
     }
     return matches
   },
+  getServiceCount: (signal?: AbortSignal) =>
+    callRPC<number>('getServiceCount', undefined, signal),
   discoverServices: (
     options: Omit<DiscoveryOptions, 'kind'> = {},
     signal?: AbortSignal

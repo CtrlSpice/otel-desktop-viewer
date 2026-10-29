@@ -17,18 +17,6 @@ export function createNavigationCounts() {
   let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
   let generation = 0
   let request: AbortController | undefined
-  async function serviceCount(signal: AbortSignal) {
-    let total = 0
-    for (;;) {
-      const page = await telemetryAPI.discoverServices(
-        { offset: total, limit: 100 },
-        signal
-      )
-      total += page.items.length
-      if (!page.truncated) return total
-      if (!page.items.length) throw new Error('Service count is incomplete')
-    }
-  }
   async function refresh() {
     request?.abort()
     const controller = new AbortController()
@@ -36,7 +24,7 @@ export function createNavigationCounts() {
     const current = ++generation
     const results = await Promise.allSettled([
       telemetryAPI.getStats(),
-      serviceCount(controller.signal),
+      telemetryAPI.getServiceCount(controller.signal),
       __EVALS_BUILT__ && get(evalsEnabled)
         ? evalAPI.searchEvalExperiments({ limit: 1 }, controller.signal)
         : Promise.resolve(undefined),

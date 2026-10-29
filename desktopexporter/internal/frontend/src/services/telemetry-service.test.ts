@@ -70,6 +70,20 @@ function stubRpcResult<T>(result: T) {
   stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
+it('requests only a scalar service count, including counts beyond one summary page', async () => {
+  stubRpcResult(250)
+  const controller = new AbortController()
+  expect(await telemetryAPI.getServiceCount(controller.signal)).toBe(250)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch).toHaveBeenCalledWith(
+    '/rpc',
+    expect.objectContaining({ signal: controller.signal })
+  )
+  const request = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string)
+  expect(request.method).toBe('getServiceCount')
+  expect(request.params).toBeUndefined()
+})
+
 it('reads ordered field completions and empty results through native transport', async () => {
   const values = ['quote"\\%_雪', 'second', '']
   stubRpcResult(values)
