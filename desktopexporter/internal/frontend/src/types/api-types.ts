@@ -137,7 +137,6 @@ export type Attribute = {
   id?: string
   key: string
   value: AttributeValue
-  hasConflict?: boolean
 }
 
 export type AttributeValue =
@@ -155,7 +154,6 @@ export type AttributeValue =
   | {
       kind: 'map'
       value: AttributeMapEntry[]
-      conflictingKeys?: string[]
       readonly childCount?: number
       readonly previewChildren?: AttributeMapEntry[]
     }

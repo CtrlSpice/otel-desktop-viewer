@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   attributeValueCopy,
   attributeValueTokens,
-  hasConflictingKeys,
   jsonContainerTokens,
   compactValueTokens,
   valueTokenTree,
@@ -313,23 +312,5 @@ describe('detail value formatting', () => {
         JSON.stringify(String(value))
       )
     }
-  })
-  it('detects conflicts through nested arrays without merging the duplicate entries', () => {
-    const value: AttributeValue = {
-      kind: 'array',
-      value: [
-        {
-          kind: 'map',
-          conflictingKeys: ['same'],
-          value: [
-            { key: 'same', value: { kind: 'int64', value: 1n } },
-            { key: 'same', value: { kind: 'string', value: '1' } },
-          ],
-        },
-      ],
-    }
-    expect(hasConflictingKeys(value)).toBe(true)
-    expect(attributeValueCopy(value)).toContain('"same": 1,\n    "same": "1"')
-    expect(hasConflictingKeys({ kind: 'map', value: [] })).toBe(false)
   })
 })

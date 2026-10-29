@@ -870,7 +870,7 @@ describe('telemetryAPI.getMetricView', () => {
     ).toBe(Number.POSITIVE_INFINITY)
   })
 
-  it('detects distinct exceptional-double conflicts before decoding', async () => {
+  it('retains NaN in scalar and nested native values', async () => {
     stubRpcResult(
       metricResult({
         metadata: [
@@ -880,20 +880,11 @@ describe('telemetryAPI.getMetricView', () => {
             value: { kind: 'double', value: '0x7ff8000000000001' },
           },
           {
-            id: 'metadata-2',
-            key: 'payload',
-            value: { kind: 'double', value: '0x7ff8000000000002' },
-          },
-          {
             id: 'metadata-3',
             key: 'nested',
             value: {
               kind: 'map',
               value: [
-                {
-                  key: 'payload',
-                  value: { kind: 'double', value: '0x7ff8000000000001' },
-                },
                 {
                   key: 'payload',
                   value: { kind: 'double', value: '0x7ff8000000000002' },
@@ -907,11 +898,10 @@ describe('telemetryAPI.getMetricView', () => {
 
     const metadata = (await telemetryAPI.getMetricView('some-metric', 0n, 1n))!
       .metadata
-    expect(metadata[0]!.hasConflict).toBe(true)
-    expect(metadata[1]!.hasConflict).toBe(true)
-    expect(metadata[2]!.value).toMatchObject({
+    expect(metadata[0]!.value).toEqual({ kind: 'double', value: NaN })
+    expect(metadata[1]!.value).toMatchObject({
       kind: 'map',
-      conflictingKeys: ['payload'],
+      value: [{ key: 'payload', value: { kind: 'double', value: NaN } }],
     })
   })
 })

@@ -211,6 +211,12 @@ Selection is local to that collection: it never combines Resource, Scope, record
 event, link, datapoint, exemplar or metadata attributes. Earlier conflicting values
 are not stored. The incoming pdata is not mutated.
 
+The same last-occurrence rule applies recursively to native OTel maps, including
+maps inside arrays. "Last" refers to payload order within that map, not record
+timestamps. Details, search and Copy/Download use the surviving values; the UI
+does not rescan maps for duplicate-key conflicts. String content is unchanged,
+including strings that happen to contain JSON.
+
 Deleting a signal row also deletes its owned context and attributes.
 `ingest.SweepOrphans` collects unreferenced shared histogram bounds. Clear
 operations sweep immediately; retention sweeps before measuring and after each

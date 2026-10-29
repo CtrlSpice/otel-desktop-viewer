@@ -20,8 +20,5 @@
     fieldKind="attribute"
     fieldSource={source ?? origin ?? owner}
     {origin}
-    defectLabel={attribute.hasConflict
-      ? `Conflicting typed values retained for ${attribute.key} in ${owner}.`
-      : undefined}
   />
 {/each}

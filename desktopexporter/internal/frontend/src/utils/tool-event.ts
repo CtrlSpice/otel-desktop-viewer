@@ -5,12 +5,9 @@ type EventAttributes =
 type NamedEvent = EventAttributes & { name: string }
 
 function attribute(event: EventAttributes, key: string) {
-  const values = (
+  return (
     'attributes' in event ? event.attributes : event.summaryAttributes
-  ).filter(item => item.key === key)
-  return values.length === 1 && !values[0]!.hasConflict
-    ? values[0]!.value
-    : undefined
+  ).find(item => item.key === key)?.value
 }
 
 export function toolEventError(event: EventAttributes) {

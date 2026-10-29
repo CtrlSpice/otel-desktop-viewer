@@ -328,13 +328,3 @@ export function attributeValueCopy(value: AttributeValue): string {
     .map(token => token.text)
     .join('')
 }
-
-export function hasConflictingKeys(value: AttributeValue): boolean {
-  if (value.kind === 'map') {
-    return (
-      Boolean(value.conflictingKeys?.length) ||
-      value.value.some(entry => hasConflictingKeys(entry.value))
-    )
-  }
-  return value.kind === 'array' && value.value.some(hasConflictingKeys)
-}

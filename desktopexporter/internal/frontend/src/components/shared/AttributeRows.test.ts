@@ -15,12 +15,11 @@ function renderAttributes(attributes: Attributes, origin?: string) {
 }
 
 describe('AttributeRows', () => {
-  it('shows formatted JSON immediately and preserves duplicate attribute entries', () => {
+  it('shows formatted JSON and scalar attributes immediately', () => {
     const { container } = renderAttributes([
       {
         id: 'one',
         key: 'payload',
-        hasConflict: true,
         value: {
           kind: 'map',
           value: [
@@ -34,8 +33,7 @@ describe('AttributeRows', () => {
       },
       {
         id: 'two',
-        key: 'payload',
-        hasConflict: true,
+        key: 'message',
         value: { kind: 'string', value: 'raw' },
       },
     ])
@@ -44,12 +42,7 @@ describe('AttributeRows', () => {
       flags: [true],
     })
     expect(screen.getByText('raw')).toBeInTheDocument()
-    expect(container.querySelectorAll('[data-field="payload"]')).toHaveLength(2)
-    expect(
-      screen.getAllByRole('img', {
-        name: 'Conflicting typed values retained for payload in span attributes.',
-      })
-    ).toHaveLength(2)
+    expect(container.querySelectorAll('[data-field="payload"]')).toHaveLength(1)
     expect(container.querySelector('details')).toBeNull()
   })
 
@@ -84,14 +77,6 @@ describe('AttributeRows', () => {
     ).not.toBeNull()
     expect(container).not.toHaveTextContent('resource.service.name')
     expect(attributes[0]!.key).toBe('service.name')
-  })
-
-  it('does not warn for exact repeated canonical values', () => {
-    renderAttributes([
-      { id: 'one', key: 'retry', value: { kind: 'int64', value: 1n } },
-      { id: 'two', key: 'retry', value: { kind: 'int64', value: 1n } },
-    ])
-    expect(screen.queryByRole('img')).toBeNull()
   })
 
   it('preserves punctuation, escaping, int64 precision and negative zero', () => {
@@ -134,29 +119,5 @@ describe('AttributeRows', () => {
       'first',
       { '[0]': 'key' },
     ])
-  })
-
-  it('warns once on a conflicted structured value while preserving every duplicate key', () => {
-    const { container } = renderAttributes([
-      {
-        key: 'payload',
-        value: {
-          kind: 'map',
-          conflictingKeys: ['same'],
-          value: [
-            { key: 'same', value: { kind: 'int64', value: 1n } },
-            { key: 'same', value: { kind: 'string', value: '1' } },
-            { key: 'clear', value: { kind: 'bool', value: true } },
-          ],
-        },
-      },
-    ])
-    expect(screen.getAllByRole('img')).toHaveLength(1)
-    expect(screen.getByRole('img')).toHaveAccessibleName(
-      /Conflicting typed values retained in payload/
-    )
-    expect(jsonEditorView(container).state.doc.toString()).toBe(
-      '{\n  "same": 1,\n  "same": "1",\n  "clear": true\n}'
-    )
   })
 })

@@ -14,11 +14,7 @@
   } from '@/state/value-presentation.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
-  import {
-    attributeValueCopy,
-    hasConflictingKeys,
-    structuredValueText,
-  } from './detail-value'
+  import { attributeValueCopy, structuredValueText } from './detail-value'
 
   let {
     fieldName,
@@ -72,12 +68,6 @@
     fieldSource?: string
   } = $props()
 
-  let conflict = $derived(
-    defectLabel ??
-      (typedValue && hasConflictingKeys(typedValue)
-        ? `Conflicting typed values retained in ${fieldName}. Duplicate keys remain in the JSON output.`
-        : undefined)
-  )
   let copyText = $derived(
     copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
   )
@@ -115,7 +105,7 @@
 
 {#snippet header()}
   <div class="detail-property__header">
-    {#if conflict}<ConflictMarker label={conflict} />{/if}
+    {#if defectLabel}<ConflictMarker label={defectLabel} />{/if}
     <div class="detail-property__heading">
       <span class="detail-property__key"
         >{fieldName}{#if qualifier}<span class="text-subtle">{' · '}</span><span
