@@ -1,7 +1,6 @@
 import type { DetailFieldTarget } from '@/components/shared/utils/reveal-detail-field'
 import type { LogColumn, LogTableRow } from '@/types/api-types'
 import type { FieldDefinition } from '@/search/model'
-import { attributeValueTokens } from '@/components/shared/detail-value'
 
 export type LogSortColumn =
   'timestamp' | 'severity' | 'service' | 'body' | 'name'
@@ -195,24 +194,11 @@ export function logColumnCell(log: LogTableRow, column: LogColumnOption) {
   )
   if (!result) return null
   return {
-    text: result.values.length
-      ? result.values
-          .map(value => {
-            if (value.kind === 'string' && value.value !== '')
-              return value.value
-            return attributeValueTokens(value)
-              .map(token => token.text)
-              .join('')
-          })
-          .join(' | ')
-      : '—',
+    text: result.present ? result.preview : '—',
     numeric:
-      result.values.length > 0 &&
-      result.values.every(
-        value => value.kind === 'int64' || value.kind === 'double'
-      ),
-    present: result.values.length > 0,
-    string: result.values.length === 1 && result.values[0].kind === 'string',
+      result.present && (result.valueType === 'int64' || result.valueType === 'double'),
+    present: result.present,
+    string: result.present && result.valueType === 'string',
   }
 }
 

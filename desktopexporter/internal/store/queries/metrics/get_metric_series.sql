@@ -12,7 +12,7 @@ selected_datapoints as materialized (
 	select d.*
 	from metric_datapoints d
 	join selected_series s on s.id = d.series_id
-	where (list_extract($3::ubigint[], 1) is null or d.timestamp >= list_extract($3::ubigint[], 1))
+	where {{if .ContextOnly}}false and {{end}}(list_extract($3::ubigint[], 1) is null or d.timestamp >= list_extract($3::ubigint[], 1))
 	  and (list_extract($4::ubigint[], 1) is null or d.timestamp <= list_extract($4::ubigint[], 1))
 ),
 selected_exemplars as materialized (

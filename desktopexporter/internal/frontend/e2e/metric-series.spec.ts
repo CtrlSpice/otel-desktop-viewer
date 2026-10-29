@@ -13,9 +13,14 @@ import type {
   JsonAggregateBucket,
   JsonDataPoint,
   JsonMetricSeriesViewData,
-  JsonMetricSummary,
   JsonMetricViewData,
 } from '../src/types/wire-types'
+import type { MetricSummary } from '../src/types/api-types'
+
+// The test transport encodes these readable timestamp fixtures as native Arrow.
+type MetricSummaryFixture = Omit<MetricSummary, 'lastSeen'> & {
+  lastSeen: string | null
+}
 
 const startMs = 1_700_000_000_000
 const startNs = String(BigInt(startMs) * 1_000_000n)
@@ -118,10 +123,9 @@ const metric: JsonMetricViewData = {
     effective: { startNs, endNs },
   },
 }
-const summary: JsonMetricSummary = {
+const summary: MetricSummaryFixture = {
   metricRef: metric.metricRef,
   name: metric.name,
-  description: '',
   unit: metric.unit,
   metricType: 'Gauge',
   aggregationTemporalityCode: null,
@@ -171,6 +175,89 @@ test.beforeEach(async ({ page }) => {
                 : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
+})
+
+test('compact series labels retain hidden rows and load exact context only on disclosure', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  const receivedContext = 'received context not included in the series labels'
+  const contextRequests: Record<string, unknown>[] = []
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method === 'getMetricView') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...metric,
+            timeseries: timeseries.map(series => ({
+              ...series,
+              attributesComplete: false,
+              labelPreviews: [
+                {
+                  key: 'route',
+                  text: series.seriesRef === 'first' ? '/first' : '/second',
+                },
+              ],
+            })),
+          },
+        },
+      })
+    } else if (method === 'getMetricSeries') {
+      contextRequests.push(params)
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...metric,
+            seriesRef: params.seriesRef,
+            datapoints: [],
+            attributes: [
+              ...timeseries.find(
+                series => series.seriesRef === params.seriesRef
+              )!.attributes,
+              {
+                key: 'full.context',
+                value: { kind: 'string', value: receivedContext },
+              },
+            ],
+          },
+        },
+      })
+    } else await route.fallback()
+  })
+  await page.goto(`/metrics/${metric.metricRef}?time=all`)
+  const table = page.getByRole('grid', { name: 'Metric series', exact: true })
+  await expect(table).toContainText('/first')
+  expect(contextRequests).toHaveLength(0)
+  await table
+    .getByRole('checkbox', { name: 'Show route: /second in chart' })
+    .uncheck()
+  await expect(
+    table.getByRole('button', { name: 'Select route: /first', exact: true })
+  ).toBeVisible()
+  await expect(
+    table.getByRole('button', { name: 'Select route: /second', exact: true })
+  ).toBeVisible()
+  await table
+    .getByRole('button', { name: 'Expand attributes for route: /first' })
+    .click()
+  await expect(table).toContainText(receivedContext)
+  expect(contextRequests).toEqual([
+    {
+      metricRef: metric.metricRef,
+      seriesRef: 'first',
+      startTime: null,
+      endTime: null,
+      includeDatapoints: false,
+    },
+  ])
 })
 
 test('metric replacement keeps its displayed identity and mounted headers during delayed loading', async ({
@@ -865,7 +952,7 @@ test.describe('independent histogram aggregate loading', () => {
           })),
       })),
     }
-    const histogramSummary: JsonMetricSummary = {
+    const histogramSummary: MetricSummaryFixture = {
       ...summary,
       metricType: 'Histogram',
       ...temporality,
@@ -2432,6 +2519,7 @@ for (const { id: theme } of THEMES) {
           exact: true,
         })
         const urlBeforeEmphasis = page.url()
+        await expect(quantileLines).toHaveCount(3)
         const geometry = await quantileLines.evaluateAll(lines =>
           lines.map(line =>
             ['d', 'x1', 'x2', 'y1', 'y2'].map(attr => line.getAttribute(attr))

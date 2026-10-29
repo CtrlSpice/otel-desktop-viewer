@@ -29,6 +29,7 @@ type JSONRPCHandler struct {
 	logger       *zap.Logger
 	otlpHTTPPort int
 	otlpGRPCPort int
+	homeValues   homeValueReferences
 }
 
 func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
@@ -235,10 +236,11 @@ type traceViewParams struct {
 	traceID string
 	query   any
 	spanIDs []uint64
+	columns []spans.WaterfallColumn
 }
 
 func parseTraceViewParams(raw json.RawMessage) (*traceViewParams, error) {
-	params, err := decodePositionalParams(raw, 1, 3)
+	params, err := decodePositionalParams(raw, 1, 4)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +268,20 @@ func parseTraceViewParams(raw json.RawMessage) (*traceViewParams, error) {
 		}
 	}
 
-	return &traceViewParams{traceID: traceID, query: query, spanIDs: spanIDs}, nil
+	var columns []spans.WaterfallColumn
+	if len(params) >= 4 && params[3] != nil {
+		encoded, err := json.Marshal(params[3])
+		if err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if err := json.Unmarshal(encoded, &columns); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if err := spans.ValidateWaterfallColumns(columns); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	return &traceViewParams{traceID: traceID, query: query, spanIDs: spanIDs, columns: columns}, nil
 }
 
 type compactTraceResult struct {
@@ -658,7 +673,7 @@ func (h *JSONRPCHandler) getMetricSeries(ctx context.Context, req *jsonrpc2.Requ
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricSeries(ctx, db, args.metricRef, args.seriesRef, args.timeRange)
+		return metrics.GetMetricSeries(ctx, db, args.metricRef, args.seriesRef, args.timeRange, args.includeDatapoints)
 	})
 }
 
@@ -751,11 +766,21 @@ func (h *JSONRPCHandler) deleteLogsByRefs(ctx context.Context, req *jsonrpc2.Req
 
 // searchAttributeMatches finds keys/owners first and values only after selection.
 func (h *JSONRPCHandler) searchAttributeMatches(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	params, err := decodePositionalParams(req.Params, 1, 5)
+	options, err := parseAttributeMatchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
-	options := attributes.SearchOptions{}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return attributes.SearchScoped(ctx, db, *options)
+	})
+}
+
+func parseAttributeMatchParams(raw json.RawMessage) (*searchindex.DiscoveryOptions, error) {
+	params, err := decodePositionalParams(raw, 1, 5)
+	if err != nil {
+		return nil, err
+	}
+	options := &searchindex.DiscoveryOptions{}
 	term, ok := params[0].(string)
 	if !ok {
 		return nil, jsonrpc2.ErrInvalidParams
@@ -805,8 +830,9 @@ func (h *JSONRPCHandler) searchAttributeMatches(ctx context.Context, req *jsonrp
 		for _, segment := range options.Path {
 			switch v := segment.(type) {
 			case string:
-			case float64:
-				if math.Trunc(v) != v || v < 0 || v >= 4294967295 {
+			case json.Number:
+				index, err := v.Int64()
+				if err != nil || index < 0 || index >= math.MaxUint32 {
 					return nil, jsonrpc2.ErrInvalidParams
 				}
 			default:
@@ -814,9 +840,7 @@ func (h *JSONRPCHandler) searchAttributeMatches(ctx context.Context, req *jsonrp
 			}
 		}
 	}
-	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return attributes.SearchScoped(ctx, db, options)
-	})
+	return options, nil
 }
 
 func (h *JSONRPCHandler) getFieldValueCompletions(ctx context.Context, req *jsonrpc2.Request) (any, error) {

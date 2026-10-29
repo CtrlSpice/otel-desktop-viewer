@@ -9,8 +9,16 @@ import {
 import { afterEach, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
-import type { AttributeFrequency } from '@/services/discovery-types'
+import type {
+  AttributeFrequency,
+  DiscoveryOptions,
+  HomeCoveragePage,
+} from '@/services/discovery-types'
+import { attributeValueCopy } from '@/components/shared/detail-value'
 import AttributeDiscovery from './AttributeDiscovery.svelte'
+import { copyText } from '@/utils/clipboard'
+
+vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
 const service = {
   serviceName: 'checkout',
@@ -38,7 +46,192 @@ const service = {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.mocked(copyText).mockReset()
 })
+
+it('loads bounded server pages and resolves full hover/Copy text only on demand', async () => {
+  const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
+  vi.spyOn(telemetryAPI, 'discoverAttributeKeys').mockImplementation(
+    async options => ({
+      items:
+        options.signal === 'traces' && options.ownerType === 'span'
+          ? [{ key: 'deep', kind: 'map', foundOn }]
+          : [],
+      truncated: false,
+    })
+  )
+  const read = vi
+    .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
+    .mockImplementation(async options => {
+      const offset = options.offset ?? 0
+      return {
+        values: Array.from(
+          { length: Math.min(options.limit ?? 25, 64 - offset) },
+          (_, i) => ({
+            identity: `home:ref-${offset + i}`,
+            valueRef: `home:ref-${offset + i}`,
+            kind: 'map',
+            preview: '{same bounded preview}',
+            colorHash: 17,
+            count: 1,
+            counts: { traces: 1, logs: 0, metrics: 0 },
+            kindCount: 64,
+            denominator: 64,
+            relativeFrequency: 1 / 64,
+            foundOn,
+          })
+        ),
+        kinds: [
+          {
+            kind: 'map',
+            count: 64,
+            counts: { traces: 64, logs: 0, metrics: 0 },
+          },
+        ],
+        denominator: 64,
+        denominators: { traces: 64, logs: 0, metrics: 0 },
+        total: 64,
+        truncated: offset + 25 < 64,
+      }
+    })
+  const full = vi
+    .spyOn(telemetryAPI, 'getHomeAttributeValue')
+    .mockResolvedValue({
+      kind: 'map',
+      value: [
+        { key: 'exact', value: { kind: 'int64', value: 9007199254740993n } },
+      ],
+    })
+  const onSelectAttribute = vi.fn()
+  const { container, getByRole } = render(AttributeDiscovery, {
+    service,
+    range: {},
+    revision: 0,
+    queries: { traces: null, logs: false, metrics: false },
+    selectedAttribute: null,
+    onSelectAttribute,
+  })
+  await waitFor(() =>
+    expect(read).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 0 }),
+      expect.any(AbortSignal)
+    )
+  )
+  expect(full).not.toHaveBeenCalled()
+  await fireEvent.click(
+    getByRole('button', { name: 'Expand deep · span values' })
+  )
+  await waitFor(() =>
+    expect(container.querySelectorAll('tr[data-value-identity]')).toHaveLength(
+      25
+    )
+  )
+  expect(full).not.toHaveBeenCalled()
+  const row = container.querySelector<HTMLElement>('tr[data-value-identity]')!
+  await fireEvent.click(row.querySelector('[data-attribute-column="count"]')!, {
+    detail: 1,
+  })
+  expect(onSelectAttribute).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ key: 'deep' }),
+    expect.objectContaining({ identity: 'home:ref-0' })
+  )
+  const inspect = within(row).getByRole('button', {
+    name: 'Show span attribute: deep in details',
+  })
+  await fireEvent.pointerEnter(inspect)
+  await waitFor(() =>
+    expect(inspect).toHaveAttribute(
+      'title',
+      '{\n  "exact": 9007199254740993\n}'
+    )
+  )
+  await fireEvent.click(
+    within(row).getByRole('button', { name: 'Copy deep value' })
+  )
+  await waitFor(() =>
+    expect(copyText).toHaveBeenCalledExactlyOnceWith(
+      '{\n  "exact": 9007199254740993\n}'
+    )
+  )
+  expect(onSelectAttribute).toHaveBeenCalledTimes(1)
+  const next = within(container.querySelector('tbody')!).getByRole('button', {
+    name: 'Next page',
+  })
+  await fireEvent.click(next)
+  await waitFor(() =>
+    expect(read).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 25, limit: 25 }),
+      expect.any(AbortSignal)
+    )
+  )
+  await waitFor(() =>
+    expect(container.querySelector('tr[data-value-identity]')).toHaveAttribute(
+      'data-value-identity',
+      'home:ref-25'
+    )
+  )
+  expect(full).toHaveBeenCalledTimes(2)
+  full.mockRejectedValueOnce(
+    new Error(
+      'Home value is unavailable; refresh attribute values and select it again'
+    )
+  )
+  await fireEvent.click(
+    within(container.querySelector('tr[data-value-identity]')!).getByRole(
+      'button',
+      { name: 'Copy deep value' }
+    )
+  )
+  await waitFor(() =>
+    expect(getByRole('alert')).toHaveTextContent('refresh attribute values')
+  )
+  expect(copyText).toHaveBeenCalledTimes(1)
+})
+
+function homeResult(
+  items: AttributeFrequency[],
+  options: Partial<DiscoveryOptions> = {}
+): HomeCoveragePage {
+  const denominator = items[0]?.denominator ?? 0
+  const denominators = { traces: denominator, metrics: 0, logs: 0 }
+  const kinds = [
+    ...new Map(
+      items.map(item => [
+        item.value.kind,
+        {
+          kind: item.value.kind,
+          count: item.kindCount,
+          counts: { traces: item.kindCount, metrics: 0, logs: 0 },
+        },
+      ])
+    ).values(),
+  ]
+  const filtered = items.filter(
+    item => !options.valueKind || item.value.kind === options.valueKind
+  )
+  return {
+    values: filtered
+      .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 25))
+      .map(item => ({
+        identity: item.identity,
+        valueRef: item.identity,
+        kind: item.value.kind,
+        preview: attributeValueCopy(item.value),
+        colorHash: 17,
+        foundOn: item.foundOn,
+        count: item.count,
+        counts: { traces: item.count, metrics: 0, logs: 0 },
+        kindCount: item.kindCount,
+        denominator,
+        relativeFrequency: item.relativeFrequency,
+      })),
+    kinds,
+    denominators,
+    denominator,
+    total: filtered.length,
+    truncated: filtered.length > 25,
+  }
+}
 
 it.each([
   {
@@ -93,10 +286,9 @@ it.each([
         relativeFrequency: 1 / denominator,
       },
     ]
-    vi.spyOn(telemetryAPI, 'discoverAttributeValues').mockResolvedValue({
-      items: values,
-      truncated: false,
-    })
+    vi.spyOn(telemetryAPI, 'discoverHomeAttributeValues').mockImplementation(
+      async options => homeResult(values, options)
+    )
     const { container, getByRole } = render(AttributeDiscovery, {
       service: {
         serviceName: 'checkout',
@@ -202,11 +394,11 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
     })
   )
   const values = vi
-    .spyOn(telemetryAPI, 'discoverAttributeValues')
+    .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
     .mockImplementation(async options => {
       const count = Number(options.key?.slice(4)) + 1
-      return {
-        items: [
+      return homeResult(
+        [
           {
             identity: '{"kind":"string","value":"received"}',
             value: { kind: 'string', value: 'received' },
@@ -217,8 +409,8 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
             relativeFrequency: count / 100,
           },
         ],
-        truncated: false,
-      }
+        options
+      )
     })
   const onSelectAttribute = vi.fn()
   const { container, getByRole, rerender } = render(AttributeDiscovery, {
@@ -266,7 +458,7 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
   )
   expect(onSelectAttribute).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ key: 'key-000' }),
-    expect.objectContaining({ value: { kind: 'string', value: 'received' } })
+    expect.objectContaining({ kind: 'string', preview: 'received' })
   )
   onSelectAttribute.mockClear()
   await fireEvent.click(footer.getByRole('button', { name: 'Next page' }))
@@ -276,7 +468,10 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
   expect(
     container.querySelector('tr[data-attribute-key="key-000"]')
   ).not.toHaveAttribute('hidden')
-  expect(values).toHaveBeenCalledTimes(60)
+  expect(values).toHaveBeenCalledWith(
+    expect.objectContaining({ key: 'key-000', limit: 25 }),
+    expect.any(AbortSignal)
+  )
   expect(onSelectAttribute).not.toHaveBeenCalled()
   await fireEvent.click(
     controls.getByRole('button', { name: 'Expand all attributes' })
@@ -293,17 +488,13 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
       name: 'Collapse key-025 · span values',
     })
   )
-  expect(
-    container.querySelector('tr[data-attribute-key="key-025"]')
-  ).toHaveAttribute('hidden')
+  expect(container.querySelector('tr[data-attribute-key="key-025"]')).toBeNull()
   await fireEvent.click(footer.getByRole('button', { name: 'Previous page' }))
   expect(
     container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
   ).toHaveLength(25)
   await fireEvent.click(footer.getByRole('button', { name: 'Next page' }))
-  expect(
-    container.querySelector('tr[data-attribute-key="key-025"]')
-  ).toHaveAttribute('hidden')
+  expect(container.querySelector('tr[data-attribute-key="key-025"]')).toBeNull()
   await fireEvent.click(
     controls.getByRole('button', { name: 'Expand all attributes' })
   )
@@ -317,7 +508,10 @@ it('paginates attribute names, keeps global count sorting and retains expanded v
   expect(
     container.querySelectorAll('tr[data-attribute-key]:not([hidden])')
   ).toHaveLength(0)
-  expect(values).toHaveBeenCalledTimes(60)
+  expect(values).toHaveBeenCalledWith(
+    expect.objectContaining({ key: 'key-025', limit: 25 }),
+    expect.any(AbortSignal)
+  )
   expect(onSelectAttribute).not.toHaveBeenCalled()
   await fireEvent.click(
     within(container.querySelector('thead')!).getByRole('button', {
@@ -349,13 +543,13 @@ it('applies the latest bulk disclosure to values that finish loading later', asy
   )
   const early =
     Promise.withResolvers<
-      Awaited<ReturnType<typeof telemetryAPI.discoverAttributeValues>>
+      Awaited<ReturnType<typeof telemetryAPI.discoverHomeAttributeValues>>
     >()
   const late =
     Promise.withResolvers<
-      Awaited<ReturnType<typeof telemetryAPI.discoverAttributeValues>>
+      Awaited<ReturnType<typeof telemetryAPI.discoverHomeAttributeValues>>
     >()
-  vi.spyOn(telemetryAPI, 'discoverAttributeValues').mockImplementation(
+  vi.spyOn(telemetryAPI, 'discoverHomeAttributeValues').mockImplementation(
     options => (options.key === 'early' ? early.promise : late.promise)
   )
   const onSelectAttribute = vi.fn()
@@ -371,20 +565,17 @@ it('applies the latest bulk disclosure to values that finish loading later', asy
     expect(getByRole('button', { name: 'Expand all attributes' })).toBeEnabled()
   )
   await fireEvent.click(getByRole('button', { name: 'Expand all attributes' }))
-  const result = {
-    items: [
-      {
-        identity: 'received',
-        value: { kind: 'string' as const, value: 'received' },
-        foundOn,
-        count: 1,
-        kindCount: 1,
-        denominator: 1,
-        relativeFrequency: 1,
-      },
-    ],
-    truncated: false,
-  }
+  const result = homeResult([
+    {
+      identity: 'received',
+      value: { kind: 'string' as const, value: 'received' },
+      foundOn,
+      count: 1,
+      kindCount: 1,
+      denominator: 1,
+      relativeFrequency: 1,
+    },
+  ])
   early.resolve(result)
   await waitFor(() =>
     expect(

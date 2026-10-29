@@ -837,6 +837,103 @@
 			group by d.series_id
 		),
 
+		-- Label candidates use the complete window cohort, not the datapoint
+		-- shipping/visibility subset. Compare canonical typed values, never JSON
+		-- scalar coercions or hashes. Counting presence separately keeps absent
+		-- attributes distinct from received empty/null values.
+		series_label_entries as materialized (
+			select t.series_id, keys.key,
+				attribute_native_field(parts.value, keys.key) as value
+			from ts_dps_agg t,
+			lateral (select variant_to_parquet_variant(variant_normalize(t.attributes))
+				::struct(metadata blob, value blob) as value) parts,
+			unnest(variant_keys(t.attributes)) keys(key)
+		),
+		series_label_parts as materialized (
+			select series_id, key, variant_to_parquet_variant(variant_normalize(value))
+				::struct(metadata blob, value blob) as parts
+			from series_label_entries
+		),
+		-- Shared context values recur across series and keys. Encode each distinct
+		-- native value once, before joining its exact identity back to the cohort.
+		series_label_values as materialized (
+			select parts, otel_wire_json(parts.metadata, parts.value) as signature
+			from (select distinct parts from series_label_parts)
+		),
+		series_label_comparisons as materialized (
+			select p.*, v.signature
+			from series_label_parts p join series_label_values v using (parts)
+		),
+		series_label_keys as (
+			select key from series_label_comparisons
+			group by key
+			having count(distinct signature) > 1
+				or count(*) < (select count(*) from ts_dps_agg)
+		),
+		series_label_renderings as materialized (
+			select parts, otel_metric_label_info(parts.metadata, parts.value) as info
+			from (select distinct parts from series_label_comparisons
+				where key in (select key from series_label_keys))
+		),
+		series_label_classes as (
+			select t.series_id, k.key, c.signature,
+				dense_rank() over (partition by k.key order by c.signature nulls first) as class,
+				coalesce(r.info.label, '[absent]') as label,
+				coalesce(r.info.kind, 'missing') as kind,
+				coalesce(r.info.labelLength, 8) as label_cost,
+				coalesce(r.info.signatureLength, 2) as signature_cost,
+				coalesce(r.info.kindLength, 7) as kind_cost
+			from ts_dps_agg t cross join series_label_keys k
+			left join series_label_comparisons c on c.series_id = t.series_id and c.key = k.key
+			left join series_label_renderings r on r.parts = c.parts
+		),
+		series_label_costs as (
+			select *, case when count(distinct coalesce(signature, '[missing]'))
+				over (partition by key, label) > 1 then
+				case when count(distinct coalesce(signature, '[missing]'))
+					over (partition by key, label, kind) > 1 then signature_cost
+					else label_cost + kind_cost + 3 end
+				else label_cost end as cost
+			from series_label_classes
+		),
+		series_label_columns as (
+			select key, list(class order by series_id) as groups,
+				sum(cost)::bigint as cost
+			from series_label_costs group by key
+		),
+		series_label_selected as materialized (
+			select unnest(otel_metric_label_columns(coalesce(to_json(list(
+				struct_pack(key := key, groups := groups, cost := cost))), '[]'))) as key
+			from series_label_columns
+		),
+		series_label_preview_values as (
+			select c.series_id, c.key, c.class, c.kind,
+				case when c.signature is null then '[absent]'
+					else native_column_preview(e.value) end as preview
+			from series_label_costs c
+			left join series_label_entries e on e.series_id = c.series_id and e.key = c.key
+			where c.key in (select key from series_label_selected)
+		),
+		series_label_preview_displays as (
+			select series_id, key, case
+				when count(distinct class) over (partition by key, preview) <= 1 then preview
+				when count(distinct class) over (partition by key, preview, kind) <= 1
+					then preview || ' (' || kind || ')'
+				else preview || ' (value ' || class::varchar || ')'
+			end as text
+			from series_label_preview_values
+		),
+		series_label_previews as (
+			select series_id, list(struct_pack(key := key, text := text) order by key) as previews
+			from series_label_preview_displays group by series_id
+		),
+		series_label_attributes as (
+			select series_id, variant_group_object(key, value) as attributes
+			from series_label_entries
+			where key in (select key from series_label_selected)
+			group by series_id
+		),
+
 		-- Build wire JSON only for datapoints surviving reduction and narrowing.
 		shipped_dps as (
 			select d.* from projected_dps d
@@ -921,7 +1018,7 @@
 		timeseries_agg as (
 			select {{if arrow}}list({{template "viewSeries" .}} order by t.latest_ts desc, t.attrs_key){{else}}to_json(list(metric_series_view_json(
 				t.attrs_key,
-				attribute_document(t.attributes),
+				attribute_document(coalesce(sla.attributes, '{}'::json::variant)),
 				s.resource_json,
 				-- [] means this series shipped no datapoints.
 				coalesce(tj.datapoints, json('[]')),
@@ -935,9 +1032,12 @@
 				sv.views,
 				sp.sparkline
 {{- end}}
+				, coalesce(slp.previews, [])
 			-- Series ID makes equal latest timestamps deterministic.
 			) order by t.latest_ts desc, t.attrs_key)){{end}} as timeseries
 			from ts_dps_agg t
+			left join series_label_attributes sla on sla.series_id = t.series_id
+			left join series_label_previews slp on slp.series_id = t.series_id
 			-- Narrowed series have no datapoint JSON row.
 			left join ts_dps_json tj on tj.series_id = t.series_id
 			cross join selected_metric_json s

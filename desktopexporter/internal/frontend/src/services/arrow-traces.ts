@@ -6,6 +6,10 @@ import type {
   LinkData,
   ResourceData,
   ScopeData,
+  TraceWaterfallData,
+  TraceColumnPreview,
+  WaterfallSpanData,
+  WaterfallSpanNode,
 } from '@/types/api-types'
 import { ArrowFrame } from './arrow-data'
 import { attributes, rowViews } from './arrow-values'
@@ -13,6 +17,30 @@ import { attributes, rowViews } from './arrow-values'
 function text(frame: ArrowFrame, row: number, name: string): string {
   const cell = frame.cell(name, row)
   return cell.isNull ? '' : cell.text()
+}
+
+function columnSource(value: string): TraceColumnPreview['source'] {
+  if (value === 'span' || value === 'resource' || value === 'scope')
+    return value
+  throw new Error(`Unsupported trace column source: ${value}`)
+}
+
+function previewValueType(
+  value: string
+): TraceColumnPreview['values'][number]['valueType'] {
+  switch (value) {
+    case 'empty':
+    case 'string':
+    case 'bytes':
+    case 'bool':
+    case 'int64':
+    case 'double':
+    case 'map':
+    case 'array':
+      return value
+    default:
+      throw new Error(`Unsupported trace preview type: ${value}`)
+  }
 }
 
 export function resourceData(frame: ArrowFrame, row: number): ResourceData {
@@ -173,6 +201,18 @@ export function traceData(frame: ArrowFrame): TraceData {
         get resource() {
           return resources[data.cell('r', 0).number() - 1]!
         },
+        get resourceSchemaURL() {
+          const owners = new ArrowFrame(frame.cell('resources', 0).list())
+          return owners.has('schemaUrl')
+            ? text(owners, data.cell('r', 0).number() - 1, 'schemaUrl')
+            : ''
+        },
+        get scopeSchemaURL() {
+          const owners = new ArrowFrame(frame.cell('scopes', 0).list())
+          return owners.has('schemaUrl')
+            ? text(owners, data.cell('s', 0).number() - 1, 'schemaUrl')
+            : ''
+        },
         get scope() {
           return scopes[data.cell('s', 0).number() - 1]!
         },
@@ -219,4 +259,128 @@ export function traceData(frame: ArrowFrame): TraceData {
     },
     spans,
   }
+}
+
+/** Tree-only views retain native nested buffers; no full span objects are fabricated. */
+export function traceWaterfallData(frame: ArrowFrame): TraceWaterfallData {
+  const traceID = frame.cell('traceID', 0).text()
+  const resources = new ArrowFrame(frame.cell('resources', 0).list())
+  const scopes = new ArrowFrame(frame.cell('scopes', 0).list())
+  const resourceViews = rowViews(resources, (f, i) => ({
+    serviceName: text(f, i, 'serviceName'),
+    droppedAttributesCount: f.cell('droppedAttributesCount', i).number(),
+  }))
+  const scopeViews = rowViews(scopes, (f, i) => ({
+    name: text(f, i, 'name'),
+    version: text(f, i, 'version'),
+    droppedAttributesCount: f.cell('droppedAttributesCount', i).number(),
+  }))
+  const nodes = new ArrowFrame(frame.cell('spans', 0).list())
+  return {
+    traceID,
+    unplacedSpanCount: frame.cell('unplacedSpanCount', 0).number(),
+    availableColumns: rowViews(
+      new ArrowFrame(frame.cell('availableColumns', 0).list()),
+      (f, i) => ({
+        source: columnSource(text(f, i, 'source')),
+        key: text(f, i, 'key'),
+        count: f.cell('count', i).number(),
+      })
+    ),
+    spans: rowViews(nodes, (f, i) => {
+      const data = f.cell('spanData', i).struct()
+      const r = data.cell('r', 0).number() - 1
+      const s = data.cell('s', 0).number() - 1
+      const kindCode = data.cell('kindCode', 0).number()
+      const statusCodeValue = data.cell('statusCodeValue', 0).number()
+      const spanData: WaterfallSpanData = {
+        traceID,
+        spanID: text(data, 0, 'spanID'),
+        parentSpanID: data.cell('parentSpanID', 0).isNull
+          ? null
+          : text(data, 0, 'parentSpanID'),
+        name: text(data, 0, 'name'),
+        get traceState() {
+          return text(data, 0, 'traceState')
+        },
+        flags: data.cell('flags', 0).number(),
+        kindCode,
+        kind:
+          [
+            'Unspecified',
+            'Internal',
+            'Server',
+            'Client',
+            'Producer',
+            'Consumer',
+          ][kindCode] ?? `Unknown (${kindCode})`,
+        startTime: data.cell('startTime', 0).integer(),
+        endTime: data.cell('endTime', 0).integer(),
+        statusCodeValue,
+        statusCode:
+          ['Unset', 'Ok', 'Error'][statusCodeValue] ??
+          `Unknown (${statusCodeValue})`,
+        get statusMessage() {
+          return text(data, 0, 'statusMessage')
+        },
+        droppedAttributesCount: data.cell('droppedAttributesCount', 0).number(),
+        droppedEventsCount: data.cell('droppedEventsCount', 0).number(),
+        droppedLinksCount: data.cell('droppedLinksCount', 0).number(),
+        events: rowViews(
+          new ArrowFrame(data.cell('events', 0).list()),
+          (events, row) => ({
+            name: text(events, row, 'name'),
+            timestamp: events.cell('timestamp', row).integer(),
+            droppedAttributesCount: events
+              .cell('droppedAttributesCount', row)
+              .number(),
+            get summaryAttributes() {
+              return attributes(events.cell('summaryAttributes', row))
+            },
+          })
+        ),
+        resource: resourceViews[r]!,
+        scope: scopeViews[s]!,
+        columnValues: data.has('columnValues')
+          ? rowViews(
+              new ArrowFrame(data.cell('columnValues', 0).list()),
+              (c, row) => ({
+                spanID: text(data, 0, 'spanID'),
+                source: columnSource(text(c, row, 'source')),
+                key: text(c, row, 'key'),
+                values: rowViews(
+                  new ArrowFrame(c.cell('values', row).list()),
+                  (v, j) => ({
+                    valueType: previewValueType(text(v, j, 'valueType')),
+                    preview: text(v, j, 'preview'),
+                  })
+                ),
+              })
+            )
+          : [],
+      }
+      const node: WaterfallSpanNode = {
+        spanData,
+        depth: f.cell('depth', i).number(),
+        matched: f.cell('matched', i).boolean(),
+      }
+      if (f.has('salvaged') && f.cell('salvaged', i).boolean()) {
+        node.salvaged = true
+        node.cyclePoint = f.cell('cyclePoint', i).boolean()
+      }
+      return node
+    }),
+  }
+}
+
+export function traceColumnPreviews(frame: ArrowFrame): TraceColumnPreview[] {
+  return rowViews(frame, (f, i) => ({
+    spanID: text(f, i, 'spanID'),
+    source: columnSource(text(f, i, 'source')),
+    key: text(f, i, 'key'),
+    values: rowViews(new ArrowFrame(f.cell('values', i).list()), (v, j) => ({
+      valueType: previewValueType(text(v, j, 'valueType')),
+      preview: text(v, j, 'preview'),
+    })),
+  }))
 }

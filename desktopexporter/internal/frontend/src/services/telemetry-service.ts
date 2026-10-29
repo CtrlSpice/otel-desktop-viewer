@@ -1,5 +1,9 @@
 import type {
   TraceData,
+  TraceWaterfallData,
+  TraceColumn,
+  TraceColumnPreview,
+  SpanData,
   TraceSummary,
   SpanTiming,
   LogData,
@@ -16,11 +20,9 @@ import type {
   ExactMetricSeries,
 } from '@/types/api-types'
 import type {
-  JsonAttributeDefinition,
   JsonDeleteResult,
   JsonStats,
   JsonQueryNode,
-  JsonAttributeMatch,
 } from '@/types/wire-types'
 import type {
   DiscoveryOptions,
@@ -30,6 +32,7 @@ import type {
   ServiceConnectionSpan,
   AttributeKey,
   AttributeFrequency,
+  HomeCoveragePage,
 } from './discovery-types'
 import {
   attributeMatchesSQL,
@@ -37,11 +40,19 @@ import {
   type AttributeRecordMatch,
 } from './attribute-matches'
 import type { FieldDefinition, QueryNode } from '@/search/model'
-import { fieldFromDiscovery } from '@/components/shared/Search/attribute-field-reference'
+import {
+  attributeDefinitions,
+  attributeMatch,
+  type AttributeMatch,
+} from './arrow-search'
 import { fetchArrow } from './arrow-fetch'
-import { rowViews } from './arrow-values'
+import { attributeValue, rowViews } from './arrow-values'
 import { ArrowFrame } from './arrow-data'
-import { traceData } from './arrow-traces'
+import {
+  traceData,
+  traceWaterfallData,
+  traceColumnPreviews,
+} from './arrow-traces'
 import {
   discoveryPage,
   serviceSummary,
@@ -76,6 +87,7 @@ type JsonRpcParamValue =
   | SearchSort
   | readonly (string | number)[]
   | readonly LogColumn[]
+  | readonly TraceColumn[]
   | (Omit<DiscoveryOptions, 'queries'> & {
       queries?: Record<
         'traces' | 'metrics' | 'logs',
@@ -277,6 +289,43 @@ async function discover<T>(
 }
 
 export let telemetryAPI = {
+  discoverHomeAttributeValues: (
+    options: Omit<DiscoveryOptions, 'kind' | 'signal'>,
+    signal?: AbortSignal
+  ): Promise<HomeCoveragePage> => {
+    const convert = (query: QueryNode | false | null) =>
+      query ? convertQueryTreeForBackend(query) : query
+    return callRPC(
+      'discoverTelemetry',
+      named({
+        options: {
+          ...options,
+          kind: 'home-values',
+          queries: options.queries
+            ? {
+                traces: convert(options.queries.traces),
+                metrics: convert(options.queries.metrics),
+                logs: convert(options.queries.logs),
+              }
+            : undefined,
+        },
+      }),
+      signal
+    )
+  },
+  getHomeAttributeValue: async (valueRef: string, signal?: AbortSignal) => {
+    const frame = await callArrow(
+      'discoverTelemetry',
+      named({
+        options: {
+          kind: 'home-value',
+          valueRef,
+        },
+      }),
+      signal
+    )
+    return attributeValue(frame.cell('value', 0))
+  },
   discoverServiceConnections: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
@@ -299,6 +348,16 @@ export let telemetryAPI = {
     options: AttributeMatchOptions,
     signal?: AbortSignal
   ): Promise<AttributeRecordMatch[]> => {
+    if (options.valueIdentity?.startsWith('home:')) {
+      const resolved = await callRPC<{ identity: string }>(
+        'discoverTelemetry',
+        named({
+          options: { kind: 'home-value', valueRef: options.valueIdentity },
+        }),
+        signal
+      )
+      options = { ...options, valueIdentity: resolved.identity }
+    }
     const matches: AttributeRecordMatch[] = []
     let more = true
     while (more) {
@@ -373,64 +432,35 @@ export let telemetryAPI = {
       path?: readonly (string | number)[]
       type?: string
     } = {}
-  ): Promise<JsonAttributeMatch[]> => {
+  ): Promise<AttributeMatch[]> => {
     if (!term.trim() && !options.path) return []
-    const rawData = await callRPC<JsonAttributeMatch[]>(
+    const rawData = await callArrow(
       'searchAttributeMatches',
       named({ term, ...options })
     )
-    if (!Array.isArray(rawData)) {
-      console.warn('searchAttributeMatches: Expected array, got:', rawData)
-      return []
-    }
-    return rawData
+    return rowViews(rawData, attributeMatch)
   },
 
   getTraceAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getTraceAttributeDefinitions'
+    return attributeDefinitions(
+      await callArrow('getTraceAttributeDefinitions', named({}))
     )
-
-    if (!Array.isArray(rawData)) {
-      console.warn(
-        'getTraceAttributeDefinitions: Expected array, got:',
-        rawData
-      )
-      return []
-    }
-
-    const converted = convertAttributesToFieldDefinitions(rawData)
-    return converted
   },
 
   getTraceAttributeDefinitionsByTraceID: async (
     traceID: string
   ): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
+    const rawData = await callArrow(
       'getTraceAttributeDefinitionsByTraceID',
       named({ traceID })
     )
-    if (!Array.isArray(rawData)) {
-      console.warn(
-        'getTraceAttributeDefinitionsByTraceID: Expected array, got:',
-        rawData
-      )
-      return []
-    }
-    return convertAttributesToFieldDefinitions(rawData)
+    return attributeDefinitions(rawData)
   },
 
   getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getLogAttributeDefinitions'
+    return attributeDefinitions(
+      await callArrow('getLogAttributeDefinitions', named({}))
     )
-
-    if (!Array.isArray(rawData)) {
-      console.warn('getLogAttributeDefinitions: Expected array, got:', rawData)
-      return []
-    }
-
-    return convertAttributesToFieldDefinitions(rawData)
   },
 
   searchTraceSummaries: async (
@@ -634,17 +664,42 @@ LIMIT ${batch.length}`,
   getTraceView: async (
     traceID: string,
     queryTree?: QueryNode,
-    signal?: AbortSignal
-  ): Promise<TraceData> => {
+    signal?: AbortSignal,
+    columns?: readonly TraceColumn[]
+  ): Promise<TraceWaterfallData> => {
     const rawData = await callArrow(
       'getTraceView',
       named({
         traceID,
         query: queryTree && convertQueryTreeForBackend(queryTree),
+        columns,
       }),
       signal
     )
-    return traceData(rawData)
+    return traceWaterfallData(rawData)
+  },
+
+  getSpan: async (
+    traceID: string,
+    spanID: string,
+    signal?: AbortSignal
+  ): Promise<SpanData | null> => {
+    const frame = await callArrow('getSpan', named({ traceID, spanID }), signal)
+    return frame.length ? (traceData(frame).spans[0]?.spanData ?? null) : null
+  },
+
+  getTraceColumnPreviews: async (
+    traceID: string,
+    columns: readonly TraceColumn[],
+    signal?: AbortSignal
+  ): Promise<TraceColumnPreview[]> => {
+    return traceColumnPreviews(
+      await callArrow(
+        'getTraceColumnPreviews',
+        named({ traceID, columns }),
+        signal
+      )
+    )
   },
 
   getTraceLogSummaries: async (
@@ -809,7 +864,8 @@ LIMIT ${batch.length}`,
     metricRef: string,
     seriesRef: string,
     startTime: QueryTimeBound,
-    endTime: QueryTimeBound
+    endTime: QueryTimeBound,
+    includeDatapoints?: boolean
   ): Promise<ExactMetricSeries | null> => {
     try {
       const rawData = await callArrow(
@@ -817,6 +873,7 @@ LIMIT ${batch.length}`,
         named({
           metricRef,
           seriesRef,
+          includeDatapoints,
           startTime: serializeNanoseconds(startTime),
           endTime: serializeNanoseconds(endTime),
         })
@@ -947,19 +1004,9 @@ LIMIT ${batch.length}`,
   },
 
   getMetricAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getMetricAttributeDefinitions'
+    return attributeDefinitions(
+      await callArrow('getMetricAttributeDefinitions', named({}))
     )
-
-    if (!Array.isArray(rawData)) {
-      console.warn(
-        'getMetricAttributeDefinitions: Expected array, got:',
-        rawData
-      )
-      return []
-    }
-
-    return convertAttributesToFieldDefinitions(rawData)
   },
 
   deleteMetric: (metricRef: string) =>
@@ -1040,17 +1087,4 @@ export function convertQueryTreeForBackend(
       },
     }
   }
-}
-
-// Helper function to convert backend attribute data to FieldDefinition objects
-function convertAttributesToFieldDefinitions(
-  attributes: JsonAttributeDefinition[]
-): FieldDefinition[] {
-  const definitions: FieldDefinition[] = []
-  for (const attr of attributes) {
-    if (!attr) continue
-    const field = fieldFromDiscovery(attr)
-    if (field) definitions.push(field)
-  }
-  return definitions
 }

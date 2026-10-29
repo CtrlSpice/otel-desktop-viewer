@@ -78,7 +78,7 @@ const trace: JsonTraceData = {
   })),
 }
 
-test('trace selection keeps the waterfall and detail sections mounted until the replacement arrives', async ({
+test('trace selection keeps panes mounted without showing old Details under a new identity', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
@@ -88,7 +88,7 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
   const next = structuredClone(trace)
   next.traceID = 'abcdefabcdefabcdefabcdefabcdefab'
   next.spans[0]!.spanData.name = 'replacement trace'
-  let release: (() => Promise<void>) | undefined
+  const releases: (() => Promise<void>)[] = []
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
@@ -131,8 +131,12 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
               : []
     const fulfill = () =>
       route.fulfill({ json: { jsonrpc: '2.0', id, result } })
-    if (method === 'getTraceView' && params.traceID === next.traceID)
-      release = fulfill
+    if (
+      method === 'getTraceView' &&
+      params.traceID === next.traceID &&
+      route.originalRequest().url().endsWith('/api/data/getTraceView')
+    )
+      releases.push(fulfill)
     else await fulfill()
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}&time=all`)
@@ -144,7 +148,7 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
     document.querySelector('.page-layout__main-chrome > .pane-header'),
     document.querySelector('.waterfall-view'),
     document.querySelector('.waterfall-view__scroll'),
-    document.querySelector('[aria-label="Span fields"]'),
+    document.querySelector('#signal-drawer-detail'),
     ...document.querySelectorAll('#signal-drawer-detail details'),
   ])
   await page.clock.install()
@@ -153,10 +157,9 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
     .locator('#signal-drawer-panel')
     .getByRole('button', { name: /replacement trace/ })
     .click()
-  await expect.poll(() => !!release).toBe(true)
-  await expect(fields.locator('[data-field="name"]').first()).toContainText(
-    'selected span'
-  )
+  await expect.poll(() => releases.length).toBe(1)
+  await expect(fields).toHaveCount(0)
+  await expect(page.getByText('Loading selected span…')).toBeVisible()
   await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
   await page.clock.runFor(200)
   await expect(page.getByText('Loading selected trace…')).toBeVisible()
@@ -164,7 +167,7 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)
-  await release!()
+  await Promise.all(releases.map(release => release()))
   await expect(
     page.locator('.page-layout__main-chrome > .pane-header')
   ).toContainText('replacement trace')

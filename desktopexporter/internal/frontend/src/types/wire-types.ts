@@ -38,39 +38,6 @@ export type JsonScopeData = {
   droppedAttributesCount: number
 }
 
-export type JsonRootSpan = {
-  // nullif(service_name, '') in the summary projection: an empty service
-  // name arrives as JSON null, not ''.
-  serviceName: string | null
-  name: string
-}
-
-export type JsonMatchedSpan = {
-  traceID: string
-  spanID: string
-}
-
-export type JsonSummaryBreakdownPart = {
-  key: string
-  label: string
-  count: number
-  other?: boolean
-}
-
-export type JsonTraceSummary = {
-  traceID: string
-  hasRootSpan: boolean
-  // SQL `case ... end` without else: orphaned traces get null (not absent).
-  rootSpan: JsonRootSpan | null
-  startTime: string
-  durationNs: string | null
-  spanCount: number
-  errorCount: number
-  serviceBreakdown?: JsonSummaryBreakdownPart[]
-  /** Computed identities of matching spans; present only for filtered searches. */
-  matchedSpans?: JsonMatchedSpan[]
-}
-
 export type JsonEventData = {
   name: string
   timestamp: string
@@ -178,32 +145,6 @@ export type JsonTraceData = {
    */
   unplacedSpanCount: number
   spans: JsonSpanNode[]
-}
-
-export type JsonLogSummary = {
-  logRef: string
-  timestamp: string
-  severityText: string
-  severityNumber: number
-  serviceName: string
-  bodyPreview: string
-  bodyType?: JsonAttributeValue['kind']
-  eventName?: string
-}
-
-export type JsonTraceLogSummary = JsonLogSummary & {
-  spanID: string | null
-  eventName: string
-}
-
-export type JsonLogColumn = {
-  source: 'log' | 'resource' | 'scope'
-  kind: 'field' | 'attribute'
-  key: string
-}
-
-export type JsonLogTableRow = JsonLogSummary & {
-  columnValues?: (JsonLogColumn & { values: JsonAttributeValue[] })[]
 }
 
 export type JsonLogData = {
@@ -363,6 +304,8 @@ export type JsonMetricSeriesViewData = {
   /** Generated database-local series reference. */
   seriesRef: string
   attributes: JsonAttribute[]
+  attributesComplete?: boolean
+  labelPreviews?: { key: string; text: string }[]
   /** Resource associated with the parent Metric. */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]
@@ -614,36 +557,6 @@ export type JsonAggregateBucket = {
   quantiles: Record<string, JsonDouble | null> | null
 }
 
-export type JsonMetricSummary = {
-  metricRef: string
-  name: string
-  // Left-joined from stream_description; null when absent.
-  description: string | null
-  unit: string
-  metricType: JsonMetricType
-  aggregationTemporalityCode: number | null
-  aggregationTemporality: string | null
-  // Explicitly nulled by the projection for every type except Sum --
-  // unlike getMetricView, which serves the raw stream column (false for
-  // non-Sums).
-  isMonotonic: boolean | null
-  serviceName: string
-  // seriesCount/dataPointCount/lastSeen all come from left joins, but the
-  // search time-condition guarantees every filtered stream has at least
-  // one in-window datapoint, so all three CTEs always produce a row.
-  /** Series that reported inside the requested window. */
-  seriesCount: number
-  /** Series the stream has ever had, whatever the window. Equal to
-   *  seriesCount on an unbounded range, lower than it never. */
-  seriesCardinality: number
-  dataPointCount: number
-  /** @derived Latest Gauge/Sum value by timestamp in the requested window.
-   * SQL coalesces the double/int arms into an IEEE-754 metric-unit number, so
-   * an integer source may be approximate past 2^53. Null for histograms. */
-  lastValue: JsonDouble | null
-  lastSeen: string
-}
-
 export type JsonTraceStats = {
   traceCount: number
   spanCount: number
@@ -707,28 +620,6 @@ export type JsonAttributeScope =
   | 'datapoint'
   | 'exemplar'
   | 'metadata'
-
-export type JsonAttributeDefinition = {
-  name: string
-  owner?: Exclude<JsonAttributeScope, 'metadata'> | 'metric'
-  path?: readonly (string | number)[]
-  attributeScope: JsonAttributeScope
-  type: JsonAttributeType
-}
-
-// searchAttributeMatches: scoped keys-first discovery.
-//
-// Without an exact owner/path selection, only keys match and sampleValues is
-// empty. A selected field requests matching typed samples from native rows.
-//
-// matchCount is the number of distinct *values* of this key that match, not the
-// number of spans or logs carrying it. It distinguishes "this term identifies
-// one specific thing" from "this term appears all over a high-cardinality key".
-// sampleValues is a short, bounded illustration, not a complete list.
-export type JsonAttributeMatch = JsonAttributeDefinition & {
-  matchCount: number
-  sampleValues: JsonAttributeValue[]
-}
 
 // deleteSpansByTraceID / deleteLogsByRefs.
 // `count` is the number of IDs accepted, not rows removed.

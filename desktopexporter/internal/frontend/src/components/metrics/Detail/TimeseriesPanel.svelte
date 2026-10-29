@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SvelteSet } from 'svelte/reactivity'
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
@@ -22,11 +22,16 @@
   } from '@/components/metrics/utils/minimal-series-labels'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
+  import { telemetryAPI } from '@/services/telemetry-service'
+  import type { Attribute } from '@/types/api-types'
 
   const ctx = getMetricViewContext()
   const metricRef = $derived(ctx.metric?.metricRef)
   const id = $props.id()
   const expandedAttributes = new SvelteSet<string>()
+  const receivedAttributes = new SvelteMap<string, Attribute[]>()
+  const attributeErrors = new SvelteMap<string, string>()
+  const loadingAttributes = new SvelteSet<string>()
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
@@ -37,6 +42,9 @@
     focusedSeriesKey = null
     sort = null
     expandedAttributes.clear()
+    receivedAttributes.clear()
+    attributeErrors.clear()
+    loadingAttributes.clear()
   })
   $effect(() => {
     ctx.previewSeriesKey = ctx.isHistogramKind
@@ -65,7 +73,46 @@
 
   function toggleAttributes(key: string) {
     if (expandedAttributes.has(key)) expandedAttributes.delete(key)
-    else expandedAttributes.add(key)
+    else {
+      expandedAttributes.add(key)
+      void loadAttributes(key)
+    }
+  }
+  async function loadAttributes(key: string) {
+    const series = timeseriesByKey.get(key)
+    const owner = metricRef
+    if (
+      !owner ||
+      !series ||
+      series.attributesComplete !== false ||
+      receivedAttributes.has(key) ||
+      loadingAttributes.has(key)
+    )
+      return
+    loadingAttributes.add(key)
+    attributeErrors.delete(key)
+    try {
+      const received = await telemetryAPI.getMetricSeries(
+        owner,
+        key,
+        null,
+        null,
+        false
+      )
+      if (metricRef !== owner) return
+      if (!received) throw new Error('Series is no longer available')
+      receivedAttributes.set(key, received.attributes)
+    } catch (error) {
+      if (metricRef === owner)
+        attributeErrors.set(
+          key,
+          error instanceof Error
+            ? error.message
+            : 'Failed to load series attributes'
+        )
+    } finally {
+      if (metricRef === owner) loadingAttributes.delete(key)
+    }
   }
   const identityColumn = $derived(
     table.columns.length === 0 ||
@@ -124,15 +171,19 @@
 
   function attrsTooltip(attrs: PanelTimeseries['attributes']): string {
     return (
-      attrs.map(a => `${a.key}: ${attributeValueLabel(a.value)}`).join(' ') ||
-      'default series'
+      attrs
+        .map(
+          attribute =>
+            `${attribute.key}: ${attributeValueLabel(attribute.value)}`
+        )
+        .join(' ') || 'default series'
     )
   }
   function identifierValue(key: string, cell: SeriesCell): string | undefined {
-    const value = cell.values[0]
-    return cell.values.length === 1 &&
-      value?.kind === 'string' &&
-      /(?:^|[._])(?:id|uuid)$/i.test(key)
+    if (!/(?:^|[._])(?:id|uuid)$/i.test(key)) return undefined
+    const values = cell.values
+    const value = values[0]
+    return values.length === 1 && value?.kind === 'string'
       ? value.value
       : undefined
   }
@@ -140,10 +191,10 @@
 
 {#snippet cellContent(key: string, cell: SeriesCell)}
   {@const identifier = identifierValue(key, cell)}
-  <span class="block max-w-full truncate" title={cell.label}>
+  <span class="block max-w-full truncate" title={cell.preview ?? cell.label}>
     {#if identifier !== undefined}<Identifier
         value={identifier}
-      />{:else}{cell.label}{/if}
+      />{:else}{cell.preview ?? cell.label}{/if}
   </span>
 {/snippet}
 
@@ -232,7 +283,9 @@
         {@const headerLabel = label.needsIdentity
           ? `${label.text} · ${ts.key}`
           : label.text}
-        {@const attributes = timeseriesByKey.get(ts.key)?.attributes ?? []}
+        {@const series = timeseriesByKey.get(ts.key)}
+        {@const attributes =
+          receivedAttributes.get(ts.key) ?? series?.attributes ?? []}
         {@const expanded = expandedAttributes.has(ts.key)}
         {@const detailID = `${id}-attributes-${ts.key}`}
         <tr
@@ -254,7 +307,7 @@
             style:left="{layout.pinned.controls}px"
           >
             <div class="flex items-center gap-2">
-              {#if attributes.length}
+              {#if attributes.length || series?.attributesComplete === false}
                 <button
                   type="button"
                   class="ts-row__caret"
@@ -287,7 +340,9 @@
               class:table-cell--pinned={layout.pinned[`attr:${column.key}`] !==
                 undefined}
               style:left="{layout.pinned[`attr:${column.key}`]}px"
-              title={attrsTooltip(ts.attributes)}
+              title={series?.labelPreviews !== undefined
+                ? headerLabel
+                : attrsTooltip(ts.attributes)}
               >{#if column === table.columns[0]}<button
                   type="button"
                   class="block max-w-full text-left"
@@ -308,7 +363,9 @@
               class="table-cell"
               class:ts-row__first-value={!ctx.isHistogramKind &&
                 table.columns.length === 0}
-              title={attrsTooltip(ts.attributes)}
+              title={series?.labelPreviews !== undefined
+                ? headerLabel
+                : attrsTooltip(ts.attributes)}
             >
               <button
                 type="button"
@@ -347,17 +404,33 @@
         {#if expanded}
           <tr id={detailID} data-series-attributes={ts.key}>
             <td colspan={columns.length} class="p-0">
-              <table
-                class="detail-fields w-full"
-                aria-label={`Attributes for ${headerLabel}`}
-              >
-                <tbody
-                  ><AttributeRows
-                    {attributes}
-                    owner={`timeseries ${ts.key}`}
-                  /></tbody
+              {#if loadingAttributes.has(ts.key)}
+                <p role="status" class="px-3 py-2 text-subtle">
+                  Loading series attributes…
+                </p>
+              {:else if attributeErrors.has(ts.key)}
+                <p role="alert" class="px-3 py-2 text-papaya">
+                  {attributeErrors.get(ts.key)}
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-ghost mx-3"
+                  onclick={() => loadAttributes(ts.key)}
+                  >Retry attributes</button
                 >
-              </table>
+              {:else}
+                <table
+                  class="detail-fields w-full"
+                  aria-label={`Attributes for ${headerLabel}`}
+                >
+                  <tbody
+                    ><AttributeRows
+                      {attributes}
+                      owner={`timeseries ${ts.key}`}
+                    /></tbody
+                  >
+                </table>
+              {/if}
             </td>
           </tr>
         {/if}

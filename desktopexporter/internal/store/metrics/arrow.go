@@ -29,11 +29,11 @@ func GetArrow(ctx context.Context, db *sql.DB, metricID string) (*arrowread.Resu
 	return readMetricArrow(ctx, db, query, metricID)
 }
 
-func SeriesArrow(ctx context.Context, db *sql.DB, metricID, seriesID string, timeRange timerange.TimeRange) (*arrowread.Result, error) {
+func SeriesArrow(ctx context.Context, db *sql.DB, metricID, seriesID string, timeRange timerange.TimeRange, includeDatapoints ...bool) (*arrowread.Result, error) {
 	if _, err := receivedMetricType(ctx, db, "GetMetricSeries", metricID); err != nil {
 		return nil, err
 	}
-	query, err := queries.RenderArrow(queries.GetMetricSeries, nil)
+	query, err := queries.RenderArrow(queries.GetMetricSeries, metricSeriesShape(includeDatapoints))
 	if err != nil {
 		return nil, err
 	}

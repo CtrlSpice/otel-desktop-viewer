@@ -157,7 +157,6 @@ func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder
 		"name":           {candidate: "fm.name", summary: "name", early: true},
 		"metricType":     {candidate: "fm.metric_type", summary: "metric_type", early: true},
 		"serviceName":    {candidate: "fm.service_name", summary: "service_name", early: true},
-		"description":    {summary: "coalesce(description, '')"},
 		"dataPointCount": {summary: "coalesce(datapoint_count, 0)"},
 		"seriesCount":    {summary: "coalesce(series_count, 0)"},
 	}[field]
@@ -219,6 +218,10 @@ func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term strin
 // for a caller that cannot name the series it wants because it picks them from
 // this very response; it takes the first N in the response's own order. Nil
 // and 0 mean every series ships them.
+// Series attributes contain only the bounded-selector's distinguishing columns;
+// attributesComplete=false marks this projection. labelPreviews are bounded
+// display text. Selected typed attribute values retain exact sorting semantics;
+// GetMetricSeries returns the complete received context on demand.
 // A null endpoint is omitted from filtering and derived from the filtered data
 // extent. A concrete endpoint remains the effective endpoint.
 func GetMetricView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
@@ -234,12 +237,14 @@ func GetMetric(ctx context.Context, db *sql.DB, metricID string) (json.RawMessag
 
 // GetMetricSeries returns one exact series' retained received datapoints in the
 // requested timestamp window.
-func GetMetricSeries(ctx context.Context, db *sql.DB, metricID, seriesID string, timeRange timerange.TimeRange) (json.RawMessage, error) {
+// includeDatapoints=false returns complete received context with an empty
+// datapoints array and skips point/exemplar reconstruction. The default is true.
+func GetMetricSeries(ctx context.Context, db *sql.DB, metricID, seriesID string, timeRange timerange.TimeRange, includeDatapoints ...bool) (json.RawMessage, error) {
 	metricType, err := receivedMetricType(ctx, db, "GetMetricSeries", metricID)
 	if err != nil {
 		return nil, err
 	}
-	query, err := queries.Render(queries.GetMetricSeries, nil)
+	query, err := queries.Render(queries.GetMetricSeries, metricSeriesShape(includeDatapoints))
 	if err != nil {
 		return nil, fmt.Errorf("GetMetricSeries: %w: %w", ErrMetricsStoreInternal, err)
 	}
@@ -265,6 +270,10 @@ func GetMetricSeries(ctx context.Context, db *sql.DB, metricID, seriesID string,
 		return nil, fmt.Errorf("GetMetricSeries: %w: query returned null", ErrMetricsStoreInternal)
 	}
 	return json.RawMessage(raw), nil
+}
+
+func metricSeriesShape(includeDatapoints []bool) struct{ ContextOnly bool } {
+	return struct{ ContextOnly bool }{ContextOnly: len(includeDatapoints) > 0 && !includeDatapoints[0]}
 }
 
 func receivedMetricType(ctx context.Context, db *sql.DB, operation, metricID string) (string, error) {
@@ -472,19 +481,11 @@ func GetMetricAggregateView(ctx context.Context, db *sql.DB, metricID string, ti
 // The definition set includes Metric metadata, datapoint labels, exemplar
 // attributes, and the owned Resource and Scope maps.
 func GetMetricAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
-	query, err := queries.Render(queries.GetMetricAttributeDefinitions, nil)
+	raw, err := searchindex.Definitions(ctx, db, "metric")
 	if err != nil {
-		return nil, err
-	}
-
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetMetricAttributeDefinitions: %w: %w", ErrMetricsStoreInternal, err)
 	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 // Clear removes every Metric, series, datapoint, and exemplar. DuckDB does not

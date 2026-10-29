@@ -7,15 +7,10 @@ import type {
   LogTableRow,
   LogColumn,
   LogData,
+  AttributeValue,
 } from '@/types/api-types'
 import { ArrowFrame } from './arrow-data'
-import {
-  attributeValue,
-  attributes,
-  bodyPreview,
-  rowViews,
-  valueKind,
-} from './arrow-values'
+import { attributeValue, attributes, rowViews } from './arrow-values'
 
 function text(frame: ArrowFrame, row: number, name: string): string {
   const cell = frame.cell(name, row)
@@ -29,6 +24,23 @@ function nullableText(
 ): string | null {
   const cell = frame.cell(name, row)
   return cell.isNull ? null : cell.text()
+}
+
+function attributeKind(frame: ArrowFrame, row: number, name: string): AttributeValue['kind'] {
+  const kind = text(frame, row, name)
+  switch (kind) {
+    case 'empty':
+    case 'string':
+    case 'int64':
+    case 'double':
+    case 'bool':
+    case 'bytes':
+    case 'map':
+    case 'array':
+      return kind
+    default:
+      throw new Error(`Unsupported attribute type: ${kind}`)
+  }
 }
 
 export function traceSummary(frame: ArrowFrame, row: number): TraceSummary {
@@ -122,10 +134,10 @@ export function logSummary(frame: ArrowFrame, row: number): LogSummary {
       return text(frame, row, 'serviceName')
     },
     get bodyPreview() {
-      return bodyPreview(frame.cell('body', row))
+      return text(frame, row, 'bodyPreview')
     },
     get bodyType() {
-      return valueKind(frame.cell('body', row))
+      return attributeKind(frame, row, 'bodyType')
     },
   }
 }
@@ -163,10 +175,14 @@ export function logTableRow(
         const values = new ArrowFrame(frame.cell('columnValues', row).list())
         return columns.map((column, i) => ({
           ...column,
-          get values() {
+          get present() {
             return values.cell('present', i).boolean()
-              ? [attributeValue(values.cell('value', i))]
-              : []
+          },
+          get valueType() {
+            return attributeKind(values, i, 'valueType')
+          },
+          get preview() {
+            return text(values, i, 'preview')
           },
         }))
       },
@@ -267,9 +283,6 @@ export function metricSummary(frame: ArrowFrame, row: number): MetricSummary {
     },
     get name() {
       return text(frame, row, 'name')
-    },
-    get description() {
-      return text(frame, row, 'description')
     },
     get unit() {
       return text(frame, row, 'unit')

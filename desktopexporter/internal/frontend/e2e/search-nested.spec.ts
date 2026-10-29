@@ -45,10 +45,8 @@ test('a selected nested suggestion retains keys, indices, owner and type through
               : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
-  const definitions = page.waitForResponse(
-    response =>
-      response.url().endsWith('/rpc') &&
-      response.request().postDataJSON().method === 'getLogAttributeDefinitions'
+  const definitions = page.waitForResponse(response =>
+    response.url().endsWith('/api/data/getLogAttributeDefinitions')
   )
   await page.goto('/logs')
   await definitions

@@ -23,13 +23,12 @@ func SearchArrow(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange,
 // Each attribute key is a bound constant: DuckDB Variant extraction does not
 // accept a different key for each input row. Field expressions come only from
 // this closed set, never from a requested SQL identifier.
-func arrowColumns(columns []Column, args []any) (string, []any, error) {
+func columnPreviews(columns []Column, args []any) (string, []any, error) {
 	if err := ValidateColumns(columns); err != nil {
 		return "", nil, err
 	}
 	var expressions []string
 	for _, c := range columns {
-		args = append(args, c.Source, c.Kind, c.Key)
 		prefix := "l"
 		if c.Source != "log" {
 			prefix += "." + c.Source
@@ -38,7 +37,6 @@ func arrowColumns(columns []Column, args []any) (string, []any, error) {
 		if c.Kind == "attribute" {
 			present = "variant_exists(" + prefix + ".attributes, ?::varchar)"
 			value = prefix + ".attributes[?::varchar]"
-			args = append(args, c.Key, c.Key)
 		} else {
 			switch c.Key {
 			case "timeUnixNano":
@@ -73,7 +71,11 @@ func arrowColumns(columns []Column, args []any) (string, []any, error) {
 			present = "(" + value + ") is not null"
 			value = "(" + value + ")::variant"
 		}
-		expressions = append(expressions, "struct_pack(source := ?::varchar, kind := ?::varchar, key := ?::varchar, present := "+present+", value := "+value+")")
+		expressions = append(expressions, "struct_pack(source := ?::varchar, kind := ?::varchar, key := ?::varchar, present := "+present+", valueType := otel_value_kind("+value+"), preview := native_column_preview("+value+"))")
+		args = append(args, c.Source, c.Kind, c.Key)
+		if c.Kind == "attribute" {
+			args = append(args, c.Key, c.Key, c.Key)
+		}
 	}
 	return strings.Join(expressions, ",\n"), args, nil
 }

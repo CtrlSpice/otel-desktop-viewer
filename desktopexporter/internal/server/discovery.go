@@ -35,6 +35,9 @@ type discoveryOptions struct {
 	SortBy          string            `json:"sortBy"`
 	SortDirection   string            `json:"sortDirection"`
 	Queries         *discoveryQueries `json:"queries"`
+	ValueKind       string            `json:"valueKind"`
+	ValueRef        string            `json:"valueRef"`
+	Locale          string            `json:"locale"`
 }
 
 // A false predicate excludes a signal whose fields cannot satisfy the Home query.
@@ -46,6 +49,11 @@ type discoveryQueries struct {
 }
 
 func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	if options, home, err := homeDiscoveryOptions(req.Params); err != nil {
+		return nil, err
+	} else if home {
+		return h.discoverHomeValues(ctx, options)
+	}
 	plan, err := discoveryPlanFor(req.Params, false)
 	if err != nil {
 		return nil, err
@@ -110,6 +118,12 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 			return nil, fmt.Errorf("%v: %w", err, jsonrpc2.ErrInvalidParams)
 		}
 		query.Sources = discovery.Sources{Spans: "home_spans", Logs: "home_logs", Metrics: "home_metrics"}
+		if options.Kind == "services" && (len(bytes.TrimSpace(options.Queries.Metrics)) == 0 || bytes.Equal(bytes.TrimSpace(options.Queries.Metrics), []byte("null"))) {
+			// Service counts already select the owning points by time. Without
+			// a metric search expression there is no additional identity-level
+			// eligibility to reconstruct through the latest-descriptor view.
+			query.Sources.Metrics = ""
+		}
 	}
 	var statement, search, order string
 	switch options.Kind {
@@ -126,7 +140,7 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 		search = "concat(json_extract_string(entry, '$.serviceNamespace'), ' ', json_extract_string(entry, '$.serviceName'))"
 		order = "json_extract_string(entry, '$.serviceNamespace'), json_extract_string(entry, '$.serviceName'), json_extract_string(entry, '$.serviceIdentity')"
 	case "keys", "values":
-		records, err := discovery.RecordsFrom(options.Signal, options.OwnerType, query.Sources)
+		records, err := discovery.RecordsFrom(options.Signal, options.OwnerType, query)
 		if err != nil {
 			return nil, fmt.Errorf("%v: %w", err, jsonrpc2.ErrInvalidParams)
 		}

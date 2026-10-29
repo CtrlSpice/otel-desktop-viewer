@@ -1,4 +1,8 @@
-import type { AttributeValue } from '@/types/api-types'
+import type {
+  Attribute,
+  AttributeValue,
+  MetricSeriesViewData,
+} from '@/types/api-types'
 import type { LegendTimeseries } from '@/types/metric-chart-types'
 import { attributeValueLabel } from '@/components/shared/attribute-label'
 
@@ -12,6 +16,7 @@ type Partition = number[][]
 export type SeriesLabel = { text: string; needsIdentity: boolean }
 export type SeriesCell = {
   label: string
+  preview?: string
   signature: string
   values: readonly AttributeValue[]
 }
@@ -135,7 +140,8 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
 
 /** A compact distinguishing key set for all rows, including hidden series. */
 export function minimalSeriesTable(
-  rows: readonly LegendTimeseries[]
+  rows: readonly LegendTimeseries[],
+  preselected = false
 ): SeriesTable {
   if (rows.length === 0) return { columns: [], labels: new Map() }
   const attributes = rows.map(row => {
@@ -223,9 +229,9 @@ export function minimalSeriesTable(
     partitions.add(signature)
     return true
   })
-  const selected = minimumColumns(candidates, rows.length).sort((a, b) =>
-    a.key < b.key ? -1 : a.key > b.key ? 1 : 0
-  )
+  const selected = (
+    preselected ? columns : minimumColumns(candidates, rows.length)
+  ).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
   const texts = rows.map(
     (_, index) =>
       selected
@@ -267,13 +273,89 @@ export function minimalSeriesLabels(
   return minimalSeriesTable(rows).labels
 }
 
+/** Render SQL/Go-selected bounded previews without opening structured values.
+ * Exact labels/signatures are materialized only if a sort needs them. */
+export function compactSeriesTable(
+  series: readonly Pick<
+    MetricSeriesViewData,
+    'seriesRef' | 'attributes' | 'labelPreviews'
+  >[]
+): SeriesTable {
+  const previews = series.map(
+    row => new Map(row.labelPreviews?.map(cell => [cell.key, cell.text]))
+  )
+  const keys = [...new Set(previews.flatMap(row => [...row.keys()]))].sort()
+  const rows = series.map(row => {
+    const byKey = new Map<string, Attribute[]>()
+    for (const attribute of row.attributes) {
+      const key = attribute.key
+      const entries = byKey.get(key)
+      if (entries) entries.push(attribute)
+      else byKey.set(key, [attribute])
+    }
+    return { key: row.seriesRef, byKey }
+  })
+  const exactColumns = new Map<string, SeriesColumn>()
+  function exactCell(key: string, row: string): SeriesCell {
+    if (!exactColumns.has(key)) {
+      const column = minimalSeriesTable(
+        rows.map(row => ({
+          key: row.key,
+          attributes: row.byKey.get(key) ?? [],
+        })),
+        true
+      ).columns[0]!
+      exactColumns.set(key, column)
+    }
+    return exactColumns.get(key)!.cells.get(row)!
+  }
+  const texts = series.map(
+    (_, index) =>
+      keys
+        .map(key => `${key}: ${previews[index]!.get(key) ?? '[absent]'}`)
+        .join(' · ') || 'default series'
+  )
+  const counts = new Map<string, number>()
+  for (const text of texts) counts.set(text, (counts.get(text) ?? 0) + 1)
+  return {
+    labels: new Map(
+      series.map((row, index) => [
+        row.seriesRef,
+        { text: texts[index]!, needsIdentity: counts.get(texts[index]!)! > 1 },
+      ])
+    ),
+    columns: keys.map(key => ({
+      key,
+      cells: new Map(
+        series.map((row, index) => [
+          row.seriesRef,
+          {
+            preview: previews[index]!.get(key) ?? '[absent]',
+            values: (rows[index]!.byKey.get(key) ?? []).map(
+              attribute => attribute.value
+            ),
+            get label() {
+              return exactCell(key, row.seriesRef).label
+            },
+            get signature() {
+              return exactCell(key, row.seriesRef).signature
+            },
+          },
+        ])
+      ),
+    })),
+  }
+}
+
 /** Numeric telemetry sorts numerically; other values use deterministic natural text order. */
 export function compareSeriesCells(a: SeriesCell, b: SeriesCell): number {
-  const left = a.values[0]
-  const right = b.values[0]
+  const leftValues = a.values
+  const rightValues = b.values
+  const left = leftValues[0]
+  const right = rightValues[0]
   if (
-    a.values.length === 1 &&
-    b.values.length === 1 &&
+    leftValues.length === 1 &&
+    rightValues.length === 1 &&
     left &&
     right &&
     (left.kind === 'int64' || left.kind === 'double') &&

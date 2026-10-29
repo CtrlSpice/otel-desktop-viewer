@@ -13,12 +13,28 @@ import {
   vectorFromArray,
 } from 'apache-arrow'
 import { ArrowCell, ArrowFrame } from './arrow-data'
-import { attributeValue, bodyPreview, rowViews } from './arrow-values'
+import { attributeValue, rowViews } from './arrow-values'
 import { logSummary } from './arrow-summaries'
 import { attributeValueCopy } from '@/components/shared/detail-value'
 import { logSummaryTable } from '@/test/arrow-fixtures'
+import { tableValuePreview } from '@/components/shared/table-value-preview'
 
 describe('Arrow value presentation', () => {
+  it('counts folded containers and opens only the three preview children', () => {
+    const vector = vectorFromArray(
+      [Array.from({ length: 5000 }, (_, i) => BigInt(i))],
+      new List(new Field('item', new Int64()))
+    )
+    const value = attributeValue(new ArrowCell(vector, 0))
+    if (value.kind !== 'array') throw new Error('expected array')
+    const reads = vi.spyOn(ArrowCell.prototype, 'isNull', 'get')
+    expect(tableValuePreview(value, true)).toBe('array (5000 items)')
+    expect(reads).toHaveBeenCalledTimes(1) // The list's validity, not its children.
+    expect(tableValuePreview(value)).toBe('[0, 1, 2, … (+4997 items)]')
+    expect(reads.mock.calls.length).toBeLessThan(30)
+    reads.mockRestore()
+    expect(value.value.at(-1)?.value).toBe(4999n)
+  })
   it('creates summary references without reading or copying response fields', () => {
     const frame = new ArrowFrame(logSummaryTable())
     const read = vi.spyOn(frame, 'cell')
@@ -27,6 +43,8 @@ describe('Arrow value presentation', () => {
     expect(rows[0].timestamp).toBe(9223372036854775807n)
     expect(read).toHaveBeenCalledWith('timestamp', 0)
     expect(rows[0].bodyPreview).toBe('received')
+    expect(rows[0].bodyType).toBe('string')
+    expect(read).not.toHaveBeenCalledWith('body', 0)
     expect(
       Object.getOwnPropertyDescriptor(rows[0], 'bodyPreview')?.get
     ).toBeDefined()
@@ -84,14 +102,9 @@ describe('Arrow value presentation', () => {
     const out = new DataView(new ArrayBuffer(8))
     out.setFloat64(0, Number(nan))
     expect(out.getBigUint64(0)).toBe(0x7ff8000000000042n)
-    expect(bodyPreview(new ArrowCell(vector, 0))).toBe(
-      '{__proto__: 1, constructor: 1, large: 9007199254740993, … (+2 fields)}'
-    )
   })
 
-  it('bounds Unicode previews and opens nested lists only on demand', () => {
-    const text = vectorFromArray(['雪'.repeat(301)], new Utf8())
-    expect([...bodyPreview(new ArrowCell(text, 0))]).toHaveLength(300)
+  it('opens nested lists only on demand', () => {
     const nested = vectorFromArray(
       [[['雪']]],
       new List(new Field('item', new List(new Field('item', new Utf8()))))
@@ -100,7 +113,6 @@ describe('Arrow value presentation', () => {
     const list = vi.spyOn(cell, 'list')
     const value = attributeValue(cell)
     expect(list).not.toHaveBeenCalled()
-    expect(bodyPreview(cell)).toBe('[array (1 items)]')
     expect(attributeValueCopy(value)).toContain('雪')
   })
 })

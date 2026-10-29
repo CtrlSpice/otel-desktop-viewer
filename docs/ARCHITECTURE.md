@@ -175,9 +175,10 @@ The UI wire projection uses recursive tagged JSON: every value is `{kind,value}`
 
 - int64 values use decimal strings.
 - finite doubles use JSON numbers.
-- negative zero and non-finite doubles use IEEE-754 bit text. Native storage
-  preserves received NaN sign and payload bits. Content-identity hashing
-  normalizes NaNs; transport dictionaries also compare received attribute bytes.
+- negative zero and non-finite doubles use IEEE-754 bit text. NaN remains NaN,
+  but its sign and payload bits are not a preservation contract and may normalize
+  during storage. Content-identity hashing normalizes NaNs; transport dictionaries
+  also compare received attribute bytes.
 - arrays preserve order.
 - maps keep the last received value per key, then sort the surviving entry list.
 - empty values use `null` inside the tagged value.
@@ -613,11 +614,36 @@ under the frontend's `src/` directory.
 
 ## Trace view wire format
 
-`getTraceView` sends Resources and Scopes once in top-level maps. Spans refer to
-them by sequence key. Sequence values are stable within one database and are not
-reused after deletion.
+The viewer reads `/api/data/getTraceView` as native Arrow. Its ordinary response
+contains the complete ordered tree, exact span identities and timestamps, status,
+service identity, activity-marker summaries, and an independent attribute-column
+catalogue. The catalogue includes every retained span/resource/scope attribute
+key with its span count, whether or not that column is selected. Scalar field
+columns remain available independently of attribute previews.
 
-The response stores one absolute `traceStart`. Each span carries a start offset
+The optional `columns` parameter selects span/resource/scope attribute previews.
+Each preview opens at most three map/list children, summarizes nested containers
+by their size, and bounds strings. Missing attributes have no values; received
+null, empty containers, empty strings, booleans and numeric kinds remain distinct.
+Adding columns uses one trace-wide `/api/data/getTraceColumnPreviews` request,
+not one request per span. Preview values never determine tree or timing order.
+
+`/api/data/getSpan` requires both `traceID` and `spanID` and returns complete
+received attributes, resource/scope descriptors, events and links for that exact
+pair. When the selected identity is known, its request starts alongside the tree
+request. Superseded selections cancel their requests and cannot replace current
+Details. The mounted trace workspace keeps at most 16 selected-span Details
+responses and invalidates them when refreshing the trace. Copy and Download use
+the complete record export endpoints, never waterfall previews.
+
+Explicit `spanIDs` selections, bounded to 256 spans, retain full evidence for
+Evals consumers. These requests are separate from ordinary waterfall reads.
+
+The legacy JSON-RPC `getTraceView` response retains its full display projection.
+It sends Resources and Scopes once in top-level maps; spans refer to them by
+response-local sequence key.
+
+That JSON response stores one absolute `traceStart`. Each span carries a start offset
 and duration. `traceStart` is the minimum span start in the response, which
 handles traces without roots and clock skew between hosts.
 

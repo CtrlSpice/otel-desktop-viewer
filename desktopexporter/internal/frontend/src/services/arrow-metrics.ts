@@ -367,40 +367,67 @@ function scalarBuckets(cell: ArrowCell): ScalarViewBucket[] {
   return rowViews(new ArrowFrame(cell.list()), scalarBucket)
 }
 
-function seriesView(frame: ArrowFrame, row: number): MetricSeriesViewData {
-  return columnView(frame, row, {
-    seriesRef: text,
-    attributes,
-    resource,
-    datapoints: cell => rowViews(new ArrowFrame(cell.list()), point),
-    stats: cell =>
-      cell.isNull
-        ? null
-        : columnView(cell.struct(), 0, {
-            count: number,
-            min: number,
-            max: number,
-            sum: number,
-            avg: number,
-          }),
-    datapointCount: number,
-    lastSeenNs: nullableInteger,
-    views: cell => (cell.isNull ? null : scalarBuckets(cell)),
-    rateStats: cell =>
-      cell.isNull
-        ? null
-        : columnView(cell.struct(), 0, {
-            min: number,
-            max: number,
-            avg: number,
-          }),
-    sparkline: cell =>
-      cell.isNull
-        ? null
-        : rowViews(new ArrowFrame(cell.list()), (rows, i) =>
-            columnView(rows, i, { timestamp: integer, value: number })
-          ),
-  })
+function seriesView(
+  frame: ArrowFrame,
+  row: number,
+  metricResource: ExactMetricResource
+): MetricSeriesViewData {
+  return extendView(
+    columnView(frame, row, {
+      seriesRef: text,
+      attributes,
+      datapoints: cell => rowViews(new ArrowFrame(cell.list()), point),
+      stats: cell =>
+        cell.isNull
+          ? null
+          : columnView(cell.struct(), 0, {
+              count: number,
+              min: number,
+              max: number,
+              sum: number,
+              avg: number,
+            }),
+      datapointCount: number,
+      lastSeenNs: nullableInteger,
+      views: cell => (cell.isNull ? null : scalarBuckets(cell)),
+      rateStats: cell =>
+        cell.isNull
+          ? null
+          : columnView(cell.struct(), 0, {
+              min: number,
+              max: number,
+              avg: number,
+            }),
+      sparkline: cell =>
+        cell.isNull
+          ? null
+          : rowViews(new ArrowFrame(cell.list()), (rows, i) =>
+              columnView(rows, i, { timestamp: integer, value: number })
+            ),
+    }),
+    {
+      get resource() {
+        return frame.has('resource') && !frame.cell('resource', row).isNull
+          ? resource(frame.cell('resource', row))
+          : metricResource
+      },
+      get attributesComplete() {
+        return (
+          !frame.has('attributesComplete') ||
+          frame.cell('attributesComplete', row).boolean()
+        )
+      },
+      get labelPreviews() {
+        return frame.has('labelPreviews') &&
+          !frame.cell('labelPreviews', row).isNull
+          ? rowViews(
+              new ArrowFrame(frame.cell('labelPreviews', row).list()),
+              (rows, i) => columnView(rows, i, { key: text, text })
+            )
+          : undefined
+      },
+    }
+  )
 }
 
 function bounds(cell: ArrowCell) {
@@ -416,7 +443,12 @@ export function metricView(frame: ArrowFrame): MetricViewData {
     columnView(frame, 0, {
       lastSeenNs: nullableInteger,
       datapointCount: number,
-      timeseries: cell => rowViews(new ArrowFrame(cell.list()), seriesView),
+      timeseries: cell => {
+        const sharedResource = metric.resource
+        return rowViews(new ArrowFrame(cell.list()), (rows, row) =>
+          seriesView(rows, row, sharedResource)
+        )
+      },
       boundsMismatch: cell =>
         cell.isNull
           ? null

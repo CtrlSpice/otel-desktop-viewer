@@ -7,7 +7,6 @@ import {
   type SearchSignal,
   type ValuePath,
 } from '@/search/model'
-import type { JsonAttributeDefinition } from '@/types/wire-types'
 import { unquoteQueryString } from './query-literals'
 
 export type AttributeField = FieldDefinition
@@ -149,24 +148,6 @@ export function createPathFieldReference(
     path,
     operators: getOperatorsForFieldType(type),
   }
-}
-
-export function fieldFromDiscovery(
-  attribute: JsonAttributeDefinition
-): AttributeField | null {
-  return attribute.path
-    ? createPathFieldReference(
-        attribute.path[0] === 'metadata'
-          ? 'metadata'
-          : (attribute.owner ?? attribute.attributeScope),
-        attribute.path,
-        attribute.type
-      )
-    : createAttributeFieldReference(
-        attribute.attributeScope,
-        attribute.name,
-        attribute.type
-      )
 }
 
 export function parseAttributeFieldReference(

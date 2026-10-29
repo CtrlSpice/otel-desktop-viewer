@@ -5,7 +5,133 @@ import {
   minimalSeriesLabels,
   minimalSeriesTable,
   compareSeriesCells,
+  compactSeriesTable,
 } from './minimal-series-labels'
+
+it('renders server previews without opening structured comparison values', () => {
+  let opened = 0
+  const series = [1, 2].map(index => ({
+    seriesRef: String(index),
+    labelPreviews: [
+      { key: 'context', text: `{nested: array (1 items)} (value ${index})` },
+    ],
+    attributes: [
+      {
+        key: 'context',
+        value: {
+          kind: 'map' as const,
+          get value() {
+            opened++
+            return [
+              {
+                key: 'nested',
+                value: { kind: 'int64' as const, value: BigInt(index) },
+              },
+            ]
+          },
+        },
+      },
+    ],
+  }))
+  const table = compactSeriesTable(series)
+  expect(table.labels.get('1')!.text).toContain('array (1 items)')
+  expect(table.columns[0]!.cells.get('2')!.preview).toContain('(value 2)')
+  expect(opened).toBe(0)
+  const cells = table.columns[0]!.cells
+  expect(compareSeriesCells(cells.get('1')!, cells.get('2')!)).toBeLessThan(0)
+  expect(opened).toBeGreaterThan(0)
+  expect(table.labels.get('1')!.text).toContain('array (1 items)')
+})
+
+it('keeps compact-cell comparisons identical to full typed comparisons', () => {
+  const values: Attribute['value'][] = [
+    { kind: 'int64', value: 9007199254740993n },
+    { kind: 'int64', value: 9007199254740992n },
+    { kind: 'double', value: -0 },
+    { kind: 'double', value: Infinity },
+    { kind: 'double', value: NaN },
+    { kind: 'string', value: 'NaN' },
+  ]
+  const series = values.map((value, index) => ({
+    seriesRef: String(index),
+    attributes: [{ key: 'n', value }],
+    labelPreviews: [{ key: 'n', text: String(index) }],
+  }))
+  const compact = compactSeriesTable(series).columns[0]!.cells
+  const exact = minimalSeriesTable(
+    series.map(row => ({ key: row.seriesRef, attributes: row.attributes })),
+    true
+  ).columns[0]!.cells
+  for (const left of series)
+    for (const right of series)
+      expect(
+        Math.sign(
+          compareSeriesCells(
+            compact.get(left.seriesRef)!,
+            compact.get(right.seriesRef)!
+          )
+        )
+      ).toBe(
+        Math.sign(
+          compareSeriesCells(
+            exact.get(left.seriesRef)!,
+            exact.get(right.seriesRef)!
+          )
+        )
+      )
+})
+
+it('indexes lazy attributes once and opens only the column being sorted', () => {
+  let arraysRead = 0
+  let keysRead = 0
+  let unrelatedOpened = 0
+  const series = Array.from({ length: 32 }, (_, index) => ({
+    seriesRef: String(index),
+    labelPreviews: [
+      { key: 'route', text: `/route/${index}` },
+      { key: 'context', text: '{nested: array (1 items)}' },
+    ],
+    get attributes(): Attribute[] {
+      arraysRead++
+      return [
+        {
+          get key() {
+            keysRead++
+            return 'route'
+          },
+          value: { kind: 'string', value: `/route/${index}` },
+        },
+        {
+          get key() {
+            keysRead++
+            return 'context'
+          },
+          value: {
+            kind: 'array',
+            get value(): Attribute['value'][] {
+              unrelatedOpened++
+              return [{ kind: 'int64', value: BigInt(index) }]
+            },
+          },
+        },
+      ]
+    },
+  }))
+  const table = compactSeriesTable(series)
+  const cells = table.columns.find(column => column.key === 'route')!.cells
+  expect(arraysRead).toBe(32)
+  expect(keysRead).toBe(64)
+  for (let repeat = 0; repeat < 3; repeat++) {
+    expect([...cells.values()].sort(compareSeriesCells)[0]!.label).toBe(
+      '/route/0'
+    )
+  }
+  expect(arraysRead).toBe(32)
+  // One initial index plus one exact-column preparation; comparator calls do
+  // not repeatedly scan each row's complete attribute list.
+  expect(keysRead).toBe(128)
+  expect(unrelatedOpened).toBe(0)
+})
 
 function row(key: string, values: Record<string, string>): LegendTimeseries {
   return {

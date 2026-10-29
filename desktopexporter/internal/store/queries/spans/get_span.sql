@@ -1,4 +1,10 @@
-with target as materialized (
+{{if arrow}}with trace_spans as materialized (
+	select * from spans where trace_id = try_cast($1 as uuid)
+	and span_id = (select unnest($2::ubigint[]))
+), tree as materialized (
+	select *, 0 as depth, [1] as sort_path from trace_spans
+), {{template "traceNative" .}}
+{{else}}with target as materialized (
 	select *
 	from spans
 	where trace_id = ?::uuid
@@ -39,4 +45,4 @@ select cast(json_object(
 	'statusCode', case t.status_code when 0 then 'Unset' when 1 then 'Ok' when 2 then 'Error' else 'Unknown (' || t.status_code::varchar || ')' end,
 	'statusMessage', t.status_message
 ) as varchar)
-from target t
+from target t{{end}}

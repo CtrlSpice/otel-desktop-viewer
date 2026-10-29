@@ -82,6 +82,8 @@
 
   type Props = {
     span: SpanData | undefined
+    loading?: boolean
+    error?: string
     rootSpanID?: string
     fieldTarget?: DetailFieldTarget
     /** Node-level flags from the salvage walk; absent on healthy traces. */
@@ -96,6 +98,8 @@
 
   let {
     span,
+    loading = false,
+    error = '',
     rootSpanID,
     fieldTarget,
     salvaged = false,
@@ -196,7 +200,11 @@
             />{/if}{/snippet}
       </DetailViewTabs>
     {/snippet}
-    {#if span}<DetailViews
+    {#if error}<p class="p-3 text-papaya" role="alert">{error}</p>
+    {:else if loading && !span}<p class="p-3 text-subtle" role="status">
+        Loading selected span…
+      </p>
+    {:else if span}<DetailViews
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
@@ -457,8 +465,12 @@
   </DetailBubble>
 {/snippet}
 {#snippet eventsSection()}
-  <DetailBubble label="Events" icon={eventsIcon} count={numCombinedEvents}>
-    {#if numCombinedEvents === 0}
+  <DetailBubble
+    label="Events"
+    icon={eventsIcon}
+    count={span ? numCombinedEvents : undefined}
+  >
+    {#if span && numCombinedEvents === 0}
       <p class="detail-view__section-empty">No events recorded for this span</p>
     {:else if span}
       <ActivityPanel
@@ -473,8 +485,12 @@
   </DetailBubble>
 {/snippet}
 {#snippet linksSection()}
-  <DetailBubble label="Links" icon={linksIcon} count={numLinks}>
-    {#if numLinks === 0}
+  <DetailBubble
+    label="Links"
+    icon={linksIcon}
+    count={span ? numLinks : undefined}
+  >
+    {#if span && numLinks === 0}
       <p class="detail-view__section-empty">No links recorded for this span</p>
     {:else if span}
       <LinksPanel

@@ -304,17 +304,11 @@ func logResultsSQL(timeRange timerange.TimeRange, criteria any, options search.R
 	if page != nil {
 		queryName = queries.SearchLogPage
 		args = append(args, page.Size, page.Offset)
-		if len(page.Columns) > 0 && native {
-			nativeColumns, args, err = arrowColumns(page.Columns, args)
+		if len(page.Columns) > 0 {
+			nativeColumns, args, err = columnPreviews(page.Columns, args)
 			if err != nil {
 				return nil, err
 			}
-		} else if len(page.Columns) > 0 {
-			columns, err := json.Marshal(page.Columns)
-			if err != nil {
-				return nil, err
-			}
-			args = append(args, string(columns))
 		}
 	}
 	if selectedID != nil {
@@ -457,19 +451,11 @@ func getTraceLogSummariesSQL(traceID string) (string, []any, error) {
 // GetLogAttributeDefinitions returns every log-side attribute name/scope/type this store
 // knows about, collected from the owned maps.
 func GetLogAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
-	query, err := queries.Render(queries.GetLogAttributeDefinitions, nil)
+	raw, err := searchindex.Definitions(ctx, db, "log")
 	if err != nil {
-		return nil, err
-	}
-
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetLogAttributeDefinitions: %w: %w", ErrLogsStoreInternal, err)
 	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 // Clear deletes logs and their search documents.

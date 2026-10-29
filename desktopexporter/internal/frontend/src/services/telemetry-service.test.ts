@@ -12,14 +12,13 @@ import {
   type FieldDefinition,
   type QueryNode,
 } from '@/search/model'
-import type {
-  JsonMetricViewData,
-  JsonTraceLogSummary,
-  JsonTraceData,
-} from '@/types/wire-types'
+import type { JsonMetricViewData, JsonTraceData } from '@/types/wire-types'
 import { parseDuration } from '@/utils/time'
 import { parseQuery } from '@/components/shared/Search/queryParser'
-import type { ReceivedHistogramDataPoint } from '@/types/api-types'
+import type {
+  ReceivedHistogramDataPoint,
+  TraceLogSummary,
+} from '@/types/api-types'
 import {
   arrowResponse,
   traceSummaryTable,
@@ -313,28 +312,23 @@ describe('telemetryAPI.getLog', () => {
 
 describe('telemetryAPI.getTraceLogSummaries', () => {
   it('revives exact timestamps and preserves nullable span IDs', async () => {
-    const result: JsonTraceLogSummary[] = [
+    const result: TraceLogSummary[] = [
       {
         logRef: 'log-1',
-        timestamp: '9223372036854775807',
+        timestamp: 9_223_372_036_854_775_807n,
         spanID: null,
         severityText: 'INFO',
         severityNumber: 9,
         serviceName: 'checkout',
         eventName: 'order.received',
         bodyPreview: 'received',
+        bodyType: 'string',
       },
     ]
     stubArrowResult(logSummaryTable())
 
     await expect(telemetryAPI.getTraceLogSummaries('trace-1')).resolves.toEqual(
-      [
-        {
-          ...result[0],
-          timestamp: 9_223_372_036_854_775_807n,
-          bodyType: 'string',
-        },
-      ]
+      result
     )
   })
 })
@@ -1753,6 +1747,22 @@ describe('telemetryAPI.getTraceView rehydration', () => {
     return telemetryAPI.getTraceView('abc123')
   }
 
+  it('exposes a lightweight tree and independent catalogue, not empty full Details payloads', async () => {
+    const trace = await fetchTrace()
+    const span = trace.spans[0]!.spanData
+    expect(span).not.toHaveProperty('attributes')
+    expect(span).not.toHaveProperty('links')
+    expect(span.resource).not.toHaveProperty('attributes')
+    expect(span.scope).not.toHaveProperty('attributes')
+    expect(span.events[0]).not.toHaveProperty('attributes')
+    expect(span.events[0]).toHaveProperty('summaryAttributes')
+    expect(trace.availableColumns).toContainEqual({
+      source: 'resource',
+      key: 'service.name',
+      count: 2,
+    })
+  })
+
   it('rehydrates referenced spans with exact timing, ancestry and full shared Details payloads', async () => {
     const traceID = 'a'.repeat(32)
     const spanID = 'b'.repeat(16)
@@ -1781,8 +1791,9 @@ describe('telemetryAPI.getTraceView rehydration', () => {
   })
 
   it('retains derived link names separately from received link attributes', async () => {
-    const trace = await fetchTrace()
-    expect(trace.spans[0].spanData.links[0]).toMatchObject({
+    stubArrowResult(telemetryDataset('getSpan', wire))
+    const span = await telemetryAPI.getSpan('abc123', 'aaaa')
+    expect(span?.links[0]).toMatchObject({
       traceID: 'linked-trace',
       spanID: 'linked-span',
       attributes: [],
@@ -1794,13 +1805,11 @@ describe('telemetryAPI.getTraceView rehydration', () => {
 
   it('resolves each span against its own resource, not the first one', async () => {
     const trace = await fetchTrace()
-    expect(trace.spans[0].spanData.resource.attributes[0].value).toEqual({
-      kind: 'string',
-      value: 'checkout',
+    expect(trace.spans[0].spanData.resource).toMatchObject({
+      serviceName: 'checkout',
     })
-    expect(trace.spans[1].spanData.resource.attributes[0].value).toEqual({
-      kind: 'string',
-      value: 'payments',
+    expect(trace.spans[1].spanData.resource).toMatchObject({
+      serviceName: 'payments',
     })
     expect(trace.spans[1].spanData.resource.droppedAttributesCount).toBe(2)
   })
@@ -2278,12 +2287,14 @@ describe('request parameters', () => {
     ['clearTraces', () => telemetryAPI.clearTraces()],
     ['clearLogs', () => telemetryAPI.clearLogs()],
     ['clearMetrics', () => telemetryAPI.clearMetrics()],
-  ])('%s sends no params', async (method, invoke) => {
+  ])('%s sends no arguments', async (method, invoke) => {
     const sent = captureRequest()
     await invoke().catch(() => {})
     const request = sent()
     expect(request.method).toBe(method)
-    expect('params' in request).toBe(false)
+    if (method.endsWith('AttributeDefinitions'))
+      expect(request.params).toEqual({})
+    else expect('params' in request).toBe(false)
   })
 
   it.each([

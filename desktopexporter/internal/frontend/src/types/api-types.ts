@@ -1,4 +1,4 @@
-import type { JsonLinkSummary, JsonLogColumn } from '@/types/wire-types'
+import type { JsonLinkSummary } from '@/types/wire-types'
 
 export type RootSpan = {
   serviceName: string
@@ -99,6 +99,38 @@ export type SpanData = {
   /** Readable label derived from statusCodeValue by SQL. */
   statusCode: string
   statusMessage: string
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
+}
+
+export type TraceColumn = { source: 'span' | 'resource' | 'scope'; key: string }
+export type TraceColumnOption = TraceColumn & { count: number }
+export type TraceColumnPreview = TraceColumn & {
+  spanID: string
+  values: { valueType: AttributeValue['kind']; preview: string }[]
+}
+
+/** Display projection only. No attribute, link or received-record export surface. */
+export type WaterfallEventData = Omit<EventData, 'attributes'> & {
+  /** Only tool label/error/timestamp provenance, never full received attributes. */
+  summaryAttributes: Attributes
+}
+export type WaterfallSpanData = Omit<
+  SpanData,
+  'attributes' | 'links' | 'resource' | 'scope' | 'events'
+> & {
+  resource: Omit<ResourceData, 'attributes'> & { serviceName: string }
+  scope: Omit<ScopeData, 'attributes'>
+  columnValues: TraceColumnPreview[]
+  events: WaterfallEventData[]
+}
+export type WaterfallSpan = SpanData | WaterfallSpanData
+export type WaterfallSpanNode = Omit<SpanNode, 'spanData'> & {
+  spanData: WaterfallSpan
+}
+export type TraceWaterfallData = Omit<TraceData, 'spans'> & {
+  spans: WaterfallSpanNode[]
+  availableColumns: TraceColumnOption[]
 }
 
 export type Attribute = {
@@ -114,8 +146,19 @@ export type AttributeValue =
   | { kind: 'bool'; value: boolean }
   | { kind: 'int64'; value: bigint }
   | { kind: 'double'; value: number }
-  | { kind: 'array'; value: AttributeValue[] }
-  | { kind: 'map'; value: AttributeMapEntry[]; conflictingKeys?: string[] }
+  | {
+      kind: 'array'
+      value: AttributeValue[]
+      readonly childCount?: number
+      readonly previewChildren?: AttributeValue[]
+    }
+  | {
+      kind: 'map'
+      value: AttributeMapEntry[]
+      conflictingKeys?: string[]
+      readonly childCount?: number
+      readonly previewChildren?: AttributeMapEntry[]
+    }
 
 export type AttributeMapEntry = {
   key: string
@@ -200,9 +243,17 @@ export type LogSummary = {
   eventName?: string
 }
 
-export type LogColumn = JsonLogColumn
+export type LogColumn = {
+  source: 'log' | 'resource' | 'scope'
+  kind: 'field' | 'attribute'
+  key: string
+}
 export type LogTableRow = LogSummary & {
-  columnValues?: (LogColumn & { values: AttributeValue[] })[]
+  columnValues?: (LogColumn & {
+    present: boolean
+    valueType: AttributeValue['kind']
+    preview: string
+  })[]
 }
 
 export type LogErrorTarget = { logRef: string; offset: number }
@@ -371,7 +422,12 @@ export type SeriesRateStats = {
 export type MetricSeriesViewData = {
   /** Database-local series reference. */
   seriesRef: string
+  /** Distinguishing label candidates, not the complete received series context. */
   attributes: Attributes
+  /** False when common attributes were withheld; inspect through getMetricSeries. */
+  attributesComplete?: boolean
+  /** Bounded display text for the server-selected columns; values above retain exact comparisons. */
+  labelPreviews?: { key: string; text: string }[]
   /** Resource associated with the parent Metric. */
   resource: ResourceData
   datapoints: DataPoint[]
@@ -604,7 +660,6 @@ export type SparklinePoint = {
 export type MetricSummary = {
   metricRef: string
   name: string
-  description: string
   unit: string
   metricType: MetricType
   aggregationTemporality: string | null

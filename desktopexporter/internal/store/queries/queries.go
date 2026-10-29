@@ -83,8 +83,6 @@ const (
 	// GetMetricOTLP reconstructs one stored Metric as standard OTLP JSON,
 	// without applying UI aggregation or time-window rules.
 	GetMetricOTLP Name = "metrics/get_metric_otlp.sql"
-	// GetMetricAttributeDefinitions lists the attribute keys metrics carry.
-	GetMetricAttributeDefinitions Name = "metrics/get_metric_attribute_definitions.sql"
 
 	// GetLog returns one log record with its attributes resolved.
 	GetLog Name = "logs/get_log.sql"
@@ -94,8 +92,6 @@ const (
 	GetTraceLogSummaries Name = "logs/get_trace_log_summaries.sql"
 	// GetSpanLogs returns full logs associated with one composite span identity.
 	GetSpanLogs Name = "logs/get_span_logs.sql"
-	// GetLogAttributeDefinitions lists the attribute keys logs carry.
-	GetLogAttributeDefinitions Name = "logs/get_log_attribute_definitions.sql"
 
 	// SearchMetricSummaries lists Metrics for the metrics list view.
 	SearchMetricSummaries Name = "metrics/search_summaries.sql"
@@ -110,8 +106,8 @@ const (
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
 	GetTraceView, SalvageSpans, SearchTraceSummaries, GetTraceOverview, GetSpanSummaries, GetSpan, GetTraceOTLP,
-	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributeDefinitions,
-	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs, GetLogAttributeDefinitions,
+	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP,
+	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs,
 	SearchMetricSummaries, SearchLogSummaries, SearchLogPage, GetLogErrorNavigation,
 }
 

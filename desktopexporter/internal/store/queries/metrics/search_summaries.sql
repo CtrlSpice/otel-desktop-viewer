@@ -51,7 +51,6 @@ with metric_datapoints as materialized (select * from main.metric_datapoints),
 			select
 				fm.id,
 				fm.name,
-				fm.description,
 				fm.unit,
 				fm.metric_type,
 				fm.aggregation_temporality,
@@ -74,7 +73,7 @@ with metric_datapoints as materialized (select * from main.metric_datapoints),
 			order by {{.SummaryOrder}}{{.SummaryLimit}}
 		)
 		{{if arrow}}select sub.id::varchar as metricRef,
-			sub.name, sub.description, sub.unit, sub.metric_type as metricType,
+			sub.name, sub.unit, sub.metric_type as metricType,
 			case when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram')
 				then sub.aggregation_temporality end as aggregationTemporalityCode,
 			case when sub.metric_type = 'Sum' then sub.is_monotonic end as isMonotonic,
@@ -85,7 +84,6 @@ with metric_datapoints as materialized (select * from main.metric_datapoints),
 		select cast(coalesce(to_json(list(json_object(
 			'metricRef', cast(sub.id as varchar),
 			'name', sub.name,
-			'description', sub.description,
 			'unit', sub.unit,
 			'metricType', sub.metric_type,
 			-- Code is received OTLP data; label is a display projection.

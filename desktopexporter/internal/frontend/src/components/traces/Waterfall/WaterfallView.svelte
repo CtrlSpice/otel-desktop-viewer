@@ -1,5 +1,10 @@
 <script module lang="ts">
-  import type { SpanNode, SpanData, TraceLogSummary } from '@/types/api-types'
+  import type {
+    WaterfallSpanNode as SpanNode,
+    WaterfallSpan as SpanData,
+    TraceLogSummary,
+    TraceColumnOption,
+  } from '@/types/api-types'
   import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
@@ -266,6 +271,8 @@
     /** Retained trace identity, including when no spans can be placed in the view. */
     traceID?: string
     logs?: TraceLogSummary[]
+    columnCatalogue?: TraceColumnOption[]
+    onColumnsChange?: (columns: WaterfallColumn[]) => void
     selectedSpanID: string | null
     searchActive?: boolean
     onSelectSpan: (spanID: string) => void
@@ -278,6 +285,8 @@
     spans,
     traceID: providedTraceID,
     logs = [],
+    columnCatalogue,
+    onColumnsChange,
     selectedSpanID,
     searchActive = false,
     onSelectSpan,
@@ -368,7 +377,10 @@
   import { resizeRowHover } from '@/components/shared/utils/resize-row-hover'
 
   let selectedColumns = $state(loadColumns())
-  let availableColumns = $derived(columnOptions(spans, selectedColumns))
+  let availableColumns = $derived(
+    columnOptions(spans, selectedColumns, columnCatalogue)
+  )
+  $effect(() => onColumnsChange?.(selectedColumns))
   let wfCols = $derived([
     flex('span', 140, 2),
     ...selectedColumns.map(column =>

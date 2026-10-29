@@ -11,7 +11,6 @@
     | 'name'
     | 'metricType'
     | 'serviceName'
-    | 'description'
     | 'dataPointCount'
     | 'seriesCount'
     | 'lastSeen'
@@ -33,9 +32,6 @@
         break
       case 'serviceName':
         cmp = compareByStringField(a, b, m => m.serviceName)
-        break
-      case 'description':
-        cmp = compareByStringField(a, b, m => m.description)
         break
       case 'dataPointCount':
         cmp = a.dataPointCount - b.dataPointCount
@@ -945,7 +941,6 @@
                 'Type, then applicable temporality (Delta, Cumulative, Unspecified), then Sum monotonicity. Missing values sort last ascending.',
             },
             { value: 'serviceName', label: 'Service Name' },
-            { value: 'description', label: 'Description' },
             { value: 'dataPointCount', label: 'Datapoint Count' },
             { value: 'seriesCount', label: 'Timeseries Count' },
           ]}

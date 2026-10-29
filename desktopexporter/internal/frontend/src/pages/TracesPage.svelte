@@ -68,7 +68,9 @@
     LOG_PARAM,
   } from '@/route'
   import type {
-    TraceData,
+    TraceWaterfallData,
+    SpanData,
+    TraceColumnPreview,
     SearchResultEvent,
     TraceStats,
     TraceLogSummary,
@@ -97,6 +99,11 @@
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import { detailPanel } from '@/state/detail-panel.svelte'
+  import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
+  import {
+    columnID,
+    loadColumns,
+  } from '@/components/traces/Waterfall/waterfall-columns'
 
   let {
     importFailure = null,
@@ -179,7 +186,7 @@
   let selectedEventRaw = $derived(routeContext.route.query[EVENT_PARAM])
   let selectedEventIndex = $derived(parseEventIndex(selectedEventRaw))
   let selectedLogRef = $derived(routeContext.route.query[LOG_PARAM] ?? null)
-  let traceData = $state<TraceData | null>(null)
+  let traceData = $state<TraceWaterfallData | null>(null)
   let traceLogs = $state<TraceLogSummary[]>([])
   let detailLoading = $state(false)
   let detailError = $state('')
@@ -189,27 +196,19 @@
   let displayError = $derived(page.error ?? actionError)
 
   let currentTraceData = $derived(page.selectedID ? traceData : null)
-  // Requested selection and displayed selection are separate until the response
-  // arrives. Keep the previous span/events/links together during that handoff.
-  let displayedSelection = $state<{
-    spanID: string | null
-    eventIndex: number | null
-    logRef: string | null
-  }>({ spanID: null, eventIndex: null, logRef: null })
+  // Retain the old tree highlight during a trace handoff. Details always follows
+  // the requested composite identity, never the retained tree's old record.
+  let retainedTreeSpanID = $state<string | null>(null)
   let displayingRequestedTrace = $derived(
     currentTraceData?.traceID === page.selectedID
   )
   $effect.pre(() => {
     if (displayingRequestedTrace) {
-      displayedSelection = {
-        spanID: selectedSpanID,
-        eventIndex: selectedEventIndex,
-        logRef: selectedLogRef,
-      }
+      retainedTreeSpanID = selectedSpanID
     }
   })
   let displayedSpanID = $derived(
-    displayingRequestedTrace ? selectedSpanID : displayedSelection.spanID
+    displayingRequestedTrace ? selectedSpanID : retainedTreeSpanID
   )
   let selectedNode = $derived(
     currentTraceData?.spans.find(n => n.spanData.spanID === displayedSpanID) ??
@@ -217,25 +216,125 @@
       undefined
   )
   let selectedSpan = $derived(selectedNode?.spanData)
+  const spanCache = new Map<string, SpanData>()
+  const spanDetails = createDebouncedDetailFetcher<
+    { traceID: string; spanID: string },
+    SpanData
+  >({
+    keysEqual: (a, b) => a.traceID === b.traceID && a.spanID === b.spanID,
+    fetch: async (key, signal) => {
+      const id = `${key.traceID}/${key.spanID}`
+      const cached = spanCache.get(id)
+      if (cached) {
+        spanCache.delete(id)
+        spanCache.set(id, cached)
+        return cached
+      }
+      const result = await telemetryAPI.getSpan(key.traceID, key.spanID, signal)
+      if (!result) throw new Error('The selected span was not found.')
+      if (result.traceID !== key.traceID || result.spanID !== key.spanID)
+        throw new Error(
+          'The span Details response did not match the requested identity.'
+        )
+      if (!signal.aborted) {
+        spanCache.set(id, result)
+        if (spanCache.size > 16)
+          spanCache.delete(spanCache.keys().next().value!)
+      }
+      return result
+    },
+  })
+  let detailIdentity = $derived(
+    page.selectedID &&
+      (selectedSpanID ||
+        (displayingRequestedTrace ? selectedSpan?.spanID : null))
+      ? {
+          traceID: page.selectedID!,
+          spanID: (selectedSpanID || selectedSpan?.spanID)!,
+        }
+      : null
+  )
+  $effect(() => spanDetails.select(detailIdentity))
+  let fullSpan = $derived(
+    spanDetails.data?.traceID === detailIdentity?.traceID &&
+      spanDetails.data?.spanID === detailIdentity?.spanID
+      ? (spanDetails.data ?? undefined)
+      : undefined
+  )
+
+  let selectedColumns = $state<WaterfallColumn[]>(loadColumns())
+  let previewValues = $state<TraceColumnPreview[]>([])
+  let previewError = $state('')
+  let previewTraceID = $state('')
+  let loadedPreviewKey = $state('')
+  const previewColumns = $derived(
+    selectedColumns
+      .filter(column => !column.field)
+      .map(({ source, key }) => ({ source, key }))
+  )
+  $effect(() => {
+    const trace = currentTraceData
+    const columns = previewColumns
+    if (!trace || trace.traceID !== page.selectedID) return
+    const key = JSON.stringify([trace.traceID, columns])
+    if (key === loadedPreviewKey) return
+    const controller = new AbortController()
+    previewError = ''
+    void telemetryAPI
+      .getTraceColumnPreviews(trace.traceID, columns, controller.signal)
+      .then(
+        values => {
+          if (controller.signal.aborted) return
+          previewTraceID = trace.traceID
+          previewValues = values
+          loadedPreviewKey = key
+        },
+        err => {
+          if (!controller.signal.aborted && !isAbortError(err))
+            previewError = 'Could not load waterfall column previews.'
+        }
+      )
+    return () => controller.abort()
+  })
+  let waterfallSpans = $derived.by(() => {
+    const bySpan = new Map<string, TraceColumnPreview[]>()
+    if (previewTraceID === currentTraceData?.traceID)
+      for (const cell of previewValues) {
+        const cells = bySpan.get(cell.spanID) ?? []
+        cells.push(cell)
+        bySpan.set(cell.spanID, cells)
+      }
+    return (
+      currentTraceData?.spans.map(node =>
+        'columnValues' in node.spanData
+          ? {
+              ...node,
+              spanData: {
+                ...node.spanData,
+                columnValues: bySpan.get(node.spanData.spanID) ?? [],
+              },
+            }
+          : node
+      ) ?? []
+    )
+  })
   let selectedSpanLogs = $derived(
-    selectedSpan
-      ? traceLogs.filter(log => log.spanID === selectedSpan.spanID)
+    fullSpan && displayingRequestedTrace
+      ? traceLogs.filter(log => log.spanID === fullSpan.spanID)
       : []
   )
 
   let resolvedEventIndex = $derived.by((): number | null => {
-    const span = selectedSpan
-    const index = displayingRequestedTrace
-      ? selectedEventIndex
-      : displayedSelection.eventIndex
+    const span =
+      fullSpan ?? (displayingRequestedTrace ? selectedSpan : undefined)
+    const index = selectedEventIndex
     if (index === null || !span) return null
     if (index >= span.events.length) return null
     return index
   })
   let resolvedLogRef = $derived.by((): string | null => {
-    const logRef = displayingRequestedTrace
-      ? selectedLogRef
-      : displayedSelection.logRef
+    if (!displayingRequestedTrace) return null
+    const logRef = selectedLogRef
     const span = selectedSpan
     if (!logRef || !span) return null
     return traceLogs.some(
@@ -341,33 +440,58 @@
 
   // Abort superseded detail queries so they release the store read lock.
   let detailFetch: AbortController | null = null
+  let requestedTraceID: string | null = null
 
   onDestroy(() => detailFetch?.abort())
 
   function clearTraceDetail() {
     detailFetch?.abort()
     detailFetch = null
+    requestedTraceID = null
+    spanCache.clear()
+    spanDetails.select(null)
     traceData = null
     traceLogs = []
+    previewValues = []
+    previewTraceID = ''
+    loadedPreviewKey = ''
+    previewError = ''
     detailLoading = false
     detailError = ''
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
     const retainedSpanID = untrack(() => getSpanFromQuery())
+    const requestedColumns = untrack(() => previewColumns)
     detailFetch?.abort()
     const fetchCtl = new AbortController()
     detailFetch = fetchCtl
+    if (requestedTraceID === traceID) {
+      spanCache.clear()
+      spanDetails.refresh()
+    }
+    requestedTraceID = traceID
 
     try {
       detailLoading = true
       detailError = ''
+      previewError = ''
       const [result, logs] = await Promise.all([
-        telemetryAPI.getTraceView(traceID, queryTree, fetchCtl.signal),
+        telemetryAPI.getTraceView(
+          traceID,
+          queryTree,
+          fetchCtl.signal,
+          requestedColumns
+        ),
         telemetryAPI.getTraceLogSummaries(traceID, fetchCtl.signal),
       ])
       if (detailFetch !== fetchCtl || page.selectedID !== traceID) return
       traceData = result
+      previewTraceID = traceID
+      previewValues = result.spans.flatMap(node =>
+        'columnValues' in node.spanData ? node.spanData.columnValues : []
+      )
+      loadedPreviewKey = JSON.stringify([traceID, requestedColumns])
       traceLogs = logs
       const spanIDs = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
@@ -517,6 +641,9 @@
     {#if detailError}
       <p class="traces-page__placeholder" role="alert">{detailError}</p>
     {/if}
+    {#if previewError}<p class="traces-page__placeholder" role="alert">
+        {previewError}
+      </p>{/if}
     {#if displayError || importFailure}
       <div class="traces-page__placeholder alert alert-error">
         {#if displayError}
@@ -551,7 +678,15 @@
       {/if}
       <WaterfallView
         traceID={currentTraceData?.traceID ?? ''}
-        spans={currentTraceData?.spans ?? []}
+        spans={waterfallSpans}
+        columnCatalogue={currentTraceData.availableColumns}
+        onColumnsChange={columns => {
+          if (
+            columns.map(columnID).join() !==
+            selectedColumns.map(columnID).join()
+          )
+            selectedColumns = columns
+        }}
         logs={traceLogs}
         selectedSpanID={displayedSpanID}
         searchActive={activeQueryTree !== undefined}
@@ -570,15 +705,21 @@
 
   {#snippet detail()}
     <DetailView
-      span={selectedSpan}
-      rootSpanID={currentTraceData?.spans.find(
-        node => !node.spanData.parentSpanID
-      )?.spanData.spanID}
+      span={fullSpan}
+      loading={(detailLoading && !fullSpan) ||
+        spanDetails.loading ||
+        (!!detailIdentity && !fullSpan && !spanDetails.error)}
+      error={spanDetails.error ?? ''}
+      rootSpanID={displayingRequestedTrace
+        ? currentTraceData?.spans.find(node => !node.spanData.parentSpanID)
+            ?.spanData.spanID
+        : undefined}
       fieldTarget={fieldRequest?.spanID === selectedSpanID
         ? fieldRequest.target
         : undefined}
-      salvaged={selectedNode?.salvaged ?? false}
-      cyclePoint={selectedNode?.cyclePoint ?? false}
+      salvaged={displayingRequestedTrace && (selectedNode?.salvaged ?? false)}
+      cyclePoint={displayingRequestedTrace &&
+        (selectedNode?.cyclePoint ?? false)}
       selectedEventIndex={resolvedEventIndex}
       selectedLogRef={resolvedLogRef}
       logs={selectedSpanLogs}

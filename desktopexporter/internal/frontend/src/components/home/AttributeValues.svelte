@@ -1,6 +1,5 @@
 <script module lang="ts">
   import { GRAPH_INKS } from '@/themes/graph-inks'
-  import { colorIdentityHash } from '@/utils/color-slots'
   // Middle-strength official shades stay clear as small marks in Day and Night.
   const valueColors = GRAPH_INKS.flatMap(ink => ink.swatches.slice(2, 5))
 </script>
@@ -17,7 +16,6 @@
   import {
     coverageCounts,
     loadAttributeCoverage,
-    sortCoverageValues,
     type AttributeCoverage,
     type AttributeValueSort,
     type CoverageValue,
@@ -27,9 +25,10 @@
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import {
     attributeValueCopy,
-    attributeValueTokens,
+    compactValueTokens,
     jsonContainerTokens,
   } from '@/components/shared/detail-value'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import {
     valuePresentation,
     valuePresentationKey,
@@ -72,33 +71,54 @@
   const kindCoverage = $derived(coverage?.kinds.get(kind))
   const PAGE_SIZE = 25
   let offset = $state(0)
-  const values = $derived(
-    sortCoverageValues(
-      coverage?.values.filter(item => item.value.kind === kind) ?? [],
-      sortBy,
-      sortDirection
-    )
-  )
-  const page = $derived(values.slice(offset, offset + PAGE_SIZE))
+  const values = $derived(coverage?.values ?? [])
+  const page = $derived(values)
   const pageIndex = $derived(Math.floor(offset / PAGE_SIZE))
-  const pageCount = $derived(Math.max(1, Math.ceil(values.length / PAGE_SIZE)))
+  const pageCount = $derived(
+    Math.max(1, Math.ceil((coverage?.total ?? 0) / PAGE_SIZE))
+  )
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
   let loading = $state(false)
   let error = $state('')
+  async function copyValue(item: CoverageValue, signal: AbortSignal) {
+    try {
+      return attributeValueCopy(
+        await telemetryAPI.getHomeAttributeValue(item.valueRef, signal)
+      )
+    } catch (reason) {
+      if (!signal.aborted) error = String(reason)
+      throw reason
+    }
+  }
   const headingID = $props.id()
-  const canExpand = $derived(values.length > 0)
+  const canExpand = $derived((coverage?.total ?? 0) > 0)
   $effect.pre(() => {
     void sortBy
     void sortDirection
+    void options
+    void name
+    void kind
     offset = 0
   })
   $effect(() => {
     const controller = new AbortController()
     loading = true
     error = ''
-    void loadAttributeCoverage({ ...options, key: name }, controller.signal)
+    void loadAttributeCoverage(
+      {
+        ...options,
+        key: name,
+        valueKind: kind,
+        offset,
+        limit: expanded && !hidden ? PAGE_SIZE : 0,
+        sortBy,
+        sortDirection,
+        locale: navigator.language,
+      },
+      controller.signal
+    )
       .then(result => {
         if (controller.signal.aborted) return
         coverage = result
@@ -159,7 +179,7 @@
     >
       <span
         title={kindCoverage
-          ? `${values.length.toLocaleString()} distinct ${values.length === 1 ? 'value' : 'values'} · ${coverageCounts(kindCoverage.counts)}`
+          ? `${coverage?.total.toLocaleString()} distinct ${coverage?.total === 1 ? 'value' : 'values'} · ${coverageCounts(kindCoverage.counts)}`
           : undefined}
         >{coverage ? (kindCoverage?.count ?? 0).toLocaleString() : '—'}</span
       >
@@ -167,7 +187,7 @@
     <td class="table-cell text-right" data-attribute-column="frequency"></td>
     <td class="table-cell" data-attribute-column="copy"></td>
   </tr>
-  {#if error || values.length === 0}
+  {#if error || (expanded && values.length === 0)}
     <tr
       ><td class="table-cell" colspan="4"
         ><div class="pl-6">
@@ -180,18 +200,13 @@
     >
   {:else}
     {#each page as item (item.identity)}
-      {@const text = attributeValueCopy(item.value)}
-      {@const color =
-        valueColors[
-          colorIdentityHash(
-            JSON.stringify([options.ownerType, name, item.identity])
-          ) % valueColors.length
-        ]!.color}
+      {@const text = item.preview}
+      {@const color = valueColors[item.colorHash % valueColors.length]!.color}
       {@const tokens =
-        item.value.kind === 'string'
-          ? jsonContainerTokens(item.value.value, true)
-          : item.value.kind === 'array' || item.value.kind === 'map'
-            ? attributeValueTokens(item.value, true)
+        item.kind === 'string'
+          ? jsonContainerTokens(text, true)
+          : item.kind === 'array' || item.kind === 'map'
+            ? compactValueTokens(text, true)
             : null}
       <tr
         class="table-row"
@@ -221,9 +236,16 @@
                 {text}
                 inset={false}
                 onInspect={() => onSelectValue(item)}
+                loadText={async signal =>
+                  attributeValueCopy(
+                    await telemetryAPI.getHomeAttributeValue(
+                      item.valueRef,
+                      signal
+                    )
+                  )}
               >
-                {#if item.value.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
-                    text={item.value.value}
+                {#if item.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
+                    {text}
                   />
                 {:else if tokens}<ValueSyntax {tokens} />{:else}{text === ''
                     ? '""'
@@ -260,7 +282,11 @@
           >
         </td>
         <td class="table-cell text-right" data-attribute-column="copy"
-          ><ValueCopyButton {text} label={`${name} value`} tooltip="Copy" /></td
+          ><ValueCopyButton
+            loadText={signal => copyValue(item, signal)}
+            label={`${name} value`}
+            tooltip="Copy"
+          /></td
         >
       </tr>
     {/each}

@@ -80,6 +80,7 @@ import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { savedColorSlots } from '@/utils/color-slots'
 import {
   minimalSeriesTable,
+  compactSeriesTable,
   type SeriesTable,
 } from '@/components/metrics/utils/minimal-series-labels'
 import {
@@ -703,8 +704,9 @@ export function createMetricViewContext(
   const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
-    const distinguishing = distinguishingResourceAttributes(m.timeseries)
-    return m.timeseries.map(ts => ({
+    const series = m.timeseries
+    const distinguishing = distinguishingResourceAttributes(series)
+    return series.map(ts => ({
       key: ts.seriesRef,
       attributes: [
         ...ts.attributes,
@@ -1139,7 +1141,15 @@ export function createMetricViewContext(
   const seriesRows = $derived(
     isHistogramKind ? histogramLegendTimeseries : gaugeSumLegendTimeseries
   )
-  const seriesTable = $derived(minimalSeriesTable(seriesRows))
+  const seriesTable = $derived.by(() => {
+    const series = getMetric()?.timeseries
+    if (series?.every(row => row.labelPreviews !== undefined))
+      return compactSeriesTable(series)
+    return minimalSeriesTable(
+      seriesRows,
+      series?.every(row => row.attributesComplete === false) ?? false
+    )
+  })
 
   const heatmapBucketSeries = $derived.by((): HistogramSlicePoint[] | null => {
     if (!isHistogramKind) return null
@@ -1253,7 +1263,14 @@ export function createMetricViewContext(
       perAttribute,
       activeQuantiles,
       view.visibleSeries,
-      seriesLabelsByKey(getMetric()?.timeseries ?? [])
+      getMetric()?.timeseries.every(row => row.labelPreviews !== undefined)
+        ? new Map(
+            [...seriesTable.labels].map(([key, label]) => [
+              key,
+              label.needsIdentity ? `${label.text} · ${key}` : label.text,
+            ])
+          )
+        : seriesLabelsByKey(getMetric()?.timeseries ?? [])
     )
   })
 

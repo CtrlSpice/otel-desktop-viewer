@@ -230,7 +230,8 @@ function logSummary(r: RecordFixture) {
     severityNumber: r.severityNumber ?? 0,
     eventName: r.eventName ?? '',
     serviceName: r.serviceName ?? '',
-    body: r.body ? value(r.body) : (r.bodyPreview ?? ''),
+    bodyPreview: r.bodyPreview ?? '',
+    bodyType: r.bodyType ?? r.body?.kind ?? 'string',
   }
   if (r.spanID !== undefined) Object.assign(result, { spanID: r.spanID })
   if (r.columnValues)
@@ -239,8 +240,9 @@ function logSummary(r: RecordFixture) {
         source: c.source,
         kind: c.kind,
         key: c.key,
-        present: c.values.length > 0,
-        value: c.values.length ? value(c.values[0]) : null,
+        present: c.present,
+        valueType: c.valueType,
+        preview: c.preview,
       })),
     })
   return result
@@ -264,6 +266,41 @@ function log(r: RecordFixture) {
 export function telemetryDataset(method: string, result: any): Table {
   let rows: Record<string, Value>[]
   switch (method) {
+    case 'getTraceAttributeDefinitions':
+    case 'getTraceAttributeDefinitionsByTraceID':
+    case 'getLogAttributeDefinitions':
+    case 'getMetricAttributeDefinitions':
+    case 'searchAttributeMatches':
+      rows = result.map((entry: RecordFixture) => {
+        const row = {
+          name: entry.name,
+          attributeScope: entry.attributeScope,
+          owner:
+            entry.owner ??
+            (entry.attributeScope === 'metadata'
+              ? 'metric'
+              : entry.attributeScope),
+          path: (
+            entry.path ?? [
+              entry.attributeScope === 'metadata' ? 'metadata' : 'attributes',
+              entry.name,
+            ]
+          ).map((part: string | number) => ({
+            key: typeof part === 'string' ? part : null,
+            index: typeof part === 'number' ? BigInt(part) : null,
+          })),
+          type: entry.type,
+        }
+        if (method === 'searchAttributeMatches') {
+          return {
+            ...row,
+            matchCount: entry.matchCount,
+            sampleValues: entry.sampleValues.map(value),
+          }
+        }
+        return row
+      })
+      break
     case 'getFieldValueCompletions':
       rows = result.map((value: string) => ({ value }))
       break
@@ -322,7 +359,10 @@ export function telemetryDataset(method: string, result: any): Table {
           timeseries: result.timeseries.map((s: RecordFixture) => ({
             seriesRef: s.seriesRef,
             attributes: attrs(s.attributes),
-            resource: resource(s.resource),
+            attributesComplete: s.attributesComplete ?? true,
+            labelPreviews: s.labelPreviews ?? null,
+            resource:
+              s.attributesComplete === false ? null : resource(s.resource),
             datapoints: s.datapoints.map(metricPoint),
             stats: stats(s.stats),
             rateStats: stats(s.rateStats),
@@ -362,6 +402,12 @@ export function telemetryDataset(method: string, result: any): Table {
     case 'getTraceView':
       rows = [trace(result)]
       break
+    case 'getSpan':
+      rows = result === null ? [] : [trace(result)]
+      break
+    case 'getTraceColumnPreviews':
+      rows = result
+      break
     case 'searchTraceSummaries':
       rows = result.map((r: RecordFixture) => {
         const row = {
@@ -387,7 +433,6 @@ export function telemetryDataset(method: string, result: any): Table {
       rows = result.map((r: RecordFixture) => ({
         ...r,
         unit: r.unit ?? '',
-        description: r.description ?? '',
         lastSeen: r.lastSeen == null ? null : BigInt(r.lastSeen),
         aggregationTemporalityCode: r.aggregationTemporalityCode ?? null,
         isMonotonic: r.isMonotonic ?? null,
@@ -479,6 +524,30 @@ function discoveryService(entry: RecordFixture) {
   }
 }
 
+function traceColumnCatalogue(data: JsonTraceData) {
+  const counts = new Map<
+    string,
+    { source: string; kind: string; key: string; count: number }
+  >()
+  for (const node of data.spans) {
+    for (const source of ['span', 'resource', 'scope'] as const) {
+      const attributes =
+        source === 'span'
+          ? node.spanData.attributes
+          : source === 'resource'
+            ? data.resources[String(node.spanData.r)].attributes
+            : data.scopes[String(node.spanData.s)].attributes
+      for (const key of new Set(attributes.map(attribute => attribute.key))) {
+        const id = JSON.stringify([source, key])
+        const column = counts.get(id)
+        if (column) column.count++
+        else counts.set(id, { source, kind: 'attribute', key, count: 1 })
+      }
+    }
+  }
+  return [...counts.values()]
+}
+
 function trace(data: JsonTraceData) {
   const resourceEntries = Object.entries(data.resources)
   const scopeEntries = Object.entries(data.scopes)
@@ -486,7 +555,14 @@ function trace(data: JsonTraceData) {
     traceID: data.traceID,
     traceStart: BigInt(data.traceStart),
     unplacedSpanCount: BigInt(data.unplacedSpanCount),
-    resources: resourceEntries.map(([, r]) => resource(r)),
+    availableColumns: traceColumnCatalogue(data),
+    resources: resourceEntries.map(([, r]) => ({
+      ...(resource(r) as Record<string, Value>),
+      serviceName:
+        r.attributes.find(
+          a => a.key === 'service.name' && a.value.kind === 'string'
+        )?.value.value ?? '',
+    })),
     scopes: scopeEntries.map(([, s]) => scope(s)),
     spans: data.spans.map(node => ({
       depth: node.depth,
@@ -512,6 +588,16 @@ function trace(data: JsonTraceData) {
           ...e,
           timestamp: BigInt(e.timestamp),
           attributes: attrs(e.attributes),
+          summaryAttributes: attrs(
+            e.attributes.filter(a =>
+              [
+                'gen_ai.tool.name',
+                'tool.is_error',
+                'pi.event.timestamp.source',
+                'opencode.event.timestamp.source',
+              ].includes(a.key)
+            )
+          ),
         })),
         links: node.spanData.links.map(l => ({
           ...l,
