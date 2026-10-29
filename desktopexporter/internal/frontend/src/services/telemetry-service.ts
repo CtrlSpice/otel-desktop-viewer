@@ -32,7 +32,6 @@ import type {
   JsonMetricViewData,
   JsonMetricSeriesViewData,
   JsonStats,
-  JsonTraceData,
   JsonQueryNode,
   JsonAttributeMatch,
   JsonAttribute,
@@ -68,6 +67,7 @@ import { fieldFromDiscovery } from '@/components/shared/Search/attribute-field-r
 import { fetchArrow } from './arrow-fetch'
 import { rowViews } from './arrow-values'
 import { ArrowFrame } from './arrow-data'
+import { traceData } from './arrow-traces'
 import {
   logData,
   logSummary,
@@ -319,60 +319,6 @@ async function callArrow(
   } catch (error) {
     if (signal?.aborted || isAbortError(error)) throw new RequestAbortedError()
     throw error
-  }
-}
-
-// Decodes compressed spans and shares each resolved resource and scope object.
-function traceDataFromJSON(json: JsonTraceData): TraceData {
-  const traceStart = bigintFromWire(json.traceStart)
-  const resources = Object.fromEntries(
-    Object.entries(json.resources).map(([id, resource]) => [
-      id,
-      { ...resource, attributes: attributesFromJSON(resource.attributes) },
-    ])
-  )
-  const scopes = Object.fromEntries(
-    Object.entries(json.scopes).map(([id, scope]) => [
-      id,
-      { ...scope, attributes: attributesFromJSON(scope.attributes) },
-    ])
-  )
-
-  return {
-    traceID: json.traceID,
-    unplacedSpanCount: json.unplacedSpanCount,
-    spans: json.spans.map(spanNode => {
-      const { r, s, start, dur, ...rest } = spanNode.spanData
-      const startTime = traceStart + BigInt(start)
-      const node: TraceData['spans'][number] = {
-        spanData: {
-          ...rest,
-          attributes: attributesFromJSON(rest.attributes),
-          links: rest.links.map(link => ({
-            ...link,
-            attributes: attributesFromJSON(link.attributes),
-          })),
-          traceID: json.traceID,
-          resource: resources[String(r)]!,
-          scope: scopes[String(s)]!,
-          startTime,
-          endTime: startTime + BigInt(dur),
-          events: spanNode.spanData.events.map(event => ({
-            ...event,
-            attributes: attributesFromJSON(event.attributes),
-            timestamp: bigintFromWire(event.timestamp),
-          })),
-        },
-        depth: spanNode.depth,
-        matched: spanNode.matched,
-      }
-      // Keep both properties absent on every span of a healthy trace.
-      if (spanNode.salvaged) {
-        node.salvaged = true
-        node.cyclePoint = spanNode.cyclePoint
-      }
-      return node
-    }),
   }
 }
 
@@ -1107,12 +1053,12 @@ LIMIT ${batch.length}`,
           }
           if (ids.size > 256)
             throw new Error('Referenced trace exceeds the 256-span view limit.')
-          const raw = await callRPC<JsonTraceData>(
+          const raw = await callArrow(
             'getTraceView',
             named({ traceID, spanIDs: [...ids] }),
             signal
           )
-          return traceDataFromJSON(raw)
+          return traceData(raw)
         })
       )
       if (signal?.aborted) throw new RequestAbortedError()
@@ -1155,7 +1101,7 @@ LIMIT ${batch.length}`,
     queryTree?: QueryNode,
     signal?: AbortSignal
   ): Promise<TraceData> => {
-    const rawData = await callRPC<JsonTraceData>(
+    const rawData = await callArrow(
       'getTraceView',
       named({
         traceID,
@@ -1163,7 +1109,7 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return traceDataFromJSON(rawData)
+    return traceData(rawData)
   },
 
   getTraceLogSummaries: async (
