@@ -83,6 +83,10 @@ func searchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRa
 // searchSummariesSQL builds the query and bound arguments without database I/O.
 // Validation, filtering, sorting, and limit placement depend only on the inputs.
 func searchSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
+	return summariesSQL(timeRange, criteria, options, false)
+}
+
+func summariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions, native bool) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -113,7 +117,11 @@ func searchSummariesSQL(timeRange timerange.TimeRange, criteria any, options sea
 		}
 		args = append(args, *options.Limit)
 	}
-	query, err := queries.Render(queries.SearchMetricSummaries, searchSummariesParams{
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	query, err := render(queries.SearchMetricSummaries, searchSummariesParams{
 		CTEs:           strings.TrimPrefix(cteSQL, "with "),
 		From:           metricSearchFrom,
 		Where:          whereClause,
@@ -371,6 +379,24 @@ func GetMetricSelectionOTLP(ctx context.Context, db *sql.DB, metricID, seriesID,
 // getMetricView runs the chart query in whichever shape params asks for. Both shapes take
 // the same arguments and the same CTEs; only the projection differs.
 func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+	query, args, err := metricViewSQL(params, metricID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit, false)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetMetricView: %w", ErrMetricIDNotFound)
+		}
+		return nil, fmt.Errorf("GetMetricView: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil || string(raw) == "null" {
+		return nil, fmt.Errorf("GetMetricView: %w: query returned null", ErrMetricsStoreInternal)
+	}
+	return json.RawMessage(raw), nil
+}
+
+func metricViewSQL(params getMetricViewParams, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64, native bool) (string, []any, error) {
 	// Deduplicate the quantile list, keeping first-occurrence order.
 	//
 	// DuckDB map keys must be unique. Preserve first-occurrence request order.
@@ -390,7 +416,6 @@ func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, 
 	params.HasStart = timeRange.Start != nil
 	params.HasEnd = timeRange.End != nil
 
-	var raw []byte
 	// A nil slice binds as an empty array, not SQL NULL, so "all series" has
 	// to travel as an untyped nil. Empty then keeps its own meaning: no series.
 	var seriesArg any
@@ -429,28 +454,17 @@ func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, 
 	if timeRange.End != nil {
 		endTime = []uint64{*timeRange.End}
 	}
-	query, args, err := queries.RenderBound(queries.GetMetricView, params, map[string]any{
+	render := queries.RenderBound
+	if native {
+		render = queries.RenderBoundArrow
+	}
+	return render(queries.GetMetricView, params, map[string]any{
 		"metric_id": metricID, "time_start": startTime, "time_end": endTime,
 		"target_buckets": targetBuckets, "series_ids": seriesArg, "quantiles": quantiles,
 		"tz_offset_ns": tzOffsetNs, "view_buckets": viewBuckets, "sparkline_buckets": sparklineBuckets,
 		"selected_series_ids": selectedArg, "tz_name": tzArg, "datapoint_series_ids": datapointArg,
 		"datapoint_series_limit": datapointSeriesLimit, "contribution_id": params.ContributionID,
 	})
-	if err != nil {
-		return nil, err
-	}
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("GetMetricView: %w", ErrMetricIDNotFound)
-		}
-		return nil, fmt.Errorf("GetMetricView: %w: %w", ErrMetricsStoreInternal, err)
-	}
-	// The projection is a non-null json_object, so a null here means the
-	// query itself misbehaved -- an internal anomaly, not a missing Metric.
-	if raw == nil || string(raw) == "null" {
-		return nil, fmt.Errorf("GetMetricView: %w: query returned null", ErrMetricsStoreInternal)
-	}
-	return json.RawMessage(raw), nil
 }
 
 // GetMetricAggregateView returns only the cross-series aggregate: the selected

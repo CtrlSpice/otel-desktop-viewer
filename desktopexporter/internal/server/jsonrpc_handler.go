@@ -222,7 +222,23 @@ func (h *JSONRPCHandler) searchTraceSummaries(ctx context.Context, req *jsonrpc2
 }
 
 func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	params, err := decodePositionalParams(req.Params, 1, 3)
+	params, err := parseTraceViewParams(req.Params)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceView(ctx, db, params.traceID, params.query, params.spanIDs...)
+	})
+}
+
+type traceViewParams struct {
+	traceID string
+	query   any
+	spanIDs []uint64
+}
+
+func parseTraceViewParams(raw json.RawMessage) (*traceViewParams, error) {
+	params, err := decodePositionalParams(raw, 1, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -250,9 +266,7 @@ func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request
 		}
 	}
 
-	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetTraceView(ctx, db, traceID, query, spanIDs...)
-	})
+	return &traceViewParams{traceID: traceID, query: query, spanIDs: spanIDs}, nil
 }
 
 type compactTraceResult struct {
@@ -504,7 +518,22 @@ func (h *JSONRPCHandler) searchLogSummaries(ctx context.Context, req *jsonrpc2.R
 }
 
 func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	values, err := decodePositionalParams(req.Params, 2, 8)
+	params, err := parseLogPageParams(req.Params)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, params.page)
+	})
+}
+
+type logPageParams struct {
+	searchParams
+	page logs.PageOptions
+}
+
+func parseLogPageParams(raw json.RawMessage) (*logPageParams, error) {
+	values, err := decodePositionalParams(raw, 2, 8)
 	if err != nil {
 		return nil, err
 	}
@@ -549,9 +578,7 @@ func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Reques
 			return nil, jsonrpc2.ErrInvalidParams
 		}
 	}
-	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, logs.PageOptions{Size: size, Offset: offset, Columns: columns})
-	})
+	return &logPageParams{searchParams: params, page: logs.PageOptions{Size: size, Offset: offset, Columns: columns}}, nil
 }
 
 func (h *JSONRPCHandler) getLogErrorNavigation(ctx context.Context, req *jsonrpc2.Request) (any, error) {

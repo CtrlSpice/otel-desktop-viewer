@@ -73,6 +73,15 @@ with metric_datapoints as materialized (select * from main.metric_datapoints),
 			from summary_rows
 			order by {{.SummaryOrder}}{{.SummaryLimit}}
 		)
+		{{if arrow}}select sub.id::varchar as metricRef,
+			sub.name, sub.description, sub.unit, sub.metric_type as metricType,
+			case when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram')
+				then sub.aggregation_temporality end as aggregationTemporalityCode,
+			case when sub.metric_type = 'Sum' then sub.is_monotonic end as isMonotonic,
+			sub.service_name as serviceName, sub.series_count as seriesCount,
+			sub.series_cardinality as seriesCardinality, sub.datapoint_count as dataPointCount,
+			sub.last_value as lastValue, sub.last_dp_ts as lastSeen
+		from selected_summaries sub order by {{.SummaryOrder}}{{else}}
 		select cast(coalesce(to_json(list(json_object(
 			'metricRef', cast(sub.id as varchar),
 			'name', sub.name,
@@ -101,4 +110,4 @@ with metric_datapoints as materialized (select * from main.metric_datapoints),
 			'lastValue', double_wire_json(sub.last_value),
 			'lastSeen', sub.last_dp_ts::varchar
 		) order by {{.SummaryOrder}})), '[]') as varchar) as summaries
-		from selected_summaries sub
+		from selected_summaries sub{{end}}

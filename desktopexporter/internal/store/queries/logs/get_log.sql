@@ -1,4 +1,4 @@
-select log_data_json(
+{{if arrow}}select {{template "logColumns"}}{{else}}select log_data_json(
     l, attribute_document(l.attributes),
     json_object('attributes', attribute_document(l.resource.attributes),
         'droppedAttributesCount', l.resource.dropped_attributes_count),
@@ -6,5 +6,5 @@ select log_data_json(
         'attributes', attribute_document(l.scope.attributes),
         'droppedAttributesCount', l.scope.dropped_attributes_count),
     l.resource.schema_url, l.scope.schema_url
-)::varchar as log
+)::varchar as log{{end}}
 from logs l where l.id = ?::uuid

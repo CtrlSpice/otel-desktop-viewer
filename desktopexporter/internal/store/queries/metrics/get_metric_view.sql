@@ -64,12 +64,15 @@
 		),
 
 		selected_metric_json as materialized (
-			select s.*, attribute_document(s.metadata) as metadata_json,
+			{{if arrow}}select s.*, s.metadata as metadata_json,
+				{{template "resource" "s.resource"}} as resource_json,
+				{{template "scope" "s.scope"}} as scope_json
+			{{else}}select s.*, attribute_document(s.metadata) as metadata_json,
 				json_object('attributes', attribute_document(s.resource.attributes),
 					'droppedAttributesCount', s.resource.dropped_attributes_count) as resource_json,
 				json_object('name', s.scope.name, 'version', s.scope.version,
 					'attributes', attribute_document(s.scope.attributes),
-					'droppedAttributesCount', s.scope.dropped_attributes_count) as scope_json
+					'droppedAttributesCount', s.scope.dropped_attributes_count) as scope_json{{end}}
 			from selected_metric s
 		),
 		-- Value extents used to rank exemplar-bearing datapoints.
@@ -84,8 +87,8 @@
 			-- (timestamp, id) gives total order; json_group_array rejects ORDER BY.
 			select e.metric_datapoint_id,
 				-- Retain at most five exemplars per datapoint.
-				to_json(list(exemplar_json(e, attribute_document(e.attributes)) order by e.timestamp, e.id)
-				        filter (where e.rn <= 5)) as exemplars,
+				{{if arrow}}list({{template "exemplar"}} order by e.timestamp, e.id) filter (where e.rn <= 5){{else}}to_json(list(exemplar_json(e, attribute_document(e.attributes)) order by e.timestamp, e.id)
+				        filter (where e.rn <= 5)){{end}} as exemplars,
 				-- Count before capping so the wire reports withheld exemplars.
 				count(*) as exemplar_count
 			from exemplars_ranked e
@@ -372,15 +375,15 @@
 		-- Rate stats include drawn gap zeros.
 		scalar_rate_stats as (
 			select series_id,
-				json_object('min', double_wire_json(min(drawn_rate)),
+				{{if arrow}}struct_pack(min := min(drawn_rate), max := max(drawn_rate), avg := avg(drawn_rate order by bucket_start)){{else}}json_object('min', double_wire_json(min(drawn_rate)),
 				            'max', double_wire_json(max(drawn_rate)),
-				            'avg', double_wire_json(avg(drawn_rate order by bucket_start))) as rate_stats
+				            'avg', double_wire_json(avg(drawn_rate order by bucket_start))){{end}} as rate_stats
 			from scalar_view_drawn
 			group by series_id
 		),
 		scalar_views_agg as (
 			select a.series_id,
-				to_json(list(json_object(
+				{{if arrow}}list({{template "scalarBucket"}} order by a.bucket_start){{else}}to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
 					'sum', double_wire_json(a.value_sum),
@@ -388,7 +391,7 @@
 					'rate', double_wire_json(a.rate),
 					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
-				) order by a.bucket_start)) as views
+				) order by a.bucket_start)){{end}} as views
 			from scalar_view_agg a
 			left join scalar_view_slope sl
 				on sl.series_id = a.series_id and sl.bucket_start = a.bucket_start
@@ -434,7 +437,8 @@
 		),
 		scalar_pools_json as (
 			select
-				coalesce(to_json(list(json_object(
+				{{if arrow}}coalesce(list({{template "scalarBucket"}} order by a.bucket_start) filter (where a.pool = 'selected'), []) as selected,
+				coalesce(list({{template "scalarBucket"}} order by a.bucket_start) filter (where a.pool = 'all'), []) as all_series{{else}}coalesce(to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
 					'sum', double_wire_json(a.value_sum),
@@ -451,7 +455,7 @@
 					'rate', double_wire_json(a.rate),
 					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
-				) order by a.bucket_start) filter (where a.pool = 'all')), json('[]')) as all_series
+				) order by a.bucket_start) filter (where a.pool = 'all')), json('[]')) as all_series{{end}}
 			from scalar_pool_agg a
 			left join scalar_pool_slope sl
 				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
@@ -505,10 +509,10 @@
 		-- Histogram series have NULL sparklines.
 		sparkline_agg as (
 			select series_id,
-				to_json(list(json_object(
+				{{if arrow}}list(struct_pack(timestamp := timestamp, value := value) order by timestamp, value){{else}}to_json(list(json_object(
 					'timestamp', timestamp::varchar,
 					'value', double_wire_json(value)
-				) order by timestamp, value)) as sparkline
+				) order by timestamp, value)){{end}} as sparkline
 			from sparkline_points
 			group by series_id
 		),
@@ -889,9 +893,9 @@
 		-- Preserve request key order with ordered lists. Empty histograms emit each
 		-- requested key with NULL value.
 		dp_quantiles as (
-			select t.id, to_json(map(
+			select t.id, {{if arrow}}map(list(t.q::varchar order by t.qi), list(p.v order by t.qi)){{else}}to_json(map(
 				list(t.q::varchar order by t.qi),
-				list(double_wire_json(p.v) order by t.qi))) as quantiles
+				list(double_wire_json(p.v) order by t.qi))){{end}} as quantiles
 			from (select b.id, qq.q, qq.qi from dp_qsrc b,
 				(select u.q, u.i as qi from unnest({{bind "quantiles"}}::double[]) with ordinality u(q, i)) qq) t
 			left join dp_q_values p on p.id = t.id and p.q = t.q
@@ -900,12 +904,12 @@
 {{- end}}
 		ts_dps_json as (
 			select d.series_id,
-				to_json(list(metric_datapoint_view_json(
+				{{if arrow}}list({{template "viewPoint" .}} order by d.timestamp desc, d.id){{else}}to_json(list(metric_datapoint_view_json(
 					d,
 					coalesce(ea.exemplars, json('[]')),
 					coalesce(ea.exemplar_count, 0),
 					{{if .NoHistogramMerge}}null::json{{else}}dq.quantiles{{end}}
-				) order by d.timestamp desc, d.id)) as datapoints
+				) order by d.timestamp desc, d.id)){{end}} as datapoints
 			from shipped_dps d
 			left join exemplars_agg ea on ea.metric_datapoint_id = d.id
 {{- if not .NoHistogramMerge}}
@@ -915,7 +919,7 @@
 		),
 		-- Pack series newest first with their exact parent Metric Resource payload.
 		timeseries_agg as (
-			select to_json(list(metric_series_view_json(
+			select {{if arrow}}list({{template "viewSeries" .}} order by t.latest_ts desc, t.attrs_key){{else}}to_json(list(metric_series_view_json(
 				t.attrs_key,
 				attribute_document(t.attributes),
 				s.resource_json,
@@ -932,7 +936,7 @@
 				sp.sparkline
 {{- end}}
 			-- Series ID makes equal latest timestamps deterministic.
-			) order by t.latest_ts desc, t.attrs_key)) as timeseries
+			) order by t.latest_ts desc, t.attrs_key)){{end}} as timeseries
 			from ts_dps_agg t
 			-- Narrowed series have no datapoint JSON row.
 			left join ts_dps_json tj on tj.series_id = t.series_id
@@ -1091,9 +1095,9 @@
 			from agg_q_picked
 		),
 		agg_quantiles as (
-			select t.bucket_start, to_json(map(
+			select t.bucket_start, {{if arrow}}map(list(t.q::varchar order by t.qi), list(p.v order by t.qi)){{else}}to_json(map(
 				list(t.q::varchar order by t.qi),
-				list(double_wire_json(p.v) order by t.qi))) as quantiles
+				list(double_wire_json(p.v) order by t.qi))){{end}} as quantiles
 			from (select b.bucket_start, qq.q, qq.qi from agg_qsrc b,
 				(select u.q, u.i as qi from unnest({{bind "quantiles"}}::double[]) with ordinality u(q, i)) qq) t
 			left join agg_q_values p on p.bucket_start = t.bucket_start and p.q = t.q
@@ -1144,22 +1148,22 @@
 			from contribution_folded p
 		),
 		contribution_agg as (
-			select to_json(list(metric_aggregate_bucket_view_json(
+			select {{if arrow}}list({{template "contributionBucket"}}){{else}}to_json(list(metric_aggregate_bucket_view_json(
 				p.bucket_start, p.start_time, p.count, p.sum, p.aggregate_scale,
 				p.aggregate_zero_threshold,
 				p.zero_count + p.pos_fold.folded + p.neg_fold.folded,
 				p.final_pos, p.final_neg, p.explicit_bounds, p.bucket_counts, null, p.extents
-			))) as contribution
+			))){{end}} as contribution
 			from contribution_values p
 		),
 {{- end}}
 		aggregate_agg as (
-			select to_json(list(metric_aggregate_bucket_view_json(
+			select {{if arrow}}list({{template "aggregateBucket"}} order by f.bucket_start){{else}}to_json(list(metric_aggregate_bucket_view_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
 				f.zero_threshold, f.zero_count, f.pos_fold, f.neg_fold,
 				f.explicit_bounds, f.bucket_counts,
 				aq.quantiles, f.extents
-			) order by f.bucket_start)) as aggregate
+			) order by f.bucket_start)){{end}} as aggregate
 			from agg_values f
 			left join agg_quantiles aq on aq.bucket_start = f.bucket_start
 			-- Do not merge incompatible explicit bounds.
@@ -1167,7 +1171,7 @@
 		)
 {{- end}}
 		-- Known Metrics return a row even when the window has no datapoints.
-		select cast(json_object(
+		{{if arrow}}{{template "metricView" .}}{{else}}select cast(json_object(
 {{- if not .AggregateOnly}}
 			'metricRef', s.id, 'name', s.name, 'description', s.description, 'unit', s.unit,
 			'metadata', s.metadata_json,
@@ -1232,4 +1236,4 @@
 			)
 {{- end}}
 		) as varchar) as metric
-		from {{if .AggregateOnly}}selected_metric{{else}}selected_metric_json{{end}} s
+		from {{if .AggregateOnly}}selected_metric{{else}}selected_metric_json{{end}} s{{end}}

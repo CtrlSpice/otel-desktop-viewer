@@ -182,6 +182,7 @@ static void initialize(duckdb_v2_extension_input *input) {
     CHECK(duckdb_v2_table_function_set_init_global_callback(function, init_scan, err));
     CHECK(duckdb_v2_table_function_set_exec_callback(function, execute_scan, err));
     CHECK(duckdb_v2_extension_register_table_function(extension, function, err));
+    CHECK(otel_arrow_register_output(extension, factory, err));
 cleanup:
     duckdb_v2_logical_type_destroy(&type);
     duckdb_v2_table_function_destroy(&function);

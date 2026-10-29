@@ -59,7 +59,8 @@
 				s.status_code, s.status_message
 			from {{if .Selected}}selected_tree{{else}}spans_tree{{end}} st
 			join spans s on s.trace_id = st.trace_id and s.span_id = st.span_id
-		),
+		){{if arrow}},
+		{{template "traceNative" .}}{{else}},
 
 		event_data as (
 			select e.trace_id, e.span_id,
@@ -140,4 +141,4 @@
 		end as trace,
 		-- Separate column lets the caller select salvage without parsing JSON.
 		(select n from unplaced_count) as unplaced
-		from ordered_spans
+		from ordered_spans{{end}}

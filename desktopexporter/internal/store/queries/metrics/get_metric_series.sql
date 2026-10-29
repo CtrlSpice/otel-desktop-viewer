@@ -18,8 +18,15 @@ selected_datapoints as materialized (
 selected_exemplars as materialized (
 	select e.* from exemplars e
 	join selected_datapoints d on d.id = e.metric_datapoint_id
-),
-exemplar_documents as materialized (
+){{if arrow}}, exemplar_documents as (
+    select e.metric_datapoint_id, list({{template "exemplar"}} order by e.timestamp, e.id) as documents
+    from selected_exemplars e group by e.metric_datapoint_id
+)
+select {{template "metricColumns"}}, s.id::varchar as seriesRef, s.attributes,
+    (select coalesce(list({{template "receivedPoint"}} order by d.timestamp, d.id), [])
+     from selected_datapoints d left join exemplar_documents e on e.metric_datapoint_id = d.id) as datapoints
+from selected_metric m join selected_series s on s.metric_id = m.id
+{{else}}, exemplar_documents as materialized (
 	select e.metric_datapoint_id,
 		to_json(list(exemplar_json(e, attribute_document(e.attributes)) order by e.timestamp, e.id)) as documents
 	from selected_exemplars e
@@ -114,4 +121,4 @@ select m.metric_type,
 			else json('{}')
 		end) as varchar) as document
 from selected_metric m
-join selected_series s on s.metric_id = m.id
+join selected_series s on s.metric_id = m.id{{end}}
