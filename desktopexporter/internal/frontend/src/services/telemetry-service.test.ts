@@ -27,6 +27,11 @@ import {
   logDetailTable,
 } from '@/test/arrow-fixtures'
 import { Table, Bool, vectorFromArray } from 'apache-arrow'
+import { telemetryDataset } from '@/test/native-telemetry-fixtures'
+
+function stubTraceResult(result: JsonTraceData) {
+  stubArrowResult(telemetryDataset('getTraceView', result))
+}
 
 function stubArrowResult(table: Table) {
   vi.stubGlobal(
@@ -254,7 +259,7 @@ describe('request cancellation', () => {
       telemetryAPI.getTraceView('trace-1', undefined, controller.signal)
     ).rejects.toBeInstanceOf(RequestAbortedError)
     expect(fetchMock).toHaveBeenCalledWith(
-      '/rpc',
+      '/api/data/getTraceView',
       expect.objectContaining({ signal: controller.signal })
     )
   })
@@ -1420,6 +1425,17 @@ describe('telemetryAPI.getReferencedTraceViews', () => {
       'fetch',
       vi.fn().mockImplementation(async (_url, init: RequestInit) => {
         const request = JSON.parse(String(init.body))
+        if (!request.method)
+          return arrowResponse(
+            telemetryDataset('getTraceView', {
+              traceID: request.traceID,
+              traceStart: '0',
+              resources: {},
+              scopes: {},
+              spans: [],
+              unplacedSpanCount: 0,
+            })
+          )
         return {
           ok: true,
           json: async () => ({
@@ -1456,8 +1472,8 @@ describe('telemetryAPI.getReferencedTraceViews', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0]).toMatchObject({ method: 'query', params: { limit: 257 } })
     expect(calls[1]).toMatchObject({
-      method: 'getTraceView',
-      params: { traceID, spanIDs: ['1'.repeat(16), '2'.repeat(16)] },
+      traceID,
+      spanIDs: ['1'.repeat(16), '2'.repeat(16)],
     })
   })
 
@@ -1481,25 +1497,21 @@ describe('telemetryAPI.getReferencedTraceViews', () => {
       'fetch',
       vi.fn().mockImplementation(async (_url, init: RequestInit) => {
         const request = JSON.parse(String(init.body))
-        return {
-          ok: true,
-          json: async () => ({
-            jsonrpc: '2.0',
-            id: request.id,
-            ...(request.params.traceID === 'b'.repeat(32)
-              ? { error: { code: -1, message: 'missing' } }
-              : {
-                  result: {
-                    traceID: request.params.traceID,
-                    traceStart: '0',
-                    resources: {},
-                    scopes: {},
-                    spans: [],
-                    unplacedSpanCount: 0,
-                  },
-                }),
-          }),
-        }
+        if (request.traceID === 'b'.repeat(32))
+          return Response.json(
+            { code: -1, message: 'missing' },
+            { status: 404 }
+          )
+        return arrowResponse(
+          telemetryDataset('getTraceView', {
+            traceID: request.traceID,
+            traceStart: '0',
+            resources: {},
+            scopes: {},
+            spans: [],
+            unplacedSpanCount: 0,
+          })
+        )
       })
     )
     const reference = { traceID: 'a'.repeat(32), spanID: 'f'.repeat(16) }
@@ -1518,12 +1530,12 @@ describe('telemetryAPI.getReferencedTraceViews', () => {
         .mock.calls.map(([, init]) => JSON.parse(String(init!.body)))
     ).toEqual([
       expect.objectContaining({
-        method: 'getTraceView',
-        params: { traceID: reference.traceID, spanIDs: [reference.spanID] },
+        traceID: reference.traceID,
+        spanIDs: [reference.spanID],
       }),
       expect.objectContaining({
-        method: 'getTraceView',
-        params: { traceID: 'b'.repeat(32), spanIDs: [reference.spanID] },
+        traceID: 'b'.repeat(32),
+        spanIDs: [reference.spanID],
       }),
     ])
     expect(
@@ -1716,14 +1728,14 @@ describe('telemetryAPI.getTraceView rehydration', () => {
   } satisfies JsonTraceData
 
   async function fetchTrace() {
-    stubRpcResult<JsonTraceData>(wire)
+    stubTraceResult(wire)
     return telemetryAPI.getTraceView('abc123')
   }
 
   it('rehydrates referenced spans with exact timing, ancestry and full shared Details payloads', async () => {
     const traceID = 'a'.repeat(32)
     const spanID = 'b'.repeat(16)
-    stubRpcResult({
+    stubTraceResult({
       ...wire,
       traceID,
       spans: [
@@ -1807,7 +1819,7 @@ describe('telemetryAPI.getTraceView rehydration', () => {
   })
 
   it('shares resolved resources rather than copying them per span', async () => {
-    stubRpcResult<JsonTraceData>({
+    stubTraceResult({
       ...wire,
       spans: [wire.spans[0], { ...wire.spans[0], depth: 1 }],
     })
@@ -1830,7 +1842,7 @@ describe('telemetryAPI.getTraceView rehydration', () => {
   })
 
   it('preserves unplacedSpanCount when the wire reports spans stranded on a cycle', async () => {
-    stubRpcResult<JsonTraceData>({ ...wire, unplacedSpanCount: 3 })
+    stubTraceResult({ ...wire, unplacedSpanCount: 3 })
     const trace = await telemetryAPI.getTraceView('abc123')
     expect(trace.unplacedSpanCount).toBe(3)
   })
@@ -1844,7 +1856,7 @@ describe('telemetryAPI.getTraceView rehydration', () => {
   })
 
   it('preserves salvaged and cyclePoint on a span recovered from a cycle', async () => {
-    stubRpcResult<JsonTraceData>({
+    stubTraceResult({
       ...wire,
       unplacedSpanCount: 0,
       spans: [
