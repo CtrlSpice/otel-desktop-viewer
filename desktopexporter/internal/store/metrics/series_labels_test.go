@@ -71,9 +71,28 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 		}
 		require.NoError(t, json.Unmarshal(raw, &view))
 		require.Len(t, view.Timeseries, len(fixtures))
+		ids := make([]string, len(view.Timeseries))
+		for i, series := range view.Timeseries {
+			ids[i] = series.SeriesRef
+		}
+		column, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesColumn(ctx, db, metricID, ids, "varying")
+		})
+		require.NoError(t, err)
+		var cells []struct {
+			SeriesRef  string           `json:"seriesRef"`
+			Attributes []map[string]any `json:"attributes"`
+		}
+		require.NoError(t, json.Unmarshal(column, &cells))
+		require.Len(t, cells, len(view.Timeseries))
+		bySeries := make(map[string][]map[string]any)
+		for _, cell := range cells {
+			bySeries[cell.SeriesRef] = cell.Attributes
+		}
 		signatures := make(map[string]bool)
 		previews := make(map[string]bool)
 		for _, series := range view.Timeseries {
+			require.Equal(t, series.Attributes, bySeries[series.SeriesRef])
 			require.False(t, series.Complete)
 			require.Len(t, series.Previews, 1)
 			require.Equal(t, "varying", series.Previews[0].Key)
@@ -100,5 +119,22 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 			require.Contains(t, string(contextOnly), `"datapoints":[]`)
 			require.Contains(t, string(contextOnly), `"retained"`)
 		}
+		for _, refs := range [][]string{{}, {"00000000-0000-0000-0000-000000000000"}} {
+			empty, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetricSeriesColumn(ctx, db, metricID, refs, "varying")
+			})
+			require.NoError(t, err)
+			require.JSONEq(t, "[]", string(empty))
+		}
+		foreign, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesColumn(ctx, db, "00000000-0000-0000-0000-000000000000", ids, "varying")
+		})
+		require.NoError(t, err)
+		require.JSONEq(t, "[]", string(foreign))
+		missing, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesColumn(ctx, db, metricID, []string{ids[0], ids[0]}, "'; select 1; --")
+		})
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"seriesRef":"`+ids[0]+`","attributes":[]}]`, string(missing))
 	}
 }

@@ -266,6 +266,10 @@ func TestArrowDatasetReads(t *testing.T) {
 	read("getMetricAggregateView", `{"metricRef":"`+metricID+`","startTime":null,"endTime":null,"targetBuckets":10,"viewBuckets":5}`)
 	series := metric.Column(metric.Schema().FieldIndices("series")[0]).(*array.List).ListValues().(*array.Struct)
 	seriesID := series.Field(0).(*array.String).Value(0)
+	column := read("getMetricSeriesColumn", `{"metricRef":"`+metricID+`","seriesRefs":["`+seriesID+`"],"key":"missing"}`)
+	require.Equal(t, int64(1), column.NumRows())
+	require.Len(t, column.Schema().Fields(), 2)
+	require.Equal(t, seriesID, column.Column(column.Schema().FieldIndices("seriesRef")[0]).(*array.String).Value(0))
 	points := read("getMetricSeries", `{"metricRef":"`+metricID+`","seriesRef":"`+seriesID+`","startTime":null,"endTime":null}`)
 	require.Positive(t, points.Column(points.Schema().FieldIndices("datapoints")[0]).(*array.List).ListValues().Len())
 	for _, method := range []string{"searchTraceSummaries", "searchMetricSummaries", "searchLogSummaries"} {

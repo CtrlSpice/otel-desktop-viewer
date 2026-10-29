@@ -48,6 +48,7 @@ var methodParamNames = map[string][]string{
 	"searchMetricSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
 	"getMetric":              {"metricRef"},
 	"getMetricSeries":        {"metricRef", "seriesRef", "startTime", "endTime", "includeDatapoints"},
+	"getMetricSeriesColumn":  {"metricRef", "seriesRefs", "key"},
 	"getMetricView": {
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
@@ -446,6 +447,43 @@ type getMetricSeriesParams struct {
 	seriesRef         string
 	timeRange         store.TimeRange
 	includeDatapoints bool
+}
+
+type metricSeriesColumnParams struct {
+	metricRef  string
+	seriesRefs []string
+	key        string
+}
+
+func parseMetricSeriesColumnParams(raw json.RawMessage) (metricSeriesColumnParams, error) {
+	var result metricSeriesColumnParams
+	params, err := decodePositionalParams(raw, 3, 3)
+	if err != nil {
+		return result, err
+	}
+	result.metricRef, err = parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
+	if err != nil {
+		return result, err
+	}
+	if params[1] == nil {
+		return result, jsonrpc2.ErrInvalidParams
+	}
+	result.seriesRefs, err = parseOptionalStringList(params, 1)
+	if err != nil {
+		return result, err
+	}
+	for i, ref := range result.seriesRefs {
+		result.seriesRefs[i], err = normalizeUUID(ref)
+		if err != nil {
+			return result, ErrInvalidMetricRef
+		}
+	}
+	key, ok := params[2].(string)
+	if !ok {
+		return result, jsonrpc2.ErrInvalidParams
+	}
+	result.key = key
+	return result, nil
 }
 
 func parseGetMetricSeriesParams(raw json.RawMessage) (getMetricSeriesParams, error) {
