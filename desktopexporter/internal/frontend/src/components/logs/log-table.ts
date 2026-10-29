@@ -196,7 +196,8 @@ export function logColumnCell(log: LogTableRow, column: LogColumnOption) {
   return {
     text: result.present ? result.preview : '—',
     numeric:
-      result.present && (result.valueType === 'int64' || result.valueType === 'double'),
+      result.present &&
+      (result.valueType === 'int64' || result.valueType === 'double'),
     present: result.present,
     string: result.present && result.valueType === 'string',
   }

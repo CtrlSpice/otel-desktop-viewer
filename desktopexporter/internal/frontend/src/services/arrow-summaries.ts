@@ -26,7 +26,11 @@ function nullableText(
   return cell.isNull ? null : cell.text()
 }
 
-function attributeKind(frame: ArrowFrame, row: number, name: string): AttributeValue['kind'] {
+function attributeKind(
+  frame: ArrowFrame,
+  row: number,
+  name: string
+): AttributeValue['kind'] {
   const kind = text(frame, row, name)
   switch (kind) {
     case 'empty':
