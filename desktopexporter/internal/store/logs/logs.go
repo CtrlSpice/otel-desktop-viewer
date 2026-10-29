@@ -184,40 +184,18 @@ func appendPass(
 	return nil
 }
 
-// fieldValueQueries names the log columns whose values the search box may
-// complete, keyed by the search grammar's field name. An allowlist of whole
-// baked queries rather than an identifier spliced into one: a field name from
-// the wire never becomes SQL.
-var fieldValueQueries = map[string]string{
-	"eventName": `
-		select cast(coalesce(
-			to_json(list(sub.v order by sub.cnt desc, sub.v)),
-			to_json([])) as varchar)
-		from (
-			select event_name as v, count(*) as cnt
-			from logs
-			where event_name is not null and event_name <> ''
-				and event_name ilike '%' || ? || '%' escape '\'
-			group by event_name
-			order by cnt desc, event_name
-			limit ?
-		) sub
-	`,
-}
-
 // GetFieldValueCompletions returns distinct values of one completable log column
 // matching term, most frequent first. Same contract as spans.GetFieldValueCompletions.
 func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
-	query, ok := fieldValueQueries[field]
-	if !ok {
+	query, args, err := searchindex.FieldValuesSQL("logs", field, term, limit)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidLogQuery, field)
 	}
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+	raw, err := searchindex.FieldValuesJSON(ctx, db, query, args)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrLogsStoreInternal, err)
 	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 // Search returns log summaries in the time range matching the optional

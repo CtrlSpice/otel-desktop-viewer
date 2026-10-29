@@ -171,49 +171,20 @@ func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder
 	return candidateOrder, summaryOrder, spec.early, nil
 }
 
-// fieldValueQueries names the metric columns whose values the search box may
-// complete, keyed by the search grammar's field name. An allowlist of whole
-// baked queries rather than an identifier spliced into one: a field name from
-// the wire never becomes SQL. metrics holds one row per logical Metric,
-// so these scan a tiny table, not the datapoints.
-var fieldValueQueries = map[string]string{
-	"name": `
-		select cast(coalesce(to_json(list(sub.v order by sub.v)), to_json([])) as varchar)
-		from (
-			select distinct name as v
-			from metrics
-			where name ilike '%' || ? || '%' escape '\'
-			order by name
-			limit ?
-		) sub
-	`,
-	"unit": `
-		select cast(coalesce(to_json(list(sub.v order by sub.v)), to_json([])) as varchar)
-		from (
-			select distinct unit as v
-			from metrics
-			where unit <> '' and unit ilike '%' || ? || '%' escape '\'
-			order by unit
-			limit ?
-		) sub
-	`,
-}
-
 // GetFieldValueCompletions returns distinct values of one completable metric column
 // matching term. Same contract as spans.GetFieldValueCompletions; alphabetical rather
 // than by frequency, because metrics has no row count to rank by and
 // Metric names read best sorted.
 func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
-	query, ok := fieldValueQueries[field]
-	if !ok {
+	query, args, err := searchindex.FieldValuesSQL("metrics", field, term, limit)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidMetricQuery, field)
 	}
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+	raw, err := searchindex.FieldValuesJSON(ctx, db, query, args)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrMetricsStoreInternal, err)
 	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 // GetMetricView returns the chart/UI projection for a Metric in the time window.

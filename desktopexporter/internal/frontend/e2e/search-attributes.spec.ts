@@ -45,7 +45,9 @@ for (const [signal, scope, method] of [
               }
             : rpcMethod === 'searchLogPage'
               ? { logs: [], total: 0 }
-              : []
+              : rpcMethod === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
     const query = `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993`

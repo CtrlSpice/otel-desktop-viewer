@@ -40,7 +40,9 @@ test('a selected nested suggestion retains keys, indices, owner and type through
             }
           : method === 'searchLogPage'
             ? { logs: [], total: 0 }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   const definitions = page.waitForResponse(

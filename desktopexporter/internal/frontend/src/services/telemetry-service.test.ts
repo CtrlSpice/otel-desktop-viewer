@@ -71,6 +71,21 @@ function stubRpcResult<T>(result: T) {
   stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
+it('reads ordered field completions and empty results through native transport', async () => {
+  const values = ['quote"\\%_雪', 'second', '']
+  stubRpcResult(values)
+  expect(
+    await telemetryAPI.getFieldValueCompletions('traces', 'name', '%_', 10)
+  ).toEqual(values)
+  expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+    '/api/data/getFieldValueCompletions'
+  )
+  stubRpcResult([])
+  expect(
+    await telemetryAPI.getFieldValueCompletions('traces', 'name', 'absent', 10)
+  ).toEqual([])
+})
+
 it('retains distinct discovery identities for signed zero and nested NaN payloads', async () => {
   const values = [
     { kind: 'double', value: 0 },

@@ -264,6 +264,9 @@ function log(r: RecordFixture) {
 export function telemetryDataset(method: string, result: any): Table {
   let rows: Record<string, Value>[]
   switch (method) {
+    case 'getFieldValueCompletions':
+      rows = result.map((value: string) => ({ value }))
+      break
     case 'discoverTelemetry':
       rows = [
         {

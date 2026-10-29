@@ -12,6 +12,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowread"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
@@ -87,6 +88,16 @@ func (h *JSONRPCHandler) readArrow(ctx context.Context, method string, raw json.
 		return nil, err
 	}
 	switch method {
+	case "getFieldValueCompletions":
+		p, err := parseFieldValuesParams(params)
+		if err != nil {
+			return nil, err
+		}
+		query, args, err := searchindex.FieldValuesSQL(p.signal, p.field, p.term, p.limit)
+		if err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		return h.arrowRead(ctx, func(db *sql.DB) (*arrowread.Result, error) { return arrowread.Read(ctx, db, query, args...) })
 	case "discoverTelemetry":
 		plan, err := discoveryPlanFor(params, true)
 		if err != nil {

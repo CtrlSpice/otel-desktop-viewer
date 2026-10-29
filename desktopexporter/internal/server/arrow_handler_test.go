@@ -46,6 +46,7 @@ func TestArrowDatasetReads(t *testing.T) {
 	batch := data.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics()
 	hist := batch.AppendEmpty()
 	hist.SetName("arrow.histogram")
+	hist.SetUnit("ms")
 	hist.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
 	dp := hist.Histogram().DataPoints().AppendEmpty()
 	dp.SetTimestamp(100)
@@ -75,6 +76,21 @@ func TestArrowDatasetReads(t *testing.T) {
 		return readArrowDataset(t, s, method, params)
 	}
 	trace := read("getTraceView", `{"traceID":"`+testTraceIDHex+`"}`)
+	for _, completion := range []struct{ signal, field string }{{"traces", "name"}, {"logs", "eventName"}, {"metrics", "name"}, {"metrics", "unit"}} {
+		params := map[string]any{"signal": completion.signal, "field": completion.field, "term": "", "limit": 10}
+		legacy, err := h.Handle(t.Context(), createRequest("getFieldValueCompletions", params))
+		require.NoError(t, err)
+		var want []string
+		require.NoError(t, json.Unmarshal(legacy.(json.RawMessage), &want))
+		require.NotEmpty(t, want)
+		wire, err := json.Marshal(params)
+		require.NoError(t, err)
+		got := read("getFieldValueCompletions", string(wire))
+		require.Equal(t, len(want), int(got.NumRows()))
+		for i, value := range want {
+			require.Equal(t, value, got.Column(0).(*array.String).Value(i))
+		}
+	}
 	services := read("discoverTelemetry", `{"options":{"kind":"services","queries":{"traces":null,"logs":null,"metrics":null},"limit":1}}`)
 	serviceRows := services.Column(0).(*array.List).ListValues().(*array.Struct)
 	require.Equal(t, 1, serviceRows.Len())
@@ -143,6 +159,7 @@ func TestArrowDatasetReads(t *testing.T) {
 		{"getLog", `{"logRef":"bad"}`, http.StatusBadRequest},
 		{"clearLogs", `{}`, http.StatusNotFound},
 		{"searchLogSummaries", `{`, http.StatusBadRequest},
+		{"getFieldValueCompletions", `{"signal":"traces","field":"statusMessage","term":"","limit":10}`, http.StatusBadRequest},
 	} {
 		w := httptest.NewRecorder()
 		s.server.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/data/"+tc.method, strings.NewReader(tc.params)))
