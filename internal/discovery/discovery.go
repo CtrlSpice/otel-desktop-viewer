@@ -174,43 +174,40 @@ ORDER BY a.value->>'key', a.value->'value'->>'kind'`
 }
 
 func Values(query Query, location Location, records, key string) string {
+	value := "v.identity::JSON"
 	if query.Native {
-		// Keep canonical content grouping/search identities, while returning a
-		// deterministic received representative with its original scalar bits.
-		return `WITH records AS (` + records + `), owned_values AS (
-    SELECT s.record_id, s.attributes[` + Literal(key) + `] AS value,
-        otel_value_json(s.attributes[` + Literal(key) + `])::VARCHAR AS identity
+		value = "v.value"
+	}
+	fields := []string{"value", value, "foundOn", foundOn(query, location),
+		"count", "v.count", "kindCount", "k.count", "denominator", "d.count",
+		"relativeFrequency", "v.count::DOUBLE / nullif(d.count,0)::DOUBLE"}
+	if query.Native {
+		fields = append(fields, "identity", "v.identity")
+	}
+	// Encode canonical identities once per distinct received value, not once per
+	// owner. Both transports retain the same grouping and record denominators.
+	// Native output also preserves a deterministic representative's received bits.
+	return `WITH records AS (` + records + `), received_values AS MATERIALIZED (
+    SELECT s.record_id,
+        variant_to_parquet_variant(s.attributes[` + Literal(key) + `])::struct(metadata blob, value blob) AS parts
     FROM records s WHERE ` + Predicate(query) + ` AND variant_exists(s.attributes, ` + Literal(key) + `)
+), distinct_values AS MATERIALIZED (
+    SELECT DISTINCT parts FROM received_values
+), identified_values AS MATERIALIZED (
+    SELECT parts, variant_bytes_to_variant(parts.metadata || parts.value) AS value,
+        otel_value_json(value)::VARCHAR AS identity FROM distinct_values
+), owned_values AS (
+    SELECT r.record_id, i.parts, i.value, i.identity
+    FROM received_values r JOIN identified_values i ON r.parts IS NOT DISTINCT FROM i.parts
 ), value_counts AS (
-    SELECT identity, first(value ORDER BY record_id,
-        variant_to_parquet_variant(value)::struct(metadata blob, value blob)) AS value,
+    SELECT identity, first(value ORDER BY record_id, parts) AS value,
         count(DISTINCT record_id) AS count FROM owned_values GROUP BY identity
 ), kind_counts AS (
     SELECT otel_value_kind(value) AS kind, count(DISTINCT record_id) AS count FROM owned_values GROUP BY otel_value_kind(value)
 ), denominator AS (SELECT count(DISTINCT record_id) AS count FROM owned_values)
-SELECT struct_pack(value := v.value, identity := v.identity, foundOn := ` + foundOn(query, location) + `,
-    count := v.count, kindCount := k.count, denominator := d.count,
-    relativeFrequency := v.count::DOUBLE / nullif(d.count,0)::DOUBLE) AS entry
+SELECT ` + object(query, fields...) + ` AS entry
 FROM value_counts v JOIN kind_counts k ON k.kind=otel_value_kind(v.value) CROSS JOIN denominator d
 ORDER BY v.count DESC, otel_value_kind(v.value), v.identity`
-	}
-	return `WITH records AS (` + records + `), owned_values AS (
-    SELECT s.record_id, otel_value_json(s.attributes[` + Literal(key) + `]) AS value FROM records s
-    WHERE ` + Predicate(query) + ` AND variant_exists(s.attributes, ` + Literal(key) + `)
-), value_counts AS (
-    SELECT value, count(DISTINCT record_id) AS count FROM owned_values GROUP BY value
-), kind_counts AS (
-    SELECT json_extract_string(value, '$.kind') AS kind, count(DISTINCT record_id) AS count
-    FROM owned_values GROUP BY json_extract_string(value, '$.kind')
-), denominator AS (
-    SELECT count(DISTINCT record_id) AS count FROM owned_values
-)
-SELECT json_object('value', v.value, 'foundOn', ` + foundOn(query, location) + `,
-    'count', v.count, 'kindCount', k.count, 'denominator', d.count,
-    'relativeFrequency', v.count::DOUBLE / nullif(d.count, 0)::DOUBLE) AS entry
-FROM value_counts v JOIN kind_counts k ON k.kind = json_extract_string(v.value, '$.kind')
-CROSS JOIN denominator d
-ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
 }
 
 func Services(query Query) string {
