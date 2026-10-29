@@ -16,6 +16,8 @@ type Query struct {
 	Namespace       *string
 	ServiceIdentity *string
 	Sources         Sources
+	// Native emits nested SQL values for Arrow datasets instead of JSON documents.
+	Native bool
 }
 
 // Sources names server-owned relations that have already applied a signal query.
@@ -129,14 +131,41 @@ func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
 	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service + " AS service_name, " + resource + " AS resource, " + attributes + " AS attributes FROM " + from, nil
 }
 
-func foundOn(location Location) string {
+func foundOn(query Query, location Location) string {
+	if query.Native {
+		return "[struct_pack(signal := " + Literal(location.Signal) + ", ownerType := " + Literal(location.OwnerType) + ")]"
+	}
 	return "json_array(json_object('signal', " + Literal(location.Signal) + ", 'ownerType', " + Literal(location.OwnerType) + "))"
 }
 
+// object changes only the output representation; selection and aggregation are shared.
+func object(query Query, fields ...string) string {
+	parts := make([]string, 0, len(fields)/2)
+	for i := 0; i < len(fields); i += 2 {
+		if query.Native {
+			parts = append(parts, `"`+fields[i]+`" := `+fields[i+1])
+		} else {
+			parts = append(parts, Literal(fields[i])+", "+fields[i+1])
+		}
+	}
+	if query.Native {
+		return "struct_pack(" + strings.Join(parts, ", ") + ")"
+	}
+	return "json_object(" + strings.Join(parts, ", ") + ")"
+}
+
 func Keys(query Query, location Location, records string) string {
+	if query.Native {
+		return `WITH records AS (` + records + `)
+SELECT struct_pack(key := a.key, kind := otel_value_kind(attribute_native_field(s.parts, a.key)), foundOn := ` + foundOn(query, location) + `) AS entry
+FROM (SELECT *, variant_to_parquet_variant(variant_normalize(attributes))::struct(metadata blob, value blob) AS parts FROM records) s, unnest(variant_keys(s.attributes)) a(key)
+WHERE ` + Predicate(query) + `
+GROUP BY a.key, otel_value_kind(attribute_native_field(s.parts, a.key))
+ORDER BY a.key, otel_value_kind(attribute_native_field(s.parts, a.key))`
+	}
 	return `WITH records AS (` + records + `)
 SELECT json_object('key', a.value->>'key', 'kind', a.value->'value'->>'kind',
-    'foundOn', ` + foundOn(location) + `) AS entry
+    'foundOn', ` + foundOn(query, location) + `) AS entry
 FROM records s
 CROSS JOIN json_each(otel_value_json(s.attributes), '$.value') a
 WHERE ` + Predicate(query) + `
@@ -145,6 +174,26 @@ ORDER BY a.value->>'key', a.value->'value'->>'kind'`
 }
 
 func Values(query Query, location Location, records, key string) string {
+	if query.Native {
+		// Keep canonical content grouping/search identities, while returning a
+		// deterministic received representative with its original scalar bits.
+		return `WITH records AS (` + records + `), owned_values AS (
+    SELECT s.record_id, s.attributes[` + Literal(key) + `] AS value,
+        otel_value_json(s.attributes[` + Literal(key) + `])::VARCHAR AS identity
+    FROM records s WHERE ` + Predicate(query) + ` AND variant_exists(s.attributes, ` + Literal(key) + `)
+), value_counts AS (
+    SELECT identity, first(value ORDER BY record_id,
+        variant_to_parquet_variant(value)::struct(metadata blob, value blob)) AS value,
+        count(DISTINCT record_id) AS count FROM owned_values GROUP BY identity
+), kind_counts AS (
+    SELECT otel_value_kind(value) AS kind, count(DISTINCT record_id) AS count FROM owned_values GROUP BY otel_value_kind(value)
+), denominator AS (SELECT count(DISTINCT record_id) AS count FROM owned_values)
+SELECT struct_pack(value := v.value, identity := v.identity, foundOn := ` + foundOn(query, location) + `,
+    count := v.count, kindCount := k.count, denominator := d.count,
+    relativeFrequency := v.count::DOUBLE / nullif(d.count,0)::DOUBLE) AS entry
+FROM value_counts v JOIN kind_counts k ON k.kind=otel_value_kind(v.value) CROSS JOIN denominator d
+ORDER BY v.count DESC, otel_value_kind(v.value), v.identity`
+	}
 	return `WITH records AS (` + records + `), owned_values AS (
     SELECT s.record_id, otel_value_json(s.attributes[` + Literal(key) + `]) AS value FROM records s
     WHERE ` + Predicate(query) + ` AND variant_exists(s.attributes, ` + Literal(key) + `)
@@ -156,7 +205,7 @@ func Values(query Query, location Location, records, key string) string {
 ), denominator AS (
     SELECT count(DISTINCT record_id) AS count FROM owned_values
 )
-SELECT json_object('value', v.value, 'foundOn', ` + foundOn(location) + `,
+SELECT json_object('value', v.value, 'foundOn', ` + foundOn(query, location) + `,
     'count', v.count, 'kindCount', k.count, 'denominator', d.count,
     'relativeFrequency', v.count::DOUBLE / nullif(d.count, 0)::DOUBLE) AS entry
 FROM value_counts v JOIN kind_counts k ON k.kind = json_extract_string(v.value, '$.kind')
@@ -167,6 +216,20 @@ ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
 func Services(query Query) string {
 	predicate := Predicate(query)
 	identity := `JOIN service_identities i ON i.resource_id = s.resource.id`
+	lastSeen := "max(c.last_seen)::VARCHAR"
+	if query.Native {
+		lastSeen = "max(c.last_seen)"
+	}
+	entry := object(query,
+		"serviceNamespace", "c.service_namespace", "serviceName", "c.service_name", "serviceIdentity", "c.service_identity",
+		"serviceNameKind", "coalesce(json_extract_string(c.service_identity, '$[0].kind'), 'missing')",
+		"serviceNamespaceKind", "json_extract_string(c.service_identity, '$[1].kind')",
+		"traceCount", "coalesce(sum(c.trace_count),0)", "spanCount", "coalesce(sum(c.span_count),0)", "errorSpanCount", "coalesce(sum(c.error_span_count),0)",
+		"logCount", "coalesce(sum(c.log_count),0)", "errorLogCount", "coalesce(sum(c.error_log_count),0)",
+		"logSeverityCounts", object(query, "trace", "coalesce(sum(c.trace_log_count),0)", "debug", "coalesce(sum(c.debug_log_count),0)",
+			"info", "coalesce(sum(c.info_log_count),0)", "warn", "coalesce(sum(c.warn_log_count),0)", "error", "coalesce(sum(c.error_severity_log_count),0)",
+			"fatal", "coalesce(sum(c.fatal_log_count),0)", "other", "coalesce(sum(c.other_log_count),0)"),
+		"metricCount", "coalesce(sum(c.metric_count),0)", "dataPointCount", "coalesce(sum(c.data_point_count),0)", "exemplarCount", "coalesce(sum(c.exemplar_count),0)", "lastSeen", lastSeen)
 	return `WITH resource_payloads AS (
     SELECT resource FROM ` + source(query.Sources.Spans, "spans") + `
     UNION SELECT resource FROM ` + source(query.Sources.Logs, "logs") + `
@@ -209,22 +272,7 @@ func Services(query Query) string {
     LEFT JOIN exemplar_counts e ON e.metric_datapoint_id = s.datapoint_id
     WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
 )
-SELECT json_object(
-    'serviceNamespace', c.service_namespace, 'serviceName', c.service_name,
-    'serviceIdentity', c.service_identity,
-    'serviceNameKind', coalesce(json_extract_string(c.service_identity, '$[0].kind'), 'missing'),
-    'serviceNamespaceKind', json_extract_string(c.service_identity, '$[1].kind'),
-    'traceCount', coalesce(sum(c.trace_count), 0),
-    'spanCount', coalesce(sum(c.span_count), 0), 'errorSpanCount', coalesce(sum(c.error_span_count), 0),
-    'logCount', coalesce(sum(c.log_count), 0), 'errorLogCount', coalesce(sum(c.error_log_count), 0),
-    'logSeverityCounts', json_object(
-        'trace', coalesce(sum(c.trace_log_count), 0), 'debug', coalesce(sum(c.debug_log_count), 0),
-        'info', coalesce(sum(c.info_log_count), 0), 'warn', coalesce(sum(c.warn_log_count), 0),
-        'error', coalesce(sum(c.error_severity_log_count), 0), 'fatal', coalesce(sum(c.fatal_log_count), 0),
-        'other', coalesce(sum(c.other_log_count), 0)),
-    'metricCount', coalesce(sum(c.metric_count), 0), 'dataPointCount', coalesce(sum(c.data_point_count), 0),
-    'exemplarCount', coalesce(sum(c.exemplar_count), 0),
-    'lastSeen', max(c.last_seen)::VARCHAR) AS entry
+SELECT ` + entry + ` AS entry
 FROM service_counts c
 GROUP BY c.service_identity, c.service_namespace, c.service_name
 ORDER BY c.service_namespace, c.service_name, c.service_identity`

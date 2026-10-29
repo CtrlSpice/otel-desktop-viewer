@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -16,6 +17,8 @@ import (
 func TestServiceMapConnections(t *testing.T) {
 	h := setupHandler(t)
 	h.logger = zaptest.NewLogger(t)
+	server, err := NewServer("localhost:8000", 0, h.store, h.logger, nil)
+	require.NoError(t, err)
 	ctx := context.Background()
 	data := ptrace.NewTraces()
 	add := func(service, namespace string, trace, id, parent byte, start uint64) ptrace.Span {
@@ -56,6 +59,11 @@ func TestServiceMapConnections(t *testing.T) {
 			Truncated bool                `json:"truncated"`
 		}
 		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+		wire, err := json.Marshal(map[string]any{"options": options})
+		require.NoError(t, err)
+		native := readArrowDataset(t, server, "discoverTelemetry", string(wire))
+		require.Equal(t, len(page.Rows), native.Column(0).(*array.List).ListValues().Len())
+		require.Equal(t, page.Truncated, native.Column(1).(*array.Boolean).Value(0))
 		return page
 	}
 	options := map[string]any{"kind": "connections", "serviceIdentity": identity, "limit": 1}
@@ -91,6 +99,9 @@ func TestServiceMapConnections(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, workerIdentity)
+	options["term"] = `"lastSeen":"160"`
+	require.NotEmpty(t, read(options).Rows)
+	delete(options, "term")
 	children := read(map[string]any{"kind": "connection-spans", "serviceIdentity": identity, "targetIdentity": workerIdentity})
 	require.Len(t, children.Rows, 3)
 	require.Contains(t, string(children.Rows[0][0]), `"spanID":"0200000000000000"`)
@@ -107,7 +118,7 @@ func TestServiceMapConnections(t *testing.T) {
 	require.Len(t, page.Rows, 1)
 	options["queries"] = map[string]any{"traces": false}
 	require.Empty(t, read(options).Rows)
-	_, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connections"}}))
+	_, err = h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connections"}}))
 	require.Error(t, err)
 	_, err = h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connection-spans", "serviceIdentity": identity}}))
 	require.Error(t, err)

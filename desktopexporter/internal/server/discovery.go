@@ -46,8 +46,25 @@ type discoveryQueries struct {
 }
 
 func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	plan, err := discoveryPlanFor(req.Params, false)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		var result []byte
+		err := db.QueryRowContext(ctx, plan.statement, plan.args...).Scan(&result)
+		return result, err
+	})
+}
+
+type discoveryPlan struct {
+	statement string
+	args      []any
+}
+
+func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) {
 	var params []json.RawMessage
-	if err := json.Unmarshal(req.Params, &params); err != nil || len(params) != 1 || bytes.Equal(bytes.TrimSpace(params[0]), []byte("null")) {
+	if err := json.Unmarshal(raw, &params); err != nil || len(params) != 1 || bytes.Equal(bytes.TrimSpace(params[0]), []byte("null")) {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	var options discoveryOptions
@@ -75,7 +92,7 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 	if limit < 1 || limit > 500 || options.Offset > 1_000_000_000 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	query := discovery.Query{StartTime: options.StartTime, EndTime: options.EndTime, ServiceName: options.ServiceName, Namespace: options.Namespace, ServiceIdentity: options.ServiceIdentity}
+	query := discovery.Query{StartTime: options.StartTime, EndTime: options.EndTime, ServiceName: options.ServiceName, Namespace: options.Namespace, ServiceIdentity: options.ServiceIdentity, Native: native}
 	if options.Kind == "connections" || options.Kind == "connection-spans" {
 		if options.ServiceIdentity == nil || (options.Kind == "connection-spans" && options.TargetIdentity == nil) {
 			return nil, jsonrpc2.ErrInvalidParams
@@ -140,29 +157,64 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 	default:
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if options.Queries != nil {
-		filtered := "SELECT entry FROM discovered WHERE contains(lower(" + search + "), lower(" + discovery.Literal(options.Term) + "))"
-		statement = prefix + ", discovered AS (" + statement + "), filtered AS (" + filtered + "), ordered AS (SELECT entry FROM filtered ORDER BY " + order + " OFFSET " + strconv.FormatUint(options.Offset, 10) + " LIMIT " + strconv.FormatUint(limit+1, 10) + "), page AS (SELECT entry FROM ordered LIMIT " + strconv.FormatUint(limit, 10) + ") SELECT json_object('rows', coalesce((SELECT list(json_array(entry)) FROM page), []), 'truncated', (SELECT count(*) FROM ordered) > " + strconv.FormatUint(limit, 10)
-		if options.Kind == "services" {
+	if native {
+		switch options.Kind {
+		case "services":
+			search = "concat(entry.serviceNamespace, ' ', entry.serviceName)"
+			order = "entry.serviceNamespace,entry.serviceName,entry.serviceIdentity"
+		case "connections":
+			// Text filtering retains the established searchable representation,
+			// including quoted nanosecond timestamps; output stays native.
+			search = `to_json(struct_update(entry,
+                source := struct_update(entry.source, lastSeen := entry.source.lastSeen::VARCHAR),
+                target := struct_update(entry.target, lastSeen := entry.target.lastSeen::VARCHAR)))::VARCHAR`
+			order = "entry.source.serviceIdentity,entry.target.serviceIdentity"
+		case "connection-spans":
+			search = "entry.name"
+			order = "entry.startTime,entry.traceID,entry.spanID"
+		case "keys":
+			search = "entry.key"
+			order = "entry.key,entry.kind"
+		case "values":
+			search = "entry.identity"
+			order = "entry.count DESC,entry.identity"
+			if options.SortBy != "" || options.SortDirection != "" {
+				direction := "DESC"
+				if options.SortDirection == "asc" || (options.SortDirection == "" && options.SortBy == "name") {
+					direction = "ASC"
+				}
+				field := "entry.count"
+				if options.SortBy == "name" {
+					field = "coalesce(json_extract_string(entry.identity, '$.value'), entry.identity)"
+				}
+				order = field + " " + direction + ",entry.identity"
+			}
+		}
+	}
+	if prefix == "" {
+		prefix = "WITH "
+	} else {
+		prefix += ", "
+	}
+	filtered := "SELECT entry FROM discovered WHERE contains(lower(" + search + "), lower(" + discovery.Literal(options.Term) + "))"
+	if options.Term == "" {
+		filtered = "SELECT entry FROM discovered"
+	}
+	statement = prefix + "discovered AS (" + statement + "), filtered AS (" + filtered + "), ordered AS (SELECT entry, row_number() over(ORDER BY " + order + ") AS ordinal FROM filtered ORDER BY " + order + " OFFSET " + strconv.FormatUint(options.Offset, 10) + " LIMIT " + strconv.FormatUint(limit+1, 10) + "), page AS (SELECT * FROM ordered ORDER BY ordinal LIMIT " + strconv.FormatUint(limit, 10) + ") "
+	totals := options.Queries != nil && options.Kind == "services"
+	if native {
+		statement += "SELECT coalesce((SELECT list(entry ORDER BY ordinal) FROM page), []) AS items, (SELECT count(*) FROM ordered)>" + strconv.FormatUint(limit, 10) + " AS truncated"
+		if totals {
+			statement += ", struct_pack(home := (SELECT count(*) FROM filtered), traces := (SELECT count(DISTINCT trace_id) FROM home_spans), logs := (SELECT count(*) FROM home_logs), metrics := (SELECT count(*) FROM home_metrics)) AS totals"
+		}
+	} else {
+		statement += "SELECT json_object('rows', coalesce((SELECT list(json_array(entry) ORDER BY ordinal) FROM page), []), 'truncated', (SELECT count(*) FROM ordered)>" + strconv.FormatUint(limit, 10)
+		if totals {
 			statement += ", 'totals', json_object('home', (SELECT count(*) FROM filtered), 'traces', (SELECT count(DISTINCT trace_id) FROM home_spans), 'logs', (SELECT count(*) FROM home_logs), 'metrics', (SELECT count(*) FROM home_metrics))"
 		}
 		statement += ", 'columns', json_array(json_object('name', 'entry', 'type', 'JSON')))::VARCHAR"
-		return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-			var result []byte
-			err := db.QueryRowContext(ctx, statement, args...).Scan(&result)
-			return result, err
-		})
 	}
-	statement = "SELECT entry FROM (" + statement + ") discovered WHERE contains(lower(" + search + "), lower(" + discovery.Literal(options.Term) + ")) ORDER BY " + order + " OFFSET " + strconv.FormatUint(options.Offset, 10)
-	queryParams, err := json.Marshal(map[string]any{"sql": statement, "limit": limit})
-	if err != nil {
-		return nil, err
-	}
-	normalized, err := normalizeParams("query", queryParams)
-	if err != nil {
-		return nil, err
-	}
-	return h.query(ctx, &jsonrpc2.Request{Params: normalized})
+	return &discoveryPlan{statement: statement, args: args}, nil
 }
 
 func discoverySearchSources(options discoveryOptions) (string, []any, error) {

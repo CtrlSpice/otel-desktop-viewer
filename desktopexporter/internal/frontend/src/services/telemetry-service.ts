@@ -21,9 +21,7 @@ import type {
   JsonStats,
   JsonQueryNode,
   JsonAttributeMatch,
-  JsonAttributeValue,
 } from '@/types/wire-types'
-import type { AttributeValue } from '@/types/api-types'
 import type {
   DiscoveryOptions,
   DiscoveryPage,
@@ -44,6 +42,14 @@ import { fetchArrow } from './arrow-fetch'
 import { rowViews } from './arrow-values'
 import { ArrowFrame } from './arrow-data'
 import { traceData } from './arrow-traces'
+import {
+  discoveryPage,
+  serviceSummary,
+  serviceConnection,
+  serviceConnectionSpan,
+  attributeKey,
+  attributeFrequency,
+} from './arrow-discovery'
 import {
   exactMetric,
   exactMetricSeries,
@@ -127,52 +133,6 @@ function bigintFromWire(value: unknown): bigint {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accepts null; otherwise delegates to the validating wire decoder.
 function nullableBigintFromWire(value: unknown): bigint | null {
   return value === null ? null : bigintFromWire(value)
-}
-
-function doubleFromWire(value: number | string): number {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decodes the two double wire encodings: JSON numbers and hexadecimal IEEE-754 bit strings.
-  if (typeof value === 'number') return value
-  if (!/^0x[0-9a-f]{16}$/i.test(value)) {
-    throw new Error(`Invalid double wire value: ${value}`)
-  }
-  const bytes = new ArrayBuffer(8)
-  const view = new DataView(bytes)
-  view.setBigUint64(0, BigInt(value), false)
-  return view.getFloat64(0, false)
-}
-
-function attributeValueFromJSON(value: JsonAttributeValue): AttributeValue {
-  switch (value.kind) {
-    case 'empty':
-    case 'string':
-    case 'bytes':
-    case 'bool':
-      return value
-    case 'int64':
-      return { ...value, value: bigintFromWire(value.value) }
-    case 'double':
-      return { ...value, value: doubleFromWire(value.value) }
-    case 'array':
-      return { ...value, value: value.value.map(attributeValueFromJSON) }
-    case 'map':
-      const encodedValuesByKey = new Map<string, Set<string>>()
-      for (const entry of value.value) {
-        const encodedValues =
-          encodedValuesByKey.get(entry.key) ?? new Set<string>()
-        encodedValues.add(JSON.stringify(entry.value))
-        encodedValuesByKey.set(entry.key, encodedValues)
-      }
-      return {
-        ...value,
-        value: value.value.map(entry => ({
-          key: entry.key,
-          value: attributeValueFromJSON(entry.value),
-        })),
-        conflictingKeys: [...encodedValuesByKey].flatMap(([key, values]) =>
-          values.size > 1 ? [key] : []
-        ),
-      }
-  }
 }
 
 /** Thrown when a superseded request is abandoned. */
@@ -290,6 +250,7 @@ function statsFromJSON(json: JsonStats): Stats {
 
 async function discover<T>(
   options: DiscoveryOptions,
+  view: (frame: ArrowFrame, row: number) => T,
   signal?: AbortSignal
 ): Promise<DiscoveryPage<T>> {
   const convert = (query: QueryNode | false | null) =>
@@ -305,29 +266,33 @@ async function discover<T>(
         },
       }
     : plainOptions
-  const result = await callRPC<{
-    rows: [T][]
-    truncated: boolean
-    totals?: DiscoveryPage<T>['totals']
-  }>('discoverTelemetry', named({ options: wireOptions }), signal)
-  return {
-    items: result.rows.map(row => row[0]),
-    truncated: result.truncated,
-    totals: result.totals,
-  }
+  return discoveryPage(
+    await fetchArrow(
+      'discoverTelemetry',
+      JSON.stringify({ options: wireOptions }),
+      signal
+    ),
+    view
+  )
 }
 
 export let telemetryAPI = {
   discoverServiceConnections: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
-  ) => discover<ServiceConnection>({ ...options, kind: 'connections' }, signal),
+  ) =>
+    discover<ServiceConnection>(
+      { ...options, kind: 'connections' },
+      serviceConnection,
+      signal
+    ),
   discoverServiceConnectionSpans: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
   ) =>
     discover<ServiceConnectionSpan>(
       { ...options, kind: 'connection-spans' },
+      serviceConnectionSpan,
       signal
     ),
   getAttributeRecordMatches: async (
@@ -363,29 +328,22 @@ export let telemetryAPI = {
   discoverServices: (
     options: Omit<DiscoveryOptions, 'kind'> = {},
     signal?: AbortSignal
-  ) => discover<ServiceSummary>({ ...options, kind: 'services' }, signal),
+  ) =>
+    discover<ServiceSummary>(
+      { ...options, kind: 'services' },
+      serviceSummary,
+      signal
+    ),
   discoverAttributeKeys: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
-  ) => discover<AttributeKey>({ ...options, kind: 'keys' }, signal),
-  discoverAttributeValues: async (
+  ) =>
+    discover<AttributeKey>({ ...options, kind: 'keys' }, attributeKey, signal),
+  discoverAttributeValues: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
-  ): Promise<DiscoveryPage<AttributeFrequency>> => {
-    const page = await discover<
-      Omit<AttributeFrequency, 'value' | 'identity'> & {
-        value: JsonAttributeValue
-      }
-    >({ ...options, kind: 'values' }, signal)
-    return {
-      ...page,
-      items: page.items.map(item => ({
-        ...item,
-        identity: JSON.stringify(item.value),
-        value: attributeValueFromJSON(item.value),
-      })),
-    }
-  },
+  ): Promise<DiscoveryPage<AttributeFrequency>> =>
+    discover({ ...options, kind: 'values' }, attributeFrequency, signal),
   // Value-first discovery: given text the user can see, which attribute keys
   // hold it. Cross-signal by nature -- the dictionary it reads is shared by
   // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
