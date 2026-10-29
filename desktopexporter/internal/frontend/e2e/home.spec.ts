@@ -321,14 +321,14 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const destination = new URL((await logs.getAttribute('href'))!, page.url())
   expect(destination.pathname).toBe('/logs')
   expect(destination.searchParams.get('q')).toContain(
-    '"service.namespace", string) = "storefront"'
+    `resource.attributes["service.namespace"]::VARCHAR = 'storefront'`
   )
   await logs.click()
   await expect
     .poll(() => new URL(page.url()).searchParams.get('q'))
     .toBe(destination.searchParams.get('q'))
   await expect(page.locator('.cm-content[contenteditable="true"]')).toHaveText(
-    'service.namespace · Resource · String = "storefront"'
+    "service.namespace · Resource · String = 'storefront'"
   )
   await page.getByRole('button', { name: 'Clear search', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()
