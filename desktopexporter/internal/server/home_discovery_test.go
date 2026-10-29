@@ -218,18 +218,20 @@ func TestHomeNameSortPreservesStableCanonicalCollationTies(t *testing.T) {
 	scope := data.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
 	for i, text := range []string{"é", "é", "e\u0301"} {
 		span := scope.Spans().AppendEmpty()
-		span.SetTraceID(pcommon.TraceID{15:1}); span.SetSpanID(pcommon.SpanID{7:byte(i+1)})
-		span.SetStartTimestamp(100); span.SetEndTimestamp(101)
-		span.Attributes().PutStr("letter",text)
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(100)
+		span.SetEndTimestamp(101)
+		span.Attributes().PutStr("letter", text)
 	}
-	require.NoError(t,h.store.WithConn(func(conn driver.Conn) error{return spans.Ingest(t.Context(),conn,data)}))
-	for _, direction := range []string{"asc","desc"} {
-		page:=homePage(t,h,map[string]any{"ownerType":"span","key":"letter","sortBy":"name","sortDirection":direction,"locale":"en-US"})
-		require.Len(t,page.Values,2)
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	for _, direction := range []string{"asc", "desc"} {
+		page := homePage(t, h, map[string]any{"ownerType": "span", "key": "letter", "sortBy": "name", "sortDirection": direction, "locale": "en-US"})
+		require.Len(t, page.Values, 2)
 		// Both Copy text and canonical identity collate equally. The original
 		// stable frontend sort retained the source's descending-frequency order.
-		require.Equal(t,"é",page.Values[0].Preview)
-		require.EqualValues(t,2,page.Values[0].Count)
+		require.Equal(t, "é", page.Values[0].Preview)
+		require.EqualValues(t, 2, page.Values[0].Count)
 	}
 }
 
@@ -239,23 +241,27 @@ func TestServiceNativePairsKeepDistinctIDsAcrossCanonicalNaNs(t *testing.T) {
 	for i := range 2 {
 		resource := data.ResourceSpans().AppendEmpty()
 		resource.Resource().Attributes().PutDouble("service.name", math.Float64frombits(0x7ff8000000000001+uint64(i)))
-		span:=resource.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
-		span.SetTraceID(pcommon.TraceID{15:1});span.SetSpanID(pcommon.SpanID{7:byte(i+1)})
-		span.SetStartTimestamp(100);span.SetEndTimestamp(101)
-		md:=buildTestMetrics()
-		md.ResourceMetrics().At(0).Resource().Attributes().PutDouble("service.name",math.Float64frombits(0x7ff8000000000001+uint64(i)))
-		md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0).SetTimestamp(pcommon.Timestamp(100+i))
-		require.NoError(t,h.store.WithConn(func(conn driver.Conn) error{return metrics.Ingest(t.Context(),conn,md)}))
+		span := resource.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(100)
+		span.SetEndTimestamp(101)
+		md := buildTestMetrics()
+		md.ResourceMetrics().At(0).Resource().Attributes().PutDouble("service.name", math.Float64frombits(0x7ff8000000000001+uint64(i)))
+		md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0).SetTimestamp(pcommon.Timestamp(100 + i))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(t.Context(), conn, md) }))
 	}
-	require.NoError(t,h.store.WithConn(func(conn driver.Conn) error{return spans.Ingest(t.Context(),conn,data)}))
-	result,err:=h.Handle(t.Context(),createRequest("discoverTelemetry",map[string]any{"options":map[string]any{"kind":"services"}}))
-	require.NoError(t,err)
-	var page struct { Rows [][]struct{TraceCount, SpanCount, MetricCount, DataPointCount uint64} }
-	require.NoError(t,json.Unmarshal(result.(json.RawMessage),&page))
-	require.Len(t,page.Rows,1)
-	counts:=page.Rows[0][0]
-	require.EqualValues(t,1,counts.TraceCount)
-	require.EqualValues(t,2,counts.SpanCount)
-	require.EqualValues(t,1,counts.MetricCount)
-	require.EqualValues(t,2,counts.DataPointCount)
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	result, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "services"}}))
+	require.NoError(t, err)
+	var page struct {
+		Rows [][]struct{ TraceCount, SpanCount, MetricCount, DataPointCount uint64 }
+	}
+	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+	require.Len(t, page.Rows, 1)
+	counts := page.Rows[0][0]
+	require.EqualValues(t, 1, counts.TraceCount)
+	require.EqualValues(t, 2, counts.SpanCount)
+	require.EqualValues(t, 1, counts.MetricCount)
+	require.EqualValues(t, 2, counts.DataPointCount)
 }

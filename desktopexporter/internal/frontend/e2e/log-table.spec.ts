@@ -1705,38 +1705,50 @@ test('extreme severity labels have bounded width and retain their exact inspecta
 test('discovered columns retain typed values, provenance, drafts and saved selections', async ({
   page,
 }) => {
-  const values: { column: LogColumn; values: JsonAttributeValue[] }[] = [
+  const values: {
+    column: LogColumn
+    values: JsonAttributeValue[]
+    preview: string
+  }[] = [
     {
       column: { source: 'log', kind: 'field', key: 'flags' },
       values: [{ kind: 'int64', value: '0' }],
+      preview: '0',
     },
     {
       column: { source: 'log', kind: 'attribute', key: 'flags' },
       values: [{ kind: 'int64', value: '9223372036854775807' }],
+      preview: '9223372036854775807',
     },
     {
       column: { source: 'log', kind: 'attribute', key: 'timestamp' },
       values: [{ kind: 'string', value: 'received attribute' }],
+      preview: 'received attribute',
     },
     {
       column: { source: 'resource', kind: 'attribute', key: 'flags' },
       values: [{ kind: 'bool', value: false }],
+      preview: 'false',
     },
     {
       column: { source: 'scope', kind: 'attribute', key: 'flags' },
       values: [{ kind: 'double', value: '0x8000000000000000' }],
+      preview: '-0',
     },
     {
       column: { source: 'scope', kind: 'field', key: 'name' },
       values: [{ kind: 'string', value: '' }],
+      preview: '""',
     },
     {
       column: { source: 'resource', kind: 'field', key: 'schemaUrl' },
       values: [{ kind: 'string', value: 'https://example.test/schema' }],
+      preview: 'https://example.test/schema',
     },
     {
       column: { source: 'log', kind: 'attribute', key: 'missing' },
       values: [],
+      preview: '',
     },
   ]
   const detail: JsonLogData = {
@@ -1794,15 +1806,20 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
             timestamp: detail.observedTimestamp,
             serviceName: 'api',
             bodyPreview: 'body preview',
-            columnValues: (params.columns ?? []).map((column: LogColumn) => ({
-              ...column,
-              values: values.find(
+            columnValues: (params.columns ?? []).map((column: LogColumn) => {
+              const selected = values.find(
                 entry =>
                   entry.column.source === column.source &&
                   entry.column.kind === column.kind &&
                   entry.column.key === column.key
-              )!.values,
-            })),
+              )!
+              return {
+                ...column,
+                present: selected.values.length > 0,
+                valueType: selected.values[0]?.kind ?? '',
+                preview: selected.preview,
+              }
+            }),
           },
         ],
       }
