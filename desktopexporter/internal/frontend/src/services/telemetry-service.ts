@@ -13,6 +13,7 @@ import type {
   LogErrorNavigation,
   TraceLogSummary,
   MetricViewData,
+  MetricSeriesColumnValue,
   MetricSummary,
   Stats,
   MetricAggregateViewData,
@@ -64,6 +65,7 @@ import {
 import {
   exactMetric,
   exactMetricSeries,
+  metricSeriesColumn,
   metricView,
   metricAggregateView,
 } from './arrow-metrics'
@@ -862,6 +864,20 @@ LIMIT ${batch.length}`,
       throw error
     }
   },
+
+  getMetricSeriesColumn: async (
+    metricRef: string,
+    seriesRefs: string[],
+    key: string,
+    signal?: AbortSignal
+  ): Promise<MetricSeriesColumnValue[]> =>
+    metricSeriesColumn(
+      await callArrow(
+        'getMetricSeriesColumn',
+        named({ metricRef, seriesRefs, key }),
+        signal
+      )
+    ),
 
   getMetricSeries: async (
     metricRef: string,

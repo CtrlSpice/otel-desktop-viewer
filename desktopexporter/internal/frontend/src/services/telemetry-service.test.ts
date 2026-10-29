@@ -253,6 +253,76 @@ describe('JSON-RPC response identity', () => {
 })
 
 describe('request cancellation', () => {
+  it('decodes exact comparison values with native nested types and missing attributes', async () => {
+    stubRpcResult([
+      {
+        seriesRef: 'a',
+        attributes: [
+          {
+            key: '',
+            value: {
+              kind: 'map',
+              value: [
+                {
+                  key: 'large',
+                  value: { kind: 'int64', value: '9007199254740993' },
+                },
+                {
+                  key: 'zero',
+                  value: { kind: 'double', value: '0x8000000000000000' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { seriesRef: 'b', attributes: [] },
+    ])
+    const rows = await telemetryAPI.getMetricSeriesColumn(
+      'metric',
+      ['a', 'b'],
+      ''
+    )
+    expect(rows[0]).toMatchObject({
+      seriesRef: 'a',
+      attributes: [
+        {
+          key: '',
+          value: {
+            kind: 'map',
+            value: [
+              {
+                key: 'large',
+                value: { kind: 'int64', value: 9007199254740993n },
+              },
+              { key: 'zero', value: { kind: 'double', value: -0 } },
+            ],
+          },
+        },
+      ],
+    })
+    expect(rows[1]).toMatchObject({ seriesRef: 'b', attributes: [] })
+  })
+
+  it('cancels an exact comparison-column load', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new DOMException('aborted', 'AbortError'))
+    vi.stubGlobal('fetch', fetch)
+    const controller = new AbortController()
+    await expect(
+      telemetryAPI.getMetricSeriesColumn(
+        'metric',
+        ['series'],
+        'key',
+        controller.signal
+      )
+    ).rejects.toBeInstanceOf(RequestAbortedError)
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/data/getMetricSeriesColumn',
+      expect.objectContaining({ signal: controller.signal })
+    )
+  })
   it.each([
     [
       'getMetric',

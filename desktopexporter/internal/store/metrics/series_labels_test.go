@@ -1,6 +1,7 @@
 package metrics_test
 
 import (
+	"bytes"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -15,6 +16,79 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
+
+func TestNestedComparisonPayloadLoadsOnlyOnDemand(t *testing.T) {
+	var viewBytes []int
+	for _, size := range []int{1024, 65536} {
+		s, ctx := storetest.New(t)
+		data := pmetric.NewMetrics()
+		m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("nested-only")
+		points := m.SetEmptyGauge().DataPoints()
+		const key = "context\"雪"
+		for i := range 4 {
+			p := points.AppendEmpty()
+			p.SetTimestamp(100)
+			p.SetIntValue(1)
+			value := p.Attributes().PutEmptyMap(key)
+			value.PutStr("prefix", strings.Repeat("x", size))
+			value.PutInt("tail", int64(i)+9007199254740992)
+			p.Attributes().PutStr("unrelated", "do not ship this attribute")
+		}
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
+		id := findMetricRef(t, s, ctx, "nested-only")
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, 0, 0, nil, "", []string{}, 0)
+		})
+		require.NoError(t, err)
+		require.NotContains(t, string(raw), strings.Repeat("x", 256))
+		var view struct {
+			Timeseries []struct {
+				SeriesRef  string `json:"seriesRef"`
+				Attributes []any  `json:"attributes"`
+				Previews   []struct {
+					Key  string `json:"key"`
+					Kind string `json:"kind"`
+				} `json:"labelPreviews"`
+			} `json:"timeseries"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &view))
+		require.Len(t, view.Timeseries, 4)
+		refs := make([]string, 0, 4)
+		for _, row := range view.Timeseries {
+			require.Empty(t, row.Attributes)
+			require.Len(t, row.Previews, 1)
+			require.Equal(t, key, row.Previews[0].Key)
+			require.Equal(t, "map", row.Previews[0].Kind)
+			refs = append(refs, row.SeriesRef)
+		}
+		_, err = readStore(s, func(db *sql.DB) (int, error) {
+			result, err := metrics.ViewArrow(ctx, db, id, store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, 0, 0, nil, "", []string{}, 0, false, "")
+			if err != nil {
+				return 0, err
+			}
+			defer result.Close()
+			var wire bytes.Buffer
+			if err := result.Write(ctx, &wire); err != nil {
+				return 0, err
+			}
+			viewBytes = append(viewBytes, wire.Len())
+			return wire.Len(), nil
+		})
+		require.NoError(t, err)
+		column, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesColumn(ctx, db, id, refs, key)
+		})
+		require.NoError(t, err)
+		require.Contains(t, string(column), strings.Repeat("x", size))
+		require.Contains(t, string(column), "9007199254740995")
+		require.NotContains(t, string(column), "unrelated")
+		t.Logf("nested bytes/value=%d initial JSON=%d Arrow=%d exact-column JSON=%d", size, len(raw), viewBytes[len(viewBytes)-1], len(column))
+	}
+	// Increasing each comparison value by 63KiB must not increase the initial
+	// response proportionally. IDs/previews have the same bounded shape.
+	require.LessOrEqual(t, viewBytes[1], viewBytes[0]+256)
+}
 
 func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *testing.T) {
 	t.Parallel()
@@ -92,17 +166,17 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 		signatures := make(map[string]bool)
 		previews := make(map[string]bool)
 		for _, series := range view.Timeseries {
-			require.Equal(t, series.Attributes, bySeries[series.SeriesRef])
+			require.Empty(t, series.Attributes, "view carries previews, not exact comparison payloads")
 			require.False(t, series.Complete)
 			require.Len(t, series.Previews, 1)
 			require.Equal(t, "varying", series.Previews[0].Key)
 			require.Less(t, len(series.Previews[0].Text), 512)
 			require.False(t, previews[series.Previews[0].Text], "bounded preview collisions must be disambiguated")
 			previews[series.Previews[0].Text] = true
-			for _, attr := range series.Attributes {
+			for _, attr := range bySeries[series.SeriesRef] {
 				require.Equal(t, "varying", attr["key"])
 			}
-			encoded, err := json.Marshal(series.Attributes)
+			encoded, err := json.Marshal(bySeries[series.SeriesRef])
 			require.NoError(t, err)
 			require.False(t, signatures[string(encoded)], "typed label candidates collapsed")
 			signatures[string(encoded)] = true
@@ -112,6 +186,17 @@ func TestSeriesLabelProjectionPreservesTypedDistinctionsAndReceivedContext(t *te
 			require.NoError(t, err)
 			require.Contains(t, string(received), `"common"`)
 			require.Contains(t, string(received), `"retained"`)
+			var exact struct {
+				Attributes []map[string]any `json:"attributes"`
+			}
+			require.NoError(t, json.Unmarshal(received, &exact))
+			selected := []map[string]any{}
+			for _, attr := range exact.Attributes {
+				if attr["key"] == "varying" {
+					selected = append(selected, attr)
+				}
+			}
+			require.Equal(t, selected, bySeries[series.SeriesRef])
 			contextOnly, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 				return metrics.GetMetricSeries(ctx, db, metricID, series.SeriesRef, store.BoundedTimeRange(0, maxNano), false)
 			})

@@ -186,6 +186,7 @@ test('compact series labels retain hidden rows and load exact context only on di
   )
   const receivedContext = 'received context not included in the series labels'
   const contextRequests: Record<string, unknown>[] = []
+  const comparisonRequests: Record<string, unknown>[] = []
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getMetricView') {
@@ -206,6 +207,26 @@ test('compact series labels retain hidden rows and load exact context only on di
               ],
             })),
           },
+        },
+      })
+    } else if (method === 'getMetricSeriesColumn') {
+      comparisonRequests.push(params)
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: timeseries.flatMap(series =>
+            params.seriesRefs.includes(series.seriesRef)
+              ? [
+                  {
+                    seriesRef: series.seriesRef,
+                    attributes: series.attributes.filter(
+                      attribute => attribute.key === params.key
+                    ),
+                  },
+                ]
+              : []
+          ),
         },
       })
     } else if (method === 'getMetricSeries') {
@@ -236,6 +257,7 @@ test('compact series labels retain hidden rows and load exact context only on di
   const table = page.getByRole('grid', { name: 'Metric series', exact: true })
   await expect(table).toContainText('/first')
   expect(contextRequests).toHaveLength(0)
+  expect(comparisonRequests).toHaveLength(0)
   await table
     .getByRole('checkbox', { name: 'Show route: /second in chart' })
     .uncheck()
@@ -245,6 +267,26 @@ test('compact series labels retain hidden rows and load exact context only on di
   await expect(
     table.getByRole('button', { name: 'Select route: /second', exact: true })
   ).toBeVisible()
+  const sort = table.getByRole('button', { name: 'Sort by route', exact: true })
+  await sort.click()
+  await expect.poll(() => comparisonRequests.length).toBe(1)
+  await expect(table.locator('th[aria-sort="ascending"]')).toContainText(
+    'route'
+  )
+  expect(comparisonRequests[0]).toEqual({
+    metricRef: metric.metricRef,
+    seriesRefs: ['first', 'second'],
+    key: 'route',
+  })
+  await sort.click()
+  await expect(table.locator('tr[data-series-key]').first()).toHaveAttribute(
+    'data-series-key',
+    'second'
+  )
+  expect(comparisonRequests).toHaveLength(1)
+  await expect(
+    table.getByRole('checkbox', { name: 'Show route: /second in chart' })
+  ).not.toBeChecked()
   await table
     .getByRole('button', { name: 'Expand attributes for route: /first' })
     .click()

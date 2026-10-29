@@ -6,6 +6,7 @@ import {
   minimalSeriesTable,
   compareSeriesCells,
   compactSeriesTable,
+  comparisonSeriesColumn,
 } from './minimal-series-labels'
 
 it('renders server previews without opening structured comparison values', () => {
@@ -13,7 +14,11 @@ it('renders server previews without opening structured comparison values', () =>
   const series = [1, 2].map(index => ({
     seriesRef: String(index),
     labelPreviews: [
-      { key: 'context', text: `{nested: array (1 items)} (value ${index})` },
+      {
+        key: 'context',
+        text: `{nested: array (1 items)} (value ${index})`,
+        kind: 'map',
+      },
     ],
     attributes: [
       {
@@ -37,13 +42,15 @@ it('renders server previews without opening structured comparison values', () =>
   expect(table.labels.get('1')!.text).toContain('array (1 items)')
   expect(table.columns[0]!.cells.get('2')!.preview).toContain('(value 2)')
   expect(opened).toBe(0)
-  const cells = table.columns[0]!.cells
+  expect(table.comparisonRequired).toBe(true)
+  expect(table.columns[0]!.cells.get('1')!.kind).toBe('map')
+  const cells = comparisonSeriesColumn(series, ['1', '2'], 'context').cells
   expect(compareSeriesCells(cells.get('1')!, cells.get('2')!)).toBeLessThan(0)
   expect(opened).toBeGreaterThan(0)
   expect(table.labels.get('1')!.text).toContain('array (1 items)')
 })
 
-it('keeps compact-cell comparisons identical to full typed comparisons', () => {
+it('keeps on-demand comparisons identical to full typed comparisons', () => {
   const values: Attribute['value'][] = [
     { kind: 'int64', value: 9007199254740993n },
     { kind: 'int64', value: 9007199254740992n },
@@ -51,13 +58,40 @@ it('keeps compact-cell comparisons identical to full typed comparisons', () => {
     { kind: 'double', value: Infinity },
     { kind: 'double', value: NaN },
     { kind: 'string', value: 'NaN' },
+    { kind: 'double', value: -Infinity },
+    { kind: 'double', value: 0 },
+    { kind: 'bool', value: false },
+    { kind: 'empty', value: null },
+    { kind: 'string', value: '' },
+    { kind: 'string', value: '雪2' },
+    { kind: 'string', value: '雪10' },
+    ...[10n, 2n].map(value => ({
+      kind: 'map' as const,
+      value: [
+        {
+          key: 'prefix',
+          value: { kind: 'string' as const, value: 'same'.repeat(10000) },
+        },
+        { key: 'tail', value: { kind: 'int64' as const, value } },
+      ],
+    })),
+    { kind: 'array', value: [{ kind: 'double', value: -0 }] },
   ]
   const series = values.map((value, index) => ({
     seriesRef: String(index),
     attributes: [{ key: 'n', value }],
     labelPreviews: [{ key: 'n', text: String(index) }],
   }))
-  const compact = compactSeriesTable(series).columns[0]!.cells
+  series.push({
+    seriesRef: 'missing',
+    attributes: [],
+    labelPreviews: [{ key: 'n', text: '[absent]' }],
+  })
+  const compact = comparisonSeriesColumn(
+    series,
+    series.map(row => row.seriesRef),
+    'n'
+  ).cells
   const exact = minimalSeriesTable(
     series.map(row => ({ key: row.seriesRef, attributes: row.attributes })),
     true
@@ -81,7 +115,7 @@ it('keeps compact-cell comparisons identical to full typed comparisons', () => {
       )
 })
 
-it('indexes lazy attributes once and opens only the column being sorted', () => {
+it('reads no exact attributes for previews and prepares only the requested column once', () => {
   let arraysRead = 0
   let keysRead = 0
   let unrelatedOpened = 0
@@ -118,19 +152,46 @@ it('indexes lazy attributes once and opens only the column being sorted', () => 
     },
   }))
   const table = compactSeriesTable(series)
-  const cells = table.columns.find(column => column.key === 'route')!.cells
-  expect(arraysRead).toBe(32)
-  expect(keysRead).toBe(64)
+  expect(table.columns).toHaveLength(2)
+  expect(arraysRead).toBe(0)
+  expect(keysRead).toBe(0)
+  const columnValues = series.map((row, index) => ({
+    seriesRef: row.seriesRef,
+    get attributes(): Attribute[] {
+      arraysRead++
+      return [
+        { key: 'route', value: { kind: 'string', value: `/route/${index}` } },
+      ]
+    },
+  }))
+  const cells = comparisonSeriesColumn(
+    columnValues,
+    series.map(row => row.seriesRef),
+    'route'
+  ).cells
   for (let repeat = 0; repeat < 3; repeat++) {
     expect([...cells.values()].sort(compareSeriesCells)[0]!.label).toBe(
       '/route/0'
     )
   }
   expect(arraysRead).toBe(32)
-  // One initial index plus one exact-column preparation; comparator calls do
-  // not repeatedly scan each row's complete attribute list.
-  expect(keysRead).toBe(128)
+  expect(keysRead).toBe(0)
   expect(unrelatedOpened).toBe(0)
+})
+
+it('rejects incomplete, duplicate, foreign or wrong-column comparison responses', () => {
+  const cell = {
+    seriesRef: 'one',
+    attributes: [{ key: 'k', value: { kind: 'string' as const, value: 'v' } }],
+  }
+  for (const rows of [
+    [],
+    [cell, cell],
+    [{ ...cell, seriesRef: 'foreign' }],
+    [{ ...cell, attributes: [{ ...cell.attributes[0]!, key: 'wrong' }] }],
+  ]) {
+    expect(() => comparisonSeriesColumn(rows, ['one'], 'k')).toThrow()
+  }
 })
 
 function row(key: string, values: Record<string, string>): LegendTimeseries {

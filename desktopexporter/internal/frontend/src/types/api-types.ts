@@ -420,12 +420,12 @@ export type SeriesRateStats = {
 export type MetricSeriesViewData = {
   /** Database-local series reference. */
   seriesRef: string
-  /** Distinguishing label candidates, not the complete received series context. */
+  /** Empty in preview responses; exact context is available through getMetricSeries. */
   attributes: Attributes
-  /** False when common attributes were withheld; inspect through getMetricSeries. */
+  /** False when received attributes were withheld. */
   attributesComplete?: boolean
-  /** Bounded display text for the server-selected columns; values above retain exact comparisons. */
-  labelPreviews?: { key: string; text: string }[]
+  /** Bounded server-selected columns; getMetricSeriesColumn supplies exact comparisons. */
+  labelPreviews?: { key: string; text: string; kind?: string }[]
   /** Resource associated with the parent Metric. */
   resource: ResourceData
   datapoints: DataPoint[]
@@ -547,6 +547,12 @@ export type MetricViewData = {
     effective: { startNs: bigint | null; endNs: bigint | null }
   }
 } & OptionalMetricTemporality
+
+/** One exact attribute, or an empty attribute list when absent, per retained series. */
+export type MetricSeriesColumnValue = Pick<
+  MetricSeriesViewData,
+  'seriesRef' | 'attributes'
+>
 
 export type ExactMetricResource = {
   attributes: Attributes

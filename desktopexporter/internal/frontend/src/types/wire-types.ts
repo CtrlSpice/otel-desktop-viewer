@@ -305,7 +305,7 @@ export type JsonMetricSeriesViewData = {
   seriesRef: string
   attributes: JsonAttribute[]
   attributesComplete?: boolean
-  labelPreviews?: { key: string; text: string }[]
+  labelPreviews?: { key: string; text: string; kind?: string }[]
   /** Resource associated with the parent Metric. */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]

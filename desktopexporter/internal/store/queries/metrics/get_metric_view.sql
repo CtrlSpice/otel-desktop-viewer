@@ -915,7 +915,7 @@
 			where c.key in (select key from series_label_selected)
 		),
 		series_label_preview_displays as (
-			select series_id, key, case
+			select series_id, key, kind, case
 				when count(distinct class) over (partition by key, preview) <= 1 then preview
 				when count(distinct class) over (partition by key, preview, kind) <= 1
 					then preview || ' (' || kind || ')'
@@ -924,14 +924,8 @@
 			from series_label_preview_values
 		),
 		series_label_previews as (
-			select series_id, list(struct_pack(key := key, text := text) order by key) as previews
+			select series_id, list(struct_pack(key := key, text := text, kind := kind) order by key) as previews
 			from series_label_preview_displays group by series_id
-		),
-		series_label_attributes as (
-			select series_id, variant_group_object(key, value) as attributes
-			from series_label_entries
-			where key in (select key from series_label_selected)
-			group by series_id
 		),
 
 		-- Build wire JSON only for datapoints surviving reduction and narrowing.
@@ -1018,7 +1012,7 @@
 		timeseries_agg as (
 			select {{if arrow}}list({{template "viewSeries" .}} order by t.latest_ts desc, t.attrs_key){{else}}to_json(list(metric_series_view_json(
 				t.attrs_key,
-				attribute_document(coalesce(sla.attributes, '{}'::json::variant)),
+				'[]'::json,
 				s.resource_json,
 				-- [] means this series shipped no datapoints.
 				coalesce(tj.datapoints, json('[]')),
@@ -1036,7 +1030,6 @@
 			-- Series ID makes equal latest timestamps deterministic.
 			) order by t.latest_ts desc, t.attrs_key)){{end}} as timeseries
 			from ts_dps_agg t
-			left join series_label_attributes sla on sla.series_id = t.series_id
 			left join series_label_previews slp on slp.series_id = t.series_id
 			-- Narrowed series have no datapoint JSON row.
 			left join ts_dps_json tj on tj.series_id = t.series_id
