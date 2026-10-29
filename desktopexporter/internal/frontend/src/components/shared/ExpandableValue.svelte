@@ -9,13 +9,15 @@
     /** The key, rendered by the caller so each signal keeps its own markup. */
     keyLabel?: Snippet
     value: string
+    /** Reset disclosure when rich content changes, without serializing it. */
+    identity?: unknown
     /** Rich field content. The value remains its identity for expansion reset. */
     children?: Snippet
     /** Extra classes for the value (tabular-nums, font-mono, ...). */
     valueClass?: string
   }
 
-  let { keyLabel, value, children, valueClass = '' }: Props = $props()
+  let { keyLabel, value, identity, children, valueClass = '' }: Props = $props()
   const contentID = $props.id()
 
   let expanded = $state(false)
@@ -26,7 +28,7 @@
   // Clicking between spans should not leave a field open from the previous
   // one: the same field on the next span is a different question.
   $effect(() => {
-    void value
+    void (identity ?? value)
     expanded = false
   })
 
@@ -34,7 +36,7 @@
   // on the width the value ends up with, which the string cannot know. The
   // observer keeps it honest as the pane is dragged.
   $effect(() => {
-    void value
+    void (identity ?? value)
     const node = el
     if (!node) return
     const measure = () => {

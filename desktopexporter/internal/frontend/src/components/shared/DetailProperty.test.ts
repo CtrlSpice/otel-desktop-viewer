@@ -5,8 +5,40 @@ import userEvent from '@testing-library/user-event'
 import DetailProperty from './DetailProperty.svelte'
 import { foldAll, foldedRanges } from '@codemirror/language'
 import { jsonEditorView } from '@/test/json-editor-helpers'
+import * as detailValue from './detail-value'
 
 describe('DetailProperty copy controls', () => {
+  it('serializes exact native Copy only on request and uses the current value', async () => {
+    const user = userEvent.setup()
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const serialize = vi.spyOn(detailValue, 'attributeValueCopy')
+    const result = render(DetailProperty, {
+      fieldName: 'payload',
+      fieldType: 'array',
+      typedValue: {
+        kind: 'array',
+        value: [{ kind: 'int64', value: 9007199254740993n }],
+      },
+    })
+    expect(serialize).not.toHaveBeenCalled()
+    expect(jsonEditorView(result.container).state.doc.toString()).toContain(
+      '9007199254740993'
+    )
+    await user.click(screen.getByRole('button', { name: 'Copy payload' }))
+    expect(serialize).toHaveBeenCalledTimes(1)
+    expect(copy).toHaveBeenLastCalledWith('[\n  9007199254740993\n]')
+    await result.rerender({
+      fieldName: 'payload',
+      fieldType: 'array',
+      typedValue: { kind: 'array', value: [{ kind: 'double', value: -0 }] },
+    })
+    expect(serialize).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'Copy payload' }))
+    expect(serialize).toHaveBeenCalledTimes(2)
+    expect(copy).toHaveBeenLastCalledWith('[\n  -0\n]')
+    serialize.mockRestore()
+  })
+
   it.each(['body', 'output', 'attributes'])(
     'formats nested runtime code in shared %s Details without changing Copy or type',
     async fieldName => {
