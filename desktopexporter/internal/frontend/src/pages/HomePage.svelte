@@ -63,7 +63,9 @@
   const navigation = getNavigationCounts()
   const signals = SIGNAL_ORDER
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
-  let fieldsReady = $state(false)
+  let fieldsReady = false
+  let fieldRequest: Promise<void> | undefined
+  let submission = 0
   let queries = $state(homeQueries(null))
   let pendingQueries = homeQueries(null)
   let totalServices = $state<number>()
@@ -202,38 +204,48 @@
       if (!controller.signal.aborted) loading = false
     }
   }
-  function submit() {
+  function ensureFields(): Promise<void> {
+    if (fieldsReady) return Promise.resolve()
+    fieldRequest ??= Promise.all(signals.map(getDynamicAttributes)).then(
+      groups => {
+        if (!alive) return
+        fields = homeFields([fields, ...groups])
+        fieldsReady = true
+      }
+    )
+    return fieldRequest
+  }
+  async function submit() {
+    const text = draft
+    const current = ++submission
     try {
-      pendingQueries = homeQueries(parseQuery(draft, fields))
-      term = draft
-      routeQuery = draft
+      if (text.trim()) await ensureFields()
+      if (!alive || current !== submission || text !== draft) return
+      pendingQueries = homeQueries(parseQuery(text, fields))
+      initialized = true
+      term = text
+      routeQuery = text
       const route = readRoute()
-      if ((route.query.q ?? '') !== draft)
+      if ((route.query.q ?? '') !== text)
         navigateCurrentRoute(
-          { ...route.query, q: draft || undefined },
+          { ...route.query, q: text || undefined },
           'replace'
         )
       void load(0, true)
     } catch (reason) {
-      error = reason instanceof Error ? reason.message : String(reason)
+      if (alive && current === submission)
+        error = reason instanceof Error ? reason.message : String(reason)
     }
   }
   $effect(() => {
     void time.selection
-    if (!fieldsReady) return
     untrack(() => {
       if (!initialized) {
-        initialized = true
-        submit()
+        void submit()
       } else void load(0, true)
     })
   })
   onMount(() => {
-    void Promise.all(signals.map(getDynamicAttributes)).then(groups => {
-      if (!alive) return
-      fields = homeFields([fields, ...groups])
-      fieldsReady = true
-    })
     return subscribeToRoute(() => {
       const route = readRoute()
       if (route.path !== '/') return
@@ -241,7 +253,7 @@
       if (next === routeQuery) return
       routeQuery = next
       draft = next
-      if (fieldsReady) submit()
+      void submit()
     })
   })
   onDestroy(() => {
@@ -378,6 +390,9 @@
         aria-label="Search telemetry"
         placeholder="Search telemetry…"
         bind:value={draft}
+        onfocus={() => {
+          void ensureFields()
+        }}
       />
       <button
         type="button"

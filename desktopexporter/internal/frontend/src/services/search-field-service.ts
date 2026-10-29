@@ -1,7 +1,22 @@
 import type { FieldDefinition, SearchSignal } from '@/search/model'
 import { telemetryAPI } from './telemetry-service'
 
-export async function getDynamicAttributes(
+// Share only in-flight work. A later request can see newly ingested fields.
+const pending = new Map<SearchSignal, Promise<FieldDefinition[]>>()
+
+export function getDynamicAttributes(
+  signal: SearchSignal
+): Promise<FieldDefinition[]> {
+  const existing = pending.get(signal)
+  if (existing) return existing
+  const request = fetchDynamicAttributes(signal).finally(() =>
+    pending.delete(signal)
+  )
+  pending.set(signal, request)
+  return request
+}
+
+async function fetchDynamicAttributes(
   signal: SearchSignal
 ): Promise<FieldDefinition[]> {
   switch (signal) {

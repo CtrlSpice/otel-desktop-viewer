@@ -96,6 +96,9 @@ describe('Home service discovery', () => {
       expect(screen.getByRole('tab', { name: /^Logs/ })).toBeDisabled()
     )
     expect(services).toHaveBeenCalledTimes(1)
+    expect(telemetryAPI.getTraceAttributeDefinitions).not.toHaveBeenCalled()
+    expect(telemetryAPI.getMetricAttributeDefinitions).not.toHaveBeenCalled()
+    expect(telemetryAPI.getLogAttributeDefinitions).not.toHaveBeenCalled()
     expect(window.location.pathname).toBe('/')
     await fireEvent.click(
       screen
