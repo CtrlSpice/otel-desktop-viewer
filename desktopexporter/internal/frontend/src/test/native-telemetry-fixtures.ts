@@ -2,6 +2,7 @@ import {
   Bool,
   DataType,
   DenseUnion,
+  Decimal,
   Field,
   Float64,
   Int64,
@@ -30,12 +31,17 @@ type Value =
   | Uint8Array
   | Value[]
   | Map<string, Value>
+  | MapEntries
   | { [key: string]: Value }
+
+class MapEntries {
+  constructor(readonly entries: [string, Value][]) {}
+}
 
 function kind(value: Value): string {
   if (value === null) return 'null'
   if (value instanceof Uint8Array) return 'bytes'
-  if (value instanceof Map) return 'map'
+  if (value instanceof Map || value instanceof MapEntries) return 'map'
   if (Array.isArray(value)) return 'list'
   return typeof value
 }
@@ -74,6 +80,32 @@ function column(values: Value[]): Data {
   values.forEach((v, i) => {
     if (v !== null) nullBitmap[i >> 3] |= 1 << (i % 8)
   })
+  if (
+    category === 'bigint' &&
+    (values.some(
+      v =>
+        v !== null &&
+        ((v as bigint) < -(1n << 63n) || (v as bigint) >= 1n << 64n)
+    ) ||
+      (values.some(v => v !== null && (v as bigint) < 0n) &&
+        values.some(v => v !== null && (v as bigint) >= 1n << 63n)))
+  ) {
+    const data = new Uint32Array(values.length * 4)
+    values.forEach((v, i) => {
+      let bits = BigInt.asUintN(128, (v as bigint | null) ?? 0n)
+      for (let word = 0; word < 4; word++) {
+        data[i * 4 + word] = Number(bits & 0xffffffffn)
+        bits >>= 32n
+      }
+    })
+    return makeData({
+      type: new Decimal(0, 38, 128),
+      data,
+      length: values.length,
+      nullCount,
+      nullBitmap,
+    })
+  }
   if (category === 'object') {
     const objects = values as ({ [key: string]: Value } | null)[]
     const keys = [...new Set(objects.flatMap(v => Object.keys(v ?? {})))]
@@ -93,9 +125,11 @@ function column(values: Value[]): Data {
     const lists = values.map(v =>
       v === null
         ? []
-        : v instanceof Map
-          ? [...v].map(([key, value]) => ({ key, value }))
-          : (v as Value[])
+        : v instanceof MapEntries
+          ? v.entries.map(([key, value]) => ({ key, value }))
+          : v instanceof Map
+            ? [...v].map(([key, value]) => ({ key, value }))
+            : (v as Value[])
     )
     let size = 0
     const offsets = [0, ...lists.map(v => (size += v.length))]
@@ -160,7 +194,7 @@ function value(v: JsonAttributeValue): Value {
     case 'array':
       return v.value.map(value)
     case 'map':
-      return new Map(v.value.map(e => [e.key, value(e.value)]))
+      return new MapEntries(v.value.map(e => [e.key, value(e.value)]))
     case 'bytes':
       return new Uint8Array(Buffer.from(v.value, 'base64'))
     default:
@@ -171,8 +205,8 @@ function value(v: JsonAttributeValue): Value {
 type RecordFixture = Record<string, any>
 function attrs(
   list: { key: string; value: JsonAttributeValue }[] = []
-): Map<string, Value> {
-  return new Map(list.map(a => [a.key, value(a.value)]))
+): MapEntries {
+  return new MapEntries(list.map(a => [a.key, value(a.value)]))
 }
 function resource(r: RecordFixture = {}): Value {
   return {
@@ -230,6 +264,87 @@ function log(r: RecordFixture) {
 export function telemetryDataset(method: string, result: any): Table {
   let rows: Record<string, Value>[]
   switch (method) {
+    case 'getMetric':
+      rows = [
+        {
+          ...metricIdentity(result),
+          series: result.series.map((s: RecordFixture) => ({
+            ...s,
+            attributes: attrs(s.attributes),
+            datapointCount: BigInt(s.datapointCount),
+            firstDatapointTimestamp: big(s.firstDatapointTimestamp),
+            lastDatapointTimestamp: big(s.lastDatapointTimestamp),
+          })),
+        },
+      ]
+      break
+    case 'getMetricSeries':
+      rows = [
+        {
+          ...metricIdentity(result),
+          seriesRef: result.seriesRef,
+          attributes: attrs(result.attributes),
+          datapoints: result.datapoints.map(metricPoint),
+        },
+      ]
+      break
+    case 'getMetricView':
+      rows = [
+        {
+          ...metricIdentity(result),
+          lastSeenNs: big(result.lastSeenNs),
+          datapointCount: result.datapointCount ?? 0,
+          boundsMismatch: result.boundsMismatch ?? null,
+          window: {
+            requested: {
+              startNs: big(result.window.requested.startNs),
+              endNs: big(result.window.requested.endNs),
+            },
+            effective: {
+              startNs: big(result.window.effective.startNs),
+              endNs: big(result.window.effective.endNs),
+            },
+          },
+          timeseries: result.timeseries.map((s: RecordFixture) => ({
+            seriesRef: s.seriesRef,
+            attributes: attrs(s.attributes),
+            resource: resource(s.resource),
+            datapoints: s.datapoints.map(metricPoint),
+            stats: stats(s.stats),
+            rateStats: stats(s.rateStats),
+            datapointCount: s.datapointCount ?? 0,
+            lastSeenNs: big(s.lastSeenNs),
+            views: s.views?.map(scalarBucket) ?? null,
+            sparkline:
+              s.sparkline?.map((p: RecordFixture) => ({
+                timestamp: BigInt(p.timestamp),
+                value: double(p.value),
+              })) ?? null,
+          })),
+        },
+      ]
+      break
+    case 'getMetricAggregateView': {
+      if (result === null) {
+        rows = []
+        break
+      }
+      const row = {
+        aggregate: result.aggregate?.map(metricPoint) ?? null,
+        scalarAggregate: result.scalarAggregate
+          ? {
+              selected: result.scalarAggregate.selected.map(scalarBucket),
+              all: result.scalarAggregate.all.map(scalarBucket),
+            }
+          : null,
+      }
+      if (result.contribution !== undefined)
+        Object.assign(row, {
+          contribution: result.contribution?.map(metricPoint) ?? null,
+        })
+      rows = [row]
+      break
+    }
     case 'getTraceView':
       rows = [trace(result)]
       break
@@ -338,5 +453,110 @@ function trace(data: JsonTraceData) {
         })),
       },
     })),
+  }
+}
+
+function big(value: string | number | null | undefined) {
+  return value == null ? null : BigInt(value)
+}
+function double(v: string | number | null | undefined): Value {
+  return v == null ? null : value({ kind: 'double', value: v })
+}
+function stats(s: RecordFixture | null | undefined) {
+  if (!s) return null
+  return {
+    ...s,
+    min: double(s.min),
+    max: double(s.max),
+    sum: double(s.sum),
+    avg: double(s.avg),
+  }
+}
+function metricIdentity(r: RecordFixture) {
+  return {
+    metricRef: r.metricRef,
+    name: r.name ?? '',
+    description: r.description ?? '',
+    unit: r.unit ?? '',
+    metadata: attrs(r.metadata),
+    metricType: r.metricType ?? 'Gauge',
+    aggregationTemporalityCode: r.aggregationTemporalityCode ?? null,
+    isMonotonic: r.isMonotonic ?? null,
+    resource: resource({
+      ...r.resource,
+      schemaUrl: r.resource?.schemaUrl ?? r.resourceSchemaUrl,
+    }),
+    scope: scope({
+      ...r.scope,
+      schemaUrl: r.scope?.schemaUrl ?? r.scopeSchemaUrl,
+    }),
+  }
+}
+function metricPoint(r: RecordFixture) {
+  return {
+    ...r,
+    timestamp: BigInt(r.timestamp),
+    startTime: BigInt(r.startTime),
+    exemplars: (r.exemplars ?? []).map((e: RecordFixture) => ({
+      ...e,
+      timestamp: BigInt(e.timestamp),
+      intValue: big(e.intValue),
+      doubleValue: double(e.doubleValue),
+      filteredAttributes: attrs(e.filteredAttributes),
+    })),
+    exemplarCount: r.exemplarCount ?? null,
+    intValue: big(r.intValue),
+    doubleValue: double(r.doubleValue),
+    count: big(r.count),
+    sum: double(r.sum),
+    min: double(r.min),
+    max: double(r.max),
+    zeroCount: big(r.zeroCount),
+    zeroThreshold: double(r.zeroThreshold),
+    bucketCounts: r.bucketCounts?.map(BigInt) ?? null,
+    explicitBounds: r.explicitBounds?.map(double) ?? null,
+    positiveBucketCounts: r.positiveBucketCounts?.map(BigInt) ?? null,
+    negativeBucketCounts: r.negativeBucketCounts?.map(BigInt) ?? null,
+    positive: r.positive
+      ? {
+          offset: r.positive.offset,
+          bucketCounts: r.positive.bucketCounts.map(BigInt),
+        }
+      : null,
+    negative: r.negative
+      ? {
+          offset: r.negative.offset,
+          bucketCounts: r.negative.bucketCounts.map(BigInt),
+        }
+      : null,
+    quantiles:
+      r.quantiles == null
+        ? null
+        : new Map(
+            Object.entries(r.quantiles).map(([key, v]) => [
+              key,
+              double(v as number | string | null),
+            ])
+          ),
+    deltaInt:
+      typeof r.delta === 'string' && !r.delta.startsWith('0x')
+        ? BigInt(r.delta)
+        : null,
+    deltaDouble:
+      typeof r.delta === 'number' ||
+      (typeof r.delta === 'string' && r.delta.startsWith('0x'))
+        ? double(r.delta)
+        : null,
+    isReset: r.isReset ?? null,
+  }
+}
+function scalarBucket(r: RecordFixture) {
+  return {
+    ...r,
+    bucketStart: BigInt(r.bucketStart),
+    sum: double(r.sum),
+    avg: double(r.avg),
+    rate: double(r.rate),
+    slope: double(r.slope),
   }
 }

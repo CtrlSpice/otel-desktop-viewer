@@ -50,7 +50,13 @@ type StubRpcResponse<T> = {
 function stubRpcResponse<T>(body: StubRpcResponse<T>) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+    vi.fn().mockImplementation(async (url, init: RequestInit) => {
+      if (String(url).startsWith('/api/data/')) {
+        if (body.error) return Response.json(body.error, { status: 400 })
+        return arrowResponse(
+          telemetryDataset(String(url).split('/').at(-1)!, body.result)
+        )
+      }
       const request = JSON.parse(String(init.body)) as { id: number }
       const responseBody = 'id' in body ? body : { ...body, id: request.id }
       return {

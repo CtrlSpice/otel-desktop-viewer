@@ -335,7 +335,7 @@ export function aggregateToSlices(
   if (!buckets) return []
   return buckets.map(b => {
     const totals = {
-      count: b.count,
+      count: Number(b.count),
       sum: b.sum ?? undefined,
       // Derived from the buckets server-side; a merge cannot carry the
       // originals through.
@@ -349,7 +349,7 @@ export function aggregateToSlices(
         timestamp: BigInt(b.timestamp),
         seriesRef: '',
         bounds: b.explicitBounds ?? [],
-        counts: b.bucketCounts ?? [],
+        counts: b.bucketCounts?.map(Number) ?? [],
         totals,
         quantiles: b.quantiles ?? null,
       }
@@ -360,11 +360,11 @@ export function aggregateToSlices(
       seriesRef: '',
       scale: b.scale ?? 0,
       zeroThreshold: b.zeroThreshold ?? 0,
-      zeroCount: b.zeroCount ?? 0,
+      zeroCount: Number(b.zeroCount ?? 0n),
       positiveOffset: b.positiveBucketOffset ?? 0,
-      positiveCounts: b.positiveBucketCounts ?? [],
+      positiveCounts: b.positiveBucketCounts?.map(Number) ?? [],
       negativeOffset: b.negativeBucketOffset ?? 0,
-      negativeCounts: b.negativeBucketCounts ?? [],
+      negativeCounts: b.negativeBucketCounts?.map(Number) ?? [],
       totals,
       quantiles: b.quantiles ?? null,
     }

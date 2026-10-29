@@ -9,45 +9,21 @@ import type {
   LogErrorNavigation,
   TraceLogSummary,
   MetricViewData,
-  MetricSeriesViewData,
   MetricSummary,
   Stats,
-  Exemplar,
-  DataPoint,
-  ScalarAggregate,
-  ScalarViewBucket,
   MetricAggregateViewData,
   ExactMetric,
   ExactMetricSeries,
-  ReceivedNumberDataPoint,
-  ReceivedHistogramDataPoint,
-  ReceivedExponentialHistogramDataPoint,
-  AggregateBucket,
 } from '@/types/api-types'
 import type {
   JsonAttributeDefinition,
-  JsonDataPoint,
   JsonDeleteResult,
-  JsonExemplar,
-  JsonMetricViewData,
-  JsonMetricSeriesViewData,
   JsonStats,
   JsonQueryNode,
   JsonAttributeMatch,
-  JsonAttribute,
   JsonAttributeValue,
-  JsonMetricAggregateViewData,
-  JsonExactMetric,
-  JsonExactMetricSeries,
-  JsonReceivedNumberDataPoint,
-  JsonReceivedHistogramDataPoint,
-  JsonReceivedExponentialHistogramDataPoint,
-  JsonScalarAggregate,
-  JsonScalarViewBucket,
-  JsonAggregateBucket,
-  JsonDouble,
 } from '@/types/wire-types'
-import type { Attribute, AttributeValue } from '@/types/api-types'
+import type { AttributeValue } from '@/types/api-types'
 import type {
   DiscoveryOptions,
   DiscoveryPage,
@@ -68,6 +44,12 @@ import { fetchArrow } from './arrow-fetch'
 import { rowViews } from './arrow-values'
 import { ArrowFrame } from './arrow-data'
 import { traceData } from './arrow-traces'
+import {
+  exactMetric,
+  exactMetricSeries,
+  metricView,
+  metricAggregateView,
+} from './arrow-metrics'
 import {
   logData,
   logSummary,
@@ -159,30 +141,6 @@ function doubleFromWire(value: number | string): number {
   return view.getFloat64(0, false)
 }
 
-function nullableDoubleFromWire(value: JsonDouble | null): number | null {
-  return value === null ? null : doubleFromWire(value)
-}
-
-function scalarDeltaFromWire(
-  value: JsonDouble | string | null | undefined
-): number | bigint | null | undefined {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decodes calculated-delta wire values: numbers and nullish values pass through; strings go to the bigint or double decoder.
-  if (typeof value !== 'string') return value
-  return value.startsWith('0x') ? doubleFromWire(value) : bigintFromWire(value)
-}
-
-function doubleRecordFromJSON(
-  values: Record<string, JsonDouble | null> | null | undefined
-): Record<string, number | null> | null {
-  if (values === null || values === undefined) return null
-  return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [
-      key,
-      nullableDoubleFromWire(value),
-    ])
-  )
-}
-
 function attributeValueFromJSON(value: JsonAttributeValue): AttributeValue {
   switch (value.kind) {
     case 'empty':
@@ -215,22 +173,6 @@ function attributeValueFromJSON(value: JsonAttributeValue): AttributeValue {
         ),
       }
   }
-}
-
-function attributesFromJSON(attributes: JsonAttribute[]): Attribute[] {
-  const encodedValuesByKey = new Map<string, Set<string>>()
-  for (const attribute of attributes) {
-    const encodedValues =
-      encodedValuesByKey.get(attribute.key) ?? new Set<string>()
-    encodedValues.add(JSON.stringify(attribute.value))
-    encodedValuesByKey.set(attribute.key, encodedValues)
-  }
-  return attributes.map(attribute => ({
-    id: attribute.id,
-    key: attribute.key,
-    value: attributeValueFromJSON(attribute.value),
-    hasConflict: encodedValuesByKey.get(attribute.key)!.size > 1,
-  }))
 }
 
 /** Thrown when a superseded request is abandoned. */
@@ -319,371 +261,6 @@ async function callArrow(
   } catch (error) {
     if (signal?.aborted || isAbortError(error)) throw new RequestAbortedError()
     throw error
-  }
-}
-
-function exemplarFromJSON(json: JsonExemplar): Exemplar {
-  const base = {
-    timestamp: bigintFromWire(json.timestamp),
-    traceID: json.traceID,
-    spanID: json.spanID,
-    filteredAttributes: attributesFromJSON(json.filteredAttributes),
-  }
-  switch (json.valueType) {
-    case 'Double':
-      return {
-        ...base,
-        valueType: 'Double',
-        doubleValue: doubleFromWire(json.doubleValue),
-        intValue: null,
-      }
-    case 'Int':
-      return {
-        ...base,
-        valueType: 'Int',
-        doubleValue: null,
-        intValue: bigintFromWire(json.intValue),
-      }
-    case 'Empty':
-      return {
-        ...base,
-        valueType: 'Empty',
-        doubleValue: null,
-        intValue: null,
-      }
-  }
-}
-
-function dataPointFromJSON(json: JsonDataPoint): DataPoint {
-  const base = {
-    id: json.id,
-    timestamp: bigintFromWire(json.timestamp),
-    timestampMs: json.timestampMs,
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-    exemplarCount: json.exemplarCount,
-  }
-  switch (json.metricType) {
-    case 'Gauge':
-      return {
-        ...base,
-        metricType: 'Gauge',
-        doubleValue: nullableDoubleFromWire(json.doubleValue),
-        intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
-        valueType: json.valueType,
-      }
-    case 'Sum':
-      return {
-        ...base,
-        metricType: 'Sum',
-        doubleValue: nullableDoubleFromWire(json.doubleValue),
-        intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
-        valueType: json.valueType,
-        isMonotonic: json.isMonotonic,
-        aggregationTemporalityCode: json.aggregationTemporalityCode,
-        aggregationTemporality: json.aggregationTemporality,
-        delta: scalarDeltaFromWire(json.delta),
-        isReset: json.isReset,
-      }
-    case 'Histogram':
-      return {
-        ...base,
-        metricType: 'Histogram',
-        count: bigintFromWire(json.count),
-        sum: nullableDoubleFromWire(json.sum),
-        min: nullableDoubleFromWire(json.min),
-        max: nullableDoubleFromWire(json.max),
-        bucketCounts: json.bucketCounts.map(bigintFromWire),
-        explicitBounds: json.explicitBounds.map(doubleFromWire),
-        quantiles: doubleRecordFromJSON(json.quantiles),
-        aggregationTemporalityCode: json.aggregationTemporalityCode,
-        aggregationTemporality: json.aggregationTemporality,
-      }
-    case 'ExponentialHistogram':
-      return {
-        ...base,
-        metricType: 'ExponentialHistogram',
-        count: bigintFromWire(json.count),
-        sum: nullableDoubleFromWire(json.sum),
-        min: nullableDoubleFromWire(json.min),
-        max: nullableDoubleFromWire(json.max),
-        scale: json.scale,
-        zeroCount: bigintFromWire(json.zeroCount),
-        zeroThreshold: doubleFromWire(json.zeroThreshold),
-        positiveBucketOffset: json.positiveBucketOffset,
-        positiveBucketCounts: json.positiveBucketCounts.map(bigintFromWire),
-        negativeBucketOffset: json.negativeBucketOffset,
-        negativeBucketCounts: json.negativeBucketCounts.map(bigintFromWire),
-        quantiles: doubleRecordFromJSON(json.quantiles),
-        aggregationTemporalityCode: json.aggregationTemporalityCode,
-        aggregationTemporality: json.aggregationTemporality,
-      }
-  }
-}
-
-function timeseriesFromJSON(
-  json: JsonMetricSeriesViewData
-): MetricSeriesViewData {
-  return {
-    seriesRef: json.seriesRef,
-    attributes: attributesFromJSON(json.attributes),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    datapoints: json.datapoints.map(dataPointFromJSON),
-    stats: json.stats
-      ? {
-          ...json.stats,
-          min: doubleFromWire(json.stats.min),
-          max: doubleFromWire(json.stats.max),
-          sum: doubleFromWire(json.stats.sum),
-          avg: doubleFromWire(json.stats.avg),
-        }
-      : null,
-    datapointCount: json.datapointCount ?? 0,
-    lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
-    views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
-    rateStats: json.rateStats
-      ? {
-          min: doubleFromWire(json.rateStats.min),
-          max: doubleFromWire(json.rateStats.max),
-          avg: doubleFromWire(json.rateStats.avg),
-        }
-      : null,
-    sparkline:
-      json.sparkline?.map(p => ({
-        ...p,
-        timestamp: bigintFromWire(p.timestamp),
-        value: doubleFromWire(p.value),
-      })) ?? null,
-  }
-}
-
-/** Decodes nanosecond bucket starts and scalar values at the wire boundary. */
-function scalarViewBucketsFromJSON(
-  json: JsonScalarViewBucket[]
-): ScalarViewBucket[] {
-  return json.map(b => ({
-    ...b,
-    bucketStart: bigintFromWire(b.bucketStart),
-    sum: nullableDoubleFromWire(b.sum),
-    avg: nullableDoubleFromWire(b.avg),
-    rate: nullableDoubleFromWire(b.rate),
-    slope: nullableDoubleFromWire(b.slope),
-  }))
-}
-
-function aggregateBucketsFromJSON(
-  json: JsonAggregateBucket[] | null
-): MetricAggregateViewData['aggregate'] {
-  if (!json) return null
-  return json.map(bucket => {
-    const { sum, min, max, explicitBounds, zeroThreshold, quantiles, ...rest } =
-      bucket
-    const decoded: AggregateBucket = {
-      ...rest,
-      sum: nullableDoubleFromWire(sum),
-      quantiles: doubleRecordFromJSON(quantiles),
-    }
-    if (min !== undefined) decoded.min = doubleFromWire(min)
-    if (max !== undefined) decoded.max = doubleFromWire(max)
-    if (explicitBounds !== undefined) {
-      decoded.explicitBounds = explicitBounds.map(doubleFromWire)
-    }
-    if (zeroThreshold !== undefined) {
-      decoded.zeroThreshold = doubleFromWire(zeroThreshold)
-    }
-    return decoded
-  })
-}
-
-function scalarAggregateFromJSON(
-  json: JsonScalarAggregate | null
-): ScalarAggregate | null {
-  if (!json) return null
-  return {
-    selected: scalarViewBucketsFromJSON(json.selected),
-    all: scalarViewBucketsFromJSON(json.all),
-  }
-}
-
-function metricViewDataFromJSON(json: JsonMetricViewData): MetricViewData {
-  const {
-    aggregate: _aggregate,
-    scalarAggregate: _scalarAggregate,
-    ...rest
-  } = json
-  return {
-    ...rest,
-    metadata: attributesFromJSON(json.metadata),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-    timeseries: json.timeseries.map(timeseriesFromJSON),
-    boundsMismatch: json.boundsMismatch ?? null,
-    lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
-    window: {
-      requested: {
-        startNs: nullableBigintFromWire(json.window.requested.startNs),
-        endNs: nullableBigintFromWire(json.window.requested.endNs),
-      },
-      effective: {
-        startNs: nullableBigintFromWire(json.window.effective.startNs),
-        endNs: nullableBigintFromWire(json.window.effective.endNs),
-      },
-    },
-  }
-}
-
-function exactMetricIdentityFromJSON<
-  T extends JsonExactMetric | JsonExactMetricSeries,
->(json: T) {
-  return {
-    ...json,
-    metadata: attributesFromJSON(json.metadata),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-  }
-}
-
-function exactMetricFromJSON(json: JsonExactMetric): ExactMetric {
-  return {
-    ...exactMetricIdentityFromJSON(json),
-    series: json.series.map(series => ({
-      ...series,
-      attributes: attributesFromJSON(series.attributes),
-      datapointCount: bigintFromWire(series.datapointCount),
-      firstDatapointTimestamp: nullableBigintFromWire(
-        series.firstDatapointTimestamp
-      ),
-      lastDatapointTimestamp: nullableBigintFromWire(
-        series.lastDatapointTimestamp
-      ),
-    })),
-  }
-}
-
-function receivedNumberDataPointFromJSON(
-  json: JsonReceivedNumberDataPoint
-): ReceivedNumberDataPoint {
-  const base = {
-    datapointRef: json.datapointRef,
-    timestamp: bigintFromWire(json.timestamp),
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-  }
-  switch (json.valueType) {
-    case 'Int':
-      return {
-        ...base,
-        valueType: 'Int',
-        intValue: bigintFromWire(json.intValue),
-        doubleValue: null,
-      }
-    case 'Double':
-      return {
-        ...base,
-        valueType: 'Double',
-        intValue: null,
-        doubleValue: doubleFromWire(json.doubleValue),
-      }
-    case 'Empty':
-      return {
-        ...base,
-        valueType: 'Empty',
-        intValue: null,
-        doubleValue: null,
-      }
-  }
-}
-
-function receivedHistogramDataPointFromJSON(
-  json: JsonReceivedHistogramDataPoint
-): ReceivedHistogramDataPoint {
-  const decoded: ReceivedHistogramDataPoint = {
-    datapointRef: json.datapointRef,
-    timestamp: bigintFromWire(json.timestamp),
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-    count: bigintFromWire(json.count),
-    bucketCounts: json.bucketCounts.map(bigintFromWire),
-    explicitBounds: json.explicitBounds.map(doubleFromWire),
-  }
-  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
-  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
-  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
-  return decoded
-}
-
-function receivedExponentialHistogramDataPointFromJSON(
-  json: JsonReceivedExponentialHistogramDataPoint
-): ReceivedExponentialHistogramDataPoint {
-  const decoded: ReceivedExponentialHistogramDataPoint = {
-    datapointRef: json.datapointRef,
-    timestamp: bigintFromWire(json.timestamp),
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-    count: bigintFromWire(json.count),
-    scale: json.scale,
-    zeroCount: bigintFromWire(json.zeroCount),
-    zeroThreshold: doubleFromWire(json.zeroThreshold),
-    positive: {
-      offset: json.positive.offset,
-      bucketCounts: json.positive.bucketCounts.map(bigintFromWire),
-    },
-    negative: {
-      offset: json.negative.offset,
-      bucketCounts: json.negative.bucketCounts.map(bigintFromWire),
-    },
-  }
-  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
-  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
-  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
-  return decoded
-}
-
-function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
-  let datapoints: ExactMetricSeries['datapoints']
-  switch (json.metricType) {
-    case 'Gauge':
-    case 'Sum':
-      datapoints = json.datapoints.map(receivedNumberDataPointFromJSON)
-      break
-    case 'Histogram':
-      datapoints = json.datapoints.map(receivedHistogramDataPointFromJSON)
-      break
-    case 'ExponentialHistogram':
-      datapoints = json.datapoints.map(
-        receivedExponentialHistogramDataPointFromJSON
-      )
-      break
-  }
-  return datapoints
-}
-
-function exactMetricSeriesFromJSON(
-  json: JsonExactMetricSeries
-): ExactMetricSeries {
-  return {
-    ...exactMetricIdentityFromJSON(json),
-    attributes: attributesFromJSON(json.attributes),
-    datapoints: receivedMetricDatapointsFromJSON(json),
   }
 }
 
@@ -1257,11 +834,8 @@ LIMIT ${batch.length}`,
 
   getMetric: async (metricRef: string): Promise<ExactMetric | null> => {
     try {
-      const rawData = await callRPC<JsonExactMetric>(
-        'getMetric',
-        named({ metricRef })
-      )
-      return exactMetricFromJSON(rawData)
+      const rawData = await callArrow('getMetric', named({ metricRef }))
+      return exactMetric(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1280,7 +854,7 @@ LIMIT ${batch.length}`,
     endTime: QueryTimeBound
   ): Promise<ExactMetricSeries | null> => {
     try {
-      const rawData = await callRPC<JsonExactMetricSeries>(
+      const rawData = await callArrow(
         'getMetricSeries',
         named({
           metricRef,
@@ -1289,7 +863,7 @@ LIMIT ${batch.length}`,
           endTime: serializeNanoseconds(endTime),
         })
       )
-      return exactMetricSeriesFromJSON(rawData)
+      return exactMetricSeries(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1331,10 +905,9 @@ LIMIT ${batch.length}`,
   ): Promise<MetricViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
-    // Not-found arrives as a JSON-RPC error (one wire convention across all
-    // signals); translate it to null here so callers keep a simple contract.
+    // Keep the established not-found code and nullable consumer contract.
     try {
-      const rawData = await callRPC<JsonMetricViewData>(
+      const rawData = await callArrow(
         'getMetricView',
         named({
           metricRef,
@@ -1354,7 +927,7 @@ LIMIT ${batch.length}`,
           datapointSeriesLimit,
         })
       )
-      return metricViewDataFromJSON(rawData)
+      return metricView(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1387,7 +960,7 @@ LIMIT ${batch.length}`,
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
     try {
-      const raw = await callRPC<JsonMetricAggregateViewData | null>(
+      const raw = await callArrow(
         'getMetricAggregateView',
         named({
           metricRef,
@@ -1403,15 +976,7 @@ LIMIT ${batch.length}`,
           datapointRef,
         })
       )
-      if (!raw) return null
-      const result: MetricAggregateViewData = {
-        aggregate: aggregateBucketsFromJSON(raw.aggregate),
-        scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
-      }
-      if (raw.contribution !== undefined) {
-        result.contribution = aggregateBucketsFromJSON(raw.contribution)
-      }
-      return result
+      return raw.length ? metricAggregateView(raw) : null
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
