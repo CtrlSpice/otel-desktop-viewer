@@ -134,7 +134,8 @@ func openRPCDocument() map[string]any {
 			"metrics":    rpcObject(map[string]any{"metricCount": integer, "dataPointCount": integer, "lastReceived": nullableText}, "metricCount", "dataPointCount", "lastReceived"),
 			"rejections": rpcArray(object),
 		}, "storage", "traces", "logs", "metrics", "rejections"),
-		"ObjectList": rpcArray(object), "StringList": rpcArray(text),
+		"MetricSeriesColumn": rpcArray(rpcObject(map[string]any{"seriesRef": text, "attributes": attributes}, "seriesRef", "attributes")),
+		"ObjectList":         rpcArray(object), "StringList": rpcArray(text),
 		"DeleteResult": rpcObject(map[string]any{"message": text, "count": integer}, "message", "count"),
 		"ImportConfig": rpcObject(map[string]any{"otlpHttpPort": integer, "otlpGrpcPort": integer}, "otlpHttpPort"),
 		"Object":       object, "Integer": integer, "String": text,
@@ -161,6 +162,7 @@ func openRPCDocument() map[string]any {
 		{"getMetricSeries", "MetricSeries", "Returns exact retained received datapoints for one database-local Metric/series pair and inclusive timestamp window. timestamps/startTime, signed intValue, unsigned count/bucketCounts/zeroCount use decimal strings. doubleValue uses finite numbers or IEEE-754 bit text for negative zero/non-finite values. Inactive intValue/doubleValue is null; absent histogram sum/min/max are omitted, not zero. Exemplars and typed attributes stay associated with their datapoints. Empty matching window returns datapoints:[]. Optional includeDatapoints=false returns complete received context with datapoints:[] and skips datapoint reconstruction; omitted/null defaults to true.", 4},
 		{"getMetricView", "MetricView", "Returns SQL-computed chart data: Metric metadata, series, statistics, sparklines, histogram/time buckets and aggregate data. Not an exact retained datapoint export; chart calculations can use floating-point display values. See docs/metric-resolution.md for bucket/aggregation formulas and precision. Received numeric payload fields retain exact decimal/typed wire encoding. Optional bucket counts control resolution; 0 uses store defaults. seriesRefs narrows series; selectedSeriesRefs controls aggregate selection; datapointSeriesRefs/Limit bounds datapoint payloads. tzOffsetNs is signed nanoseconds; tzName is the timezone name.", 3},
 		{"getMetricAggregateView", "MetricAggregateView", "Returns only the SQL-computed cross-series aggregate chart envelope. Shares metric/window/resolution parameters with getMetricView but has no sparkline/datapoint parameters. selectedSeriesRefs chooses aggregate membership. Not received OTel data; see docs/metric-resolution.md for formulas, units and precision.", 3},
+		{"getMetricSeriesColumn", "MetricSeriesColumn", "Returns one exact typed attribute for each retained series in the supplied metric-owned cohort. key is literal, including empty keys. A missing attribute returns attributes:[]; missing or foreign series return no row. Duplicate references return one row. An empty cohort returns []. No datapoints, resource or scope context is included. Reads current retained data; callers must reject an incomplete cohort rather than sort missing series as missing attributes.", 3},
 		{"clearTraces", "String", "Deletes all retained traces/spans and sweeps unused shared dictionary rows. Destructive operation.", 0},
 		{"clearLogs", "String", "Deletes all retained logs and sweeps unused shared dictionary rows. Destructive operation.", 0},
 		{"clearMetrics", "String", "Deletes all retained Metrics and sweeps unused shared dictionary rows. Destructive operation.", 0},
@@ -244,6 +246,9 @@ func openRPCDocument() map[string]any {
 			case "seriesRefs", "selectedSeriesRefs", "datapointSeriesRefs":
 				schema = rpcArray(text)
 				description = "Database-local series references. Omitted/null uses store defaults."
+				if spec.name == "getMetricSeriesColumn" {
+					description = "Required explicit cohort of database-local UUID references; null is invalid. Empty returns no rows."
+				}
 			case "quantiles":
 				schema = rpcArray(map[string]any{"type": "number", "minimum": 0, "maximum": 1})
 			case "includeDatapoints":

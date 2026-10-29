@@ -145,6 +145,14 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getMetric(ctx, req)
 	case "getMetricSeries":
 		return h.getMetricSeries(ctx, req)
+	case "getMetricSeriesColumn":
+		args, err := parseMetricSeriesColumnParams(req.Params)
+		if err != nil {
+			return nil, err
+		}
+		return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesColumn(ctx, db, args.metricRef, args.seriesRefs, args.key)
+		})
 	case "getMetricView":
 		return h.getMetricView(ctx, req)
 	case "getMetricAggregateView":

@@ -77,7 +77,8 @@ const (
 	GetMetric Name = "metrics/get_metric.sql"
 	// GetMetricSeries returns one exact series' retained received datapoints,
 	// grouped by their owning received Metric reports.
-	GetMetricSeries Name = "metrics/get_metric_series.sql"
+	GetMetricSeries       Name = "metrics/get_metric_series.sql"
+	GetMetricSeriesColumn Name = "metrics/get_metric_series_column.sql"
 	// GetMetricView returns the chart/UI projection for one Metric.
 	GetMetricView Name = "metrics/get_metric_view.sql"
 	// GetMetricOTLP reconstructs one stored Metric as standard OTLP JSON,
@@ -106,7 +107,7 @@ const (
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
 	GetTraceView, SalvageSpans, SearchTraceSummaries, GetTraceOverview, GetSpanSummaries, GetSpan, GetTraceOTLP,
-	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP,
+	GetMetric, GetMetricSeries, GetMetricSeriesColumn, GetMetricView, GetMetricOTLP,
 	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs,
 	SearchMetricSummaries, SearchLogSummaries, SearchLogPage, GetLogErrorNavigation,
 }
