@@ -5,12 +5,17 @@ test('a selected nested suggestion retains keys, indices, owner and type through
   page,
 }) => {
   const requests: unknown[] = []
+  let releaseDefinitions!: () => void
+  const definitionsReady = new Promise<void>(resolve => {
+    releaseDefinitions = resolve
+  })
   const path = ['attributes', 'nested', 0, '0', '']
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
+    if (method === 'getLogAttributeDefinitions') await definitionsReady
     if (params?.query) requests.push(params.query)
     const result =
       method === 'getLogAttributeDefinitions'
@@ -49,9 +54,11 @@ test('a selected nested suggestion retains keys, indices, owner and type through
     response.url().endsWith('/api/data/getLogAttributeDefinitions')
   )
   await page.goto('/logs')
-  await definitions
   const editor = page.locator('.cm-content[contenteditable="true"]')
   await editor.fill('nested')
+  await expect(editor).toHaveText('nested')
+  releaseDefinitions()
+  await definitions
   await page
     .getByRole('option')
     .filter({ hasText: 'Log · Integer · Nested' })

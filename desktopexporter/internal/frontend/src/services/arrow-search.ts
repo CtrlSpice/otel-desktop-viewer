@@ -3,7 +3,7 @@ import type { FieldDefinition } from '@/search/model'
 import { createPathFieldReference } from '@/components/shared/Search/attribute-field-reference'
 import { ArrowCell, ArrowFrame } from './arrow-data'
 import { columnView, listValues, number, text } from './arrow-record'
-import { attributeValue, rowViews } from './arrow-values'
+import { attributeValue } from './arrow-values'
 
 export type AttributeMatch = {
   name: string
@@ -36,15 +36,23 @@ export function attributeMatch(frame: ArrowFrame, row: number): AttributeMatch {
   })
 }
 
-export function attributeDefinitions(frame: ArrowFrame): FieldDefinition[] {
-  return rowViews(frame, (frame, row) => {
+export async function attributeDefinitions(
+  frame: ArrowFrame
+): Promise<FieldDefinition[]> {
+  const fields: FieldDefinition[] = []
+  for (let row = 0; row < frame.length; row++) {
+    if (row > 0 && row % 256 === 0)
+      await (globalThis.scheduler?.yield?.() ??
+        new Promise<void>(resolve => setTimeout(resolve, 0)))
     const segments = path(frame.cell('path', row))
-    return createPathFieldReference(
+    const field = createPathFieldReference(
       segments[0] === 'metadata' ? 'metadata' : frame.cell('owner', row).text(),
       segments,
       frame.cell('type', row).text()
     )
-  }).filter((field): field is FieldDefinition => field !== null)
+    if (field) fields.push(field)
+  }
+  return fields
 }
 
 /** Preserve the existing completion spelling; native samples keep their bits. */

@@ -13,10 +13,6 @@
     type FieldDefinition,
     type SearchSignal,
   } from '@/search/model'
-  import {
-    getTimeContext,
-    selectionToQueryRangeMs,
-  } from '@/contexts/time-context.svelte'
 
   type Props = {
     signal: SearchSignal
@@ -47,28 +43,26 @@
   let buttonEl = $state<HTMLButtonElement | null>(null)
   let popoverEl = $state<HTMLDivElement | null>(null)
 
-  const timeContext = getTimeContext()
-
   let availableFields = $state<FieldDefinition[]>([])
 
   $effect(() => {
     const base = [...getStaticFieldsForSearch(signal)]
+    const requestedSignal = signal
     availableFields = base
+    if (!popoverOpen) return
     let cancelled = false
-    const t = window.setTimeout(async () => {
+    void (async () => {
       try {
-        void selectionToQueryRangeMs(timeContext.selection, Date.now())
-        const dynamicAttrs = await getDynamicAttributes(signal)
+        const dynamicAttrs = await getDynamicAttributes(requestedSignal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
       } catch {
         /* keep static fields */
       }
-    }, 250)
+    })()
 
     return () => {
       cancelled = true
-      window.clearTimeout(t)
     }
   })
 

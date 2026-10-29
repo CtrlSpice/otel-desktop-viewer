@@ -7,6 +7,7 @@
   } from '@codemirror/view'
   import { EditorState, Compartment } from '@codemirror/state'
   import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
+  import { forceLinting } from '@codemirror/lint'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
@@ -21,7 +22,6 @@
   import { attributeSampleText } from '@/services/arrow-search'
   import {
     getTimeContext,
-    selectionToQueryRangeMs,
     selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
@@ -124,6 +124,7 @@
   let availableFields = $state<FieldDefinition[]>([])
   let queryText = $state('')
   let definitionsLoaded = false
+  let definitionsWanted = $state(false)
   let pendingRestoration: string | undefined
 
   $effect(() => onQueryChange?.(queryText, availableFields))
@@ -141,10 +142,11 @@
     })
   })
 
-  /** Fetch dynamic attributes from the shared dictionary. */
+  /** Discover fields only for an active search, not while opening telemetry. */
   $effect(() => {
     const base = [...staticFieldsList]
     const requestedSignal = signal
+    const wanted = definitionsWanted
     definitionsLoaded = false
     availableFields = base
 
@@ -152,14 +154,15 @@
       definitionsLoaded = true
       return
     }
+    if (!wanted) return
 
     let cancelled = false
-    const t = window.setTimeout(async () => {
+    void (async () => {
       try {
-        void selectionToQueryRangeMs(timeContext.selection, Date.now())
         const dynamicAttrs = await getDynamicAttributes(requestedSignal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
+        if (editorView) forceLinting(editorView)
       } catch (error) {
         console.warn('Failed to load dynamic attributes:', error)
       } finally {
@@ -172,11 +175,10 @@
             onSubmit()
         }
       }
-    }, 250)
+    })()
 
     return () => {
       cancelled = true
-      window.clearTimeout(t)
     }
   })
 
@@ -269,8 +271,13 @@
   }
 
   function onSubmit() {
-    pendingRestoration = undefined
     const text = editorView?.state.doc.toString() ?? ''
+    if (signal && !definitionsLoaded && text.trim()) {
+      pendingRestoration = text
+      definitionsWanted = true
+      return
+    }
+    pendingRestoration = undefined
     // Initial URL submission can precede the reactive change notification.
     onQueryChange?.(text, availableFields)
 
@@ -322,19 +329,6 @@
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }
-  }
-
-  function restoreQuery() {
-    const text = editorView?.state.doc.toString() ?? ''
-    if (!definitionsLoaded && text.trim()) {
-      try {
-        parseSearchRequest(text, [...staticFieldsList], signal)
-      } catch {
-        pendingRestoration = text
-        return
-      }
-    }
-    onSubmit()
   }
 
   function openHelp() {
@@ -399,6 +393,11 @@
       doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
+        EditorView.domEventHandlers({
+          focus: () => {
+            definitionsWanted = true
+          },
+        }),
         EditorView.contentAttributes.of({
           'aria-label': `Search ${definition?.label ?? signal}`,
         }),
@@ -407,7 +406,18 @@
         autocompletion({
           // Fetch values only after the user selects an exact field.
           override: [
-            createQueryCompletionSource(() => availableFields, signal),
+            async context => {
+              let fields = availableFields
+              if (signal && !definitionsLoaded) {
+                definitionsWanted = true
+                fields = [
+                  ...staticFieldsList,
+                  ...(await getDynamicAttributes(signal)),
+                ]
+              }
+              if (context.aborted) return null
+              return createQueryCompletionSource(() => fields, signal)(context)
+            },
             ...(fieldValueCache
               ? [
                   // Column values and exact selected attribute paths.
@@ -475,7 +485,7 @@
         onSubmit()
       },
     })
-    if (initialQuery || definition) restoreQuery()
+    if (initialQuery || definition) onSubmit()
     return subscribeToRoute(() => {
       const route = readRoute()
       const path = definition?.path ?? `/${signal}`
@@ -486,7 +496,7 @@
       editorView.dispatch({
         changes: { from: 0, to: editorView.state.doc.length, insert: next },
       })
-      restoreQuery()
+      onSubmit()
     })
   })
 

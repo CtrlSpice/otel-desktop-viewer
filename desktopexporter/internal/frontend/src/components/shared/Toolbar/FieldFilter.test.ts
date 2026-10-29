@@ -4,6 +4,7 @@ import { screen, fireEvent } from '@testing-library/svelte'
 import FieldFilter from './FieldFilter.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { TRACE_COLUMN_DEFAULTS } from '@/constants/fields'
+import { telemetryAPI } from '@/services/telemetry-service'
 
 vi.mock('@/services/telemetry-service', () => ({
   telemetryAPI: {
@@ -26,6 +27,17 @@ function renderComponent(props = {}) {
 }
 
 describe('FieldFilter', () => {
+  it('loads dynamic fields only when the picker opens', async () => {
+    vi.mocked(telemetryAPI.getTraceAttributeDefinitions).mockClear()
+    renderComponent()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(telemetryAPI.getTraceAttributeDefinitions).not.toHaveBeenCalled()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Columns: filter columns' })
+    )
+    expect(telemetryAPI.getTraceAttributeDefinitions).toHaveBeenCalledTimes(1)
+  })
+
   it('renders the trigger button with an accessible label', () => {
     renderComponent()
     expect(
