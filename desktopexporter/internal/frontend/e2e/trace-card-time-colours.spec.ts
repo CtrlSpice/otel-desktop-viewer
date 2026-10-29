@@ -126,7 +126,9 @@ async function intercept(page: Page) {
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
 }

@@ -42,7 +42,9 @@ async function openSavedLayout(
                 },
                 rejections: [],
               }
-            : [],
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : [],
       },
     })
   })

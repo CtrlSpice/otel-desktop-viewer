@@ -95,7 +95,9 @@ async function openWorkspace(page: Page, legacyBookmark = false) {
                 metrics: { count: 0 },
                 rejections: [],
               }
-            : [],
+            : request.method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : [],
       },
     })
   })

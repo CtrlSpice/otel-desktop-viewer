@@ -38,7 +38,9 @@ async function openCopyField(
           ? { total: 0, logs: [] }
           : method === 'getLogErrorNavigation'
             ? { count: 0, index: null, previous: null, next: null }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     return route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto(`/logs/${log.logRef}?time=all`)

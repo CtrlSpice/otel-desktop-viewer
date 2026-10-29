@@ -109,7 +109,9 @@ async function openSource(
             metrics: { count: 0 },
             rejections: [],
           }
-        : []
+        : request.method === 'discoverTelemetry'
+          ? { rows: [], truncated: false }
+          : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   const experiment = projection.experiments[0]

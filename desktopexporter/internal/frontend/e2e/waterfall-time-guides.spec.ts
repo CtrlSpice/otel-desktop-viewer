@@ -87,7 +87,9 @@ test('every labelled waterfall tick has an unclipped guide, including the end', 
                     },
                     rejections: [],
                   }
-                : [],
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
