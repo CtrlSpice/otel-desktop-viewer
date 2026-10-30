@@ -157,6 +157,7 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 		"rpc.discover": true,
 		"clearTraces":  true, "clearLogs": true, "clearMetrics": true,
 		"getStats":                      true,
+		"getServiceCount":               true,
 		"getImportConfig":               true,
 		"getTraceAttributeDefinitions":  true,
 		"getLogAttributeDefinitions":    true,

@@ -26,11 +26,21 @@ import (
 
 func redactionTestPort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
-	require.NoError(t, l.Close())
-	return port
+	return redactionTestPorts(t, 1)[0]
+}
+
+func redactionTestPorts(t *testing.T, count int) []int {
+	t.Helper()
+	ports := make([]int, count)
+	for i := range ports {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		// Hold every reservation until all ports are chosen, so sibling
+		// listeners cannot receive the same ephemeral port.
+		defer func() { require.NoError(t, l.Close()) }()
+		ports[i] = l.Addr().(*net.TCPAddr).Port
+	}
+	return ports
 }
 
 // Both wire protocols feed the real upstream processor and desktop exporter.
@@ -43,7 +53,8 @@ func TestRedactionReceiveStoreExport(t *testing.T) {
 			tp, lp, mp := startRedaction(t, te, le, me)
 			o := testOptions()
 			o.host = "127.0.0.1"
-			o.httpPort, o.grpcPort = redactionTestPort(t), redactionTestPort(t)
+			ports := redactionTestPorts(t, 2)
+			o.httpPort, o.grpcPort = ports[0], ports[1]
 			cfg, err := resolveConfig(t, o)
 			require.NoError(t, err)
 			factories, err := components()
