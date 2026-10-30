@@ -52,6 +52,11 @@ type Appender struct {
 	scopeIndices    *array.Int32Builder
 	resourceIDs     map[string]int32
 	scopeIDs        map[string]int32
+	resourceIndex   int32
+	scopeIndex      int32
+	contextBound    bool
+	resourceKey     string
+	scopeKey        string
 }
 
 // SetContext converts shared context identities once per scope, outside the row loop.
@@ -67,6 +72,11 @@ func (a *Appender) SetContext(r, s map[string]any) {
 	}
 	a.resourceValues = []any{uuid.UUID(r["id"].(duckdb.UUID)).String(), uuid.UUID(r["payload_id"].(duckdb.UUID)).String(), r["schema_url"], r["attributes"], r["dropped_attributes_count"]}
 	a.scopeValues = []any{uuid.UUID(s["id"].(duckdb.UUID)).String(), s["name"], s["version"], s["schema_url"], s["attributes"], s["dropped_attributes_count"]}
+	// Content identities canonicalize NaNs; transport dictionaries also retain
+	// the received bytes. Prepare these payload-sized keys once per context.
+	a.resourceKey = a.resourceValues[0].(string) + string(a.resourceValues[3].([]byte))
+	a.scopeKey = a.scopeValues[0].(string) + string(a.scopeValues[4].([]byte))
+	a.bindContext()
 }
 
 // AppendLog writes pdata scalar columns directly, without a variadic driver row.
@@ -109,13 +119,18 @@ func (a *Appender) AppendLog(r plog.LogRecord, id uuid.UUID, body, attrs []byte,
 }
 
 func (a *Appender) appendContext() {
-	// Content identities intentionally canonicalize NaNs. Transport sharing must
-	// additionally distinguish the received bytes so payload bits survive.
-	rkey := a.resourceValues[0].(string) + string(a.resourceValues[3].([]byte))
-	ri, ok := a.resourceIDs[rkey]
+	if !a.contextBound {
+		a.bindContext()
+	}
+	a.resourceIndices.Append(a.resourceIndex)
+	a.scopeIndices.Append(a.scopeIndex)
+}
+
+func (a *Appender) bindContext() {
+	ri, ok := a.resourceIDs[a.resourceKey]
 	if !ok {
 		ri = int32(len(a.resourceIDs))
-		a.resourceIDs[rkey] = ri
+		a.resourceIDs[a.resourceKey] = ri
 		rb := a.resourceBuilder
 		rb.Append(true)
 		rb.FieldBuilder(0).(*array.StringBuilder).Append(a.resourceValues[0].(string))
@@ -124,12 +139,10 @@ func (a *Appender) appendContext() {
 		rb.FieldBuilder(3).(*array.BinaryBuilder).Append(a.resourceValues[3].([]byte))
 		rb.FieldBuilder(4).(*array.Uint32Builder).Append(a.resourceValues[4].(uint32))
 	}
-	a.resourceIndices.Append(ri)
-	skey := a.scopeValues[0].(string) + string(a.scopeValues[4].([]byte))
-	si, ok := a.scopeIDs[skey]
+	si, ok := a.scopeIDs[a.scopeKey]
 	if !ok {
 		si = int32(len(a.scopeIDs))
-		a.scopeIDs[skey] = si
+		a.scopeIDs[a.scopeKey] = si
 		sb := a.scopeBuilder
 		sb.Append(true)
 		for i := range 4 {
@@ -138,7 +151,8 @@ func (a *Appender) appendContext() {
 		sb.FieldBuilder(4).(*array.BinaryBuilder).Append(a.scopeValues[4].([]byte))
 		sb.FieldBuilder(5).(*array.Uint32Builder).Append(a.scopeValues[5].(uint32))
 	}
-	a.scopeIndices.Append(si)
+	a.resourceIndex, a.scopeIndex = ri, si
+	a.contextBound = true
 }
 
 func NewAppenders(ctx context.Context, conn driver.Conn, tables []string) (map[string]*Appender, error) {
@@ -203,6 +217,7 @@ func (a *Appender) Flush() error {
 		}
 		clear(a.resourceIDs)
 		clear(a.scopeIDs)
+		a.contextBound = false
 	} else {
 		record = a.b.NewRecordBatch()
 	}

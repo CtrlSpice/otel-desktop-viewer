@@ -586,7 +586,7 @@ func traceQueryColumns(name queries.Name, traceID string, criteria any, native, 
 		}
 	}
 
-	_, whereClause, args, err := buildSpanSQL(searchTree, traceID)
+	cteSQL, whereClause, args, err := buildSpanSQL(searchTree, traceID)
 	if err != nil {
 		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrInvalidTraceQuery, err)
 	}
@@ -599,12 +599,15 @@ func traceQueryColumns(name queries.Name, traceID string, criteria any, native, 
 	matchedJoin := ""
 	matchedExpr := "true"
 	if searchTree != nil {
+		if cteSQL != "" {
+			cteSQL += "\n\t\t\t"
+		}
 		matchedCTE = fmt.Sprintf(`,
 		matched_spans as (
-			select s.span_id
+			%sselect s.span_id
 			%s
 			where %s
-		)`, spanSearchFrom, whereClause)
+		)`, cteSQL, spanSearchFrom, whereClause)
 		matchedJoin = "left join matched_spans ms on ts.span_id = ms.span_id"
 		matchedExpr = "case when ms.span_id is not null then true else false end"
 	}
@@ -692,14 +695,13 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, eligibilityWhere string, queryWhere string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("s.start_time", timeRange.Start, timeRange.End)
 	timeCondition = strings.ReplaceAll(timeCondition, " AND ", " and ")
-	const documentScope = "try_cast(split_part(search_record.root_key,':',1) as uuid)=s.trace_id and try_cast('0x'||split_part(search_record.root_key,':',2) as ubigint)=s.span_id"
-	cteSQL, eligibilityWhere, args, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams, "span", documentScope)
+	cteSQL, eligibilityWhere, args, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams, "span", spanDocumentScope)
 	if err != nil || queryNode == nil {
 		return cteSQL, eligibilityWhere, "", args, err
 	}
 	// Keep time bindings in the parameter list so query references retain
 	// the same positions as eligibilityWhere.
-	_, queryWhere, _, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), "", timeParams, "span", documentScope)
+	_, queryWhere, _, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), "", timeParams, "span", spanDocumentScope)
 	return cteSQL, eligibilityWhere, queryWhere, args, err
 }
 
@@ -733,21 +735,10 @@ func buildSpanSQL(queryNode *search.QueryNode, traceID string) (cteSQL string, w
 		{Name: "trace_id", Value: traceID},
 	}
 
-	var conditions []string
-	if queryNode != nil {
-		if err := search.BuildConditions(queryNode, &conditions, &params, traceFieldMapper()); err != nil {
-			return "", "", nil, err
-		}
-	}
-
-	if len(conditions) > 0 {
-		whereSQL = "s.trace_id = try_cast($1 as uuid) AND (" + strings.Join(conditions, " ") + ")"
-	} else {
-		whereSQL = "s.trace_id = try_cast($1 as uuid)"
-	}
-
-	return "", whereSQL, search.Arguments(params), nil
+	return searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), "s.trace_id = try_cast($1 as uuid)", params, "span", spanDocumentScope)
 }
+
+const spanDocumentScope = "try_cast(split_part(search_record.root_key,':',1) as uuid)=s.trace_id and try_cast('0x'||split_part(search_record.root_key,':',2) as ubigint)=s.span_id"
 
 // spanSearchFrom is the FROM clause every span search predicate is written
 // against. Resource and scope fields live on each span.

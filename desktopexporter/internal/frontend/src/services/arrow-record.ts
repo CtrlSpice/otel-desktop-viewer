@@ -4,18 +4,43 @@ import { ArrowCell, ArrowFrame } from './arrow-data'
 export function columnView<T extends object>(
   frame: ArrowFrame,
   row: number,
-  readers: { [K in keyof T]: (cell: ArrowCell) => T[K] }
+  readers: { [K in keyof T]: (cell: ArrowCell) => T[K] },
+  cache = false
 ): T {
   const descriptors: PropertyDescriptorMap = {}
   for (const name in readers) {
     descriptors[name] = {
       enumerable: true,
-      get: () => readers[name](frame.cell(name, row)),
+      get: cache
+        ? memoize(() => readers[name](frame.cell(name, row)))
+        : () => readers[name](frame.cell(name, row)),
     }
   }
   // SAFETY: The mapped readers contract requires a decoder for every T field;
   // each descriptor returns that field's declared type.
   return Object.defineProperties({}, descriptors) as T
+}
+
+/** Response-owned lazy values; consumers must derive rather than mutate arrays. */
+export function memoize<T>(read: () => T): () => T {
+  let initialized = false
+  let value: T
+  return () => {
+    if (!initialized) {
+      value = read()
+      if (Array.isArray(value)) Object.freeze(value)
+      initialized = true
+    }
+    return value
+  }
+}
+
+export function cachedColumnView<T extends object>(
+  frame: ArrowFrame,
+  row: number,
+  readers: { [K in keyof T]: (cell: ArrowCell) => T[K] }
+): T {
+  return columnView(frame, row, readers, true)
 }
 
 /** Compose views without evaluating getters as object spread would. */

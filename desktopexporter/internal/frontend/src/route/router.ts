@@ -132,7 +132,16 @@ export function signalIdFromPath(
   const prefix = `${signalPath(signal)}/`
   if (!path.startsWith(prefix)) return null
   const segment = path.slice(prefix.length).split('/')[0]
-  return segment ? decodeURIComponent(segment) : null
+  if (!segment) return null
+  const id = decodeURIComponent(segment)
+  // Trace responses use lowercase, undashed OTLP IDs. Normalize accepted URL
+  // spellings before selection and exact Details identity checks.
+  if (
+    signal === 'traces' &&
+    /^(?:[\da-f]{32}|[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i.test(id)
+  )
+    return id.replaceAll('-', '').toLowerCase()
+  return id
 }
 
 /**

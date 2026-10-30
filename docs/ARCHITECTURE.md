@@ -531,6 +531,15 @@ history modes.
 accessors. Control/count requests and remaining tabular reads use JSON-RPC.
 The adapters validate runtime payloads, preserve exact integers as `bigint`,
 and map transport-specific representations to domain types.
+Metric adapters memoize collections and nested views on first access for each
+response. Repeated reads reuse those wrappers; scalar values remain lazily read
+from Arrow. Returned collections are immutable; consumers derive their own arrays
+when sorting or filtering.
+
+Trace selection normalizes uppercase and dashed trace IDs to the lowercase OTLP
+form. Exact span Details uses a 16-entry cache within one trace activation.
+Reopening or refreshing a trace invalidates that cache, including resolved link
+targets, and cancels superseded Details requests.
 
 Metric aggregation remains in SQL. The frontend chooses tabs, colours, visible
 series, chart coordinates, and selected datapoints. Legend changes request only
