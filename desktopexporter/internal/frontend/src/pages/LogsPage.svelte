@@ -374,6 +374,7 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
+  loadingRequestKey={`${page.requestKey}:${detailFetcher.requestKey}`}
   loadingMessage={detailFetcher.loading
     ? 'Loading selected log…'
     : page.loading

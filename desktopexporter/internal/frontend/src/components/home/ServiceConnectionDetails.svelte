@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
@@ -31,6 +33,10 @@
   let loading = $state(false)
   let error = $state('')
   let retry = $state(0)
+  let displayed = $state.raw<ServiceConnection>()
+  const shownConnection = $derived(displayed ?? connection)
+  let displayedOffset = $state(0)
+  let requestKey = $state(0)
   $effect(() => {
     void connection
     void options
@@ -41,10 +47,11 @@
     const controller = new AbortController()
     void revision
     void retry
+    const selected = connection
+    const selectedOffset = offset
+    requestKey = untrack(() => requestKey) + 1
     loading = true
     error = ''
-    more = false
-    spans = []
     void telemetryAPI
       .discoverServiceConnectionSpans(
         {
@@ -60,6 +67,8 @@
         if (!controller.signal.aborted) {
           spans = page.items
           more = page.truncated
+          displayed = selected
+          displayedOffset = selectedOffset
         }
       })
       .catch(reason => {
@@ -81,48 +90,48 @@
       <tbody>
         <DetailProperty
           fieldName="Parent service"
-          fieldType={connection.source.serviceNameKind ?? 'string'}
-          fieldValue={connection.source.serviceName}
+          fieldType={shownConnection.source.serviceNameKind ?? 'string'}
+          fieldValue={shownConnection.source.serviceName}
           loadText={async signal =>
             (
               await telemetryAPI.getServiceLabels(
-                serviceIdentity(connection.source),
+                serviceIdentity(shownConnection.source),
                 signal
               )
             ).serviceName}
         />
         <DetailProperty
           fieldName="Parent namespace"
-          fieldType={connection.source.serviceNamespaceKind ?? 'string'}
-          fieldValue={connection.source.serviceNamespace}
+          fieldType={shownConnection.source.serviceNamespaceKind ?? 'string'}
+          fieldValue={shownConnection.source.serviceNamespace}
           loadText={async signal =>
             (
               await telemetryAPI.getServiceLabels(
-                serviceIdentity(connection.source),
+                serviceIdentity(shownConnection.source),
                 signal
               )
             ).serviceNamespace}
         />
         <DetailProperty
           fieldName="Child service"
-          fieldType={connection.target.serviceNameKind ?? 'string'}
-          fieldValue={connection.target.serviceName}
+          fieldType={shownConnection.target.serviceNameKind ?? 'string'}
+          fieldValue={shownConnection.target.serviceName}
           loadText={async signal =>
             (
               await telemetryAPI.getServiceLabels(
-                serviceIdentity(connection.target),
+                serviceIdentity(shownConnection.target),
                 signal
               )
             ).serviceName}
         />
         <DetailProperty
           fieldName="Child namespace"
-          fieldType={connection.target.serviceNamespaceKind ?? 'string'}
-          fieldValue={connection.target.serviceNamespace}
+          fieldType={shownConnection.target.serviceNamespaceKind ?? 'string'}
+          fieldValue={shownConnection.target.serviceNamespace}
           loadText={async signal =>
             (
               await telemetryAPI.getServiceLabels(
-                serviceIdentity(connection.target),
+                serviceIdentity(shownConnection.target),
                 signal
               )
             ).serviceNamespace}
@@ -130,17 +139,17 @@
         <DetailProperty
           fieldName="Parent-child connections"
           fieldType="number"
-          fieldValue={String(connection.spanCount)}
+          fieldValue={String(shownConnection.spanCount)}
         />
         <DetailProperty
           fieldName="Traces"
           fieldType="number"
-          fieldValue={String(connection.traceCount)}
+          fieldValue={String(shownConnection.traceCount)}
         />
         <DetailProperty
           fieldName="Error child spans"
           fieldType="number"
-          fieldValue={String(connection.errorSpanCount)}
+          fieldValue={String(shownConnection.errorSpanCount)}
         />
       </tbody>
     </table>
@@ -148,51 +157,52 @@
       Recorded child spans connecting these services. Both parent and child
       match the trace search and time range.
     </p>
-    {#if loading}<p role="status" class="text-subtle">
-        Loading connected spans…
-      </p>
-    {:else if error}<p role="alert" class="text-papaya">{error}</p>
+    <LoadingStatus
+      pending={loading}
+      label="Loading connected spans…"
+      {requestKey}
+    />
+    {#if error}<p role="alert" class="text-papaya">{error}</p>
       <button class="btn btn-ghost btn-sm" onclick={() => retry++}>Retry</button
       >
-    {:else}
-      {#each spans as span (`${span.traceID}:${span.spanID}`)}
-        <SignalCard
-          id={`${span.traceID}:${span.spanID}`}
-          title={span.name}
-          href={itemHref('traces', span.traceID, { span: span.spanID })}
-        >
-          {#snippet titleContent()}<span class="flex min-w-0 items-center gap-2"
-              ><span
-                class="size-2 shrink-0 rounded-full"
-                style:background-color={traceServiceColor(
-                  connection.target.serviceName,
-                  themeSignal.value,
-                  connection.target.serviceColorKey
-                )}
-                aria-hidden="true"
-              ></span><span class="truncate">{span.name}</span></span
-            >{/snippet}
-          {#snippet badge()}{#if span.statusCode === 2}<span
-                class="flex items-center gap-2"
-                ><span class="size-2 rounded-full bg-error" aria-hidden="true"
-                ></span><span class="text-subtle">Error</span></span
-              >{/if}{/snippet}
-          {#snippet date()}<SignalDate
-              label="Start"
-              timestamp={BigInt(span.startTime)}
-            />{/snippet}
-          {#snippet dateEnd()}<span
-              >Duration: <span class="text-base-content"
-                >{formatDuration(
-                  BigInt(span.endTime) - BigInt(span.startTime)
-                )}</span
-              ></span
-            >{/snippet}
-        </SignalCard>
-      {:else}<p class="text-subtle">
-          No connected spans match this search and time range.
-        </p>{/each}
     {/if}
+    {#each spans as span (`${span.traceID}:${span.spanID}`)}
+      <SignalCard
+        id={`${span.traceID}:${span.spanID}`}
+        title={span.name}
+        href={itemHref('traces', span.traceID, { span: span.spanID })}
+      >
+        {#snippet titleContent()}<span class="flex min-w-0 items-center gap-2"
+            ><span
+              class="size-2 shrink-0 rounded-full"
+              style:background-color={traceServiceColor(
+                shownConnection.target.serviceName,
+                themeSignal.value,
+                shownConnection.target.serviceColorKey
+              )}
+              aria-hidden="true"
+            ></span><span class="truncate">{span.name}</span></span
+          >{/snippet}
+        {#snippet badge()}{#if span.statusCode === 2}<span
+              class="flex items-center gap-2"
+              ><span class="size-2 rounded-full bg-error" aria-hidden="true"
+              ></span><span class="text-subtle">Error</span></span
+            >{/if}{/snippet}
+        {#snippet date()}<SignalDate
+            label="Start"
+            timestamp={BigInt(span.startTime)}
+          />{/snippet}
+        {#snippet dateEnd()}<span
+            >Duration: <span class="text-base-content"
+              >{formatDuration(
+                BigInt(span.endTime) - BigInt(span.startTime)
+              )}</span
+            ></span
+          >{/snippet}
+      </SignalCard>
+    {:else}{#if !loading && !error}<p class="text-subtle">
+          No connected spans match this search and time range.
+        </p>{/if}{/each}
   </div>
   <SignalFooter compact label="page">
     {#snippet navigation()}<div class="flex items-center gap-2">
@@ -200,7 +210,7 @@
           class="btn btn-ghost btn-sm"
           disabled={loading || offset === 0}
           onclick={() => (offset = Math.max(0, offset - 25))}>Previous</button
-        ><span class="text-subtle">Page {offset / 25 + 1}</span><button
+        ><span class="text-subtle">Page {displayedOffset / 25 + 1}</span><button
           class="btn btn-ghost btn-sm"
           disabled={loading || !more}
           onclick={() => (offset += 25)}>Next</button

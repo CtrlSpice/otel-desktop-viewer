@@ -50,144 +50,260 @@ afterEach(() => {
   vi.mocked(copyText).mockReset()
 })
 
-it('loads bounded server pages and resolves full hover/Copy text only on demand', async () => {
+it('retains attribute rows and disclosures through a pending or failed refresh', async () => {
   const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
-  vi.spyOn(telemetryAPI, 'discoverAttributeKeys').mockImplementation(
-    async options => ({
+  const keys = vi
+    .spyOn(telemetryAPI, 'discoverAttributeKeys')
+    .mockImplementation(async options => ({
       items:
         options.signal === 'traces' && options.ownerType === 'span'
-          ? [{ key: 'deep', kind: 'map', foundOn }]
+          ? [{ key: 'retained', kind: 'string', foundOn }]
           : [],
       truncated: false,
-    })
-  )
-  const read = vi
-    .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
-    .mockImplementation(async options => {
-      const offset = options.offset ?? 0
-      return {
-        values: Array.from(
-          { length: Math.min(options.limit ?? 25, 64 - offset) },
-          (_, i) => ({
-            identity: `home:ref-${offset + i}`,
-            valueRef: `home:ref-${offset + i}`,
-            kind: 'map',
-            preview: '{same bounded preview}',
-            colorHash: 17,
-            count: 1,
-            counts: { traces: 1, logs: 0, metrics: 0 },
-            kindCount: 64,
-            denominator: 64,
-            relativeFrequency: 1 / 64,
-            foundOn,
-          })
-        ),
-        kinds: [
-          {
-            kind: 'map',
-            count: 64,
-            counts: { traces: 64, logs: 0, metrics: 0 },
-          },
-        ],
-        denominator: 64,
-        denominators: { traces: 64, logs: 0, metrics: 0 },
-        total: 64,
-        truncated: offset + 25 < 64,
-      }
-    })
-  const full = vi
-    .spyOn(telemetryAPI, 'getHomeAttributeValue')
-    .mockResolvedValue({
-      kind: 'map',
-      value: [
-        { key: 'exact', value: { kind: 'int64', value: 9007199254740993n } },
-      ],
-    })
-  const onSelectAttribute = vi.fn()
-  const { container, getByRole } = render(AttributeDiscovery, {
+    }))
+  vi.spyOn(telemetryAPI, 'discoverHomeAttributeValues').mockResolvedValue({
+    values: [
+      {
+        identity: 'identity',
+        valueRef: 'value',
+        kind: 'string',
+        preview: 'Original value',
+        colorHash: 0,
+        counts: { traces: 1, metrics: 0, logs: 0 },
+        count: 1,
+        kindCount: 1,
+        denominator: 1,
+        relativeFrequency: 1,
+        foundOn,
+      },
+    ],
+    kinds: [
+      { kind: 'string', count: 1, counts: { traces: 1, metrics: 0, logs: 0 } },
+    ],
+    denominators: { traces: 1, metrics: 0, logs: 0 },
+    denominator: 1,
+    total: 1,
+    truncated: false,
+  })
+  const view = render(AttributeDiscovery, {
     service,
     range: {},
     revision: 0,
-    queries: { traces: null, logs: false, metrics: false },
     selectedAttribute: null,
-    onSelectAttribute,
+    onSelectAttribute: vi.fn(),
   })
   await waitFor(() =>
-    expect(read).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 0 }),
-      expect.any(AbortSignal)
-    )
-  )
-  expect(full).not.toHaveBeenCalled()
-  await fireEvent.click(
-    getByRole('button', { name: 'Expand deep · span values' })
-  )
-  await waitFor(() =>
-    expect(container.querySelectorAll('tr[data-value-identity]')).toHaveLength(
-      25
-    )
-  )
-  expect(full).not.toHaveBeenCalled()
-  const row = container.querySelector<HTMLElement>('tr[data-value-identity]')!
-  await fireEvent.click(row.querySelector('[data-attribute-column="count"]')!, {
-    detail: 1,
-  })
-  expect(onSelectAttribute).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ key: 'deep' }),
-    expect.objectContaining({ identity: 'home:ref-0' })
-  )
-  const inspect = within(row).getByRole('button', {
-    name: 'Show span attribute: deep in details',
-  })
-  await fireEvent.pointerEnter(inspect)
-  await waitFor(() =>
-    expect(inspect).toHaveAttribute(
-      'title',
-      '{\n  "exact": 9007199254740993\n}'
-    )
+    expect(
+      view.getByRole('button', { name: 'Expand retained · span values' })
+    ).toBeEnabled()
   )
   await fireEvent.click(
-    within(row).getByRole('button', { name: 'Copy deep value' })
+    view.getByRole('button', { name: 'Expand retained · span values' })
   )
-  await waitFor(() =>
-    expect(copyText).toHaveBeenCalledExactlyOnceWith(
-      '{\n  "exact": 9007199254740993\n}'
-    )
-  )
-  expect(onSelectAttribute).toHaveBeenCalledTimes(1)
-  const next = within(container.querySelector('tbody')!).getByRole('button', {
-    name: 'Next page',
+  const toggle = view.getByRole('button', {
+    name: 'Collapse retained · span values',
   })
-  await fireEvent.click(next)
-  await waitFor(() =>
-    expect(read).toHaveBeenCalledWith(
-      expect.objectContaining({ offset: 25, limit: 25 }),
-      expect.any(AbortSignal)
-    )
+  const row = view.container.querySelector(
+    '[data-attribute-heading="retained"]'
   )
-  await waitFor(() =>
-    expect(container.querySelector('tr[data-value-identity]')).toHaveAttribute(
-      'data-value-identity',
-      'home:ref-25'
-    )
+  let fail!: (reason: Error) => void
+  keys.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
   )
-  expect(full).toHaveBeenCalledTimes(2)
-  full.mockRejectedValueOnce(
-    new Error(
-      'Home value is unavailable; refresh attribute values and select it again'
-    )
-  )
-  await fireEvent.click(
-    within(container.querySelector('tr[data-value-identity]')!).getByRole(
-      'button',
-      { name: 'Copy deep value' }
-    )
-  )
-  await waitFor(() =>
-    expect(getByRole('alert')).toHaveTextContent('refresh attribute values')
-  )
-  expect(copyText).toHaveBeenCalledTimes(1)
+  await view.rerender({ revision: 1 })
+  expect(
+    view.container.querySelector('[data-attribute-heading="retained"]')
+  ).toBe(row)
+  expect(
+    view.getByRole('button', { name: 'Collapse retained · span values' })
+  ).toBe(toggle)
+  expect(view.queryByText('Loading attributes…')).toBeNull()
+  await view.findByText('Loading attributes…')
+  fail(new Error('Discovery unavailable'))
+  await view.findByRole('alert')
+  expect(
+    view.container.querySelector('[data-attribute-heading="retained"]')
+  ).toBe(row)
+  expect(
+    view.getByRole('button', { name: 'Collapse retained · span values' })
+  ).toBe(toggle)
 })
+
+it.each([25, 14])(
+  'loads %i-row server pages without skipping values and resolves full hover/Copy text only on demand',
+  async rowsPerPage => {
+    const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
+    vi.spyOn(telemetryAPI, 'discoverAttributeKeys').mockImplementation(
+      async options => ({
+        items:
+          options.signal === 'traces' && options.ownerType === 'span'
+            ? [{ key: 'deep', kind: 'map', foundOn }]
+            : [],
+        truncated: false,
+      })
+    )
+    const read = vi
+      .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
+      .mockImplementation(async options => {
+        const offset = options.offset ?? 0
+        return {
+          values: Array.from(
+            { length: Math.min(options.limit ?? 25, rowsPerPage, 64 - offset) },
+            (_, i) => ({
+              identity: `home:ref-${offset + i}`,
+              valueRef: `home:ref-${offset + i}`,
+              kind: 'map',
+              preview: '{same bounded preview}',
+              colorHash: 17,
+              count: 1,
+              counts: { traces: 1, logs: 0, metrics: 0 },
+              kindCount: 64,
+              denominator: 64,
+              relativeFrequency: 1 / 64,
+              foundOn,
+            })
+          ),
+          kinds: [
+            {
+              kind: 'map',
+              count: 64,
+              counts: { traces: 64, logs: 0, metrics: 0 },
+            },
+          ],
+          denominator: 64,
+          denominators: { traces: 64, logs: 0, metrics: 0 },
+          total: 64,
+          truncated: offset + rowsPerPage < 64,
+        }
+      })
+    const full = vi
+      .spyOn(telemetryAPI, 'getHomeAttributeValue')
+      .mockResolvedValue({
+        kind: 'map',
+        value: [
+          { key: 'exact', value: { kind: 'int64', value: 9007199254740993n } },
+        ],
+      })
+    const onSelectAttribute = vi.fn()
+    const { container, getByRole } = render(AttributeDiscovery, {
+      service,
+      range: {},
+      revision: 0,
+      queries: { traces: null, logs: false, metrics: false },
+      selectedAttribute: null,
+      onSelectAttribute,
+    })
+    await waitFor(() =>
+      expect(read).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 0 }),
+        expect.any(AbortSignal)
+      )
+    )
+    expect(full).not.toHaveBeenCalled()
+    await fireEvent.click(
+      getByRole('button', { name: 'Expand deep · span values' })
+    )
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll('tr[data-value-identity]')
+      ).toHaveLength(rowsPerPage)
+    )
+    expect(full).not.toHaveBeenCalled()
+    const row = container.querySelector<HTMLElement>('tr[data-value-identity]')!
+    await fireEvent.click(
+      row.querySelector('[data-attribute-column="count"]')!,
+      {
+        detail: 1,
+      }
+    )
+    expect(onSelectAttribute).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ key: 'deep' }),
+      expect.objectContaining({ identity: 'home:ref-0' })
+    )
+    const inspect = within(row).getByRole('button', {
+      name: 'Show span attribute: deep in details',
+    })
+    await fireEvent.pointerEnter(inspect)
+    await waitFor(() =>
+      expect(inspect).toHaveAttribute(
+        'title',
+        '{\n  "exact": 9007199254740993\n}'
+      )
+    )
+    await fireEvent.click(
+      within(row).getByRole('button', { name: 'Copy deep value' })
+    )
+    await waitFor(() =>
+      expect(copyText).toHaveBeenCalledExactlyOnceWith(
+        '{\n  "exact": 9007199254740993\n}'
+      )
+    )
+    expect(onSelectAttribute).toHaveBeenCalledTimes(1)
+    const next = within(container.querySelector('tbody')!).getByRole('button', {
+      name: 'Next page',
+    })
+    await fireEvent.click(next)
+    await waitFor(() =>
+      expect(read).toHaveBeenCalledWith(
+        expect.objectContaining({ offset: rowsPerPage, limit: 25 }),
+        expect.any(AbortSignal)
+      )
+    )
+    await waitFor(() =>
+      expect(
+        container.querySelector('tr[data-value-identity]')
+      ).toHaveAttribute('data-value-identity', `home:ref-${rowsPerPage}`)
+    )
+    expect(full).toHaveBeenCalledTimes(2)
+    const previous = within(container.querySelector('tbody')!).getByRole(
+      'button',
+      { name: 'Previous page' }
+    )
+    await fireEvent.click(previous)
+    await waitFor(() =>
+      expect(
+        container.querySelector('tr[data-value-identity]')
+      ).toHaveAttribute('data-value-identity', 'home:ref-0')
+    )
+    expect(previous).toBeDisabled()
+    for (let offset = rowsPerPage; offset < 64; offset += rowsPerPage) {
+      await fireEvent.click(next)
+      await waitFor(() =>
+        expect(
+          container.querySelector('tr[data-value-identity]')
+        ).toHaveAttribute('data-value-identity', `home:ref-${offset}`)
+      )
+    }
+    expect(next).toBeDisabled()
+    await fireEvent.click(previous)
+    await waitFor(() =>
+      expect(
+        container.querySelector('tr[data-value-identity]')
+      ).toHaveAttribute(
+        'data-value-identity',
+        `home:ref-${Math.floor(63 / rowsPerPage) * rowsPerPage - rowsPerPage}`
+      )
+    )
+    full.mockRejectedValueOnce(
+      new Error(
+        'Home value is unavailable; refresh attribute values and select it again'
+      )
+    )
+    await fireEvent.click(
+      within(container.querySelector('tr[data-value-identity]')!).getByRole(
+        'button',
+        { name: 'Copy deep value' }
+      )
+    )
+    await waitFor(() =>
+      expect(getByRole('alert')).toHaveTextContent('refresh attribute values')
+    )
+    expect(copyText).toHaveBeenCalledTimes(1)
+  }
+)
 
 type CoverageFixtureValue = Pick<
   HomeCoverageValue,

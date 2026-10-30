@@ -31,6 +31,44 @@ beforeEach(() => {
 })
 
 describe('AssociatedTrace', () => {
+  it('keeps the displayed summary and link through pending and failed replacements', async () => {
+    getTraceSummary.mockResolvedValueOnce(summary)
+    const view = renderWithContexts(AssociatedTrace, {
+      traceID: summary.traceID,
+      spanID: null,
+    })
+    const title = await screen.findByText('POST /checkout')
+    const link = screen.getByRole('link')
+    let reject!: (reason: Error) => void
+    getTraceSummary.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail
+        })
+    )
+    await view.rerender({
+      componentProps: { traceID: 'replacement', spanID: null },
+    })
+    expect(screen.getByText('POST /checkout')).toBe(title)
+    expect(link).toHaveAttribute(
+      'href',
+      `/traces/${summary.traceID}?start=1&end=2`
+    )
+    expect(screen.queryByText('Loading trace context…')).toBeNull()
+    await screen.findByText('Loading trace context…')
+    reject(new Error('offline'))
+    await screen.findByRole('alert')
+    expect(screen.getByText('POST /checkout')).toBe(title)
+    getTraceSummary.mockResolvedValueOnce({
+      ...summary,
+      traceID: 'replacement',
+      rootSpan: { name: 'Replacement', serviceName: 'worker' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await screen.findByText('Replacement')
+    expect(screen.getByRole('link')).toBe(link)
+    expect(link).toHaveAttribute('href', '/traces/replacement?start=1&end=2')
+  })
   it('summarises the linked span rather than the root or whole trace', async () => {
     getSpanTimings.mockResolvedValue([
       {

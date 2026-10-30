@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -196,14 +197,17 @@
     )
   )
   let timingsLoading = $state(false)
+  let timingRequest = $state.raw<AbortSignal>()
+  const timingNotice = createLoadingNotice(
+    () => timingsLoading,
+    () => timingRequest
+  )
   let timingsFailed = $state(false)
   let timelineLogs = $state(new Map<string, TraceLogSummary[]>())
   $effect(() => {
     const nodes = traceIndex.nodes
     const traces = traceViews
     const controller = new AbortController()
-    timelineLogs = new Map()
-    correlationLogs = []
     void (async () => {
       const summaries = new Map<string, TraceLogSummary[]>()
       for (let offset = 0; offset < traces.length; offset += 4) {
@@ -218,7 +222,6 @@
           if (result.status === 'fulfilled')
             summaries.set(batch[index]!.traceID.toLowerCase(), result.value)
         })
-        timelineLogs = new Map(summaries)
       }
       const owners = new Map<string, SpanData>()
       for (const [traceID, logs] of summaries) {
@@ -256,8 +259,10 @@
         if (controller.signal.aborted) return
         for (const result of results)
           if (result.status === 'fulfilled') received.push(...result.value)
-        correlationLogs = [...received]
       }
+      if (controller.signal.aborted) return
+      timelineLogs = summaries
+      correlationLogs = received
     })()
     return () => controller.abort()
   })
@@ -283,7 +288,7 @@
   }
   function missingTiming(reference?: TelemetryReference) {
     if (!reference?.spanID) return 'No recorded duration'
-    if (timingsLoading) return 'Loading span'
+    if (timingsLoading) return timingNotice.visible ? 'Loading span' : ''
     if (timingsFailed) return 'Span unavailable'
     return timingFor(reference) ? 'Invalid span duration' : 'Span not stored'
   }
@@ -333,7 +338,7 @@
   $effect(() => {
     const references = evalTraceReferences(sourceExperiment)
     const controller = new AbortController()
-    traceViews = []
+    timingRequest = controller.signal
     timingsLoading = true
     timingsFailed = false
     void telemetryAPI

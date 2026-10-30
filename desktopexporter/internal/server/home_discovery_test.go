@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -210,6 +211,84 @@ func TestHomeReferenceSeparatesCanonicalRowsFromReceivedRepresentatives(t *testi
 	require.Equal(t, []byte{3}, resolved.value)
 	_, err = cache.resolve(new(sql.DB), nativeB)
 	require.ErrorIs(t, err, ErrHomeValueUnavailable)
+}
+
+func TestHomeReferencePageProtectsCanonicalAndReceivedReferences(t *testing.T) {
+	var cache homeValueReferences
+	db := new(sql.DB)
+	canonical, _, err := cache.retain(db, "canonical NaN", []byte{1}, []byte{2})
+	require.NoError(t, err)
+	for i := range homeReferenceEntries - 1 {
+		_, _, err = cache.retain(db, strconv.Itoa(i), []byte{1}, []byte{2})
+		require.NoError(t, err)
+	}
+	values := []homeReferenceValue{{"canonical NaN", []byte{1}, []byte{3}}}
+	for i := range homeReferenceEntries {
+		values = append(values, homeReferenceValue{fmt.Sprintf("new-%d", i), []byte{1}, []byte{2}})
+	}
+	refs, err := cache.retainPage(db, values)
+	require.NoError(t, err)
+	// The first row owns two entries: its canonical identity and exact representative.
+	require.Len(t, refs, homeReferenceEntries-1)
+	require.Equal(t, canonical, refs[0].identity)
+	require.NotEqual(t, canonical, refs[0].value)
+	for _, ref := range refs {
+		_, err = cache.resolve(db, ref.identity)
+		require.NoError(t, err)
+		_, err = cache.resolve(db, ref.value)
+		require.NoError(t, err)
+	}
+	received, err := cache.resolve(db, refs[0].value)
+	require.NoError(t, err)
+	require.Equal(t, []byte{3}, received.value)
+	require.LessOrEqual(t, cache.bytes, homeReferenceBytes)
+	require.LessOrEqual(t, cache.order.Len(), homeReferenceEntries)
+}
+
+func TestHomeDiscoveryByteBoundedPagesKeepEveryReturnedValueResolvable(t *testing.T) {
+	h := setupHandler(t)
+	data := ptrace.NewTraces()
+	scope := data.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	for i := range 25 {
+		span := scope.Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(100)
+		span.SetEndTimestamp(101)
+		span.Attributes().PutStr("value", fmt.Sprintf("%03d", i)+strings.Repeat("x", 1_500_000))
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	options := map[string]any{"ownerType": "span", "key": "value", "valueKind": "string", "limit": 25, "sortBy": "name", "sortDirection": "asc"}
+	// Rebuilding the first page must not repeat the original self-eviction failure.
+	for range 2 {
+		offset := 0
+		for offset < 25 {
+			options["offset"] = offset
+			page := homePage(t, h, options)
+			require.NotEmpty(t, page.Values)
+			require.EqualValues(t, 25, page.Total)
+			if offset == 0 {
+				require.Less(t, len(page.Values), 25)
+				require.True(t, page.Truncated)
+			}
+			require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+				for i, value := range page.Values {
+					for _, ref := range []string{value.Identity, value.ValueRef} {
+						entry, err := h.homeValues.resolve(db, ref)
+						require.NoError(t, err)
+						native, err := parquetvariant.New(entry.metadata, entry.value)
+						require.NoError(t, err)
+						require.Equal(t, fmt.Sprintf("%03d", offset+i)+strings.Repeat("x", 1_500_000), native.Value())
+					}
+				}
+				return nil
+			}))
+			offset += len(page.Values)
+			require.Equal(t, offset < 25, page.Truncated)
+			require.LessOrEqual(t, h.homeValues.bytes, homeReferenceBytes)
+		}
+		require.Equal(t, 25, offset)
+	}
 }
 
 func TestHomeNameSortPreservesStableCanonicalCollationTies(t *testing.T) {

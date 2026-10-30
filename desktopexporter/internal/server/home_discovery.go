@@ -78,6 +78,16 @@ func homeDiscoveryOptions(raw json.RawMessage) (discoveryOptions, bool, error) {
 // including after eviction or database replacement. Equality is exact, not hash
 // equality. No table, persistence, or global store contract is introduced.
 type homeReferenceKey struct{ identity, metadata, value string }
+type homeReferenceValue struct {
+	identity        string
+	metadata, value []byte
+}
+type homeReferencePair struct{ identity, value string }
+
+func homeReferenceSize(identity string, metadata, value []byte) int {
+	return len(identity) + 2*len(metadata) + 2*len(value)
+}
+
 type homeReference struct {
 	key             homeReferenceKey
 	ref             string
@@ -109,46 +119,86 @@ func (c *homeValueReferences) database(db *sql.DB) {
 	c.byIdentity = make(map[string]*list.Element)
 }
 func (c *homeValueReferences) retain(db *sql.DB, identity string, metadata, value []byte) (string, string, error) {
+	refs, err := c.retainPage(db, []homeReferenceValue{{identity, metadata, value}})
+	if err != nil {
+		return "", "", err
+	}
+	return refs[0].identity, refs[0].value, nil
+}
+
+// Publish a prefix that fits as one operation. Both canonical identities and
+// received representatives are protected from eviction by later rows of the page.
+func (c *homeValueReferences) retainPage(db *sql.DB, values []homeReferenceValue) ([]homeReferencePair, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.database(db)
-	key := homeReferenceKey{identity, string(metadata), string(value)}
-	if previous := c.byValue[key]; previous != nil {
+	refs := make([]homeReferencePair, 0, len(values))
+	protected := make(map[*list.Element]bool)
+	protectedBytes := 0
+	protect := func(element *list.Element) {
+		if element != nil && !protected[element] {
+			entry := element.Value.(*homeReference)
+			protectedBytes += homeReferenceSize(entry.key.identity, entry.metadata, entry.value)
+			protected[element] = true
+		}
+	}
+	for _, received := range values {
+		key := homeReferenceKey{received.identity, string(received.metadata), string(received.value)}
+		previous, canonical := c.byValue[key], c.byIdentity[received.identity]
+		size := homeReferenceSize(received.identity, received.metadata, received.value)
+		neededBytes, neededEntries := protectedBytes, len(protected)
+		if previous == nil {
+			neededBytes += size
+			neededEntries++
+		}
+		for i, element := range []*list.Element{previous, canonical} {
+			if element != nil && !protected[element] && (i == 0 || element != previous) {
+				entry := element.Value.(*homeReference)
+				neededBytes += homeReferenceSize(entry.key.identity, entry.metadata, entry.value)
+				neededEntries++
+			}
+		}
+		if neededBytes > homeReferenceBytes || neededEntries > homeReferenceEntries {
+			if len(refs) == 0 {
+				return nil, fmt.Errorf("Home value exceeds exact-reference capacity")
+			}
+			break
+		}
+		protect(previous)
+		protect(canonical)
+		if previous == nil {
+			for last := c.order.Back(); c.bytes+size > homeReferenceBytes || c.order.Len() >= homeReferenceEntries; {
+				candidate := last
+				last = last.Prev()
+				if protected[candidate] {
+					continue
+				}
+				entry := candidate.Value.(*homeReference)
+				delete(c.byRef, entry.ref)
+				delete(c.byValue, entry.key)
+				if c.byIdentity[entry.key.identity] == candidate {
+					delete(c.byIdentity, entry.key.identity)
+				}
+				c.bytes -= homeReferenceSize(entry.key.identity, entry.metadata, entry.value)
+				c.order.Remove(candidate)
+			}
+			c.next++
+			ref := "home:" + c.epoch + ":" + strconv.FormatUint(c.next, 10)
+			entry := &homeReference{key: key, ref: ref, metadata: bytes.Clone(received.metadata), value: bytes.Clone(received.value)}
+			previous = c.order.PushFront(entry)
+			c.byRef[ref], c.byValue[key] = previous, previous
+			c.bytes += size
+			protect(previous)
+		}
+		if canonical == nil {
+			canonical = previous
+			c.byIdentity[received.identity] = canonical
+		}
 		c.order.MoveToFront(previous)
-		if c.byIdentity[identity] == nil {
-			c.byIdentity[identity] = previous
-		}
-		canonical := c.byIdentity[identity]
 		c.order.MoveToFront(canonical)
-		return canonical.Value.(*homeReference).ref, previous.Value.(*homeReference).ref, nil
+		refs = append(refs, homeReferencePair{canonical.Value.(*homeReference).ref, previous.Value.(*homeReference).ref})
 	}
-	size := len(identity) + len(key.metadata) + len(key.value) + len(metadata) + len(value)
-	if size > homeReferenceBytes {
-		return "", "", fmt.Errorf("Home value exceeds exact-reference capacity")
-	}
-	for c.bytes+size > homeReferenceBytes || c.order.Len() >= homeReferenceEntries {
-		last := c.order.Back()
-		entry := last.Value.(*homeReference)
-		delete(c.byRef, entry.ref)
-		delete(c.byValue, entry.key)
-		if c.byIdentity[entry.key.identity] == last {
-			delete(c.byIdentity, entry.key.identity)
-		}
-		c.bytes -= len(entry.key.identity) + len(entry.key.metadata) + len(entry.key.value) + len(entry.metadata) + len(entry.value)
-		c.order.Remove(last)
-	}
-	c.next++
-	ref := "home:" + c.epoch + ":" + strconv.FormatUint(c.next, 10)
-	entry := &homeReference{key: key, ref: ref, metadata: bytes.Clone(metadata), value: bytes.Clone(value)}
-	element := c.order.PushFront(entry)
-	c.byRef[ref], c.byValue[key] = element, element
-	if c.byIdentity[identity] == nil {
-		c.byIdentity[identity] = element
-	}
-	canonical := c.byIdentity[identity]
-	c.order.MoveToFront(canonical)
-	c.bytes += size
-	return canonical.Value.(*homeReference).ref, ref, nil
+	return refs, nil
 }
 func (c *homeValueReferences) resolve(db *sql.DB, ref string) (*homeReference, error) {
 	c.mu.Lock()
@@ -327,6 +377,8 @@ func (h *JSONRPCHandler) discoverHomeValues(ctx context.Context, options discove
 		}
 		defer rows.Close()
 		page := &homeValuePage{Values: []homeValue{}, Kinds: []homeKindCounts{}}
+		var received []homeReferenceValue
+		pageBytes := 0
 		for rows.Next() {
 			var identity, kind, preview, counts sql.NullString
 			var count sql.NullInt64
@@ -345,11 +397,16 @@ func (h *JSONRPCHandler) discoverHomeValues(ctx context.Context, options discove
 			if !identity.Valid {
 				continue
 			}
-			ref, valueRef, err := h.homeValues.retain(db, identity.String, metadata, value)
-			if err != nil {
-				return nil, err
+			size := homeReferenceSize(identity.String, metadata, value)
+			if size > homeReferenceBytes && len(received) == 0 {
+				return nil, fmt.Errorf("Home value exceeds exact-reference capacity")
 			}
-			entry := homeValue{Identity: ref, ValueRef: valueRef, Kind: kind.String, Preview: preview.String, Count: uint64(count.Int64),
+			if pageBytes+size > homeReferenceBytes {
+				break
+			}
+			pageBytes += size
+			received = append(received, homeReferenceValue{identity.String, metadata, value})
+			entry := homeValue{Kind: kind.String, Preview: preview.String, Count: uint64(count.Int64),
 				KindCount: kindCount, Denominator: page.Denominator, ColorHash: homeColorHash(options.OwnerType, *options.Key, identity.String), FoundOn: []discovery.Location{}}
 			if page.Denominator > 0 {
 				entry.RelativeFrequency = float64(entry.Count) / float64(page.Denominator)
@@ -369,6 +426,20 @@ func (h *JSONRPCHandler) discoverHomeValues(ctx context.Context, options discove
 		}
 		if err := rows.Err(); err != nil {
 			return nil, err
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		refs, err := h.homeValues.retainPage(db, received)
+		if err != nil {
+			return nil, err
+		}
+		page.Values = page.Values[:len(refs)]
+		for i, ref := range refs {
+			page.Values[i].Identity, page.Values[i].ValueRef = ref.identity, ref.value
 		}
 		page.Truncated = options.Offset+uint64(len(page.Values)) < page.Total
 		return page, nil

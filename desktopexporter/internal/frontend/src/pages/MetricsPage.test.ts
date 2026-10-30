@@ -659,7 +659,10 @@ describe('Metric Details request lifecycle', () => {
     })
     await tick()
     expect(screen.queryByText('stale context')).toBeNull()
-    expect(screen.getByText('Loading series attributes…')).toBeVisible()
+    expect(
+      screen.queryByText('Loading series attributes…')
+    ).not.toBeInTheDocument()
+    expect(await screen.findByText('Loading series attributes…')).toBeVisible()
     const currentSignal = getMetricSeries.mock.calls[1]!.at(-1) as AbortSignal
     await fireEvent.click(
       screen.getByRole('button', {
@@ -1044,6 +1047,41 @@ describe('MetricsPage raw series fetching', () => {
     expect((rawSeriesCalls()[1]!.at(-1) as AbortSignal).aborted).toBe(true)
   })
 
+  it('keeps displayed datapoint rows mounted until a refreshed raw series is ready', async () => {
+    prepareRawSeriesTest()
+    const replacement = deferred<MetricViewData | null>()
+    let rawRequests = 0
+    getMetricView.mockImplementation((...args: unknown[]) =>
+      args[3] === 0
+        ? rawRequests++ === 0
+          ? Promise.resolve(
+              makeMetric('Sum', [
+                makeSumDatapoint('displayed', 1_700_000_000_000, 7),
+              ])
+            )
+          : replacement.promise
+        : Promise.resolve(makeMetric('Sum', [reduced]))
+    )
+    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="displayed"]')).not.toBeNull()
+    )
+    const row = document.querySelector('[data-dp-id="displayed"]')
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
+    expect(document.querySelector('[data-dp-id="displayed"]')).toBe(row)
+    replacement.resolve(
+      makeMetric('Sum', [makeSumDatapoint('replacement', 1_700_000_000_000, 9)])
+    )
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-dp-id="replacement"]')
+      ).not.toBeNull()
+    )
+    expect(document.querySelector('[data-dp-id="displayed"]')).toBeNull()
+  })
+
   const terminalResponses: Array<[string, () => MetricViewData | null]> = [
     ['a null result', () => null],
     ['an omitted series', () => ({ ...makeMetric('Sum'), timeseries: [] })],
@@ -1067,7 +1105,8 @@ describe('MetricsPage raw series fetching', () => {
       renderWithContexts(MetricsPage)
       await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
       expect(document.querySelector('tr[data-dp-id="dp-reduced"]')).toBeNull()
-      expect(screen.getByText('Loading datapoints…')).toBeVisible()
+      expect(screen.queryByText('Loading datapoints…')).not.toBeInTheDocument()
+      expect(await screen.findByText('Loading datapoints…')).toBeVisible()
 
       raw.resolve(response())
       await raw.promise

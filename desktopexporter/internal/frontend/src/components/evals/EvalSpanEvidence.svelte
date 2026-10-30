@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import type { LogData, SpanData, SpanNode } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailField from '@/components/shared/DetailProperty.svelte'
@@ -23,13 +25,23 @@
   const logOwners = $derived(toolLogOwners(spans, nodes, callID))
   let logs = $state<LogData[]>([])
   let loading = $state(false)
+  let requestKey = $state.raw<AbortSignal>()
   let failed = $state(false)
+  let displayed = $state.raw<{
+    spans: SpanData[]
+    logs: LogData[]
+    callID: string | undefined
+  }>()
   const outputField = (key: string) =>
     /^(output|stdout|stderr|tool\.(output|result|error)|gen_ai\.tool\.call\.result)$/.test(
       key
     )
   const records = $derived(
-    evalSpanEvidence(spans, logs, callID)
+    evalSpanEvidence(
+      displayed?.spans ?? spans,
+      displayed?.logs ?? logs,
+      displayed ? displayed.callID : callID
+    )
       .map(record => ({
         ...record,
         fields: [...record.fields].sort(
@@ -45,8 +57,12 @@
 
   $effect(() => {
     const selected = logOwners
+    const selectedSpans = spans
+    const selectedCallID = callID
     const controller = new AbortController()
-    logs = []
+    requestKey = controller.signal
+    if (!untrack(() => displayed))
+      displayed = { spans: selectedSpans, logs: [], callID: selectedCallID }
     loading = true
     failed = false
     void (async () => {
@@ -71,6 +87,11 @@
         }
       }
       logs = received
+      displayed = {
+        spans: selectedSpans,
+        logs: received,
+        callID: selectedCallID,
+      }
       failed = unavailable
       loading = false
     })()
@@ -109,9 +130,12 @@
     </tbody>
   </table>
 {/each}
-{#if loading}<p class="px-3 py-2 text-sm text-subtle" role="status">
-    Loading linked log evidence…
-  </p>
+{#if loading}<LoadingStatus
+    pending
+    label="Loading linked log evidence…"
+    {requestKey}
+    class="block px-3 py-2 text-sm text-subtle"
+  />
 {:else if failed}<p class="px-3 py-2 text-sm text-subtle" role="status">
     Linked log evidence could not be loaded.
   </p>{/if}

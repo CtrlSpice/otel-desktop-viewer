@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
   import AttributeKey from './AttributeKey.svelte'
@@ -127,6 +129,9 @@
         }),
   })
   const identity = $derived(service ? serviceIdentity(service) : '')
+  let displayedOptions = $state.raw<Omit<DiscoveryOptions, 'kind'>>({})
+  let displayedIdentity = ''
+  let requestKey = $state(0)
   $effect(() => {
     const text = filter
     const timer = setTimeout(() => {
@@ -136,15 +141,21 @@
   })
   $effect(() => {
     const active = service
+    const scope = identity
+    const selectedOptions = options
     const request = { ...options, term, limit: 100 }
     void revision
     const controller = new AbortController()
-    keys = []
-    counts = {}
+    requestKey = untrack(() => requestKey) + 1
     error = ''
     loading = Boolean(active)
-    pageIndex = 0
-    setAll(false)
+    if (!active) {
+      keys = []
+      counts = {}
+      displayedIdentity = ''
+      pageIndex = 0
+      setAll(false)
+    }
     if (active)
       void Promise.all(
         discoverySignals
@@ -169,8 +180,13 @@
           )
       )
         .then(pages => {
-          if (!controller.signal.aborted)
-            keys = mergeAttributeKeys(pages.flat())
+          if (controller.signal.aborted) return
+          keys = mergeAttributeKeys(pages.flat())
+          counts = {}
+          displayedOptions = { ...selectedOptions }
+          pageIndex = 0
+          if (displayedIdentity !== scope) setAll(false)
+          displayedIdentity = scope
         })
         .catch(reason => {
           if (!controller.signal.aborted) error = String(reason)
@@ -225,134 +241,129 @@
       {#if service}
         {@render filterField()}
         {#if error}<p role="alert" class="p-3 text-papaya">{error}</p>
-        {:else if loading && keys.length === 0}<p
-            role="status"
-            class="p-3 text-subtle"
-          >
-            Loading attributes…
-          </p>
-        {:else if keys.length === 0}<p class="p-3 text-subtle">
+        {/if}
+        <LoadingStatus
+          pending={loading}
+          {requestKey}
+          label="Loading attributes…"
+          class="block p-3 text-subtle"
+        />
+        {#if !loading && !error && keys.length === 0}<p class="p-3 text-subtle">
             No matching attributes in this service and time range.
           </p>
-        {:else}
+        {/if}
+        {#if keys.length > 0}
           <div class="attribute-discovery__table" bind:this={viewport}>
-            {#key `${identity}:${revision}:${term}`}
-              <ResizableTable
-                {columns}
-                storageKey="home-attribute-column-widths"
-                caption="Attributes"
-                fillColumn="name"
-                pinnedCount={1}
-                constrainToViewport
-                selectable
-              >
-                {#snippet header(layout)}
-                  <tr>
-                    <th
-                      class="table-cell text-left"
-                      class:table-cell--pinned={layout.pinned.name !==
-                        undefined}
-                      style:left={layout.pinned.name === undefined
-                        ? undefined
-                        : `${layout.pinned.name}px`}
-                      data-attribute-column="name"
-                      scope="col"
-                      aria-sort={sortBy === 'name'
-                        ? sortDirection === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'}
+            <ResizableTable
+              {columns}
+              storageKey="home-attribute-column-widths"
+              caption="Attributes"
+              fillColumn="name"
+              pinnedCount={1}
+              constrainToViewport
+              selectable
+            >
+              {#snippet header(layout)}
+                <tr>
+                  <th
+                    class="table-cell text-left"
+                    class:table-cell--pinned={layout.pinned.name !== undefined}
+                    style:left={layout.pinned.name === undefined
+                      ? undefined
+                      : `${layout.pinned.name}px`}
+                    data-attribute-column="name"
+                    scope="col"
+                    aria-sort={sortBy === 'name'
+                      ? sortDirection === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : 'none'}
+                  >
+                    <TableSortButton
+                      label="name"
+                      inlineDirection
+                      title="Sort attributes and their values by name"
+                      direction={sortBy === 'name' ? sortDirection : undefined}
+                      onclick={() => sort('name')}
                     >
-                      <TableSortButton
-                        label="name"
-                        inlineDirection
-                        title="Sort attributes and their values by name"
-                        direction={sortBy === 'name'
-                          ? sortDirection
-                          : undefined}
-                        onclick={() => sort('name')}
-                      >
-                        <TableColumnHeading label="Name" />
-                      </TableSortButton>
-                    </th>
-                    <th
-                      class="table-cell text-right"
-                      data-attribute-column="count"
-                      scope="col"
-                      aria-sort={sortBy === 'count'
-                        ? sortDirection === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'}
+                      <TableColumnHeading label="Name" />
+                    </TableSortButton>
+                  </th>
+                  <th
+                    class="table-cell text-right"
+                    data-attribute-column="count"
+                    scope="col"
+                    aria-sort={sortBy === 'count'
+                      ? sortDirection === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : 'none'}
+                  >
+                    <TableSortButton
+                      label="records"
+                      inlineDirection
+                      align="right"
+                      title="Records containing this attribute and type; value rows count records containing that exact value"
+                      direction={sortBy === 'count' ? sortDirection : undefined}
+                      onclick={() => sort('count')}
                     >
-                      <TableSortButton
-                        label="records"
-                        inlineDirection
-                        align="right"
-                        title="Records containing this attribute and type; value rows count records containing that exact value"
-                        direction={sortBy === 'count'
-                          ? sortDirection
-                          : undefined}
-                        onclick={() => sort('count')}
-                      >
-                        <TableColumnHeading label="Records" align="right" />
-                      </TableSortButton>
-                    </th>
-                    <th
-                      class="table-cell text-right"
-                      data-attribute-column="frequency"
-                      scope="col"
-                      aria-sort={sortBy === 'frequency'
-                        ? sortDirection === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'}
+                      <TableColumnHeading label="Records" align="right" />
+                    </TableSortButton>
+                  </th>
+                  <th
+                    class="table-cell text-right"
+                    data-attribute-column="frequency"
+                    scope="col"
+                    aria-sort={sortBy === 'frequency'
+                      ? sortDirection === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : 'none'}
+                  >
+                    <TableSortButton
+                      label="percentage"
+                      inlineDirection
+                      align="right"
+                      title="Sort values within each attribute"
+                      direction={sortBy === 'frequency'
+                        ? sortDirection
+                        : undefined}
+                      onclick={() => sort('frequency')}
                     >
-                      <TableSortButton
-                        label="percentage"
-                        inlineDirection
-                        align="right"
-                        title="Sort values within each attribute"
-                        direction={sortBy === 'frequency'
-                          ? sortDirection
-                          : undefined}
-                        onclick={() => sort('frequency')}
-                      >
-                        <TableColumnHeading label="%" align="right" />
-                      </TableSortButton>
-                    </th>
-                    <th
-                      class="table-cell"
-                      data-attribute-column="copy"
-                      scope="col"><span class="sr-only">Copy</span></th
-                    >
-                  </tr>
-                {/snippet}
-                {#snippet children(layout)}
-                  {#each sortedKeys as entry, index (attributeIdentity(entry))}
-                    {@const id = attributeIdentity(entry)}
-                    <AttributeKey
-                      {entry}
-                      {options}
-                      sortBy={sortBy === 'name' ? 'name' : 'frequency'}
-                      {sortDirection}
-                      onCount={count => (counts[id] = count)}
-                      pinnedLeft={layout.pinned.name}
-                      expanded={expansionOverrides[id] ?? allExpanded}
-                      onExpandedChange={expanded =>
-                        (expansionOverrides[id] = expanded)}
-                      selected={selectedAttribute !== null &&
-                        attributeIdentity(selectedAttribute) === id}
-                      onSelect={() => onSelectAttribute(entry)}
-                      {selectedValue}
-                      onSelectValue={value => onSelectAttribute(entry, value)}
-                      hidden={index < pageIndex * pageSize ||
-                        index >= (pageIndex + 1) * pageSize}
-                    />
-                  {/each}
-                {/snippet}
-              </ResizableTable>
-            {/key}
+                      <TableColumnHeading label="%" align="right" />
+                    </TableSortButton>
+                  </th>
+                  <th
+                    class="table-cell"
+                    data-attribute-column="copy"
+                    scope="col"><span class="sr-only">Copy</span></th
+                  >
+                </tr>
+              {/snippet}
+              {#snippet children(layout)}
+                {#each sortedKeys as entry, index (attributeIdentity(entry))}
+                  {@const id = attributeIdentity(entry)}
+                  <AttributeKey
+                    {entry}
+                    options={displayedOptions}
+                    sortBy={sortBy === 'name' ? 'name' : 'frequency'}
+                    {sortDirection}
+                    onCount={count => (counts[id] = count)}
+                    pinnedLeft={layout.pinned.name}
+                    expanded={expansionOverrides[id] ?? allExpanded}
+                    onExpandedChange={expanded =>
+                      (expansionOverrides[id] = expanded)}
+                    selected={selectedAttribute !== null &&
+                      attributeIdentity(selectedAttribute) === id}
+                    onSelect={() => onSelectAttribute(entry)}
+                    {selectedValue}
+                    onSelectValue={value => onSelectAttribute(entry, value)}
+                    hidden={index < pageIndex * pageSize ||
+                      index >= (pageIndex + 1) * pageSize}
+                  />
+                {/each}
+              {/snippet}
+            </ResizableTable>
           </div>
         {/if}
         <SignalFooter label="page" compact>

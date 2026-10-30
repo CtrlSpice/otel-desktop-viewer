@@ -78,9 +78,11 @@ const trace: TraceFixture = {
   })),
 }
 
-test('trace selection keeps panes mounted without showing old Details under a new identity', async ({
+test('trace selection retains the displayed record and delays feedback until its replacement arrives', async ({
   page,
+  context,
 }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'true')
@@ -89,6 +91,14 @@ test('trace selection keeps panes mounted without showing old Details under a ne
   next.traceID = 'abcdefabcdefabcdefabcdefabcdefab'
   next.spans[0]!.spanData.name = 'replacement trace'
   const releases: (() => Promise<void>)[] = []
+  const copied: string[] = []
+  await page.route('**/export/traces/**', async route => {
+    const url = new URL(route.request().url())
+    copied.push(url.pathname + url.search)
+    await route.fulfill({
+      json: { trace: url.pathname, span: url.searchParams.get('spanId') },
+    })
+  })
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
@@ -149,6 +159,9 @@ test('trace selection keeps panes mounted without showing old Details under a ne
     document.querySelector('.waterfall-view'),
     document.querySelector('.waterfall-view__scroll'),
     document.querySelector('#signal-drawer-detail'),
+    document.querySelector('[aria-label="Span fields"]'),
+    document.querySelector('[aria-label="Copy span"]'),
+    document.querySelector('[aria-label="Detail view"]'),
     ...document.querySelectorAll('#signal-drawer-detail details'),
   ])
   await page.clock.install()
@@ -158,10 +171,21 @@ test('trace selection keeps panes mounted without showing old Details under a ne
     .getByRole('button', { name: /replacement trace/ })
     .click()
   await expect.poll(() => releases.length).toBe(1)
-  await expect(fields).toHaveCount(0)
-  await expect(page.getByText('Loading selected span…')).toBeVisible()
+  await expect(fields.locator('[data-field="name"]').first()).toContainText(
+    'selected span'
+  )
+  await expect(fields.locator('[data-field="traceId"]')).toContainText(
+    traceID.slice(0, 8)
+  )
+  await expect(page.getByText('Loading selected span…')).toHaveCount(0)
   await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
-  await page.clock.runFor(200)
+  await page.getByRole('button', { name: 'Copy span', exact: true }).click()
+  await expect
+    .poll(() => copied)
+    .toEqual([`/export/traces/${traceID}?spanId=${selectedID}`])
+  await page.clock.runFor(199)
+  await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
+  await page.clock.runFor(1)
   await expect(page.getByText('Loading selected trace…')).toBeVisible()
   await expect(page.locator('.waterfall-view')).toHaveCSS('opacity', '1')
   expect(
@@ -173,6 +197,10 @@ test('trace selection keeps panes mounted without showing old Details under a ne
   ).toContainText('replacement trace')
   await expect(fields.locator('[data-field="traceId"]')).toContainText('abcdef')
   await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Copy span', exact: true }).click()
+  await expect
+    .poll(() => copied.at(-1))
+    .toBe(`/export/traces/${next.traceID}?spanId=${rootID}`)
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)

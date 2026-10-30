@@ -43,6 +43,10 @@
   const timeContext = getTimeContext()
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
+  let rawMetric = $state.raw<typeof ctx.metric>()
+  const actionMetric = $derived(
+    detailView === 'raw' ? (rawMetric ?? ctx.metric) : ctx.metric
+  )
 
   let seriesCount = $derived.by(() => {
     if (!ctx.metric) return 0
@@ -104,15 +108,15 @@
     {#snippet action()}
       <DetailViewTabs id={detailViewID} bind:view={detailView}>
         {#snippet action()}
-          {#if ctx.metric}{@const metric = ctx.metric}{#key metric}
-              <ValueCopyButton
-                grouped
-                loadText={signal =>
-                  readOTLPText('metric', metric.metricRef, signal)}
-                label="metric"
-                tooltip="Copy metric as OTLP JSON"
-              />
-            {/key}{/if}
+          {#if actionMetric}{@const metric = actionMetric}
+            <ValueCopyButton
+              grouped
+              loadText={signal =>
+                readOTLPText('metric', metric.metricRef, signal)}
+              label="metric"
+              tooltip="Copy metric as OTLP JSON"
+            />
+          {/if}
         {/snippet}
       </DetailViewTabs>
     {/snippet}
@@ -120,6 +124,8 @@
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
+        record={metric}
+        bind:displayedRecord={rawMetric}
         scopes={rawScopes}
         wholeURL={metricURL}
         refreshKey={metric}

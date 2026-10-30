@@ -45,6 +45,36 @@ function span(spanID: string): SpanData {
 }
 afterEach(() => vi.restoreAllMocks())
 
+it('retains evidence fields while replacement logs load', async () => {
+  const first = span('1'.repeat(16))
+  const second = span('2'.repeat(16))
+  const nodes = new Map(
+    [first, second].map(spanData => [
+      referenceKey(spanData),
+      { spanData, depth: 0, matched: true },
+    ])
+  )
+  let finish!: (logs: LogData[]) => void
+  const loader = vi
+    .spyOn(telemetryAPI, 'getSpanLogs')
+    .mockResolvedValueOnce([])
+    .mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        })
+    )
+  const view = render(EvalSpanEvidence, { span: first, nodes })
+  const field = await screen.findByText(`output-${first.spanID}`)
+  await waitFor(() => expect(loader).toHaveBeenCalledTimes(1))
+  await view.rerender({ span: second, nodes })
+  expect(screen.getByText(`output-${first.spanID}`)).toBe(field)
+  expect(screen.queryByText(`output-${second.spanID}`)).toBeNull()
+  finish([])
+  await screen.findByText(`output-${second.spanID}`)
+  expect(screen.queryByText(`output-${first.spanID}`)).toBeNull()
+})
+
 it('shows span output immediately and never lets a late log response replace the newly selected tool', async () => {
   const first = span('1'.repeat(16))
   const second = span('2'.repeat(16))

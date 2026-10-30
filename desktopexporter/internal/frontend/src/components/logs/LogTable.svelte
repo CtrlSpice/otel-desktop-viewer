@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckListIcon } from '@hugeicons/core-free-icons'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
@@ -457,12 +458,14 @@
       ?.querySelector<HTMLElement>(`[data-log-ref="${escapeForSelector(id)}"]`)
       ?.focus({ preventScroll: true })
   }
+  const loadingNotice = createLoadingNotice(() => loading)
+
   function text(log: LogTableRow, column: LogColumnOption) {
     const id = column.id
     if (column.projection)
       return (
         logColumnCell(log, column)?.text ??
-        (loading ? 'Loading…' : 'Unavailable')
+        (loading ? (loadingNotice.visible ? 'Loading…' : '') : 'Unavailable')
       )
     if (id === 'timestamp')
       return formatTimestamp(log.timestamp, time.tz, 'milliseconds')

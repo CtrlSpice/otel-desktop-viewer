@@ -24,6 +24,7 @@ export type AttributeCoverage = {
   denominators: RecordCounts
   denominator: number
   total: number
+  truncated: boolean
 }
 
 export function attributeIdentity(entry: DiscoveredAttribute): string {

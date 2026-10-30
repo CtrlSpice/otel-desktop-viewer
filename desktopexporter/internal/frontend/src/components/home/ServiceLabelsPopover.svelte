@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
   import {
     createPopoverID,
@@ -12,6 +13,10 @@
   let { service }: { service: ServiceSummary } = $props()
   let labels = $state<{ serviceName: string; serviceNamespace: string }>()
   let loading = $state(false)
+  const loadingNotice = createLoadingNotice(
+    () => loading,
+    () => serviceIdentity(service)
+  )
   let error = $state('')
   let request: AbortController | undefined
   const id = createPopoverID('service-labels')
@@ -76,7 +81,9 @@
         class="btn btn-ghost btn-sm font-normal"
         disabled={loading}
         onclick={inspect}
-        >{loading ? 'Loading labels…' : 'Show full labels'}</button
+        >{loadingNotice.visible
+          ? 'Loading labels…'
+          : 'Show full labels'}</button
       >
     {/if}
     {#if error}<p role="alert" class="text-papaya">{error}</p>{/if}

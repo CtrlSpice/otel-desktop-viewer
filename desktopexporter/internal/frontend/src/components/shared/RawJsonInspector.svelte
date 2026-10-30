@@ -8,9 +8,10 @@
   }
 </script>
 
-<script lang="ts">
+<script lang="ts" generics="T">
   import { untrack } from 'svelte'
   import JsonEditor from './JsonEditor.svelte'
+  import LoadingStatus from './LoadingStatus.svelte'
   import RawJsonStatus, { type RawJsonStatusData } from './RawJsonStatus.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -26,6 +27,8 @@
     status = $bindable<RawJsonStatusData>(),
     showStatus = true,
     refreshKey,
+    record,
+    displayedRecord = $bindable<T | undefined>(),
   }: {
     scopes: RawJsonScope[]
     active: boolean
@@ -33,6 +36,8 @@
     status?: RawJsonStatusData
     showStatus?: boolean
     refreshKey?: unknown
+    record?: T
+    displayedRecord?: T
   } = $props()
   const PREVIEW_BYTES = 2 * 1024 * 1024
   const formatDescription =
@@ -40,8 +45,14 @@
   let scopeID = $state(untrack(() => scopes[0]?.id ?? ''))
   let scope = $derived(scopes.find(item => item.id === scopeID) ?? scopes[0])
   let previewURL = $derived(scope?.previewURL ?? scope?.url)
+  let displayedScope = $state<RawJsonScope>()
+  let displayedBytes = $state<number | null>(null)
+  let displayedWholeURL = $state('')
+  let formatted = $state('')
+  let completedURL = ''
+  const visibleScope = $derived(formatted ? displayedScope : scope)
   let formatHint = $derived(
-    scope?.id === 'metric'
+    visibleScope?.id === 'metric'
       ? `${formatDescription} Displayed metric JSON omits datapoints; Copy and Download include all retained datapoints.`
       : formatDescription
   )
@@ -50,12 +61,12 @@
   let inspectingSize = $state(false)
   let loadingPreview = $state(false)
   let loading = $derived(inspectingSize || loadingPreview)
-  let formatted = $state('')
   let partial = $state(false)
   let requestedURL = $state('')
   let currentURL = $state('')
   let currentRefreshKey: unknown
   let retry = $state(0)
+  let requestKey = $state.raw<AbortSignal>()
   let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
   const sizeLabel = (size: number) =>
     size < 1024
@@ -65,10 +76,11 @@
         : `${(size / 1024 / 1024).toFixed(1)} MiB`
 
   $effect(() => {
+    const size = formatted ? displayedBytes : bytes
     status = {
-      label: `OTLP JSON${scope?.id === 'metric' ? ' · without datapoints' : ''}${bytes === null ? '' : ` · ${sizeLabel(bytes)}`}`,
+      label: `OTLP JSON${visibleScope?.id === 'metric' ? ' · without datapoints' : ''}${size === null ? '' : ` · ${sizeLabel(size)}`}`,
       description: formatHint,
-      url: previewURL,
+      url: visibleScope?.previewURL ?? visibleScope?.url,
     }
   })
 
@@ -85,13 +97,19 @@
     currentRefreshKey = revision
     currentURL = url ?? ''
     requestedURL = ''
-    formatted = ''
+    completedURL = ''
     error = ''
     bytes = null
-    partial = false
     inspectingSize = false
-    if (!url) return
+    if (!url) {
+      formatted = ''
+      displayedRecord = undefined
+      return
+    }
+    const selectedScope = scope
+    const selectedRecord = record
     const controller = new AbortController()
+    requestKey = controller.signal
     let inspected = false
     inspectingSize = true
     void fetch(url, { method: 'HEAD', signal: controller.signal })
@@ -105,14 +123,19 @@
         const length = response.headers.get('Content-Length')
         bytes = length === null ? null : Number(length)
         // Metric metadata always loads a bounded preview without a manual gate.
-        if (scope?.id === 'metric') {
+        if (selectedScope?.id === 'metric') {
           requestedURL = url
         } else if (
-          scope?.id === 'datapoint' ||
-          scope?.id === 'span' ||
-          scope?.id === 'log'
+          selectedScope?.id === 'datapoint' ||
+          selectedScope?.id === 'span' ||
+          selectedScope?.id === 'log'
         ) {
           if (bytes !== null && bytes <= PREVIEW_BYTES) requestedURL = url
+        }
+        if (!requestedURL) {
+          // The manual preview gate is a completed result for this scope.
+          formatted = ''
+          displayedRecord = selectedRecord
         }
         inspected = true
       })
@@ -134,8 +157,12 @@
   $effect(() => {
     void refreshKey
     const url = requestedURL
+    const selectedScope = scope
+    const selectedRecord = record
+    const selectedWholeURL = wholeURL
+    const selectedBytes = bytes
     if (!active || !url || url !== previewURL) return
-    if (untrack(() => formatted && currentURL === url)) return
+    if (untrack(() => formatted && completedURL === url)) return
     const controller = new AbortController()
     let worker: Worker | undefined
     loadingPreview = true
@@ -160,12 +187,12 @@
         if (controller.signal.aborted) return
         const buffer = await blob.arrayBuffer()
         if (controller.signal.aborted) return
-        partial =
+        const previewPartial =
           response.status === 206 &&
           !!response.headers.get('Content-Range') &&
           !response.headers.get('Content-Range')!.endsWith(`/${blob.size}`)
         const raw = new TextDecoder().decode(buffer, {
-          stream: partial,
+          stream: previewPartial,
         })
         worker = new Worker(
           new URL('./utils/raw-json.worker.ts', import.meta.url),
@@ -174,6 +201,12 @@
         worker.onmessage = (event: MessageEvent<string>) => {
           if (!controller.signal.aborted) {
             formatted = event.data
+            partial = previewPartial
+            completedURL = url
+            displayedScope = selectedScope
+            displayedRecord = selectedRecord
+            displayedBytes = selectedBytes
+            displayedWholeURL = selectedWholeURL
             loadingPreview = false
           }
           worker?.terminate()
@@ -227,7 +260,7 @@
         class="btn btn-xs chart-header-control tooltip tooltip-left"
         aria-label="Collapse JSON"
         data-tip="Collapse JSON"
-        disabled={!editor || loading || !!error}
+        disabled={!editor}
         onclick={() => editor?.collapseAll()}
       >
         <HugeiconsIcon
@@ -243,7 +276,7 @@
         class="btn btn-xs chart-header-control tooltip tooltip-left"
         aria-label="Expand JSON"
         data-tip="Expand JSON"
-        disabled={!editor || loading || !!error}
+        disabled={!editor}
         onclick={() => editor?.expandAll()}
       >
         <HugeiconsIcon
@@ -255,11 +288,11 @@
         />
       </button>
     </div>
-    {#if scope?.url && scope.url !== wholeURL}<a
+    {#if visibleScope?.url && visibleScope.url !== (formatted ? displayedWholeURL : wholeURL)}<a
         class="header-icon-button tooltip tooltip-left"
-        href={scope.url}
-        aria-label="Download {scope.label.toLowerCase()}"
-        data-tip="Download {scope.label.toLowerCase()}"
+        href={visibleScope.url}
+        aria-label="Download {visibleScope.label.toLowerCase()}"
+        data-tip="Download {visibleScope.label.toLowerCase()}"
         download
         ><HugeiconsIcon
           icon={Download01Icon}
@@ -282,7 +315,12 @@
         retry++
       }}>Retry</button
     >
-  {:else if loading}<p class="p-3 text-sm" role="status">Loading JSON…</p>
+  {:else if loading}<LoadingStatus
+      pending
+      label="Loading JSON…"
+      {requestKey}
+      class="block p-3 text-sm text-subtle"
+    />
   {:else if !formatted && scope?.id !== 'metric'}<div class="p-3">
       <button
         type="button"
@@ -293,7 +331,7 @@
           : `Load ${scope.label.toLowerCase()} JSON`}</button
       >
     </div>{/if}
-  {#if formatted && !loading && !error}
+  {#if formatted}
     {#if partial}<p class="raw-inspector__notice" role="status">
         Partial preview: first 2 MiB only. Search applies only to this preview.
         The JSON may end mid-value. Download contains the complete selected

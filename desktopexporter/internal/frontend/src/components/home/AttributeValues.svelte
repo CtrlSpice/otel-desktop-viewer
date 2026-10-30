@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -70,17 +71,16 @@
   let coverage = $state<AttributeCoverage>()
   const kindCoverage = $derived(coverage?.kinds.get(kind))
   const PAGE_SIZE = 25
-  let offset = $state(0)
+  type Navigation = { offset: number; previous: number[] }
+  let navigation = $state.raw<Navigation>({ offset: 0, previous: [] })
+  let displayedNavigation = $state.raw<Navigation>({ offset: 0, previous: [] })
   const values = $derived(coverage?.values ?? [])
   const page = $derived(values)
-  const pageIndex = $derived(Math.floor(offset / PAGE_SIZE))
-  const pageCount = $derived(
-    Math.max(1, Math.ceil((coverage?.total ?? 0) / PAGE_SIZE))
-  )
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
   let loading = $state(false)
+  let requestKey = $state.raw<AbortSignal>()
   let error = $state('')
   async function copyValue(item: CoverageValue, signal: AbortSignal) {
     try {
@@ -100,10 +100,12 @@
     void options
     void name
     void kind
-    offset = 0
+    navigation = { offset: 0, previous: [] }
   })
   $effect(() => {
+    const selectedNavigation = navigation
     const controller = new AbortController()
+    requestKey = controller.signal
     loading = true
     error = ''
     void loadAttributeCoverage(
@@ -111,7 +113,7 @@
         ...options,
         key: name,
         valueKind: kind,
-        offset,
+        offset: selectedNavigation.offset,
         limit: expanded && !hidden ? PAGE_SIZE : 0,
         sortBy,
         sortDirection,
@@ -122,6 +124,7 @@
       .then(result => {
         if (controller.signal.aborted) return
         coverage = result
+        displayedNavigation = selectedNavigation
         onCount(result.kinds.get(kind)?.count ?? 0)
       })
       .catch(reason => {
@@ -192,13 +195,19 @@
       ><td class="table-cell" colspan="4"
         ><div class="pl-6">
           {#if error}<span role="alert" class="text-papaya">{error}</span>
+          {:else if loading}<LoadingStatus
+              pending
+              label="Loading values…"
+              {requestKey}
+            />
           {:else}<span class="text-subtle" role="status"
-              >{loading ? 'Loading values…' : 'No retained values.'}</span
+              >No retained values.</span
             >{/if}
         </div></td
       ></tr
     >
-  {:else}
+  {/if}
+  {#if values.length > 0}
     {#each page as item (item.identity)}
       {@const text = item.preview}
       {@const color = valueColors[item.colorHash % valueColors.length]!.color}
@@ -290,18 +299,30 @@
         >
       </tr>
     {/each}
-    {#if pageCount > 1}
+    {#if displayedNavigation.offset > 0 || coverage?.truncated}
       <tr hidden={!expanded}
         ><td class="table-cell" colspan="4"
           ><div class="flex justify-center">
             <DetailNav
-              index={pageIndex}
-              total={pageCount}
+              index={displayedNavigation.previous.length}
+              total={undefined}
+              hasNext={!!coverage?.truncated && values.length > 0}
+              busy={loading}
               label="page"
-              onFirst={() => (offset = 0)}
-              onPrev={() => (offset -= PAGE_SIZE)}
-              onNext={() => (offset += PAGE_SIZE)}
-              onLast={() => (offset = (pageCount - 1) * PAGE_SIZE)}
+              onFirst={() => (navigation = { offset: 0, previous: [] })}
+              onPrev={() =>
+                (navigation = {
+                  offset: displayedNavigation.previous.at(-1) ?? 0,
+                  previous: displayedNavigation.previous.slice(0, -1),
+                })}
+              onNext={() =>
+                (navigation = {
+                  offset: displayedNavigation.offset + values.length,
+                  previous: [
+                    ...displayedNavigation.previous,
+                    displayedNavigation.offset,
+                  ],
+                })}
             />
           </div></td
         ></tr
