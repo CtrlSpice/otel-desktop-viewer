@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { screen, within } from '@testing-library/svelte'
+import { screen, within, fireEvent } from '@testing-library/svelte'
 import AttributeRows from './AttributeRows.svelte'
 import { renderWithContexts } from '@/test/render-helpers'
 import type { Attributes } from '@/types/api-types'
@@ -15,7 +15,7 @@ function renderAttributes(attributes: Attributes, origin?: string) {
 }
 
 describe('AttributeRows', () => {
-  it('shows formatted JSON and scalar attributes immediately', () => {
+  it('shows native fields and scalars immediately, formatting a full document on request', async () => {
     const { container } = renderAttributes([
       {
         id: 'one',
@@ -37,6 +37,13 @@ describe('AttributeRows', () => {
         value: { kind: 'string', value: 'raw' },
       },
     ])
+    expect(container.querySelector('.cm-editor')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Expand flags' })
+    ).toHaveAttribute('aria-expanded', 'false')
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual({
       attempts: 2,
       flags: [true],
@@ -79,7 +86,7 @@ describe('AttributeRows', () => {
     expect(attributes[0]!.key).toBe('service.name')
   })
 
-  it('preserves punctuation, escaping, int64 precision and negative zero', () => {
+  it('preserves punctuation, escaping, int64 precision and negative zero', async () => {
     const { container } = renderAttributes([
       {
         key: 'payload',
@@ -93,13 +100,16 @@ describe('AttributeRows', () => {
         },
       },
     ])
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(jsonEditorView(container).state.doc.toString()).toBe(
       '[\n  "line\\n\\"quoted\\"",\n  9223372036854775807,\n  -0\n]'
     )
     expect(screen.getByLabelText('JSON value of payload')).toBeInTheDocument()
   })
 
-  it('uses JSON array syntax rather than injecting indices into the copied value', () => {
+  it('uses JSON array syntax rather than injecting indices into the copied value', async () => {
     const { container } = renderAttributes([
       {
         key: 'payload',
@@ -115,6 +125,9 @@ describe('AttributeRows', () => {
         },
       },
     ])
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual([
       'first',
       { '[0]': 'key' },

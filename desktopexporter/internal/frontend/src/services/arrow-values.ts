@@ -72,6 +72,17 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
     case 'map':
       return {
         kind: 'map',
+        childAt(index) {
+          const entries = cell.map()
+          return {
+            get key() {
+              return entries.cell('key', index).text()
+            },
+            get value() {
+              return attributeValue(entries.cell('value', index))
+            },
+          }
+        },
         get value() {
           return attributes(cell)
         },
@@ -85,6 +96,9 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
     case 'array':
       return {
         kind: 'array',
+        childAt(index) {
+          return attributeValue(new ArrowCell(cell.list(), index))
+        },
         get value() {
           const values = cell.list()
           return Array.from({ length: values.length }, (_, row) =>

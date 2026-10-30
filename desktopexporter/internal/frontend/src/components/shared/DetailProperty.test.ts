@@ -21,9 +21,8 @@ describe('DetailProperty copy controls', () => {
       },
     })
     expect(serialize).not.toHaveBeenCalled()
-    expect(jsonEditorView(result.container).state.doc.toString()).toContain(
-      '9007199254740993'
-    )
+    expect(result.container.querySelector('.cm-editor')).toBeNull()
+    expect(result.container).toHaveTextContent('9007199254740993')
     await user.click(screen.getByRole('button', { name: 'Copy payload' }))
     expect(serialize).toHaveBeenCalledTimes(1)
     expect(copy).toHaveBeenLastCalledWith('[\n  9007199254740993\n]')
@@ -59,6 +58,9 @@ describe('DetailProperty copy controls', () => {
           ],
         },
       })
+      await user.click(
+        screen.getByRole('button', { name: 'Full document / Find' })
+      )
       const view = jsonEditorView(result.container)
       expect(view.state.doc.toString()).toContain('"workspaceID": undefined')
       await user.click(
@@ -141,6 +143,9 @@ describe('DetailProperty copy controls', () => {
         ],
       },
     })
+    await user.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(jsonEditorView(container).state.doc.toString()).toBe(
       '[\n  "loading",\n  {\n    "path": "/recorded/config.jsonc"\n  }\n]'
     )
@@ -408,6 +413,9 @@ describe('DetailProperty copy controls', () => {
     expect(copy).toHaveBeenCalledWith(
       '{\n  "sequence": 9223372036854775807,\n  "ready": false\n}'
     )
+    await user.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(copy.mock.calls[0]![0]).toBe(
       jsonEditorView(container).state.doc.toString()
     )
@@ -434,10 +442,13 @@ describe('DetailProperty copy controls', () => {
           ],
         },
       })
-      foldAll(jsonEditorView(container))
-      expect(container.querySelector('.cm-foldPlaceholder')).toHaveTextContent(
-        '…'
+      await user.click(
+        screen.getByRole('button', { name: `Collapse all ${fieldName} JSON` })
       )
+      expect(container.querySelector('.cm-editor')).toBeNull()
+      expect(
+        screen.getByRole('button', { name: `Expand ${fieldName}` })
+      ).toHaveAttribute('aria-expanded', 'false')
       expect(screen.queryByText('9223372036854775807')).toBeNull()
       expect(copy).not.toHaveBeenCalled()
       await user.click(

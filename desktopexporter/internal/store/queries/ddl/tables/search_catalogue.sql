@@ -23,3 +23,12 @@ create table if not exists search_values (
 create table if not exists search_postings (
     owner_id bigint not null, path_id bigint not null, value_id bigint not null
 );
+create table if not exists search_services (
+    ref varchar primary key,
+    name varchar not null, namespace varchar not null,
+    name_kind varchar not null, namespace_kind varchar not null,
+    name_preview varchar not null, namespace_preview varchar not null
+);
+create table if not exists search_service_resources (
+    resource_id uuid primary key, service_ref varchar not null
+);

@@ -4,10 +4,10 @@ import { telemetryDataset } from '../src/test/native-telemetry-fixtures'
 import { ArrowFrame } from '../src/services/arrow-data'
 import { traceData } from '../src/services/arrow-traces'
 import { tableValuePreview } from '../src/components/shared/table-value-preview'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import type { TraceColumn } from '../src/types/api-types'
 
-function tracePreviews(result: JsonTraceData, columns: TraceColumn[]) {
+function tracePreviews(result: TraceFixture, columns: TraceColumn[]) {
   const full = traceData(
     new ArrowFrame(telemetryDataset('getTraceView', result))
   )
@@ -81,7 +81,7 @@ export async function routeTelemetry(
           result = {
             ...result,
             spans: result.spans.filter(
-              (node: JsonTraceData['spans'][number]) =>
+              (node: TraceFixture['spans'][number]) =>
                 node.spanData.spanID === params.spanID
             ),
           }
@@ -91,7 +91,7 @@ export async function routeTelemetry(
           const previews = tracePreviews(result, params.columns)
           result = {
             ...result,
-            spans: result.spans.map((node: JsonTraceData['spans'][number]) => ({
+            spans: result.spans.map((node: TraceFixture['spans'][number]) => ({
               ...node,
               spanData: {
                 ...node.spanData,

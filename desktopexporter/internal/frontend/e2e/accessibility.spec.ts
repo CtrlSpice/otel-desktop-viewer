@@ -2,7 +2,7 @@ import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import { SEASONS } from '../src/themes'
 
 type RpcRequest = {
@@ -26,7 +26,6 @@ const EMPTY_STATS = {
 
 const EMPTY_LIST_METHODS = new Set([
   'getTraceAttributeDefinitions',
-  'getTraceAttributeDefinitionsByTraceID',
   'getLogAttributeDefinitions',
   'getMetricAttributeDefinitions',
   'searchTraceSummaries',
@@ -153,7 +152,7 @@ async function interceptTraces(page: Page): Promise<void> {
     }
     if (method !== 'getTraceView') return route.fallback()
     const traceID: string = params.traceID
-    const trace: JsonTraceData = {
+    const trace: TraceFixture = {
       traceID,
       traceStart: '1700000000000000000',
       unplacedSpanCount: 0,

@@ -10,11 +10,11 @@ import {
   graphSwatch,
 } from '../src/themes/graph-inks'
 import type {
-  JsonAggregateBucket,
-  JsonDataPoint,
-  JsonMetricSeriesViewData,
-  JsonMetricViewData,
-} from '../src/types/wire-types'
+  AggregateFixture,
+  PointFixture,
+  SeriesFixture,
+  MetricFixture,
+} from '../src/test/telemetry-fixture-types'
 import type { MetricSummary } from '../src/types/api-types'
 
 // The test transport encodes these readable timestamp fixtures as native Arrow.
@@ -67,34 +67,30 @@ const resource = {
   ],
   droppedAttributesCount: 0,
 }
-const timeseries: JsonMetricSeriesViewData[] = ['first', 'second'].map(
-  name => ({
-    seriesRef: name,
-    attributes: [
-      { key: 'route', value: { kind: 'string', value: `/${name}` } },
-    ],
-    resource,
-    datapoints: Array.from({ length: 40 }, (_, index) => ({
-      id: `${name}-${index}`,
-      metricType: 'Gauge',
-      timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
-      timestampMs: startMs + index * 1000,
-      startTime: startNs,
-      flags: 0,
-      exemplars: [],
-      doubleValue: index + 1,
-      intValue: null,
-      valueType: 'Double',
-    })),
-    stats: null,
-    datapointCount: 40,
-    lastSeenNs: endNs,
-    rateStats: null,
-    views: null,
-    sparkline: null,
-  })
-)
-const metric: JsonMetricViewData = {
+const timeseries: SeriesFixture[] = ['first', 'second'].map(name => ({
+  seriesRef: name,
+  attributes: [{ key: 'route', value: { kind: 'string', value: `/${name}` } }],
+  resource,
+  datapoints: Array.from({ length: 40 }, (_, index) => ({
+    id: `${name}-${index}`,
+    metricType: 'Gauge',
+    timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
+    timestampMs: startMs + index * 1000,
+    startTime: startNs,
+    flags: 0,
+    exemplars: [],
+    doubleValue: index + 1,
+    intValue: null,
+    valueType: 'Double',
+  })),
+  stats: null,
+  datapointCount: 40,
+  lastSeenNs: endNs,
+  rateStats: null,
+  views: null,
+  sparkline: null,
+}))
+const metric: MetricFixture = {
   metricRef: 'series-layout',
   name: 'request.duration',
   description: '',
@@ -837,7 +833,7 @@ test('series table sorts attributes while retaining checked choices and colours'
     { key: 'b', model: 'haiku', type: 'output' },
     { key: 'c', model: 'sonnet', type: 'input' },
   ]
-  const received: JsonMetricViewData = {
+  const received: MetricFixture = {
     ...metric,
     timeseries: samples.map(sample => ({
       ...timeseries[0]!,
@@ -955,7 +951,7 @@ test('series table sorts attributes while retaining checked choices and colours'
 })
 
 test.describe('independent histogram aggregate loading', () => {
-  const bucket: JsonAggregateBucket = {
+  const bucket: AggregateFixture = {
     timestamp: startNs,
     startTime: startNs,
     count: 12,
@@ -980,7 +976,7 @@ test.describe('independent histogram aggregate loading', () => {
             aggregationTemporalityCode: 2,
             aggregationTemporality: 'Cumulative',
           }
-    const histogramMetric: JsonMetricViewData = {
+    const histogramMetric: MetricFixture = {
       ...metric,
       metricType: 'Histogram',
       ...temporality,
@@ -1137,7 +1133,7 @@ test.describe('independent histogram aggregate loading', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
     const pending = await holdAggregates(page)
-    const large: JsonAggregateBucket = {
+    const large: AggregateFixture = {
       ...bucket,
       count: 9_000_000_000_000_000,
       sum: 1e20,
@@ -2115,7 +2111,7 @@ for (const { id: theme } of THEMES) {
     test(`${metricType} graph highlights use rounded neutral interaction roles in ${theme}`, async ({
       page,
     }) => {
-      const datapoints: JsonDataPoint[] = [0, 1].map(index => {
+      const datapoints: PointFixture[] = [0, 1].map(index => {
         const common = {
           id: `hist-${index}`,
           timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
@@ -2150,7 +2146,7 @@ for (const { id: theme } of THEMES) {
               negativeBucketCounts: [],
             }
       })
-      const aggregate: JsonAggregateBucket[] = datapoints.map(point => ({
+      const aggregate: AggregateFixture[] = datapoints.map(point => ({
         timestamp: point.timestamp,
         startTime: startNs,
         count: 12,
@@ -2170,7 +2166,7 @@ for (const { id: theme } of THEMES) {
               negativeBucketCounts: [],
             }),
       }))
-      const histogramMetric: JsonMetricViewData = {
+      const histogramMetric: MetricFixture = {
         ...metric,
         metricType,
         aggregationTemporalityCode: 1,
@@ -2766,7 +2762,7 @@ test('extrema use the series colour and the backed average stays behind the seri
       method: string
     }
     if (request.method !== 'getMetricView') return route.fallback()
-    const withStats: JsonMetricViewData = {
+    const withStats: MetricFixture = {
       ...metric,
       timeseries: metric.timeseries.map(series => ({
         ...series,

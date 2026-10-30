@@ -1,15 +1,15 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 import type {
-  JsonLogData,
-  JsonTraceData,
-  JsonAttributeValue,
-} from '../src/types/wire-types'
+  LogFixture,
+  TraceFixture,
+  AttributeFixture,
+} from '../src/test/telemetry-fixture-types'
 import type { LogErrorNavigation, LogColumn } from '../src/types/api-types'
 
 const firstID = '00000000-0000-0000-0000-000000000001'
 const secondID = '00000000-0000-0000-0000-000000000002'
-const logs: JsonLogData[] = [firstID, secondID].map((logRef, index) => ({
+const logs: LogFixture[] = [firstID, secondID].map((logRef, index) => ({
   logRef,
   timestamp: index === 0 ? '0' : '1700000000123456789',
   observedTimestamp: '1700000000987654321',
@@ -319,7 +319,7 @@ test('Details pins enriched trace context above scrolling fields', async ({
   await expect(page.getByRole('table', { name: 'Log fields' })).toBeVisible()
   const traceID = '00000000000000000000000000000011'
   const spanID = '0000000000000001'
-  const traceData: JsonTraceData = {
+  const traceData: TraceFixture = {
     traceID,
     traceStart: '1700000000000000000',
     unplacedSpanCount: 0,
@@ -1075,7 +1075,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
       ),
     pattern: command,
   })
-  const body: JsonAttributeValue = {
+  const body: AttributeFixture = {
     kind: 'array',
     value: [
       { kind: 'string', value: 'loading' },
@@ -1123,7 +1123,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   await expect(cell).toContainText('…')
   await expect(cell.locator('.cm-editor')).toHaveCount(0)
   const bodyField = page.locator('[data-field="body"]')
-  const editor = bodyField.locator('.cm-editor')
+  const editor = bodyField.locator('.cm-editor:visible')
   await bodyField.getByRole('button', { name: 'Expand all body JSON' }).click()
   await expect
     .poll(() =>
@@ -1198,39 +1198,35 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   await search.press('Enter')
   await expect(editor.locator('.cm-searchMatch')).toHaveText('getTraceView')
   await page.keyboard.press('Escape')
-  const braces = bodyField.locator('.json-fold-bracket')
+  const braces = editor.locator('.json-fold-bracket')
   await braces.nth(1).hover()
-  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+  await expect(editor.locator('.json-fold-bracket--active')).toHaveText([
     '{',
     '}',
   ])
   await expect(
-    bodyField.locator(
-      '.cm-foldGutter .json-fold-group-active .json-fold-marker'
-    )
+    editor.locator('.cm-foldGutter .json-fold-group-active .json-fold-marker')
   ).toHaveCount(1)
-  await bodyField.locator('.cm-foldGutter [title="Fold line"]').nth(1).hover()
-  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+  await editor.locator('.cm-foldGutter [title="Fold line"]').nth(1).hover()
+  await expect(editor.locator('.json-fold-bracket--active')).toHaveText([
     '{',
     '}',
   ])
   await braces.nth(2).click()
-  await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
-  await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
+  await expect(editor.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(editor.locator('.cm-content')).not.toContainText('"path"')
   await braces.nth(1).click()
-  await expect(bodyField.locator('.cm-content')).toContainText('"path"')
+  await expect(editor.locator('.cm-content')).toContainText('"path"')
   await braces.first().hover()
-  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+  await expect(editor.locator('.json-fold-bracket--active')).toHaveText([
     '[',
     ']',
   ])
   await braces.first().click()
-  await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
-  await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
-  await bodyField
-    .locator('.cm-foldGutter [title="Unfold line"]:visible')
-    .click()
-  await expect(bodyField.locator('.cm-content')).toContainText('"path"')
+  await expect(editor.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(editor.locator('.cm-content')).not.toContainText('"path"')
+  await editor.locator('.cm-foldGutter [title="Unfold line"]:visible').click()
+  await expect(editor.locator('.cm-content')).toContainText('"path"')
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await bodyField
     .getByRole('button', { name: 'Copy body', exact: true })
@@ -1274,7 +1270,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
   page,
 }) => {
-  const structured: JsonLogData = {
+  const structured: LogFixture = {
     ...logs[0]!,
     body: {
       kind: 'map',
@@ -1495,6 +1491,9 @@ test('structured previews have static syntax colours and Details folds Body and 
   await expect(searchInput).toHaveCount(0)
 
   const input = page.locator('[data-field="gen_ai.input.messages"]')
+  await expect(input).toContainText('Explain the trace')
+  await input.getByRole('button', { name: 'Full document / Find' }).click()
+  await page.keyboard.press('Escape')
   await expect(input.locator('.json-indent-guides')).toHaveCount(0)
   await expect(input.locator('.json-indent-bands')).toHaveCount(0)
   await expect(input.locator('.json-fold-icon').first()).toHaveCSS(
@@ -1503,7 +1502,9 @@ test('structured previews have static syntax colours and Details folds Body and 
   )
   await input.scrollIntoViewIfNeeded()
   await input.locator('.cm-foldGutter [title="Fold line"]').nth(1).click()
-  await expect(input).not.toContainText('Explain the trace')
+  await expect(input.locator('.cm-editor:visible')).not.toContainText(
+    'Explain the trace'
+  )
   await expect(input.locator('.cm-foldPlaceholder')).toHaveText('…')
   await input.locator('.cm-foldPlaceholder').click()
   await expect(input).toContainText('Explain the trace')
@@ -1707,7 +1708,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
 }) => {
   const values: {
     column: LogColumn
-    values: JsonAttributeValue[]
+    values: AttributeFixture[]
     preview: string
   }[] = [
     {
@@ -1732,7 +1733,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
     },
     {
       column: { source: 'scope', kind: 'attribute', key: 'flags' },
-      values: [{ kind: 'double', value: '0x8000000000000000' }],
+      values: [{ kind: 'double', value: -0 }],
       preview: '-0',
     },
     {
@@ -1751,7 +1752,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
       preview: '',
     },
   ]
-  const detail: JsonLogData = {
+  const detail: LogFixture = {
     ...logs[0]!,
     resourceSchemaURL: 'https://example.test/schema',
     attributes: values
@@ -1771,7 +1772,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
       attributes: [
         {
           key: 'flags',
-          value: { kind: 'double', value: '0x8000000000000000' },
+          value: { kind: 'double', value: -0 },
         },
       ],
     },
@@ -2662,7 +2663,7 @@ test('header error navigation crosses pages within the current result', async ({
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     let result:
-      { total: number; logs: typeof records } | JsonLogData | LogErrorNavigation
+      { total: number; logs: typeof records } | LogFixture | LogErrorNavigation
     if (method === 'searchLogPage') {
       await pageResponse
       result = {

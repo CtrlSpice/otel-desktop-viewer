@@ -12,7 +12,10 @@ import {
   type FieldDefinition,
   type QueryNode,
 } from '@/search/model'
-import type { JsonMetricViewData, JsonTraceData } from '@/types/wire-types'
+import type {
+  MetricFixture,
+  TraceFixture,
+} from '@/test/telemetry-fixture-types'
 import { parseDuration } from '@/utils/time'
 import { parseQuery } from '@/components/shared/Search/queryParser'
 import type {
@@ -28,7 +31,7 @@ import {
 import { Table, Bool, vectorFromArray } from 'apache-arrow'
 import { telemetryDataset } from '@/test/native-telemetry-fixtures'
 
-function stubTraceResult(result: JsonTraceData) {
+function stubTraceResult(result: TraceFixture) {
   stubArrowResult(telemetryDataset('getTraceView', result))
 }
 
@@ -99,40 +102,7 @@ it('reads ordered field completions and empty results through native transport',
   ).toEqual([])
 })
 
-it('retains distinct discovery identities for signed zero and nested NaN payloads', async () => {
-  const values = [
-    { kind: 'double', value: 0 },
-    { kind: 'double', value: '0x8000000000000000' },
-    { kind: 'array', value: [{ kind: 'double', value: '0x7ff8000000000001' }] },
-    { kind: 'array', value: [{ kind: 'double', value: '0x7ff8000000000002' }] },
-  ]
-  stubRpcResult({
-    rows: values.map(value => [
-      {
-        value,
-        foundOn: [],
-        count: 1,
-        kindCount: 2,
-        denominator: 4,
-        relativeFrequency: 0.25,
-      },
-    ]),
-    truncated: false,
-  })
-  const page = await telemetryAPI.discoverAttributeValues({
-    signal: 'traces',
-    ownerType: 'span',
-    key: 'number',
-  })
-  expect(new Set(page.items.map(item => item.identity)).size).toBe(4)
-  expect(page.items[0].value.value).toBe(0)
-  expect(Object.is(page.items[1].value.value, -0)).toBe(true)
-  expect(page.items.map(item => item.kindCount)).toEqual([2, 2, 2, 2])
-})
-
-function metricResult(
-  overrides: Partial<JsonMetricViewData> = {}
-): JsonMetricViewData {
+function metricResult(overrides: Partial<MetricFixture> = {}): MetricFixture {
   return {
     lastSeenNs: null,
     metricRef: 'some-metric',
@@ -530,7 +500,7 @@ describe('telemetryAPI.getMetricView', () => {
                 startTime: '0',
                 flags: 0,
                 metricType: 'Gauge',
-                doubleValue: '0x8000000000000000',
+                doubleValue: -0,
                 intValue: null,
                 valueType: 'Double',
                 exemplars: [
@@ -564,7 +534,7 @@ describe('telemetryAPI.getMetricView', () => {
                   {
                     timestamp: '104',
                     valueType: 'Double',
-                    doubleValue: '0x7ff8000000000001',
+                    doubleValue: NaN,
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -573,7 +543,7 @@ describe('telemetryAPI.getMetricView', () => {
                   {
                     timestamp: '105',
                     valueType: 'Double',
-                    doubleValue: '0x7ff0000000000000',
+                    doubleValue: Infinity,
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -582,7 +552,7 @@ describe('telemetryAPI.getMetricView', () => {
                   {
                     timestamp: '106',
                     valueType: 'Double',
-                    doubleValue: '0xfff0000000000000',
+                    doubleValue: -Infinity,
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -591,7 +561,7 @@ describe('telemetryAPI.getMetricView', () => {
                   {
                     timestamp: '107',
                     valueType: 'Double',
-                    doubleValue: '0xfff8000000000002',
+                    doubleValue: NaN,
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -718,12 +688,12 @@ describe('telemetryAPI.getMetricView', () => {
               exemplars: [],
               metricType: 'Histogram',
               count: '18446744073709551615',
-              sum: '0x7ff8000000000001',
-              min: '0xfff0000000000000',
-              max: '0x7ff0000000000000',
+              sum: NaN,
+              min: -Infinity,
+              max: Infinity,
               bucketCounts: ['0', '9007199254740993', '18446744073709551615'],
-              explicitBounds: ['0x8000000000000000', 1],
-              quantiles: { '0.5': '0x7ff0000000000000' },
+              explicitBounds: [-0, 1],
+              quantiles: { '0.5': Infinity },
               aggregationTemporalityCode: -1,
               aggregationTemporality: 'Unknown (-1)',
             },
@@ -741,7 +711,7 @@ describe('telemetryAPI.getMetricView', () => {
               max: 1,
               scale: 0,
               zeroCount: '9007199254740993',
-              zeroThreshold: '0x8000000000000000',
+              zeroThreshold: -0,
               positiveBucketOffset: 0,
               positiveBucketCounts: ['18446744073709551615'],
               negativeBucketOffset: 0,
@@ -764,7 +734,7 @@ describe('telemetryAPI.getMetricView', () => {
               isMonotonic: true,
               aggregationTemporalityCode: 2,
               aggregationTemporality: 'Cumulative',
-              delta: '0x7ff0000000000000',
+              delta: Infinity,
               isReset: false,
             },
           ],
@@ -971,13 +941,13 @@ describe('telemetryAPI.getMetricView', () => {
                 },
                 {
                   key: 'negativeZero',
-                  value: { kind: 'double', value: '0x8000000000000000' },
+                  value: { kind: 'double', value: -0 },
                 },
                 {
                   key: 'list',
                   value: {
                     kind: 'array',
-                    value: [{ kind: 'double', value: '0x7ff0000000000000' }],
+                    value: [{ kind: 'double', value: Infinity }],
                   },
                 },
               ],
@@ -1010,7 +980,7 @@ describe('telemetryAPI.getMetricView', () => {
           {
             id: 'metadata-1',
             key: 'payload',
-            value: { kind: 'double', value: '0x7ff8000000000001' },
+            value: { kind: 'double', value: NaN },
           },
           {
             id: 'metadata-3',
@@ -1020,7 +990,7 @@ describe('telemetryAPI.getMetricView', () => {
               value: [
                 {
                   key: 'payload',
-                  value: { kind: 'double', value: '0x7ff8000000000002' },
+                  value: { kind: 'double', value: NaN },
                 },
               ],
             },
@@ -1136,9 +1106,9 @@ describe('exact received metric API', () => {
           flags: 1,
           count: '18446744073709551615',
           sum: 0,
-          max: '0x8000000000000000',
+          max: -0,
           bucketCounts: ['18446744073709551615'],
-          explicitBounds: ['0x7ff0000000000000'],
+          explicitBounds: [Infinity],
           exemplars: [
             {
               timestamp: '9',
@@ -1153,7 +1123,7 @@ describe('exact received metric API', () => {
               timestamp: '10',
               valueType: 'Double',
               intValue: null,
-              doubleValue: '0x8000000000000000',
+              doubleValue: -0,
               traceID: '00000000000000000000000000000001',
               spanID: '0000000000000001',
               filteredAttributes: [],
@@ -1225,7 +1195,7 @@ describe('exact received metric API', () => {
           exemplars: [],
           valueType: 'Double',
           intValue: null,
-          doubleValue: '0x7ff8000000000001',
+          doubleValue: NaN,
         },
         {
           datapointRef: 'e',
@@ -1292,7 +1262,7 @@ describe('exact received metric API', () => {
           count: '18446744073709551615',
           scale: -10,
           zeroCount: '9007199254740993',
-          zeroThreshold: '0x8000000000000000',
+          zeroThreshold: -0,
           positive: {
             offset: -2,
             bucketCounts: ['1', '18446744073709551615'],
@@ -1327,10 +1297,10 @@ describe('telemetryAPI.getMetricAggregateView', () => {
           timestamp: '100',
           startTime: '0',
           count: 0,
-          sum: '0x8000000000000000',
+          sum: -0,
           bucketCounts: [0, 0],
-          explicitBounds: ['0x7ff0000000000000'],
-          quantiles: { '0.5': '0x7ff8000000000001' },
+          explicitBounds: [Infinity],
+          quantiles: { '0.5': NaN },
         },
       ],
       scalarAggregate: null,
@@ -1863,7 +1833,7 @@ describe('telemetryAPI.getTraceView rehydration', () => {
         matched: true,
       },
     ],
-  } satisfies JsonTraceData
+  } satisfies TraceFixture
 
   async function fetchTrace() {
     stubTraceResult(wire)
@@ -2125,11 +2095,6 @@ describe('request parameters', () => {
       { term: 'http' },
     ],
     [
-      'getTraceAttributeDefinitionsByTraceID',
-      () => telemetryAPI.getTraceAttributeDefinitionsByTraceID('abc'),
-      { traceID: 'abc' },
-    ],
-    [
       'searchTraceSummaries',
       () => telemetryAPI.searchTraceSummaries(2n, 5n),
       { startTime: '2', endTime: '5' },
@@ -2143,11 +2108,6 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(2n, 5n),
       { startTime: '2', endTime: '5' },
-    ],
-    [
-      'getTraceSpanCount',
-      () => telemetryAPI.getTraceSpanCount('abc'),
-      { traceID: 'abc' },
     ],
     [
       'getTraceLogSummaries',

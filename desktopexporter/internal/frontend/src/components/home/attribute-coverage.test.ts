@@ -73,7 +73,6 @@ it('requests one server-sorted page without fetching other pages or reconstructi
   const read = vi
     .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
     .mockResolvedValue(page)
-  const oldRead = vi.spyOn(telemetryAPI, 'discoverAttributeValues')
   const signal = new AbortController().signal
   const options = {
     ownerType: 'resource' as const,
@@ -87,7 +86,6 @@ it('requests one server-sorted page without fetching other pages or reconstructi
   }
   const coverage = await loadAttributeCoverage(options, signal)
   expect(read).toHaveBeenCalledExactlyOnceWith(options, signal)
-  expect(oldRead).not.toHaveBeenCalled()
   expect(coverage.values).toBe(page.values)
   expect(coverage.total).toBe(501)
   expect(coverage.kinds.get('string')).toEqual({ count: 1100, counts })

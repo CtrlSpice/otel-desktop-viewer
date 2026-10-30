@@ -7,6 +7,7 @@
   import ConflictMarker from './ConflictMarker.svelte'
   import ValueCopyButton from './ValueCopyButton.svelte'
   import JsonEditor from './JsonEditor.svelte'
+  import NativeValue from './NativeValue.svelte'
   import ShellValue from './ShellValue.svelte'
   import {
     valuePresentation,
@@ -77,14 +78,26 @@
       (async () => exact ?? (native ? attributeValueCopy(native) : text))
     )
   })
+  const nativeContainer = $derived(
+    !value &&
+      !valueLabel &&
+      timestampLabel === undefined &&
+      !identifier &&
+      !jsonText &&
+      (typedValue?.kind === 'map' || typedValue?.kind === 'array')
+      ? typedValue
+      : undefined
+  )
   let structuredText = $derived(
     jsonText ??
       (!value && !valueLabel && timestampLabel === undefined && !identifier
-        ? typedValue
-          ? structuredValueText(typedValue)
-          : fieldType === 'string'
-            ? structuredValueText({ kind: 'string', value: fieldValue })
-            : undefined
+        ? nativeContainer
+          ? undefined
+          : typedValue
+            ? structuredValueText(typedValue)
+            : fieldType === 'string'
+              ? structuredValueText({ kind: 'string', value: fieldValue })
+              : undefined
         : undefined)
   )
   let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
@@ -124,7 +137,7 @@
           class="detail-property__origin">{origin}</span
         >{/if}
     </div>
-    {#if structuredText !== undefined && !showShell}
+    {#if (nativeContainer || structuredText !== undefined) && !showShell}
       <div
         class="detail-property__folding"
         role="group"
@@ -191,6 +204,12 @@
           {/if}
           {#if showShell && shellText !== undefined}
             <ShellValue text={shellText} label={fieldName} />
+          {:else if nativeContainer}
+            <NativeValue
+              value={nativeContainer}
+              label={fieldName}
+              bind:this={editor}
+            />
           {:else if structuredText !== undefined}
             <JsonEditor
               text={structuredText}

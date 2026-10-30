@@ -82,7 +82,7 @@ func TestHomeDiscoveryGlobalPageAndExactReference(t *testing.T) {
 	require.Equal(t, `{"kind":"int64","value":"0"}`, resolved.Column(1).(*array.String).Value(0))
 	_, err = setupHandler(t).homeValueArrow(t.Context(), discoveryOptions{Kind: "home-value", ValueRef: first})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "refresh attribute values")
+	require.Contains(t, err.Error(), "refresh and select it again")
 }
 
 func TestHomeDiscoveryCrossSignalCountsAndBoundedOutput(t *testing.T) {

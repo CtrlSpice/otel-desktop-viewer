@@ -31,7 +31,7 @@ const (
 
 // Custom JSON-RPC errors
 var (
-	ErrHomeValueUnavailable = jsonrpc2.NewError(ErrCodeHomeValueUnavailable, "Home value is unavailable; refresh attribute values and select it again")
+	ErrHomeValueUnavailable = jsonrpc2.NewError(ErrCodeHomeValueUnavailable, "Home value is unavailable; refresh and select it again")
 	ErrTraceNotFound        = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
 	ErrLogsNotFound         = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
 	ErrMetricNotFound       = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")

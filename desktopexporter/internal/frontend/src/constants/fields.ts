@@ -582,7 +582,8 @@ export const RESOURCE_FIELDS: FieldDefinition[] = withScalarMembership(
       name: 'serviceIdentity',
       type: 'string',
       operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
-      description: 'Exact typed service name and namespace, as a JSON pair',
+      description:
+        'Catalogue reference for an exact typed service name and namespace',
     },
     {
       name: 'resource.droppedAttributesCount',

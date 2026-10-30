@@ -1,17 +1,22 @@
 package server
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestServicesGroupResourcesWithoutSplittingScopesOrDoubleCountingTraces(t *testing.T) {
@@ -63,44 +68,22 @@ func TestServicesGroupResourcesWithoutSplittingScopesOrDoubleCountingTraces(t *t
 	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, count)
-	// Inspect actual optimizer cardinalities: 400 owner rows reduce to two
-	// resource contexts before the presence/extraction projections are evaluated.
+	// Reads aggregate compact resource IDs. The catalogue holds the typed pair
+	// once despite unrelated attributes, scopes and hundreds of owning records.
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		var key, raw string
 		err := db.QueryRowContext(t.Context(), "EXPLAIN (ANALYZE, FORMAT JSON) "+discovery.Services(discovery.Query{})).Scan(&key, &raw)
 		if err != nil {
 			return err
 		}
-		var profile struct {
-			Operators []servicePlanNode `json:"operator"`
-		}
-		require.NoError(t, json.Unmarshal([]byte(raw), &profile))
-		found := false
-		var walk func(servicePlanNode)
-		walk = func(node servicePlanNode) {
-			if node.Info.CTEName == "service_fields" {
-				require.NotEmpty(t, node.Children)
-				require.EqualValues(t, 2, node.Children[0].Rows)
-				found = true
-			}
-			for _, child := range node.Children {
-				walk(child)
-			}
-		}
-		for _, node := range profile.Operators {
-			walk(node)
-		}
-		require.True(t, found, "service field extraction must have a bounded shared stage")
+		require.Contains(t, raw, "search_service_resources")
+		var services, resources int
+		require.NoError(t, db.QueryRow(`select (select count(*) from search_services),(select count(*) from search_service_resources)`).Scan(&services, &resources))
+		require.Equal(t, 1, services)
+		require.Equal(t, 2, resources)
+		require.NotContains(t, raw, "otel_native_text")
 		return nil
 	}))
-}
-
-type servicePlanNode struct {
-	Rows int `json:"intermediate_rows"`
-	Info struct {
-		CTEName string `json:"CTE Name"`
-	} `json:"extra_info"`
-	Children []servicePlanNode `json:"children"`
 }
 
 func TestServiceCountIsScalarBeyondOneSummaryPage(t *testing.T) {
@@ -124,4 +107,54 @@ func TestServiceCountIsScalarBeyondOneSummaryPage(t *testing.T) {
 		_, err := h.Handle(t.Context(), createRequest("getServiceCount", params))
 		require.Error(t, err)
 	}
+}
+
+func TestServiceCatalogueBoundsLabelsButKeepsExactSelectionAndCopy(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
+	prefix := strings.Repeat("雪'quoted\"\\", 2000)
+	data := ptrace.NewTraces()
+	for i, suffix := range []string{"z-tail", "a-tail"} {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutStr("service.name", prefix+suffix)
+		r.Resource().Attributes().PutStr("service.namespace", prefix)
+		span := r.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
+		span.SetSpanID(pcommon.SpanID{7: 1})
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	read := func(options string) *array.Struct {
+		record := readArrowDataset(t, s, "discoverTelemetry", `{"options":`+options+`}`)
+		return record.Column(0).(*array.List).ListValues().(*array.Struct)
+	}
+	field := func(items *array.Struct, name string) *array.String {
+		index, ok := items.DataType().(*arrow.StructType).FieldIdx(name)
+		require.True(t, ok)
+		return items.Field(index).(*array.String)
+	}
+	items := read(`{"kind":"services","limit":1}`)
+	require.Equal(t, 1, items.Len())
+	ref := field(items, "serviceIdentity").Value(0)
+	require.Len(t, ref, 64)
+	require.LessOrEqual(t, len([]rune(field(items, "serviceName").Value(0))), 300)
+	require.Equal(t, fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(prefix+"a-tail"))), field(items, "serviceColorKey").Value(0))
+	labels, err := h.Handle(t.Context(), createRequest("getServiceLabels", map[string]any{"serviceRef": ref}))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"serviceName": prefix + "a-tail", "serviceNamespace": prefix}, labels)
+	second := read(`{"kind":"services","offset":1,"limit":1}`)
+	require.NotEqual(t, ref, field(second, "serviceIdentity").Value(0))
+	require.Equal(t, field(items, "serviceName").Value(0), field(second, "serviceName").Value(0))
+	filtered := read(`{"kind":"services","term":"a-tail"}`)
+	require.Equal(t, 1, filtered.Len())
+	require.Equal(t, ref, field(filtered, "serviceIdentity").Value(0))
+	selected := read(`{"kind":"services","serviceIdentity":"` + ref + `"}`)
+	require.Equal(t, 1, selected.Len())
+	_, err = h.Handle(t.Context(), createRequest("deleteSpansByTraceID", []any{"00000000000000000000000000000002"}))
+	require.NoError(t, err)
+	_, err = h.Handle(t.Context(), createRequest("getServiceLabels", map[string]any{"serviceRef": ref}))
+	require.ErrorIs(t, err, ErrHomeValueUnavailable)
+	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
 }

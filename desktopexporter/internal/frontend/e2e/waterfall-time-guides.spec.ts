@@ -1,10 +1,10 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 
 const traceID = 'faca0000000000000000000000000001'
 const spanID = 'faca000000000002'
-const trace: JsonTraceData = {
+const trace: TraceFixture = {
   traceID,
   traceStart: '1700000000000000000',
   unplacedSpanCount: 0,

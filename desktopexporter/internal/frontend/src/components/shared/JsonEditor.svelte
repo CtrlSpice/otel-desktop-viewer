@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { Compartment, EditorState } from '@codemirror/state'
   import { EditorView } from '@codemirror/view'
+  import { openSearchPanel } from '@codemirror/search'
   import {
     foldAll,
     unfoldAll,
@@ -72,6 +73,9 @@
 
   export function expandAll() {
     if (view) unfoldAll(view)
+  }
+  export function find() {
+    if (view) openSearchPanel(view)
   }
   onMount(() => {
     if (!host) return

@@ -17,7 +17,6 @@ export type DiscoveryOptions = {
   kind:
     | 'services'
     | 'keys'
-    | 'values'
     | 'connections'
     | 'connection-spans'
     | 'home-values'
@@ -42,6 +41,8 @@ export type DiscoveryOptions = {
   locale?: string
 }
 export type ServiceSummary = {
+  serviceColorKey?: string
+  labelsComplete?: boolean
   serviceName: string
   serviceNamespace: string
   serviceIdentity?: string
@@ -82,17 +83,6 @@ export type ServiceConnectionSpan = {
   startTime: string
   endTime: string
   statusCode: number
-}
-export type AttributeFrequency = {
-  identity: string
-  value: AttributeValue
-  foundOn: AttributeKey['foundOn']
-  count: number
-  /** Distinct records carrying this key and received kind, before value pagination. */
-  kindCount: number
-  /** Distinct records carrying this key across all received kinds. */
-  denominator: number
-  relativeFrequency: number
 }
 export type DiscoveryTotals = {
   home: number

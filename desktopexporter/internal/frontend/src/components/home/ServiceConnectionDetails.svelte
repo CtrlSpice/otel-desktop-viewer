@@ -83,21 +83,49 @@
           fieldName="Parent service"
           fieldType={connection.source.serviceNameKind ?? 'string'}
           fieldValue={connection.source.serviceName}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(connection.source),
+                signal
+              )
+            ).serviceName}
         />
         <DetailProperty
           fieldName="Parent namespace"
           fieldType={connection.source.serviceNamespaceKind ?? 'string'}
           fieldValue={connection.source.serviceNamespace}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(connection.source),
+                signal
+              )
+            ).serviceNamespace}
         />
         <DetailProperty
           fieldName="Child service"
           fieldType={connection.target.serviceNameKind ?? 'string'}
           fieldValue={connection.target.serviceName}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(connection.target),
+                signal
+              )
+            ).serviceName}
         />
         <DetailProperty
           fieldName="Child namespace"
           fieldType={connection.target.serviceNamespaceKind ?? 'string'}
           fieldValue={connection.target.serviceNamespace}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(connection.target),
+                signal
+              )
+            ).serviceNamespace}
         />
         <DetailProperty
           fieldName="Parent-child connections"
@@ -138,7 +166,8 @@
                 class="size-2 shrink-0 rounded-full"
                 style:background-color={traceServiceColor(
                   connection.target.serviceName,
-                  themeSignal.value
+                  themeSignal.value,
+                  connection.target.serviceColorKey
                 )}
                 aria-hidden="true"
               ></span><span class="truncate">{span.name}</span></span

@@ -1,5 +1,3 @@
-import type { JsonLinkSummary } from '@/types/wire-types'
-
 export type RootSpan = {
   serviceName: string
   name: string
@@ -150,12 +148,14 @@ export type AttributeValue =
       value: AttributeValue[]
       readonly childCount?: number
       readonly previewChildren?: AttributeValue[]
+      childAt?: (index: number) => AttributeValue
     }
   | {
       kind: 'map'
       value: AttributeMapEntry[]
       readonly childCount?: number
       readonly previewChildren?: AttributeMapEntry[]
+      childAt?: (index: number) => AttributeMapEntry
     }
 
 export type AttributeMapEntry = {
@@ -193,7 +193,7 @@ export type LinkData = {
   /** W3C trace flags for the linked context. */
   flags: number
   /** Read-time names for presentation only; never exported as OTLP fields. */
-  summary?: JsonLinkSummary
+  summary?: { target: { name: string; serviceName: string } | null }
 }
 
 export type LogData = {

@@ -1,8 +1,7 @@
 import { ArrowFrame, type ArrowCell } from './arrow-data'
 import { columnView, number, text } from './arrow-record'
-import { attributeValue, rowViews } from './arrow-values'
+import { rowViews } from './arrow-values'
 import type {
-  AttributeFrequency,
   AttributeKey,
   DiscoveryPage,
   DiscoveryTotals,
@@ -15,6 +14,8 @@ const timestamp = (cell: ArrowCell): string => cell.integer().toString()
 
 export function serviceSummary(frame: ArrowFrame, row: number): ServiceSummary {
   return columnView<ServiceSummary>(frame, row, {
+    serviceColorKey: cell => (cell.isNull ? undefined : text(cell)),
+    labelsComplete: cell => (cell.isNull ? undefined : cell.boolean()),
     serviceName: text,
     serviceNamespace: text,
     serviceIdentity: text,
@@ -96,21 +97,6 @@ export function attributeKey(frame: ArrowFrame, row: number): AttributeKey {
     key: text,
     kind: text,
     foundOn,
-  })
-}
-
-export function attributeFrequency(
-  frame: ArrowFrame,
-  row: number
-): AttributeFrequency {
-  return columnView<AttributeFrequency>(frame, row, {
-    identity: text,
-    value: attributeValue,
-    foundOn,
-    count: number,
-    kindCount: number,
-    denominator: number,
-    relativeFrequency: number,
   })
 }
 

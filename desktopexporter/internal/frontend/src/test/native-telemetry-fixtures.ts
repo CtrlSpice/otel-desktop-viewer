@@ -20,7 +20,8 @@ import {
   vectorFromArray,
   type Data,
 } from 'apache-arrow'
-import type { JsonAttributeValue, JsonTraceData } from '../types/wire-types'
+import type { AttributeFixture, TraceFixture } from './telemetry-fixture-types'
+import { serviceColorIdentity } from '../utils/service-color-identity'
 
 type Value =
   | null
@@ -179,18 +180,14 @@ function column(values: Value[]): Data {
   return vectorFromArray(values, type).data[0]!
 }
 
-function value(v: JsonAttributeValue): Value {
+function value(v: AttributeFixture): Value {
   switch (v.kind) {
     case 'empty':
       return null
     case 'int64':
       return BigInt(v.value)
-    case 'double': {
-      if (typeof v.value === 'number') return v.value
-      const bits = new DataView(new ArrayBuffer(8))
-      bits.setBigUint64(0, BigInt(v.value))
-      return bits.getFloat64(0)
-    }
+    case 'double':
+      return v.value
     case 'array':
       return v.value.map(value)
     case 'map':
@@ -204,7 +201,7 @@ function value(v: JsonAttributeValue): Value {
 
 type RecordFixture = Record<string, any>
 function attrs(
-  list: { key: string; value: JsonAttributeValue }[] = []
+  list: { key: string; value: AttributeFixture }[] = []
 ): MapEntries {
   return new MapEntries(list.map(a => [a.key, value(a.value)]))
 }
@@ -270,7 +267,6 @@ export function telemetryDataset(method: string, result: any): Table {
       rows = result.map((seriesRef: string) => ({ seriesRef }))
       break
     case 'getTraceAttributeDefinitions':
-    case 'getTraceAttributeDefinitionsByTraceID':
     case 'getLogAttributeDefinitions':
     case 'getMetricAttributeDefinitions':
     case 'searchAttributeMatches':
@@ -485,12 +481,6 @@ function discoveryEntry(entry: RecordFixture) {
       source: discoveryService(entry.source),
       target: discoveryService(entry.target),
     }
-  if ('value' in entry)
-    return {
-      ...entry,
-      value: value(entry.value),
-      identity: JSON.stringify(entry.value),
-    }
   if ('startTime' in entry)
     return {
       ...entry,
@@ -503,6 +493,8 @@ function discoveryEntry(entry: RecordFixture) {
 
 function discoveryService(entry: RecordFixture) {
   return {
+    serviceColorKey: serviceColorIdentity(entry.serviceName ?? ''),
+    labelsComplete: true,
     serviceIdentity: JSON.stringify([
       entry.serviceNamespace,
       entry.serviceName,
@@ -531,7 +523,7 @@ function discoveryService(entry: RecordFixture) {
   }
 }
 
-function traceColumnCatalogue(data: JsonTraceData) {
+function traceColumnCatalogue(data: TraceFixture) {
   const counts = new Map<
     string,
     { source: string; kind: string; key: string; count: number }
@@ -555,7 +547,7 @@ function traceColumnCatalogue(data: JsonTraceData) {
   return [...counts.values()]
 }
 
-function trace(data: JsonTraceData) {
+function trace(data: TraceFixture) {
   const resourceEntries = Object.entries(data.resources)
   const scopeEntries = Object.entries(data.scopes)
   return {
@@ -619,8 +611,8 @@ function trace(data: JsonTraceData) {
 function big(value: string | number | null | undefined) {
   return value == null ? null : BigInt(value)
 }
-function double(v: string | number | null | undefined): Value {
-  return v == null ? null : value({ kind: 'double', value: v })
+function double(v: number | null | undefined): Value {
+  return v ?? null
 }
 function stats(s: RecordFixture | null | undefined) {
   if (!s) return null
@@ -695,18 +687,14 @@ function metricPoint(r: RecordFixture) {
         : new Map(
             Object.entries(r.quantiles).map(([key, v]) => [
               key,
-              double(v as number | string | null),
+              double(v as number | null),
             ])
           ),
     deltaInt:
-      typeof r.delta === 'string' && !r.delta.startsWith('0x')
+      typeof r.delta === 'string' || typeof r.delta === 'bigint'
         ? BigInt(r.delta)
         : null,
-    deltaDouble:
-      typeof r.delta === 'number' ||
-      (typeof r.delta === 'string' && r.delta.startsWith('0x'))
-        ? double(r.delta)
-        : null,
+    deltaDouble: typeof r.delta === 'number' ? double(r.delta) : null,
     isReset: r.isReset ?? null,
   }
 }
