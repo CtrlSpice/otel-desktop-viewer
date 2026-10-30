@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -157,4 +158,29 @@ func TestServiceCatalogueBoundsLabelsButKeepsExactSelectionAndCopy(t *testing.T)
 	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, count)
+}
+
+func TestServiceCatalogueCanonicalNaNsAcrossDistinctResources(t *testing.T) {
+	h := setupHandler(t)
+	data := ptrace.NewTraces()
+	for i, bits := range []uint64{0x7ff8000000000001, 0x7ff8000000000002, 0xfff8000000000001} {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutDouble("service.name", math.Float64frombits(bits))
+		r.Resource().Attributes().PutEmptyMap("service.namespace").PutDouble("nested", math.Float64frombits(bits))
+		r.Resource().Attributes().PutInt("unrelated", int64(i))
+		span := r.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		var services, resources int
+		require.NoError(t, db.QueryRow(`select (select count(*) from search_services),(select count(*) from search_service_resources)`).Scan(&services, &resources))
+		require.Equal(t, 1, services)
+		require.Equal(t, 3, resources)
+		return nil
+	}))
 }
