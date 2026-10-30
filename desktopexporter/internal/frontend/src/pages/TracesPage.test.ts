@@ -298,6 +298,84 @@ describe('TracesPage unplaced spans banner', () => {
 })
 
 describe('TracesPage trace detail lifecycle', () => {
+  it.each([
+    'ABCDEF0123456789ABCDEF0123456789',
+    'abcdef01-2345-6789-abcd-ef0123456789',
+  ])('opens canonical Details for trace route %s', async routeID => {
+    const traceID = 'abcdef0123456789abcdef0123456789'
+    const spanID = 'abcdef0123456789'
+    const trace = makeTraceData(0, traceID, spanID)
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary({ traceID })])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockResolvedValue(trace)
+    getSpan.mockResolvedValue(trace.spans[0]!.spanData)
+    setTestUrl(`/traces/${routeID}?span=${spanID}`)
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-field="spanId"]')).not.toBeNull()
+    )
+    expect(getSpan).toHaveBeenCalledWith(
+      traceID,
+      spanID,
+      expect.any(AbortSignal)
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each(['reactivation', 'refresh'] as const)(
+    'reloads linked-target availability on trace %s',
+    async transition => {
+      searchTraceSummaries.mockImplementation(async () => [
+        makeTraceSummary(),
+        makeTraceSummary({ traceID: 'trace-2' }),
+      ])
+      getStats.mockResolvedValue(makeStats())
+      getTraceView.mockImplementation(async traceID =>
+        makeTraceData(0, traceID)
+      )
+      let available = false
+      getSpan.mockImplementation(async (traceID, spanID) => ({
+        ...makeSpanNode(spanID, traceID).spanData,
+        links: [
+          {
+            traceID: 'linked-trace',
+            spanID: 'linked-span',
+            traceState: '',
+            attributes: [],
+            droppedAttributesCount: 0,
+            flags: 0,
+            summary: {
+              target: available
+                ? { name: 'Arrived target', serviceName: 'worker' }
+                : null,
+            },
+          },
+        ],
+      }))
+      setTestUrl('/traces/trace-1?span=root')
+      renderWithContexts(TracesPage)
+      await screen.findByText('(unavailable)')
+      if (transition === 'reactivation') {
+        navigate('/traces/trace-2?span=root')
+        await waitFor(() =>
+          expect(getSpan).toHaveBeenCalledWith(
+            'trace-2',
+            'root',
+            expect.any(AbortSignal)
+          )
+        )
+      }
+      available = true
+      if (transition === 'reactivation') navigate('/traces/trace-1?span=root')
+      else
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await screen.findByText('Arrived target (worker)')
+      expect(
+        getSpan.mock.calls.filter(([id]) => id === 'trace-1')
+      ).toHaveLength(2)
+    }
+  )
+
   it('keeps same-span-ID Details and activity isolated across traces during a tree handoff', async () => {
     const nextTree = deferred<TraceData>()
     const old = makeTraceData(0)

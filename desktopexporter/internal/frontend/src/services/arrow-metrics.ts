@@ -19,8 +19,9 @@ import type {
 import { ArrowCell, ArrowFrame } from './arrow-data'
 import { attributes, rowViews } from './arrow-values'
 import {
-  columnView,
+  cachedColumnView as columnView,
   extendView,
+  memoize,
   text,
   number,
   integer,
@@ -100,14 +101,12 @@ export function metricSeriesOrder(frame: ArrowFrame): string[] {
 }
 
 export function exactMetric(frame: ArrowFrame): ExactMetric {
-  return extendView(identity(frame), {
-    get series() {
-      return rowViews(
-        new ArrowFrame(frame.cell('series', 0).list()),
-        seriesSummary
-      )
-    },
-  })
+  return extendView(
+    identity(frame),
+    columnView(frame, 0, {
+      series: cell => rowViews(new ArrowFrame(cell.list()), seriesSummary),
+    })
+  )
 }
 
 function numberValue(frame: ArrowFrame, row: number) {
@@ -229,26 +228,25 @@ function receivedExponentialHistogram(
 
 export function exactMetricSeries(frame: ArrowFrame): ExactMetricSeries {
   const metric = identity(frame)
-  return extendView(metric, {
-    get seriesRef() {
-      return frame.cell('seriesRef', 0).text()
-    },
-    get attributes() {
-      return attributes(frame.cell('attributes', 0))
-    },
-    get datapoints() {
-      const points = new ArrowFrame(frame.cell('datapoints', 0).list())
-      switch (metric.metricType) {
-        case 'Gauge':
-        case 'Sum':
-          return rowViews(points, receivedNumber)
-        case 'Histogram':
-          return rowViews(points, receivedHistogram)
-        case 'ExponentialHistogram':
-          return rowViews(points, receivedExponentialHistogram)
-      }
-    },
-  })
+  return extendView(
+    metric,
+    columnView(frame, 0, {
+      seriesRef: text,
+      attributes,
+      datapoints: cell => {
+        const points = new ArrowFrame(cell.list())
+        switch (metric.metricType) {
+          case 'Gauge':
+          case 'Sum':
+            return rowViews(points, receivedNumber)
+          case 'Histogram':
+            return rowViews(points, receivedHistogram)
+          case 'ExponentialHistogram':
+            return rowViews(points, receivedExponentialHistogram)
+        }
+      },
+    })
+  )
 }
 
 function temporality(code: number): string {
@@ -376,6 +374,19 @@ function seriesView(
   row: number,
   metricResource: ExactMetricResource
 ): MetricSeriesViewData {
+  const readResource = memoize(() =>
+    frame.has('resource') && !frame.cell('resource', row).isNull
+      ? resource(frame.cell('resource', row))
+      : metricResource
+  )
+  const readLabelPreviews = memoize(() =>
+    frame.has('labelPreviews') && !frame.cell('labelPreviews', row).isNull
+      ? rowViews(
+          new ArrowFrame(frame.cell('labelPreviews', row).list()),
+          (rows, i) => columnView(rows, i, { key: text, text, kind: text })
+        )
+      : undefined
+  )
   return extendView(
     columnView(frame, row, {
       seriesRef: text,
@@ -411,9 +422,7 @@ function seriesView(
     }),
     {
       get resource() {
-        return frame.has('resource') && !frame.cell('resource', row).isNull
-          ? resource(frame.cell('resource', row))
-          : metricResource
+        return readResource()
       },
       get attributesComplete() {
         return (
@@ -422,13 +431,7 @@ function seriesView(
         )
       },
       get labelPreviews() {
-        return frame.has('labelPreviews') &&
-          !frame.cell('labelPreviews', row).isNull
-          ? rowViews(
-              new ArrowFrame(frame.cell('labelPreviews', row).list()),
-              (rows, i) => columnView(rows, i, { key: text, text, kind: text })
-            )
-          : undefined
+        return readLabelPreviews()
       },
     }
   )
@@ -552,7 +555,7 @@ export function metricAggregateView(
   if (frame.has('contribution'))
     Object.defineProperty(result, 'contribution', {
       enumerable: true,
-      get: () => aggregates(frame.cell('contribution', 0)),
+      get: memoize(() => aggregates(frame.cell('contribution', 0))),
     })
   return result
 }

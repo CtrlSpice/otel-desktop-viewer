@@ -217,11 +217,13 @@
   )
   let selectedSpan = $derived(selectedNode?.spanData)
   const spanCache = new Map<string, SpanData>()
+  let detailEpoch = $state(0)
   const spanDetails = createDebouncedDetailFetcher<
-    { traceID: string; spanID: string },
+    { traceID: string; spanID: string; epoch: number },
     SpanData
   >({
-    keysEqual: (a, b) => a.traceID === b.traceID && a.spanID === b.spanID,
+    keysEqual: (a, b) =>
+      a.traceID === b.traceID && a.spanID === b.spanID && a.epoch === b.epoch,
     fetch: async (key, signal) => {
       const id = `${key.traceID}/${key.spanID}`
       const cached = spanCache.get(id)
@@ -236,7 +238,7 @@
         throw new Error(
           'The span Details response did not match the requested identity.'
         )
-      if (!signal.aborted) {
+      if (!signal.aborted && key.epoch === detailEpoch) {
         spanCache.set(id, result)
         if (spanCache.size > 16)
           spanCache.delete(spanCache.keys().next().value!)
@@ -251,10 +253,10 @@
       ? {
           traceID: page.selectedID!,
           spanID: (selectedSpanID || selectedSpan?.spanID)!,
+          epoch: detailEpoch,
         }
       : null
   )
-  $effect(() => spanDetails.select(detailIdentity))
   let fullSpan = $derived(
     spanDetails.data?.traceID === detailIdentity?.traceID &&
       spanDetails.data?.spanID === detailIdentity?.spanID
@@ -380,6 +382,9 @@
     fetchTraceDetail(summary.traceID, activeQueryTree)
   })
 
+  // Activate the new snapshot before consulting its within-activation cache.
+  $effect(() => spanDetails.select(detailIdentity))
+
   function selectTrace(traceID: string) {
     page.selectItem(traceID)
   }
@@ -466,9 +471,9 @@
     detailFetch?.abort()
     const fetchCtl = new AbortController()
     detailFetch = fetchCtl
-    if (requestedTraceID === traceID) {
+    if (requestedTraceID !== null) {
       spanCache.clear()
-      spanDetails.refresh()
+      detailEpoch = untrack(() => detailEpoch) + 1
     }
     requestedTraceID = traceID
 

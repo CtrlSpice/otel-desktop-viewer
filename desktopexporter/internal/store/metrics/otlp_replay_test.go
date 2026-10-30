@@ -62,3 +62,46 @@ func TestGetMetricOTLPJSONReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestGetMetricOTLPMetadataSignedZeroReplay(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(map[bool]string{false: "scalar", true: "nested"}[nested], func(t *testing.T) {
+			s, ctx := storetest.New(t)
+			data := pmetric.NewMetrics()
+			ms := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+			for i, value := range []float64{0, math.Copysign(0, -1)} {
+				m := ms.AppendEmpty()
+				m.SetName("signed-zero-metadata")
+				attrs := m.Metadata()
+				if nested {
+					attrs = attrs.PutEmptySlice("nested").AppendEmpty().SetEmptyMap()
+				}
+				attrs.PutDouble("zero", value)
+				dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.Timestamp(i + 1))
+				dp.SetIntValue(int64(i))
+			}
+			// Check actual pdata JSON replay and a second store, not JSON equality
+			// (whose numeric comparison treats both signs as equal).
+			for range 2 {
+				require.NoError(t, s.WithConn(func(c driver.Conn) error { return metrics.Ingest(ctx, c, data) }))
+				id := metricMetricIDs(t, s, ctx)["signed-zero-metadata"]
+				decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(getMetricOTLP(t, s, ctx, id))
+				require.NoError(t, err)
+				got := decoded.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics()
+				require.Equal(t, 2, got.Len())
+				for _, m := range got.All() {
+					attrs := m.Metadata()
+					if nested {
+						attrs = mustMapValue(t, attrs, "nested").Slice().At(0).Map()
+					}
+					dp := m.Gauge().DataPoints()
+					require.Equal(t, 1, dp.Len())
+					require.Equal(t, dp.At(0).IntValue() == 1, math.Signbit(mustMapValue(t, attrs, "zero").Double()))
+				}
+				data = decoded
+				s, ctx = storetest.New(t)
+			}
+		})
+	}
+}

@@ -1,6 +1,9 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
 with selected_metric as materialized (
-	select * from metric_records where id = try_cast($4 as uuid)
+	-- Native numeric equality merges signed zeros. The typed binary key keeps
+	-- received metadata distinct, recursively, without a JSON round trip.
+	select *, variant_to_parquet_variant(variant_normalize(metadata)) as metadata_key
+	from metric_records where id = try_cast($4 as uuid)
 ),
 matching_datapoints as not materialized (
 	select d.*, r.record_id, r.resource, r.scope
@@ -104,7 +107,7 @@ grouped_metrics as materialized (
 		coalesce(d.scope, s.scope).id as scope_id,
 		coalesce(d.scope, s.scope).schema_url as scope_schema_url,
 		coalesce(d.resource, s.resource) as resource, coalesce(d.scope, s.scope) as scope,
-		s.description, s.metadata, s.name, s.unit, s.metric_type,
+		s.description, s.metadata, s.metadata_key, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
 		case when $3::boolean
 			then json_object('dataPoints', coalesce(list(d.document order by d.timestamp, d.id)
@@ -115,7 +118,7 @@ grouped_metrics as materialized (
 	where (try_cast($1 as uuid) is null and try_cast($2 as uuid) is null)
 	   or s.record_id in (select record_id from matching_datapoints)
 	group by coalesce(d.resource, s.resource), coalesce(d.scope, s.scope),
-		s.description, s.metadata, s.name, s.unit, s.metric_type,
+		s.description, s.metadata, s.metadata_key, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic
 ),
 metric_documents as materialized (
@@ -139,7 +142,7 @@ scope_documents as materialized (
 	select resource_id, resource_schema_url, resource, scope_id, scope_schema_url,
 		json_object(
 			'scope', otlp_scope(scope),
-			'metrics', list(document order by description, metadata),
+			'metrics', list(document order by description, metadata, metadata_key),
 			'schemaUrl', scope_schema_url) as document
 	from metric_documents
 	group by resource_id, resource_schema_url, resource, scope_id, scope_schema_url, scope

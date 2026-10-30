@@ -44,7 +44,7 @@
 		matched_spans as (
 			select s.span_id
 			from spans s
-			where s.trace_id = try_cast($1 as uuid) AND ((variant_exists(s.attributes, $2) and otel_value_kind(s.attributes[$2]) = $3 and try_cast(s.attributes[$2] as varchar) = $4))
+			where ((variant_exists(s.attributes, $2) and otel_value_kind(s.attributes[$2]) = $3 and try_cast(s.attributes[$2] as varchar) = $4)) AND s.trace_id = try_cast($1 as uuid)
 		),
 
 		-- Join traversed IDs to payloads once.
