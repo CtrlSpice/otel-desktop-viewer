@@ -1,47 +1,14 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
-  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
-  import type { LogData, SpanData, SpanNode } from '@/types/api-types'
-  import { telemetryAPI } from '@/services/telemetry-service'
   import DetailField from '@/components/shared/DetailProperty.svelte'
-  import {
-    evalSpanEvidence,
-    toolEvidenceSpans,
-    uniqueToolCallID,
-    toolLogOwners,
-  } from './eval-span-evidence'
+  import type { EvalSpanEvidence } from './eval-span-evidence'
 
-  let {
-    span,
-    nodes,
-    onlogs,
-  }: {
-    span: SpanData
-    nodes: Map<string, SpanNode>
-    onlogs?: (logs: LogData[] | undefined) => void
-  } = $props()
-  const spans = $derived(toolEvidenceSpans(span, nodes))
-  const callID = $derived(uniqueToolCallID(span, nodes))
-  const logOwners = $derived(toolLogOwners(spans, nodes, callID))
-  let logs = $state<LogData[]>([])
-  let loading = $state(false)
-  let requestKey = $state.raw<AbortSignal>()
-  let failed = $state(false)
-  let displayed = $state.raw<{
-    spans: SpanData[]
-    logs: LogData[]
-    callID: string | undefined
-  }>()
+  let { evidence }: { evidence: EvalSpanEvidence[] } = $props()
   const outputField = (key: string) =>
     /^(output|stdout|stderr|tool\.(output|result|error)|gen_ai\.tool\.call\.result)$/.test(
       key
     )
   const records = $derived(
-    evalSpanEvidence(
-      displayed?.spans ?? spans,
-      displayed?.logs ?? logs,
-      displayed ? displayed.callID : callID
-    )
+    evidence
       .map(record => ({
         ...record,
         fields: [...record.fields].sort(
@@ -54,59 +21,6 @@
           Number(a.fields.some(field => outputField(field.key)))
       )
   )
-
-  $effect(() => {
-    const selected = logOwners
-    const selectedSpans = spans
-    const selectedCallID = callID
-    const controller = new AbortController()
-    requestKey = controller.signal
-    if (!untrack(() => displayed))
-      displayed = { spans: selectedSpans, logs: [], callID: selectedCallID }
-    loading = true
-    failed = false
-    void (async () => {
-      const received: LogData[] = []
-      let unavailable = false
-      for (let offset = 0; offset < selected.length; offset += 4) {
-        const results = await Promise.allSettled(
-          selected
-            .slice(offset, offset + 4)
-            .map(item =>
-              telemetryAPI.getSpanLogs(
-                item.traceID,
-                item.spanID,
-                controller.signal
-              )
-            )
-        )
-        if (controller.signal.aborted) return
-        for (const result of results) {
-          if (result.status === 'fulfilled') received.push(...result.value)
-          else unavailable = true
-        }
-      }
-      logs = received
-      displayed = {
-        spans: selectedSpans,
-        logs: received,
-        callID: selectedCallID,
-      }
-      failed = unavailable
-      loading = false
-    })()
-    return () => controller.abort()
-  })
-  $effect(() => {
-    const ids = new Set(
-      records
-        .filter(record => record.id.startsWith('log/'))
-        .map(record => record.id.slice(4))
-    )
-    onlogs?.(
-      loading || failed ? undefined : logs.filter(log => ids.has(log.logRef))
-    )
-  })
 </script>
 
 {#each records as record (record.id)}
@@ -130,12 +44,3 @@
     </tbody>
   </table>
 {/each}
-{#if loading}<LoadingStatus
-    pending
-    label="Loading linked log evidence…"
-    {requestKey}
-    class="block px-3 py-2 text-sm text-subtle"
-  />
-{:else if failed}<p class="px-3 py-2 text-sm text-subtle" role="status">
-    Linked log evidence could not be loaded.
-  </p>{/if}

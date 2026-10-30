@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
@@ -19,19 +22,25 @@
   import EvalTelemetrySection from './EvalTelemetrySection.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import { referenceKey } from './eval-traces'
-  import type { LogData, SpanNode } from '@/types/api-types'
+  import type { LogData, SpanData, SpanNode } from '@/types/api-types'
+  import {
+    evalSpanEvidence,
+    toolEvidenceSpans,
+    toolLogOwners,
+    uniqueToolCallID,
+  } from './eval-span-evidence'
   import { completionLabel, completionTone } from './group-results'
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
   import type { EvalSourceFieldCopy } from './eval-source-copy'
 
   let {
-    experiment,
-    row,
+    experiment: requestedExperiment,
+    row: requestedRow,
     mode = 'results',
-    telemetryNodes,
+    telemetryNodes: requestedNodes,
     telemetryLoading = false,
-    sourceCopy,
+    sourceCopy: requestedSourceCopy,
   }: {
     experiment: EvalExperiment
     row: EvalOutlineRow
@@ -40,8 +49,100 @@
     telemetryLoading?: boolean
     sourceCopy?: EvalSourceFieldCopy
   } = $props()
+  const requested = $derived({
+    experiment: requestedExperiment,
+    row: requestedRow,
+    telemetryNodes: requestedNodes,
+    sourceCopy: requestedSourceCopy,
+  })
+  let displayed = $state.raw<{
+    context: typeof requested
+    spans: SpanData[]
+    logs: LogData[]
+    callID?: string
+    failed: boolean
+    complete: boolean
+  }>()
+  let evidenceLoading = $state(false)
+  let requestKey = $state.raw<AbortSignal>()
+  const context = $derived(displayed?.context ?? requested)
+  const experiment = $derived(context.experiment)
+  const row = $derived(context.row)
+  const telemetryNodes = $derived(context.telemetryNodes)
+  const sourceCopy = $derived(context.sourceCopy)
+  const evidence = $derived(
+    evalSpanEvidence(
+      displayed?.spans ?? [],
+      displayed?.logs ?? [],
+      displayed?.callID
+    )
+  )
+  const evidenceLogs = $derived.by(() => {
+    if (!displayed?.complete || displayed.failed) return undefined
+    const ids = new Set(
+      evidence
+        .filter(record => record.id.startsWith('log/'))
+        .map(record => record.id.slice(4))
+    )
+    return displayed?.logs.filter(log => ids.has(log.logRef)) ?? []
+  })
+
+  // The row owns publication: headings, context, actions and evidence advance
+  // together. Keep the mounted presentation while the next row's logs load.
+  $effect(() => {
+    const selected = requested
+    const nodes = selected.telemetryNodes
+    const reference = selected.row.reference
+    const selectedSpan =
+      reference &&
+      nodes &&
+      ['tool', 'span', 'grader', 'execution'].includes(selected.row.kind)
+        ? nodes.get(referenceKey(reference))?.spanData
+        : undefined
+    const spans =
+      selectedSpan && nodes ? toolEvidenceSpans(selectedSpan, nodes) : []
+    const callID =
+      selectedSpan && nodes ? uniqueToolCallID(selectedSpan, nodes) : undefined
+    const owners = nodes ? toolLogOwners(spans, nodes, callID) : []
+    const initial = {
+      context: selected,
+      spans,
+      logs: [],
+      callID,
+      failed: false,
+      complete: false,
+    }
+    const controller = new AbortController()
+    requestKey = controller.signal
+    if (!untrack(() => displayed) || !owners.length) displayed = initial
+    evidenceLoading = owners.length > 0
+    void (async () => {
+      const logs: LogData[] = []
+      let failed = false
+      for (let offset = 0; offset < owners.length; offset += 4) {
+        const results = await Promise.allSettled(
+          owners
+            .slice(offset, offset + 4)
+            .map(item =>
+              telemetryAPI.getSpanLogs(
+                item.traceID,
+                item.spanID,
+                controller.signal
+              )
+            )
+        )
+        if (controller.signal.aborted) return
+        for (const result of results) {
+          if (result.status === 'fulfilled') logs.push(...result.value)
+          else failed = true
+        }
+      }
+      displayed = { ...initial, logs, failed, complete: true }
+      evidenceLoading = false
+    })()
+    return () => controller.abort()
+  })
   const result = $derived(row.result)
-  let evidenceLogs = $state<LogData[]>()
   const references = $derived(evalTelemetrySummaries(experiment, row))
   const members = $derived(
     experiment.results.filter(item => item.caseID === row.caseID)
@@ -196,15 +297,21 @@
         />
       {/if}
     {/snippet}
-    {#if span && telemetryNodes && (row.kind === 'tool' || row.kind === 'span' || row.kind === 'grader' || row.kind === 'execution')}
-      <div hidden={mode === 'cost'}>
-        <EvalSpanEvidence
-          {span}
-          nodes={telemetryNodes}
-          onlogs={logs => (evidenceLogs = logs)}
+    <div hidden={mode === 'cost'}>
+      <EvalSpanEvidence {evidence} />
+      {#if evidenceLoading}
+        <LoadingStatus
+          pending
+          label="Loading linked log evidence…"
+          {requestKey}
+          class="block px-3 py-2 text-sm text-subtle"
         />
-      </div>
-    {/if}
+      {:else if displayed?.failed}
+        <p class="px-3 py-2 text-sm text-subtle" role="status">
+          Linked log evidence could not be loaded.
+        </p>
+      {/if}
+    </div>
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>
