@@ -300,6 +300,12 @@ test('a delayed experiment source keeps Results mounted through loading and repl
   const scrollTop = await viewport.evaluate(element => element.scrollTop)
   expect(scrollTop).toBeGreaterThan(0)
   const gate = fixture.holdSource('Beta')
+  const header = page.getByRole('region', {
+    name: 'Evaluation results',
+    exact: true,
+  })
+  const headerBox = await header.boundingBox()
+  const viewportBox = await viewport.boundingBox()
   await page.clock.install({ time: 0 })
   await page.clock.pauseAt(1000)
   try {
@@ -309,10 +315,14 @@ test('a delayed experiment source keeps Results mounted through loading and repl
       .getByRole('status')
       .filter({ hasText: 'Loading experiment…' })
     await expect(loading).toHaveCount(0)
+    expect(await header.boundingBox()).toEqual(headerBox)
+    expect(await viewport.boundingBox()).toEqual(viewportBox)
     await page.clock.runFor(199)
     await expect(loading).toHaveCount(0)
     await page.clock.runFor(1)
     await expect(loading).toBeVisible()
+    expect(await header.boundingBox()).toEqual(headerBox)
+    expect(await viewport.boundingBox()).toEqual(viewportBox)
     await page.clock.resume()
     await sameTable()
     await sameViewport()
@@ -328,6 +338,15 @@ test('a delayed experiment source keeps Results mounted through loading and repl
       exact: true,
     })
     await expect(nextTable).toBeVisible()
+    expect(await header.boundingBox()).toEqual(headerBox)
+    expect(
+      await page
+        .getByRole('region', {
+          name: 'Results for Beta table viewport',
+          exact: true,
+        })
+        .boundingBox()
+    ).toEqual(viewportBox)
     await sameTable(nextTable)
     await sameViewport(
       page.getByRole('region', {

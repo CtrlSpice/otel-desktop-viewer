@@ -20,6 +20,7 @@ import {
   withQueryPatch,
 } from '@/route'
 import { downloadOTLP } from '@/services/export-service'
+import { savePersistedTimeseriesVisible } from '@/components/metrics/utils/metric-timeseries-visible'
 
 vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
 
@@ -167,10 +168,12 @@ function makeSumDatapoint(
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(next => {
+  let reject!: (reason: Error) => void
+  const promise = new Promise<T>((next, fail) => {
     resolve = next
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function makeStats(): Stats {
@@ -228,6 +231,204 @@ async function renderSelected(metricType: MetricType) {
       timeout: 3000,
     })
 }
+
+describe('Metric list and freshness statistics', () => {
+  it.each(['search', 'refresh'] as const)(
+    'retains the selected chart and details through a failed %s and recovery',
+    async action => {
+      await renderSelected('Gauge')
+      const chart = document.querySelector('.metrics-page__chart')!
+      const chartContent = chart.firstElementChild
+      const fields = screen.getByRole('table', { name: 'Metric fields' })
+      const header = screen.getByRole('region', { name: 'Metric chart' })
+      searchMetricSummaries.mockRejectedValueOnce(
+        new Error('summaries unavailable')
+      )
+      if (action === 'search') {
+        navigateCurrentRoute(
+          withQueryPatch(readRoute().query, { q: 'name = "current"' }),
+          'replace'
+        )
+      } else
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await screen.findByText('Error: summaries unavailable')
+      expect(chart.isConnected).toBe(true)
+      expect(chart.firstElementChild).toBe(chartContent)
+      expect(fields.isConnected).toBe(true)
+      expect(header.isConnected).toBe(true)
+      expect(window.location.pathname).toBe('/metrics/metric-1')
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() =>
+        expect(screen.queryByText('Error: summaries unavailable')).toBeNull()
+      )
+      expect(document.querySelector('.metrics-page__chart')).toBe(chart)
+      expect(fields.isConnected).toBe(true)
+    }
+  )
+
+  it.each(['pending', 'failed'] as const)(
+    'publishes the list and loads its selection while statistics are %s',
+    async outcome => {
+      const stats = deferred<Stats>()
+      const summaries = deferred<MetricSummary[]>()
+      searchMetricSummaries.mockReturnValue(summaries.promise)
+      getStats.mockReturnValue(stats.promise)
+      getMetricView.mockResolvedValue(makeMetric('Gauge'))
+      setTestUrl('/metrics?time=all')
+      renderWithContexts(MetricsPage)
+      await waitFor(() =>
+        expect(searchMetricSummaries).toHaveBeenCalledTimes(1)
+      )
+      expect(getStats).toHaveBeenCalledTimes(1)
+      if (outcome === 'failed')
+        stats.reject(new Error('Statistics unavailable'))
+      summaries.resolve([makeSummary('Gauge')])
+      await waitFor(() => expect(getMetricView).toHaveBeenCalled())
+      expect(
+        await screen.findByRole('table', { name: 'Metric fields' })
+      ).toHaveTextContent('demo.metric')
+      expect(window.location.pathname).toBe('/metrics/metric-1')
+      expect(screen.queryByText(/Statistics unavailable/)).toBeNull()
+      expect(screen.queryByText('Loading metrics…')).toBeNull()
+    }
+  )
+
+  it('publishes refreshed summaries without waiting for their statistics', async () => {
+    await renderSelected('Gauge')
+    const fields = screen.getByRole('table', { name: 'Metric fields' })
+    const stats = deferred<Stats>()
+    getStats.mockReturnValue(stats.promise)
+    searchMetricSummaries.mockResolvedValue([
+      { ...makeSummary('Gauge'), name: 'fresh.metric' },
+    ])
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(searchMetricSummaries).toHaveBeenCalledTimes(2))
+    expect(
+      await screen.findByRole('button', { name: /fresh.metric/ })
+    ).toBeInTheDocument()
+    expect(getStats).toHaveBeenCalledTimes(2)
+    expect(fields.isConnected).toBe(true)
+  })
+
+  it.each(['success', 'failure'] as const)(
+    'rejects stale statistics %s after refresh and keeps polling owned by the displayed list',
+    async outcome => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      const stale = deferred<Stats>()
+      getStats.mockReturnValueOnce(stale.promise)
+      searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
+      getMetricView.mockResolvedValue(makeMetric('Gauge'))
+      setTestUrl('/metrics/metric-1?time=all')
+      const view = renderWithContexts(MetricsPage)
+      await screen.findByRole('table', { name: 'Metric fields' })
+      const staleSignal = getStats.mock.calls[0]![0] as AbortSignal
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(getStats).toHaveBeenCalledTimes(1)
+
+      const refreshed = makeStats()
+      refreshed.metrics = {
+        ...refreshed.metrics,
+        metricCount: 10,
+        dataPointCount: 40,
+      }
+      getStats.mockResolvedValueOnce(refreshed)
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() => expect(getStats).toHaveBeenCalledTimes(2))
+      expect(staleSignal.aborted).toBe(true)
+      if (outcome === 'success') stale.resolve(makeStats())
+      else stale.reject(new Error('obsolete statistics failed'))
+      await tick()
+
+      const polled = makeStats()
+      polled.metrics = {
+        ...polled.metrics,
+        metricCount: 11,
+        dataPointCount: 44,
+      }
+      getStats.mockResolvedValueOnce(polled)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(
+        screen.getByRole('button', { name: 'Refresh: +1 metric, +4 dps' })
+      ).toBeInTheDocument()
+
+      const pendingPoll = deferred<Stats>()
+      getStats.mockReturnValueOnce(pendingPoll.promise)
+      await vi.advanceTimersByTimeAsync(3000)
+      const pollSignal = getStats.mock.calls.at(-1)![0] as AbortSignal
+      view.unmount()
+      expect(pollSignal.aborted).toBe(true)
+      pendingPoll.resolve(makeStats())
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(getStats).toHaveBeenCalledTimes(4)
+    }
+  )
+
+  it('recovers freshness polling after a failed baseline without discarding the loaded list', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    getStats.mockRejectedValueOnce(new Error('stats unavailable'))
+    searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
+    getMetricView.mockResolvedValue(makeMetric('Gauge'))
+    setTestUrl('/metrics/metric-1?time=all')
+    renderWithContexts(MetricsPage)
+    const fields = await screen.findByRole('table', { name: 'Metric fields' })
+    getStats.mockResolvedValueOnce(makeStats())
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    const polled = makeStats()
+    polled.metrics = { ...polled.metrics, metricCount: 2, dataPointCount: 8 }
+    getStats.mockResolvedValueOnce(polled)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(
+      screen.getByRole('button', { name: 'Refresh: +1 metric, +4 dps' })
+    ).toBeInTheDocument()
+    expect(fields.isConnected).toBe(true)
+    expect(searchMetricSummaries).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/stats unavailable/)).toBeNull()
+  })
+
+  it('preserves the displayed freshness baseline after a failed list refresh', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    await renderSelected('Gauge')
+    const polled = makeStats()
+    polled.metrics = { ...polled.metrics, metricCount: 2, dataPointCount: 8 }
+    getStats.mockResolvedValueOnce(polled)
+    await vi.advanceTimersByTimeAsync(3000)
+    const refresh = screen.getByRole('button', {
+      name: 'Refresh: +1 metric, +4 dps',
+    })
+    const stats = deferred<Stats>()
+    getStats.mockReturnValueOnce(stats.promise)
+    searchMetricSummaries.mockRejectedValueOnce(new Error('list unavailable'))
+    await fireEvent.click(refresh)
+    await screen.findByText('Error: list unavailable')
+    expect(refresh).toHaveAccessibleName('Refresh: +1 metric, +4 dps')
+    expect((getStats.mock.calls.at(-1)![0] as AbortSignal).aborted).toBe(true)
+    stats.resolve(makeStats())
+    await tick()
+    expect(refresh).toHaveAccessibleName('Refresh: +1 metric, +4 dps')
+  })
+
+  it('cancels both outstanding list and baseline requests on unmount', async () => {
+    const summaries = deferred<MetricSummary[]>()
+    const stats = deferred<Stats>()
+    searchMetricSummaries.mockReturnValue(summaries.promise)
+    getStats.mockReturnValue(stats.promise)
+    setTestUrl('/metrics?time=all')
+    const view = renderWithContexts(MetricsPage)
+    await waitFor(() => expect(searchMetricSummaries).toHaveBeenCalledTimes(1))
+    const listSignal = searchMetricSummaries.mock.calls[0]!.at(
+      -1
+    ) as AbortSignal
+    const statsSignal = getStats.mock.calls[0]![0] as AbortSignal
+    view.unmount()
+    expect(listSignal.aborted).toBe(true)
+    expect(statsSignal.aborted).toBe(true)
+    summaries.resolve([makeSummary('Gauge')])
+    stats.resolve(makeStats())
+    await tick()
+    expect(getMetricView).not.toHaveBeenCalled()
+  })
+})
 
 describe('Metric main-header range', () => {
   it.each(['failure', 'missing'] as const)(
@@ -854,6 +1055,283 @@ describe('MetricsPage raw series fetching', () => {
     })
   }
 
+  it('publishes datapoint counts and units from the received response when it is newer than the chart', async () => {
+    prepareRawSeriesTest()
+    const points = Array.from({ length: 5 }, (_, index) =>
+      makeSumDatapoint(`point-${index}`, 1_700_000_000_000 + index, index)
+    )
+    const chart = makeMetric('Sum', points.slice(0, 4))
+    const received = {
+      ...makeMetric('Sum', points),
+      unit: 's',
+      datapointCount: 5,
+      timeseries: [
+        { ...chart.timeseries[0]!, datapoints: points, datapointCount: 5 },
+      ],
+    }
+    getMetricView.mockImplementation((...args: unknown[]) =>
+      Promise.resolve(args[3] === 0 ? received : chart)
+    )
+    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-dp-id]')).toHaveLength(5)
+    )
+    expect(
+      document.querySelector('[data-detail-section="datapoints"] summary')
+    ).toHaveTextContent('[5]')
+    expect(
+      screen.getByRole('columnheader', { name: /^Value\s*\(s\)$/ })
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('table', { name: 'Metric fields' })).getByText(
+        'ms',
+        { exact: true }
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('keeps cached raw rows interactive when chart enrichment replaces only the metric response', async () => {
+    prepareRawSeriesTest()
+    const point = makeSumDatapoint('kept-point', 1_700_000_000_000, 7)
+    const base = makeMetric('Sum', [point])
+    const first = { ...base.timeseries[0]!, seriesRef: 'series-a' }
+    const second = { ...first, seriesRef: 'series-b', datapoints: [] }
+    const enrichment = deferred<MetricViewData | null>()
+    let viewCalls = 0
+    getMetricView.mockImplementation((...args: unknown[]) => {
+      if (args[3] === 0)
+        return Promise.resolve({ ...base, timeseries: [first] })
+      return ++viewCalls === 1
+        ? Promise.resolve({ ...base, timeseries: [first, second] })
+        : enrichment.promise
+    })
+    savePersistedTimeseriesVisible('metric-1', ['series-a'])
+    setTestUrl('/metrics/metric-1?time=all&series=series-a')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="kept-point"]')).not.toBeNull()
+    )
+    const row = document.querySelector('[data-dp-id="kept-point"]')!
+    const unchecked = screen
+      .getAllByRole('checkbox', { name: /^Show .* in chart$/ })
+      .find(element => !(element as HTMLInputElement).checked)!
+    expect(unchecked).toBeDefined()
+    await fireEvent.click(unchecked)
+    await waitFor(() => expect(viewCalls).toBe(2))
+    await fireEvent.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(readRoute().query.dp).toBe('kept-point')
+    const expansion = document.querySelector('.dp-list__expansion')
+    enrichment.resolve({
+      ...base,
+      timeseries: [
+        first,
+        {
+          ...second,
+          datapoints: [makeSumDatapoint('b-point', 1_700_000_000_000, 9)],
+        },
+      ],
+    })
+    await enrichment.promise
+    await tick()
+    expect(rawSeriesCalls()).toHaveLength(1)
+    expect(document.querySelector('[data-dp-id="kept-point"]')).toBe(row)
+    expect(document.querySelector('.dp-list__expansion')).toBe(expansion)
+    expect(row).not.toHaveAttribute('aria-disabled', 'true')
+    await fireEvent.keyDown(row, { key: 'Enter' })
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    expect(readRoute().query.dp).toBeUndefined()
+    await fireEvent.keyDown(row, { key: ' ' })
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(readRoute().query.dp).toBe('kept-point')
+  })
+
+  it('returns retained rows to live selection after A→B→A and rejects the late B response', async () => {
+    prepareRawSeriesTest()
+    const metric = makeMetric('Sum', [
+      makeSumDatapoint('a-point', 1_700_000_000_000, 7),
+    ])
+    const first = { ...metric.timeseries[0]!, seriesRef: 'series-a' }
+    const second = { ...first, seriesRef: 'series-b', datapoints: [] }
+    const replacement = deferred<MetricViewData | null>()
+    getMetricView.mockImplementation((...args: unknown[]) => {
+      if (args[3] !== 0)
+        return Promise.resolve({ ...metric, timeseries: [first, second] })
+      return (args[4] as string[])[0] === 'series-a'
+        ? Promise.resolve({ ...metric, timeseries: [first] })
+        : replacement.promise
+    })
+    setTestUrl('/metrics/metric-1?time=all&series=series-a')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="a-point"]')).not.toBeNull()
+    )
+    const row = document.querySelector('[data-dp-id="a-point"]')!
+    navigateCurrentRoute(
+      withQueryPatch(readRoute().query, { series: 'series-b' }),
+      'replace'
+    )
+    await tick()
+    expect(rawSeriesCalls()).toHaveLength(2)
+    await fireEvent.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(readRoute().query.series).toBe('series-b')
+    expect(readRoute().query.dp).toBeUndefined()
+    navigateCurrentRoute(
+      withQueryPatch(readRoute().query, { series: 'series-a' }),
+      'replace'
+    )
+    await tick()
+    expect((rawSeriesCalls()[1]!.at(-1) as AbortSignal).aborted).toBe(true)
+    await fireEvent.keyDown(row, { key: 'Enter' })
+    expect(readRoute().query.dp).toBe('a-point')
+    replacement.resolve({
+      ...metric,
+      timeseries: [
+        {
+          ...second,
+          datapoints: [makeSumDatapoint('stale-b', 1_700_000_000_000, 99)],
+        },
+      ],
+    })
+    await replacement.promise
+    await tick()
+    expect(document.querySelector('[data-dp-id="a-point"]')).toBe(row)
+    expect(document.querySelector('[data-dp-id="stale-b"]')).toBeNull()
+    expect(readRoute().query.series).toBe('series-a')
+    expect(readRoute().query.dp).toBe('a-point')
+  })
+
+  it.each(['success', 'failure'] as const)(
+    'retains the displayed series count, identity, disclosure and action ownership through replacement %s',
+    async outcome => {
+      userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      prepareRawSeriesTest()
+      const replacement = deferred<MetricViewData | null>()
+      const a = {
+        ...makeSumDatapoint('a-point', 1_700_000_000_000, 7),
+        flags: 1,
+      }
+      const b = makeSumDatapoint('b-point', 1_700_000_000_000, 9)
+      const metric = makeMetric('Sum', [a])
+      const first = {
+        ...metric.timeseries[0]!,
+        seriesRef: 'series-a',
+        attributes: [
+          { key: 'route', value: { kind: 'string' as const, value: '/a' } },
+        ],
+      }
+      const second = {
+        ...first,
+        seriesRef: 'series-b',
+        datapointCount: 9,
+        datapoints: [b],
+        attributes: [
+          { key: 'route', value: { kind: 'string' as const, value: '/b' } },
+        ],
+      }
+      const full = { ...metric, timeseries: [first, second] }
+      getMetricView.mockImplementation((...args: unknown[]) => {
+        if (args[3] !== 0) return Promise.resolve(full)
+        return (args[4] as string[])[0] === 'series-b'
+          ? replacement.promise
+          : Promise.resolve({ ...full, timeseries: [first] })
+      })
+      setTestUrl('/metrics/metric-1?time=all&series=series-a&dp=a-point')
+      renderWithContexts(MetricsPage)
+      await waitFor(() =>
+        expect(document.querySelector('[data-dp-id="a-point"]')).not.toBeNull()
+      )
+      const row = document.querySelector<HTMLTableRowElement>(
+        '[data-dp-id="a-point"]'
+      )!
+      await waitFor(() => expect(row).toHaveAttribute('aria-expanded', 'true'))
+      const expansion = document.querySelector('.dp-list__expansion')
+      const section = document.querySelector(
+        '[data-detail-section="datapoints"]'
+      )!
+      const header = section.querySelector('summary')!
+      const identity = screen.getByLabelText('Displayed datapoint series')
+      expect(header).toHaveTextContent('[4]')
+      expect(identity).toHaveTextContent('series-a')
+
+      navigateCurrentRoute(
+        withQueryPatch(readRoute().query, {
+          series: 'series-b',
+          dp: undefined,
+        }),
+        'replace'
+      )
+      await tick()
+      // No debounce: B starts without advancing a timer or completing A's view.
+      expect(rawSeriesCalls().at(-1)?.[4]).toEqual(['series-b'])
+      const requestedURL = window.location.search
+      expect(document.querySelector('[data-dp-id="a-point"]')).toBe(row)
+      expect(document.querySelector('.dp-list__expansion')).toBe(expansion)
+      expect(header).toHaveTextContent('[4]')
+      expect(identity).toHaveTextContent('series-a')
+      expect(screen.getByText('/b', { exact: true })).toBeInTheDocument()
+      expect(screen.queryByText('Loading datapoints…')).toBeNull()
+      await screen.findByText('Loading datapoints…')
+      expect(row).not.toHaveAttribute('aria-disabled', 'true')
+      await fireEvent.click(
+        within(expansion as HTMLElement).getByRole('button', {
+          name: 'Copy asDouble',
+        })
+      )
+      await waitFor(() => expect(copy).toHaveBeenLastCalledWith('7'))
+      await fireEvent.click(row)
+      expect(row).toHaveAttribute('aria-expanded', 'false')
+      expect(window.location.search).toBe(requestedURL)
+      await fireEvent.keyDown(row, { key: 'Enter' })
+      expect(window.location.search).toBe(requestedURL)
+      expect(row).toHaveAttribute('aria-expanded', 'true')
+      await fireEvent.click(
+        within(
+          document.querySelector<HTMLElement>('.dp-list__expansion')!
+        ).getByRole('button', {
+          name: 'Copy asDouble',
+        })
+      )
+      await waitFor(() => expect(copy).toHaveBeenLastCalledWith('7'))
+      if (outcome === 'failure') {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        replacement.reject(new Error('offline'))
+        await screen.findByText('Could not load datapoints.')
+        expect(document.querySelector('[data-dp-id="a-point"]')).toBe(row)
+        expect(header).toHaveTextContent('[4]')
+        expect(identity).toHaveTextContent('series-a')
+        await fireEvent.keyDown(row, { key: ' ' })
+        expect(row).toHaveAttribute('aria-expanded', 'false')
+        await fireEvent.click(row)
+        expect(row).toHaveAttribute('aria-expanded', 'true')
+        expect(window.location.search).toBe(requestedURL)
+        await fireEvent.click(
+          within(
+            document.querySelector<HTMLElement>('.dp-list__expansion')!
+          ).getByRole('button', { name: 'Copy asDouble' })
+        )
+        await waitFor(() => expect(copy).toHaveBeenLastCalledWith('7'))
+        error.mockRestore()
+        return
+      }
+
+      replacement.resolve({ ...full, timeseries: [second] })
+      await waitFor(() =>
+        expect(document.querySelector('[data-dp-id="b-point"]')).not.toBeNull()
+      )
+      expect(header).toHaveTextContent('[9]')
+      expect(identity).toHaveTextContent('series-b')
+      expect(document.querySelector('[data-dp-id="a-point"]')).toBeNull()
+      await fireEvent.click(document.querySelector('[data-dp-id="b-point"]')!)
+      expect(readRoute().query.dp).toBe('b-point')
+    }
+  )
+
   it('retries a failed raw request without changing series or visibility', async () => {
     prepareRawSeriesTest()
     let rawRequest = 0
@@ -883,38 +1361,100 @@ describe('MetricsPage raw series fetching', () => {
     expect(screen.queryByText('Could not load datapoints.')).toBeNull()
   })
 
-  it('keeps inspected datapoints while another metric is pending and after it fails', async () => {
-    prepareRawSeriesTest()
-    searchMetricSummaries.mockResolvedValue([
-      makeSummary('Sum'),
-      { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
-    ])
-    let reject!: (error: Error) => void
-    const pending = new Promise<MetricViewData>((_, fail) => {
-      reject = fail
-    })
-    getMetricView.mockImplementation((id: string) =>
-      id === 'next' ? pending : Promise.resolve(makeMetric('Sum', [reduced]))
-    )
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
-    renderWithContexts(MetricsPage)
-    await waitFor(() =>
-      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
-    )
-    navigateToItem('metrics', 'next')
-    await waitFor(() =>
-      expect(getMetricView.mock.calls.some(call => call[0] === 'next')).toBe(
-        true
+  it.each(['success', 'failure'] as const)(
+    'keeps retained rows inspectable without changing a different requested metric through %s',
+    async outcome => {
+      userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      prepareRawSeriesTest()
+      searchMetricSummaries.mockResolvedValue([
+        makeSummary('Sum'),
+        { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
+      ])
+      const detail = deferred<MetricViewData | null>()
+      const raw = deferred<MetricViewData | null>()
+      getMetricView.mockImplementation((...args: unknown[]) =>
+        args[0] === 'next'
+          ? args[3] === 0
+            ? raw.promise
+            : detail.promise
+          : Promise.resolve(makeMetric('Sum', [reduced]))
       )
-    )
-    expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
-    reject(new Error('replacement unavailable'))
-    await screen.findByText('Could not load the selected metric.')
-    expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
-    expect(rawSeriesCalls()).toHaveLength(1)
-    error.mockRestore()
-  })
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+      renderWithContexts(MetricsPage)
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-dp-id="dp-reduced"]')
+        ).not.toBeNull()
+      )
+      const row = document.querySelector('[data-dp-id="dp-reduced"]')!
+      navigateToItem('metrics', 'next', 'push', { series: 'route=/checkout' })
+      await waitFor(() =>
+        expect(getMetricView.mock.calls.some(call => call[0] === 'next')).toBe(
+          true
+        )
+      )
+      const requestedURL = window.location.href
+      await fireEvent.click(row)
+      expect(row).toHaveAttribute('aria-expanded', 'true')
+      expect(window.location.href).toBe(requestedURL)
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Copy asDouble' })
+      )
+      await waitFor(() => expect(copy).toHaveBeenLastCalledWith('1'))
+
+      const next = {
+        ...makeMetric('Sum', [reduced]),
+        metricRef: 'next',
+        name: 'next.metric',
+      }
+      if (outcome === 'failure') {
+        detail.reject(new Error('replacement unavailable'))
+        await screen.findByText('Could not load the selected metric.')
+        expect(rawSeriesCalls()).toHaveLength(1)
+      } else {
+        detail.resolve(next)
+        await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
+      }
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).toBe(row)
+      await fireEvent.keyDown(row, { key: 'Enter' })
+      expect(row).toHaveAttribute('aria-expanded', 'false')
+      await fireEvent.keyDown(row, { key: ' ' })
+      expect(row).toHaveAttribute('aria-expanded', 'true')
+      expect(window.location.href).toBe(requestedURL)
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Copy asDouble' })
+      )
+      await waitFor(() => expect(copy).toHaveBeenLastCalledWith('1'))
+
+      if (outcome === 'success') {
+        raw.resolve({
+          ...next,
+          timeseries: [
+            {
+              ...next.timeseries[0]!,
+              datapoints: [
+                makeSumDatapoint('next-point', 1_700_000_000_000, 9),
+              ],
+            },
+          ],
+        })
+        await waitFor(() =>
+          expect(
+            document.querySelector('[data-dp-id="next-point"]')
+          ).not.toBeNull()
+        )
+        await fireEvent.click(
+          document.querySelector('[data-dp-id="next-point"]')!
+        )
+        expect(readRoute().query.dp).toBe('next-point')
+      }
+      error.mockRestore()
+    }
+  )
 
   it('anchors a preset window when the series request is triggered', async () => {
     const initialNow = 1_700_000_000_000
@@ -1051,6 +1591,7 @@ describe('MetricsPage raw series fetching', () => {
     prepareRawSeriesTest()
     const replacement = deferred<MetricViewData | null>()
     let rawRequests = 0
+    let viewRequests = 0
     getMetricView.mockImplementation((...args: unknown[]) =>
       args[3] === 0
         ? rawRequests++ === 0
@@ -1060,7 +1601,10 @@ describe('MetricsPage raw series fetching', () => {
               ])
             )
           : replacement.promise
-        : Promise.resolve(makeMetric('Sum', [reduced]))
+        : Promise.resolve({
+            ...makeMetric('Sum', [reduced]),
+            unit: viewRequests++ === 0 ? 'ms' : 's',
+          })
     )
     setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
     renderWithContexts(MetricsPage)
@@ -1068,18 +1612,38 @@ describe('MetricsPage raw series fetching', () => {
       expect(document.querySelector('[data-dp-id="displayed"]')).not.toBeNull()
     )
     const row = document.querySelector('[data-dp-id="displayed"]')
+    expect(
+      screen.getByRole('columnheader', { name: /^Value\s*\(ms\)$/ })
+    ).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
     expect(document.querySelector('[data-dp-id="displayed"]')).toBe(row)
-    replacement.resolve(
-      makeMetric('Sum', [makeSumDatapoint('replacement', 1_700_000_000_000, 9)])
-    )
+    // The metric's independent fields are already fresh, while retained raw
+    // values still use the unit belonging to their displayed response.
+    expect(
+      within(screen.getByRole('table', { name: 'Metric fields' })).getByText(
+        's',
+        { exact: true }
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('columnheader', { name: /^Value\s*\(ms\)$/ })
+    ).toBeInTheDocument()
+    replacement.resolve({
+      ...makeMetric('Sum', [
+        makeSumDatapoint('replacement', 1_700_000_000_000, 9),
+      ]),
+      unit: 's',
+    })
     await waitFor(() =>
       expect(
         document.querySelector('[data-dp-id="replacement"]')
       ).not.toBeNull()
     )
     expect(document.querySelector('[data-dp-id="displayed"]')).toBeNull()
+    expect(
+      screen.getByRole('columnheader', { name: /^Value\s*\(s\)$/ })
+    ).toBeInTheDocument()
   })
 
   const terminalResponses: Array<[string, () => MetricViewData | null]> = [

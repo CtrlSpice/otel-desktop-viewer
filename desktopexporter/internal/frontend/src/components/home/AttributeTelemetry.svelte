@@ -46,13 +46,13 @@
     error: string
     pageIndex: number
     scrollTop: number
+    loaded: boolean
+    attribute: DiscoveredAttribute | null
   }
   const PAGE_SIZE_KEY = 'home-telemetry-page-size'
   let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
   let groups = $state<Group[]>([])
-  let loading = $state(false)
   let requestKey = $state(0)
-  let displayedAttribute = $state<DiscoveredAttribute | null>(null)
   let selectedSignal = $state<DiscoverySignal>('traces')
   let viewport = $state<HTMLDivElement>()
   const panelID = $props.id()
@@ -63,6 +63,8 @@
   const active = $derived(
     available.find(group => group.signal === selectedSignal) ?? available[0]
   )
+  const loading = $derived(active?.loading ?? false)
+  const displayedAttribute = $derived(active?.attribute ?? null)
   const tabs = $derived(
     discoverySignals.map(signal => {
       const group = groups.find(group => group.signal === signal)
@@ -70,15 +72,16 @@
         id: signal,
         label: labels[signal],
         countBrackets: true,
-        count:
-          group && !group.loading && !group.error
-            ? group.cards.length
-            : undefined,
+        count: group?.loaded ? group.cards.length : undefined,
         disabled: !available.some(group => group.signal === signal),
       }
     })
   )
-  const pageCount = $derived(Math.ceil((active?.cards.length ?? 0) / pageSize))
+  const pageCount = $derived(
+    active && !active.loaded
+      ? undefined
+      : Math.ceil((active?.cards.length ?? 0) / pageSize)
+  )
   const pageStart = $derived((active?.pageIndex ?? 0) * pageSize)
   const page = $derived(
     active?.cards.slice(pageStart, pageStart + pageSize) ?? []
@@ -98,13 +101,14 @@
     if (group) selectedSignal = group.signal
   }
   function setPage(index: number) {
-    if (!active || loading || active.error) return
+    if (!active?.loaded || pageCount === undefined) return
     active.pageIndex = Math.max(0, Math.min(index, pageCount - 1))
     active.scrollTop = 0
   }
   $effect(() => {
     const group = active
     void group?.pageIndex
+    void group?.scrollTop
     const element = viewport
     untrack(() => {
       if (element) element.scrollTop = group?.scrollTop ?? 0
@@ -117,51 +121,55 @@
     requestKey = untrack(() => requestKey) + 1
     if (!selection.service) {
       groups = []
-      displayedAttribute = null
-      loading = false
       return
     }
-    loading = true
     const selectedService = selection.service
     const signals = discoverySignals.filter(
       signal =>
         (!attribute || attributeOwners[signal].includes(attribute.ownerType)) &&
         options.queries?.[signal] !== false
     )
-    const pending = signals.map((signal): Group => ({
-      signal,
-      cards: [],
-      loading: true,
-      error: '',
-      pageIndex: 0,
-      scrollTop: 0,
-    }))
-    if (untrack(() => groups.length === 0)) {
-      groups = pending
-      displayedAttribute = selection.attribute
-    }
-    void Promise.all(
-      pending.map(async group => {
-        try {
-          group.cards = await loadAttributeTelemetry(
-            group.signal,
-            selection.attribute,
-            selection.valueIdentity,
-            selectedService,
-            selection.options,
-            controller.signal
-          )
-        } catch (error) {
-          group.error = String(error)
+    untrack(() => {
+      groups = signals.map((signal): Group => {
+        const previous = groups.find(group => group.signal === signal)
+        return {
+          signal,
+          cards: previous?.cards ?? [],
+          loading: true,
+          error: previous?.error ?? '',
+          pageIndex: previous?.pageIndex ?? 0,
+          scrollTop: previous?.scrollTop ?? 0,
+          loaded: previous?.loaded ?? false,
+          attribute: previous ? previous.attribute : selection.attribute,
         }
-        group.loading = false
-        return group
       })
-    ).then(result => {
-      if (controller.signal.aborted) return
-      groups = result
-      displayedAttribute = selection.attribute
-      loading = false
+      for (const group of groups) {
+        void loadAttributeTelemetry(
+          group.signal,
+          selection.attribute,
+          selection.valueIdentity,
+          selectedService,
+          selection.options,
+          controller.signal
+        )
+          .then(cards => {
+            if (controller.signal.aborted) return
+            group.cards = cards
+            group.attribute = selection.attribute
+            group.error = ''
+            group.loaded = true
+            group.pageIndex = 0
+            group.scrollTop = 0
+          })
+          .catch(error => {
+            if (controller.signal.aborted) return
+            group.error = String(error)
+            if (!group.loaded) group.attribute = selection.attribute
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) group.loading = false
+          })
+      }
     })
     return () => controller.abort()
   })
@@ -228,7 +236,7 @@
       <LoadingStatus
         pending={loading}
         label={`Loading matching ${active?.signal ?? 'telemetry'}…`}
-        {requestKey}
+        requestKey={`${requestKey}:${active?.signal ?? ''}`}
       />
       {#if active?.error}<p role="alert" class="text-papaya">
           {active.error}
@@ -267,15 +275,19 @@
         />
       {/snippet}
       {#snippet navigation()}
-        <div>
+        <div
+          class:attribute-telemetry__navigation--pending={active &&
+            !active.loaded}
+        >
           <DetailNav
             index={active?.pageIndex ?? -1}
             total={pageCount}
+            busy={!!active && !active.loaded}
             label="page"
             onFirst={() => setPage(0)}
             onPrev={() => setPage((active?.pageIndex ?? 0) - 1)}
             onNext={() => setPage((active?.pageIndex ?? 0) + 1)}
-            onLast={() => setPage(pageCount - 1)}
+            onLast={() => setPage((pageCount ?? 0) - 1)}
           />
         </div>
       {/snippet}
@@ -294,5 +306,8 @@
   }
   .attribute-telemetry__cards {
     @apply min-h-0 flex-1 overflow-auto px-3 pb-3;
+  }
+  .attribute-telemetry__navigation--pending :global(.detail-nav__counter) {
+    visibility: hidden;
   }
 </style>

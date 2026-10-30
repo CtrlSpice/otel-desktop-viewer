@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import type { LogData, SpanData } from '@/types/api-types'
 import { telemetryAPI } from '@/services/telemetry-service'
@@ -69,7 +69,206 @@ function row(span: SpanData): EvalOutlineRow {
 
 const experiment = { ...exampleExperiments[0], results: [] }
 
-it('publishes the heading, context, evidence and Copy target together after replacement logs load', async () => {
+function log(owner: SpanData, body: string): LogData {
+  return {
+    logRef: `log-${owner.spanID}`,
+    traceID: owner.traceID,
+    spanID: owner.spanID,
+    timestamp: 1n,
+    observedTimestamp: 1n,
+    severityText: '',
+    severityNumber: 0,
+    body: { kind: 'string', value: body },
+    eventName: 'tool.output',
+    resource: owner.resource,
+    scope: owner.scope,
+    flags: 0,
+    attributes: [],
+    droppedAttributesCount: 0,
+  }
+}
+
+it.each(['root-first', 'child-first', 'child-failure'])(
+  'publishes each ready log owner independently with deterministic order and exact Copy: %s',
+  async order => {
+    const a = span('1'.repeat(16)),
+      b = span('2'.repeat(16))
+    b.attributes = [
+      {
+        key: 'gen_ai.operation.name',
+        value: { kind: 'string', value: 'execute_tool' },
+      },
+    ]
+    const child = { ...span('3'.repeat(16)), parentSpanID: b.spanID }
+    const nodes = new Map(
+      [a, b, child].map(spanData => [
+        referenceKey(spanData),
+        { spanData, depth: 0, matched: true },
+      ])
+    )
+    const pending = new Map<
+      string,
+      { resolve: (logs: LogData[]) => void; reject: (reason: Error) => void }
+    >()
+    vi.spyOn(telemetryAPI, 'getTraceLogSummaries').mockResolvedValue([])
+    vi.spyOn(telemetryAPI, 'getSpanLogs').mockImplementation((_trace, id) =>
+      id === a.spanID
+        ? Promise.resolve([log(a, 'A retained log')])
+        : new Promise((resolve, reject) => pending.set(id, { resolve, reject }))
+    )
+    const view = render(EvalRowDetail, {
+      experiment,
+      row: row(a),
+      telemetryNodes: nodes,
+    })
+    await screen.findByText('A retained log')
+    await view.rerender({
+      componentProps: { experiment, row: row(b), telemetryNodes: nodes },
+    })
+    await waitFor(() => expect(pending.size).toBe(2))
+    const first = order === 'child-first' ? child : b
+    pending.get(first.spanID)!.resolve([log(first, `received-${first.spanID}`)])
+    const ready = await screen.findByText(`received-${first.spanID}`)
+    expect(
+      screen
+        .getByText('A retained log')
+        .closest('table')
+        ?.querySelector('caption')
+    ).toHaveTextContent(a.spanID)
+    const telemetry = [...view.container.querySelectorAll('summary')].find(
+      element => element.textContent?.includes('Telemetry')
+    )!
+    expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
+    await fireEvent.click(
+      within(ready.closest('table')!).getByRole('button', { name: 'Copy body' })
+    )
+    expect(copyText).toHaveBeenLastCalledWith(`received-${first.spanID}`)
+    if (order === 'child-failure')
+      pending.get(child.spanID)!.reject(new Error('unavailable child'))
+    else {
+      const last = first === child ? b : child
+      pending.get(last.spanID)!.resolve([log(last, `received-${last.spanID}`)])
+    }
+    await waitFor(() => expect(screen.queryByText('A retained log')).toBeNull())
+    if (order === 'child-failure') {
+      expect(
+        screen.getByText('Linked log evidence could not be loaded.')
+      ).toBeVisible()
+      expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
+    } else {
+      const bodies = [...view.container.querySelectorAll('table')].flatMap(
+        table =>
+          table.textContent?.includes('received-') ? [table.textContent] : []
+      )
+      expect(bodies).toHaveLength(2)
+      expect(bodies[0]).toContain(`received-${b.spanID}`)
+      expect(bodies[1]).toContain(`received-${child.spanID}`)
+      await waitFor(() => expect(telemetry).toHaveTextContent('2 logs'))
+    }
+  }
+)
+
+it.each(['case', 'result', 'no-reference', 'trace-only'])(
+  'clears inapplicable prior evidence immediately despite global pending telemetry: %s',
+  async kind => {
+    const a = span('1'.repeat(16))
+    const nodes = new Map([
+      [referenceKey(a), { spanData: a, depth: 0, matched: true }],
+    ])
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getSpanLogs')
+      .mockResolvedValue([log(a, 'A prior log')])
+    vi.spyOn(telemetryAPI, 'getTraceLogSummaries').mockResolvedValue([])
+    const view = render(EvalRowDetail, {
+      experiment,
+      row: row(a),
+      telemetryNodes: nodes,
+    })
+    await screen.findByText('A prior log')
+    const next = {
+      ...row(a),
+      id: 'B',
+      name: 'B',
+      kind: (kind === 'case' || kind === 'result'
+        ? kind
+        : 'tool') as EvalOutlineRow['kind'],
+      reference: kind === 'trace-only' ? { traceID: a.traceID } : undefined,
+    }
+    await view.rerender({
+      componentProps: {
+        experiment,
+        row: next,
+        telemetryNodes: nodes,
+        telemetryLoading: true,
+      },
+    })
+    expect(screen.queryByText(`output-${a.spanID}`)).toBeNull()
+    expect(screen.queryByText('A prior log')).toBeNull()
+    expect(lookup).toHaveBeenCalledTimes(1)
+  }
+)
+
+it('rejects both late multi-owner success and failure across A → B → fresh A', async () => {
+  const a = span('1'.repeat(16)),
+    b = span('2'.repeat(16))
+  b.attributes = [
+    {
+      key: 'gen_ai.operation.name',
+      value: { kind: 'string', value: 'execute_tool' },
+    },
+  ]
+  const child = { ...span('3'.repeat(16)), parentSpanID: b.spanID }
+  const nodes = new Map(
+    [a, b, child].map(spanData => [
+      referenceKey(spanData),
+      { spanData, depth: 0, matched: true },
+    ])
+  )
+  const pending: Array<{
+    id: string
+    resolve: (logs: LogData[]) => void
+    reject: (reason: Error) => void
+  }> = []
+  const lookup = vi
+    .spyOn(telemetryAPI, 'getSpanLogs')
+    .mockImplementation(
+      (_trace, id) =>
+        new Promise((resolve, reject) => pending.push({ id, resolve, reject }))
+    )
+  const view = render(EvalRowDetail, {
+    experiment,
+    row: row(a),
+    telemetryNodes: nodes,
+  })
+  await waitFor(() => expect(pending).toHaveLength(1))
+  pending[0].resolve([log(a, 'A original')])
+  await screen.findByText('A original')
+  await view.rerender({
+    componentProps: { experiment, row: row(b), telemetryNodes: nodes },
+  })
+  await waitFor(() => expect(pending).toHaveLength(3))
+  const fresh = { ...row(a), name: 'A refreshed' }
+  await view.rerender({
+    componentProps: { experiment, row: fresh, telemetryNodes: new Map(nodes) },
+  })
+  await waitFor(() => expect(pending).toHaveLength(4))
+  pending[3].resolve([log(a, 'A fresh')])
+  await screen.findByText('A fresh')
+  pending[1].resolve([log(b, 'B stale')])
+  pending[2].reject(new Error('stale child failure'))
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(lookup.mock.calls[1][2]?.aborted).toBe(true)
+  expect(lookup.mock.calls[2][2]?.aborted).toBe(true)
+  expect(screen.queryByText('B stale')).toBeNull()
+  expect(
+    screen.queryByText('Linked log evidence could not be loaded.')
+  ).toBeNull()
+  await fireEvent.click(screen.getByRole('button', { name: 'Copy body' }))
+  expect(copyText).toHaveBeenLastCalledWith('A fresh')
+})
+
+it('publishes ready B span output without waiting for logs, retaining only identified A logs and their Copy target', async () => {
   const first = span('1'.repeat(16))
   const second = span('2'.repeat(16))
   const nodes = new Map(
@@ -81,7 +280,7 @@ it('publishes the heading, context, evidence and Copy target together after repl
   let finish!: (logs: LogData[]) => void
   const loader = vi
     .spyOn(telemetryAPI, 'getSpanLogs')
-    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([log(first, 'A log body')])
     .mockImplementationOnce(
       () =>
         new Promise(resolve => {
@@ -93,7 +292,8 @@ it('publishes the heading, context, evidence and Copy target together after repl
     row: row(first),
     telemetryNodes: nodes,
   })
-  const field = await screen.findByText(`output-${first.spanID}`)
+  await screen.findByText(`output-${first.spanID}`)
+  const field = await screen.findByText('A log body')
   await waitFor(() => expect(loader).toHaveBeenCalledTimes(1))
   const heading = view.container.querySelector(
     'summary.detail-bubble__heading'
@@ -102,15 +302,21 @@ it('publishes the heading, context, evidence and Copy target together after repl
     componentProps: { experiment, row: row(second), telemetryNodes: nodes },
   })
   await waitFor(() => expect(loader).toHaveBeenCalledTimes(2))
-  expect(heading).toHaveTextContent(first.name)
-  expect(screen.getByText(`case-${first.spanID}`)).toBeVisible()
-  expect(screen.getByText(`output-${first.spanID}`)).toBe(field)
-  expect(screen.queryByText(`output-${second.spanID}`)).toBeNull()
+  expect(heading).toHaveTextContent(second.name)
+  expect(screen.getByText(`case-${second.spanID}`)).toBeVisible()
+  expect(field.closest('table')?.querySelector('caption')).toHaveTextContent(
+    first.name
+  )
+  expect(screen.getByText('A log body')).toBe(field)
+  expect(screen.queryByText(`output-${first.spanID}`)).toBeNull()
+  expect(screen.getByText(`output-${second.spanID}`)).toBeVisible()
   expect(screen.queryByText('Loading linked log evidence…')).toBeNull()
   expect(await screen.findByText('Loading linked log evidence…')).toBeVisible()
-  expect(heading).toHaveTextContent(first.name)
+  expect(heading).toHaveTextContent(second.name)
   await fireEvent.click(screen.getByRole('button', { name: 'Copy output' }))
-  expect(copyText).toHaveBeenLastCalledWith(`output-${first.spanID}`)
+  expect(copyText).toHaveBeenLastCalledWith(`output-${second.spanID}`)
+  await fireEvent.click(screen.getByRole('button', { name: 'Copy body' }))
+  expect(copyText).toHaveBeenLastCalledWith('A log body')
   finish([])
   await screen.findByText(`output-${second.spanID}`)
   expect(view.container.querySelector('summary.detail-bubble__heading')).toBe(
@@ -120,12 +326,13 @@ it('publishes the heading, context, evidence and Copy target together after repl
   expect(screen.getByText(`case-${second.spanID}`)).toBeVisible()
   expect(screen.queryByText(`case-${first.spanID}`)).toBeNull()
   expect(screen.queryByText(`output-${first.spanID}`)).toBeNull()
+  await waitFor(() => expect(screen.queryByText('A log body')).toBeNull())
   await fireEvent.click(screen.getByRole('button', { name: 'Copy output' }))
   expect(copyText).toHaveBeenLastCalledWith(`output-${second.spanID}`)
 })
 
 it.each(['success', 'failure'])(
-  'shows delayed feedback in Cost while retaining accounting until replacement %s',
+  'updates Cost immediately without waiting for unrelated evidence %s',
   async outcome => {
     const first = span('1'.repeat(16))
     const second = span('2'.repeat(16))
@@ -178,15 +385,9 @@ it.each(['success', 'failure'])(
     await waitFor(() => expect(loader).toHaveBeenCalledTimes(2))
     expect(screen.queryByText('Loading linked log evidence…')).toBeNull()
     expect(
-      await screen.findByText('Loading linked log evidence…')
-    ).toBeVisible()
-    expect(
-      screen.getByRole('table', { name: `${first.name} accounting` })
+      screen.getByRole('table', { name: `${second.name} accounting` })
     ).toBe(accounting)
-    expect(accounting).toHaveTextContent('C$1.000')
-    expect(
-      screen.queryByRole('table', { name: `${second.name} accounting` })
-    ).toBeNull()
+    expect(accounting).toHaveTextContent('C$2.000')
     finish()
     const replacement = await screen.findByRole('table', {
       name: `${second.name} accounting`,
@@ -196,10 +397,60 @@ it.each(['success', 'failure'])(
     if (outcome === 'failure') {
       expect(
         screen.getByText('Linked log evidence could not be loaded.')
-      ).toBeVisible()
+      ).not.toBeVisible()
     }
   }
 )
+
+it('retains identified span content only while the replacement span itself is unavailable', async () => {
+  const first = span('1'.repeat(16)),
+    second = span('2'.repeat(16))
+  const nodes = new Map(
+    [first, second].map(spanData => [
+      referenceKey(spanData),
+      { spanData, depth: 0, matched: true },
+    ])
+  )
+  const pending: Array<(logs: LogData[]) => void> = []
+  vi.spyOn(telemetryAPI, 'getSpanLogs').mockImplementation(
+    () => new Promise(resolve => pending.push(resolve))
+  )
+  const view = render(EvalRowDetail, {
+    experiment,
+    row: row(first),
+    telemetryNodes: nodes,
+  })
+  const field = await screen.findByText(`output-${first.spanID}`)
+  await view.rerender({
+    componentProps: {
+      experiment,
+      row: row(second),
+      telemetryNodes: new Map(),
+      telemetryLoading: true,
+    },
+  })
+  expect(screen.getByText(`output-${first.spanID}`)).toBe(field)
+  expect(field.closest('table')?.querySelector('caption')).toHaveTextContent(
+    first.name
+  )
+  await view.rerender({
+    componentProps: {
+      experiment,
+      row: row(second),
+      telemetryNodes: nodes,
+      telemetryLoading: false,
+    },
+  })
+  expect(screen.getByText(`output-${second.spanID}`)).toBeVisible()
+  expect(screen.queryByText(`output-${first.spanID}`)).toBeNull()
+  expect(pending).toHaveLength(2)
+  pending[0]([log(first, 'Stale A log')])
+  pending[1]([])
+  await waitFor(() =>
+    expect(screen.queryByText('Loading linked log evidence…')).toBeNull()
+  )
+  expect(screen.queryByText('Stale A log')).toBeNull()
+})
 
 it('shows span output immediately and never lets a late log response replace the newly selected tool', async () => {
   const first = span('1'.repeat(16))
@@ -306,7 +557,7 @@ it('rejects superseded responses across A → B → A and same-ID refreshes', as
   const heading = view.container.querySelector(
     'summary.detail-bubble__heading'
   )!
-  expect(heading).toHaveTextContent(first.name)
+  expect(heading).toHaveTextContent(refreshed.name)
   pending[2]([])
   await screen.findByText(`output-${second.spanID}`)
   expect(heading).toHaveTextContent(refreshed.name)

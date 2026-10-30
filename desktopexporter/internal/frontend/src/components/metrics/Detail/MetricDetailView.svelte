@@ -6,8 +6,8 @@
    *   - Series: independently selectable series and chart visibility
    *   - Datapoints: received rows for the selected series
    *
-   * Reads everything through MetricViewContext: this is a near-pure
-   * renderer. Disclosure state stays local to the panel.
+   * Uses MetricViewContext and the received-series response for rendering.
+   * Disclosure state stays local to the panel.
    */
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
@@ -26,15 +26,23 @@
   import MetricField from '@/components/shared/DetailProperty.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import DatapointsPanel from './DatapointsPanel.svelte'
+  import type { DatapointSeries } from './SeriesDatapointList.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { readOTLPText } from '@/services/export-service'
 
   const ctx = getMetricViewContext()
   let {
+    datapointSeries,
     datapointsError,
     retryDatapoints,
-  }: { datapointsError?: string; retryDatapoints?: () => void } = $props()
+    selectionCurrent = true,
+  }: {
+    datapointSeries?: DatapointSeries
+    datapointsError?: string
+    retryDatapoints?: () => void
+    selectionCurrent?: boolean
+  } = $props()
   const selectedSeries = $derived(
     ctx.metric?.timeseries.find(
       series => series.seriesRef === ctx.selectedSeriesKey
@@ -43,6 +51,7 @@
   const timeContext = getTimeContext()
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
+  let displayedDatapointCount = $state<number>()
   let rawMetric = $state.raw<typeof ctx.metric>()
   const actionMetric = $derived(
     detailView === 'raw' ? (rawMetric ?? ctx.metric) : ctx.metric
@@ -98,9 +107,15 @@
     contained
     icon={seriesIcon}
     disabled={!selectedSeries}
-    count={selectedSeries?.datapointCount}
+    count={displayedDatapointCount}
   >
-    <DatapointsPanel error={datapointsError} onretry={retryDatapoints} />
+    <DatapointsPanel
+      response={datapointSeries}
+      {selectionCurrent}
+      error={datapointsError}
+      onretry={retryDatapoints}
+      bind:displayedCount={displayedDatapointCount}
+    />
   </DetailBubble>
 {/snippet}
 {#snippet metricSection()}

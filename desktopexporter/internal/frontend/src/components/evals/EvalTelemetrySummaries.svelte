@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
@@ -26,6 +27,8 @@
   } = $props()
 
   let traces = $state<Map<string, TraceSummary | null>>(new Map())
+  let pending = $state.raw(new Set<string>())
+  let requestKey = $state.raw<AbortSignal>()
   $effect(() => {
     const ids = [
       ...new Set(entries.map(entry => entry.reference.traceID.toLowerCase())),
@@ -54,8 +57,9 @@
   $effect(() => {
     const ids = lookupIDs ? lookupIDs.split(',') : []
     const controller = new AbortController()
+    requestKey = controller.signal
+    pending = new Set(ids)
     async function load() {
-      const received = new Map<string, TraceSummary | null>()
       for (let offset = 0; offset < ids.length; offset += 4) {
         if (controller.signal.aborted) return
         await Promise.all(
@@ -65,14 +69,20 @@
                 id,
                 controller.signal
               )
-              if (!controller.signal.aborted) received.set(id, trace)
+              if (!controller.signal.aborted)
+                traces = new Map(untrack(() => traces)).set(id, trace)
             } catch {
               // A failed request does not establish that the trace is absent.
+            } finally {
+              if (!controller.signal.aborted) {
+                const next = new Set(untrack(() => pending))
+                next.delete(id)
+                pending = next
+              }
             }
           })
         )
       }
-      if (!controller.signal.aborted) traces = received
     }
     void load()
     return () => controller.abort()
@@ -85,6 +95,7 @@
     {@const trace = traces.get(entry.reference.traceID.toLowerCase())}
     {@const unavailable = !span && trace === null}
     {@const traceOnly = !entry.reference.spanID}
+    {@const tracePending = pending.has(entry.reference.traceID.toLowerCase())}
     {@const startedAt =
       span?.startTime ?? (traceOnly ? trace?.startTime : undefined)}
     {@const service = span
@@ -126,6 +137,12 @@
           >
         {/if}
         {#if unavailable}<span class="text-subtle">(unavailable)</span>{/if}
+        <LoadingStatus
+          pending={tracePending}
+          label="Loading trace…"
+          {requestKey}
+          class="text-sm text-secondary"
+        />
       </span>
     {/snippet}
     <SignalCard

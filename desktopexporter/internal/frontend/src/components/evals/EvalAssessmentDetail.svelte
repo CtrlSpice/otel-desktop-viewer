@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
@@ -17,6 +18,7 @@
     showHeading = true,
     loadRubric: requestedRubric,
     loadExplanation: requestedExplanation,
+    contextLabel = requestedAssessment.id,
   }: {
     assessment: Assessment
     definition?: AssessmentDefinition
@@ -24,25 +26,20 @@
     showHeading?: boolean
     loadRubric?: EvalSourceTextLoader
     loadExplanation?: EvalSourceTextLoader
+    contextLabel?: string
   } = $props()
   let displayed = $state.raw<{
-    assessment: Assessment
-    definition?: AssessmentDefinition
     loadRubric?: EvalSourceTextLoader
-    loadExplanation?: EvalSourceTextLoader
+    contextLabel: string
     rubric: string
   }>()
-  const assessment = $derived(displayed?.assessment ?? requestedAssessment)
-  const definition = $derived(
-    displayed ? displayed.definition : requestedDefinition
-  )
+  const assessment = $derived(requestedAssessment)
+  const definition = $derived(requestedDefinition)
   const loadRubric = $derived(
     displayed ? displayed.loadRubric : requestedRubric
   )
-  const loadExplanation = $derived(
-    displayed ? displayed.loadExplanation : requestedExplanation
-  )
-  const rubric = $derived(displayed?.rubric ?? '')
+  const loadExplanation = $derived(requestedExplanation)
+  const rubric = $derived(displayed?.rubric ?? requestedAssessment.rubric)
   let loading = $state(false)
   let requestKey = $state.raw<AbortSignal>()
   let loadError = $state('')
@@ -52,15 +49,14 @@
 
   $effect(() => {
     const selected = {
-      assessment: requestedAssessment,
-      definition: requestedDefinition,
       loadRubric: requestedRubric,
-      loadExplanation: requestedExplanation,
+      contextLabel,
       rubric: requestedAssessment.rubric,
     }
     loadError = ''
     const loader = requestedRubric
     loading = !!loader
+    if (!untrack(() => displayed)) displayed = selected
     if (!loader) {
       displayed = selected
       return
@@ -113,6 +109,28 @@
           fieldType="string"
           fieldValue={assessment.evaluator}
         />{/if}
+    </tbody>
+  </table>
+  <table
+    class="detail-fields w-full"
+    aria-label="Grader input"
+    hidden={!rubric && !loadRubric}
+  >
+    <caption
+      class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-subtle"
+    >
+      <span class="flex items-center justify-between gap-2">
+        <span>Grader input · {displayed?.contextLabel ?? contextLabel}</span>
+        {#if !showHeading && (rubric || loadRubric)}
+          <ValueCopyButton
+            text={rubric}
+            loadText={loadRubric}
+            label="grader input"
+          />
+        {/if}
+      </span>
+    </caption>
+    <tbody>
       {#if packet}
         {#each packet.criteria as criterion}
           <DetailField
@@ -224,7 +242,7 @@
 {#if showHeading}
   <div
     class="eval-assessment-detail"
-    class:eval-assessment-detail--copy={!!(assessment.rubric || loadRubric)}
+    class:eval-assessment-detail--copy={!!(rubric || loadRubric)}
   >
     <FieldGroup label={name} detail>
       {#snippet heading()}
@@ -236,8 +254,11 @@
       {/snippet}
       {@render content()}
     </FieldGroup>
-    {#if assessment.rubric || loadRubric}
-      <div class="eval-assessment-detail__copy">
+    {#if rubric || loadRubric}
+      <div
+        class="eval-assessment-detail__copy"
+        title={`Grader input · ${displayed?.contextLabel ?? contextLabel}`}
+      >
         <ValueCopyButton
           text={rubric}
           loadText={loadRubric}

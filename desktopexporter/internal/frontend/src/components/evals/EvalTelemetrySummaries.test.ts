@@ -21,6 +21,65 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 const reference = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
+
+it('publishes each trace lookup immediately and shows slow feedback only for the pending trace', async () => {
+  const a = 'a'.repeat(32),
+    b = 'b'.repeat(32)
+  let finish!: (value: null) => void
+  vi.mocked(telemetryAPI.getTraceSummary).mockImplementation(id =>
+    id === a
+      ? Promise.resolve(null)
+      : new Promise(resolve => {
+          finish = resolve
+        })
+  )
+  const ontracecount = vi.fn()
+  render(EvalTelemetrySummaries, {
+    entries: [
+      { reference: { traceID: a }, label: 'A' },
+      { reference: { traceID: b }, label: 'B' },
+    ],
+    ontracecount,
+  })
+  expect(screen.queryByText('Loading trace…')).toBeNull()
+  await screen.findByText('(unavailable)')
+  expect(screen.getAllByRole('link')[0]).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  )
+  expect(screen.getAllByRole('link')[0]).not.toHaveAttribute('href')
+  expect(screen.getAllByRole('link')[1]).toHaveAttribute('href')
+  expect(ontracecount).toHaveBeenLastCalledWith(undefined)
+  expect(await screen.findByText('Loading trace…')).toBeVisible()
+  finish(null)
+  await waitFor(() =>
+    expect(screen.getAllByText('(unavailable)')).toHaveLength(2)
+  )
+  expect(screen.queryByText('Loading trace…')).toBeNull()
+  expect(ontracecount).toHaveBeenLastCalledWith(0)
+})
+
+it('rejects superseded trace lookups including A → B → A', async () => {
+  const pending: Array<(value: null) => void> = []
+  const lookup = vi
+    .mocked(telemetryAPI.getTraceSummary)
+    .mockImplementation(() => new Promise(resolve => pending.push(resolve)))
+  const a = { reference: { traceID: 'a'.repeat(32) }, label: 'A' }
+  const b = { reference: { traceID: 'b'.repeat(32) }, label: 'B' }
+  const view = render(EvalTelemetrySummaries, { entries: [a] })
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await view.rerender({ componentProps: { entries: [b] } })
+  await view.rerender({ componentProps: { entries: [a] } })
+  expect(lookup.mock.calls[0][1]?.aborted).toBe(true)
+  expect(lookup.mock.calls[1][1]?.aborted).toBe(true)
+  pending[0](null)
+  pending[1](null)
+  await Promise.resolve()
+  expect(screen.queryByText('(unavailable)')).toBeNull()
+  pending[2](null)
+  await screen.findByText('(unavailable)')
+})
+
 const node: SpanNode = {
   depth: 0,
   matched: true,

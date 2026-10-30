@@ -1,8 +1,18 @@
 <script lang="ts">
   import DetailField from '@/components/shared/DetailProperty.svelte'
+  import Identifier from '@/components/shared/Identifier.svelte'
   import type { EvalSpanEvidence } from './eval-span-evidence'
+  import type { TelemetryReference } from './model'
 
-  let { evidence }: { evidence: EvalSpanEvidence[] } = $props()
+  let {
+    evidence,
+    owner,
+    reference,
+  }: {
+    evidence: EvalSpanEvidence[]
+    owner?: string
+    reference?: TelemetryReference
+  } = $props()
   const outputField = (key: string) =>
     /^(output|stdout|stderr|tool\.(output|result|error)|gen_ai\.tool\.call\.result)$/.test(
       key
@@ -28,7 +38,15 @@
     <caption
       title={record.sourceDescription}
       class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-secondary"
-      >{record.source}{#if record.toolError}<span class="text-subtle">
+      >{#if owner}<span class="text-base-content">{owner}</span>
+        {#if reference?.traceID}
+          · <Identifier value={reference.traceID} />
+        {/if}
+        {#if reference?.spanID}
+          · <Identifier value={reference.spanID} />
+        {/if}
+        ·
+      {/if}{record.source}{#if record.toolError}<span class="text-subtle">
           ·
         </span><span class="text-base-content">Tool error</span>{/if}</caption
     >

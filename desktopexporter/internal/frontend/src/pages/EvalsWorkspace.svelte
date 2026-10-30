@@ -583,15 +583,6 @@
         >
       </div>{/if}
     {#if experiment}
-      {#if databaseMode && storedExperimentLoading && loadingNotice.visible}
-        <p class="px-3 py-1 text-sm text-subtle" role="status">
-          Loading experiment… Showing {experiment.name} until it is ready.
-        </p>
-      {:else if databaseMode && storedExperimentError}
-        <p class="px-3 py-1 text-sm" role="alert">
-          {storedExperimentError} Still showing {experiment.name}.
-        </p>
-      {/if}
       <div
         class="flex min-h-0 flex-1 flex-col"
         aria-busy={databaseMode && storedExperimentLoading}
@@ -612,20 +603,35 @@
             toolLogs = logs
             telemetryLoading = loading
           }}
-        />
+        >
+          {#snippet loadingStatus()}
+            {#if databaseMode && storedExperimentLoading && loadingNotice.visible}
+              <span class="truncate text-sm text-subtle" role="status">
+                Loading experiment… Showing {experiment.name} until it is ready.
+              </span>
+            {:else if databaseMode && storedExperimentError}
+              <span class="truncate text-sm" role="alert">
+                {storedExperimentError} Still showing {experiment.name}.
+              </span>
+            {/if}
+          {/snippet}
+        </EvalResults>
         {#if !results.length}<p class="p-6 text-sm text-subtle">
             No results recorded for this experiment.
           </p>{/if}
       </div>
     {:else if databaseMode && storedExperimentLoading}
-      {#if loadingNotice.visible}
-        <PaneHeader
-          pill
-          mode="title"
-          title={storedExperimentSummary?.name ?? 'Evals'}
-        />
-        <p class="p-3 text-sm text-subtle" role="status">Loading experiment…</p>
-      {/if}
+      <PaneHeader
+        pill
+        mode="title"
+        title={storedExperimentSummary?.name ?? 'Evals'}
+      />
+      <LoadingStatus
+        pending={storedExperimentLoading}
+        requestKey={selectedExperimentID}
+        label="Loading experiment…"
+        class="p-3 text-sm text-subtle"
+      />
     {:else if databaseMode && storedExperimentError}
       <PaneHeader
         pill

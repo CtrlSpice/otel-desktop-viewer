@@ -1059,8 +1059,8 @@ LIMIT ${batch.length}`,
     return config
   },
 
-  getStats: async (): Promise<Stats> => {
-    const rawData = await callRPC<JsonStats>('getStats')
+  getStats: async (signal?: AbortSignal): Promise<Stats> => {
+    const rawData = await callRPC<JsonStats>('getStats', undefined, signal)
     return statsFromJSON(rawData)
   },
 }

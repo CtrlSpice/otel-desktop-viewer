@@ -32,7 +32,8 @@
   const receivedAttributes = new SvelteMap<string, Attribute[]>()
   const attributeErrors = new SvelteMap<string, string>()
   const loadingAttributes = new SvelteSet<string>()
-  const attributeRequests = new Map<string, AbortController>()
+  const attributeRequests = new SvelteMap<string, AbortController>()
+  const attributeRevisions = new Map<string, typeof ctx.metric>()
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
@@ -52,6 +53,7 @@
     sort = null
     expandedAttributes.clear()
     receivedAttributes.clear()
+    attributeRevisions.clear()
     attributeErrors.clear()
     loadingAttributes.clear()
   })
@@ -60,7 +62,12 @@
   $effect.pre(() => {
     void ctx.metric
     seriesOrder = undefined
-    receivedAttributes.clear()
+    // Keep the displayed exact values until their replacement is ready. A
+    // revision check below invalidates reuse without unmounting the table.
+    for (const series of ctx.metric?.timeseries ?? []) {
+      if (series.attributesComplete !== false)
+        receivedAttributes.delete(series.seriesRef)
+    }
     attributeErrors.clear()
     loadingAttributes.clear()
     return () => {
@@ -170,11 +177,13 @@
       !owner ||
       !series ||
       series.attributesComplete !== false ||
-      receivedAttributes.has(key) ||
+      (receivedAttributes.has(key) &&
+        attributeRevisions.get(key) === ctx.metric) ||
       loadingAttributes.has(key)
     )
       return
     loadingAttributes.add(key)
+    const revision = ctx.metric
     const controller = new AbortController()
     attributeRequests.set(key, controller)
     attributeErrors.delete(key)
@@ -190,6 +199,7 @@
       if (controller.signal.aborted) return
       if (!received) throw new Error('Series is no longer available')
       receivedAttributes.set(key, received.attributes)
+      attributeRevisions.set(key, revision)
     } catch (error) {
       if (!controller.signal.aborted)
         attributeErrors.set(
@@ -511,10 +521,11 @@
                 <LoadingStatus
                   pending
                   label="Loading series attributes…"
-                  requestKey={`${metricRef}:${ts.key}`}
+                  requestKey={attributeRequests.get(ts.key)?.signal}
                   class="block px-3 py-2 text-subtle"
                 />
-              {:else if attributeErrors.has(ts.key)}
+              {/if}
+              {#if attributeErrors.has(ts.key)}
                 <p role="alert" class="px-3 py-2 text-papaya">
                   {attributeErrors.get(ts.key)}
                 </p>
@@ -524,7 +535,8 @@
                   onclick={() => loadAttributes(ts.key)}
                   >Retry attributes</button
                 >
-              {:else}
+              {/if}
+              {#if receivedAttributes.has(ts.key) || series?.attributesComplete !== false}
                 <table
                   class="detail-fields w-full"
                   aria-label={`Attributes for ${headerLabel}`}

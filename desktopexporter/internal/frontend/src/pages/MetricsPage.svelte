@@ -72,7 +72,7 @@
     HEATMAP_BUCKET_TARGET,
   } from '@/components/metrics/utils/histogram-aggregation'
   import type { AggregateBucket } from '@/types/api-types'
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import {
     telemetryAPI,
@@ -84,11 +84,7 @@
   } from '@/contexts/time-context.svelte'
   import { resolveTimezoneName, timezoneOffsetMinutes } from '@/utils/time'
   import { navigateToItem } from '@/route'
-  import type {
-    DataPoint,
-    MetricViewData,
-    MetricStats,
-  } from '@/types/api-types'
+  import type { MetricViewData, MetricStats } from '@/types/api-types'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
@@ -96,7 +92,6 @@
   import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
   import TelemetryListFilters from '@/components/shared/TelemetryListFilters.svelte'
   import type { FieldDefinition, ParsedSearchRequest } from '@/search/model'
-  import { parseSearchRequest } from '@/components/shared/Search/queryParser'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
@@ -105,6 +100,7 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { GridTableIcon, ChartHistogramIcon } from '@hugeicons/core-free-icons'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
+  import type { DatapointSeries } from '@/components/metrics/Detail/SeriesDatapointList.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
@@ -137,6 +133,12 @@
 
   let baselineStats = $state<MetricStats | null>(null)
   let polledStats = $state<MetricStats | null>(null)
+  let listRequest: AbortController | undefined
+  let statsRequest: AbortController | undefined
+  onDestroy(() => {
+    listRequest?.abort()
+    statsRequest?.abort()
+  })
   let actionError = $state<string | null>(null)
   let query = $state('')
   let submittedText = $state('')
@@ -149,44 +151,74 @@
     initialSort: { column: 'lastSeen', direction: 'desc' },
     compare: compareMetrics,
     fetchList: async () => {
+      listRequest?.abort()
+      statsRequest?.abort()
+      const controller = new AbortController()
+      const statsController = new AbortController()
+      listRequest = controller
+      statsRequest = statsController
+      // Freshness statistics run beside the list, but only a successful list
+      // can establish a new baseline for the displayed results.
+      const stats = telemetryAPI
+        .getStats(statsController.signal)
+        .catch(() => null)
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchMetricSummaries(
-        startTime,
-        endTime,
-        submittedRequest?.predicate ?? undefined,
-        submittedRequest?.limit ?? undefined,
-        untrack(() => ({
-          field: page.sortColumn,
-          direction: page.sortDirection,
-        }))
-      )
-      const s = await telemetryAPI.getStats()
-      baselineStats = s.metrics
-      polledStats = s.metrics
-      return results
+      try {
+        const results = await telemetryAPI.searchMetricSummaries(
+          startTime,
+          endTime,
+          submittedRequest?.predicate ?? undefined,
+          submittedRequest?.limit ?? undefined,
+          untrack(() => ({
+            field: page.sortColumn,
+            direction: page.sortDirection,
+          })),
+          controller.signal
+        )
+        if (!controller.signal.aborted) {
+          baselineStats = null
+          void stats.then(result => {
+            if (statsController.signal.aborted) return
+            if (result) {
+              baselineStats = result.metrics
+              polledStats = result.metrics
+            }
+            if (statsRequest === statsController) statsRequest = undefined
+          })
+        }
+        return results
+      } catch (error) {
+        statsController.abort()
+        if (statsRequest === statsController) statsRequest = undefined
+        throw error
+      }
     },
     pollStats: async () => {
-      const s = await telemetryAPI.getStats()
-      polledStats = s.metrics
+      if (statsRequest) return
+      const controller = new AbortController()
+      statsRequest = controller
+      try {
+        const stats = await telemetryAPI.getStats(controller.signal)
+        if (controller.signal.aborted) return
+        baselineStats ??= stats.metrics
+        polledStats = stats.metrics
+      } finally {
+        if (statsRequest === controller) statsRequest = undefined
+      }
     },
-    refreshFromStats: () => {
-      if (!baselineStats || !polledStats) {
-        return { pulse: false, tip: '' }
-      }
-      const parts: string[] = []
-      const metricDelta = polledStats.metricCount - baselineStats.metricCount
-      if (metricDelta > 0) {
-        parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
-      }
-      const dpDelta = polledStats.dataPointCount - baselineStats.dataPointCount
-      if (dpDelta > 0) {
-        parts.push(`+${dpDelta} dp${dpDelta !== 1 ? 's' : ''}`)
-      }
-      return { pulse: parts.length > 0, tip: parts.join(', ') }
-    },
+  })
+  const freshness = $derived.by(() => {
+    if (!baselineStats || !polledStats) return { pulse: false, tip: '' }
+    const parts: string[] = []
+    const metricDelta = polledStats.metricCount - baselineStats.metricCount
+    if (metricDelta > 0)
+      parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
+    const dpDelta = polledStats.dataPointCount - baselineStats.dataPointCount
+    if (dpDelta > 0) parts.push(`+${dpDelta} dp${dpDelta !== 1 ? 's' : ''}`)
+    return { pulse: parts.length > 0, tip: parts.join(', ') }
   })
   let services = $derived([
     ...new Set(
@@ -210,12 +242,24 @@
   let summaryLoading = $state(false)
   let summaryError = $state('')
   let summaryRetry = $state(0)
+  let summaryLookupID = $state<string | null>(null)
   let selectedSummary = $derived(
     page.selectedSummary ??
       (retainedSummary?.metricRef === page.selectedID
         ? retainedSummary
         : undefined)
   )
+  // A list refresh cannot cancel an exact-identity lookup already in flight.
+  $effect(() => {
+    const id = page.selectedID
+    if (!id || page.selectedSummary) {
+      summaryLookupID = null
+    } else if (page.mounted && !page.loading) {
+      summaryLookupID = id
+    } else if (untrack(() => summaryLookupID) !== id) {
+      summaryLookupID = null
+    }
+  })
   $effect(() => {
     void summaryRetry
     summaryLoading = false
@@ -225,14 +269,8 @@
       retainedSummary = summary
       return
     }
-    const id = page.selectedID
-    if (
-      !id ||
-      !page.mounted ||
-      page.loading ||
-      untrack(() => retainedSummary?.metricRef) === id
-    )
-      return
+    const id = summaryLookupID
+    if (!id || untrack(() => retainedSummary?.metricRef) === id) return
     // A shared URL selects an identity independently of filtered-list membership.
     const controller = new AbortController()
     summaryLoading = true
@@ -301,7 +339,7 @@
   let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
 
   // Unreduced inspected-series datapoints belong to the displayed response.
-  let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
+  let seriesDatapoints = new SvelteMap<string, DatapointSeries>()
   let seriesDatapointErrors = new SvelteMap<string, string>()
   let seriesDatapointsKey = ''
   let seriesRetry = $state(0)
@@ -334,7 +372,7 @@
     () => selectedAggregate,
     () => selectedAggregateSummary,
     () => selectedScalarAggregate,
-    key => seriesDatapoints.get(key),
+    key => seriesDatapoints.get(key)?.datapoints,
     () => columnDistribution,
     () => histogramContribution
   )
@@ -660,7 +698,14 @@
       if (signal.aborted || cacheKey !== seriesDatapointsKey) return
       const series = result?.timeseries.find(t => t.seriesRef === seriesKey)
       // Cache terminal empty results so pending URL selections can resolve.
-      seriesDatapoints.set(seriesKey, series?.datapoints ?? [])
+      seriesDatapoints.set(seriesKey, {
+        metricRef,
+        seriesRef: seriesKey,
+        metricType: result?.metricType ?? 'Empty',
+        unit: result?.unit ?? '',
+        count: series?.datapointCount ?? 0,
+        datapoints: series?.datapoints ?? [],
+      })
     } catch (err) {
       if (signal.aborted) return
       if (cacheKey === seriesDatapointsKey)
@@ -950,8 +995,8 @@
   drawerID="signal-drawer"
   drawerLabel="Metrics"
   onRefresh={refreshMetrics}
-  refreshPulse={page.refreshPulse}
-  refreshAsideTip={page.refreshAsideTip}
+  refreshPulse={freshness.pulse}
+  refreshAsideTip={freshness.tip}
   loading={page.loading}
   loadingRequestKey={`${page.requestKey}:${page.selectedID}:${summaryRetry}:${detailRequestKey}`}
   loadingMessage={detailLoading || summaryLoading
@@ -967,7 +1012,6 @@
       signal="metrics"
       sortValue={page.sortColumn}
       sortDirection={page.sortDirection}
-      onSearchResults={page.handleSearchResults}
       onSearchReady={api => (page.searchEditorApi = api)}
       onQueryChange={(text, availableFields) => {
         query = text
@@ -975,7 +1019,10 @@
       }}
       onQuerySubmit={text => {
         submittedText = text
-        submittedRequest = parseSearchRequest(text, fields, 'metrics')
+      }}
+      onSearchRequest={request => {
+        submittedRequest = request
+        void page.runListFetch()
       }}
     />
   {/snippet}
@@ -1130,10 +1177,7 @@
       </div>
     {/if}
     {#if displayError || importFailure}
-      <div
-        {...chartTabPanelAttrs}
-        class="metrics-page__placeholder alert alert-error"
-      >
+      <div class="metrics-page__placeholder alert alert-error" role="alert">
         {#if displayError}
           <span>Error: {displayError}</span>
         {:else if importFailure}
@@ -1143,7 +1187,8 @@
           >
         {/if}
       </div>
-    {:else if page.loading && !hasMetricRows && !selectedSummary}
+    {/if}
+    {#if !selectedMetric && (displayError || importFailure || (page.loading && !hasMetricRows && !selectedSummary))}
       <div
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"
@@ -1167,6 +1212,10 @@
 
   {#snippet detail()}
     <MetricDetailView
+      datapointSeries={metricCtx.selectedSeriesKey
+        ? seriesDatapoints.get(metricCtx.selectedSeriesKey)
+        : undefined}
+      selectionCurrent={page.selectedID === selectedMetric?.metricRef}
       retryDatapoints={() => seriesRetry++}
       datapointsError={metricCtx.selectedSeriesKey
         ? seriesDatapointErrors.get(metricCtx.selectedSeriesKey)
