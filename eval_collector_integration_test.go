@@ -26,7 +26,8 @@ func startEvalCollectorIntegration(t *testing.T, db, flags string) (string, func
 	t.Helper()
 	o := testOptions()
 	o.host = "127.0.0.1"
-	o.browserPort, o.httpPort, o.grpcPort = redactionTestPort(t), redactionTestPort(t), redactionTestPort(t)
+	ports := redactionTestPorts(t, 3)
+	o.browserPort, o.httpPort, o.grpcPort = ports[0], ports[1], ports[2]
 	o.db, o.dbMaxSize, o.featureFlagsFile = db, "0", flags
 	cfg, err := resolveConfig(t, o)
 	require.NoError(t, err)

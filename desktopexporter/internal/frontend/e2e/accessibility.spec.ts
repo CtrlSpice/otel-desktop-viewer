@@ -87,24 +87,30 @@ async function interceptRpc(page: Page): Promise<void> {
     const response =
       request.method === 'getStats'
         ? { jsonrpc: '2.0', id: request.id, result: EMPTY_STATS }
-        : request.method === 'discoverTelemetry'
-          ? {
-              jsonrpc: '2.0',
-              id: request.id,
-              result: { rows: [], truncated: false },
-            }
-          : request.method === 'getImportConfig'
-            ? { jsonrpc: '2.0', id: request.id, result: { otlpHttpPort: 4318 } }
-            : EMPTY_LIST_METHODS.has(request.method)
-              ? { jsonrpc: '2.0', id: request.id, result: [] }
-              : {
+        : request.method === 'getServiceCount'
+          ? { jsonrpc: '2.0', id: request.id, result: 0 }
+          : request.method === 'discoverTelemetry'
+            ? {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: { rows: [], truncated: false },
+              }
+            : request.method === 'getImportConfig'
+              ? {
                   jsonrpc: '2.0',
                   id: request.id,
-                  error: {
-                    code: -32601,
-                    message: `No accessibility-test fixture for ${request.method}`,
-                  },
+                  result: { otlpHttpPort: 4318 },
                 }
+              : EMPTY_LIST_METHODS.has(request.method)
+                ? { jsonrpc: '2.0', id: request.id, result: [] }
+                : {
+                    jsonrpc: '2.0',
+                    id: request.id,
+                    error: {
+                      code: -32601,
+                      message: `No accessibility-test fixture for ${request.method}`,
+                    },
+                  }
 
     await route.fulfill({
       status: 200,
