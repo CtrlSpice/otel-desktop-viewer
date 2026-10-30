@@ -7,11 +7,12 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	pv "github.com/apache/arrow-go/v18/parquet/variant"
 )
 
 // Metadata dictionary offsets are not identities. Hash typed contents instead,
-// retaining float bits and canonical object key order without payload JSON.
+// retaining non-NaN float bits and canonical object key order without payload JSON.
 func (o *Object) walkNative(v pv.Value, path []any, key string) (string, string, error) {
 	var text, identity, kind string
 	childPath := func(part any) []any { return append(append([]any(nil), path...), part) }
@@ -47,7 +48,7 @@ func (o *Object) walkNative(v pv.Value, path []any, key string) (string, string,
 	case float64:
 		kind = "double"
 		text = strconv.FormatFloat(x, 'g', -1, 64)
-		identity = digest("double", strconv.FormatUint(math.Float64bits(x), 16))
+		identity = digest("double", strconv.FormatUint(math.Float64bits(util.CanonicalDouble(x)), 16))
 	case []byte:
 		kind = "bytes"
 		text = base64.StdEncoding.EncodeToString(x)
