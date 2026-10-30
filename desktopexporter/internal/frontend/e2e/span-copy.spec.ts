@@ -2,12 +2,12 @@ import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 
 const traceID = '12345678901234567890123456789012'
 const rootID = '1111111111111111'
 const selectedID = '2222222222222222'
-const trace: JsonTraceData = {
+const trace: TraceFixture = {
   traceID,
   traceStart: '1700000000123456789',
   resources: {
@@ -257,7 +257,7 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const leafID = '3333333333333333'
-  const nestedTrace: JsonTraceData = {
+  const nestedTrace: TraceFixture = {
     ...trace,
     spans: [
       ...trace.spans,
@@ -384,7 +384,7 @@ for (const { id: theme } of THEMES) {
         id: number
         method: string
       }
-      const statusTrace: JsonTraceData = {
+      const statusTrace: TraceFixture = {
         ...trace,
         spans: trace.spans.map(node =>
           node.spanData.spanID === selectedID
@@ -1067,6 +1067,10 @@ test('Copy span shares the section heading row and copies only the selected span
   await expect(
     fields.locator('[data-field="sequence"] .detail-code--number')
   ).toHaveCSS('color', palette['base-content']!)
+  await fields
+    .locator('[data-field="payload"]')
+    .getByRole('button', { name: 'Full document / Find' })
+    .click()
   const json = fields.locator('[data-field="payload"] .cm-content')
   await expect(json).toHaveAttribute('contenteditable', 'false')
   await expect(json.getByText('example', { exact: true })).toHaveCSS(

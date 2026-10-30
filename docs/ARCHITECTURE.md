@@ -327,6 +327,8 @@ belong to that candidate's context chain when combined with untargeted text.
 Native VARIANT rows remain the telemetry source of truth. The derived catalogue
 contains owner records, distinct typed paths, distinct scalar values and
 owner/path/value associations. Values retain exact typed identities.
+The service catalogue stores each typed name/namespace pair once, with compact
+resource-to-service associations, exact display labels and bounded previews.
 Shared Resource/Scope context is referenced,
 not copied into every child. Native preparation walks Arrow VARIANT metadata and
 bytes without serializing received payloads to JSON. Container identities do not
@@ -423,13 +425,18 @@ cancellation maps to `-32010` rather than an internal error.
 ## Service discovery
 
 The CLI `services` command uses the read-only `query` RPC. Home uses
-`discoverTelemetry`; both share query builders in `internal/discovery/`, with no
-stored service entity. Groups retain the exact typed Resource `service.name` and
+`discoverTelemetry`; both share query builders in `internal/discovery/` and the
+derived service catalogue. Groups retain the exact typed Resource `service.name` and
 `service.namespace` values. An absent namespace equals an empty-string namespace;
 an absent name remains distinct. Equal display text with different types does
-not merge groups. Both CLI JSON and Home return `serviceIdentity`, preserving
-the typed values even when names and outer kinds have identical display text.
+not merge groups. Both CLI JSON and Home return an opaque, compact `serviceIdentity`
+reference, distinguishing typed values even when their previews are identical.
 Home carries this identity into attribute discovery and signal searches.
+Arrow summaries carry bounded labels; filtering and sorting use complete labels
+in the database. `getServiceLabels(serviceRef)` returns complete display text on
+demand for inspection and Copy. CLI JSON retains complete display labels.
+Service catalogue updates and orphan cleanup share the native mutation transaction.
+Navigation's `getServiceCount` aggregates compact references without formatting labels.
 
 Each field is computed within the selected inclusive time window:
 
@@ -617,6 +624,13 @@ Copy is explicit and complete; raw JSON and Download retain source values rather
 than formatted previews. Shared formatting lives in
 `components/shared/detail-value.ts` and `components/shared/utils/editor-highlighting.ts`
 under the frontend's `src/` directory.
+
+Properties opens native map/list containers lazily from retained Arrow buffers.
+Closed descendants are not formatted into an editor document. Open containers
+show children in batches of 100; additional children remain available on demand.
+Full document / Find and Expand all materialize the complete display document
+with CodeMirror folding and search. Copy and Download remain complete regardless
+of which containers or child batches are visible.
 
 ## Trace view wire format
 

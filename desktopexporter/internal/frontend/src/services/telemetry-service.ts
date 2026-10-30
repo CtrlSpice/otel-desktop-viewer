@@ -31,7 +31,6 @@ import type {
   ServiceConnection,
   ServiceConnectionSpan,
   AttributeKey,
-  AttributeFrequency,
   HomeCoveragePage,
 } from './discovery-types'
 import {
@@ -59,7 +58,6 @@ import {
   serviceConnection,
   serviceConnectionSpan,
   attributeKey,
-  attributeFrequency,
 } from './arrow-discovery'
 import {
   exactMetric,
@@ -290,6 +288,11 @@ async function discover<T>(
 }
 
 export let telemetryAPI = {
+  getServiceLabels: (
+    serviceRef: string,
+    signal?: AbortSignal
+  ): Promise<{ serviceName: string; serviceNamespace: string }> =>
+    callRPC('getServiceLabels', named({ serviceRef }), signal),
   discoverHomeAttributeValues: (
     options: Omit<DiscoveryOptions, 'kind' | 'signal'>,
     signal?: AbortSignal
@@ -401,15 +404,6 @@ export let telemetryAPI = {
     signal?: AbortSignal
   ) =>
     discover<AttributeKey>({ ...options, kind: 'keys' }, attributeKey, signal),
-  discoverAttributeValues: (
-    options: Omit<DiscoveryOptions, 'kind'>,
-    signal?: AbortSignal
-  ): Promise<DiscoveryPage<AttributeFrequency>> =>
-    discover({ ...options, kind: 'values' }, attributeFrequency, signal),
-  // Value-first discovery: given text the user can see, which attribute keys
-  // hold it. Cross-signal by nature -- the dictionary it reads is shared by
-  // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
-  // no time range.
   // Distinct values of one completable column, most frequent first. Fetched
   // once per field per completion session with a generous limit; the editor
   // filters the list client-side per keystroke, so this does not round-trip
@@ -448,16 +442,6 @@ export let telemetryAPI = {
     return attributeDefinitions(
       await callArrow('getTraceAttributeDefinitions', named({}))
     )
-  },
-
-  getTraceAttributeDefinitionsByTraceID: async (
-    traceID: string
-  ): Promise<FieldDefinition[]> => {
-    const rawData = await callArrow(
-      'getTraceAttributeDefinitionsByTraceID',
-      named({ traceID })
-    )
-    return attributeDefinitions(rawData)
   },
 
   getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
@@ -1078,10 +1062,6 @@ LIMIT ${batch.length}`,
   getStats: async (): Promise<Stats> => {
     const rawData = await callRPC<JsonStats>('getStats')
     return statsFromJSON(rawData)
-  },
-
-  getTraceSpanCount: async (traceID: string): Promise<number> => {
-    return await callRPC<number>('getTraceSpanCount', named({ traceID }))
   },
 }
 

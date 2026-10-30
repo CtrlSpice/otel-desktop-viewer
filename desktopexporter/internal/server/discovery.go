@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -68,6 +69,27 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 type discoveryPlan struct {
 	statement string
 	args      []any
+}
+
+func (h *JSONRPCHandler) getServiceLabels(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	ref, err := parseSingleIDParam(req.Params, jsonrpc2.ErrInvalidParams, func(value string) (string, error) {
+		decoded, err := hex.DecodeString(value)
+		if err != nil || len(decoded) != 32 {
+			return "", jsonrpc2.ErrInvalidParams
+		}
+		return strings.ToLower(value), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (map[string]string, error) {
+		var name, namespace string
+		err := db.QueryRowContext(ctx, `select name,namespace from search_services where ref=$1`, ref).Scan(&name, &namespace)
+		if err == sql.ErrNoRows {
+			return nil, ErrHomeValueUnavailable
+		}
+		return map[string]string{"serviceName": name, "serviceNamespace": namespace}, err
+	})
 }
 
 func (h *JSONRPCHandler) getServiceCount(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -185,14 +207,18 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 	if native {
 		switch options.Kind {
 		case "services":
-			search = "concat(entry.serviceNamespace, ' ', entry.serviceName)"
-			order = "entry.serviceNamespace,entry.serviceName,entry.serviceIdentity"
+			search = "(select concat(s.namespace, ' ', s.name) from search_services s where s.ref=entry.serviceIdentity)"
+			order = "(select s.namespace from search_services s where s.ref=entry.serviceIdentity),(select s.name from search_services s where s.ref=entry.serviceIdentity),entry.serviceIdentity"
 		case "connections":
 			// Text filtering retains the established searchable representation,
 			// including quoted nanosecond timestamps; output stays native.
 			search = `to_json(struct_update(entry,
-                source := struct_update(entry.source, lastSeen := entry.source.lastSeen::VARCHAR),
-                target := struct_update(entry.target, lastSeen := entry.target.lastSeen::VARCHAR)))::VARCHAR`
+                source := struct_update(entry.source, lastSeen := entry.source.lastSeen::VARCHAR,
+                    serviceName := (select name from search_services where ref=entry.source.serviceIdentity),
+                    serviceNamespace := (select namespace from search_services where ref=entry.source.serviceIdentity)),
+                target := struct_update(entry.target, lastSeen := entry.target.lastSeen::VARCHAR,
+                    serviceName := (select name from search_services where ref=entry.target.serviceIdentity),
+                    serviceNamespace := (select namespace from search_services where ref=entry.target.serviceIdentity))))::VARCHAR`
 			order = "entry.source.serviceIdentity,entry.target.serviceIdentity"
 		case "connection-spans":
 			search = "entry.name"

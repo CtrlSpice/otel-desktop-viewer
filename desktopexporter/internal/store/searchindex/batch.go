@@ -15,6 +15,7 @@ import (
 type Batch struct {
 	stream   *streamCatalogue
 	contexts map[string]bool
+	services []serviceResource
 }
 
 func (o *Object) AddNative(root string, raw []byte) error {
@@ -77,6 +78,21 @@ func (b *Batch) Contexts(resource, scope map[string]any) (string, string, error)
 		if err := o.AddNative("attributes", input["attributes"].([]byte)); err != nil {
 			return "", "", err
 		}
+		if owner == "resource" {
+			name, namespace := digest("missing"), digest("string", "")
+			for _, entry := range o.Entries {
+				if len(entry.Path) != 2 {
+					continue
+				}
+				switch entry.Path[1] {
+				case "service.name":
+					name = entry.NativeIdentity
+				case "service.namespace":
+					namespace = entry.NativeIdentity
+				}
+			}
+			b.services = append(b.services, serviceResource{key, digest(name, namespace), input["attributes"].([]byte)})
+		}
 		fields := map[string]any{"schemaUrl": input["schema_url"]}
 		if owner == "scope" {
 			fields["name"] = input["name"]
@@ -93,7 +109,10 @@ func (b *Batch) Contexts(resource, scope map[string]any) (string, string, error)
 
 func (b *Batch) Add(o Object) { o.NewOwner = true; b.addStream(o) }
 func (b *Batch) Write(ctx context.Context, conn driver.Conn) error {
-	return b.writeStream(ctx, conn)
+	if err := b.writeStream(ctx, conn); err != nil {
+		return err
+	}
+	return b.writeServices(ctx, conn)
 }
 
 func (b *Batch) Metric(id duckdb.UUID, metadata []byte, resource, scope map[string]any, name, description, unit string) error {

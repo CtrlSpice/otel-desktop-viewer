@@ -48,14 +48,10 @@ func Literal(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-// ServiceIdentity retains received value kinds and exact wire values. OTel treats
-// an absent namespace as an empty string; an absent name remains distinct.
+// ServiceIdentity is the catalogue's compact typed name/namespace reference.
 // resource is a server-owned SQL alias, never query input.
 func ServiceIdentity(resource string) string {
-	value := func(key string) string {
-		return "case when variant_exists(" + resource + ".attributes, " + Literal(key) + ") then otel_value_json(" + resource + ".attributes[" + Literal(key) + "]) end"
-	}
-	return "json_array(" + value("service.name") + ", coalesce(" + value("service.namespace") + ", '{\"kind\":\"string\",\"value\":\"\"}'::JSON))::VARCHAR"
+	return "(select sr.service_ref from search_service_resources sr where sr.resource_id=" + resource + ".id)"
 }
 
 func Predicate(query Query) string {
@@ -238,11 +234,10 @@ ORDER BY v.count DESC, otel_value_kind(v.value), v.identity`
 }
 
 func Services(query Query) string {
-	// Time/search eligibility precedes grouping. Binary resource attributes retain
-	// typed distinctions, including signed zero, without decoding service fields
-	// per span/log/point. Scope is not part of service identity.
+	// Time/search eligibility precedes grouping. Compact resource IDs join the
+	// ingestion-time service catalogue; reads do not decode resource attributes.
 	predicate := Predicate(Query{StartTime: query.StartTime, EndTime: query.EndTime})
-	resourceParts := `variant_to_parquet_variant(s.resource.attributes)::struct(metadata blob, value blob) AS resource_parts`
+	resourceParts := `s.resource.id AS resource_id`
 	metricSelection := "true"
 	if query.Sources.Metrics != "" {
 		metricSelection = "EXISTS (SELECT 1 FROM " + query.Sources.Metrics + " m WHERE m.id=r.id)"
@@ -251,10 +246,16 @@ func Services(query Query) string {
 	if query.Native {
 		lastSeen = "max(c.last_seen)"
 	}
+	name, namespace := "c.service_name", "c.service_namespace"
+	if query.Native {
+		name, namespace = "c.name_preview", "c.namespace_preview"
+	}
 	entry := object(query,
-		"serviceNamespace", "c.service_namespace", "serviceName", "c.service_name", "serviceIdentity", "c.service_identity",
-		"serviceNameKind", "coalesce(json_extract_string(c.service_identity, '$[0].kind'), 'missing')",
-		"serviceNamespaceKind", "json_extract_string(c.service_identity, '$[1].kind')",
+		"serviceColorKey", "case when octet_length(encode(c.service_name))>300 then 'sha256:'||sha256(c.service_name) when starts_with(c.service_name,'sha256:') or starts_with(c.service_name,'name:') then 'name:'||c.service_name else c.service_name end",
+		"labelsComplete", "c.service_name=c.name_preview AND c.service_namespace=c.namespace_preview",
+		"serviceNamespace", namespace, "serviceName", name, "serviceIdentity", "c.service_identity",
+		"serviceNameKind", "c.name_kind",
+		"serviceNamespaceKind", "c.namespace_kind",
 		"traceCount", "len(list_distinct(flatten(list(coalesce(c.trace_ids, []::UUID[])))))", "spanCount", "coalesce(sum(c.span_count),0)", "errorSpanCount", "coalesce(sum(c.error_span_count),0)",
 		"logCount", "coalesce(sum(c.log_count),0)", "errorLogCount", "coalesce(sum(c.error_log_count),0)",
 		"logSeverityCounts", object(query, "trace", "coalesce(sum(c.trace_log_count),0)", "debug", "coalesce(sum(c.debug_log_count),0)",
@@ -287,55 +288,30 @@ func Services(query Query) string {
     FROM (SELECT r.resource, r.service_name, r.id AS metric_id, r.d.timestamp AS time_ns, r.d.exemplars AS exemplars
         FROM (SELECT r.*, unnest(r.datapoints) AS d FROM metric_records r WHERE ` + metricSelection + `) r) s
     WHERE ` + predicate + ` GROUP BY ALL
-), ` + serviceResourceLabels(`SELECT DISTINCT resource_parts FROM resource_counts`, true) + `, service_counts AS (
-    SELECT c.* EXCLUDE(resource_parts), s.service_identity, s.service_name, s.service_namespace
-    FROM resource_counts c JOIN service_labels s USING(resource_parts)
+), service_counts AS (
+    SELECT c.* EXCLUDE(resource_id), s.ref AS service_identity, s.name AS service_name, s.namespace AS service_namespace,
+        s.name_kind, s.namespace_kind, s.name_preview, s.namespace_preview
+    FROM resource_counts c JOIN search_service_resources r USING(resource_id) JOIN search_services s ON s.ref=r.service_ref
     WHERE ` + serviceLabelPredicate(query) + `
 )
 SELECT ` + entry + ` AS entry
 FROM service_counts c
-GROUP BY c.service_identity, c.service_namespace, c.service_name
+GROUP BY c.service_identity, c.service_namespace, c.service_name, c.name_kind, c.namespace_kind, c.name_preview, c.namespace_preview
 ORDER BY c.service_namespace, c.service_name, c.service_identity`
-}
-
-// Decode each distinct received resource context once across all three signals.
-// The parts helpers consume the existing binary fields directly; reconstructing
-// and re-encoding the same values for each output label is unnecessary.
-func serviceResourceLabels(contexts string, labels bool) string {
-	display := ""
-	if labels {
-		display = `,
-        coalesce(otel_value_text_parts(name_parts), '') AS service_name,
-        coalesce(otel_value_text_parts(namespace_parts), '') AS service_namespace`
-	}
-	return `service_resources AS MATERIALIZED (` + contexts + `), service_fields AS MATERIALIZED (
-    SELECT resource_parts,
-        variant_exists(attributes, 'service.name') AS name_present,
-        variant_to_parquet_variant(attributes['service.name'])::struct(metadata blob, value blob) AS name_parts,
-        variant_exists(attributes, 'service.namespace') AS namespace_present,
-        variant_to_parquet_variant(attributes['service.namespace'])::struct(metadata blob, value blob) AS namespace_parts
-    FROM (SELECT resource_parts, variant_bytes_to_variant(resource_parts.metadata || resource_parts.value) AS attributes FROM service_resources)
-), service_labels AS MATERIALIZED (
-    SELECT resource_parts,
-        json_array(case when name_present then otel_value_json_parts(name_parts) end,
-            case when namespace_present then otel_value_json_parts(namespace_parts)
-                else '{"kind":"string","value":""}'::JSON end)::VARCHAR AS service_identity` + display + `
-    FROM service_fields
-)`
 }
 
 func serviceLabelPredicate(query Query) string {
 	p := []string{"true"}
 	if query.ServiceName != nil {
-		p = append(p, "s.service_name = "+Literal(*query.ServiceName))
+		p = append(p, "s.name = "+Literal(*query.ServiceName))
 	} else if query.Service != "" {
-		p = append(p, "s.service_name = "+Literal(query.Service))
+		p = append(p, "s.name = "+Literal(query.Service))
 	}
 	if query.Namespace != nil {
-		p = append(p, "s.service_namespace = "+Literal(*query.Namespace))
+		p = append(p, "s.namespace = "+Literal(*query.Namespace))
 	}
 	if query.ServiceIdentity != nil {
-		p = append(p, "s.service_identity = "+Literal(*query.ServiceIdentity))
+		p = append(p, "s.ref = "+Literal(*query.ServiceIdentity))
 	}
 	return strings.Join(p, " AND ")
 }
@@ -343,11 +319,11 @@ func serviceLabelPredicate(query Query) string {
 // ServiceCount is database-wide, like navigation's signal counts. It does not
 // construct service summaries, sort/page them, or expand metric datapoints.
 func ServiceCount() string {
-	return `WITH ` + serviceResourceLabels(`
-    SELECT variant_to_parquet_variant(resource.attributes)::struct(metadata blob, value blob) AS resource_parts FROM spans
+	return `WITH resources AS (
+    SELECT resource.id AS resource_id FROM spans
     UNION
-    SELECT variant_to_parquet_variant(resource.attributes)::struct(metadata blob, value blob) FROM logs
+    SELECT resource.id FROM logs
     UNION
-    SELECT variant_to_parquet_variant(resource.attributes)::struct(metadata blob, value blob) FROM metric_records WHERE len(datapoints)>0
-`, false) + ` SELECT count(DISTINCT service_identity) FROM service_labels`
+    SELECT resource.id FROM metric_records WHERE len(datapoints)>0
+) SELECT count(DISTINCT service_ref) FROM resources JOIN search_service_resources USING(resource_id)`
 }

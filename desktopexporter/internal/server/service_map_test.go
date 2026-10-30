@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"testing"
@@ -46,7 +47,10 @@ func TestServiceMapConnections(t *testing.T) {
 	add("api", "one", 3, 1, 0, 90)
 	add("worker", "", 3, 2, 1, 95) // same edge in a second trace
 	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data) }))
-	identity := `[{"kind":"string","value":"api"},{"kind":"string","value":"one"}]`
+	var identity string
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select ref from search_services where name='api' and namespace='one'`).Scan(&identity)
+	}))
 	read := func(options map[string]any) struct {
 		Rows      [][]json.RawMessage `json:"rows"`
 		Truncated bool                `json:"truncated"`

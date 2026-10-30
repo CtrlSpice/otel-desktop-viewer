@@ -34,6 +34,7 @@ import (
 // named call to them is refused with a message saying so, which is the honest
 // answer.
 var methodParamNames = map[string][]string{
+	"getServiceLabels":       {"serviceRef"},
 	"discoverTelemetry":      {"options"},
 	"searchTraceSummaries":   {"startTime", "endTime", "query", "limit", "sort"},
 	"getTraceView":           {"traceID", "query", "spanIDs", "columns"},

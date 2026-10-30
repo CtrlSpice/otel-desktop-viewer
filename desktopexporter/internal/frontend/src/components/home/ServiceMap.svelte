@@ -10,6 +10,7 @@
   import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import ServiceCard from './ServiceCard.svelte'
+  import ServiceLabelsPopover from './ServiceLabelsPopover.svelte'
   import ServiceMapLayout from './ServiceMapLayout.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -248,6 +249,7 @@
       {connections.length === 1 ? 'connection' : 'connections'}</span
     >{/snippet}
   {#snippet metaRight()}
+    {#if inspected}<ServiceLabelsPopover service={inspected} />{/if}
     {#if inspectedPage?.more}<button
         class="btn btn-ghost btn-sm"
         disabled={busy}

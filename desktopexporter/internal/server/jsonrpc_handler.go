@@ -110,6 +110,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	switch req.Method {
 	case "getServiceCount":
 		return h.getServiceCount(ctx, req)
+	case "getServiceLabels":
+		return h.getServiceLabels(ctx, req)
 	case "rpc.discover":
 		if err := validateNoParams(req.Params); err != nil {
 			return nil, err

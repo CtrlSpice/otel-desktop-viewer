@@ -36,6 +36,7 @@
     "@internationalized/date": "^3.12.4",
     "@lezer/highlight": "^1.2.5",
     "@lezer/lr": "^1.4.11",
+    "@noble/hashes": "^2.0.1",
     "@streamparser/json": "0.0.26",
     "apache-arrow": "21.2.0",
     "bits-ui": "^2.20.2",

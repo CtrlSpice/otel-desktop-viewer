@@ -1,10 +1,13 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
-import type { JsonLogData, JsonTraceData } from '../src/types/wire-types'
+import type {
+  LogFixture,
+  TraceFixture,
+} from '../src/test/telemetry-fixture-types'
 
 const traceID = '12345678901234567890123456789012'
 const spanID = '1234567890123456'
-const trace: JsonTraceData = {
+const trace: TraceFixture = {
   traceID,
   traceStart: '1700000000000000000',
   resources: {
@@ -561,7 +564,7 @@ test('associated logs reuse summary cards and open the full log without losing t
   page,
 }) => {
   const logRef = '00000000-0000-0000-0000-000000000001'
-  const log: JsonLogData = {
+  const log: LogFixture = {
     logRef,
     timestamp: '1700000002500000000',
     observedTimestamp: '1700000002500000000',

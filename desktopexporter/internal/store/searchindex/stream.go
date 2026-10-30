@@ -122,6 +122,9 @@ func streamRegister(ctx context.Context, conn driver.Conn, name string, b *array
 		if f.Type.ID() == arrow.UINT32 {
 			kind = "uinteger"
 		}
+		if f.Type.ID() == arrow.BINARY {
+			kind = "blob"
+		}
 		fields[i] = f.Name + " " + kind
 	}
 	exec := connection{conn}

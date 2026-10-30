@@ -77,7 +77,7 @@ it('opens selected samples lazily and preserves exact completion spelling', () =
         matchCount: 8,
         sampleValues: [
           { kind: 'int64', value: '9007199254740993' },
-          { kind: 'double', value: '0x8000000000000000' },
+          { kind: 'double', value: -0 },
           { kind: 'map', value: [] },
         ],
       },

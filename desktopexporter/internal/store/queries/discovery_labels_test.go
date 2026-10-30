@@ -1,19 +1,19 @@
 package queries_test
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"math"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 )
 
 func TestDiscoveryNativeServiceLabels(t *testing.T) {
-	db := freshDB(t)
 	for _, tc := range []struct {
 		name    string
 		value   any
@@ -30,23 +30,22 @@ func TestDiscoveryNativeServiceLabels(t *testing.T) {
 		{"nonfinite container", []any{math.Inf(1)}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			attributes := pcommon.NewMap()
+			db := freshDB(t)
+			data := plog.NewLogs()
+			resource := data.ResourceLogs().AppendEmpty()
+			attributes := resource.Resource().Attributes()
 			value := pcommon.NewValueEmpty()
 			require.NoError(t, value.FromRaw(tc.value))
 			if !tc.missing {
 				value.CopyTo(attributes.PutEmpty("service.name"))
 				value.CopyTo(attributes.PutEmpty("service.namespace"))
 			}
-			encoded, err := ingest.AttributeBytes(attributes)
-			require.NoError(t, err)
 			label := value.AsString()
-			_, err = db.Exec(`insert into logs(id, timestamp, service_name, attributes, resource, scope)
-				values (uuid(), 100, ?, '{}'::json::variant,
-				struct_pack(id := uuid(), payload_id := uuid(), schema_url := '',
-					attributes := variant_bytes_to_variant(?::blob), dropped_attributes_count := 0)::otel_resource,
-				struct_pack(id := uuid(), name := '', version := '', schema_url := '',
-					attributes := '{}'::json::variant, dropped_attributes_count := 0)::otel_scope)`, label, encoded)
+			resource.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(100)
+			conn, err := db.Conn(t.Context())
 			require.NoError(t, err)
+			require.NoError(t, conn.Raw(func(raw any) error { return logs.Ingest(t.Context(), raw.(driver.Conn), data) }))
+			require.NoError(t, conn.Close())
 			var raw string
 			require.NoError(t, db.QueryRow("select entry::varchar from ("+discovery.Services(discovery.Query{})+")").Scan(&raw))
 			var service struct {
@@ -59,13 +58,10 @@ func TestDiscoveryNativeServiceLabels(t *testing.T) {
 			require.Equal(t, label, service.Name)
 			require.Equal(t, label, service.Namespace)
 			require.Equal(t, 1, service.Count)
-			identity := `[null,{"kind":"string","value":""}]`
-			if !tc.missing {
-				wire, err := util.EncodeValue(value)
-				require.NoError(t, err)
-				identity = "[" + string(wire) + "," + string(wire) + "]"
-			}
-			require.JSONEq(t, identity, service.Identity)
+			require.Regexp(t, `^[0-9a-f]{64}$`, service.Identity)
+			var matched int
+			require.NoError(t, db.QueryRow("select count(*) from ("+discovery.Services(discovery.Query{ServiceIdentity: &service.Identity})+")").Scan(&matched))
+			require.Equal(t, 1, matched)
 
 			// Exercise the actual shared namespace predicate, including absent and
 			// received empty values, through record discovery and service summaries.
@@ -83,8 +79,6 @@ func TestDiscoveryNativeServiceLabels(t *testing.T) {
 				require.NoError(t, db.QueryRow("select count(*) from ("+discovery.Services(query)+")").Scan(&count))
 				require.Equal(t, want, count)
 			}
-			_, err = db.Exec("delete from logs")
-			require.NoError(t, err)
 		})
 	}
 }

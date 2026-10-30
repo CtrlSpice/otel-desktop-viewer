@@ -10,10 +10,11 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type {
-  AttributeFrequency,
   DiscoveryOptions,
   HomeCoveragePage,
+  HomeCoverageValue,
 } from '@/services/discovery-types'
+import type { AttributeValue } from '@/types/api-types'
 import { attributeValueCopy } from '@/components/shared/detail-value'
 import AttributeDiscovery from './AttributeDiscovery.svelte'
 import { copyText } from '@/utils/clipboard'
@@ -188,8 +189,18 @@ it('loads bounded server pages and resolves full hover/Copy text only on demand'
   expect(copyText).toHaveBeenCalledTimes(1)
 })
 
+type CoverageFixtureValue = Pick<
+  HomeCoverageValue,
+  | 'identity'
+  | 'foundOn'
+  | 'count'
+  | 'kindCount'
+  | 'denominator'
+  | 'relativeFrequency'
+> & { value: AttributeValue }
+
 function homeResult(
-  items: AttributeFrequency[],
+  items: CoverageFixtureValue[],
   options: Partial<DiscoveryOptions> = {}
 ): HomeCoveragePage {
   const denominator = items[0]?.denominator ?? 0
@@ -266,7 +277,7 @@ it.each([
         truncated: false,
       })
     )
-    const values: AttributeFrequency[] = [
+    const values: CoverageFixtureValue[] = [
       ...strings.map(value => ({
         identity: JSON.stringify({ kind: 'string', value }),
         value: { kind: 'string' as const, value },
