@@ -1310,7 +1310,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -1333,7 +1333,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 // TestGetTraceViewWith32CharHexTraceID verifies that GetTraceView finds a trace when given the 32-char hex form (no hyphens).
