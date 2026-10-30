@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,4 +85,47 @@ func TestDiscoverySQLInputBoundaries(t *testing.T) {
 		require.Positive(t, count)
 		return err
 	}))
+}
+
+func TestDiscoveryPlansSeparateSQLFromValues(t *testing.T) {
+	// Changing values of the same query shape must change only its parameters.
+	// Include exact uint64 bounds and strings that resemble SQL and placeholders.
+	for _, kind := range []string{"services", "keys", "values", "connections", "connection-spans", "home-values"} {
+		for _, native := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/native=%t", kind, native), func(t *testing.T) {
+				var previous *discoveryPlan
+				for _, value := range []string{"ordinary", "' OR true; -- $1::VARCHAR \\雪\x00"} {
+					start, end := "18446744073709551614", "18446744073709551615"
+					options := discoveryOptions{
+						Kind: kind, Signal: "traces", OwnerType: "event", Key: &value,
+						ServiceName: &value, Namespace: &value, ServiceIdentity: &value, TargetIdentity: &value,
+						StartTime: &start, EndTime: &end, Term: value,
+						Queries: &discoveryQueries{Traces: json.RawMessage(`{"type":"condition","query":{"field":{"searchScope":"global"},"fieldOperator":"CONTAINS","value":"prefix argument"}}`)},
+					}
+					var plan *discoveryPlan
+					var err error
+					if kind == "home-values" {
+						options.Locale, options.ValueKind, options.SortBy = value, value, "name"
+						plan, err = homeValuesPlan(options)
+					} else {
+						raw, marshalErr := json.Marshal([]discoveryOptions{options})
+						require.NoError(t, marshalErr)
+						plan, err = discoveryPlanFor(raw, native)
+					}
+					require.NoError(t, err)
+					require.NotContains(t, plan.statement, value)
+					require.NotContains(t, plan.statement, start)
+					require.NotContains(t, plan.statement, end)
+					require.Contains(t, plan.args, value)
+					require.Contains(t, plan.args, start)
+					require.Contains(t, plan.args, end)
+					if previous != nil {
+						require.Equal(t, previous.statement, plan.statement)
+						require.NotEqual(t, previous.args, plan.args)
+					}
+					previous = plan
+				}
+			})
+		}
+	}
 }

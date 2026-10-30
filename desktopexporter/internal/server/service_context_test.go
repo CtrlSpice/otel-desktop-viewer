@@ -73,7 +73,9 @@ func TestServicesGroupResourcesWithoutSplittingScopesOrDoubleCountingTraces(t *t
 	// once despite unrelated attributes, scopes and hundreds of owning records.
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		var key, raw string
-		err := db.QueryRowContext(t.Context(), "EXPLAIN (ANALYZE, FORMAT JSON) "+discovery.Services(discovery.Query{})).Scan(&key, &raw)
+		var builder discovery.Builder
+		statement := builder.Services(discovery.Query{})
+		err := db.QueryRowContext(t.Context(), "EXPLAIN (ANALYZE, FORMAT JSON) "+statement, builder.Args()...).Scan(&key, &raw)
 		if err != nil {
 			return err
 		}

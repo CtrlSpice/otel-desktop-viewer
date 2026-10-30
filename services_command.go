@@ -128,5 +128,6 @@ func writeServicesResult(writer io.Writer, result servicesResult, jsonOutput boo
 // values, treating absent and empty-string namespaces as equivalent.
 // Only resources with matching records participate in discovery.
 func servicesSQL(query telemetrySearchQuery) string {
-	return discovery.Services(discoveryQuery(query))
+	var builder discovery.Builder
+	return builder.Inline(builder.Services(discoveryQuery(query)))
 }

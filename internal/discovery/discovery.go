@@ -54,42 +54,42 @@ func ServiceIdentity(resource string) string {
 	return "(select sr.service_ref from search_service_resources sr where sr.resource_id=" + resource + ".id)"
 }
 
-func Predicate(query Query) string {
+func (b *Builder) Predicate(query Query) string {
 	p := []string{"true"}
 	if query.StartTime != nil {
-		p = append(p, "s.time_ns >= "+Literal(*query.StartTime)+"::UBIGINT")
+		p = append(p, "s.time_ns >= "+b.Bind(*query.StartTime)+"::UBIGINT")
 	}
 	if query.EndTime != nil {
-		p = append(p, "s.time_ns <= "+Literal(*query.EndTime)+"::UBIGINT")
+		p = append(p, "s.time_ns <= "+b.Bind(*query.EndTime)+"::UBIGINT")
 	}
 	if query.ServiceName != nil {
-		p = append(p, "s.service_name = "+Literal(*query.ServiceName))
+		p = append(p, "s.service_name = "+b.Bind(*query.ServiceName))
 	} else if query.Service != "" {
-		p = append(p, "s.service_name = "+Literal(query.Service))
+		p = append(p, "s.service_name = "+b.Bind(query.Service))
 	}
 	if query.Namespace != nil {
-		p = append(p, `coalesce(otel_value_text(s.resource.attributes['service.namespace']), '') = `+Literal(*query.Namespace))
+		p = append(p, `coalesce(otel_value_text(s.resource.attributes['service.namespace']), '') = `+b.Bind(*query.Namespace))
 	}
 	if query.ServiceIdentity != nil {
-		p = append(p, ServiceIdentity("s.resource")+" = "+Literal(*query.ServiceIdentity))
+		p = append(p, ServiceIdentity("s.resource")+" = "+b.Bind(*query.ServiceIdentity))
 	}
 	return strings.Join(p, " AND ")
 }
 
 // Records keeps counted record identity distinct from the attribute owner.
-func Records(signal, ownerType string) (string, error) {
-	return RecordsFrom(signal, ownerType, Query{})
+func (b *Builder) Records(signal, ownerType string) (string, error) {
+	return b.RecordsFrom(signal, ownerType, Query{})
 }
 
-func RecordsFrom(signal, ownerType string, query Query) (string, error) {
+func (b *Builder) RecordsFrom(signal, ownerType string, query Query) (string, error) {
 	sources := query.Sources
 	window := func(field string) string {
 		p := []string{"true"}
 		if query.StartTime != nil {
-			p = append(p, field+" >= "+Literal(*query.StartTime)+"::UBIGINT")
+			p = append(p, field+" >= "+b.Bind(*query.StartTime)+"::UBIGINT")
 		}
 		if query.EndTime != nil {
-			p = append(p, field+" <= "+Literal(*query.EndTime)+"::UBIGINT")
+			p = append(p, field+" <= "+b.Bind(*query.EndTime)+"::UBIGINT")
 		}
 		return strings.Join(p, " AND ")
 	}
@@ -125,10 +125,10 @@ func RecordsFrom(signal, ownerType string, query Query) (string, error) {
 		if ownerType != "exemplar" {
 			points = "list_filter(r.datapoints, lambda d: " + window("d.timestamp") + ")"
 			if query.StartTime != nil {
-				overlap += " AND r.point_time_max >= " + Literal(*query.StartTime) + "::UBIGINT"
+				overlap += " AND r.point_time_max >= " + b.Bind(*query.StartTime) + "::UBIGINT"
 			}
 			if query.EndTime != nil {
-				overlap += " AND r.point_time_min <= " + Literal(*query.EndTime) + "::UBIGINT"
+				overlap += " AND r.point_time_min <= " + b.Bind(*query.EndTime) + "::UBIGINT"
 			}
 		}
 		from, directOwner = "(SELECT r.*, unnest("+points+") AS d FROM metric_records r WHERE "+overlap+" AND "+selection+") r", "datapoint"
@@ -158,11 +158,11 @@ func RecordsFrom(signal, ownerType string, query Query) (string, error) {
 	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service + " AS service_name, " + resource + " AS resource, " + attributes + " AS attributes FROM " + from, nil
 }
 
-func foundOn(query Query, location Location) string {
+func (b *Builder) foundOn(query Query, location Location) string {
 	if query.Native {
-		return "[struct_pack(signal := " + Literal(location.Signal) + ", ownerType := " + Literal(location.OwnerType) + ")]"
+		return "[struct_pack(signal := " + b.Bind(location.Signal) + ", ownerType := " + b.Bind(location.OwnerType) + ")]"
 	}
-	return "json_array(json_object('signal', " + Literal(location.Signal) + ", 'ownerType', " + Literal(location.OwnerType) + "))"
+	return "json_array(json_object('signal', " + b.Bind(location.Signal) + ", 'ownerType', " + b.Bind(location.OwnerType) + "))"
 }
 
 // object changes only the output representation; selection and aggregation are shared.
@@ -181,27 +181,27 @@ func object(query Query, fields ...string) string {
 	return "json_object(" + strings.Join(parts, ", ") + ")"
 }
 
-func Keys(query Query, location Location, records string) string {
+func (b *Builder) Keys(query Query, location Location, records string) string {
 	// Keys need no record denominators. Enumerate each exact received attribute
 	// context once, rather than encode the entire context as JSON per record.
 	return `WITH scoped_records AS (` + records + `), contexts AS (
     SELECT DISTINCT variant_to_parquet_variant(s.attributes)::struct(metadata blob, value blob) AS parts
-    FROM scoped_records s WHERE ` + Predicate(query) + `
+    FROM scoped_records s WHERE ` + b.Predicate(query) + `
 ), keys AS (
     SELECT a.key, otel_value_kind(attribute_native_field(c.parts, a.key)) AS kind
     FROM contexts c, unnest(variant_keys(variant_bytes_to_variant(c.parts.metadata || c.parts.value))) a(key)
     GROUP BY a.key, kind
 )
-SELECT ` + object(query, "key", "key", "kind", "kind", "foundOn", foundOn(query, location)) + ` AS entry
+SELECT ` + object(query, "key", "key", "kind", "kind", "foundOn", b.foundOn(query, location)) + ` AS entry
 FROM keys ORDER BY key, kind`
 }
 
-func Values(query Query, location Location, records, key string) string {
+func (b *Builder) Values(query Query, location Location, records, key string) string {
 	value := "v.identity::JSON"
 	if query.Native {
 		value = "v.value"
 	}
-	fields := []string{"value", value, "foundOn", foundOn(query, location),
+	fields := []string{"value", value, "foundOn", b.foundOn(query, location),
 		"count", "v.count", "kindCount", "k.count", "denominator", "d.count",
 		"relativeFrequency", "v.count::DOUBLE / nullif(d.count,0)::DOUBLE"}
 	if query.Native {
@@ -212,8 +212,8 @@ func Values(query Query, location Location, records, key string) string {
 	// Native output also preserves a deterministic representative's received bits.
 	return `WITH records AS (` + records + `), received_values AS MATERIALIZED (
     SELECT s.record_id,
-        variant_to_parquet_variant(s.attributes[` + Literal(key) + `])::struct(metadata blob, value blob) AS parts
-    FROM records s WHERE ` + Predicate(query) + ` AND variant_exists(s.attributes, ` + Literal(key) + `)
+        variant_to_parquet_variant(s.attributes[` + b.Bind(key) + `])::struct(metadata blob, value blob) AS parts
+    FROM records s WHERE ` + b.Predicate(query) + ` AND variant_exists(s.attributes, ` + b.Bind(key) + `)
 ), distinct_values AS MATERIALIZED (
     SELECT DISTINCT parts FROM received_values
 ), identified_values AS MATERIALIZED (
@@ -233,10 +233,10 @@ FROM value_counts v JOIN kind_counts k ON k.kind=otel_value_kind(v.value) CROSS 
 ORDER BY v.count DESC, otel_value_kind(v.value), v.identity`
 }
 
-func Services(query Query) string {
+func (b *Builder) Services(query Query) string {
 	// Time/search eligibility precedes grouping. Compact resource IDs join the
 	// ingestion-time service catalogue; reads do not decode resource attributes.
-	predicate := Predicate(Query{StartTime: query.StartTime, EndTime: query.EndTime})
+	predicate := b.Predicate(Query{StartTime: query.StartTime, EndTime: query.EndTime})
 	resourceParts := `s.resource.id AS resource_id`
 	metricSelection := "true"
 	if query.Sources.Metrics != "" {
@@ -292,7 +292,7 @@ func Services(query Query) string {
     SELECT c.* EXCLUDE(resource_id), s.ref AS service_identity, s.name AS service_name, s.namespace AS service_namespace,
         s.name_kind, s.namespace_kind, s.name_preview, s.namespace_preview
     FROM resource_counts c JOIN search_service_resources r USING(resource_id) JOIN search_services s ON s.ref=r.service_ref
-    WHERE ` + serviceLabelPredicate(query) + `
+    WHERE ` + b.serviceLabelPredicate(query) + `
 )
 SELECT ` + entry + ` AS entry
 FROM service_counts c
@@ -300,18 +300,18 @@ GROUP BY c.service_identity, c.service_namespace, c.service_name, c.name_kind, c
 ORDER BY c.service_namespace, c.service_name, c.service_identity`
 }
 
-func serviceLabelPredicate(query Query) string {
+func (b *Builder) serviceLabelPredicate(query Query) string {
 	p := []string{"true"}
 	if query.ServiceName != nil {
-		p = append(p, "s.name = "+Literal(*query.ServiceName))
+		p = append(p, "s.name = "+b.Bind(*query.ServiceName))
 	} else if query.Service != "" {
-		p = append(p, "s.name = "+Literal(query.Service))
+		p = append(p, "s.name = "+b.Bind(query.Service))
 	}
 	if query.Namespace != nil {
-		p = append(p, "s.namespace = "+Literal(*query.Namespace))
+		p = append(p, "s.namespace = "+b.Bind(*query.Namespace))
 	}
 	if query.ServiceIdentity != nil {
-		p = append(p, "s.ref = "+Literal(*query.ServiceIdentity))
+		p = append(p, "s.ref = "+b.Bind(*query.ServiceIdentity))
 	}
 	return strings.Join(p, " AND ")
 }

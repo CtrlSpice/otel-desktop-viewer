@@ -159,8 +159,8 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 
 func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testing.T) {
 	db, viewer := attributeTestViewer(t)
-	key := "quote'\\; --\nkey"
-	service := "checkout' OR true --"
+	key := "quote'\\; --\nkey $1::VARCHAR $10::VARCHAR"
+	service := "checkout' OR true -- $2::VARCHAR"
 	values := []string{
 		`{"kind":"empty","value":null}`,
 		`{"kind":"int64","value":"9223372036854775807"}`,
