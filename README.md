@@ -297,6 +297,11 @@ otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY ser
 
 The `query` command runs read-only SQL against the viewer at `http://localhost:8000`. It returns up to 25 rows as aligned columns by default. Use `--endpoint` for another viewer address, `--limit` for another row limit, or `--json` for the JSON result.
 
+`query --json` returns `{columns, rows, truncated}`, including column names and
+SQL types. Attributes and log bodies are stored as native VARIANT values; select
+`otel_value_json(value)` when you need their complete typed JSON representation.
+Use a precision-preserving JSON parser for integer tokens.
+
 ## Search Telemetry from the CLI
 
 With the viewer running, search its trace, log, or metric summaries from another terminal:
@@ -310,6 +315,20 @@ otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:
 These commands use `http://localhost:8000`, search the last hour, and return up to 25 summaries. Use `--endpoint`, `--service`, `--since`, `--start`, `--end`, `--limit`, or `--json` to change those defaults.
 
 In `metrics --json`, `metricRef` is the exact UUID text from `metrics.id`. The viewer generates it; OTLP does not provide it. It is valid only for that database. Pass it unchanged and do not parse it.
+
+CLI signal searches share the browser's database filtering, sorting and limit
+builders. The CLI uses JSON-RPC and renders tables or JSON; the browser reads
+native Arrow datasets. Summaries are compact: metric description and metadata
+are available through `metric <metric-ref> --json`, complete log bodies through
+`log <log-ref> --json`, and complete span data through the trace-qualified `span`
+command. `services` shares the service catalogue and returns complete labels.
+
+For direct API use, `GET /openrpc.json` describes methods at `POST /rpc`, and
+`GET /llms.txt` serves the agent guide. `GET /openapi.json` describes HTTP routes,
+media types and statuses, and directs agents to those JSON-RPC inspection tools.
+The browser's `POST /api/data/{method}`
+Arrow routes are a separate HTTP transport; OpenRPC describes JSON-RPC results,
+not Arrow schemas. OTLP JSON downloads use `GET /export/{signal}/{id}`.
 
 Inspect every compact span and trace-linked log row for one trace:
 

@@ -158,6 +158,11 @@ func (s *Server) initHandler() error {
 		return err
 	}
 	mux.Handle("GET /openrpc.json", discovery)
+	httpDiscovery, err := openAPIHandler()
+	if err != nil {
+		return err
+	}
+	mux.Handle("GET /openapi.json", httpDiscovery)
 	mux.Handle("GET /llms.txt", llmsTextHandler())
 	mux.HandleFunc("GET /export/{signal}/{id}", s.exportHandler)
 
@@ -220,7 +225,7 @@ func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 	indexBytes, indexErr := fs.ReadFile(fsys, "index.html")
 	indexETag := ""
 	if indexErr == nil {
-		indexBytes = bytes.Replace(indexBytes, []byte("</head>"), []byte(`<link rel="service-desc" type="application/json" href="/openrpc.json"><link rel="help" type="text/plain" href="/llms.txt"></head>`), 1)
+		indexBytes = bytes.Replace(indexBytes, []byte("</head>"), []byte(`<link rel="service-desc" type="application/json" href="/openrpc.json"><link rel="service-desc" type="application/vnd.oai.openapi+json;version=3.1" href="/openapi.json"><link rel="help" type="text/plain" href="/llms.txt"></head>`), 1)
 		sum := sha256.Sum256(indexBytes)
 		indexETag = `"` + hex.EncodeToString(sum[:16]) + `"`
 	}
@@ -242,7 +247,7 @@ func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/" {
-			writer.Header().Add("Link", `</openrpc.json>; rel="service-desc"; type="application/json", </llms.txt>; rel="help"; type="text/plain"`)
+			writer.Header().Add("Link", `</openrpc.json>; rel="service-desc"; type="application/json", </openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json;version=3.1", </llms.txt>; rel="help"; type="text/plain"`)
 		}
 		if request.Method == http.MethodGet || request.Method == http.MethodHead {
 			name := strings.TrimPrefix(path.Clean(request.URL.Path), "/")

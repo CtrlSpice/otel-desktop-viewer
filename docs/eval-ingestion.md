@@ -38,6 +38,11 @@ field values without changing the stored data.
 
 ## HTTP API and storage
 
+In Evals builds, `/openapi.json` describes the import, experiment search and
+source-row HTTP routes. Public builds omit those operations from the document
+and omit their handlers. Check `/api/features` for current availability within
+the selected build.
+
 `POST /api/evals/ingest?name=<filename>` accepts the raw Blob body on the existing
 viewer origin. No JSON-RPC escaping or whole-file parsing is used. A disabled
 feature returns 403 with an explicit message. Successful replies contain

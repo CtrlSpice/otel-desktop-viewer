@@ -25,7 +25,10 @@ flowchart TB
   subgraph serve [Serving]
     Browser[Browser] -->|GET /| Static[Embedded assets]
     Browser -->|POST /rpc| RPC[JSON-RPC handler]
+    CLI[CLI / agent] -->|POST /rpc| RPC
+    Browser -->|POST /api/data/method| Arrow[Arrow dataset handler]
     RPC --> Queries[SQL queries]
+    Arrow --> Queries
     Queries --> DuckDB
   end
 
@@ -33,13 +36,14 @@ flowchart TB
   DuckDBExt --> HTTP[HTTP server :8000]
   HTTP --> Static
   HTTP --> RPC
+  HTTP --> Arrow
 ```
 
 | Port | Purpose |
 | --- | --- |
 | 4317 | OTLP gRPC |
 | 4318 | OTLP HTTP |
-| 8000 | Web UI and JSON-RPC |
+| 8000 | Web UI, JSON-RPC, Arrow datasets and exports |
 | 3001 | Vite development server |
 
 ## Components
@@ -366,18 +370,37 @@ The server exposes these routes:
 | Route | Purpose |
 | --- | --- |
 | `POST /rpc` | JSON-RPC 2.0, with a 1 MB request limit |
+| `POST /api/data/{method}` | Native Arrow IPC datasets, with a 1 MB parameter-body limit |
+| `GET /api/features` | Build-selected frontend feature availability |
 | `GET /openrpc.json` | OpenRPC method descriptions, also returned by `rpc.discover` |
+| `GET /openapi.json` | OpenAPI 3.1 HTTP routes, media types and status codes |
 | `GET /llms.txt` | Agent guide, including HTTP discovery instructions |
 | `GET /export/{signal}/{id}` | Store-backed OTLP JSON download |
 | `GET /*` | Embedded frontend and client-route fallback |
 
-The HTTP root advertises `/openrpc.json` and `/llms.txt` with a `Link` header.
+The HTTP root advertises `/openrpc.json`, `/openapi.json` and `/llms.txt` with a
+`Link` header and HTML links.
 Discovery uses existing method names. The document describes the `View` naming
 convention once, without audience tags or aliases. OpenRPC is a
-JSON-RPC description, not an OpenAPI description of HTTP routes. GET and HEAD
+JSON-RPC description; the companion OpenAPI document describes HTTP routes. GET and HEAD
 are supported for the document. Named/positional params, exact numeric input
 rules and wire representations are described alongside each method. The two
 variadic delete methods accept repeated positional IDs, not a nested array.
+
+Both descriptions have ETags and support conditional requests. OpenAPI directs
+agents to the OpenRPC inspection methods and `/llms.txt`, and labels Arrow
+datasets as browser-oriented. It describes the RPC envelope without duplicating
+method schemas. Evals HTTP operations appear only in Evals builds; runtime
+feature availability is reported separately by `/api/features`. The description
+does not register or enable operations, and does not redirect requests.
+
+Arrow dataset requests contain the method parameters directly, without a JSON-RPC
+envelope. Supported reads share parameter validation and store query builders with
+RPC. Successful responses use `application/vnd.apache.arrow.stream`, include
+`X-Arrow-Rows`, and disable caching. Errors before streaming use HTTP status and
+JSON error objects; oversized bodies return HTTP 413. A failed response stream is
+aborted rather than presented as a complete dataset. OpenRPC result schemas apply
+only to `/rpc`; they do not describe Arrow record schemas or export routes.
 
 The server binds to `localhost` by default. CORS accepts HTTP and HTTPS origins
 so the Vite development server can call `/rpc`.
@@ -390,6 +413,7 @@ so the Vite development server can call `/rpc`.
 | `getImportConfig` | Configured OTLP HTTP import port |
 | `query` | Read-only SQL rows |
 | `discoverTelemetry` | Typed service groups, directed service connections, child-span evidence, attribute keys and value frequencies |
+| `getServiceLabels` | Complete name/namespace display text for an opaque service reference |
 | `searchTraceSummaries` | Trace list summaries |
 | `getTraceOverview` | Compact spans and trace-linked log summaries |
 | `getTraceView` | Full trace display data |
@@ -403,6 +427,7 @@ so the Vite development server can call `/rpc`.
 | `getMetricSeries` | Exact retained datapoints for one series and window |
 | `getMetricView` | Chart data for one Metric and window |
 | `getMetricAggregateView` | Cross-series aggregate data |
+| `getMetricSeriesOrder` | Database-ordered series IDs after time/cohort filtering |
 | `getTraceAttributeDefinitions` | Trace attribute definitions |
 | `getTraceAttributeDefinitionsByTraceID` | Attribute definitions for one trace |
 | `getLogAttributeDefinitions` | Log attribute definitions |
@@ -421,6 +446,29 @@ nullable decimal nanosecond strings. `null` means unbounded.
 Requests for missing entities return signal-specific errors. Invalid received
 IDs and invalid viewer references return separate parameter errors. Caller
 cancellation maps to `-32010` rather than an internal error.
+
+### Shared searches and output formats
+
+The CLI and browser share signal search compilation, time eligibility, sorting
+and limit placement. Their common builders are `traceSummariesSQL` in
+`store/spans`, `logResultsSQL` in `store/logs`, and `summariesSQL` in `store/metrics`.
+Each selects a JSON or native Arrow projection from the same SQL template.
+The log page additionally supports totals, offsets and selected column previews.
+The output formats have different serialization costs; Arrow rendering timings
+do not measure CLI latency.
+
+CLI commands use JSON-RPC. Lists render tables by default and JSON with `--json`;
+detail commands render sections or complete JSON. Custom `query` returns
+`{columns, rows, truncated}` through a separate read-only SQL execution path.
+Exports return OTLP JSON. The CLI does not decode Arrow.
+
+Summaries are for selection. Metric summaries omit description and metadata;
+`getMetric` retains these fields and its series catalogue, and `getMetricSeries`
+returns complete selected datapoints. Logs use bounded body previews with exact
+values available through `getLog`. Trace summaries lead to exact composite-ID
+span detail. This is progressive disclosure for both clients, not a second set
+of agent-only signal summaries. JSON projections also provide display labels
+and exact decimal text where their wire contract requires it.
 
 ## Service discovery
 
@@ -478,9 +526,11 @@ Route and time contexts own navigation and time selection. Pages own their data
 requests and signal presentation state. URL updates use explicit push or replace
 history modes.
 
-`telemetry-service.ts` is the wire boundary. It sends JSON-RPC requests,
-validates runtime payloads, converts exact integer text to `bigint`, decodes
-tagged values, and maps wire types to domain types.
+`telemetry-service.ts` is the wire boundary. Native telemetry reads use the
+`arrow-*` adapters over `/api/data/{method}`, retaining Arrow buffers and lazy
+accessors. Control/count requests and remaining tabular reads use JSON-RPC.
+The adapters validate runtime payloads, preserve exact integers as `bigint`,
+and map transport-specific representations to domain types.
 
 Metric aggregation remains in SQL. The frontend chooses tabs, colours, visible
 series, chart coordinates, and selected datapoints. Legend changes request only

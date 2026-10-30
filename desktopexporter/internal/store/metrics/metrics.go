@@ -46,7 +46,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (rej
 }
 
 // SearchSummaries returns lightweight per-Metric summaries for the drawer
-// cards: identity fields, description, seriesCount, lastValue (Gauge/Sum),
+// cards and CLI: identity fields, seriesCount, lastValue (Gauge/Sum),
 // and lastSeen. One row per metrics row that has at least one
 // in-range datapoint and matches the optional search criteria.
 //
