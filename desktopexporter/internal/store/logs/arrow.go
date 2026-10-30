@@ -29,9 +29,16 @@ func columnPreviews(columns []Column, args []any) (string, []any, error) {
 	}
 	var expressions []string
 	for _, c := range columns {
-		prefix := "l"
-		if c.Source != "log" {
-			prefix += "." + c.Source
+		var prefix string
+		switch c.Source {
+		case "log":
+			prefix = "l"
+		case "resource":
+			prefix = "l.resource"
+		case "scope":
+			prefix = "l.scope"
+		default:
+			return "", nil, fmt.Errorf("unsupported log column source: %w", ErrInvalidLogQuery)
 		}
 		var value, present string
 		if c.Kind == "attribute" {
