@@ -64,6 +64,11 @@ func TestDiscoverySQLInputBoundaries(t *testing.T) {
 		require.NoError(t, err)
 		readArrowDataset(t, s, method, string(wire))
 	}
+	for _, source := range []string{"log", "resource", "scope"} {
+		wire, err := json.Marshal(map[string]any{"startTime": nil, "endTime": nil, "columns": []map[string]string{{"source": source, "kind": "attribute", "key": hostile}}})
+		require.NoError(t, err)
+		readArrowDataset(t, s, "searchLogPage", string(wire))
+	}
 	for _, request := range []struct {
 		method string
 		params map[string]any
@@ -72,6 +77,7 @@ func TestDiscoverySQLInputBoundaries(t *testing.T) {
 		{"getTraceView", map[string]any{"traceID": traceID, "columns": []map[string]string{{"source": hostile, "key": hostile}}}},
 		{"getTraceColumnPreviews", map[string]any{"traceID": traceID, "columns": []map[string]string{{"source": hostile, "key": hostile}}}},
 		{"searchTraceSummaries", map[string]any{"startTime": nil, "endTime": nil, "sort": map[string]string{"field": "duration", "direction": "desc; DROP TABLE spans"}}},
+		{"searchLogPage", map[string]any{"startTime": nil, "endTime": nil, "columns": []map[string]string{{"source": hostile, "kind": "attribute", "key": hostile}}}},
 	} {
 		wire, err := json.Marshal(request.params)
 		require.NoError(t, err)
