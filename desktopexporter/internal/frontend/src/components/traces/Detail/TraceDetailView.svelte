@@ -468,6 +468,7 @@
   <DetailBubble
     label="Events"
     icon={eventsIcon}
+    pending={!span}
     count={span ? numCombinedEvents : undefined}
   >
     {#if span && numCombinedEvents === 0}
@@ -488,6 +489,7 @@
   <DetailBubble
     label="Links"
     icon={linksIcon}
+    pending={!span}
     count={span ? numLinks : undefined}
   >
     {#if span && numLinks === 0}

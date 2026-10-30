@@ -424,6 +424,75 @@ describe('TraceDetailView detail bubbles', () => {
     }
   })
 
+  it.each(['open', 'closed', 'inactive'] as const)(
+    'preserves %s section chrome through a pending span and a failed request',
+    async state => {
+      const span = makeSpan({
+        name: 'previous span',
+        events:
+          state === 'inactive'
+            ? []
+            : [
+                {
+                  name: 'previous event',
+                  timestamp: 1n,
+                  attributes: [],
+                  droppedAttributesCount: 0,
+                },
+              ],
+      })
+      const view = renderWithContexts(TraceDetailView, { span })
+      const section = (id: string) =>
+        document.querySelector<HTMLElement>(`[data-detail-section="${id}"]`)!
+      if (state === 'closed')
+        await userEvent.click(section('events').querySelector('summary')!)
+      const chrome = ['span', 'events', 'links'].map(id => ({
+        id,
+        node: section(id),
+        header: section(id).querySelector('.detail-bubble__heading'),
+        group: section(id).dataset.detailGroup,
+        flex: section(id).style.flex,
+      }))
+      const tabs = screen.getByRole('tablist', { name: 'Detail view' })
+      for (const error of ['', 'Span request failed']) {
+        await view.rerender({
+          component: TraceDetailView,
+          componentProps: { span: undefined, loading: !error, error },
+        })
+        for (const { id, node, header, group, flex } of chrome) {
+          expect(section(id)).toBe(node)
+          expect(section(id).dataset.detailGroup).toBe(group)
+          expect(section(id).style.flex).toBe(flex)
+          expect(section(id).querySelector('.detail-bubble__heading')).toBe(
+            header
+          )
+        }
+        expect(screen.getByRole('tablist', { name: 'Detail view' })).toBe(tabs)
+        expect(screen.queryByText('previous span')).not.toBeInTheDocument()
+        expect(screen.queryByText('previous event')).not.toBeInTheDocument()
+        expect(section('events').querySelector('.badge-count')).toBeNull()
+        expect(section('links').querySelector('.badge-count')).toBeNull()
+      }
+      await view.rerender({
+        component: TraceDetailView,
+        componentProps: { span: { ...span, name: 'next span' }, error: '' },
+      })
+      for (const { id, header, group, flex } of chrome) {
+        expect(section(id).querySelector('.detail-bubble__heading')).toBe(
+          header
+        )
+        expect(section(id).dataset.detailGroup).toBe(group)
+        expect(section(id).style.flex).toBe(flex)
+      }
+      expect(screen.getByText('next span')).toBeInTheDocument()
+      await view.rerender({
+        component: TraceDetailView,
+        componentProps: { span: makeSpan() },
+      })
+      expect(section('events').dataset.detailGroup).toBe('inactive')
+    }
+  )
+
   it('combines span events and correlated logs under Events with provenance labels', () => {
     const logs: TraceLogSummary[] = [
       {

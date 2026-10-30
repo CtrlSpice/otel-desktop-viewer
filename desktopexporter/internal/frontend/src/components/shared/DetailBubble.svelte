@@ -106,6 +106,7 @@
     children,
     initialOpen = true,
     disabled = false,
+    pending = false,
     contained = false,
     headerless = false,
     hideLabel = false,
@@ -122,6 +123,8 @@
     children: Snippet
     initialOpen?: boolean
     disabled?: boolean
+    /** Hold section availability until the next record resolves. */
+    pending?: boolean
     /** Let the content own scrolling within this section's allocated height. */
     contained?: boolean
     /** An always-open primary section whose content already supplies its heading. */
@@ -129,7 +132,10 @@
     /** Keep the section's accessible name while its controls identify the content. */
     hideLabel?: boolean
   } = $props()
-  const unavailable = $derived(disabled || count === 0)
+  let unavailable = $state(untrack(() => pending || disabled || count === 0))
+  $effect.pre(() => {
+    if (!pending) unavailable = disabled || count === 0
+  })
   let expanded = $state(untrack(() => initialOpen))
   let resizable = $derived(
     !unavailable &&
