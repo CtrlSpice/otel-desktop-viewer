@@ -2291,7 +2291,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -2313,7 +2313,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 	for _, table := range []string{"metrics", "metric_series", "metric_datapoints"} {
 		assert.Equal(t, 0, countRows(t, s, context.Background(), `select count(*) from `+table),
 			"canceled ingest must not leave provisional rows in %s", table)

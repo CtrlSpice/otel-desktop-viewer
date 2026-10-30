@@ -782,7 +782,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -805,7 +805,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 // TestSearchLogSummaries tests logs.Search with various query types.
