@@ -299,19 +299,19 @@
     {/snippet}
     <div hidden={mode === 'cost'}>
       <EvalSpanEvidence {evidence} />
-      {#if evidenceLoading}
-        <LoadingStatus
-          pending
-          label="Loading linked log evidence…"
-          {requestKey}
-          class="block px-3 py-2 text-sm text-subtle"
-        />
-      {:else if displayed?.failed}
-        <p class="px-3 py-2 text-sm text-subtle" role="status">
-          Linked log evidence could not be loaded.
-        </p>
-      {/if}
     </div>
+    {#if evidenceLoading}
+      <LoadingStatus
+        pending
+        label="Loading linked log evidence…"
+        {requestKey}
+        class="block px-3 py-2 text-sm text-subtle"
+      />
+    {:else if displayed?.failed}
+      <p class="px-3 py-2 text-sm text-subtle" role="status">
+        Linked log evidence could not be loaded.
+      </p>
+    {/if}
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>

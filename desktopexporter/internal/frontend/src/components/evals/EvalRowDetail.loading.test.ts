@@ -124,6 +124,83 @@ it('publishes the heading, context, evidence and Copy target together after repl
   expect(copyText).toHaveBeenLastCalledWith(`output-${second.spanID}`)
 })
 
+it.each(['success', 'failure'])(
+  'shows delayed feedback in Cost while retaining accounting until replacement %s',
+  async outcome => {
+    const first = span('1'.repeat(16))
+    const second = span('2'.repeat(16))
+    const nodes = new Map(
+      [first, second].map(spanData => [
+        referenceKey(spanData),
+        { spanData, depth: 0, matched: true },
+      ])
+    )
+    const firstRow = {
+      ...row(first),
+      estimate: { total: 1, incomplete: false },
+    }
+    const secondRow = {
+      ...row(second),
+      estimate: { total: 2, incomplete: false },
+    }
+    let finish!: () => void
+    const loader = vi
+      .spyOn(telemetryAPI, 'getSpanLogs')
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === 'success'
+                ? resolve([])
+                : reject(new Error('unavailable'))
+          })
+      )
+    const view = render(EvalRowDetail, {
+      experiment,
+      row: firstRow,
+      telemetryNodes: nodes,
+      mode: 'cost',
+    })
+    await waitFor(() => expect(loader).toHaveBeenCalledTimes(1))
+    const accounting = screen.getByRole('table', {
+      name: `${first.name} accounting`,
+    })
+    expect(accounting).toHaveTextContent('C$1.000')
+    await view.rerender({
+      componentProps: {
+        experiment,
+        row: secondRow,
+        telemetryNodes: nodes,
+        mode: 'cost',
+      },
+    })
+    await waitFor(() => expect(loader).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Loading linked log evidence…')).toBeNull()
+    expect(
+      await screen.findByText('Loading linked log evidence…')
+    ).toBeVisible()
+    expect(
+      screen.getByRole('table', { name: `${first.name} accounting` })
+    ).toBe(accounting)
+    expect(accounting).toHaveTextContent('C$1.000')
+    expect(
+      screen.queryByRole('table', { name: `${second.name} accounting` })
+    ).toBeNull()
+    finish()
+    const replacement = await screen.findByRole('table', {
+      name: `${second.name} accounting`,
+    })
+    expect(replacement).toHaveTextContent('C$2.000')
+    expect(screen.queryByText('Loading linked log evidence…')).toBeNull()
+    if (outcome === 'failure') {
+      expect(
+        screen.getByText('Linked log evidence could not be loaded.')
+      ).toBeVisible()
+    }
+  }
+)
+
 it('shows span output immediately and never lets a late log response replace the newly selected tool', async () => {
   const first = span('1'.repeat(16))
   const second = span('2'.repeat(16))
