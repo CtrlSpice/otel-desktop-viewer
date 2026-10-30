@@ -91,7 +91,7 @@ func openRPCDocument() map[string]any {
 			"kind":   map[string]any{"enum": []string{"field", "attribute"}}, "key": text,
 		}, "source", "kind", "key"),
 		"LogErrorNavigation": rpcObject(map[string]any{"count": integer, "index": nullableInteger, "previous": map[string]any{"anyOf": []any{rpcObject(map[string]any{"logRef": text, "offset": integer}, "logRef", "offset"), map[string]any{"type": "null"}}}, "next": map[string]any{"anyOf": []any{rpcObject(map[string]any{"logRef": text, "offset": integer}, "logRef", "offset"), map[string]any{"type": "null"}}}}, "count", "index", "previous", "next"),
-		"MetricSummaries": rpcArray(rpcObject(map[string]any{"metricRef": text, "name": text, "description": text, "unit": text, "metricType": text,
+		"MetricSummaries": rpcArray(rpcObject(map[string]any{"metricRef": text, "name": text, "unit": text, "metricType": text,
 			"aggregationTemporalityCode": nullableInteger, "aggregationTemporality": nullableText, "isMonotonic": map[string]any{"type": []string{"boolean", "null"}},
 			"serviceName": text, "seriesCount": nullableInteger, "seriesCardinality": integer, "dataPointCount": nullableInteger,
 			"lastValue": map[string]any{"anyOf": []any{rpcSchemaRef("Double"), map[string]any{"type": "null"}}}, "lastSeen": nullableText,
@@ -156,7 +156,7 @@ func openRPCDocument() map[string]any {
 		{"getLogErrorNavigation", "LogErrorNavigation", "Returns the count and neighbouring error logs (severityNumber >= 17) across the full time/query/sort result, capped by optional limit before navigation. Each target has logRef and zero-based result offset. index is the selected error's one-based position, or null for a missing/non-error selection. Previous/next do not wrap; a missing selection has no previous target and next points to the first error. Counts and targets come from one database statement.", 2},
 		{"getTraceLogSummaries", "LogSummaries", "Returns log summaries carrying the received trace ID, including eventName and nullable spanID. Effective timestamp uses observedTimestamp when received timestamp is zero. bodyPreview is display text.", 1},
 		{"getLog", "Log", "Returns one complete normalized log. logRef is a generated database-local ID, not an OTel log ID. timestamp/observedTimestamp are separate received uint64 Unix nanoseconds as decimal strings. Absent trace/span IDs are null. body and attributes retain recursive tagged values. Resource/Scope and schema URLs remain associated with this log.", 1},
-		{"searchMetricSummaries", "MetricSummaries", "Returns Metric summaries, not exact datapoints. seriesCount/dataPointCount are window-scoped computed counts; seriesCardinality covers retained datapoints. lastSeen is the maximum window-scoped datapoint timestamp, decimal Unix nanoseconds. lastValue selects the latest scalar value, a computed numeric display projection that may coerce int64 to double. aggregationTemporalityCode is received; its label is computed. Use getMetric/getMetricSeries for exact values. Omitted/null limit is unbounded; no truncation flag.", 2},
+		{"searchMetricSummaries", "MetricSummaries", "Returns compact Metric summaries without description, metadata, resource/scope payloads or datapoints. Uses the same search, sorting and limit builder as native Arrow summaries, with JSON output. seriesCount/dataPointCount are window-scoped computed counts; seriesCardinality covers retained datapoints. lastSeen is the maximum window-scoped datapoint timestamp, decimal Unix nanoseconds. lastValue selects the latest scalar value, a computed numeric display projection that may coerce int64 to double. aggregationTemporalityCode is received; its label is computed. Use getMetric for description, metadata and the series catalogue; use getMetricSeries for exact datapoints. Omitted/null limit is unbounded; no truncation flag.", 2},
 		{"getMetric", "Metric", "Returns received Metric identity and a series catalogue. metricRef/seriesRef are generated database-local IDs. Metadata and attributes are typed. Catalogue datapointCount is exact decimal text; first/lastDatapointTimestamp are min/max received timestamps, nullable when no datapoints. Temporality/isMonotonic fields appear only for applicable kinds; unknown received signed temporality codes remain intact.", 1},
 		{"getMetricSeries", "MetricSeries", "Returns exact retained received datapoints for one database-local Metric/series pair and inclusive timestamp window. timestamps/startTime, signed intValue, unsigned count/bucketCounts/zeroCount use decimal strings. doubleValue uses finite numbers or IEEE-754 bit text for negative zero/non-finite values. Inactive intValue/doubleValue is null; absent histogram sum/min/max are omitted, not zero. Exemplars and typed attributes stay associated with their datapoints. Empty matching window returns datapoints:[]. Optional includeDatapoints=false returns complete received context with datapoints:[] and skips datapoint reconstruction; omitted/null defaults to true.", 4},
 		{"getMetricView", "MetricView", "Returns SQL-computed chart data: Metric metadata, series, statistics, sparklines, histogram/time buckets and aggregate data. Series attributes are empty with attributesComplete=false; labelPreviews contains bounded distinguishing-column text. Use getMetricSeriesOrder for database-side sorting and getMetricSeries for complete received context. Not an exact retained datapoint export; chart calculations can use floating-point display values. See docs/metric-resolution.md for bucket/aggregation formulas and precision. Received numeric payload fields retain exact decimal/typed wire encoding. Optional bucket counts control resolution; 0 uses store defaults. seriesRefs narrows series; selectedSeriesRefs controls aggregate selection; datapointSeriesRefs/Limit bounds datapoint payloads. tzOffsetNs is signed nanoseconds; tzName is the timezone name.", 3},
@@ -329,7 +329,11 @@ func rpcExamples(method string) []map[string]any {
 }
 
 func openRPCHandler() (http.Handler, error) {
-	document, err := json.Marshal(openRPCDocument())
+	return apiDocumentHandler("openrpc.json", openRPCDocument())
+}
+
+func apiDocumentHandler(name string, value map[string]any) (http.Handler, error) {
+	document, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +343,6 @@ func openRPCHandler() (http.Handler, error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", revalidateCacheControl)
 		w.Header().Set("ETag", etag)
-		http.ServeContent(w, r, "openrpc.json", time.Time{}, bytes.NewReader(document))
+		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(document))
 	}), nil
 }

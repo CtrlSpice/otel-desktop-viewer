@@ -172,7 +172,7 @@ scripts/                              # OTLP seed data for local development
 docs/                                 # Current behavior, usage and documentation assets
 ```
 
-The root Go module builds the collector binary. The `desktop` exporter writes telemetry through the store owned by the `duckdb` extension. The frontend communicates with the server through JSON-RPC and builds into committed embedded assets.
+The root Go module builds the collector binary. The `desktop` exporter writes telemetry through the store owned by the `duckdb` extension. The frontend reads native telemetry through Arrow HTTP datasets and uses JSON-RPC for control/count requests and remaining tabular reads. The CLI uses JSON-RPC with table/JSON output. The frontend builds into committed embedded assets.
 
 ## Change conventions
 
@@ -188,6 +188,11 @@ The root Go module builds the collector binary. The `desktop` exporter writes te
 Discuss DuckDB schema, retention, ingestion, and store-lifecycle changes before implementation. Schema objects live under `desktopexporter/internal/store/queries/ddl/`; update the applicable `_order` manifest and schema-version expectations with every schema change.
 
 JSON-RPC changes should preserve deliberate wire contracts, validate input at the server boundary, map expected store errors explicitly, and include handler plus store-level tests.
+
+Signal search builders are shared by JSON and Arrow projections. When changing
+summary fields, update CLI consumers, OpenRPC and the agent guide as well as the
+frontend. Keep full received fields in detail/export paths. Verify a CLI command
+against the production server so mocked responses cannot hide contract drift.
 
 ### Frontend
 
