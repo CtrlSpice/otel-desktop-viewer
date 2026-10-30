@@ -2,7 +2,12 @@ import type { AttributeValue } from '@/types/api-types'
 import type { FieldDefinition } from '@/search/model'
 import { createPathFieldReference } from '@/components/shared/Search/attribute-field-reference'
 import { ArrowCell, ArrowFrame } from './arrow-data'
-import { columnView, listValues, number, text } from './arrow-record'
+import {
+  cachedColumnView as columnView,
+  listValues,
+  number,
+  text,
+} from './arrow-record'
 import { attributeValue } from './arrow-values'
 
 export type AttributeMatch = {

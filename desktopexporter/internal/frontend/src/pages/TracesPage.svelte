@@ -196,8 +196,7 @@
   let displayError = $derived(page.error ?? actionError)
 
   let currentTraceData = $derived(page.selectedID ? traceData : null)
-  // Retain the old tree highlight during a trace handoff. Details always follows
-  // the requested composite identity, never the retained tree's old record.
+  // Requested and displayed identities stay separate during a handoff.
   let retainedTreeSpanID = $state<string | null>(null)
   let displayingRequestedTrace = $derived(
     currentTraceData?.traceID === page.selectedID
@@ -435,6 +434,45 @@
       fieldRequest = undefined
   })
 
+  // Publish the complete Details presentation together. Pending requests retain
+  // its own span, activity, links and action targets, never a new selection's
+  // metadata combined with the previous record's values.
+  let displayedDetail = $state.raw<{
+    span: SpanData
+    logs: TraceLogSummary[]
+    rootSpanID?: string
+    fieldTarget?: DetailFieldTarget
+    salvaged: boolean
+    cyclePoint: boolean
+    selectedEventIndex: number | null
+    selectedLogRef: string | null
+  }>()
+  $effect.pre(() => {
+    if (!page.selectedID) {
+      displayedDetail = undefined
+      return
+    }
+    if (!fullSpan) return
+    displayedDetail = {
+      span: fullSpan,
+      logs: selectedSpanLogs,
+      rootSpanID: displayingRequestedTrace
+        ? currentTraceData?.spans.find(node => !node.spanData.parentSpanID)
+            ?.spanData.spanID
+        : undefined,
+      fieldTarget:
+        fieldRequest?.traceID === fullSpan.traceID &&
+        fieldRequest.spanID === fullSpan.spanID
+          ? fieldRequest.target
+          : undefined,
+      salvaged: displayingRequestedTrace && (selectedNode?.salvaged ?? false),
+      cyclePoint:
+        displayingRequestedTrace && (selectedNode?.cyclePoint ?? false),
+      selectedEventIndex: resolvedEventIndex,
+      selectedLogRef: resolvedLogRef,
+    }
+  })
+
   function handleSearchResults(event: SearchResultEvent) {
     page.handleSearchResults(event)
     if (event.signal === 'traces') {
@@ -455,6 +493,7 @@
     requestedTraceID = null
     spanCache.clear()
     spanDetails.select(null)
+    displayedDetail = undefined
     traceData = null
     traceLogs = []
     previewValues = []
@@ -580,11 +619,14 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
+  loadingRequestKey={`${page.requestKey}:${page.selectedID}:${selectedSpanID}:${detailEpoch}`}
   loadingMessage={detailLoading
     ? 'Loading selected trace…'
-    : page.loading
-      ? 'Loading traces…'
-      : undefined}
+    : spanDetails.loading
+      ? 'Loading selected span…'
+      : page.loading
+        ? 'Loading traces…'
+        : undefined}
   itemKey={t => t.traceID}
 >
   {#snippet drawerSearch()}
@@ -710,24 +752,18 @@
 
   {#snippet detail()}
     <DetailView
-      span={fullSpan}
+      span={displayedDetail?.span}
       loading={(detailLoading && !fullSpan) ||
         spanDetails.loading ||
         (!!detailIdentity && !fullSpan && !spanDetails.error)}
       error={spanDetails.error ?? ''}
-      rootSpanID={displayingRequestedTrace
-        ? currentTraceData?.spans.find(node => !node.spanData.parentSpanID)
-            ?.spanData.spanID
-        : undefined}
-      fieldTarget={fieldRequest?.spanID === selectedSpanID
-        ? fieldRequest.target
-        : undefined}
-      salvaged={displayingRequestedTrace && (selectedNode?.salvaged ?? false)}
-      cyclePoint={displayingRequestedTrace &&
-        (selectedNode?.cyclePoint ?? false)}
-      selectedEventIndex={resolvedEventIndex}
-      selectedLogRef={resolvedLogRef}
-      logs={selectedSpanLogs}
+      rootSpanID={displayedDetail?.rootSpanID}
+      fieldTarget={displayedDetail?.fieldTarget}
+      salvaged={displayedDetail?.salvaged}
+      cyclePoint={displayedDetail?.cyclePoint}
+      selectedEventIndex={displayedDetail?.selectedEventIndex}
+      selectedLogRef={displayedDetail?.selectedLogRef}
+      logs={displayedDetail?.logs ?? []}
     />
   {/snippet}
 

@@ -1,5 +1,5 @@
 import { ArrowFrame, type ArrowCell } from './arrow-data'
-import { columnView, number, text } from './arrow-record'
+import { cachedColumnView as columnView, number, text } from './arrow-record'
 import { rowViews } from './arrow-values'
 import type {
   AttributeKey,

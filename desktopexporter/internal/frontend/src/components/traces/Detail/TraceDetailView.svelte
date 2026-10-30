@@ -134,6 +134,8 @@
   })
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
+  let rawSpan = $state.raw<SpanData>()
+  const actionSpan = $derived(detailView === 'raw' ? (rawSpan ?? span) : span)
 
   function requestedField(key: string, source = 'span') {
     return (
@@ -143,9 +145,9 @@
     )
   }
 
-  let isRoot = $derived(!span?.parentSpanID)
+  let isRoot = $derived(!actionSpan?.parentSpanID)
   const loadSpanJSON = $derived.by(() => {
-    const selected = span
+    const selected = actionSpan
     return selected
       ? (signal: AbortSignal) => spanCopyJSON(selected, signal)
       : undefined
@@ -201,13 +203,13 @@
       </DetailViewTabs>
     {/snippet}
     {#if error}<p class="p-3 text-papaya" role="alert">{error}</p>
-    {:else if loading && !span}<p class="p-3 text-subtle" role="status">
-        Loading selected span…
-      </p>
-    {:else if span}<DetailViews
+    {/if}
+    {#if span}<DetailViews
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
+        record={span}
+        bind:displayedRecord={rawSpan}
         wholeURL={`/export/traces/${span.traceID}`}
         scopes={[
           {
@@ -461,7 +463,9 @@
             {/if}
           </tbody>
         </table>
-      </DetailViews>{:else}<p class="p-3 text-subtle">No span selected</p>{/if}
+      </DetailViews>{:else if !loading && !error}<p class="p-3 text-subtle">
+        No span selected
+      </p>{/if}
   </DetailBubble>
 {/snippet}
 {#snippet eventsSection()}

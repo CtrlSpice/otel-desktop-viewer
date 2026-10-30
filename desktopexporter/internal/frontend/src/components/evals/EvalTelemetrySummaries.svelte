@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
@@ -53,8 +54,8 @@
   $effect(() => {
     const ids = lookupIDs ? lookupIDs.split(',') : []
     const controller = new AbortController()
-    traces = new Map()
     async function load() {
+      const received = new Map<string, TraceSummary | null>()
       for (let offset = 0; offset < ids.length; offset += 4) {
         if (controller.signal.aborted) return
         await Promise.all(
@@ -64,14 +65,14 @@
                 id,
                 controller.signal
               )
-              if (!controller.signal.aborted)
-                traces = new Map(traces).set(id, trace)
+              if (!controller.signal.aborted) received.set(id, trace)
             } catch {
               // A failed request does not establish that the trace is absent.
             }
           })
         )
       }
+      if (!controller.signal.aborted) traces = received
     }
     void load()
     return () => controller.abort()
@@ -147,11 +148,14 @@
             class="min-h-[var(--signal-card-row-h)] truncate text-sm text-secondary"
             title={entry.label}
           >
-            {span
-              ? entry.label
-              : loading
-                ? 'Loading span…'
-                : 'Span unavailable'}
+            {#if span}{entry.label}
+            {:else if loading}<LoadingStatus
+                pending
+                label="Loading span…"
+                requestKey={referenceKey(entry.reference)}
+                class="text-sm text-secondary"
+              />
+            {:else}Span unavailable{/if}
           </div>
         {/if}
       {/snippet}

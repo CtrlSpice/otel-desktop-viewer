@@ -11,6 +11,8 @@ import type {
 } from '@/types/api-types'
 import { ArrowFrame } from './arrow-data'
 import { attributeValue, attributes, rowViews } from './arrow-values'
+import { cachedView } from './arrow-record'
+import { resourceData, scopeData } from './arrow-traces'
 
 function text(frame: ArrowFrame, row: number, name: string): string {
   const cell = frame.cell(name, row)
@@ -48,7 +50,7 @@ function attributeKind(
 }
 
 export function traceSummary(frame: ArrowFrame, row: number): TraceSummary {
-  return {
+  return cachedView({
     get traceID() {
       return frame.cell('traceID', row).text()
     },
@@ -59,14 +61,14 @@ export function traceSummary(frame: ArrowFrame, row: number): TraceSummary {
       const cell = frame.cell('rootSpan', row)
       if (cell.isNull) return undefined
       const root = cell.struct()
-      return {
+      return cachedView({
         get serviceName() {
           return text(root, 0, 'serviceName')
         },
         get name() {
           return text(root, 0, 'name')
         },
-      }
+      })
     },
     get startTime() {
       return frame.cell('startTime', row).integer()
@@ -86,39 +88,43 @@ export function traceSummary(frame: ArrowFrame, row: number): TraceSummary {
     get serviceBreakdown() {
       const cell = frame.cell('serviceBreakdown', row)
       if (cell.isNull) return []
-      return rowViews(new ArrowFrame(cell.list()), (parts, i) => ({
-        get key() {
-          return parts.cell('key', i).text()
-        },
-        get label() {
-          return parts.cell('label', i).text()
-        },
-        get count() {
-          return parts.cell('count', i).number()
-        },
-        get other() {
-          return parts.cell('other', i).boolean()
-        },
-      }))
+      return rowViews(new ArrowFrame(cell.list()), (parts, i) =>
+        cachedView({
+          get key() {
+            return parts.cell('key', i).text()
+          },
+          get label() {
+            return parts.cell('label', i).text()
+          },
+          get count() {
+            return parts.cell('count', i).number()
+          },
+          get other() {
+            return parts.cell('other', i).boolean()
+          },
+        })
+      )
     },
     get matchedSpans() {
       if (!frame.has('matchedSpans')) return undefined
       const cell = frame.cell('matchedSpans', row)
       if (cell.isNull) return undefined
-      return rowViews(new ArrowFrame(cell.list()), (matches, i) => ({
-        get traceID() {
-          return matches.cell('traceID', i).text()
-        },
-        get spanID() {
-          return matches.cell('spanID', i).text()
-        },
-      }))
+      return rowViews(new ArrowFrame(cell.list()), (matches, i) =>
+        cachedView({
+          get traceID() {
+            return matches.cell('traceID', i).text()
+          },
+          get spanID() {
+            return matches.cell('spanID', i).text()
+          },
+        })
+      )
     },
-  }
+  })
 }
 
 export function logSummary(frame: ArrowFrame, row: number): LogSummary {
-  return {
+  return cachedView({
     get logRef() {
       return frame.cell('logRef', row).text()
     },
@@ -143,7 +149,7 @@ export function logSummary(frame: ArrowFrame, row: number): LogSummary {
     get bodyType() {
       return attributeKind(frame, row, 'bodyType')
     },
-  }
+  })
 }
 
 export function traceLogSummary(
@@ -153,14 +159,14 @@ export function traceLogSummary(
   // SAFETY: Copying every LogSummary property descriptor supplies all summary
   // fields; the target supplies the required eventName and nullable spanID.
   return Object.defineProperties(
-    {
+    cachedView({
       get eventName() {
         return text(frame, row, 'eventName')
       },
       get spanID() {
         return nullableText(frame, row, 'spanID')
       },
-    },
+    }),
     Object.getOwnPropertyDescriptors(logSummary(frame, row))
   ) as TraceLogSummary
 }
@@ -173,24 +179,26 @@ export function logTableRow(
   // SAFETY: The descriptors supply every LogSummary field without reading it;
   // the target adds the typed optional columnValues getter.
   return Object.defineProperties(
-    {
+    cachedView({
       get columnValues() {
         if (!frame.has('columnValues')) return undefined
         const values = new ArrowFrame(frame.cell('columnValues', row).list())
-        return columns.map((column, i) => ({
-          ...column,
-          get present() {
-            return values.cell('present', i).boolean()
-          },
-          get valueType() {
-            return attributeKind(values, i, 'valueType')
-          },
-          get preview() {
-            return text(values, i, 'preview')
-          },
-        }))
+        return columns.map((column, i) =>
+          cachedView({
+            ...column,
+            get present() {
+              return values.cell('present', i).boolean()
+            },
+            get valueType() {
+              return attributeKind(values, i, 'valueType')
+            },
+            get preview() {
+              return text(values, i, 'preview')
+            },
+          })
+        )
       },
-    },
+    }),
     Object.getOwnPropertyDescriptors(logSummary(frame, row))
   ) as LogTableRow
 }
@@ -198,7 +206,7 @@ export function logTableRow(
 export function logData(frame: ArrowFrame, row: number): LogData {
   const resource = frame.cell('resource', row).struct()
   const scope = frame.cell('scope', row).struct()
-  return {
+  return cachedView({
     get logRef() {
       return frame.cell('logRef', row).text()
     },
@@ -235,35 +243,15 @@ export function logData(frame: ArrowFrame, row: number): LogData {
     get droppedAttributesCount() {
       return frame.cell('droppedAttributesCount', row).number()
     },
-    resource: {
-      get attributes() {
-        return attributes(resource.cell('attributes', 0))
-      },
-      get droppedAttributesCount() {
-        return resource.cell('droppedAttributesCount', 0).number()
-      },
-    },
-    scope: {
-      get name() {
-        return text(scope, 0, 'name')
-      },
-      get version() {
-        return text(scope, 0, 'version')
-      },
-      get attributes() {
-        return attributes(scope.cell('attributes', 0))
-      },
-      get droppedAttributesCount() {
-        return scope.cell('droppedAttributesCount', 0).number()
-      },
-    },
+    resource: resourceData(resource, 0),
+    scope: scopeData(scope, 0),
     get resourceSchemaURL() {
       return text(resource, 0, 'schemaUrl')
     },
     get scopeSchemaURL() {
       return text(scope, 0, 'schemaUrl')
     },
-  }
+  })
 }
 
 function metricType(frame: ArrowFrame, row: number): MetricType {
@@ -281,7 +269,7 @@ function metricType(frame: ArrowFrame, row: number): MetricType {
 }
 
 export function metricSummary(frame: ArrowFrame, row: number): MetricSummary {
-  return {
+  return cachedView({
     get metricRef() {
       return frame.cell('metricRef', row).text()
     },
@@ -328,5 +316,5 @@ export function metricSummary(frame: ArrowFrame, row: number): MetricSummary {
       const cell = frame.cell('lastSeen', row)
       return cell.isNull ? null : cell.integer()
     },
-  }
+  })
 }

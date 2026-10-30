@@ -2,6 +2,8 @@
   import { tick } from 'svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import SeriesDatapointList from './SeriesDatapointList.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import type { DataPoint } from '@/types/api-types'
 
   let { error, onretry }: { error?: string; onretry?: () => void } = $props()
   const ctx = getMetricViewContext()
@@ -14,6 +16,12 @@
   const datapoints = $derived(
     series ? ctx.seriesDatapoints(series.seriesRef) : undefined
   )
+  let displayed = $state.raw<{ key: string; datapoints: DataPoint[] }>()
+  $effect(() => {
+    if (!series) displayed = undefined
+    else if (datapoints !== undefined)
+      displayed = { key: series.seriesRef, datapoints }
+  })
 
   $effect(() => {
     const key = ctx.selectedSeriesKey
@@ -44,13 +52,18 @@
           class="btn btn-ghost mx-3"
           onclick={onretry}>Retry datapoints</button
         >{/if}
-    {:else if datapoints === undefined}
-      <p role="status" class="px-3 py-2 text-sm text-subtle">
-        Loading datapoints…
-      </p>
-    {:else}
-      {#key series.seriesRef}
-        <SeriesDatapointList {datapoints} />
+    {/if}
+    {#if datapoints === undefined && !error}
+      <LoadingStatus
+        pending
+        label="Loading datapoints…"
+        requestKey={series.seriesRef}
+        class="block px-3 py-2 text-sm text-subtle"
+      />
+    {/if}
+    {#if displayed}
+      {#key displayed.key}
+        <SeriesDatapointList datapoints={displayed.datapoints} />
       {/key}
     {/if}
   {:else}

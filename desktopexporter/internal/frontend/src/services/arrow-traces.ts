@@ -13,6 +13,7 @@ import type {
 } from '@/types/api-types'
 import { ArrowFrame } from './arrow-data'
 import { attributes, rowViews } from './arrow-values'
+import { cachedView } from './arrow-record'
 
 function text(frame: ArrowFrame, row: number, name: string): string {
   const cell = frame.cell(name, row)
@@ -44,18 +45,18 @@ function previewValueType(
 }
 
 export function resourceData(frame: ArrowFrame, row: number): ResourceData {
-  return {
+  return cachedView({
     get attributes() {
       return attributes(frame.cell('attributes', row))
     },
     get droppedAttributesCount() {
       return frame.cell('droppedAttributesCount', row).number()
     },
-  }
+  })
 }
 
 export function scopeData(frame: ArrowFrame, row: number): ScopeData {
-  return {
+  return cachedView({
     get name() {
       return text(frame, row, 'name')
     },
@@ -68,11 +69,11 @@ export function scopeData(frame: ArrowFrame, row: number): ScopeData {
     get droppedAttributesCount() {
       return frame.cell('droppedAttributesCount', row).number()
     },
-  }
+  })
 }
 
 function eventData(frame: ArrowFrame, row: number): EventData {
-  return {
+  return cachedView({
     get name() {
       return text(frame, row, 'name')
     },
@@ -85,11 +86,11 @@ function eventData(frame: ArrowFrame, row: number): EventData {
     get droppedAttributesCount() {
       return frame.cell('droppedAttributesCount', row).number()
     },
-  }
+  })
 }
 
 function linkData(frame: ArrowFrame, row: number): LinkData {
-  return {
+  return cachedView({
     get traceID() {
       const cell = frame.cell('traceID', row)
       return cell.isNull ? null : cell.text()
@@ -115,17 +116,17 @@ function linkData(frame: ArrowFrame, row: number): LinkData {
       if (target.isNull) return { target: null }
       const data = target.struct()
       return {
-        target: {
+        target: cachedView({
           get name() {
             return text(data, 0, 'name')
           },
           get serviceName() {
             return text(data, 0, 'serviceName')
           },
-        },
+        }),
       }
     },
-  }
+  })
 }
 
 /** Native timestamps stay absolute; resource/scope references share lazy views. */
@@ -143,7 +144,7 @@ export function traceData(frame: ArrowFrame): TraceData {
     new ArrowFrame(frame.cell('spans', 0).list()),
     (nodes, row): SpanNode => {
       const data = nodes.cell('spanData', row).struct()
-      const spanData: SpanData = {
+      const spanData: SpanData = cachedView({
         traceID,
         get traceState() {
           return text(data, 0, 'traceState')
@@ -235,7 +236,7 @@ export function traceData(frame: ArrowFrame): TraceData {
         get statusMessage() {
           return text(data, 0, 'statusMessage')
         },
-      }
+      })
       const node: SpanNode = {
         spanData,
         get depth() {
@@ -328,16 +329,17 @@ export function traceWaterfallData(frame: ArrowFrame): TraceWaterfallData {
         droppedLinksCount: data.cell('droppedLinksCount', 0).number(),
         events: rowViews(
           new ArrowFrame(data.cell('events', 0).list()),
-          (events, row) => ({
-            name: text(events, row, 'name'),
-            timestamp: events.cell('timestamp', row).integer(),
-            droppedAttributesCount: events
-              .cell('droppedAttributesCount', row)
-              .number(),
-            get summaryAttributes() {
-              return attributes(events.cell('summaryAttributes', row))
-            },
-          })
+          (events, row) =>
+            cachedView({
+              name: text(events, row, 'name'),
+              timestamp: events.cell('timestamp', row).integer(),
+              droppedAttributesCount: events
+                .cell('droppedAttributesCount', row)
+                .number(),
+              get summaryAttributes() {
+                return attributes(events.cell('summaryAttributes', row))
+              },
+            })
         ),
         resource: resourceViews[r]!,
         scope: scopeViews[s]!,

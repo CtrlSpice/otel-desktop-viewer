@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
   import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -302,9 +303,12 @@
   aria-label="Timeseries"
   aria-busy={sortLoading}
 >
-  {#if sortLoading}<p role="status" class="px-3 py-2 text-subtle">
-      Sorting series…
-    </p>{/if}
+  <LoadingStatus
+    pending={sortLoading}
+    label="Sorting series…"
+    requestKey={`${metricRef}:${sort?.key}:${sort?.direction}`}
+    class="block px-3 py-2 text-subtle"
+  />
   {#if sortError}<p role="alert" class="px-3 py-2 text-papaya">{sortError}</p>
     <button type="button" class="btn btn-ghost mx-3" onclick={() => sortRetry++}
       >Retry sort</button
@@ -504,9 +508,12 @@
           <tr id={detailID} data-series-attributes={ts.key}>
             <td colspan={columns.length} class="p-0">
               {#if loadingAttributes.has(ts.key)}
-                <p role="status" class="px-3 py-2 text-subtle">
-                  Loading series attributes…
-                </p>
+                <LoadingStatus
+                  pending
+                  label="Loading series attributes…"
+                  requestKey={`${metricRef}:${ts.key}`}
+                  class="block px-3 py-2 text-subtle"
+                />
               {:else if attributeErrors.has(ts.key)}
                 <p role="alert" class="px-3 py-2 text-papaya">
                   {attributeErrors.get(ts.key)}

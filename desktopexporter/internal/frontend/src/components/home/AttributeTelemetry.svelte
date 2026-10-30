@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import LogCard from '@/components/logs/LogCard.svelte'
@@ -49,7 +50,9 @@
   const PAGE_SIZE_KEY = 'home-telemetry-page-size'
   let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
   let groups = $state<Group[]>([])
-  let retry = $state(0)
+  let loading = $state(false)
+  let requestKey = $state(0)
+  let displayedAttribute = $state<DiscoveredAttribute | null>(null)
   let selectedSignal = $state<DiscoverySignal>('traces')
   let viewport = $state<HTMLDivElement>()
   const panelID = $props.id()
@@ -95,7 +98,7 @@
     if (group) selectedSignal = group.signal
   }
   function setPage(index: number) {
-    if (!active || active.loading || active.error) return
+    if (!active || loading || active.error) return
     active.pageIndex = Math.max(0, Math.min(index, pageCount - 1))
     active.scrollTop = 0
   }
@@ -109,49 +112,56 @@
   })
   $effect(() => {
     void revision
-    void retry
     const controller = new AbortController()
     const selection = { attribute, valueIdentity, service, options }
+    requestKey = untrack(() => requestKey) + 1
     if (!selection.service) {
       groups = []
+      displayedAttribute = null
+      loading = false
       return
     }
+    loading = true
     const selectedService = selection.service
-    groups = discoverySignals
-      .filter(
-        signal =>
-          (!attribute ||
-            attributeOwners[signal].includes(attribute.ownerType)) &&
-          options.queries?.[signal] !== false
-      )
-      .map(signal => ({
-        signal,
-        cards: [],
-        loading: true,
-        error: '',
-        pageIndex: 0,
-        scrollTop: 0,
-      }))
-    untrack(() => {
-      for (const group of groups) {
-        void loadAttributeTelemetry(
-          group.signal,
-          selection.attribute,
-          selection.valueIdentity,
-          selectedService,
-          selection.options,
-          controller.signal
-        )
-          .then(cards => {
-            if (!controller.signal.aborted) group.cards = cards
-          })
-          .catch(error => {
-            if (!controller.signal.aborted) group.error = String(error)
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) group.loading = false
-          })
-      }
+    const signals = discoverySignals.filter(
+      signal =>
+        (!attribute || attributeOwners[signal].includes(attribute.ownerType)) &&
+        options.queries?.[signal] !== false
+    )
+    const pending = signals.map((signal): Group => ({
+      signal,
+      cards: [],
+      loading: true,
+      error: '',
+      pageIndex: 0,
+      scrollTop: 0,
+    }))
+    if (untrack(() => groups.length === 0)) {
+      groups = pending
+      displayedAttribute = selection.attribute
+    }
+    void Promise.all(
+      pending.map(async group => {
+        try {
+          group.cards = await loadAttributeTelemetry(
+            group.signal,
+            selection.attribute,
+            selection.valueIdentity,
+            selectedService,
+            selection.options,
+            controller.signal
+          )
+        } catch (error) {
+          group.error = String(error)
+        }
+        group.loading = false
+        return group
+      })
+    ).then(result => {
+      if (controller.signal.aborted) return
+      groups = result
+      displayedAttribute = selection.attribute
+      loading = false
     })
     return () => controller.abort()
   })
@@ -180,18 +190,18 @@
 {/snippet}
 
 <DetailBubble
-  label={attribute?.key ?? 'Telemetry'}
+  label={displayedAttribute?.key ?? 'Telemetry'}
   layoutKey="attribute-telemetry"
-  hideLabel={!attribute}
+  hideLabel={!displayedAttribute}
   disabled={!service}
   contained
 >
   {#snippet labelSuffix()}
-    {#if attribute}
+    {#if displayedAttribute}
       <span class="text-subtle" aria-hidden="true">·</span>
-      <span class="text-secondary">{attribute.kind}</span>
+      <span class="text-secondary">{displayedAttribute.kind}</span>
       <span class="text-subtle" aria-hidden="true">·</span>
-      <span class="text-base-content">{attribute.ownerType}</span>
+      <span class="text-base-content">{displayedAttribute.ownerType}</span>
     {/if}
   {/snippet}
   {#snippet action()}{@render signalTabs()}{/snippet}
@@ -209,22 +219,22 @@
       class="attribute-telemetry__cards"
       role="region"
       aria-label={`Matching ${active?.signal ?? 'telemetry'}`}
-      aria-busy={active?.loading ?? false}
+      aria-busy={loading}
       tabindex="0"
       onscroll={event => {
         if (active) active.scrollTop = event.currentTarget.scrollTop
       }}
     >
-      {#if active?.loading}<p role="status" class="text-subtle">
-          Loading matching {active.signal}…
-        </p>
-      {:else if active?.error}<p role="alert" class="text-papaya">
+      <LoadingStatus
+        pending={loading}
+        label={`Loading matching ${active?.signal ?? 'telemetry'}…`}
+        {requestKey}
+      />
+      {#if active?.error}<p role="alert" class="text-papaya">
           {active.error}
         </p>
-        <button class="btn btn-ghost btn-sm" onclick={() => retry++}
-          >Retry</button
-        >
-      {:else if active}
+      {/if}
+      {#if active}
         {#each page as card (cardID(card))}
           {#if card.signal === 'traces'}
             <TraceCard
@@ -244,7 +254,7 @@
             />
           {/if}
         {/each}
-      {:else}<p class="text-subtle">
+      {:else if !loading}<p class="text-subtle">
           No matching telemetry in this service, search and time range.
         </p>{/if}
     </div>
@@ -257,7 +267,7 @@
         />
       {/snippet}
       {#snippet navigation()}
-        <div class:invisible={active?.loading || !!active?.error}>
+        <div>
           <DetailNav
             index={active?.pageIndex ?? -1}
             total={pageCount}

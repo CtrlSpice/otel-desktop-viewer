@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
@@ -10,12 +11,12 @@
   import { parseGradingInput } from './grading-input'
 
   let {
-    assessment,
-    definition,
+    assessment: requestedAssessment,
+    definition: requestedDefinition,
     showScore = true,
     showHeading = true,
-    loadRubric,
-    loadExplanation,
+    loadRubric: requestedRubric,
+    loadExplanation: requestedExplanation,
   }: {
     assessment: Assessment
     definition?: AssessmentDefinition
@@ -24,23 +25,52 @@
     loadRubric?: EvalSourceTextLoader
     loadExplanation?: EvalSourceTextLoader
   } = $props()
-  let rubric = $state('')
+  let displayed = $state.raw<{
+    assessment: Assessment
+    definition?: AssessmentDefinition
+    loadRubric?: EvalSourceTextLoader
+    loadExplanation?: EvalSourceTextLoader
+    rubric: string
+  }>()
+  const assessment = $derived(displayed?.assessment ?? requestedAssessment)
+  const definition = $derived(
+    displayed ? displayed.definition : requestedDefinition
+  )
+  const loadRubric = $derived(
+    displayed ? displayed.loadRubric : requestedRubric
+  )
+  const loadExplanation = $derived(
+    displayed ? displayed.loadExplanation : requestedExplanation
+  )
+  const rubric = $derived(displayed?.rubric ?? '')
   let loading = $state(false)
+  let requestKey = $state.raw<AbortSignal>()
   let loadError = $state('')
   let instructionsOpen = $state(false)
-  const packet = $derived(loading ? undefined : parseGradingInput(rubric))
+  const packet = $derived(parseGradingInput(rubric))
   const name = $derived(definition?.name ?? assessment.id)
 
   $effect(() => {
-    rubric = assessment.rubric
+    const selected = {
+      assessment: requestedAssessment,
+      definition: requestedDefinition,
+      loadRubric: requestedRubric,
+      loadExplanation: requestedExplanation,
+      rubric: requestedAssessment.rubric,
+    }
     loadError = ''
-    const loader = loadRubric
+    const loader = requestedRubric
     loading = !!loader
-    if (!loader) return
+    if (!loader) {
+      displayed = selected
+      return
+    }
     const controller = new AbortController()
+    requestKey = controller.signal
     void loader(controller.signal)
       .then(value => {
-        if (!controller.signal.aborted) rubric = value
+        if (!controller.signal.aborted)
+          displayed = { ...selected, rubric: value }
       })
       .catch(() => {
         if (!controller.signal.aborted)
@@ -106,7 +136,7 @@
             </DetailField>
           {/each}
         {/each}
-      {:else if !loading && rubric}
+      {:else if rubric}
         <DetailField
           fieldName="criterion"
           fieldType="string"
@@ -119,9 +149,12 @@
       {/if}
     </tbody>
   </table>
-  {#if loading}<p class="px-3 py-2 text-sm text-subtle" role="status">
-      Loading grader input…
-    </p>{/if}
+  <LoadingStatus
+    pending={loading}
+    label="Loading grader input…"
+    {requestKey}
+    class="block px-3 py-2 text-sm text-subtle"
+  />
   {#if loadError}<p class="px-3 py-2 text-sm" role="alert">{loadError}</p>{/if}
   {#if packet}
     {#if packet.reference !== undefined || packet.evidence !== undefined || packet.artifact !== undefined}

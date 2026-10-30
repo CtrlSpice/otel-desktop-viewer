@@ -96,6 +96,9 @@ describe('Home service discovery', () => {
       expect(screen.getByRole('tab', { name: /^Logs/ })).toBeDisabled()
     )
     expect(services).toHaveBeenCalledTimes(1)
+    expect(traces).toHaveBeenCalledTimes(1)
+    expect(telemetryAPI.searchMetricSummaries).toHaveBeenCalledTimes(1)
+    expect(telemetryAPI.searchLogSummaries).toHaveBeenCalledTimes(1)
     expect(telemetryAPI.getTraceAttributeDefinitions).not.toHaveBeenCalled()
     expect(telemetryAPI.getMetricAttributeDefinitions).not.toHaveBeenCalled()
     expect(telemetryAPI.getLogAttributeDefinitions).not.toHaveBeenCalled()
@@ -108,6 +111,12 @@ describe('Home service discovery', () => {
     await waitFor(() =>
       expect(JSON.stringify(traces.mock.lastCall?.[2])).toContain('internal')
     )
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /^Logs/ })).toBeDisabled()
+    )
+    expect(traces).toHaveBeenCalledTimes(2)
+    expect(telemetryAPI.searchMetricSummaries).toHaveBeenCalledTimes(2)
+    expect(telemetryAPI.searchLogSummaries).toHaveBeenCalledTimes(2)
     const calls = traces.mock.calls.length
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(services).toHaveBeenCalledTimes(2))

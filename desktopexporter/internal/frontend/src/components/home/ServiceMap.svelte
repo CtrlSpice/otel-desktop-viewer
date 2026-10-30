@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { onDestroy, untrack } from 'svelte'
   import { Chart, Svg, type ChartState } from 'layerchart'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -424,10 +425,13 @@
         </Chart>
       {/key}
     </div>
+  {:else if loadingServices || busy}<LoadingStatus
+      pending
+      label="Loading service map…"
+      class="block p-3 text-subtle"
+    />
   {:else}<p class="p-3 text-subtle">
-      {loadingServices || busy
-        ? 'Loading service map…'
-        : 'No services match this search and time range.'}
+      No services match this search and time range.
     </p>{/if}
   {#if moreServices}<SignalFooter label="services" compact>
       {#snippet leading()}<span class="text-subtle"

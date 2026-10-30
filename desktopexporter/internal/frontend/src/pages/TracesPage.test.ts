@@ -426,7 +426,7 @@ describe('TracesPage trace detail lifecycle', () => {
     )
   })
 
-  it('starts known-span Details concurrently with the tree and hides stale identity', async () => {
+  it('starts known-span Details concurrently with the tree without an immediate loading replacement', async () => {
     const tree = deferred<TraceData>()
     const detail = deferred<SpanData>()
     searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
@@ -442,15 +442,9 @@ describe('TracesPage trace detail lifecycle', () => {
         expect.any(AbortSignal)
       )
     )
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Loading selected span'
-    )
+    expect(screen.queryByText('Loading selected span…')).not.toBeInTheDocument()
     detail.resolve({ ...makeSpanNode('root').spanData, name: 'Exact details' })
-    await waitFor(() =>
-      expect(
-        screen.queryByText('Loading selected span…')
-      ).not.toBeInTheDocument()
-    )
+    await screen.findByText('Exact details')
     tree.resolve(makeTraceData(0))
     await waitFor(() =>
       expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()

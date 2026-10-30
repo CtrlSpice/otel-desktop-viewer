@@ -1,6 +1,7 @@
 import { DataType } from 'apache-arrow'
 import type { Attribute, AttributeValue } from '@/types/api-types'
 import { ArrowCell, type ArrowFrame } from './arrow-data'
+import { cachedView, memoize } from './arrow-record'
 
 /** Allocate row references only; getters continue reading the retained vectors. */
 export function rowViews<T>(
@@ -31,6 +32,21 @@ function base64(bytes: Uint8Array): string {
 
 /** Presentation adapter: containers open lazily, scalars retain their Arrow type. */
 export function attributeValue(cell: ArrowCell): AttributeValue {
+  return cachedView(readAttributeValue(cell))
+}
+
+function attributeEntry(entries: ArrowFrame, row: number): Attribute {
+  return cachedView({
+    get key() {
+      return entries.cell('key', row).text()
+    },
+    get value() {
+      return attributeValue(entries.cell('value', row))
+    },
+  })
+}
+
+function readAttributeValue(cell: ArrowCell): AttributeValue {
   switch (valueKind(cell)) {
     case 'empty':
       return { kind: 'empty', value: null }
@@ -69,64 +85,67 @@ export function attributeValue(cell: ArrowCell): AttributeValue {
           return base64(cell.bytes())
         },
       }
-    case 'map':
+    case 'map': {
+      const entries = memoize(() => cell.map())
+      const children = new Map<number, Attribute>()
+      const childAt = (index: number): Attribute => {
+        let child = children.get(index)
+        if (!child) {
+          child = attributeEntry(entries(), index)
+          children.set(index, child)
+        }
+        return child
+      }
       return {
         kind: 'map',
-        childAt(index) {
-          const entries = cell.map()
-          return {
-            get key() {
-              return entries.cell('key', index).text()
-            },
-            get value() {
-              return attributeValue(entries.cell('value', index))
-            },
-          }
-        },
+        childAt,
         get value() {
-          return attributes(cell)
+          return Array.from({ length: entries().length }, (_, i) => childAt(i))
         },
         get childCount() {
-          return cell.map().length
+          return entries().length
         },
         get previewChildren() {
-          return attributes(cell, 3)
+          return Array.from({ length: Math.min(entries().length, 3) }, (_, i) =>
+            childAt(i)
+          )
         },
       }
-    case 'array':
+    }
+    case 'array': {
+      const values = memoize(() => cell.list())
+      const children = new Map<number, AttributeValue>()
+      const childAt = (index: number): AttributeValue => {
+        let child = children.get(index)
+        if (!child) {
+          child = attributeValue(new ArrowCell(values(), index))
+          children.set(index, child)
+        }
+        return child
+      }
       return {
         kind: 'array',
-        childAt(index) {
-          return attributeValue(new ArrowCell(cell.list(), index))
-        },
+        childAt,
         get value() {
-          const values = cell.list()
-          return Array.from({ length: values.length }, (_, row) =>
-            attributeValue(new ArrowCell(values, row))
-          )
+          return Array.from({ length: values().length }, (_, i) => childAt(i))
         },
         get childCount() {
-          return cell.list().length
+          return values().length
         },
         get previewChildren() {
-          const values = cell.list()
-          return Array.from({ length: Math.min(values.length, 3) }, (_, row) =>
-            attributeValue(new ArrowCell(values, row))
+          return Array.from({ length: Math.min(values().length, 3) }, (_, i) =>
+            childAt(i)
           )
         },
       }
+    }
   }
 }
 
 export function attributes(cell: ArrowCell, limit = Infinity): Attribute[] {
   if (cell.isNull) return []
   const entries = cell.map()
-  return Array.from({ length: Math.min(entries.length, limit) }, (_, row) => ({
-    get key() {
-      return entries.cell('key', row).text()
-    },
-    get value() {
-      return attributeValue(entries.cell('value', row))
-    },
-  }))
+  return Array.from({ length: Math.min(entries.length, limit) }, (_, row) =>
+    attributeEntry(entries, row)
+  )
 }

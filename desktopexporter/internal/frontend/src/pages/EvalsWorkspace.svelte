@@ -1,4 +1,6 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { evalAPI } from '@/services/eval-service'
   import { onMount } from 'svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
@@ -170,16 +172,14 @@
   let storedExperimentProjection = $state<EvalSourceProjection>()
   let storedExperimentLoading = $state(false)
   let storedExperimentError = $state('')
-  let loadingNoticeReady = $state(false)
   const loadingResults = $derived(
     experimentListLoading || storedExperimentLoading
   )
-  $effect(() => {
-    loadingNoticeReady = false
-    if (!loadingResults) return
-    const timer = setTimeout(() => (loadingNoticeReady = true), 200)
-    return () => clearTimeout(timer)
-  })
+  const loadingNotice = createLoadingNotice(
+    () => loadingResults,
+    () => selectedExperimentID
+  )
+  const loadingMoreNotice = createLoadingNotice(() => experimentListLoadingMore)
 
   const localExperiment = $derived(
     localExperiments.find(item => item.id === query.experiment) ??
@@ -549,12 +549,11 @@
     </div>
     {#if (databaseMode && (experimentIndexing.remaining || experimentIndexing.unsupported || experimentIndexing.empty || experimentListHasMore)) || experimentListError}
       <div class="flex min-w-0 flex-col px-2 py-1 text-sm">
-        {#if databaseMode && experimentIndexing.remaining > 0}<p
-            class="px-2 py-1 text-subtle"
-            role="status"
-          >
-            Indexing saved evaluations… [{experimentIndexing.remaining}]
-          </p>{/if}
+        <LoadingStatus
+          pending={databaseMode && experimentIndexing.remaining > 0}
+          label={`Indexing saved evaluations… [${experimentIndexing.remaining}]`}
+          class="block px-2 py-1 text-subtle"
+        />
         {#if databaseMode && (experimentIndexing.unsupported || experimentIndexing.empty)}<p
             class="px-2 py-1 text-subtle"
           >
@@ -569,7 +568,7 @@
             class="btn btn-ghost btn-sm w-full font-normal"
             disabled={experimentListLoadingMore}
             onclick={loadMoreExperiments}
-            >{experimentListLoadingMore
+            >{loadingMoreNotice.visible
               ? 'Loading experiments…'
               : 'Load more experiments'}</button
           >{/if}
@@ -584,7 +583,7 @@
         >
       </div>{/if}
     {#if experiment}
-      {#if databaseMode && storedExperimentLoading && loadingNoticeReady}
+      {#if databaseMode && storedExperimentLoading && loadingNotice.visible}
         <p class="px-3 py-1 text-sm text-subtle" role="status">
           Loading experiment… Showing {experiment.name} until it is ready.
         </p>
@@ -619,7 +618,7 @@
           </p>{/if}
       </div>
     {:else if databaseMode && storedExperimentLoading}
-      {#if loadingNoticeReady}
+      {#if loadingNotice.visible}
         <PaneHeader
           pill
           mode="title"
@@ -635,7 +634,7 @@
       />
       <p class="p-3 text-sm" role="alert">{storedExperimentError}</p>
     {:else if experimentListLoading}
-      {#if loadingNoticeReady}
+      {#if loadingNotice.visible}
         <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
           Loading evals…
         </div>

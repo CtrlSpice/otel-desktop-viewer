@@ -283,6 +283,7 @@
 
   let selectedMetric = $state<MetricViewData | undefined>(undefined)
   let detailLoading = $state(false)
+  let detailRequestKey = $state(0)
   let detailError = $state('')
   let displayedMetricSummary = $state<MetricSelection>()
   let displayedSummary = $derived(
@@ -826,6 +827,7 @@
     reseed = true
   ) {
     const token = ++detailToken
+    detailRequestKey = token
     detailController?.abort()
     const controller = new AbortController()
     detailController = controller
@@ -951,6 +953,7 @@
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={page.loading}
+  loadingRequestKey={`${page.requestKey}:${page.selectedID}:${summaryRetry}:${detailRequestKey}`}
   loadingMessage={detailLoading || summaryLoading
     ? 'Loading selected metric…'
     : page.loading

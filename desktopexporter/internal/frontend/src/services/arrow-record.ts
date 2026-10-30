@@ -35,6 +35,15 @@ export function memoize<T>(read: () => T): () => T {
   }
 }
 
+/** Cache a response view's getters without visiting its retained Arrow columns. */
+export function cachedView<T extends object>(view: T): T {
+  const descriptors = Object.getOwnPropertyDescriptors(view)
+  for (const descriptor of Object.values(descriptors)) {
+    if (descriptor.get) descriptor.get = memoize(descriptor.get.bind(view))
+  }
+  return Object.defineProperties(view, descriptors)
+}
+
 export function cachedColumnView<T extends object>(
   frame: ArrowFrame,
   row: number,

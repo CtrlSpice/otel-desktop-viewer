@@ -7,6 +7,7 @@ export type DebouncedDetailFetcher<K, D> = {
   select(key: K | null, debounce?: boolean): void
   readonly data: D | null
   readonly loading: boolean
+  readonly requestKey: number
   readonly error: string | null
   /** Refetch the current key; no-op when the key is null. */
   refresh(): void
@@ -29,6 +30,7 @@ export function createDebouncedDetailFetcher<K, D>(
   let key: K | null = null
   let data = $state<D | null>(null)
   let loading = $state(false)
+  let requestKey = $state(0)
   let error = $state<string | null>(null)
 
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
@@ -56,6 +58,7 @@ export function createDebouncedDetailFetcher<K, D>(
 
   function schedule(forKey: K, debounce = false) {
     const request = ++generation
+    requestKey = request
     activeRequest?.abort()
     activeRequest = null
     if (pendingTimer !== null) clearTimeout(pendingTimer)
@@ -98,6 +101,9 @@ export function createDebouncedDetailFetcher<K, D>(
     },
     get loading() {
       return loading
+    },
+    get requestKey() {
+      return requestKey
     },
     get error() {
       return error
