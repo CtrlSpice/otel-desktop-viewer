@@ -64,15 +64,20 @@ func TestDiscoveryOwnershipPlans(t *testing.T) {
 				service = "test-svc"
 			}
 			query := discovery.Query{StartTime: &start, EndTime: &end, ServiceName: &service}
-			records, err := discovery.RecordsFrom(tc.signal, tc.owner, query)
-			require.NoError(t, err)
 			location := discovery.Location{Signal: tc.signal, OwnerType: tc.owner}
-			statements := []string{discovery.Values(query, location, tc.legacy, "value"), discovery.Values(query, location, records, "value")}
 			require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 				var previous []byte
-				for i, statement := range statements {
+				for i := range 2 {
+					var builder discovery.Builder
+					records := tc.legacy
+					if i == 1 {
+						var err error
+						records, err = builder.RecordsFrom(tc.signal, tc.owner, query)
+						require.NoError(t, err)
+					}
+					statement := builder.Values(query, location, records, "value")
 					var result []byte
-					err := db.QueryRowContext(t.Context(), "SELECT coalesce(to_json(list(entry)), '[]')::VARCHAR FROM ("+statement+")").Scan(&result)
+					err := db.QueryRowContext(t.Context(), "SELECT coalesce(to_json(list(entry)), '[]')::VARCHAR FROM ("+statement+")", builder.Args()...).Scan(&result)
 					require.NoError(t, err)
 					if i == 0 {
 						previous = result
@@ -80,7 +85,7 @@ func TestDiscoveryOwnershipPlans(t *testing.T) {
 						require.JSONEq(t, string(previous), string(result))
 					}
 					var key, plan string
-					err = db.QueryRowContext(t.Context(), "EXPLAIN ANALYZE "+statement).Scan(&key, &plan)
+					err = db.QueryRowContext(t.Context(), "EXPLAIN ANALYZE "+statement, builder.Args()...).Scan(&key, &plan)
 					require.NoError(t, err)
 					t.Logf("%s version=%d\n%s", tc.owner, i, plan)
 					// Event traversal must no longer scan spans once for parents

@@ -209,7 +209,8 @@ func attributeSQLLiteral(value string) string { return discovery.Literal(value) 
 // These projections keep the counted record identity separate from the owner
 // of the attributes. Resource/scope joins do not deduplicate referencing records.
 func attributeRecordsSQL(signal, ownerType string) (string, error) {
-	return discovery.Records(signal, ownerType)
+	var builder discovery.Builder
+	return builder.Records(signal, ownerType)
 }
 
 func discoveryQuery(query telemetrySearchQuery) discovery.Query {
@@ -217,9 +218,11 @@ func discoveryQuery(query telemetrySearchQuery) discovery.Query {
 }
 
 func attributeKeysSQL(query attributeSearchQuery) string {
-	return discovery.Keys(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records)
+	var builder discovery.Builder
+	return builder.Inline(builder.Keys(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records))
 }
 
 func attributeValuesSQL(query attributeSearchQuery, key string) string {
-	return discovery.Values(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records, key)
+	var builder discovery.Builder
+	return builder.Inline(builder.Values(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records, key))
 }

@@ -19,22 +19,33 @@ type WaterfallColumn struct {
 
 func ValidateWaterfallColumns(columns []WaterfallColumn) error {
 	for _, c := range columns {
-		if c.Source != "span" && c.Source != "resource" && c.Source != "scope" {
-			return fmt.Errorf("invalid waterfall column source: %w", ErrInvalidTraceQuery)
+		if _, err := waterfallColumnOwner(c.Source, "s"); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func waterfallColumnExpressions(columns []WaterfallColumn, args []any, owner string) (string, []any, error) {
-	if err := ValidateWaterfallColumns(columns); err != nil {
-		return "", nil, err
+// User column choices select fixed suffixes; they never supply SQL identifiers.
+func waterfallColumnOwner(source, owner string) (string, error) {
+	switch source {
+	case "span":
+		return owner, nil
+	case "resource":
+		return owner + ".resource", nil
+	case "scope":
+		return owner + ".scope", nil
+	default:
+		return "", fmt.Errorf("invalid waterfall column source: %w", ErrInvalidTraceQuery)
 	}
+}
+
+func waterfallColumnExpressions(columns []WaterfallColumn, args []any, owner string) (string, []any, error) {
 	var parts []string
 	for _, c := range columns {
-		prefix := owner
-		if c.Source != "span" {
-			prefix += "." + c.Source
+		prefix, err := waterfallColumnOwner(c.Source, owner)
+		if err != nil {
+			return "", nil, err
 		}
 		source, key := len(args)+1, len(args)+2
 		args = append(args, c.Source, c.Key)
@@ -47,15 +58,12 @@ func waterfallColumnExpressions(columns []WaterfallColumn, args []any, owner str
 // ColumnPreviewsArrow evaluates every requested column for the complete trace in
 // one query. Unselected keys remain in WaterfallArrow's independent catalogue.
 func ColumnPreviewsArrow(ctx context.Context, db *sql.DB, traceID string, columns []WaterfallColumn) (*arrowread.Result, error) {
-	if err := ValidateWaterfallColumns(columns); err != nil {
-		return nil, err
-	}
 	args := []any{traceID}
 	parts := make([]string, 0, len(columns))
 	for _, c := range columns {
-		prefix := "s"
-		if c.Source != "span" {
-			prefix += "." + c.Source
+		prefix, err := waterfallColumnOwner(c.Source, "s")
+		if err != nil {
+			return nil, err
 		}
 		source, key := len(args)+1, len(args)+2
 		args = append(args, c.Source, c.Key)

@@ -159,34 +159,35 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 		}
 	}
 	var statement, search, order string
+	builder := discovery.Builder{Offset: len(args)}
 	switch options.Kind {
 	case "connections":
-		statement = discovery.ServiceConnections(query)
+		statement = builder.ServiceConnections(query)
 		search = "entry::VARCHAR"
 		order = "json_extract_string(entry, '$.source.serviceIdentity'), json_extract_string(entry, '$.target.serviceIdentity')"
 	case "connection-spans":
-		statement = discovery.ServiceConnectionSpans(query, *options.TargetIdentity)
+		statement = builder.ServiceConnectionSpans(query, *options.TargetIdentity)
 		search = "json_extract_string(entry, '$.name')"
 		order = "json_extract_string(entry, '$.startTime')::UBIGINT, json_extract_string(entry, '$.traceID'), json_extract_string(entry, '$.spanID')"
 	case "services":
-		statement = discovery.Services(query)
+		statement = builder.Services(query)
 		search = "concat(json_extract_string(entry, '$.serviceNamespace'), ' ', json_extract_string(entry, '$.serviceName'))"
 		order = "json_extract_string(entry, '$.serviceNamespace'), json_extract_string(entry, '$.serviceName'), json_extract_string(entry, '$.serviceIdentity')"
 	case "keys", "values":
-		records, err := discovery.RecordsFrom(options.Signal, options.OwnerType, query)
+		records, err := builder.RecordsFrom(options.Signal, options.OwnerType, query)
 		if err != nil {
 			return nil, fmt.Errorf("%v: %w", err, jsonrpc2.ErrInvalidParams)
 		}
 		location := discovery.Location{Signal: options.Signal, OwnerType: options.OwnerType}
 		if options.Kind == "keys" {
-			statement = discovery.Keys(query, location, records)
+			statement = builder.Keys(query, location, records)
 			search = "json_extract_string(entry, '$.key')"
 			order = "json_extract_string(entry, '$.key'), json_extract_string(entry, '$.kind')"
 		} else {
 			if options.Key == nil {
 				return nil, jsonrpc2.ErrInvalidParams
 			}
-			statement = discovery.Values(query, location, records, *options.Key)
+			statement = builder.Values(query, location, records, *options.Key)
 			search = "json_extract(entry, '$.value')::VARCHAR"
 			order = "json_extract(entry, '$.count')::UBIGINT DESC, json_extract(entry, '$.value')::VARCHAR"
 			if options.SortBy != "" || options.SortDirection != "" {
@@ -247,9 +248,9 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 	} else {
 		prefix += ", "
 	}
-	filtered := "SELECT entry FROM discovered WHERE contains(lower(" + search + "), lower(" + discovery.Literal(options.Term) + "))"
-	if options.Term == "" {
-		filtered = "SELECT entry FROM discovered"
+	filtered := "SELECT entry FROM discovered"
+	if options.Term != "" {
+		filtered += " WHERE contains(lower(" + search + "), lower(" + builder.Bind(options.Term) + "))"
 	}
 	statement = prefix + "discovered AS (" + statement + "), filtered AS (" + filtered + "), ordered AS (SELECT entry, row_number() over(ORDER BY " + order + ") AS ordinal FROM filtered ORDER BY " + order + " OFFSET " + strconv.FormatUint(options.Offset, 10) + " LIMIT " + strconv.FormatUint(limit+1, 10) + "), page AS (SELECT * FROM ordered ORDER BY ordinal LIMIT " + strconv.FormatUint(limit, 10) + ") "
 	totals := options.Queries != nil && options.Kind == "services"
@@ -265,7 +266,7 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 		}
 		statement += ", 'columns', json_array(json_object('name', 'entry', 'type', 'JSON')))::VARCHAR"
 	}
-	return &discoveryPlan{statement: statement, args: args}, nil
+	return &discoveryPlan{statement: statement, args: append(args, builder.Args()...)}, nil
 }
 
 func discoverySearchSources(options discoveryOptions) (string, []any, error) {

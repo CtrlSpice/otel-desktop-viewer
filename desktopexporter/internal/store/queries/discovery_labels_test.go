@@ -47,7 +47,9 @@ func TestDiscoveryNativeServiceLabels(t *testing.T) {
 			require.NoError(t, conn.Raw(func(raw any) error { return logs.Ingest(t.Context(), raw.(driver.Conn), data) }))
 			require.NoError(t, conn.Close())
 			var raw string
-			require.NoError(t, db.QueryRow("select entry::varchar from ("+discovery.Services(discovery.Query{})+")").Scan(&raw))
+			var builder discovery.Builder
+			statement := builder.Services(discovery.Query{})
+			require.NoError(t, db.QueryRow("select entry::varchar from ("+statement+")", builder.Args()...).Scan(&raw))
 			var service struct {
 				Name      string `json:"serviceName"`
 				Namespace string `json:"serviceNamespace"`
@@ -60,23 +62,30 @@ func TestDiscoveryNativeServiceLabels(t *testing.T) {
 			require.Equal(t, 1, service.Count)
 			require.Regexp(t, `^[0-9a-f]{64}$`, service.Identity)
 			var matched int
-			require.NoError(t, db.QueryRow("select count(*) from ("+discovery.Services(discovery.Query{ServiceIdentity: &service.Identity})+")").Scan(&matched))
+			builder = discovery.Builder{}
+			statement = builder.Services(discovery.Query{ServiceIdentity: &service.Identity})
+			require.NoError(t, db.QueryRow("select count(*) from ("+statement+")", builder.Args()...).Scan(&matched))
 			require.Equal(t, 1, matched)
 
 			// Exercise the actual shared namespace predicate, including absent and
 			// received empty values, through record discovery and service summaries.
-			records, err := discovery.Records("logs", "resource")
+			builder = discovery.Builder{}
+			records, err := builder.Records("logs", "resource")
 			require.NoError(t, err)
 			for _, namespace := range []string{label, label + "not a match"} {
 				query := discovery.Query{Namespace: &namespace}
 				var count int
-				require.NoError(t, db.QueryRow("select count(*) from ("+records+") s where "+discovery.Predicate(query)).Scan(&count))
+				builder = discovery.Builder{}
+				statement = "select count(*) from (" + records + ") s where " + builder.Predicate(query)
+				require.NoError(t, db.QueryRow(statement, builder.Args()...).Scan(&count))
 				want := 0
 				if namespace == label {
 					want = 1
 				}
 				require.Equal(t, want, count)
-				require.NoError(t, db.QueryRow("select count(*) from ("+discovery.Services(query)+")").Scan(&count))
+				builder = discovery.Builder{}
+				statement = builder.Services(query)
+				require.NoError(t, db.QueryRow("select count(*) from ("+statement+")", builder.Args()...).Scan(&count))
 				require.Equal(t, want, count)
 			}
 		})

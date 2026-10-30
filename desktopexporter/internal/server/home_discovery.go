@@ -257,9 +257,11 @@ func homeValuesPlan(options discoveryOptions) (*discoveryPlan, error) {
 		query.Sources.Metrics = ""
 	}
 	var sources []string
+	builder := discovery.Builder{Offset: len(args)}
 	supported := false
 	for _, signal := range []string{"logs", "metrics", "traces"} {
-		records, err := discovery.RecordsFrom(signal, options.OwnerType, query)
+		candidate := builder
+		records, err := candidate.RecordsFrom(signal, options.OwnerType, query)
 		if err != nil {
 			continue
 		} // Owners are signal-specific.
@@ -276,13 +278,14 @@ func homeValuesPlan(options discoveryOptions) (*discoveryPlan, error) {
 		if bytes.Equal(bytes.TrimSpace(submitted), []byte("false")) {
 			continue
 		}
+		builder = candidate
 		recordID := "struct_pack(trace_id := NULL::UUID, span_id := NULL::UBIGINT, id := s.record_id)"
 		if signal == "traces" {
 			recordID = "struct_pack(trace_id := s.record_id.trace_id, span_id := s.record_id.span_id, id := NULL::UUID)"
 		}
-		sources = append(sources, `SELECT `+discovery.Literal(signal)+` AS signal, `+recordID+` AS record_id,
-            variant_to_parquet_variant(s.attributes[`+discovery.Literal(*options.Key)+`])::struct(metadata blob, value blob) AS parts
-            FROM (`+records+`) s WHERE `+discovery.Predicate(query)+` AND variant_exists(s.attributes, `+discovery.Literal(*options.Key)+`)`)
+		sources = append(sources, `SELECT `+builder.Bind(signal)+` AS signal, `+recordID+` AS record_id,
+            variant_to_parquet_variant(s.attributes[`+builder.Bind(*options.Key)+`])::struct(metadata blob, value blob) AS parts
+            FROM (`+records+`) s WHERE `+builder.Predicate(query)+` AND variant_exists(s.attributes, `+builder.Bind(*options.Key)+`)`)
 	}
 	if len(sources) == 0 {
 		if !supported {
@@ -308,17 +311,17 @@ func homeValuesPlan(options discoveryOptions) (*discoveryPlan, error) {
 	// normal fallback. The full Copy spelling supplies collation, not the preview.
 	locale = strings.ReplaceAll(locale, "-", "_")
 	if options.SortBy == "name" {
-		order = "icu_sort_key(otel_home_value_text(parts.metadata, parts.value), " + discovery.Literal(locale) + ") " + direction
+		order = "icu_sort_key(otel_home_value_text(parts.metadata, parts.value), " + builder.Bind(locale) + ") " + direction
 	}
 	// Preserve the old stable merge's final ties: its first containing signal,
 	// then that signal's descending frequency / binary identity insertion order.
-	order += ", icu_sort_key(identity, " + discovery.Literal(locale) + "), first_signal, first_signal_count DESC, identity"
+	order += ", icu_sort_key(identity, " + builder.Bind(locale) + "), first_signal, first_signal_count DESC, identity"
 	filter := "true"
 	if options.ValueKind != "" {
-		filter += " AND kind=" + discovery.Literal(options.ValueKind)
+		filter += " AND kind=" + builder.Bind(options.ValueKind)
 	}
 	if options.Term != "" {
-		filter += " AND contains(lower(identity), lower(" + discovery.Literal(options.Term) + "))"
+		filter += " AND contains(lower(identity), lower(" + builder.Bind(options.Term) + "))"
 	}
 	statement := prefix + `, received AS MATERIALIZED (` + strings.Join(sources, " UNION ALL ") + `),
     native_values AS (SELECT DISTINCT parts FROM received),
@@ -353,7 +356,7 @@ func homeValuesPlan(options discoveryOptions) (*discoveryPlan, error) {
         otel_native_column_preview(p.parts.metadata, p.parts.value) AS preview,
         coalesce(k.count,0), s.total, s.denominator, s.denominators::VARCHAR, s.kinds::VARCHAR
     FROM summary s LEFT JOIN page p ON true LEFT JOIN kinds k ON k.kind=p.kind ORDER BY p.ordinal`
-	return &discoveryPlan{statement: statement, args: args}, nil
+	return &discoveryPlan{statement: statement, args: append(args, builder.Args()...)}, nil
 }
 
 func (h *JSONRPCHandler) discoverHomeValues(ctx context.Context, options discoveryOptions) (any, error) {
