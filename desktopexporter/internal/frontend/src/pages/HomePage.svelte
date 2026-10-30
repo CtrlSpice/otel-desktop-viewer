@@ -96,7 +96,7 @@
     endTime: null,
   })
   const discoveryScope = $derived({ ...range, queries })
-  let request: AbortController | undefined
+  let request = $state.raw<AbortController>()
   const rejections = $derived(stats?.rejections ?? [])
   const issueCount = $derived(
     importFailures.length +
@@ -426,6 +426,7 @@
       {services}
       {totalServices}
       loadingServices={loading}
+      servicesRequestKey={request?.signal}
       servicesError={error}
       moreServices={more}
       onMoreServices={() => load(offset + 100)}

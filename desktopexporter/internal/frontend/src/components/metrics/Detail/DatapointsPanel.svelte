@@ -1,11 +1,25 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
-  import SeriesDatapointList from './SeriesDatapointList.svelte'
+  import SeriesDatapointList, {
+    type DatapointSeries,
+  } from './SeriesDatapointList.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
-  import type { DataPoint } from '@/types/api-types'
+  import Identifier from '@/components/shared/Identifier.svelte'
 
-  let { error, onretry }: { error?: string; onretry?: () => void } = $props()
+  let {
+    response,
+    error,
+    onretry,
+    selectionCurrent = true,
+    displayedCount = $bindable<number | undefined>(),
+  }: {
+    response?: DatapointSeries
+    error?: string
+    onretry?: () => void
+    selectionCurrent?: boolean
+    displayedCount?: number
+  } = $props()
   const ctx = getMetricViewContext()
   let panel: HTMLDivElement
   const series = $derived(
@@ -13,14 +27,15 @@
       series => series.seriesRef === ctx.selectedSeriesKey
     )
   )
-  const datapoints = $derived(
-    series ? ctx.seriesDatapoints(series.seriesRef) : undefined
-  )
-  let displayed = $state.raw<{ key: string; datapoints: DataPoint[] }>()
-  $effect(() => {
+  let displayed = $state.raw<DatapointSeries>()
+  // Publish rows and their metadata from the same received-series response.
+  // The chart has its own response and can advance independently.
+  $effect.pre(() => {
     if (!series) displayed = undefined
-    else if (datapoints !== undefined)
-      displayed = { key: series.seriesRef, datapoints }
+    else if (response) displayed = response
+  })
+  $effect.pre(() => {
+    displayedCount = displayed?.count
   })
 
   $effect(() => {
@@ -53,7 +68,7 @@
           onclick={onretry}>Retry datapoints</button
         >{/if}
     {/if}
-    {#if datapoints === undefined && !error}
+    {#if !response && !error}
       <LoadingStatus
         pending
         label="Loading datapoints…"
@@ -62,8 +77,20 @@
       />
     {/if}
     {#if displayed}
-      {#key displayed.key}
-        <SeriesDatapointList datapoints={displayed.datapoints} />
+      <div
+        class="px-3 py-2 text-subtle"
+        aria-label="Displayed datapoint series"
+      >
+        Metric <Identifier value={displayed.metricRef} /> · Series <Identifier
+          value={displayed.seriesRef}
+        />
+      </div>
+      {#key JSON.stringify([displayed.metricRef, displayed.seriesRef])}
+        <SeriesDatapointList
+          {selectionCurrent}
+          datapoints={displayed.datapoints}
+          owner={displayed}
+        />
       {/key}
     {/if}
   {:else}

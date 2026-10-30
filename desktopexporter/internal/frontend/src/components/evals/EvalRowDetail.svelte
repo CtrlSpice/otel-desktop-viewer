@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { evalRequestQueue, type EvalRequestPart } from './eval-request-queue'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailStack from '@/components/shared/DetailStack.svelte'
@@ -7,7 +8,6 @@
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
-  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
   import EvalSpanEvidence from './EvalSpanEvidence.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
@@ -35,12 +35,12 @@
   import type { EvalSourceFieldCopy } from './eval-source-copy'
 
   let {
-    experiment: requestedExperiment,
-    row: requestedRow,
+    experiment,
+    row,
     mode = 'results',
-    telemetryNodes: requestedNodes,
+    telemetryNodes,
     telemetryLoading = false,
-    sourceCopy: requestedSourceCopy,
+    sourceCopy,
   }: {
     experiment: EvalExperiment
     row: EvalOutlineRow
@@ -50,46 +50,10 @@
     sourceCopy?: EvalSourceFieldCopy
   } = $props()
   const requested = $derived({
-    experiment: requestedExperiment,
-    row: requestedRow,
-    telemetryNodes: requestedNodes,
-    sourceCopy: requestedSourceCopy,
+    row,
+    telemetryNodes,
   })
-  let displayed = $state.raw<{
-    context: typeof requested
-    spans: SpanData[]
-    logs: LogData[]
-    callID?: string
-    failed: boolean
-    complete: boolean
-  }>()
-  let evidenceLoading = $state(false)
-  let requestKey = $state.raw<AbortSignal>()
-  const context = $derived(displayed?.context ?? requested)
-  const experiment = $derived(context.experiment)
-  const row = $derived(context.row)
-  const telemetryNodes = $derived(context.telemetryNodes)
-  const sourceCopy = $derived(context.sourceCopy)
-  const evidence = $derived(
-    evalSpanEvidence(
-      displayed?.spans ?? [],
-      displayed?.logs ?? [],
-      displayed?.callID
-    )
-  )
-  const evidenceLogs = $derived.by(() => {
-    if (!displayed?.complete || displayed.failed) return undefined
-    const ids = new Set(
-      evidence
-        .filter(record => record.id.startsWith('log/'))
-        .map(record => record.id.slice(4))
-    )
-    return displayed?.logs.filter(log => ids.has(log.logRef)) ?? []
-  })
-
-  // The row owns publication: headings, context, actions and evidence advance
-  // together. Keep the mounted presentation while the next row's logs load.
-  $effect(() => {
+  const spanRequest = $derived.by(() => {
     const selected = requested
     const nodes = selected.telemetryNodes
     const reference = selected.row.reference
@@ -103,43 +67,123 @@
       selectedSpan && nodes ? toolEvidenceSpans(selectedSpan, nodes) : []
     const callID =
       selectedSpan && nodes ? uniqueToolCallID(selectedSpan, nodes) : undefined
-    const owners = nodes ? toolLogOwners(spans, nodes, callID) : []
-    const initial = {
+    return {
       context: selected,
       spans,
-      logs: [],
       callID,
-      failed: false,
-      complete: false,
+      selectedSpan,
+      applicable:
+        !!reference?.spanID &&
+        ['tool', 'span', 'grader', 'execution'].includes(selected.row.kind),
+      owners: nodes ? toolLogOwners(spans, nodes, callID) : [],
     }
+  })
+  let displayedSpans = $state.raw<typeof spanRequest>()
+  $effect(() => {
+    const next = spanRequest
+    if (!next.applicable || next.selectedSpan || !telemetryLoading)
+      displayedSpans = next
+  })
+  const spanEvidence = $derived(evalSpanEvidence(displayedSpans?.spans ?? []))
+  type LogPacket = {
+    request: typeof spanRequest
+    owner: SpanData
+    logs: LogData[]
+  }
+  let retainedLogs = $state.raw<LogPacket[]>([])
+  let logRequest = $state.raw<{
+    request: typeof spanRequest
+    parts: Map<string, EvalRequestPart<LogData[]>>
+  }>()
+  const evidenceLoading = $derived(
+    logRequest?.request.context === requested &&
+      [...logRequest.parts.values()].some(part => part.status === 'pending')
+  )
+  const evidenceFailed = $derived(
+    logRequest?.request.context === requested &&
+      [...logRequest.parts.values()].some(part => part.status === 'failed')
+  )
+  let requestKey = $state.raw<AbortSignal>()
+  const visibleLogPackets = $derived.by(() => {
+    const current = logRequest
+    if (!current) return retainedLogs
+    const ready = current.request.owners.flatMap(owner => {
+      const part = current.parts.get(referenceKey(owner))
+      return part?.status === 'ready'
+        ? [{ request: current.request, owner, logs: part.value }]
+        : []
+    })
+    const pending = [...current.parts.values()].some(
+      part => part.status === 'pending'
+    )
+    return [
+      ...ready,
+      ...retainedLogs.filter(packet => {
+        const replacement = current.parts.get(referenceKey(packet.owner))
+        return replacement ? replacement.status !== 'ready' : pending
+      }),
+    ]
+  })
+  function packetEvidence(packet: LogPacket) {
+    return evalSpanEvidence(
+      packet.request.spans,
+      packet.logs,
+      packet.request.callID
+    ).filter(record => record.id.startsWith('log/'))
+  }
+  const evidenceLogs = $derived.by(() => {
+    if (
+      !logRequest ||
+      logRequest.request.context !== requested ||
+      evidenceLoading ||
+      evidenceFailed
+    )
+      return undefined
+    const received = new Map<string, LogData>()
+    for (const packet of visibleLogPackets) {
+      if (packet.request !== logRequest.request) continue
+      const ids = new Set(
+        packetEvidence(packet).map(record => record.id.slice(4))
+      )
+      for (const log of packet.logs)
+        if (ids.has(log.logRef)) received.set(log.logRef, log)
+    }
+    return [...received.values()]
+  })
+
+  // Logs retain only their own packet. Span attributes/events publish separately.
+  $effect(() => {
+    const selected = spanRequest
+    if (selected.applicable && !selected.selectedSpan && telemetryLoading)
+      return
+    const { owners } = selected
+    retainedLogs = owners.length ? untrack(() => visibleLogPackets) : []
+    const parts = new Map<string, EvalRequestPart<LogData[]>>(
+      owners.map(owner => [referenceKey(owner), { status: 'pending' }])
+    )
+    logRequest = { request: selected, parts: new Map(parts) }
     const controller = new AbortController()
     requestKey = controller.signal
-    if (!untrack(() => displayed) || !owners.length) displayed = initial
-    evidenceLoading = owners.length > 0
-    void (async () => {
-      const logs: LogData[] = []
-      let failed = false
-      for (let offset = 0; offset < owners.length; offset += 4) {
-        const results = await Promise.allSettled(
-          owners
-            .slice(offset, offset + 4)
-            .map(item =>
-              telemetryAPI.getSpanLogs(
-                item.traceID,
-                item.spanID,
-                controller.signal
-              )
-            )
+    const queue = evalRequestQueue(controller.signal)
+    for (const owner of owners) {
+      void queue
+        .run(() =>
+          telemetryAPI.getSpanLogs(
+            owner.traceID,
+            owner.spanID,
+            controller.signal
+          )
         )
-        if (controller.signal.aborted) return
-        for (const result of results) {
-          if (result.status === 'fulfilled') logs.push(...result.value)
-          else failed = true
-        }
-      }
-      displayed = { ...initial, logs, failed, complete: true }
-      evidenceLoading = false
-    })()
+        .then(
+          logs => publish(owner, { status: 'ready', value: logs }),
+          () => publish(owner, { status: 'failed' })
+        )
+    }
+    function publish(owner: SpanData, part: EvalRequestPart<LogData[]>) {
+      if (controller.signal.aborted) return
+      parts.set(referenceKey(owner), part)
+      logRequest = { request: selected, parts: new Map(parts) }
+    }
     return () => controller.abort()
   })
   const result = $derived(row.result)
@@ -256,18 +300,6 @@
   const failures = $derived(row.toolCounts?.failed ?? 0)
 </script>
 
-{#snippet overallInputCopy()}
-  {#if overall}
-    <ValueCopyButton
-      text={overall.rubric}
-      loadText={result
-        ? sourceCopy?.(result.id, `assessment:${overall.id}:rubric`)
-        : undefined}
-      label="grader input"
-    />
-  {/if}
-{/snippet}
-
 {#snippet detailsSection()}
   <DetailBubble
     label={row.name}
@@ -298,20 +330,35 @@
       {/if}
     {/snippet}
     <div hidden={mode === 'cost'}>
-      <EvalSpanEvidence {evidence} />
-    </div>
-    {#if evidenceLoading}
-      <LoadingStatus
-        pending
-        label="Loading linked log evidence…"
-        {requestKey}
-        class="block px-3 py-2 text-sm text-subtle"
+      <EvalSpanEvidence
+        evidence={spanEvidence}
+        owner={displayedSpans?.context !== requested
+          ? displayedSpans?.context.row.name
+          : undefined}
+        reference={displayedSpans?.context.row.reference}
       />
-    {:else if displayed?.failed}
-      <p class="px-3 py-2 text-sm text-subtle" role="status">
-        Linked log evidence could not be loaded.
-      </p>
-    {/if}
+      {#each visibleLogPackets as packet (`${referenceKey(packet.owner)}/${packet.request.context.row.id}`)}
+        <EvalSpanEvidence
+          evidence={packetEvidence(packet)}
+          owner={packet.request.context !== requested
+            ? packet.request.context.row.name
+            : undefined}
+          reference={packet.request.context.row.reference}
+        />
+      {/each}
+      {#if evidenceLoading}
+        <LoadingStatus
+          pending
+          label="Loading linked log evidence…"
+          {requestKey}
+          class="block px-3 py-2 text-sm text-subtle"
+        />
+      {:else if evidenceFailed}
+        <p class="px-3 py-2 text-sm text-subtle" role="status">
+          Linked log evidence could not be loaded.
+        </p>
+      {/if}
+    </div>
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>
@@ -456,12 +503,7 @@
   </DetailBubble>
 {/snippet}
 {#snippet assessmentsSection()}
-  <DetailBubble
-    label="Assessments"
-    action={overall && (overall.rubric || sourceCopy)
-      ? overallInputCopy
-      : undefined}
-  >
+  <DetailBubble label="Assessments">
     {#snippet trailing()}
       {#if overall}
         <span class="inline-flex items-center gap-2">
@@ -475,6 +517,7 @@
     {#each assessments as assessment (assessment.id)}
       <EvalAssessmentDetail
         {assessment}
+        contextLabel={`${row.name} · ${result?.id ?? row.id}`}
         definition={experiment.assessments.find(
           item => item.id === assessment.id
         )}

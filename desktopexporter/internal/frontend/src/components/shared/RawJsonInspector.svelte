@@ -45,6 +45,7 @@
   let scopeID = $state(untrack(() => scopes[0]?.id ?? ''))
   let scope = $derived(scopes.find(item => item.id === scopeID) ?? scopes[0])
   let previewURL = $derived(scope?.previewURL ?? scope?.url)
+  const revision = $derived(refreshKey)
   let displayedScope = $state<RawJsonScope>()
   let displayedBytes = $state<number | null>(null)
   let displayedWholeURL = $state('')
@@ -86,15 +87,16 @@
 
   $effect(() => {
     void retry
-    const revision = refreshKey
+    const selectedRevision = revision
     const url = previewURL
     if (
       url &&
       (!active ||
-        (url === untrack(() => currentURL) && revision === currentRefreshKey))
+        (url === untrack(() => currentURL) &&
+          selectedRevision === currentRefreshKey))
     )
       return
-    currentRefreshKey = revision
+    currentRefreshKey = selectedRevision
     currentURL = url ?? ''
     requestedURL = ''
     completedURL = ''
@@ -106,8 +108,10 @@
       displayedRecord = undefined
       return
     }
-    const selectedScope = scope
-    const selectedRecord = record
+    const selectedScope = untrack(() => scope)
+    // Capture presentation context; only URL/revision changes invalidate the
+    // source. Independently arriving activity must not cancel this preview.
+    const selectedRecord = untrack(() => record)
     const controller = new AbortController()
     requestKey = controller.signal
     let inspected = false
@@ -155,10 +159,10 @@
   })
 
   $effect(() => {
-    void refreshKey
+    void revision
     const url = requestedURL
-    const selectedScope = scope
-    const selectedRecord = record
+    const selectedScope = untrack(() => scope)
+    const selectedRecord = untrack(() => record)
     const selectedWholeURL = wholeURL
     const selectedBytes = bytes
     if (!active || !url || url !== previewURL) return

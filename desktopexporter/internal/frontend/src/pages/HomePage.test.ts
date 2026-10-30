@@ -19,7 +19,38 @@ describe('rejectionLabel', () => {
 })
 
 describe('Home service discovery', () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('passes each pending discovery identity to the map without waiting for results', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(telemetryAPI, 'getStats').mockImplementation(
+      () => new Promise(() => {})
+    )
+    vi.spyOn(telemetryAPI, 'getImportConfig').mockResolvedValue({
+      otlpHttpPort: 4318,
+    })
+    const services = vi
+      .spyOn(telemetryAPI, 'discoverServices')
+      .mockImplementation(() => new Promise(() => {}))
+    setTestUrl('/?time=all')
+    const view = renderWithContexts(HomePage)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(view.getByText('Loading service map…')).toBeInTheDocument()
+    const search = view.getByRole('searchbox', { name: 'Search telemetry' })
+    await fireEvent.submit(search.closest('form')!)
+    expect(services).toHaveBeenCalledTimes(2)
+    expect(services.mock.calls[0]![1]?.aborted).toBe(true)
+    expect(view.queryByText('Loading service map…')).toBeNull()
+    await vi.advanceTimersByTimeAsync(199)
+    expect(view.queryByText('Loading service map…')).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(view.getByText('Loading service map…')).toBeInTheDocument()
+    view.unmount()
+    expect(services.mock.calls[1]![1]?.aborted).toBe(true)
+  })
 
   it('scopes telemetry by typed service identity and refreshes only on request', async () => {
     // Responsive graph layout needs a viewport; jsdom has no layout engine.

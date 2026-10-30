@@ -71,6 +71,7 @@
     sortColumn,
     sortDirection,
     loading = false,
+    loadingRequestKey,
     onSelect,
     onInspect,
     onSort,
@@ -94,6 +95,7 @@
     sortColumn: LogSortColumn
     sortDirection: LogSortDirection
     loading?: boolean
+    loadingRequestKey: number
     onSelect: (id: string, keyboard?: boolean) => void
     onInspect: (id: string, target: DetailFieldTarget) => void
     onSort: (column: LogSortColumn, direction: LogSortDirection) => void
@@ -458,7 +460,10 @@
       ?.querySelector<HTMLElement>(`[data-log-ref="${escapeForSelector(id)}"]`)
       ?.focus({ preventScroll: true })
   }
-  const loadingNotice = createLoadingNotice(() => loading)
+  const loadingNotice = createLoadingNotice(
+    () => loading,
+    () => loadingRequestKey
+  )
 
   function text(log: LogTableRow, column: LogColumnOption) {
     const id = column.id

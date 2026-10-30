@@ -356,6 +356,26 @@ describe('request cancellation', () => {
     )
   })
 
+  it('cancels an outstanding freshness statistics request through the transport', async () => {
+    const fetch = vi.fn(
+      (_url: string, options: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          )
+        })
+    )
+    vi.stubGlobal('fetch', fetch)
+    const controller = new AbortController()
+    const pending = telemetryAPI.getStats(controller.signal)
+    expect(fetch).toHaveBeenCalledWith(
+      '/rpc',
+      expect.objectContaining({ signal: controller.signal })
+    )
+    controller.abort()
+    await expect(pending).rejects.toBeInstanceOf(RequestAbortedError)
+  })
+
   it('recognizes only service and platform abort errors', () => {
     expect(isAbortError(new RequestAbortedError())).toBe(true)
     expect(isAbortError(new DOMException('aborted', 'AbortError'))).toBe(true)

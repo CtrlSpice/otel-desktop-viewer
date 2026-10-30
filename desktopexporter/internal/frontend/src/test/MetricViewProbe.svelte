@@ -11,6 +11,7 @@
   } from '@/types/api-types'
   import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
+  import type { DatapointSeries } from '@/components/metrics/Detail/SeriesDatapointList.svelte'
 
   // createMetricViewContext() registers $effects, so it only works inside a
   // component. This probe renders the sub-view state the URL sync owns so
@@ -46,13 +47,27 @@
   untrack(() => metricCtx.seedForMetric(metric))
   // Handing the context back is a one-time setup step, not a subscription.
   untrack(() => oncontext?.(metricCtx))
+  const datapointSeries = $derived.by((): DatapointSeries | undefined => {
+    const seriesKey = metricCtx.selectedSeriesKey
+    const series = metric?.timeseries.find(ts => ts.seriesRef === seriesKey)
+    const datapoints = seriesKey ? seriesDatapoints?.[seriesKey] : undefined
+    if (!metric || !series || !datapoints) return
+    return {
+      metricRef: metric.metricRef,
+      seriesRef: series.seriesRef,
+      unit: metric.unit,
+      metricType: metric.metricType ?? 'Empty',
+      count: series.datapointCount,
+      datapoints,
+    }
+  })
 </script>
 
 {#if showTimeseries}
   <TimeseriesPanel />
 {/if}
 {#if showDetail}
-  <MetricDetailView />
+  <MetricDetailView {datapointSeries} />
 {/if}
 
 <output data-testid="aggregation-view">{metricCtx.aggregationView}</output>

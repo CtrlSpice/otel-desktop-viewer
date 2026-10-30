@@ -188,6 +188,11 @@
   let selectedLogRef = $derived(routeContext.route.query[LOG_PARAM] ?? null)
   let traceData = $state<TraceWaterfallData | null>(null)
   let traceLogs = $state<TraceLogSummary[]>([])
+  let traceLogsTraceID = $state('')
+  let traceLogsRequestTraceID = $state('')
+  let traceLogsPending = $state(false)
+  let traceLogsError = $state('')
+  let traceLogsRequestKey = $state.raw<AbortSignal>()
   let detailLoading = $state(false)
   let detailError = $state('')
   let activeQueryTree = $state<QueryNode | undefined>(undefined)
@@ -196,6 +201,20 @@
   let displayError = $derived(page.error ?? actionError)
 
   let currentTraceData = $derived(page.selectedID ? traceData : null)
+  // The old waterfall can outlive its request. A new trace's early log result
+  // must not erase the activity belonging to that still-displayed tree.
+  let waterfallLogs = $state.raw<{
+    traceID: string
+    logs: TraceLogSummary[]
+  }>()
+  $effect.pre(() => {
+    const traceID = currentTraceData?.traceID
+    if (!traceID) waterfallLogs = undefined
+    else if (traceLogsTraceID === traceID)
+      waterfallLogs = { traceID, logs: traceLogs }
+    else if (untrack(() => waterfallLogs?.traceID) !== traceID)
+      waterfallLogs = undefined
+  })
   // Requested and displayed identities stay separate during a handoff.
   let retainedTreeSpanID = $state<string | null>(null)
   let displayingRequestedTrace = $derived(
@@ -319,27 +338,28 @@
       ) ?? []
     )
   })
-  let selectedSpanLogs = $derived(
-    fullSpan && displayingRequestedTrace
-      ? traceLogs.filter(log => log.spanID === fullSpan.spanID)
-      : []
+  const eventSpan = $derived(
+    fullSpan ??
+      (displayingRequestedTrace &&
+      selectedSpan?.traceID === detailIdentity?.traceID &&
+      selectedSpan?.spanID === detailIdentity?.spanID
+        ? selectedSpan
+        : undefined)
   )
-
   let resolvedEventIndex = $derived.by((): number | null => {
-    const span =
-      fullSpan ?? (displayingRequestedTrace ? selectedSpan : undefined)
+    const span = eventSpan
     const index = selectedEventIndex
     if (index === null || !span) return null
     if (index >= span.events.length) return null
     return index
   })
   let resolvedLogRef = $derived.by((): string | null => {
-    if (!displayingRequestedTrace) return null
     const logRef = selectedLogRef
-    const span = selectedSpan
-    if (!logRef || !span) return null
+    const identity = detailIdentity
+    if (!logRef || !identity || traceLogsTraceID !== identity.traceID)
+      return null
     return traceLogs.some(
-      log => log.logRef === logRef && log.spanID === span.spanID
+      log => log.logRef === logRef && log.spanID === identity.spanID
     )
       ? logRef
       : null
@@ -349,11 +369,23 @@
     const raw = selectedEventRaw
     if (detailLoading || !displayingRequestedTrace || currentTraceData === null)
       return
+    // Only completed data for this native owner can confirm absence. The
+    // waterfall includes event indexes; logs supply their own span correlation.
+    if (raw !== undefined && !eventSpan) return
 
     if (resolvedEventIndex !== null) {
       if (selectedLogRef !== null) setEventInQuery(resolvedEventIndex)
       return
     }
+
+    if (
+      selectedLogRef !== null &&
+      (traceLogsPending ||
+        traceLogsError ||
+        traceLogsRequestTraceID !== detailIdentity?.traceID ||
+        traceLogsTraceID !== page.selectedID)
+    )
+      return
 
     if (resolvedLogRef !== null) {
       if (raw !== undefined) setLogInQuery(resolvedLogRef)
@@ -440,6 +472,10 @@
   let displayedDetail = $state.raw<{
     span: SpanData
     logs: TraceLogSummary[]
+    logsKnown: boolean
+    logsPending: boolean
+    logsError: string
+    logsRequestKey?: AbortSignal
     rootSpanID?: string
     fieldTarget?: DetailFieldTarget
     salvaged: boolean
@@ -452,10 +488,39 @@
       displayedDetail = undefined
       return
     }
-    if (!fullSpan) return
+    const previous = untrack(() => displayedDetail)
+    const span = fullSpan ?? previous?.span
+    if (!span) return
+    const retained =
+      previous?.span.traceID === span.traceID &&
+      previous.span.spanID === span.spanID
+        ? previous
+        : undefined
+    const hasLogs = traceLogsTraceID === span.traceID
+    const ownsLogsRequest =
+      traceLogsRequestTraceID === span.traceID &&
+      page.selectedID === span.traceID
+    const activity = {
+      logs: hasLogs
+        ? traceLogs.filter(log => log.spanID === span.spanID)
+        : (retained?.logs ?? []),
+      logsKnown: hasLogs || (retained?.logsKnown ?? false),
+      logsPending: ownsLogsRequest && traceLogsPending,
+      logsError: ownsLogsRequest ? traceLogsError : (retained?.logsError ?? ''),
+      logsRequestKey: ownsLogsRequest
+        ? traceLogsRequestKey
+        : retained?.logsRequestKey,
+    }
+    // A trace-wide request also belongs to the retained span in that trace.
+    // Publish its settlement even when another exact span is pending/failed;
+    // keep every span-specific value, selection and action target unchanged.
+    if (!fullSpan) {
+      if (previous) displayedDetail = { ...previous, ...activity }
+      return
+    }
     displayedDetail = {
       span: fullSpan,
-      logs: selectedSpanLogs,
+      ...activity,
       rootSpanID: displayingRequestedTrace
         ? currentTraceData?.spans.find(node => !node.spanData.parentSpanID)
             ?.spanData.spanID
@@ -472,6 +537,13 @@
       selectedLogRef: resolvedLogRef,
     }
   })
+  const retryLogs = $derived.by(() => {
+    const traceID = displayedDetail?.span.traceID
+    if (!traceID || traceID !== page.selectedID) return undefined
+    return () => {
+      if (page.selectedID === traceID) void fetchTraceLogs(traceID)
+    }
+  })
 
   function handleSearchResults(event: SearchResultEvent) {
     page.handleSearchResults(event)
@@ -483,25 +555,71 @@
 
   // Abort superseded detail queries so they release the store read lock.
   let detailFetch: AbortController | null = null
+  let logsFetch: AbortController | null = null
   let requestedTraceID: string | null = null
 
-  onDestroy(() => detailFetch?.abort())
+  onDestroy(() => {
+    detailFetch?.abort()
+    logsFetch?.abort()
+  })
 
   function clearTraceDetail() {
     detailFetch?.abort()
     detailFetch = null
+    logsFetch?.abort()
+    logsFetch = null
     requestedTraceID = null
     spanCache.clear()
     spanDetails.select(null)
     displayedDetail = undefined
     traceData = null
     traceLogs = []
+    traceLogsTraceID = ''
+    traceLogsRequestTraceID = ''
+    traceLogsPending = false
+    traceLogsError = ''
     previewValues = []
     previewTraceID = ''
     loadedPreviewKey = ''
     previewError = ''
     detailLoading = false
     detailError = ''
+  }
+
+  async function fetchTraceLogs(traceID: string) {
+    logsFetch?.abort()
+    const controller = new AbortController()
+    logsFetch = controller
+    traceLogsRequestTraceID = traceID
+    traceLogsPending = true
+    traceLogsError = ''
+    traceLogsRequestKey = controller.signal
+    try {
+      const logs = await telemetryAPI.getTraceLogSummaries(
+        traceID,
+        controller.signal
+      )
+      if (
+        logsFetch !== controller ||
+        controller.signal.aborted ||
+        page.selectedID !== traceID
+      )
+        return
+      traceLogs = logs
+      traceLogsTraceID = traceID
+    } catch (err) {
+      if (
+        logsFetch === controller &&
+        !controller.signal.aborted &&
+        !isAbortError(err)
+      )
+        traceLogsError = 'Could not load correlated logs.'
+    } finally {
+      if (logsFetch === controller) {
+        traceLogsPending = false
+        logsFetch = null
+      }
+    }
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
@@ -515,20 +633,18 @@
       detailEpoch = untrack(() => detailEpoch) + 1
     }
     requestedTraceID = traceID
+    void fetchTraceLogs(traceID)
 
     try {
       detailLoading = true
       detailError = ''
       previewError = ''
-      const [result, logs] = await Promise.all([
-        telemetryAPI.getTraceView(
-          traceID,
-          queryTree,
-          fetchCtl.signal,
-          requestedColumns
-        ),
-        telemetryAPI.getTraceLogSummaries(traceID, fetchCtl.signal),
-      ])
+      const result = await telemetryAPI.getTraceView(
+        traceID,
+        queryTree,
+        fetchCtl.signal,
+        requestedColumns
+      )
       if (detailFetch !== fetchCtl || page.selectedID !== traceID) return
       traceData = result
       previewTraceID = traceID
@@ -536,7 +652,6 @@
         'columnValues' in node.spanData ? node.spanData.columnValues : []
       )
       loadedPreviewKey = JSON.stringify([traceID, requestedColumns])
-      traceLogs = logs
       const spanIDs = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
       let desired: string | null
@@ -734,7 +849,7 @@
           )
             selectedColumns = columns
         }}
-        logs={traceLogs}
+        logs={waterfallLogs?.logs ?? []}
         selectedSpanID={displayedSpanID}
         searchActive={activeQueryTree !== undefined}
         onSelectSpan={handleSelectSpan}
@@ -764,6 +879,11 @@
       selectedEventIndex={displayedDetail?.selectedEventIndex}
       selectedLogRef={displayedDetail?.selectedLogRef}
       logs={displayedDetail?.logs ?? []}
+      logsKnown={displayedDetail?.logsKnown ?? false}
+      logsPending={displayedDetail?.logsPending ?? false}
+      logsError={displayedDetail?.logsError ?? ''}
+      logsRequestKey={displayedDetail?.logsRequestKey}
+      onRetryLogs={retryLogs}
     />
   {/snippet}
 

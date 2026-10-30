@@ -139,6 +139,7 @@
           showTabs={false}
           bind:view={detailView}
           record={log}
+          refreshKey={log}
           bind:displayedRecord={rawLog}
           wholeURL={exportURL}
           scopes={[

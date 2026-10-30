@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/svelte'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { act, fireEvent, screen, waitFor } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import LogsPage from './LogsPage.svelte'
 import type { LogSummary, LogData, Stats } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -95,6 +96,8 @@ beforeEach(() => {
   })
 })
 
+afterEach(() => vi.useRealTimers())
+
 async function renderSelectedLog() {
   searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
   getStats.mockResolvedValue(makeStats())
@@ -105,6 +108,77 @@ async function renderSelectedLog() {
 }
 
 describe('LogsPage refresh', () => {
+  it('restarts projected-cell feedback for each real list replacement while pending stays true', async () => {
+    await renderSelectedLog()
+    await waitFor(() =>
+      expect(document.querySelector('[data-log-ref="log-1"]')).not.toBeNull()
+    )
+    const row = document.querySelector('[data-log-ref="log-1"]')!
+    const requests: Array<{
+      signal: AbortSignal
+      resolve: (value: unknown) => void
+    }> = []
+    searchLogPage.mockImplementation(
+      (...args: unknown[]) =>
+        new Promise(resolve => {
+          requests.push({ signal: args.at(-1) as AbortSignal, resolve })
+        })
+    )
+    vi.useFakeTimers()
+    const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+    await fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Log field: flags', hidden: true })
+    )
+    await tick()
+    expect(requests).toHaveLength(1)
+    expect(screen.queryByText('Loading…', { exact: true })).toBeNull()
+    await advance(200)
+    expect(screen.getByText('Loading…', { exact: true })).toBeInTheDocument()
+    await fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Log field: traceId', hidden: true })
+    )
+    await tick()
+    expect(requests).toHaveLength(2)
+    expect(requests[0]!.signal.aborted).toBe(true)
+    expect(screen.queryByText('Loading…', { exact: true })).toBeNull()
+    expect(document.querySelector('[data-log-ref="log-1"]')).toBe(row)
+    await advance(199)
+    expect(screen.queryByText('Loading…', { exact: true })).toBeNull()
+    await advance(1)
+    expect(screen.getAllByText('Loading…', { exact: true })).toHaveLength(2)
+    requests[1]!.resolve({
+      logs: [
+        {
+          ...makeLogSummary(),
+          columnValues: [
+            {
+              kind: 'field',
+              source: 'log',
+              key: 'flags',
+              present: true,
+              valueType: 'int64',
+              preview: '3',
+            },
+            {
+              kind: 'field',
+              source: 'log',
+              key: 'traceId',
+              present: true,
+              valueType: 'string',
+              preview: 'trace-new',
+            },
+          ],
+        },
+      ],
+      total: 1,
+    })
+    await vi.waitFor(() =>
+      expect(screen.queryAllByText('Loading…', { exact: true })).toHaveLength(0)
+    )
+    expect(screen.getByText('trace-new')).toBeInTheDocument()
+    await advance(300)
+    expect(screen.queryByText('Loading…', { exact: true })).toBeNull()
+  })
   it('cancels superseded and unmounted detail requests', async () => {
     searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
     getStats.mockResolvedValue(makeStats())

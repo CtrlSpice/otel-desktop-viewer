@@ -173,6 +173,130 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+for (const statistics of ['pending', 'failed'] as const) {
+  test(`metric lists and details remain usable with ${statistics} freshness statistics`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem('signal-detail:open', 'true')
+    )
+    let statsRequests = 0
+    let listRequests = 0
+    await routeTelemetry(page, async route => {
+      const { id, method } = route.request().postDataJSON()
+      if (method === 'getStats') {
+        statsRequests++
+        if (statistics === 'failed') {
+          await route.fulfill({
+            json: {
+              jsonrpc: '2.0',
+              id,
+              error: { code: -32603, message: 'statistics unavailable' },
+            },
+          })
+        }
+      } else if (method === 'searchMetricSummaries') {
+        listRequests++
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            result: [
+              {
+                ...summary,
+                name: listRequests === 1 ? summary.name : 'refreshed.metric',
+              },
+            ],
+          },
+        })
+      } else await route.fallback()
+    })
+    await page.goto('/metrics?time=all')
+    await expect(
+      page.getByRole('button', { name: new RegExp(summary.name) })
+    ).toBeVisible()
+    const fields = page.getByRole('table', { name: 'Metric fields' })
+    await expect(fields).toContainText(metric.name)
+    await expect(
+      page.getByRole('button', { name: 'Download metric', exact: true })
+    ).toBeEnabled()
+    expect(statsRequests).toBeGreaterThan(0)
+    const initialFields = await fields.elementHandle()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect(
+      page.getByRole('button', { name: /refreshed.metric/ })
+    ).toBeVisible()
+    await expect(fields).toContainText(metric.name)
+    expect(
+      await fields.evaluate((node, before) => node === before, initialFields)
+    ).toBe(true)
+    await expect(
+      page.getByText('Loading metrics…', { exact: true })
+    ).toHaveCount(0)
+    await expect(
+      page.getByText('statistics unavailable', { exact: true })
+    ).toHaveCount(0)
+  })
+}
+
+test('a failed metric search retains the mounted chart and selected datapoint through recovery', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  let failSearch = false
+  await routeTelemetry(page, async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method === 'searchMetricSummaries' && failSearch) {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32603, message: 'metric search unavailable' },
+        },
+      })
+    } else await route.fallback()
+  })
+  await page.goto(
+    `/metrics/${metric.metricRef}?time=all&series=first&dp=first-0`
+  )
+  const chart = page.locator('.metrics-page__chart')
+  const line = chart.locator('.metric-series-line[data-series-key="first"]')
+  const datapoint = page.locator('[data-dp-id="first-0"]')
+  await expect(line).toBeVisible()
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  const originalChart = await chart.elementHandle()
+  const originalLine = await line.elementHandle()
+  failSearch = true
+  const editor = page.getByRole('textbox', {
+    name: 'Search metrics',
+    exact: true,
+  })
+  await editor.fill('name = "current"')
+  await editor.press('Enter')
+  await expect(page.getByRole('alert')).toContainText(
+    'metric search unavailable'
+  )
+  expect(
+    await chart.evaluate((node, before) => node === before, originalChart)
+  ).toBe(true)
+  expect(
+    await line.evaluate((node, before) => node === before, originalLine)
+  ).toBe(true)
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).searchParams.get('dp')).toBe('first-0')
+  failSearch = false
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(
+    await chart.evaluate((node, before) => node === before, originalChart)
+  ).toBe(true)
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).searchParams.get('q')).toBe('name = "current"')
+})
+
 test('compact series labels retain hidden rows and load exact context only on disclosure', async ({
   page,
 }) => {
@@ -295,7 +419,9 @@ test('compact series labels retain hidden rows and load exact context only on di
 
 test('metric replacement keeps its displayed identity and mounted headers during delayed loading', async ({
   page,
+  context,
 }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'true')
@@ -331,10 +457,12 @@ test('metric replacement keeps its displayed identity and mounted headers during
         route.fulfill({ json: { jsonrpc: '2.0', id, result: replacement } })
     } else await route.fallback()
   })
-  await page.goto(`/metrics/${metric.metricRef}?time=all`)
+  await page.goto(`/metrics/${metric.metricRef}?time=all&series=first`)
   const fields = page.getByRole('table', { name: 'Metric fields' })
   const header = page.locator('.page-layout__main-chrome > .pane-header')
   await expect(fields).toContainText(metric.name)
+  const datapoint = page.locator('[data-dp-id="first-0"]')
+  await expect(datapoint).toBeVisible()
   const nodes = await page.evaluateHandle(() => [
     document.querySelector('.page-layout__main-chrome > .pane-header'),
     document.querySelector('[aria-label="Metric fields"]'),
@@ -347,11 +475,26 @@ test('metric replacement keeps its displayed identity and mounted headers during
     .getByRole('button', { name: /replacement.metric/ })
     .click()
   await expect.poll(() => !!release).toBe(true)
+  const requestedURL = page.url()
   await expect(header).toContainText(metric.name)
   await expect(fields).toContainText(metric.name)
   await expect(page.getByText('Loading selected metric…')).toHaveCount(0)
   await page.clock.runFor(200)
   await expect(page.getByText('Loading selected metric…')).toBeVisible()
+  await page.clock.resume()
+  await datapoint.click()
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(page.url()).toBe(requestedURL)
+  await page.getByRole('group', { name: 'asDouble', exact: true }).hover()
+  await page.getByRole('button', { name: 'Copy asDouble', exact: true }).click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('1')
+  await datapoint.press('Enter')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'false')
+  await datapoint.press('Space')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(page.url()).toBe(requestedURL)
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)
@@ -362,6 +505,78 @@ test('metric replacement keeps its displayed identity and mounted headers during
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)
+})
+
+test('datapoints remain interactive when a chart response reuses the received-series cache', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() => {
+    localStorage.setItem('signal-detail:open', 'true')
+    localStorage.setItem(
+      'metrics:view:series-layout',
+      JSON.stringify({ visibleKeys: ['first'] })
+    )
+  })
+  let viewRequests = 0
+  let rawRequests = 0
+  let release: (() => Promise<void>) | undefined
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getMetricView') return route.fallback()
+    if (params.targetBuckets === 0) {
+      rawRequests++
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: { ...metric, timeseries: [timeseries[0]] },
+        },
+      })
+    }
+    if (++viewRequests === 1) {
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...metric,
+            timeseries: [timeseries[0], { ...timeseries[1], datapoints: [] }],
+          },
+        },
+      })
+    }
+    release = () =>
+      route.fulfill({ json: { jsonrpc: '2.0', id, result: metric } })
+  })
+  await page.goto(
+    `/metrics/${metric.metricRef}?time=all&series=first&dp=first-0`
+  )
+  const datapoint = page.locator('[data-dp-id="first-0"]')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  const original = await datapoint.elementHandle()
+  await page
+    .getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+    .check()
+  await expect.poll(() => !!release).toBe(true)
+  await release!()
+  await expect(page.getByText('Loading selected metric…')).toHaveCount(0)
+  await expect(
+    page.locator('#metric-chart-tabpanel .metric-series-line')
+  ).toHaveCount(2)
+  expect(rawRequests).toBe(1)
+  expect(
+    await datapoint.evaluate((node, before) => node === before, original)
+  ).toBe(true)
+  await datapoint.press('Enter')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'false')
+  expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+  await datapoint.click()
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).searchParams.get('dp')).toBe('first-0')
 })
 
 test('series IDs stay on one line beside a separate compact colour column', async ({

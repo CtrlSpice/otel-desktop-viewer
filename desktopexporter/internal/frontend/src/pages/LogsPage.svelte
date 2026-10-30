@@ -434,6 +434,7 @@
         sortColumn={page.sortColumn}
         sortDirection={page.sortDirection}
         loading={page.loading}
+        loadingRequestKey={page.requestKey}
         onSelect={selectLog}
         onInspect={inspectLog}
         onSort={changeSort}

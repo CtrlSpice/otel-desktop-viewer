@@ -39,6 +39,7 @@
     services,
     totalServices,
     loadingServices,
+    servicesRequestKey,
     servicesError,
     moreServices,
     onMoreServices,
@@ -51,6 +52,7 @@
     services: ServiceSummary[]
     totalServices?: number
     loadingServices: boolean
+    servicesRequestKey?: AbortSignal
     servicesError: string
     moreServices: boolean
     onMoreServices: () => void
@@ -428,6 +430,7 @@
   {:else if loadingServices || busy}<LoadingStatus
       pending
       label="Loading service map…"
+      requestKey={loadingServices ? servicesRequestKey : graphRevision}
       class="block p-3 text-subtle"
     />
   {:else}<p class="p-3 text-subtle">

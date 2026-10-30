@@ -45,9 +45,7 @@ it('promotes only an explicit Overall judgment and preserves its evidence and in
   expect(screen.queryByText('Overall', { exact: true })).toBeNull()
   expect(screen.getByText(overall.explanation)).toBeVisible()
   expect(heading().querySelector('button')).toBeNull()
-  const action = heading()
-    .closest('details')!
-    .parentElement!.querySelector(':scope > .detail-bubble__action')!
+  const action = screen.getAllByRole('table', { name: 'Grader input' })[0]
   await fireEvent.click(
     within(action as HTMLElement).getByRole('button', {
       name: 'Copy grader input',
