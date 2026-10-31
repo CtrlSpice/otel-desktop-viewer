@@ -88,7 +88,7 @@
     selectionBusy = false,
   }: {
     logs: LogTableRow[]
-    total: number
+    total: number | null
     pageNumber?: number
     pageSize?: number
     selectedID: string | null
@@ -519,8 +519,8 @@
             ).toLocaleString()}</span
           >
           of{' '}
-        {/if}{total.toLocaleString()}
-        {total === 1 ? 'record' : 'records'}</span
+        {/if}{total === null ? '' : total.toLocaleString()}
+        {total === null ? '' : total === 1 ? 'record' : 'records'}</span
       >
     {/snippet}
     {#snippet metaRight()}
