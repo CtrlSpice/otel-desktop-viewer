@@ -1,9 +1,34 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { HomeCoveragePage } from '@/services/discovery-types'
-import { loadAttributeCoverage, mergeAttributeKeys } from './attribute-coverage'
+import {
+  attributeScope,
+  loadAttributeCoverage,
+  mergeAttributeKeys,
+} from './attribute-coverage'
 
 afterEach(() => vi.restoreAllMocks())
+
+it('owns disclosure state by service, time and search, independently of owner, page and sorting', () => {
+  const options = { serviceName: 'checkout', startTime: '10', endTime: '20' }
+  const scope = attributeScope(options)
+  expect(
+    attributeScope({
+      ...options,
+      ownerType: 'event',
+      offset: 25,
+      sortBy: 'frequency',
+    })
+  ).toBe(scope)
+  expect(attributeScope({ ...options, serviceName: 'other' })).not.toBe(scope)
+  expect(attributeScope({ ...options, startTime: '11' })).not.toBe(scope)
+  expect(
+    attributeScope({
+      ...options,
+      queries: { traces: false, logs: null, metrics: null },
+    })
+  ).not.toBe(scope)
+})
 
 it('merges keys by exact key, kind and provenance while retaining signal ownership', () => {
   const keys = mergeAttributeKeys([

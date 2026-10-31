@@ -31,6 +31,20 @@ export function attributeIdentity(entry: DiscoveredAttribute): string {
   return JSON.stringify([entry.key, entry.kind, entry.ownerType])
 }
 
+export function attributeScope(
+  options: Omit<DiscoveryOptions, 'kind'>
+): string {
+  return JSON.stringify([
+    options.serviceIdentity ?? [
+      options.namespace ?? '',
+      options.serviceName ?? '',
+    ],
+    options.startTime ?? null,
+    options.endTime ?? null,
+    ...discoverySignals.map(signal => options.queries?.[signal] ?? null),
+  ])
+}
+
 export function mergeAttributeKeys(
   entries: DiscoveredAttribute[]
 ): DiscoveredAttribute[] {
