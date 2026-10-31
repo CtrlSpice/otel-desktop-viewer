@@ -670,11 +670,6 @@
     const fetchCtl = new AbortController()
     detailFetch = fetchCtl
     if (requestedTraceID !== null) {
-      const logs = logReadings.get(requestedTraceID)
-      if (logs) {
-        logs.controller.abort()
-        logReadings.set(requestedTraceID, { ...logs, pending: false })
-      }
       spanCache.clear()
       detailEpoch = untrack(() => detailEpoch) + 1
     }
