@@ -49,6 +49,13 @@
   } = $props()
 
   const ctx = getMetricViewContext()
+  const chartUnsafeTemporality = $derived(
+    ctx.isHistogramKind
+      ? ctx.isUnsafeTemporality
+      : ctx.chartMetric?.metricType === 'Sum' &&
+          ctx.chartMetric.aggregationTemporalityCode !== 1 &&
+          ctx.chartMetric.aggregationTemporalityCode !== 2
+  )
   const pending = $derived(
     ctx.isHistogramKind && ctx.activeHistogramTab === 'histogram'
       ? aggregateSummaryLoading
@@ -177,7 +184,7 @@
         highlightedPointID={ctx.selectedDatapointID}
         selectedSeriesKey={ctx.selectedSeriesKey}
         previewSeriesKey={ctx.previewSeriesKey}
-        unit={ctx.metric!.unit}
+        unit={ctx.chartMetric!.unit}
         height={plotHeight}
         colorByKey={ctx.timeseriesColorByKey}
         aggregationView={ctx.aggregationView}
@@ -186,7 +193,7 @@
         onChartPointClick={ctx.onChartPointClick}
         onRateChartPointClick={ctx.onRateChartPointClick}
         onClearSelection={ctx.clearChartSelection}
-        seriesStats={ctx.seriesStatsByKey}
+        seriesStats={ctx.chartSeriesStatsByKey}
         emptyMessage={ctx.gaugeSumSeriesKeys.length === 0
           ? 'No datapoints to chart'
           : ctx.visibleSeries.size === 0
@@ -210,15 +217,17 @@
   <div class="metric-chart-view metric-chart-view--empty">
     <p class="text-base-content/40 text-sm">Select a metric to view details</p>
   </div>
-{:else if ctx.isUnsafeTemporality}
+{:else if chartUnsafeTemporality}
   <!-- FunError takes the entire chart row. The detail pane (Fields /
        Series) still renders independently because it consumes
        different data; this branch only blanks the chart. -->
   <div class="metric-chart-view metric-chart-view--fill">
     <UnspecifiedTemporalityCallout
       size="full"
-      temporalityCode={ctx.temporalityCode!}
-      temporalityLabel={ctx.temporality}
+      temporalityCode={ctx.chartMetric?.aggregationTemporalityCode ??
+        ctx.temporalityCode!}
+      temporalityLabel={ctx.chartMetric?.aggregationTemporality ??
+        ctx.temporality}
     />
   </div>
 {:else if ctx.isHistogramKind}
