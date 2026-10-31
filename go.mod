@@ -49,7 +49,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/exp/jsonrpc2 v0.0.0-20260718201538-764159d718ef
 	golang.org/x/sys v0.49.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 )
 
 require (
