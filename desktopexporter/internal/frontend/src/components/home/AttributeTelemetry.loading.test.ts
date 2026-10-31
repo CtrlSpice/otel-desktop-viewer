@@ -6,7 +6,9 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { LogSummary, MetricSummary, TraceSummary } from '@/types/api-types'
 import type { ServiceSummary } from '@/services/discovery-types'
+import { parseQuery } from '@/components/shared/Search/queryParser'
 import AttributeTelemetry from './AttributeTelemetry.svelte'
+import { homeQueries } from './home-search'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -204,10 +206,14 @@ it.each(['pending', 'failed'] as const)(
     vi.mocked(telemetryAPI.searchMetricSummaries)
       .mockResolvedValueOnce(metrics('A'))
       .mockReturnValueOnce(nextMetrics.promise)
-    setTestUrl('/?start=1000&end=2000')
+    setTestUrl('/?start=1000&end=2000&q=A')
     const view = renderWithContexts(AttributeTelemetry, {
       ...props,
-      options: { startTime: '1000000000', endTime: '2000000000' },
+      options: {
+        startTime: '1000000000',
+        endTime: '2000000000',
+        queries: homeQueries(parseQuery("search('A')", [])),
+      },
     })
     await view.findByRole('link', { name: /A trace 0/ })
     await waitFor(() =>
@@ -215,11 +221,15 @@ it.each(['pending', 'failed'] as const)(
         /\[26\]/
       )
     )
-    setTestUrl('/?start=3000&end=4000')
+    setTestUrl('/?start=3000&end=4000&q=B')
     await view.rerender({
       componentProps: {
         ...props,
-        options: { startTime: '3000000000', endTime: '4000000000' },
+        options: {
+          startTime: '3000000000',
+          endTime: '4000000000',
+          queries: homeQueries(parseQuery("search('B')", [])),
+        },
         revision: 1,
       },
     })
@@ -244,6 +254,11 @@ it.each(['pending', 'failed'] as const)(
         expect.stringContaining('start=1000')
       )
       expect(link).toHaveAttribute('href', expect.stringContaining('end=2000'))
+      expect(
+        new URL(link.getAttribute('href')!, 'http://local').searchParams.has(
+          'q'
+        )
+      ).toBe(false)
     }
     if (outcome === 'pending') {
       nextTraces.resolve(traces('B'))
@@ -255,6 +270,11 @@ it.each(['pending', 'failed'] as const)(
         expect.stringContaining('start=3000')
       )
       expect(card).toHaveAttribute('href', expect.stringContaining('end=4000'))
+      expect(
+        new URL(card.getAttribute('href')!, 'http://local').searchParams.has(
+          'q'
+        )
+      ).toBe(false)
     }
     view.unmount()
   }
