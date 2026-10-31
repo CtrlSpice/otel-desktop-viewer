@@ -173,15 +173,22 @@ it.each(['Next', 'Retry'])(
   }
 )
 
-it.each(['pending', 'failed'])(
-  'pages retained evidence with its own connection and scope while replacement is %s',
-  async outcome => {
+it.each([
+  { order: 'page-first', outcome: 'pending' },
+  { order: 'page-first', outcome: 'failed' },
+  { order: 'replacement-first', outcome: 'pending' },
+  { order: 'replacement-first', outcome: 'failed' },
+])(
+  'pages retained evidence in its own scope: $order with $outcome replacement',
+  async ({ order, outcome }) => {
     const { view, requests, props } = mountEvidence()
     requests[0].resolve({
       items: [evidence('worker evidence')],
       truncated: true,
     })
     await view.findByRole('link', { name: /worker evidence/ })
+    if (order === 'page-first')
+      await fireEvent.click(view.getByRole('button', { name: 'Next' }))
     navigate('/?start=3000&end=4000')
     await view.rerender({
       componentProps: {
@@ -191,20 +198,26 @@ it.each(['pending', 'failed'])(
         revision: 1,
       },
     })
-    expect(requests[1].options).toMatchObject({
+    const pendingReplacement = requests.at(-1)!
+    expect(pendingReplacement.options).toMatchObject({
       targetIdentity: 'store',
       offset: 0,
     })
     if (outcome === 'failed') {
-      requests[1].reject(new Error('Store unavailable'))
+      pendingReplacement.reject(new Error('Store unavailable'))
       await view.findByRole('alert')
     }
     const next = view.getByRole('button', { name: 'Next' })
-    expect(next).toBeEnabled()
-    await fireEvent.click(next)
-    expect(requests[2].options).toEqual({ ...requests[0].options, offset: 25 })
-    expect(requests[1].signal?.aborted).toBe(false)
-    requests[2].resolve({
+    if (order === 'replacement-first') {
+      expect(next).toBeEnabled()
+      await fireEvent.click(next)
+    }
+    const retainedPage = requests[order === 'page-first' ? 1 : 2]
+    expect(next).toBeDisabled()
+    expect(retainedPage.options).toEqual({ ...requests[0].options, offset: 25 })
+    expect(retainedPage.signal?.aborted).toBe(false)
+    expect(pendingReplacement.signal?.aborted).toBe(false)
+    retainedPage.resolve({
       items: [evidence('worker page two', '3')],
       truncated: false,
     })
@@ -226,8 +239,8 @@ it.each(['pending', 'failed'])(
     ).toHaveTextContent('worker')
     if (outcome === 'failed')
       await fireEvent.click(view.getByRole('button', { name: 'Retry' }))
-    const replacement = outcome === 'failed' ? requests[3] : requests[1]
-    expect(replacement.options).toEqual(requests[1].options)
+    const replacement = outcome === 'failed' ? requests[3] : pendingReplacement
+    expect(replacement.options).toEqual(pendingReplacement.options)
     replacement.resolve({
       items: [evidence('store evidence', '4')],
       truncated: false,
@@ -253,29 +266,43 @@ it.each(['pending', 'failed'])(
   }
 )
 
-it.each(['success', 'failure'])(
-  'ignores late page %s when a successful replacement or unmount cancels it',
-  async outcome => {
+it.each([
+  { order: 'page-first', outcome: 'success' },
+  { order: 'page-first', outcome: 'failure' },
+  { order: 'replacement-first', outcome: 'success' },
+  { order: 'replacement-first', outcome: 'failure' },
+])(
+  'ignores late page $outcome after replacement or unmount: $order',
+  async ({ order, outcome }) => {
     const { view, requests, props } = mountEvidence()
     requests[0].resolve({
       items: [evidence('worker evidence')],
       truncated: true,
     })
     await view.findByRole('link', { name: /worker evidence/ })
+    if (order === 'page-first')
+      await fireEvent.click(view.getByRole('button', { name: 'Next' }))
     await view.rerender({
       componentProps: { ...props, connection: edge(9, store), revision: 1 },
     })
-    await fireEvent.click(view.getByRole('button', { name: 'Next' }))
+    const replacement = requests.at(-1)!
+    if (order === 'replacement-first')
+      await fireEvent.click(view.getByRole('button', { name: 'Next' }))
+    const retainedPage = requests[order === 'page-first' ? 1 : 2]
     expect(requests).toHaveLength(3)
-    requests[1].resolve({
+    expect(retainedPage.signal?.aborted).toBe(false)
+    replacement.resolve({
       items: [evidence('store evidence')],
       truncated: true,
     })
     await view.findByRole('link', { name: /store evidence/ })
-    expect(requests[2].signal?.aborted).toBe(true)
+    expect(retainedPage.signal?.aborted).toBe(true)
     if (outcome === 'success')
-      requests[2].resolve({ items: [evidence('stale page')], truncated: false })
-    else requests[2].reject(new Error('Stale page error'))
+      retainedPage.resolve({
+        items: [evidence('stale page')],
+        truncated: false,
+      })
+    else retainedPage.reject(new Error('Stale page error'))
     await tick()
     expect(view.queryByText(/stale page/i)).toBeNull()
     expect(view.queryByRole('alert')).toBeNull()

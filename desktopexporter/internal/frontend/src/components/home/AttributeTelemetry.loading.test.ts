@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { telemetryAPI } from '@/services/telemetry-service'
-import type { LogSummary, TraceSummary } from '@/types/api-types'
+import type { LogSummary, MetricSummary, TraceSummary } from '@/types/api-types'
 import type { ServiceSummary } from '@/services/discovery-types'
 import AttributeTelemetry from './AttributeTelemetry.svelte'
 
@@ -73,6 +73,24 @@ const props = {
   revision: 0,
 }
 
+function metrics(prefix: string): MetricSummary[] {
+  return Array.from({ length: 26 }, (_, index) => ({
+    metricRef: `${prefix}-${index}`,
+    name: `${prefix} metric ${index}`,
+    serviceName: prefix,
+    unit: '',
+    metricType: 'Gauge',
+    aggregationTemporality: null,
+    aggregationTemporalityCode: null,
+    isMonotonic: null,
+    seriesCount: 1,
+    seriesCardinality: 1,
+    dataPointCount: 1,
+    lastValue: 1,
+    lastSeen: 1n,
+  }))
+}
+
 beforeEach(() => {
   setTestUrl('/?time=all')
   localStorage.removeItem('home-telemetry-page-size')
@@ -112,9 +130,10 @@ it('publishes and pages the active signal without waiting for unrelated signals,
   const tabs = view.getByRole('tablist', { name: 'Telemetry signals' })
   const next = view.getByRole('button', { name: 'Next page' })
   expect(next).toBeEnabled()
-  expect(view.getByRole('region', { name: 'Matching traces' })).toHaveAttribute(
-    'aria-busy',
-    'false'
+  await waitFor(() =>
+    expect(
+      view.getByRole('region', { name: 'Matching traces' })
+    ).toHaveAttribute('aria-busy', 'false')
   )
   expect(view.getByRole('tab', { name: /^Traces/ })).toHaveAccessibleName(
     /\[26\]/
@@ -170,6 +189,77 @@ it('retains independent signal pages and scroll when a different signal complete
   expect(viewport.scrollTop).toBe(41)
 })
 
+it.each(['pending', 'failed'] as const)(
+  'keeps each displayed signal range on newly paged links during a %s replacement',
+  async outcome => {
+    const nextTraces = deferred<TraceSummary[]>()
+    const nextLogs = deferred<LogSummary[]>()
+    const nextMetrics = deferred<MetricSummary[]>()
+    vi.spyOn(telemetryAPI, 'searchTraceSummaries')
+      .mockResolvedValueOnce(traces('A'))
+      .mockReturnValueOnce(nextTraces.promise)
+    vi.mocked(telemetryAPI.searchLogSummaries)
+      .mockResolvedValueOnce(logs('A'))
+      .mockReturnValueOnce(nextLogs.promise)
+    vi.mocked(telemetryAPI.searchMetricSummaries)
+      .mockResolvedValueOnce(metrics('A'))
+      .mockReturnValueOnce(nextMetrics.promise)
+    setTestUrl('/?start=1000&end=2000')
+    const view = renderWithContexts(AttributeTelemetry, {
+      ...props,
+      options: { startTime: '1000000000', endTime: '2000000000' },
+    })
+    await view.findByRole('link', { name: /A trace 0/ })
+    await waitFor(() =>
+      expect(view.getByRole('tab', { name: /^Logs/ })).toHaveAccessibleName(
+        /\[26\]/
+      )
+    )
+    setTestUrl('/?start=3000&end=4000')
+    await view.rerender({
+      componentProps: {
+        ...props,
+        options: { startTime: '3000000000', endTime: '4000000000' },
+        revision: 1,
+      },
+    })
+    if (outcome === 'failed') {
+      nextTraces.reject(new Error('Trace replacement failed'))
+      nextLogs.reject(new Error('Log replacement failed'))
+      nextMetrics.reject(new Error('Metric replacement failed'))
+      await view.findByRole('alert')
+    }
+    for (const [signal, name] of [
+      ['Traces', 'A trace 25'],
+      ['Logs', 'A log 25'],
+      ['Metrics', 'A metric 25'],
+    ]) {
+      await fireEvent.click(
+        view.getByRole('tab', { name: new RegExp(`^${signal}`) })
+      )
+      await fireEvent.click(view.getByRole('button', { name: 'Next page' }))
+      const link = view.getByRole('link', { name: new RegExp(name) })
+      expect(link).toHaveAttribute(
+        'href',
+        expect.stringContaining('start=1000')
+      )
+      expect(link).toHaveAttribute('href', expect.stringContaining('end=2000'))
+    }
+    if (outcome === 'pending') {
+      nextTraces.resolve(traces('B'))
+      const link = await view.findByRole('tab', { name: /^Traces/ })
+      await fireEvent.click(link)
+      const card = await view.findByRole('link', { name: /B trace 0/ })
+      expect(card).toHaveAttribute(
+        'href',
+        expect.stringContaining('start=3000')
+      )
+      expect(card).toHaveAttribute('href', expect.stringContaining('end=4000'))
+    }
+    view.unmount()
+  }
+)
+
 it('rejects obsolete A → B → A responses and errors without completing the current request', async () => {
   const oldA = deferred<TraceSummary[]>()
   const oldB = deferred<TraceSummary[]>()
@@ -218,6 +308,25 @@ it('publishes active errors immediately, retains its cards and paging, and has n
   await fireEvent.click(view.getByRole('button', { name: 'Next page' }))
   expect(view.getByRole('link', { name: /A trace 25/ })).toBeInTheDocument()
 })
+
+it.each(['success', 'failure'] as const)(
+  'aborts disconnected telemetry on unmount and ignores late %s',
+  async outcome => {
+    const pending = deferred<TraceSummary[]>()
+    const search = vi
+      .spyOn(telemetryAPI, 'searchTraceSummaries')
+      .mockReturnValue(pending.promise)
+    const view = renderWithContexts(AttributeTelemetry, props)
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    view.unmount()
+    expect(search.mock.calls[0]![5]?.aborted).toBe(true)
+    if (outcome === 'success') pending.resolve(traces('unmounted'))
+    else pending.reject(new Error('Unmounted telemetry failure'))
+    await tick()
+    await tick()
+    expect(view.container).toBeEmptyDOMElement()
+  }
+)
 
 it.each(['success', 'failure', 'abort'] as const)(
   'retains an initial signal error during replacement until fresh %s',
