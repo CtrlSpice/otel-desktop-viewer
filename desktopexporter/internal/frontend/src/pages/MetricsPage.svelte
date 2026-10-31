@@ -507,8 +507,6 @@
 
   $effect(() => {
     const token = ++aggregateToken
-    // Navigation starts a new generation even when the previous chart is retained.
-    void page.selectedID
     aggregateLoading = false
     aggregateSummaryLoading = false
     aggregateError = ''
