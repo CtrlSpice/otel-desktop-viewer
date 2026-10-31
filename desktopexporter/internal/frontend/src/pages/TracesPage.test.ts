@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/svelte'
+import { tick } from 'svelte'
 import userEvent from '@testing-library/user-event'
 import TracesPage from './TracesPage.svelte'
 import type {
@@ -10,10 +17,12 @@ import type {
   SpanNode,
   TraceLogSummary,
   SpanData,
+  TraceColumnPreview,
 } from '@/types/api-types'
 import type { QueryNode } from '@/search/model'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { navigate } from '@/route'
+import { saveColumns } from '@/components/traces/Waterfall/waterfall-columns'
 
 const {
   searchTraceSummaries,
@@ -58,6 +67,81 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
 })
 
 describe('TracesPage activity ownership and readiness', () => {
+  it.each(['pending', 'failed'] as const)(
+    'retries retained activity independently of a %s different trace',
+    async outcome => {
+      const tree = deferred<TraceData>()
+      const exact = deferred<SpanData>()
+      const logs = deferred<TraceLogSummary[]>()
+      const retry = deferred<TraceLogSummary[]>()
+      searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+      getStats.mockResolvedValue(makeStats())
+      getTraceView
+        .mockResolvedValueOnce(makeTraceData(0))
+        .mockReturnValueOnce(tree.promise)
+      getSpan
+        .mockResolvedValueOnce(makeSpanNode('root').spanData)
+        .mockReturnValueOnce(exact.promise)
+      getTraceLogSummaries
+        .mockRejectedValueOnce(new Error('old activity unavailable'))
+        .mockReturnValueOnce(logs.promise)
+        .mockReturnValueOnce(retry.promise)
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      try {
+        setTestUrl('/traces/trace-1?span=root')
+        renderWithContexts(TracesPage)
+        const detail = screen.getByRole('region', { name: 'Span details' })
+        await within(detail).findByText('Could not load correlated logs.')
+        const retryButton = within(detail).getByRole('button', {
+          name: 'Retry correlated logs',
+        })
+        navigate('/traces/missing-trace?span=root&log=next-log')
+        await waitFor(() =>
+          expect(getTraceLogSummaries).toHaveBeenCalledTimes(2)
+        )
+        const nextSignal = getTraceLogSummaries.mock.calls[1]![1] as AbortSignal
+        if (outcome === 'failed') {
+          tree.reject(new Error('new tree unavailable'))
+          await screen.findByText('Could not load the selected trace.')
+        }
+        expect(
+          within(detail).getByRole('button', { name: 'Retry correlated logs' })
+        ).toBe(retryButton)
+        await fireEvent.click(retryButton)
+        await waitFor(() =>
+          expect(getTraceLogSummaries).toHaveBeenCalledTimes(3)
+        )
+        expect(getTraceLogSummaries.mock.calls[2]![0]).toBe('trace-1')
+        expect(nextSignal.aborted).toBe(false)
+        retry.resolve([
+          makeTraceLog({ bodyPreview: 'retried retained activity' }),
+        ])
+        await within(detail).findByText('retried retained activity')
+        expect(window.location.pathname).toBe('/traces/missing-trace')
+        expect(window.location.search).toBe('?span=root&log=next-log')
+        expect(getTraceView).toHaveBeenCalledTimes(2)
+        expect(getSpan).toHaveBeenCalledTimes(2)
+        logs.resolve([
+          makeTraceLog({
+            logRef: 'next-log',
+            bodyPreview: 'new trace activity',
+          }),
+        ])
+        await tick()
+        expect(within(detail).queryByText('new trace activity')).toBeNull()
+        exact.resolve(makeSpanNode('root', 'missing-trace').spanData)
+        await within(detail).findByText('new trace activity')
+        expect(
+          within(detail).queryByText('retried retained activity')
+        ).toBeNull()
+      } finally {
+        consoleError.mockRestore()
+      }
+    }
+  )
+
   function prepareRetainedSpan() {
     const root = makeSpanNode('root')
     const other = makeSpanNode('other')
@@ -509,6 +593,7 @@ async function renderSelectedTrace(unplacedSpanCount: number) {
   await waitFor(() =>
     expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
   )
+  await screen.findByRole('table', { name: 'Span fields' })
 }
 
 beforeEach(() => {
@@ -517,7 +602,9 @@ beforeEach(() => {
   getTraceView.mockReset()
   getSpan.mockReset()
   getSpan.mockImplementation(async (traceID: string, spanID: string) => {
-    const trace = await getTraceView.mock.results.at(-1)?.value
+    const trace = await Promise.resolve(
+      getTraceView.mock.results.at(-1)?.value
+    ).catch(() => null)
     return (
       (trace?.traceID === traceID ? trace.spans : []).find(
         (node: SpanNode) => node.spanData.spanID === spanID
@@ -641,6 +728,247 @@ describe('TracesPage unplaced spans banner', () => {
 })
 
 describe('TracesPage independent list loading', () => {
+  it('starts and publishes a submitted tree search without waiting for the list, and keeps match metadata with that tree', async () => {
+    await renderSelectedTrace(0)
+    const oldRow = screen.getByRole('row', { name: /^root —/ })
+    const list = deferred<TraceSummary[]>()
+    const tree = deferred<TraceData>()
+    searchTraceSummaries.mockReturnValueOnce(list.promise)
+    getTraceView.mockReturnValueOnce(tree.promise)
+    navigate('/traces/trace-1?span=root&q=name%20%3D%20%22filtered%22')
+    await waitFor(() => expect(searchTraceSummaries).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
+    expect(getTraceView.mock.calls[1]![1]).toEqual(
+      searchTraceSummaries.mock.calls[1]![2]
+    )
+    expect(oldRow).not.toHaveClass('waterfall-row--matched')
+    expect(screen.getByRole('row', { name: /^root —/ })).toBe(oldRow)
+    const next = makeTraceData(0)
+    next.spans[0]!.spanData.name = 'filtered tree'
+    tree.resolve(next)
+    const replacement = await screen.findByRole('row', {
+      name: /^filtered tree —/,
+    })
+    expect(replacement).toHaveClass('waterfall-row--matched')
+    list.reject(new Error('filtered list unavailable'))
+    await screen.findByText('Error: filtered list unavailable')
+    expect(screen.getByRole('row', { name: /^filtered tree —/ })).toBe(
+      replacement
+    )
+    expect(getTraceView).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts each known trace immediately and resets its shared 200ms notice without replacing the old tree', async () => {
+    await renderSelectedTrace(0)
+    await screen.findByRole('table', { name: 'Span fields' })
+    const row = screen.getByRole('row', { name: /^root —/ })
+    const first = deferred<TraceData>()
+    const second = deferred<TraceData>()
+    getTraceView
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    getSpan.mockImplementation(
+      async (traceID: string, spanID: string) =>
+        makeSpanNode(spanID, traceID).spanData
+    )
+    vi.useFakeTimers()
+    const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+    try {
+      navigate('/traces/missing-B')
+      await tick()
+      expect(getTraceView).toHaveBeenCalledTimes(2)
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+      await advance(199)
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+      await advance(1)
+      expect(screen.getByText('Loading selected trace…')).toBeInTheDocument()
+      navigate('/traces/missing-C')
+      await tick()
+      expect(getTraceView).toHaveBeenCalledTimes(3)
+      expect((getTraceView.mock.calls[1]![2] as AbortSignal).aborted).toBe(true)
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+      expect(screen.getByRole('row', { name: /^root —/ })).toBe(row)
+      await advance(199)
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+      await advance(1)
+      expect(screen.getByText('Loading selected trace…')).toBeInTheDocument()
+      second.resolve(makeTraceData(0, 'missing-C', 'current'))
+      await advance(0)
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+      expect(
+        screen.getByRole('row', { name: /^current —/ })
+      ).toBeInTheDocument()
+      first.resolve(makeTraceData(0, 'missing-B', 'stale'))
+      await advance(200)
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+      expect(document.querySelector('tr[data-span-id="stale"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['pending', 'failed'] as const)(
+    'starts route-owned tree, logs and exact Details while the list is %s',
+    async outcome => {
+      const list = deferred<TraceSummary[]>()
+      const tree = deferred<TraceData>()
+      searchTraceSummaries.mockReturnValue(list.promise)
+      getStats.mockResolvedValue(makeStats())
+      getTraceView.mockReturnValue(tree.promise)
+      getTraceLogSummaries.mockResolvedValue([
+        makeTraceLog({ bodyPreview: 'independently received activity' }),
+      ])
+      getSpan.mockResolvedValue(makeSpanNode('root').spanData)
+      setTestUrl('/traces/trace-1?span=root&log=log-1')
+      renderWithContexts(TracesPage)
+      await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
+      await screen.findByText('independently received activity')
+      expect(new URLSearchParams(window.location.search).get('log')).toBe(
+        'log-1'
+      )
+      tree.resolve(makeTraceData(0))
+      await screen.findByRole('row', { name: /^root —/ })
+      if (outcome === 'failed') {
+        list.reject(new Error('list unavailable'))
+        await screen.findByText('Error: list unavailable')
+      }
+      expect(getTraceView).toHaveBeenCalledTimes(1)
+      expect(getTraceLogSummaries).toHaveBeenCalledTimes(1)
+      expect(
+        screen.getByRole('table', { name: 'Span fields' })
+      ).toBeInTheDocument()
+      expect(screen.queryByText('No traces in this time range')).toBeNull()
+    }
+  )
+
+  it.each(['success', 'failure'] as const)(
+    'supersedes tree/log %s promptly for a missing selection during a pending list refresh',
+    async outcome => {
+      const oldTree = deferred<TraceData>()
+      const oldLogs = deferred<TraceLogSummary[]>()
+      const nextTree = deferred<TraceData>()
+      const nextLogs = deferred<TraceLogSummary[]>()
+      const list = deferred<TraceSummary[]>()
+      searchTraceSummaries
+        .mockResolvedValueOnce([makeTraceSummary()])
+        .mockReturnValueOnce(list.promise)
+      getStats.mockResolvedValue(makeStats())
+      getTraceView
+        .mockReturnValueOnce(oldTree.promise)
+        .mockReturnValueOnce(nextTree.promise)
+      getTraceLogSummaries
+        .mockReturnValueOnce(oldLogs.promise)
+        .mockReturnValueOnce(nextLogs.promise)
+      getSpan.mockImplementation(
+        async (traceID: string, spanID: string) =>
+          makeSpanNode(spanID, traceID).spanData
+      )
+      setTestUrl('/traces/trace-1?span=root')
+      renderWithContexts(TracesPage)
+      await screen.findByText('GET /orders')
+      await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
+      // Both the list refresh and the missing selection must supersede the old
+      // activation, without waiting for the refreshed list to settle.
+      const refreshTree = deferred<TraceData>()
+      const refreshLogs = deferred<TraceLogSummary[]>()
+      getTraceView
+        .mockReset()
+        .mockReturnValueOnce(refreshTree.promise)
+        .mockReturnValueOnce(nextTree.promise)
+      getTraceLogSummaries
+        .mockReset()
+        .mockReturnValueOnce(refreshLogs.promise)
+        .mockReturnValueOnce(nextLogs.promise)
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() => expect(searchTraceSummaries).toHaveBeenCalledTimes(2))
+      navigate('/traces/missing-trace?span=next&log=next-log')
+      await waitFor(() =>
+        expect(getTraceView).toHaveBeenCalledWith(
+          'missing-trace',
+          undefined,
+          expect.any(AbortSignal),
+          expect.any(Array)
+        )
+      )
+      expect((getTraceView.mock.calls[0]![2] as AbortSignal).aborted).toBe(true)
+      expect(
+        (getTraceLogSummaries.mock.calls[0]![1] as AbortSignal).aborted
+      ).toBe(true)
+      if (outcome === 'success') {
+        oldTree.resolve(makeTraceData(0, 'trace-1', 'stale'))
+        refreshTree.resolve(makeTraceData(0, 'trace-1', 'stale-refresh'))
+        oldLogs.resolve([])
+        refreshLogs.resolve([])
+      } else {
+        oldTree.reject(new Error('stale tree failure'))
+        refreshTree.reject(new Error('stale refresh failure'))
+        oldLogs.reject(new Error('stale logs failure'))
+        refreshLogs.reject(new Error('stale refresh logs failure'))
+      }
+      await screen.findByText('Loading selected trace…')
+      expect(
+        screen.queryByText('Could not load the selected trace.')
+      ).toBeNull()
+      expect(screen.queryByText('Could not load correlated logs.')).toBeNull()
+      expect(window.location.search).toBe('?span=next&log=next-log')
+      nextTree.resolve(makeTraceData(0, 'missing-trace', 'next'))
+      nextLogs.resolve([
+        makeTraceLog({
+          logRef: 'next-log',
+          spanID: 'next',
+          bodyPreview: 'current activity',
+        }),
+      ])
+      await screen.findByRole('row', { name: /^next —/ })
+      await within(
+        screen.getByRole('region', { name: 'Span details' })
+      ).findByText('current activity')
+      expect(window.location.search).toBe('?span=next&log=next-log')
+    }
+  )
+
+  it.each(['success', 'failure'] as const)(
+    'ignores an old A tree %s after A→missing B→A while the list is pending',
+    async outcome => {
+      const list = deferred<TraceSummary[]>()
+      const old = deferred<TraceData>()
+      const middle = deferred<TraceData>()
+      const latest = deferred<TraceData>()
+      searchTraceSummaries.mockReturnValue(list.promise)
+      getStats.mockResolvedValue(makeStats())
+      getTraceView
+        .mockReturnValueOnce(old.promise)
+        .mockReturnValueOnce(middle.promise)
+        .mockReturnValueOnce(latest.promise)
+      getSpan.mockImplementation(
+        async (traceID: string, spanID: string) =>
+          makeSpanNode(spanID, traceID).spanData
+      )
+      setTestUrl('/traces/trace-1?span=root')
+      renderWithContexts(TracesPage)
+      await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
+      navigate('/traces/missing-trace?span=other')
+      await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
+      navigate('/traces/trace-1?span=current')
+      await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(3))
+      expect((getTraceView.mock.calls[0]![2] as AbortSignal).aborted).toBe(true)
+      if (outcome === 'success')
+        old.resolve(makeTraceData(0, 'trace-1', 'stale'))
+      else old.reject(new Error('stale A failure'))
+      await screen.findByText('Loading selected trace…')
+      expect(window.location.search).toBe('?span=current')
+      expect(
+        screen.queryByText('Could not load the selected trace.')
+      ).toBeNull()
+      latest.resolve(makeTraceData(0, 'trace-1', 'current'))
+      await screen.findByRole('row', { name: /^current —/ })
+      list.resolve([makeTraceSummary()])
+      await screen.findByText('GET /orders')
+      expect(getTraceView).toHaveBeenCalledTimes(3)
+      expect(document.querySelector('tr[data-span-id="stale"]')).toBeNull()
+    }
+  )
+
   it.each(['pending', 'failed'] as const)(
     'publishes the trace list and opens its tree while statistics are %s',
     async outcome => {
@@ -692,6 +1020,438 @@ describe('TracesPage independent list loading', () => {
 })
 
 describe('TracesPage trace detail lifecycle', () => {
+  it('does not republish retained A with new activity selection before the returned exact-span activation succeeds', async () => {
+    const old = makeTraceData(0)
+    old.spans[0]!.spanData.name = 'retained A'
+    old.spans[0]!.spanData.events = ['first event', 'second event'].map(
+      (name, index) => ({
+        name,
+        timestamp: BigInt(index),
+        attributes: [],
+        droppedAttributesCount: 0,
+      })
+    )
+    const middleTree = deferred<TraceData>()
+    const latestTree = deferred<TraceData>()
+    const middleSpan = deferred<SpanData>()
+    const latestSpan = deferred<SpanData>()
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView
+      .mockResolvedValueOnce(old)
+      .mockReturnValueOnce(middleTree.promise)
+      .mockReturnValueOnce(latestTree.promise)
+    getSpan
+      .mockResolvedValueOnce(old.spans[0]!.spanData)
+      .mockReturnValueOnce(middleSpan.promise)
+      .mockReturnValueOnce(latestSpan.promise)
+    setTestUrl('/traces/trace-1?span=root&event=0')
+    renderWithContexts(TracesPage)
+    const detail = screen.getByRole('region', { name: 'Span details' })
+    const fields = await within(detail).findByRole('table', {
+      name: 'Span fields',
+    })
+    const secondEvent = within(
+      document.getElementById('span-event-1')!
+    ).getByRole('button')
+    expect(secondEvent).toHaveAttribute('aria-expanded', 'false')
+    navigate('/traces/missing-trace?span=root')
+    await waitFor(() => expect(getSpan).toHaveBeenCalledTimes(2))
+    navigate('/traces/trace-1?span=root&event=1')
+    await waitFor(() => expect(getSpan).toHaveBeenCalledTimes(3))
+    expect((getSpan.mock.calls[1]![2] as AbortSignal).aborted).toBe(true)
+    middleSpan.resolve({
+      ...makeSpanNode('root', 'missing-trace').spanData,
+      name: 'stale B',
+    })
+    await screen.findByText('Loading selected trace…')
+    expect(fields.querySelector('[data-field="name"]')).toHaveTextContent(
+      'retained A'
+    )
+    expect(secondEvent).toHaveAttribute('aria-expanded', 'false')
+    expect(within(detail).queryByText('stale B')).toBeNull()
+    latestSpan.resolve({ ...old.spans[0]!.spanData, name: 'fresh A' })
+    await within(detail).findByText('fresh A')
+    expect(secondEvent).toHaveAttribute('aria-expanded', 'true')
+    expect(window.location.search).toBe('?span=root&event=1')
+    latestTree.resolve(old)
+    await waitFor(() =>
+      expect(screen.queryByText('Loading selected trace…')).toBeNull()
+    )
+    expect(getSpan).toHaveBeenCalledTimes(3)
+  })
+
+  it.each(['pending', 'failed'] as const)(
+    'loads new columns for the displayed tree while a different trace is %s',
+    async outcome => {
+      const next = deferred<TraceData>()
+      const preview = deferred<TraceColumnPreview[]>()
+      const root = makeSpanNode('root')
+      const old = {
+        traceID: 'trace-1',
+        unplacedSpanCount: 0,
+        availableColumns: [{ source: 'span', key: 'new-key', count: 1 }],
+        spans: [{ ...root, spanData: { ...root.spanData, columnValues: [] } }],
+      }
+      searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+      getStats.mockResolvedValue(makeStats())
+      getTraceView.mockResolvedValueOnce(old).mockReturnValueOnce(next.promise)
+      getSpan.mockResolvedValue(root.spanData)
+      getTraceColumnPreviews.mockReturnValue(preview.promise)
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      try {
+        setTestUrl('/traces/trace-1?span=root')
+        renderWithContexts(TracesPage)
+        const row = await screen.findByRole('row', { name: /^root …/ })
+        navigate('/traces/missing-trace')
+        await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
+        if (outcome === 'failed') {
+          next.reject(new Error('replacement unavailable'))
+          await screen.findByText('Could not load the selected trace.')
+        }
+        await fireEvent.click(
+          screen.getByRole('checkbox', { name: 'span: new-key', hidden: true })
+        )
+        await waitFor(() =>
+          expect(getTraceColumnPreviews).toHaveBeenCalledTimes(1)
+        )
+        expect(getTraceColumnPreviews).toHaveBeenCalledWith(
+          'trace-1',
+          expect.arrayContaining([{ source: 'span', key: 'new-key' }]),
+          expect.any(AbortSignal)
+        )
+        expect(within(row).queryByText('—')).toBeNull()
+        preview.resolve([
+          {
+            spanID: 'root',
+            source: 'span',
+            key: 'new-key',
+            values: [{ valueType: 'int64', preview: '9223372036854775807' }],
+          },
+        ])
+        await within(row).findByText('9223372036854775807')
+        expect(window.location.pathname).toBe('/traces/missing-trace')
+      } finally {
+        consoleError.mockRestore()
+      }
+    }
+  )
+
+  it.each(['pending', 'failed'] as const)(
+    'keeps retained Details metadata, activity, disclosures and exact on-demand actions coherent through a %s replacement',
+    async outcome => {
+      const old = makeTraceData(0)
+      const root = old.spans[0]!
+      root.salvaged = true
+      root.cyclePoint = true
+      root.spanData.events = [
+        {
+          name: 'old event',
+          timestamp: 100_000n,
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      ]
+      root.spanData.links = [
+        {
+          traceID: 'linked-trace',
+          spanID: 'linked-span',
+          traceState: '',
+          flags: 0,
+          attributes: [],
+          droppedAttributesCount: 0,
+          summary: { target: { name: 'old link', serviceName: 'worker' } },
+        },
+      ]
+      const nextTree = deferred<TraceData>()
+      const nextSpan = deferred<SpanData>()
+      const latest = makeTraceData(0, 'trace-3', 'latest-root')
+      latest.spans[0]!.spanData.events = [
+        {
+          name: 'latest event',
+          timestamp: 1n,
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      ]
+      searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+      getStats.mockResolvedValue(makeStats())
+      getTraceView.mockImplementation((traceID: string) =>
+        traceID === 'trace-1'
+          ? Promise.resolve(old)
+          : traceID === 'trace-3'
+            ? Promise.resolve(latest)
+            : nextTree.promise
+      )
+      getSpan.mockImplementation((traceID: string) =>
+        traceID === 'trace-1'
+          ? Promise.resolve(root.spanData)
+          : traceID === 'trace-3'
+            ? Promise.resolve(latest.spans[0]!.spanData)
+            : nextSpan.promise
+      )
+      getTraceLogSummaries.mockImplementation(async (traceID: string) => [
+        makeTraceLog({
+          bodyPreview:
+            traceID === 'trace-1' ? 'old activity' : 'replacement activity',
+          spanID: traceID === 'trace-3' ? 'latest-root' : 'root',
+        }),
+      ])
+      const user = userEvent.setup()
+      const write = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      const bytes =
+        '{"resourceSpans":[{"resource":{"attributes":[{"key":"large","value":{"intValue":"9223372036854775807"}}]},"scopeSpans":[{"scope":{"name":"complete-scope"},"spans":[{"traceId":"trace-1","spanId":"root","attributes":[{"key":"precise","value":{"doubleValue":1.234567890123456789}},{"key":"zero","value":{"doubleValue":-0.0}},{"key":"nested","value":{"kvlistValue":{"values":[{"key":"large","value":{"intValue":"-9223372036854775808"}}]}}}],"events":[{"name":"complete event"}],"links":[{"traceId":"linked-trace","spanId":"linked-span"}]}]}]}]}\n'
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async url =>
+          new Response(
+            url === '/api/features' ? '{"evals":{"enabled":true}}' : bytes,
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+      )
+      const exports = () =>
+        fetch.mock.calls.filter(([url]) => String(url).startsWith('/export/'))
+      const createObjectURL = vi.fn((_blob: Blob) => 'blob:trace-retained')
+      const revokeObjectURL = vi.fn()
+      const NativeURL = URL
+      vi.stubGlobal(
+        'URL',
+        class extends NativeURL {
+          static createObjectURL = createObjectURL
+          static revokeObjectURL = revokeObjectURL
+        }
+      )
+      const downloads: string[] = []
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(function (this: HTMLAnchorElement) {
+          downloads.push(this.download)
+        })
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      try {
+        setTestUrl('/traces/trace-1?span=root&event=0')
+        renderWithContexts(TracesPage)
+        const detail = screen.getByRole('region', { name: 'Span details' })
+        const fields = await within(detail).findByRole('table', {
+          name: 'Span fields',
+        })
+        const activity = await within(detail).findByText('old activity')
+        const linkHeader = within(detail).getByText('Links').closest('summary')!
+        const linkSection = linkHeader.closest('details')!
+        if (!linkSection.open) await fireEvent.click(linkHeader)
+        expect(linkSection.open).toBe(true)
+        const rootLink = within(detail).getByRole('link', {
+          name: 'Open root span in trace trace-1',
+        })
+        expect(exports()).toHaveLength(0)
+        navigate('/traces/missing-trace?span=root&log=log-1')
+        await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
+        if (outcome === 'failed') {
+          nextTree.reject(new Error('tree replacement failed'))
+          nextSpan.reject(new Error('span replacement failed'))
+          await screen.findByText('Could not load the selected trace.')
+          await within(detail).findByText('span replacement failed')
+        }
+        expect(within(detail).getByRole('table', { name: 'Span fields' })).toBe(
+          fields
+        )
+        expect(within(detail).getByText('old activity')).toBe(activity)
+        expect(within(detail).queryByText('replacement activity')).toBeNull()
+        expect(within(detail).getByText('· root')).toBeInTheDocument()
+        expect(within(detail).getByText(/Cycle detected:/)).toBeInTheDocument()
+        expect(rootLink).toHaveAttribute('href', '/traces/trace-1?span=root')
+        expect(linkSection.open).toBe(true)
+        expect(
+          within(linkSection).getByText('old link (worker)')
+        ).toBeInTheDocument()
+        expect(
+          within(detail).getByText('Events').closest('summary')
+        ).toHaveTextContent('[2]')
+        await user.click(
+          within(detail).getByRole('button', { name: 'Copy span' })
+        )
+        await waitFor(() => expect(write).toHaveBeenCalledWith(bytes))
+        expect(exports().at(-1)?.[0]).toBe('/export/traces/trace-1?spanId=root')
+        await user.click(screen.getByRole('button', { name: 'Download trace' }))
+        await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
+        expect(exports().at(-1)?.[0]).toBe('/export/traces/trace-1')
+        expect(await createObjectURL.mock.calls[0]![0].text()).toBe(bytes)
+        expect(downloads).toEqual(['trace-trace-1.json'])
+        expect(exports()).toHaveLength(2)
+        navigate('/traces/trace-3?span=latest-root')
+        await within(detail).findByText('latest event')
+        await within(detail).findByText('replacement activity')
+        expect(
+          fields.querySelector('[data-field="traceId"]')
+        ).toHaveTextContent('trace-3')
+        expect(within(detail).queryByText('old activity')).toBeNull()
+        expect(within(detail).queryByText(/Cycle detected:/)).toBeNull()
+        expect(
+          within(detail).getByRole('link', {
+            name: 'Open root span in trace trace-3',
+          })
+        ).toHaveAttribute('href', '/traces/trace-3?span=latest-root')
+        expect(exports()).toHaveLength(2)
+      } finally {
+        fetch.mockRestore()
+        write.mockRestore()
+        click.mockRestore()
+        consoleError.mockRestore()
+        vi.unstubAllGlobals()
+      }
+    }
+  )
+
+  describe.each(['pending', 'failed'] as const)(
+    'retained waterfall with a %s replacement',
+    outcome => {
+      it.each(['span', 'event', 'log', 'column'] as const)(
+        'selects the displayed trace through its retained %s handler',
+        async action => {
+          const next = deferred<TraceData>()
+          const old = makeTraceData(0)
+          const child = makeSpanNode('child')
+          child.depth = 1
+          child.spanData.parentSpanID = 'root'
+          child.spanData.events = [
+            {
+              name: 'retained event',
+              timestamp: 300_000n,
+              attributes: [],
+              droppedAttributesCount: 0,
+            },
+          ]
+          child.spanData.statusCodeValue = 2
+          child.spanData.statusCode = 'Error'
+          child.spanData.statusMessage = 'retained status'
+          old.spans.push(child)
+          saveColumns([{ source: 'span', key: 'status.message', field: true }])
+          searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+          getStats.mockResolvedValue(makeStats())
+          getTraceView.mockImplementation((traceID: string) =>
+            traceID === 'trace-1' ? Promise.resolve(old) : next.promise
+          )
+          getSpan.mockImplementation(async (traceID: string, spanID: string) =>
+            traceID === 'trace-1'
+              ? old.spans.find(node => node.spanData.spanID === spanID)!
+                  .spanData
+              : makeSpanNode(spanID, traceID).spanData
+          )
+          getTraceLogSummaries.mockImplementation(async (traceID: string) =>
+            traceID === 'trace-1'
+              ? [
+                  makeTraceLog({
+                    spanID: 'child',
+                    timestamp: 800_000n,
+                    bodyPreview: 'retained log',
+                  }),
+                ]
+              : []
+          )
+          const consoleError = vi
+            .spyOn(console, 'error')
+            .mockImplementation(() => {})
+          setTestUrl('/traces/trace-1?span=root')
+          renderWithContexts(TracesPage)
+          const row = await screen.findByRole('row', {
+            name: /^child retained status/,
+          })
+          navigate('/traces/missing-trace?span=root')
+          await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
+          if (outcome === 'failed') {
+            next.reject(new Error('replacement unavailable'))
+            await screen.findByText('Could not load the selected trace.')
+          }
+          if (action === 'span') await fireEvent.click(row)
+          else if (action === 'column')
+            await fireEvent.click(
+              within(row).getByRole('button', {
+                name: 'Show span field: status.message in details',
+              })
+            )
+          else
+            await fireEvent.click(
+              within(row).getByRole('button', {
+                name: action === 'event' ? /1 event/ : /1 log/,
+              })
+            )
+          await waitFor(() =>
+            expect(window.location.pathname).toBe('/traces/trace-1')
+          )
+          const query = new URLSearchParams(window.location.search)
+          expect(query.get('span')).toBe('child')
+          expect(query.get('event')).toBe(action === 'event' ? '0' : null)
+          expect(query.get('log')).toBe(action === 'log' ? 'log-1' : null)
+          const detail = screen.getByRole('region', { name: 'Span details' })
+          const fields = await within(detail).findByRole('table', {
+            name: 'Span fields',
+          })
+          await waitFor(() =>
+            expect(
+              fields.querySelector('[data-field="spanId"]')
+            ).toHaveTextContent('child')
+          )
+          if (action === 'column')
+            await waitFor(() =>
+              expect(
+                fields.querySelector('[data-field="status.message"]')
+              ).toHaveClass('detail-property--revealed')
+            )
+          expect(
+            screen.queryByText('Could not load the selected trace.')
+          ).toBeNull()
+          expect(getSpan.mock.calls.at(-1)?.slice(0, 2)).toEqual([
+            'trace-1',
+            'child',
+          ])
+          consoleError.mockRestore()
+        }
+      )
+    }
+  )
+
+  it.each(['success', 'failure'] as const)(
+    'ignores a late unmounted tree/log %s, including URL writes',
+    async outcome => {
+      const tree = deferred<TraceData>()
+      const logs = deferred<TraceLogSummary[]>()
+      searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+      getStats.mockResolvedValue(makeStats())
+      getTraceView.mockReturnValue(tree.promise)
+      getTraceLogSummaries.mockReturnValue(logs.promise)
+      getSpan.mockResolvedValue(makeSpanNode('requested').spanData)
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      setTestUrl('/traces/trace-1?span=requested&event=0')
+      const mounted = renderWithContexts(TracesPage)
+      await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
+      mounted.unmount()
+      expect((getTraceView.mock.calls[0]![2] as AbortSignal).aborted).toBe(true)
+      expect(
+        (getTraceLogSummaries.mock.calls[0]![1] as AbortSignal).aborted
+      ).toBe(true)
+      if (outcome === 'success') {
+        tree.resolve(makeTraceData(0, 'trace-1', 'late'))
+        logs.resolve([])
+      } else {
+        tree.reject(new Error('late unmounted tree failure'))
+        logs.reject(new Error('late unmounted log failure'))
+      }
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(window.location.search).toBe('?span=requested&event=0')
+      expect(consoleError).not.toHaveBeenCalled()
+      consoleError.mockRestore()
+    }
+  )
+
   it.each([
     'ABCDEF0123456789ABCDEF0123456789',
     'abcdef01-2345-6789-abcd-ef0123456789',
@@ -1096,7 +1856,9 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
     )
 
-    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
+    await fireEvent.click(
+      await screen.findByRole('button', { name: /^Trace two\b/ })
+    )
 
     await waitFor(() =>
       expect(screen.getByText('Loading selected trace…')).toBeVisible()
@@ -1132,7 +1894,9 @@ describe('TracesPage trace detail lifecycle', () => {
     renderWithContexts(TracesPage)
     await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
 
-    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
+    await fireEvent.click(
+      await screen.findByRole('button', { name: /^Trace two\b/ })
+    )
     await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
     firstDetail.resolve(makeTraceData(0, 'trace-1', 'old-span'))
 
@@ -1200,18 +1964,7 @@ describe('TracesPage trace detail lifecycle', () => {
     getStats.mockResolvedValue(makeStats())
 
     let detailSignal: AbortSignal | undefined
-    let resolveAbortHandled!: () => void
-    const abortHandled = new Promise<void>(resolve => {
-      resolveAbortHandled = resolve
-    })
     const abortError = new DOMException('', 'AbortError')
-    Object.defineProperty(abortError, 'name', {
-      get() {
-        // isAbortError reads this only from fetchTraceDetail's catch branch.
-        resolveAbortHandled()
-        return 'AbortError'
-      },
-    })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     getTraceView.mockImplementation(
       (
@@ -1232,7 +1985,7 @@ describe('TracesPage trace detail lifecycle', () => {
 
     page.unmount()
 
-    await abortHandled
+    await new Promise(resolve => setTimeout(resolve, 0))
     expect(detailSignal?.aborted).toBe(true)
     expect(consoleError).not.toHaveBeenCalled()
     expect(window.location.search).toBe('?span=span-1')
@@ -1289,7 +2042,9 @@ describe('TracesPage trace detail lifecycle', () => {
       'Could not load the selected trace.'
     )
 
-    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
+    await fireEvent.click(
+      await screen.findByRole('button', { name: /^Trace two\b/ })
+    )
     await waitFor(() =>
       expect(screen.getByText('Loading selected trace…')).toBeVisible()
     )
