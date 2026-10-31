@@ -8,7 +8,10 @@
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
-  import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
+  import EvalAssessmentDetail, {
+    type EvalGraderInput,
+  } from './EvalAssessmentDetail.svelte'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalSpanEvidence from './EvalSpanEvidence.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
   import {
@@ -238,6 +241,7 @@
       ? assessments.find(item => item.id === overallDefinition?.id)
       : undefined
   )
+  let overallInput = $state.raw<EvalGraderInput>()
   const proseCopy = $derived(
     row.kind === 'case' && !result && members[0]
       ? sourceCopy?.(members[0].id, 'question')
@@ -503,7 +507,10 @@
   </DetailBubble>
 {/snippet}
 {#snippet assessmentsSection()}
-  <DetailBubble label="Assessments">
+  <DetailBubble
+    label="Assessments"
+    action={overall && overallInput?.available ? overallInputCopy : undefined}
+  >
     {#snippet trailing()}
       {#if overall}
         <span class="inline-flex items-center gap-2">
@@ -523,6 +530,10 @@
         )}
         showScore={mode === 'results'}
         showHeading={assessment.id !== overall?.id}
+        externalCopy={assessment.id === overall?.id}
+        onGraderInput={assessment.id === overall?.id
+          ? input => (overallInput = input)
+          : undefined}
         loadRubric={result
           ? sourceCopy?.(result.id, `assessment:${assessment.id}:rubric`)
           : undefined}
@@ -537,6 +548,21 @@
       />
     {/each}
   </DetailBubble>
+{/snippet}
+{#snippet overallInputCopy()}
+  {#if overallInput}
+    <span
+      role="group"
+      aria-label={`Grader input · ${overallInput.contextLabel}`}
+      title={`Grader input · ${overallInput.contextLabel}`}
+    >
+      <ValueCopyButton
+        text={overallInput.text}
+        loadText={overallInput.loadText}
+        label="grader input"
+      />
+    </span>
+  {/if}
 {/snippet}
 {#snippet telemetrySection()}
   <EvalTelemetrySection

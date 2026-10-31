@@ -43,15 +43,9 @@
     retryDatapoints?: () => void
     selectionCurrent?: boolean
   } = $props()
-  const selectedSeries = $derived(
-    ctx.metric?.timeseries.find(
-      series => series.seriesRef === ctx.selectedSeriesKey
-    )
-  )
   const timeContext = getTimeContext()
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
-  let displayedDatapointCount = $state<number>()
   let rawMetric = $state.raw<typeof ctx.metric>()
   const actionMetric = $derived(
     detailView === 'raw' ? (rawMetric ?? ctx.metric) : ctx.metric
@@ -102,21 +96,13 @@
   </DetailBubble>
 {/snippet}
 {#snippet datapointsSection()}
-  <DetailBubble
-    label="Datapoints"
-    contained
+  <DatapointsPanel
     icon={seriesIcon}
-    disabled={!selectedSeries}
-    count={displayedDatapointCount}
-  >
-    <DatapointsPanel
-      response={datapointSeries}
-      {selectionCurrent}
-      error={datapointsError}
-      onretry={retryDatapoints}
-      bind:displayedCount={displayedDatapointCount}
-    />
-  </DetailBubble>
+    response={datapointSeries}
+    {selectionCurrent}
+    error={datapointsError}
+    onretry={retryDatapoints}
+  />
 {/snippet}
 {#snippet metricSection()}
   <DetailBubble label="Metric" icon={metricIcon}>

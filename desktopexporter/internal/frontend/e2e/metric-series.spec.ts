@@ -579,6 +579,91 @@ test('datapoints remain interactive when a chart response reuses the received-se
   expect(new URL(page.url()).searchParams.get('dp')).toBe('first-0')
 })
 
+for (const change of ['series', 'refresh'] as const) {
+  test(`empty datapoints recover through a failed ${change} request and retry`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.setViewportSize({ width: 1920, height: 1100 })
+    await page.addInitScript(() =>
+      localStorage.setItem('signal-detail:open', 'true')
+    )
+    let requests = 0
+    const pending: FixtureRoute[] = []
+    await routeTelemetry(page, async route => {
+      const { id, method, params } = route.request().postDataJSON()
+      if (method !== 'getMetricView' || params.targetBuckets !== 0)
+        return route.fallback()
+      if (++requests === 1) {
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            result: { ...metric, timeseries: [], datapointCount: 0 },
+          },
+        })
+      } else pending.push(route)
+    })
+    await page.goto(`/metrics/${metric.metricRef}?time=all&series=first`)
+    const section = page.locator('[data-detail-section="datapoints"]')
+    await expect(section).toHaveAttribute('data-detail-group', 'inactive')
+    await expect(section).toContainText('[0]')
+    if (change === 'series') {
+      await page
+        .getByRole('button', { name: 'Select route: /second', exact: true })
+        .click()
+    } else
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => pending.length).toBe(1)
+    await expect(section).not.toHaveAttribute('data-detail-group', 'inactive')
+    await expect(section).not.toContainText('[0]')
+    await expect(
+      page.getByText('Loading datapoints…', { exact: true })
+    ).toBeVisible()
+    const failed = pending[0]!
+    await failed.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: failed.request().postDataJSON().id,
+        error: { code: -32603, message: 'raw series unavailable' },
+      },
+    })
+    await expect(section).toContainText('Could not load datapoints.')
+    await page
+      .getByRole('button', { name: 'Retry datapoints', exact: true })
+      .click()
+    await expect.poll(() => pending.length).toBe(2)
+    const next = pending[1]!
+    const seriesRef = change === 'series' ? 'second' : 'first'
+    await next.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: next.request().postDataJSON().id,
+        result: {
+          ...metric,
+          timeseries: timeseries.filter(
+            series => series.seriesRef === seriesRef
+          ),
+        },
+      },
+    })
+    const point = page.locator(`[data-dp-id="${seriesRef}-0"]`)
+    await expect(point).toBeVisible()
+    await expect(section.locator('summary')).toContainText('[40]')
+    await point.click()
+    await expect(point).toHaveAttribute('aria-expanded', 'true')
+    expect(new URL(page.url()).searchParams.get('dp')).toBe(`${seriesRef}-0`)
+    await page.getByRole('group', { name: 'asDouble', exact: true }).hover()
+    await page
+      .getByRole('button', { name: 'Copy asDouble', exact: true })
+      .click()
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe('1')
+  })
+}
+
 test('series IDs stay on one line beside a separate compact colour column', async ({
   page,
 }) => {

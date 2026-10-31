@@ -1652,6 +1652,101 @@ describe('MetricsPage raw series fetching', () => {
     ['an empty requested series', () => makeMetric('Sum')],
   ]
 
+  it.each(['series', 'metric', 'refresh', 'window'] as const)(
+    'makes datapoints inspectable after an empty response and a %s change',
+    async change => {
+      prepareRawSeriesTest()
+      searchMetricSummaries.mockResolvedValue([
+        makeSummary('Sum'),
+        { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
+      ])
+      const base = makeMetric('Sum', [reduced])
+      const first = { ...base.timeseries[0]!, seriesRef: 'series-a' }
+      const second = { ...first, seriesRef: 'series-b' }
+      const ready = makeSumDatapoint('ready-point', 1_700_000_000_000, 42)
+      const replacement = deferred<MetricViewData | null>()
+      let requests = 0
+      getMetricView.mockImplementation((...args: unknown[]) => {
+        const metricRef = args[0] as string
+        const metric = { ...base, metricRef, timeseries: [first, second] }
+        if (args[3] !== 0) return Promise.resolve(metric)
+        if (++requests > 1) return replacement.promise
+        return Promise.resolve(
+          change === 'series' || change === 'window'
+            ? null
+            : {
+                ...metric,
+                timeseries:
+                  change === 'metric'
+                    ? []
+                    : [{ ...first, datapoints: [], datapointCount: 0 }],
+              }
+        )
+      })
+      setTestUrl('/metrics/metric-1?time=all&series=series-a')
+      renderWithContexts(MetricsPage)
+      const section = await waitFor(() => {
+        const element = document.querySelector(
+          '[data-detail-section="datapoints"]'
+        )!
+        expect(element).toHaveAttribute('data-detail-group', 'inactive')
+        expect(element).toHaveTextContent('[0]')
+        return element
+      })
+      if (change === 'series') {
+        navigateCurrentRoute(
+          withQueryPatch(readRoute().query, { series: 'series-b' }),
+          'replace'
+        )
+      } else if (change === 'metric') {
+        navigateToItem('metrics', 'next', 'push', { series: 'series-a' })
+      } else if (change === 'window') {
+        navigateCurrentRoute(
+          withQueryPatch(readRoute().query, {
+            time: undefined,
+            start: '100',
+            end: '200',
+          }),
+          'replace'
+        )
+      } else
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
+      const metricRef = change === 'metric' ? 'next' : 'metric-1'
+      const seriesRef = change === 'series' ? 'series-b' : 'series-a'
+      expect(section).not.toHaveAttribute('data-detail-group', 'inactive')
+      expect(section).not.toHaveTextContent('[0]')
+      replacement.resolve({
+        ...base,
+        metricRef,
+        unit: 's',
+        timeseries: [
+          { ...first, seriesRef, datapoints: [ready], datapointCount: 1 },
+        ],
+      })
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-dp-id="ready-point"]')
+        ).not.toBeNull()
+      )
+      expect(section).not.toHaveAttribute('data-detail-group', 'inactive')
+      expect(section).toHaveTextContent('[1]')
+      expect(
+        screen.getByLabelText('Displayed datapoint series')
+      ).toHaveTextContent(metricRef)
+      expect(
+        screen.getByLabelText('Displayed datapoint series')
+      ).toHaveTextContent(seriesRef)
+      expect(
+        screen.getByRole('columnheader', { name: /^Value\s*\(s\)$/ })
+      ).toBeInTheDocument()
+      const row = document.querySelector('[data-dp-id="ready-point"]')!
+      await fireEvent.click(row)
+      expect(row).toHaveAttribute('aria-expanded', 'true')
+      expect(readRoute().query.dp).toBe('ready-point')
+    }
+  )
+
   it.each(terminalResponses)(
     'publishes terminal empty datapoints for %s',
     async (_name, response) => {
@@ -1688,4 +1783,46 @@ describe('MetricsPage raw series fetching', () => {
       expect(rawSeriesCalls()).toHaveLength(1)
     }
   )
+
+  it('restores a manually collapsed datapoint section after an empty same-series refresh', async () => {
+    prepareRawSeriesTest()
+    const metric = makeMetric('Sum', [reduced])
+    const replacement = deferred<MetricViewData | null>()
+    let requests = 0
+    getMetricView.mockImplementation((...args: unknown[]) => {
+      if (args[3] !== 0) return Promise.resolve(metric)
+      if (++requests === 1) return Promise.resolve(metric)
+      if (requests === 2) return Promise.resolve(null)
+      return replacement.promise
+    })
+    setTestUrl('/metrics/metric-1?time=all&series=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    )
+    const section = document.querySelector(
+      '[data-detail-section="datapoints"]'
+    )!
+    const user = userEvent.setup()
+    await user.click(section.querySelector('summary')!)
+    await waitFor(() =>
+      expect(section).toHaveAttribute('data-detail-group', 'closed')
+    )
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() =>
+      expect(section).toHaveAttribute('data-detail-group', 'inactive')
+    )
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(rawSeriesCalls()).toHaveLength(3))
+    expect(section).toHaveAttribute('data-detail-group', 'closed')
+    replacement.resolve(metric)
+    await waitFor(() =>
+      expect(document.querySelector('[data-dp-id="dp-reduced"]')).not.toBeNull()
+    )
+    expect(section).toHaveAttribute('data-detail-group', 'closed')
+    await user.click(section.querySelector('summary')!)
+    await waitFor(() =>
+      expect(section).toHaveAttribute('data-detail-group', 'open')
+    )
+  })
 })
