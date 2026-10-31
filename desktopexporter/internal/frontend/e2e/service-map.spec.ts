@@ -249,7 +249,7 @@ test('retained edge inspection owns its time range and survives unrelated servic
 }) => {
   const h = await holdConnections(page)
   try {
-    await page.goto('/?start=1000&end=2000')
+    await page.goto('/?start=1000&end=2000&q=A')
     await h.ok('services', 0, [service('api'), service('worker')])
     await h.ok('connections', 0, [connection()])
     await h.ok('connections', 1, [connection()])
@@ -259,7 +259,7 @@ test('retained edge inspection owns its time range and survives unrelated servic
       page.getByRole('figure', { name: 'Service connections' })
     ).toBeVisible()
     await page.evaluate(() => {
-      window.history.pushState(null, '', '/?start=3000&end=4000')
+      window.history.pushState(null, '', '/?start=3000&end=4000&q=A')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
     await h.fail('services', 1)
@@ -272,6 +272,9 @@ test('retained edge inspection owns its time range and survives unrelated servic
       startTime: '1000000000',
       endTime: '2000000000',
     })
+    expect((await h.get('connection-spans', 0)).options.queries).toEqual(
+      (await h.get('connections', 0)).options.queries
+    )
     await h.ok('connection-spans', 0, [connectedSpan('retained evidence')])
     const link = page.getByRole('link', { name: /retained evidence/ })
     await expect(link).toBeVisible()
@@ -289,6 +292,13 @@ test('retained edge inspection owns its time range and survives unrelated servic
       await link.evaluate((element, previous) => element === previous, original)
     ).toBe(true)
     await expect(link).toHaveAttribute('href', /span=2222222222222222/)
+    const target = new URL((await link.getAttribute('href'))!, page.url())
+    expect(target.searchParams.get('start')).toBe('1000')
+    expect(target.searchParams.get('end')).toBe('2000')
+    expect(target.searchParams.has('q')).toBe(false)
+    await link.focus()
+    await link.press('Enter')
+    await expect(page).toHaveURL(target.href)
   } finally {
     h.release()
   }

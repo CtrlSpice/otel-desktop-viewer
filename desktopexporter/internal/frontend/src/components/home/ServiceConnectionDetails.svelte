@@ -15,7 +15,6 @@
     type DiscoveryOptions,
   } from '@/services/discovery-types'
   import { itemHref, parseRoute } from '@/route'
-  import { queryText } from './home-search'
   import { formatDuration } from '@/utils/time'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
@@ -51,13 +50,8 @@
   let displayed = $state.raw<EvidenceReading>()
   const shownConnection = $derived(displayed?.connection ?? connection)
   const evidenceQuery = $derived(
-    parseRoute(
-      discoverySignalHref(
-        'traces',
-        displayed?.options ?? options,
-        queryText((displayed?.options ?? options).queries?.traces ?? null)
-      )
-    ).query
+    parseRoute(discoverySignalHref('traces', displayed?.options ?? options, ''))
+      .query
   )
   let requestKey = $state(0)
   function publishWork(work: EvidenceWork) {
