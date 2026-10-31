@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
-  import { evalRequestQueue, type EvalRequestPart } from './eval-request-queue'
+  import { onDestroy, untrack } from 'svelte'
+  import type { EvalRequestPart } from './eval-request-state'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailStack from '@/components/shared/DetailStack.svelte'
@@ -52,18 +52,21 @@
     telemetryLoading?: boolean
     sourceCopy?: EvalSourceFieldCopy
   } = $props()
-  const requested = $derived({
-    row,
-    telemetryNodes,
-  })
+  const requested = $derived(
+    JSON.stringify([
+      experiment.id,
+      row.id,
+      row.kind,
+      row.reference && referenceKey(row.reference),
+    ])
+  )
   const spanRequest = $derived.by(() => {
-    const selected = requested
-    const nodes = selected.telemetryNodes
-    const reference = selected.row.reference
+    const nodes = telemetryNodes
+    const reference = row.reference
     const selectedSpan =
       reference &&
       nodes &&
-      ['tool', 'span', 'grader', 'execution'].includes(selected.row.kind)
+      ['tool', 'span', 'grader', 'execution'].includes(row.kind)
         ? nodes.get(referenceKey(reference))?.spanData
         : undefined
     const spans =
@@ -71,13 +74,14 @@
     const callID =
       selectedSpan && nodes ? uniqueToolCallID(selectedSpan, nodes) : undefined
     return {
-      context: selected,
+      context: requested,
+      row,
       spans,
       callID,
       selectedSpan,
       applicable:
         !!reference?.spanID &&
-        ['tool', 'span', 'grader', 'execution'].includes(selected.row.kind),
+        ['tool', 'span', 'grader', 'execution'].includes(row.kind),
       owners: nodes ? toolLogOwners(spans, nodes, callID) : [],
     }
   })
@@ -155,10 +159,27 @@
   })
 
   // Logs retain only their own packet. Span attributes/events publish separately.
+  let logController: AbortController | undefined
+  onDestroy(() => logController?.abort())
   $effect(() => {
     const selected = spanRequest
-    if (selected.applicable && !selected.selectedSpan && telemetryLoading)
+    const waiting =
+      selected.applicable && !selected.selectedSpan && telemetryLoading
+    const previous = untrack(() => logRequest?.request)
+    if (
+      logController &&
+      !logController.signal.aborted &&
+      previous &&
+      previous.context === selected.context &&
+      previous.callID === selected.callID &&
+      previous.spans.length === selected.spans.length &&
+      previous.spans.every((span, index) => span === selected.spans[index]) &&
+      previous.owners.length === selected.owners.length &&
+      previous.owners.every((span, index) => span === selected.owners[index])
+    )
       return
+    logController?.abort()
+    if (waiting) return
     const { owners } = selected
     retainedLogs = owners.length ? untrack(() => visibleLogPackets) : []
     const parts = new Map<string, EvalRequestPart<LogData[]>>(
@@ -166,17 +187,11 @@
     )
     logRequest = { request: selected, parts: new Map(parts) }
     const controller = new AbortController()
+    logController = controller
     requestKey = controller.signal
-    const queue = evalRequestQueue(controller.signal)
     for (const owner of owners) {
-      void queue
-        .run(() =>
-          telemetryAPI.getSpanLogs(
-            owner.traceID,
-            owner.spanID,
-            controller.signal
-          )
-        )
+      void telemetryAPI
+        .getSpanLogs(owner.traceID, owner.spanID, controller.signal)
         .then(
           logs => publish(owner, { status: 'ready', value: logs }),
           () => publish(owner, { status: 'failed' })
@@ -187,7 +202,6 @@
       parts.set(referenceKey(owner), part)
       logRequest = { request: selected, parts: new Map(parts) }
     }
-    return () => controller.abort()
   })
   const result = $derived(row.result)
   const references = $derived(evalTelemetrySummaries(experiment, row))
@@ -337,17 +351,17 @@
       <EvalSpanEvidence
         evidence={spanEvidence}
         owner={displayedSpans?.context !== requested
-          ? displayedSpans?.context.row.name
+          ? displayedSpans?.row.name
           : undefined}
-        reference={displayedSpans?.context.row.reference}
+        reference={displayedSpans?.row.reference}
       />
-      {#each visibleLogPackets as packet (`${referenceKey(packet.owner)}/${packet.request.context.row.id}`)}
+      {#each visibleLogPackets as packet (`${referenceKey(packet.owner)}/${packet.request.row.id}`)}
         <EvalSpanEvidence
           evidence={packetEvidence(packet)}
           owner={packet.request.context !== requested
-            ? packet.request.context.row.name
+            ? packet.request.row.name
             : undefined}
-          reference={packet.request.context.row.reference}
+          reference={packet.request.row.reference}
         />
       {/each}
       {#if evidenceLoading}

@@ -551,7 +551,12 @@ LIMIT ${batch.length}`,
   /** Resolve trace-only references to a bounded span selection; retain exact selections. */
   getReferencedTraceViews: async (
     references: readonly { traceID: string; spanID?: string }[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onTrace?: (
+      result:
+        | { status: 'ready'; trace: TraceData }
+        | { status: 'failed'; traceID: string }
+    ) => void
   ): Promise<{ traces: TraceData[]; unavailableTraceIDs: string[] }> => {
     const groups = new Map<string, Set<string> | null>()
     for (const reference of references) {
@@ -576,12 +581,11 @@ LIMIT ${batch.length}`,
     const unavailableTraceIDs: string[] = []
     const entries = [...groups]
     // Never split a trace's selection: that would lose ancestry across batches.
-    // Four concurrent trace queries, each with at most 256 exact span identities.
-    for (let offset = 0; offset < entries.length; offset += 4) {
-      if (signal?.aborted) throw new RequestAbortedError()
-      const batch = entries.slice(offset, offset + 4)
-      const results = await Promise.allSettled(
-        batch.map(async ([traceID, ids]) => {
+    if (signal?.aborted) throw new RequestAbortedError()
+    const results = await Promise.allSettled(
+      entries.map(([traceID, selection]) => {
+        const load = async () => {
+          let ids = selection
           if (ids === null) {
             const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
             const selection = await callRPC<{
@@ -611,14 +615,24 @@ LIMIT ${batch.length}`,
             signal
           )
           return traceData(raw)
-        })
-      )
-      if (signal?.aborted) throw new RequestAbortedError()
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') traces.push(result.value)
-        else unavailableTraceIDs.push(batch[index]![0])
+        }
+        return load().then(
+          trace => {
+            if (!signal?.aborted) onTrace?.({ status: 'ready', trace })
+            return trace
+          },
+          error => {
+            if (!signal?.aborted) onTrace?.({ status: 'failed', traceID })
+            throw error
+          }
+        )
       })
-    }
+    )
+    if (signal?.aborted) throw new RequestAbortedError()
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') traces.push(result.value)
+      else unavailableTraceIDs.push(entries[index]![0])
+    })
     return { traces, unavailableTraceIDs }
   },
 

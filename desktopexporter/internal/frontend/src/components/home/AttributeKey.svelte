@@ -36,13 +36,16 @@
     onExpandedChange: (expanded: boolean) => void
     hidden?: boolean
   } = $props()
-  const valueOptions = $derived({ ...options, ownerType: entry.ownerType })
+  const ownerType = $derived(entry.ownerType)
+  const name = $derived(entry.key)
+  const kind = $derived(entry.kind)
+  const valueOptions = $derived({ ...options, ownerType })
 </script>
 
 <AttributeValues
   options={valueOptions}
-  name={entry.key}
-  kind={entry.kind}
+  {name}
+  {kind}
   {sortBy}
   {sortDirection}
   {pinnedLeft}

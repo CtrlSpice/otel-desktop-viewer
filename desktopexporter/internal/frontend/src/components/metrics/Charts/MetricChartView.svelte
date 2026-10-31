@@ -27,8 +27,33 @@
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+
+  let {
+    aggregateLoading = false,
+    aggregateSummaryLoading = false,
+    aggregateError = '',
+    aggregateSummaryError = '',
+    requestKey,
+  }: {
+    aggregateLoading?: boolean
+    aggregateSummaryLoading?: boolean
+    aggregateError?: string
+    aggregateSummaryError?: string
+    requestKey?: AbortSignal
+  } = $props()
 
   const ctx = getMetricViewContext()
+  const pending = $derived(
+    ctx.isHistogramKind && ctx.activeHistogramTab === 'histogram'
+      ? aggregateSummaryLoading
+      : aggregateLoading
+  )
+  const error = $derived(
+    ctx.isHistogramKind && ctx.activeHistogramTab === 'histogram'
+      ? aggregateSummaryError
+      : aggregateError
+  )
 
   /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
   let plotHostHeight = $state(0)
@@ -81,6 +106,8 @@
       {#if ctx.activeHistogramTab === 'heatmap'}
         {#if ctx.bucketSeriesError}
           {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
+        {:else if (pending || error) && !ctx.heatmapBucketSeries?.length}
+          <div class="metric-chart-view__placeholder"></div>
         {:else if ctx.heatmapBucketSeries === null}
           <div class="metric-chart-view__placeholder">No histogram data</div>
         {:else if ctx.heatmapBucketSeries.length === 0 || ctx.heatmapBucketSeries.every(point => point.totals.count === 0)}
@@ -103,6 +130,8 @@
       {:else if ctx.activeHistogramTab === 'histogram'}
         {#if ctx.histogramChartError}
           {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
+        {:else if (pending || error) && !ctx.histogramChartDatapoint}
+          <div class="metric-chart-view__placeholder"></div>
         {:else if !ctx.histogramChartDatapoint || ctx.histogramChartDatapoint.count === 0}
           <MetricChartEmpty
             height={plotHeight}
@@ -163,6 +192,13 @@
   </div>
 {/snippet}
 
+<LoadingStatus
+  {pending}
+  {requestKey}
+  label="Loading chart aggregate…"
+  class="block p-3 text-subtle"
+/>
+{#if error}<p role="alert" class="p-3 text-papaya">{error}</p>{/if}
 {#if !ctx.metric}
   <div class="metric-chart-view metric-chart-view--empty">
     <p class="text-base-content/40 text-sm">Select a metric to view details</p>

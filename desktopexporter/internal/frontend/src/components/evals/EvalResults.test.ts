@@ -877,7 +877,10 @@ describe('EvalResults repetitions', () => {
   })
 
   it('never publishes another experiment’s retained trace bounds or action context', async () => {
-    const first = exampleExperiments[0]
+    const first = {
+      ...exampleExperiments[0],
+      telemetry: { traceID: 'a'.repeat(32) },
+    }
     const traces: TraceData[] = [
       { traceID: 'a'.repeat(32), unplacedSpanCount: 0, spans: [] },
     ]

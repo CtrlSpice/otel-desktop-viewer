@@ -1,4 +1,5 @@
 import type { SpanData } from '@/types/api-types'
+import { readOTLPURL } from '@/services/export-service'
 
 type SpanIdentity = Pick<SpanData, 'traceID' | 'spanID'>
 
@@ -12,22 +13,5 @@ export async function spanCopyJSON(
   span: SpanIdentity,
   signal: AbortSignal
 ): Promise<string> {
-  const contentType = 'application/json'
-  const response = await fetch(spanExportURL(span), {
-    signal,
-    headers: { Accept: contentType },
-  })
-  if (!response.ok) {
-    throw new Error(
-      (await response.text()).trim() || `Export failed (${response.status})`
-    )
-  }
-  if (
-    response.headers.get('Content-Type')?.split(';')[0]?.trim() !== contentType
-  ) {
-    throw new Error('The viewer returned an unexpected export format')
-  }
-  const text = await response.text()
-  signal.throwIfAborted()
-  return text
+  return readOTLPURL(spanExportURL(span), signal)
 }

@@ -50,6 +50,12 @@
   const actionMetric = $derived(
     detailView === 'raw' ? (rawMetric ?? ctx.metric) : ctx.metric
   )
+  const loadMetricJSON = $derived.by(() => {
+    const id = actionMetric?.metricRef
+    return id
+      ? (signal: AbortSignal) => readOTLPText('metric', id, signal)
+      : undefined
+  })
 
   let seriesCount = $derived.by(() => {
     if (!ctx.metric) return 0
@@ -109,11 +115,10 @@
     {#snippet action()}
       <DetailViewTabs id={detailViewID} bind:view={detailView}>
         {#snippet action()}
-          {#if actionMetric}{@const metric = actionMetric}
+          {#if actionMetric}
             <ValueCopyButton
               grouped
-              loadText={signal =>
-                readOTLPText('metric', metric.metricRef, signal)}
+              loadText={loadMetricJSON}
               label="metric"
               tooltip="Copy metric as OTLP JSON"
             />

@@ -19,6 +19,7 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import IngestionIssues, {
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
@@ -78,6 +79,8 @@
   )
   let stats = $state<Stats | null>(null)
   let statsError = $state('')
+  let statsLoading = $state(true)
+  let statsRequest = $state.raw<AbortController>()
   let error = $state('')
   let loading = $state(false)
   let draft = $state(readRoute().query.q ?? '')
@@ -97,16 +100,39 @@
   })
   const discoveryScope = $derived({ ...range, queries })
   let request = $state.raw<AbortController>()
+  let requestKey = $state(0)
   const rejections = $derived(stats?.rejections ?? [])
   const issueCount = $derived(
-    importFailures.length +
-      rejections.reduce((sum, entry) => sum + entry.occurrences, 0)
+    stats
+      ? importFailures.length +
+          rejections.reduce((sum, entry) => sum + entry.occurrences, 0)
+      : undefined
   )
+
+  function refreshStats() {
+    statsRequest?.abort()
+    const controller = new AbortController()
+    statsRequest = controller
+    statsLoading = true
+    statsError = ''
+    void telemetryAPI
+      .getStats(controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) stats = value
+      })
+      .catch(reason => {
+        if (!controller.signal.aborted) statsError = String(reason)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) statsLoading = false
+      })
+  }
 
   async function load(pageOffset = 0, refresh = false) {
     request?.abort()
     const controller = new AbortController()
     request = controller
+    requestKey++
     let nextRange = range
     if (refresh) {
       const bounds = selectionToQueryRangeNs(time.selection, Date.now())
@@ -124,15 +150,10 @@
     loading = true
     error = ''
     if (refresh) {
-      statsError = ''
-      void telemetryAPI
-        .getStats()
-        .then(value => {
-          if (!controller.signal.aborted) stats = value
-        })
-        .catch(reason => {
-          if (!controller.signal.aborted) statsError = String(reason)
-        })
+      range = nextRange
+      queries = options.queries
+      revision++
+      refreshStats()
     }
     try {
       const page = await telemetryAPI.discoverServices(
@@ -151,7 +172,7 @@
                 ])
               ).values(),
             ]
-      if (refresh || !loaded) {
+      if (!refresh && !loaded) {
         range = nextRange
         queries = options.queries
       }
@@ -191,12 +212,16 @@
           ) ??
           services[0] ??
           null
-        mapSelection = selected ? { kind: 'service', service: selected } : null
+        if (
+          mapSelection?.kind !== 'service' ||
+          !selected ||
+          serviceIdentity(selected) !== serviceIdentity(previousService)
+        )
+          mapSelection = selected
+            ? { kind: 'service', service: selected }
+            : null
       } else if (!mapSelection && services[0]) {
         mapSelection = { kind: 'service', service: services[0] }
-      }
-      if (refresh) {
-        revision++
       }
     } catch (reason) {
       if (!controller.signal.aborted) error = String(reason)
@@ -259,6 +284,7 @@
   onDestroy(() => {
     alive = false
     request?.abort()
+    statsRequest?.abort()
     navigation?.setHomeCounts(null)
   })
   function relative(timestamp: bigint | null | undefined) {
@@ -299,6 +325,12 @@
 {/snippet}
 {#snippet storage()}
   <DetailBubble label="Storage" initialOpen={false}>
+    <LoadingStatus
+      pending={statsLoading}
+      requestKey={statsRequest?.signal}
+      label="Loading storage information…"
+      class="block px-3 text-subtle"
+    />
     {#if statsError}<p class="px-3 text-papaya" role="alert">
         {statsError}{stats ? ' · Showing the last successful reading.' : ''}
       </p>{/if}
@@ -338,7 +370,7 @@
               >{/snippet}
           </DetailProperty>
         </tbody>
-      </table>{:else}<p class="p-3 text-subtle">
+      </table>{:else if !statsLoading && !statsError}<p class="p-3 text-subtle">
         Storage information unavailable.
       </p>{/if}
   </DetailBubble>
@@ -349,6 +381,15 @@
     count={issueCount}
     initialOpen={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   >
+    <LoadingStatus
+      pending={statsLoading}
+      requestKey={statsRequest?.signal}
+      label="Loading ingestion issues…"
+      class="block px-3 text-subtle"
+    />
+    {#if statsError}<p class="px-3 text-papaya" role="alert">
+        {statsError}{stats ? ' · Showing the last successful reading.' : ''}
+      </p>{/if}
     <IngestionIssues
       {rejections}
       {importFailures}
@@ -375,6 +416,7 @@
   mainSurface="base"
   onRefresh={submit}
   {loading}
+  loadingRequestKey={String(requestKey)}
 >
   {#snippet drawerSearch()}
     <form

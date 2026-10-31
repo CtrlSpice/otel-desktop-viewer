@@ -2282,7 +2282,7 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
-  test('rapid checkbox changes still coalesce into one request pair after 120ms', async ({
+  test('pointer checkbox changes start each replacement immediately', async ({
     page,
   }) => {
     const now = new Date('2026-10-18T12:00:00Z')
@@ -2298,14 +2298,15 @@ test.describe('independent histogram aggregate loading', () => {
     await page.clock.runFor(32)
     await expect(checkbox).toBeVisible()
     await checkbox.uncheck({ force: true })
-    await page.clock.runFor(60)
-    expect(pending).toHaveLength(2)
-    await checkbox.check({ force: true })
-    await page.clock.runFor(119)
-    expect(pending).toHaveLength(2)
-    await page.clock.runFor(1)
     await expect.poll(() => pending.length).toBe(4)
     for (const { route } of pending.slice(2)) {
+      expect(route.request().postDataJSON().params.seriesRefs).toEqual([
+        'first',
+      ])
+    }
+    await checkbox.check({ force: true })
+    await expect.poll(() => pending.length).toBe(6)
+    for (const { route } of pending.slice(4)) {
       expect(route.request().postDataJSON().params.seriesRefs).toEqual([
         'first',
         'second',
@@ -2332,7 +2333,9 @@ test.describe('independent histogram aggregate loading', () => {
       await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
       if (fail)
         await expect(
-          page.getByText('No bucket data in range', { exact: true })
+          page.getByText('Could not load the histogram aggregate.', {
+            exact: true,
+          })
         ).toBeVisible()
       else await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
       await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
@@ -2358,6 +2361,45 @@ test.describe('independent histogram aggregate loading', () => {
       true
     )
     await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+  })
+
+  test('pending and failed selection aggregates retain both charts without claiming empty data', async ({
+    page,
+  }) => {
+    const pending = await holdAggregates(page)
+    await expect(
+      page.getByText('No bucket data in range', { exact: true })
+    ).toHaveCount(0)
+    await expect(page.getByText('Loading chart aggregate…')).toBeVisible()
+    for (const { route } of pending) await respond(route)
+    await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+    await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    const canvas = await page.locator('.lc-bars-bar').first().elementHandle()
+    await page
+      .getByRole('checkbox', {
+        name: 'Show route: /second in chart',
+        exact: true,
+      })
+      .uncheck()
+    await expect.poll(() => pending.length).toBe(4)
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    await expect(page.getByText('Loading chart aggregate…')).toBeVisible()
+    expect(await canvas!.evaluate(node => node.isConnected)).toBe(true)
+    for (const { route } of pending.slice(2)) await respond(route, bucket, true)
+    await expect(
+      page.getByText('Could not load the histogram aggregate.')
+    ).toBeVisible()
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    expect(await canvas!.evaluate(node => node.isConnected)).toBe(true)
+    await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
+    await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+    await expect(
+      page.getByText('Could not load the chart aggregate.')
+    ).toBeVisible()
+    await expect(
+      page.getByText('No bucket data in range', { exact: true })
+    ).toHaveCount(0)
   })
 
   for (const fail of [false, true]) {

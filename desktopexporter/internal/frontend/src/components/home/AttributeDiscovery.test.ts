@@ -50,6 +50,179 @@ afterEach(() => {
   vi.mocked(copyText).mockReset()
 })
 
+it('does not restart a value request when another key owner finishes', async () => {
+  type Page = Awaited<ReturnType<typeof telemetryAPI.discoverAttributeKeys>>
+  const pending = new Map<
+    string,
+    ReturnType<typeof Promise.withResolvers<Page>>
+  >()
+  vi.spyOn(telemetryAPI, 'discoverAttributeKeys').mockImplementation(
+    options => {
+      const request = Promise.withResolvers<Page>()
+      pending.set(options.ownerType!, request)
+      return request.promise
+    }
+  )
+  const coverage = Promise.withResolvers<HomeCoveragePage>()
+  const values = vi
+    .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
+    .mockReturnValue(coverage.promise)
+  const props = {
+    service,
+    range: {},
+    revision: 0,
+    queries: { traces: null, logs: false as const, metrics: false as const },
+    selectedAttribute: null,
+    onSelectAttribute: vi.fn(),
+  }
+  const view = render(AttributeDiscovery, props)
+  const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
+  pending.get('span')!.resolve({
+    items: [{ key: 'ready', kind: 'string', foundOn }],
+    truncated: false,
+  })
+  await waitFor(() => expect(values).toHaveBeenCalledTimes(1))
+  const signal = values.mock.calls[0][1]!
+  pending.get('event')!.resolve({ items: [], truncated: false })
+  await tick()
+  await tick()
+  expect(values).toHaveBeenCalledTimes(1)
+  expect(signal.aborted).toBe(false)
+  pending.get('resource')!.resolve({
+    items: [
+      {
+        key: 'sibling',
+        kind: 'string',
+        foundOn: [{ signal: 'traces', ownerType: 'resource' }],
+      },
+    ],
+    truncated: false,
+  })
+  await view.findByRole('button', { name: 'Expand sibling · resource values' })
+  expect(
+    values.mock.calls.filter(([options]) => options.key === 'ready')
+  ).toHaveLength(1)
+  expect(signal.aborted).toBe(false)
+  await view.rerender({ revision: 1 })
+  expect(signal.aborted).toBe(true)
+  expect(
+    values.mock.calls.filter(([options]) => options.key === 'ready')
+  ).toHaveLength(2)
+  const current = values.mock.calls.at(-1)![1]!
+  view.unmount()
+  expect(current.aborted).toBe(true)
+})
+
+it.each(['success', 'failure', 'bulk'])(
+  'retains expanded values across unrelated owner completion until their own replacement: %s',
+  async outcome => {
+    const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
+    const keys = vi
+      .spyOn(telemetryAPI, 'discoverAttributeKeys')
+      .mockImplementation(async options => ({
+        items:
+          options.ownerType === 'span'
+            ? [{ key: 'retained', kind: 'string', foundOn }]
+            : [],
+        truncated: false,
+      }))
+    const original = homeResult([
+      {
+        identity: 'old',
+        value: { kind: 'string', value: 'Original value' },
+        foundOn,
+        count: 1,
+        kindCount: 1,
+        denominator: 1,
+        relativeFrequency: 1,
+      },
+    ])
+    const values = vi
+      .spyOn(telemetryAPI, 'discoverHomeAttributeValues')
+      .mockResolvedValue(original)
+    const view = render(AttributeDiscovery, {
+      service,
+      range: {},
+      revision: 0,
+      queries: { traces: null, logs: false, metrics: false },
+      selectedAttribute: null,
+      onSelectAttribute: vi.fn(),
+    })
+    await view.findByRole('button', { name: 'Expand retained · span values' })
+    await fireEvent.click(
+      view.getByRole('button', { name: 'Expand all attributes' })
+    )
+    await waitFor(() =>
+      expect(
+        view.container.querySelector('tr[data-value-identity="old"]')
+      ).toBeVisible()
+    )
+    type Page = Awaited<ReturnType<typeof telemetryAPI.discoverAttributeKeys>>
+    const pending = new Map<
+      string,
+      ReturnType<typeof Promise.withResolvers<Page>>
+    >()
+    keys.mockImplementation(options => {
+      const request = Promise.withResolvers<Page>()
+      pending.set(options.ownerType!, request)
+      return request.promise
+    })
+    const replacement = Promise.withResolvers<HomeCoveragePage>()
+    values.mockReturnValue(replacement.promise)
+    await view.rerender({ service: { ...service, serviceName: 'next' } })
+    pending.get('event')!.resolve({ items: [], truncated: false })
+    await tick()
+    await tick()
+    expect(
+      view.getByRole('button', { name: 'Collapse retained · span values' })
+    ).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      view.container.querySelector('tr[data-value-identity="old"]')
+    ).toBeVisible()
+    if (outcome === 'failure') {
+      replacement.reject(new Error('Values unavailable'))
+      pending.get('span')!.reject(new Error('Keys unavailable'))
+      await waitFor(() => expect(view.getAllByRole('alert')).toHaveLength(2))
+      expect(
+        view.container.querySelector('tr[data-value-identity="old"]')
+      ).toBeVisible()
+    } else {
+      pending.get('span')!.resolve({
+        items: [{ key: 'retained', kind: 'string', foundOn }],
+        truncated: false,
+      })
+      if (outcome === 'bulk')
+        await fireEvent.click(
+          view.getByRole('button', { name: 'Expand all attributes' })
+        )
+      replacement.resolve(
+        homeResult([
+          {
+            identity: 'new',
+            value: { kind: 'string', value: 'Replacement value' },
+            foundOn,
+            count: 2,
+            kindCount: 2,
+            denominator: 2,
+            relativeFrequency: 1,
+          },
+        ])
+      )
+      await waitFor(() =>
+        expect(
+          view.container.querySelector('tr[data-value-identity="new"]')
+        ).toBeInTheDocument()
+      )
+      expect(
+        view.container.querySelector('tr[data-value-identity="old"]')
+      ).toBeNull()
+      const row = view.container.querySelector('tr[data-value-identity="new"]')
+      if (outcome === 'bulk') expect(row).toBeVisible()
+      else expect(row).toHaveAttribute('hidden')
+    }
+  }
+)
+
 it('retains attribute rows and disclosures through a pending or failed refresh', async () => {
   const foundOn = [{ signal: 'traces' as const, ownerType: 'span' as const }]
   const keys = vi
