@@ -221,8 +221,8 @@ github.com/open-feature/flagd-schemas v0.2.13 h1:LzoyQfirfpR8cxI4PKnoFRtpwPjpC/c
 github.com/open-feature/flagd-schemas v0.2.13/go.mod h1:C0jnJ4C3j2LzGuqKgLDdTsdfKEWQp6sOHZyxu3QohFU=
 github.com/open-feature/flagd/core v0.19.0 h1:bglWn4AnXLAzSETFlLGYt2H0ko/74xr6V5iux1iSK54=
 github.com/open-feature/flagd/core v0.19.0/go.mod h1:dSUGvUAx9k1xoh79Gj1HUSpor+SJw6Xefmcwk9gHbFY=
-github.com/open-feature/go-sdk v1.19.0 h1:vahRSX/kYzLny7bUuxssNiiHOGqHlDIG47z+jJ/DCEY=
-github.com/open-feature/go-sdk v1.19.0/go.mod h1:JlS8ClrWUzfywMOOeFo0Ro3BeT8cS5O/KbZUOOjwtyQ=
+github.com/open-feature/go-sdk v1.20.0 h1:cQV15LaPAQi1bLEoR2KHlzVxm6UuEqrohJ7qXVq+ZAk=
+github.com/open-feature/go-sdk v1.20.0/go.mod h1:lnLzUUPhw3J9gfj1utYmc7vXG9eM0apShLvr/rGAyCs=
 github.com/open-feature/go-sdk-contrib/providers/flagd v0.8.0 h1:iE/eQP3zl6ceFKMxw+V3Omr09PAJHyMs7Xc3HaVR3DQ=
 github.com/open-feature/go-sdk-contrib/providers/flagd v0.8.0/go.mod h1:rvpfWRfFN1dXB26vjH2beTygSpf9TQjEpLoUnZgZvP0=
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage v0.163.0 h1:MS33Ed8E+bc2BVLEWHPRb6C26f24nz8ZEEZU0v9XXV8=
