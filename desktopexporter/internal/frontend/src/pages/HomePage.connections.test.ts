@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { fireEvent, waitFor } from '@testing-library/svelte'
+import { fireEvent, waitFor, within } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import { navigate } from '@/route'
 import {
@@ -12,6 +12,41 @@ import {
 } from '@/test/service-map-fixtures'
 
 afterEach(() => vi.restoreAllMocks())
+
+it('keeps a failed connection owner under its own Retry when services arrive or selection changes', async () => {
+  const { view, list, connections, refresh } = mountServiceMap()
+  list[0].resolve({ items: [api], truncated: true })
+  await waitFor(() => expect(connections).toHaveLength(1))
+  connections[0].reject(new Error('Api unavailable'))
+  const failure = await view.findByText('api: Error: Api unavailable')
+  await fireEvent.click(view.getByRole('button', { name: 'More services' }))
+  list[1].resolve({ items: [worker], truncated: false })
+  await waitFor(() => expect(connections.length).toBeGreaterThan(1))
+  expect(connections.map(request => request.options.serviceIdentity)).toEqual([
+    'api',
+    'worker',
+  ])
+  expect(view.getByText('api: Error: Api unavailable')).toBe(failure)
+  await fireEvent.click(view.getByRole('button', { name: /^worker· test / }))
+  await fireEvent.click(view.getByRole('button', { name: /^api· test / }))
+  expect(connections).toHaveLength(2)
+  expect(view.getByText('api: Error: Api unavailable')).toBe(failure)
+  await fireEvent.click(
+    within(failure.parentElement!).getByRole('button', { name: 'Retry' })
+  )
+  expect(connections).toHaveLength(3)
+  expect(connections[2].options).toEqual(connections[0].options)
+  expect(connections[1].signal?.aborted).toBe(false)
+  connections[2].reject(new Error('Api still unavailable'))
+  await view.findByText('api: Error: Api still unavailable')
+  await refresh()
+  await waitFor(() => expect(connections).toHaveLength(5))
+  expect(
+    connections.slice(3).map(request => request.options.serviceIdentity)
+  ).toEqual(['api', 'worker'])
+  expect(connections[1].signal?.aborted).toBe(true)
+  expect(view.queryByText('api: Error: Api still unavailable')).toBeNull()
+})
 
 it('enables a ready service connection page while an unrelated sibling stays pending', async () => {
   const { view, list, connections, refresh } = mountServiceMap()
@@ -27,7 +62,7 @@ it('enables a ready service connection page while an unrelated sibling stays pen
   await fireEvent.click(view.getByRole('button', { name: /^worker· test / }))
   await fireEvent.click(view.getByRole('button', { name: /^api· test / }))
   const more = view.getByRole('button', { name: 'More connections' })
-  expect(more).toBeDisabled()
+  expect(more).toBeEnabled()
   connections[2].resolve({ items: [edge(9)], truncated: true })
   await view.findByRole('button', { name: /api → worker: 9 / })
   expect(more).toBeEnabled()

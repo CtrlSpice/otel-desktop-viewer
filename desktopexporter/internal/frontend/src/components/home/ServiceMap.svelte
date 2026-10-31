@@ -70,14 +70,27 @@
   const connections = $derived(
     [...connectionReadings.values()].map(reading => reading.connection)
   )
-  let pages = $state<
-    Record<string, { offset: number; more: boolean; revision: number }>
-  >({})
-  const requests = new SvelteMap<string, AbortController>()
+  type ConnectionPage = Pick<ConnectionReading, 'options' | 'revision'> & {
+    offset: number
+    more: boolean
+    graphRevision: number
+  }
+  type ConnectionRequest = Omit<ConnectionPage, 'more'> & {
+    service: ServiceSummary
+    kind: 'replacement' | 'page'
+  }
+  let pages = $state<Record<string, ConnectionPage>>({})
+  const requests = new SvelteMap<
+    string,
+    {
+      reading: ConnectionRequest
+      controller: AbortController
+    }
+  >()
   const busy = $derived(requests.size > 0)
   let connectionRequestKey = $state(0)
   let failures = $state<
-    Record<string, { service: ServiceSummary; message: string }>
+    Record<string, ConnectionRequest & { message: string }>
   >({})
   let chart = $state<ChartState>()
   let layoutController = $state<ServiceMapLayout>()
@@ -97,6 +110,7 @@
   let viewRevision = $state(0)
   let previousScope: typeof options | undefined
   let previousRevision: number | undefined
+  const attempted = new Set<string>()
   const markerID = $props.id()
   const nodes = $derived(graphServices(services, connections))
   const inspected = $derived(
@@ -122,7 +136,7 @@
       (services.length > 0 || !moreServices) &&
       [...services, ...(inspected ? [inspected] : [])].every(service => {
         const page = pages[serviceIdentity(service)]
-        return page?.revision === graphRevision && !page.more
+        return page?.graphRevision === graphRevision && !page.more
       })
     // Retain a received count through replacement; initial empty arrays prove nothing.
     if (connections.length > 0 || complete) connectionsKnown = true
@@ -193,18 +207,40 @@
     }
   }
 
-  async function expand(node: ServiceSummary) {
+  function requestIdentity(identity: string, kind: ConnectionRequest['kind']) {
+    return JSON.stringify([identity, kind])
+  }
+  function expand(service: ServiceSummary) {
+    attempted.add(serviceIdentity(service))
+    return loadConnections({
+      service,
+      options,
+      revision,
+      graphRevision,
+      offset: 0,
+      kind: 'replacement',
+    })
+  }
+  function moreConnections(service: ServiceSummary) {
+    const page = pages[serviceIdentity(service)]
+    if (page?.more) return loadConnections({ ...page, service, kind: 'page' })
+  }
+  async function loadConnections(reading: ConnectionRequest) {
+    const {
+      service: node,
+      options: scope,
+      revision: readingRevision,
+      offset,
+      kind,
+    } = reading
     const identity = serviceIdentity(node)
-    if (requests.has(identity)) return
+    const key = requestIdentity(identity, kind)
+    if (requests.has(key)) return
     const controller = new AbortController()
-    requests.set(identity, controller)
+    requests.set(key, { reading, controller })
     connectionRequestKey++
-    const offset =
-      pages[identity]?.revision === graphRevision ? pages[identity].offset : 0
-    const scope = options
-    const readingRevision = revision
     const remaining = { ...failures }
-    delete remaining[identity]
+    delete remaining[key]
     failures = remaining
     try {
       const page = await telemetryAPI.discoverServiceConnections(
@@ -212,6 +248,14 @@
         controller.signal
       )
       if (controller.signal.aborted) return
+      if (kind === 'replacement') {
+        const pageKey = requestIdentity(identity, 'page')
+        requests.get(pageKey)?.controller.abort()
+        requests.delete(pageKey)
+        const remaining = { ...failures }
+        delete remaining[pageKey]
+        failures = remaining
+      }
       const merged = new Map(
         (offset ? (received.get(identity)?.items ?? []) : []).map(edge => [
           connectionIdentity(edge),
@@ -262,19 +306,21 @@
         [identity]: {
           offset: offset + page.items.length,
           more: page.truncated,
-          revision: graphRevision,
+          options: scope,
+          revision: readingRevision,
+          graphRevision: reading.graphRevision,
         },
       }
     } catch (reason) {
       if (!controller.signal.aborted) {
         failures = {
           ...failures,
-          [identity]: { service: node, message: String(reason) },
+          [key]: { ...reading, message: String(reason) },
         }
       }
     } finally {
-      if (requests.get(identity) === controller) {
-        requests.delete(identity)
+      if (requests.get(key)?.controller === controller) {
+        requests.delete(key)
       }
     }
   }
@@ -286,32 +332,30 @@
     const scope = options
     const reading = revision
     const visible = services
+    const selected = inspected
     untrack(() => {
       const sameScope = previousScope === scope && previousRevision === reading
       previousScope = scope
       previousRevision = reading
       if (!sameScope) {
-        for (const controller of requests.values()) controller.abort()
-        requests.clear()
+        for (const [key, work] of requests) {
+          if (work.reading.kind === 'replacement') {
+            work.controller.abort()
+            requests.delete(key)
+          }
+        }
         failures = {}
         graphRevision++
+        attempted.clear()
         for (const page of received.values()) void expand(page.service)
       }
-      for (const node of visible) {
-        if (pages[serviceIdentity(node)]?.revision !== graphRevision)
-          void expand(node)
+      for (const node of [...visible, ...(selected ? [selected] : [])]) {
+        if (!attempted.has(serviceIdentity(node))) void expand(node)
       }
-    })
-  })
-  $effect(() => {
-    const node = inspected
-    untrack(() => {
-      if (node && pages[serviceIdentity(node)]?.revision !== graphRevision)
-        void expand(node)
     })
   })
   onDestroy(() => {
-    for (const controller of requests.values()) controller.abort()
+    for (const work of requests.values()) work.controller.abort()
   })
 </script>
 
@@ -333,8 +377,9 @@
     {#if inspected}<ServiceLabelsPopover service={inspected} />{/if}
     {#if inspectedPage?.more}<button
         class="btn btn-ghost btn-sm"
-        disabled={requests.has(inspectedID)}
-        onclick={() => inspected && expand(inspected)}>More connections</button
+        disabled={requests.has(requestIdentity(inspectedID, 'page'))}
+        onclick={() => inspected && moreConnections(inspected)}
+        >More connections</button
       >{/if}
     <div
       class="header-icon-controls"
@@ -372,7 +417,7 @@
   {#if servicesError}<p role="alert" class="p-3 text-papaya">
       {servicesError}
     </p>{/if}
-  {#each Object.values(failures) as failure (serviceIdentity(failure.service))}<div
+  {#each Object.entries(failures) as [key, failure] (key)}<div
       class="flex items-center gap-2 p-3"
     >
       <p role="alert" class="text-papaya">
@@ -380,7 +425,7 @@
       </p>
       <button
         class="btn btn-ghost btn-sm"
-        onclick={() => expand(failure.service)}>Retry</button
+        onclick={() => loadConnections(failure)}>Retry</button
       >
     </div>{/each}
   <LoadingStatus

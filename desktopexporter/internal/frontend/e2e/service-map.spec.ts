@@ -5,6 +5,7 @@ import type {
   ServiceConnection,
   ServiceConnectionSpan,
   DiscoveryOptions,
+  DiscoveryTotals,
 } from '../src/services/discovery-types'
 
 const service = (serviceName: string): ServiceSummary => ({
@@ -32,7 +33,13 @@ const service = (serviceName: string): ServiceSummary => ({
 })
 
 type DiscoveryReply =
-  | { result: { rows: unknown[][]; truncated: boolean } }
+  | {
+      result: {
+        rows: unknown[][]
+        truncated: boolean
+        totals?: DiscoveryTotals
+      }
+    }
   | { error: { code: number; message: string } }
 
 async function holdDiscovery(
@@ -100,16 +107,18 @@ async function holdConnections(page: Page) {
     return requests.filter(request => request.kind === kind)[index]
   }
   return {
+    requests,
     get,
     ok: async (
       kind: DiscoveryOptions['kind'],
       index: number,
       items: unknown[],
-      truncated = false
+      truncated = false,
+      totals?: DiscoveryTotals
     ) => {
       const request = await get(kind, index)
       request.reply.resolve({
-        result: { rows: items.map(item => [item]), truncated },
+        result: { rows: items.map(item => [item]), truncated, totals },
       })
     },
     fail: async (kind: DiscoveryOptions['kind'], index: number) => {
@@ -210,7 +219,7 @@ test('ready connection pagination does not wait for an unrelated pending owner',
     const cards = page.locator('.service-map__node')
     await cards.getByRole('button', { name: /^worker / }).click()
     await cards.getByRole('button', { name: /^api / }).click()
-    await expect(more).toBeDisabled()
+    await expect(more).toBeEnabled()
     await h.ok('connections', 2, [connection(9)], true)
     await expect(more).toBeEnabled()
     await more.click()
@@ -228,6 +237,179 @@ test('ready connection pagination does not wait for an unrelated pending owner',
     h.release()
   }
 })
+
+test('retained connection pagination owns its range and offset after failed replacement', async ({
+  page,
+}) => {
+  const h = await holdConnections(page)
+  try {
+    await page.goto('/?start=1000&end=2000')
+    await h.ok('services', 0, [service('api')])
+    await h.ok('connections', 0, [connection()], true)
+    const more = page.getByRole('button', {
+      name: 'More connections',
+      exact: true,
+    })
+    await expect(more).toBeEnabled()
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/?start=3000&end=4000')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await h.get('connections', 1)
+    await expect(more).toBeEnabled()
+    await h.fail('services', 1)
+    await h.fail('connections', 1)
+    await expect(page.locator('.service-map').getByRole('alert')).toHaveCount(2)
+    await more.click()
+    const retained = (await h.get('connections', 2)).options
+    expect(retained).toMatchObject({
+      startTime: '1000000000',
+      endTime: '2000000000',
+      serviceIdentity: 'api',
+      offset: 1,
+    })
+    await h.fail('connections', 2)
+    await expect(page.locator('.service-map').getByRole('alert')).toHaveCount(3)
+    await more.click()
+    expect((await h.get('connections', 3)).options).toEqual(retained)
+    await h.ok('connections', 3, [connection(2, 'store')], true)
+    await expect(
+      page.getByRole('button', { name: /^api → store: 2 / })
+    ).toBeAttached()
+    await expect(
+      page.getByRole('button', { name: /^api → worker: 1 / })
+    ).toBeAttached()
+    await more.click()
+    expect((await h.get('connections', 4)).options).toEqual({
+      ...retained,
+      offset: 2,
+    })
+    await page
+      .locator('.service-map')
+      .getByRole('button', { name: 'Retry', exact: true })
+      .click()
+    expect((await h.get('connections', 5)).options).toMatchObject({
+      startTime: '3000000000',
+      endTime: '4000000000',
+      offset: 0,
+    })
+    await h.ok('connections', 5, [connection(9)], true)
+    await expect(
+      page.getByRole('button', { name: /^api → worker: 9 / })
+    ).toBeAttached()
+    await expect(
+      page.getByRole('button', { name: /^api → store:/ })
+    ).toHaveCount(0)
+    await h.ok('connections', 4, [connection(3, 'store')])
+    await more.click()
+    expect((await h.get('connections', 6)).options).toMatchObject({
+      startTime: '3000000000',
+      endTime: '4000000000',
+      offset: 1,
+    })
+  } finally {
+    h.release()
+  }
+})
+
+test('a service-list page preserves another connection owner failure until its own Retry', async ({
+  page,
+}) => {
+  const h = await holdConnections(page)
+  try {
+    await page.goto('/?time=all')
+    await h.ok('services', 0, [service('api')], true)
+    await h.fail('connections', 0)
+    const map = page.locator('.service-map')
+    const error = map.getByRole('alert')
+    await expect(error).toContainText('api:')
+    await page
+      .getByRole('button', { name: 'More services', exact: true })
+      .click()
+    await h.ok('services', 1, [service('worker')])
+    await h.get('connections', 1)
+    expect(
+      h.requests
+        .filter(request => request.kind === 'connections')
+        .map(request => request.owner)
+    ).toEqual(['api', 'worker'])
+    await expect(error).toContainText('api:')
+    await map.getByRole('button', { name: 'Retry', exact: true }).click()
+    expect((await h.get('connections', 2)).options).toEqual(
+      (await h.get('connections', 0)).options
+    )
+    await h.ok('connections', 2, [connection(9)])
+    await expect(
+      page.getByRole('button', { name: /^api → worker: 9 / })
+    ).toBeAttached()
+    await expect(error).toHaveCount(0)
+  } finally {
+    h.release()
+  }
+})
+
+for (const searchActive of [false, true]) {
+  test(`retained count hrefs and clicks own their successful time window with search=${searchActive}`, async ({
+    page,
+  }) => {
+    const h = await holdConnections(page)
+    try {
+      await page.goto(
+        '/?start=1000&end=2000' + (searchActive ? '&q=search(%22A%22)' : '')
+      )
+      await h.ok('services', 0, [service('api')], false, {
+        home: 1,
+        traces: 31,
+        metrics: 41,
+        logs: 51,
+      })
+      await h.ok('connections', 0, [])
+      const nav = page.getByRole('navigation', { name: 'Primary' })
+      const traces = nav.getByRole('link', { name: 'Traces [31]', exact: true })
+      await expect(traces).toBeVisible()
+      const hrefs = await Promise.all(
+        ['Traces [31]', 'Metrics [41]', 'Logs [51]'].map(name =>
+          nav.getByRole('link', { name, exact: true }).getAttribute('href')
+        )
+      )
+      await page.evaluate(() => {
+        const url = new URL(window.location.href)
+        url.searchParams.set('start', '3000')
+        url.searchParams.set('end', '4000')
+        window.history.pushState(null, '', url)
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      })
+      await h.get('services', 1)
+      await expect(traces).toHaveAttribute('href', hrefs[0]!)
+      await h.fail('services', 1)
+      await h.fail('connections', 1)
+      await expect(page.locator('.service-map').getByRole('alert')).toHaveCount(
+        2
+      )
+      for (const [index, name] of [
+        'Traces [31]',
+        'Metrics [41]',
+        'Logs [51]',
+      ].entries())
+        await expect(
+          nav.getByRole('link', { name, exact: true })
+        ).toHaveAttribute('href', hrefs[index]!)
+      await traces.click()
+      await expect(page).toHaveURL(
+        url =>
+          url.pathname === '/traces' &&
+          url.searchParams.get('start') === '1000' &&
+          url.searchParams.get('end') === '2000'
+      )
+      const query = new URL(page.url()).searchParams.get('q')
+      expect(query ?? '').toBe(
+        new URL(hrefs[0]!, page.url()).searchParams.get('q') ?? ''
+      )
+    } finally {
+      h.release()
+    }
+  })
+}
 
 test('evidence pagination retries failed pages and keeps the displayed target during another selection', async ({
   page,
