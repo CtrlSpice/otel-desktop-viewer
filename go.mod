@@ -7,7 +7,7 @@ toolchain go1.26.5
 require (
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
 	github.com/google/uuid v1.6.0
-	github.com/open-feature/go-sdk v1.19.0
+	github.com/open-feature/go-sdk v1.20.0
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.8.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza v0.163.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor v0.163.0
