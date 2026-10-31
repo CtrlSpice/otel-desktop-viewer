@@ -116,14 +116,14 @@
         ? [{ request: current.request, owner, logs: part.value }]
         : []
     })
-    const pending = [...current.parts.values()].some(
-      part => part.status === 'pending'
+    const unresolved = [...current.parts.values()].some(
+      part => part.status !== 'ready'
     )
     return [
       ...ready,
       ...retainedLogs.filter(packet => {
         const replacement = current.parts.get(referenceKey(packet.owner))
-        return replacement ? replacement.status !== 'ready' : pending
+        return replacement ? replacement.status !== 'ready' : unresolved
       }),
     ]
   })

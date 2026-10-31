@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts as render } from '@/test/render-helpers'
-import type { SpanNode } from '@/types/api-types'
+import type { SpanNode, TraceSummary } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
 import EvalTelemetrySection from './EvalTelemetrySection.svelte'
 import { evalTelemetrySummaries } from './eval-telemetry-summaries'
@@ -79,6 +80,70 @@ it('rejects superseded trace lookups including A → B → A', async () => {
   pending[2](null)
   await screen.findByText('(unavailable)')
 })
+
+it.each(['failure', 'success', 'missing'] as const)(
+  'forgets an earlier absence during a fresh lookup that ends in %s',
+  async outcome => {
+    const a = { reference: { traceID: 'a'.repeat(32) }, label: 'A' }
+    const b = { reference: { traceID: 'b'.repeat(32) }, label: 'B' }
+    const found: TraceSummary = {
+      traceID: b.reference.traceID,
+      hasRootSpan: true,
+      rootSpan: { name: 'Received root', serviceName: 'eval-agent' },
+      startTime: 0n,
+      durationNs: 100n,
+      spanCount: 2,
+      errorCount: 0,
+    }
+    let finish!: (value: TraceSummary | null) => void
+    let fail!: (error: Error) => void
+    const lookup = vi
+      .mocked(telemetryAPI.getTraceSummary)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(found)
+      .mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          finish = resolve
+          fail = reject
+        })
+      )
+    const ontracecount = vi.fn()
+    const view = render(EvalTelemetrySummaries, { entries: [a], ontracecount })
+    await screen.findByText('(unavailable)')
+    expect(ontracecount).toHaveBeenLastCalledWith(0)
+    await view.rerender({ componentProps: { entries: [b], ontracecount } })
+    await screen.findByText('Received root')
+    ontracecount.mockClear()
+    await view.rerender({ componentProps: { entries: [a], ontracecount } })
+    await waitFor(() => expect(lookup).toHaveBeenCalledTimes(3))
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', traceHref(a.reference))
+    expect(link).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByText('(unavailable)')).toBeNull()
+    expect(ontracecount).toHaveBeenLastCalledWith(undefined)
+    expect(ontracecount.mock.calls.every(([count]) => count !== 0)).toBe(true)
+    if (outcome === 'failure') fail(new Error('fresh lookup failed'))
+    else
+      finish(
+        outcome === 'missing'
+          ? null
+          : { ...found, traceID: a.reference.traceID }
+      )
+    await tick()
+    await tick()
+    if (outcome === 'missing') {
+      await waitFor(() => expect(link).toHaveAttribute('aria-disabled', 'true'))
+      expect(ontracecount).toHaveBeenLastCalledWith(0)
+    } else {
+      expect(link).toHaveAttribute('href', traceHref(a.reference))
+      expect(link).not.toHaveAttribute('aria-disabled', 'true')
+      expect(screen.queryByText('(unavailable)')).toBeNull()
+      expect(ontracecount).toHaveBeenLastCalledWith(
+        outcome === 'success' ? 1 : undefined
+      )
+    }
+  }
+)
 
 const node: SpanNode = {
   depth: 0,

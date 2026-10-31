@@ -54,8 +54,12 @@
       .sort()
       .join(',')
   )
-  $effect(() => {
+  $effect.pre(() => {
     const ids = lookupIDs ? lookupIDs.split(',') : []
+    // Absence belongs to the completed lookup, not a later pending or failed one.
+    const current = new Map(untrack(() => traces))
+    for (const id of ids) if (current.get(id) === null) current.delete(id)
+    traces = current
     const controller = new AbortController()
     requestKey = controller.signal
     pending = new Set(ids)
