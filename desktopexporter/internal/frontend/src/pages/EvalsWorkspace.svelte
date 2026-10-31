@@ -2,7 +2,7 @@
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { evalAPI } from '@/services/eval-service'
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import { evalSearchDefinition } from '@/components/evals/search-fields'
   import type { ParsedSearchRequest } from '@/search/model'
@@ -106,6 +106,7 @@
     moreExperimentsController = undefined
     experimentListLoadingMore = false
   }
+  onDestroy(cancelPagination)
   let experimentIndexing = $state<EvalExperimentSearchPage['indexing']>({
     remaining: 0,
     unsupported: 0,
@@ -308,8 +309,8 @@
     const sort = experimentSort
     const direction = experimentSortDirection
     void experimentListRevision
-    cancelPagination()
     if (!enabled || request === undefined) {
+      cancelPagination()
       experimentListLoading = false
       return
     }
@@ -358,10 +359,7 @@
           experimentListLoading = false
       }
     })()
-    return () => {
-      controller.abort()
-      moreExperimentsController?.abort()
-    }
+    return () => controller.abort()
   })
 
   $effect(() => {
@@ -474,7 +472,6 @@
       experimentListLoadingMore
     )
       return
-    const requestVersion = experimentListRequestVersion
     const controller = new AbortController()
     moreExperimentsRequestKey = controller.signal
     moreExperimentsController = controller
@@ -489,11 +486,7 @@
         },
         controller.signal
       )
-      if (
-        controller.signal.aborted ||
-        requestVersion !== experimentListRequestVersion
-      )
-        return
+      if (controller.signal.aborted || source !== displayedListRequest) return
       const seen = new Set(storedExperiments.map(item => item.id))
       storedExperiments = [
         ...storedExperiments,
@@ -505,7 +498,7 @@
       experimentIndexing = page.indexing
     } catch (error) {
       if (
-        requestVersion === experimentListRequestVersion &&
+        source === displayedListRequest &&
         !controller.signal.aborted &&
         !isAbortError(error)
       )

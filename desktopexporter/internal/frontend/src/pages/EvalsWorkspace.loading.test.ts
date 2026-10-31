@@ -290,3 +290,243 @@ it.each(['query', 'replacement', 'unmount'])(
     expect(screen.queryByRole('button', { name: /^Beta/ })).toBeNull()
   }
 )
+
+const overlapOrders = ['page-first', 'replacement-first'] as const
+const pageOutcomes = ['success', 'failure'] as const
+it.each(
+  overlapOrders.flatMap(start =>
+    overlapOrders.flatMap(settle =>
+      pageOutcomes.map(outcome => ({ start, settle, outcome }))
+    )
+  )
+)(
+  'keeps displayed pagination through failed replacement: $start start, $settle settlement, page $outcome',
+  async ({ start, settle, outcome }) => {
+    const { lists, sources, searches } = mount()
+    lists[0].resolve(page(summaries.slice(0, 1), true))
+    sources[0].resolve(source(0))
+    await screen.findByRole('table', { name: 'Results for Alpha' })
+    const list = within(screen.getByRole('region', { name: 'Evals list' }))
+    const card = list.getByRole('button', { name: /^Alpha/ })
+    const output = screen.getByRole('group', { name: 'output' })
+    const replace = async () => {
+      navigate(
+        `/evals?experiment=${summaries[0].id}&result=${experiments[0].results[0].id}&esort=name&edir=asc`
+      )
+      await tick()
+      return lists.length - 1
+    }
+    const more = async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Load more experiments' })
+      )
+      return lists.length - 1
+    }
+    const first = await (start === 'page-first' ? more() : replace())
+    const second = await (start === 'page-first' ? replace() : more())
+    const pageIndex = start === 'page-first' ? first : second
+    const replacementIndex = start === 'page-first' ? second : first
+    expect(searches.mock.calls[pageIndex][0]).toMatchObject({
+      sort: 'started',
+      direction: 'desc',
+      offset: 1,
+    })
+    expect(searches.mock.calls[pageIndex][1]?.aborted).toBe(false)
+    const settlePage = async () => {
+      if (outcome === 'success')
+        lists[pageIndex].resolve(page(summaries.slice(1)))
+      else lists[pageIndex].reject(new Error('Displayed page unavailable'))
+      await tick()
+    }
+    const settleReplacement = async () => {
+      lists[replacementIndex].reject(new Error('Replacement list unavailable'))
+      await tick()
+    }
+    await (settle === 'page-first' ? settlePage() : settleReplacement())
+    if (settle === 'page-first' && outcome === 'success') {
+      expect(list.getByRole('button', { name: /^Beta/ })).toBeVisible()
+      expect(screen.queryByText('Replacement list unavailable')).toBeNull()
+    }
+    await (settle === 'page-first' ? settleReplacement() : settlePage())
+    expect(screen.getByText('Replacement list unavailable')).toBeVisible()
+    expect(list.getByRole('button', { name: /^Alpha/ })).toBe(card)
+    expect(screen.getByRole('group', { name: 'output' })).toBe(output)
+    await fireEvent.click(
+      within(output).getByRole('button', { name: 'Copy output' })
+    )
+    expect(copyText).toHaveBeenLastCalledWith(rows[0].response.output)
+    if (outcome === 'failure') {
+      expect(screen.getByText('Displayed page unavailable')).toBeVisible()
+      const retry = await more()
+      expect(searches.mock.calls[retry][0]).toEqual(
+        searches.mock.calls[pageIndex][0]
+      )
+      lists[retry].resolve(page(summaries.slice(1)))
+      await tick()
+      expect(screen.queryByText('Displayed page unavailable')).toBeNull()
+    }
+    expect(await list.findByRole('button', { name: /^Beta/ })).toBeVisible()
+    expect(screen.getByText('Replacement list unavailable')).toBeVisible()
+  }
+)
+
+it.each(
+  overlapOrders.flatMap(start =>
+    overlapOrders.flatMap(settle =>
+      pageOutcomes.map(outcome => ({ start, settle, outcome }))
+    )
+  )
+)(
+  'publishes the current empty replacement: $start start, $settle settlement, page $outcome',
+  async ({ start, settle, outcome }) => {
+    const { lists, sources, searches } = mount()
+    lists[0].resolve(page(summaries.slice(0, 1), true))
+    sources[0].resolve(source(0))
+    await screen.findByRole('table', { name: 'Results for Alpha' })
+    const more = screen.getByRole('button', { name: 'Load more experiments' })
+    const replace = async () => {
+      navigate(`/evals?experiment=${summaries[0].id}&esort=name`)
+      await tick()
+    }
+    if (start === 'replacement-first') await replace()
+    await fireEvent.click(more)
+    const pageIndex = lists.length - 1
+    if (start === 'page-first') await replace()
+    const replacementIndex = start === 'page-first' ? 2 : 1
+    expect(searches.mock.calls[pageIndex][1]?.aborted).toBe(false)
+    const settlePage = async () => {
+      if (outcome === 'success')
+        lists[pageIndex].resolve(page(summaries.slice(1)))
+      else lists[pageIndex].reject(new Error('Old page unavailable'))
+      await tick()
+    }
+    const settleReplacement = async () => {
+      lists[replacementIndex].resolve(page([]))
+      await tick()
+    }
+    if (settle === 'page-first') {
+      await settlePage()
+      if (outcome === 'success')
+        await screen.findByRole('button', { name: /^Beta/ })
+      else expect(screen.getByText('Old page unavailable')).toBeVisible()
+      await settleReplacement()
+    } else {
+      await settleReplacement()
+      expect(searches.mock.calls[pageIndex][1]?.aborted).toBe(true)
+      await settlePage()
+    }
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: 'Evals list' })).toBeNull()
+    })
+    expect(screen.queryByText('Old page unavailable')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Load more experiments' })
+    ).toBeNull()
+    expect(
+      screen.getByRole('table', { name: 'Results for Alpha' })
+    ).toBeVisible()
+  }
+)
+
+it.each(pageOutcomes)(
+  'keeps A pagination across A → B → A, rejects late B %s, and cancels in example mode',
+  async outcome => {
+    const { view, lists, sources, searches } = mount()
+    lists[0].resolve(page(summaries.slice(0, 1), true))
+    sources[0].resolve(source(0))
+    await screen.findByRole('table', { name: 'Results for Alpha' })
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Load more experiments' })
+    )
+    navigate(`/evals?experiment=${summaries[0].id}&esort=name`)
+    await tick()
+    navigate(`/evals?experiment=${summaries[0].id}&esort=started`)
+    await tick()
+    expect(searches.mock.calls[1][1]?.aborted).toBe(false)
+    expect(searches.mock.calls[2][1]?.aborted).toBe(true)
+    lists[3].reject(new Error('Current A unavailable'))
+    if (outcome === 'success') lists[2].resolve(page([]))
+    else lists[2].reject(new Error('Stale B unavailable'))
+    lists[1].resolve(page(summaries.slice(1), true))
+    await screen.findByRole('button', { name: /^Beta/ })
+    expect(screen.getByText('Current A unavailable')).toBeVisible()
+    expect(screen.queryByText('Stale B unavailable')).toBeNull()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Load more experiments' })
+    )
+    expect(searches.mock.calls[4][0]).toMatchObject({
+      sort: 'started',
+      offset: 2,
+    })
+    navigate('/evals?preview=examples')
+    await tick()
+    expect(searches.mock.calls[4][1]?.aborted).toBe(true)
+    if (outcome === 'success') lists[4].resolve(page(summaries))
+    else lists[4].reject(new Error('Disabled page unavailable'))
+    await tick()
+    expect(screen.queryByText('Disabled page unavailable')).toBeNull()
+    view.unmount()
+  }
+)
+
+it('keeps the page notice lifetime independent, resets on retry and cancels on replacement and unmount', async () => {
+  const { view, lists, sources, searches } = mount()
+  lists[0].resolve(page(summaries.slice(0, 1), true))
+  sources[0].resolve(source(0))
+  await screen.findByRole('table', { name: 'Results for Alpha' })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Load more experiments' })
+  )
+  await vi.advanceTimersByTimeAsync(199)
+  expect(
+    screen.queryByRole('button', { name: 'Loading experiments…' })
+  ).toBeNull()
+  navigate(`/evals?experiment=${summaries[0].id}&esort=name`)
+  await tick()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(
+    screen.getByRole('button', { name: 'Loading experiments…' })
+  ).toBeDisabled()
+  lists[2].reject(new Error('Replacement unavailable'))
+  await tick()
+  expect(
+    screen.getByRole('button', { name: 'Loading experiments…' })
+  ).toBeDisabled()
+  lists[1].reject(new Error('Page unavailable'))
+  await tick()
+  await vi.advanceTimersByTimeAsync(0)
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Load more experiments' })
+  )
+  await vi.advanceTimersByTimeAsync(199)
+  expect(
+    screen.queryByRole('button', { name: 'Loading experiments…' })
+  ).toBeNull()
+  lists[3].resolve(page(summaries.slice(1), true))
+  await tick()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(
+    screen.queryByRole('button', { name: 'Loading experiments…' })
+  ).toBeNull()
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Load more experiments' })
+  )
+  navigate(`/evals?experiment=${summaries[0].id}&esort=started`)
+  await tick()
+  lists[5].resolve(page(summaries.slice(0, 1), true))
+  await tick()
+  expect(searches.mock.calls[4][1]?.aborted).toBe(true)
+  await vi.advanceTimersByTimeAsync(200)
+  expect(
+    screen.queryByRole('button', { name: 'Loading experiments…' })
+  ).toBeNull()
+  await fireEvent.click(
+    screen.getByRole('button', { name: 'Load more experiments' })
+  )
+  await vi.advanceTimersByTimeAsync(199)
+  view.unmount()
+  expect(searches.mock.calls[6][1]?.aborted).toBe(true)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(screen.queryByText('Loading experiments…')).toBeNull()
+})
