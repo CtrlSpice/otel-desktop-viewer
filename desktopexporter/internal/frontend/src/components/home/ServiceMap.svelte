@@ -69,7 +69,9 @@
   let received = $state.raw(
     new Map<string, { service: ServiceSummary; items: ServiceConnection[] }>()
   )
-  let connectionReadings = $state.raw(new Map<string, ConnectionReading>())
+  let connectionReadings = $state.raw(
+    new Map<string, ConnectionReading & { graphRevision: number }>()
+  )
   const connections = $derived(
     [...connectionReadings.values()].map(reading => reading.connection)
   )
@@ -275,14 +277,20 @@
           page.items.map(connectionIdentity)
         )
       )
-      // Only this response's edges replace values; sibling pages retain membership.
+      // Sibling pages retain membership, but older generations cannot replace
+      // a newer shared edge's value or inspection context.
       const next = new Map(connectionReadings)
-      for (const edge of page.items)
-        next.set(connectionIdentity(edge), {
+      for (const edge of page.items) {
+        const key = connectionIdentity(edge)
+        if ((next.get(key)?.graphRevision ?? -1) > reading.graphRevision)
+          continue
+        next.set(key, {
           connection: edge,
           options: scope,
           revision: readingRevision,
+          graphRevision: reading.graphRevision,
         })
+      }
       connectionReadings = new Map(
         [...next].filter(([identity]) => retained.has(identity))
       )
@@ -302,7 +310,12 @@
           reading.options !== selection.options ||
           reading.revision !== selection.revision
         )
-          onUpdateSelection?.({ kind: 'connection', ...reading })
+          onUpdateSelection?.({
+            kind: 'connection',
+            connection: reading.connection,
+            options: reading.options,
+            revision: reading.revision,
+          })
       }
       pages = {
         ...pages,
@@ -329,7 +342,13 @@
   }
   function inspectConnection(edge: ServiceConnection) {
     const reading = connectionReadings.get(connectionIdentity(edge))
-    if (reading) onSelect({ kind: 'connection', ...reading })
+    if (reading)
+      onSelect({
+        kind: 'connection',
+        connection: reading.connection,
+        options: reading.options,
+        revision: reading.revision,
+      })
   }
   $effect(() => {
     const scope = options
