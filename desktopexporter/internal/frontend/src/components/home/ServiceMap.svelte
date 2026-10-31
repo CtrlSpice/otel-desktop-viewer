@@ -1,5 +1,6 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import type { LoadingRequestKey } from '@/components/shared/utils/loading-notice.svelte'
   import { onDestroy, untrack } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import { Chart, Svg, type ChartState } from 'layerchart'
@@ -43,6 +44,7 @@
     servicesLoaded,
     totalServices,
     loadingServices,
+    loadingMoreServices = false,
     servicesRequestKey,
     servicesError,
     moreServices,
@@ -58,7 +60,8 @@
     servicesLoaded: boolean
     totalServices?: number
     loadingServices: boolean
-    servicesRequestKey?: AbortSignal
+    loadingMoreServices?: boolean
+    servicesRequestKey?: LoadingRequestKey
     servicesError: string
     moreServices: boolean
     onMoreServices: () => void
@@ -566,7 +569,7 @@
         >{/snippet}
       {#snippet trailing()}<button
           class="btn btn-ghost btn-sm"
-          disabled={loadingServices}
+          disabled={loadingMoreServices}
           onclick={onMoreServices}>More services</button
         >{/snippet}
     </SignalFooter>{/if}
