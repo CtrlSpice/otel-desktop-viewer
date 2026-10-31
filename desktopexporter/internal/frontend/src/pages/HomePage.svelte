@@ -82,7 +82,7 @@
   let statsLoading = $state(true)
   let statsRequest = $state.raw<AbortController>()
   let error = $state('')
-  let loading = $state(false)
+  let pageError = $state('')
   let draft = $state(readRoute().query.q ?? '')
   let routeQuery = readRoute().query.q ?? ''
   let term = $state('')
@@ -103,6 +103,8 @@
     | { range: typeof range; queries: typeof queries; searchActive: boolean }
     | undefined
   let request = $state.raw<AbortController>()
+  let pageRequest = $state.raw<AbortController>()
+  const loading = $derived(!!request || !!pageRequest)
   let requestKey = $state(0)
   const rejections = $derived(stats?.rejections ?? [])
   const issueCount = $derived(
@@ -132,9 +134,17 @@
   }
 
   async function load(pageOffset = 0, refresh = false) {
-    request?.abort()
+    if (!alive || (!refresh && (pageRequest || !more || !displayedListRequest)))
+      return
+    if (refresh) request?.abort()
     const controller = new AbortController()
-    request = controller
+    if (refresh) {
+      request = controller
+      error = ''
+    } else {
+      pageRequest = controller
+      pageError = ''
+    }
     requestKey++
     let nextRange = range
     if (refresh) {
@@ -144,7 +154,7 @@
         endTime: bounds.endTime?.toString() ?? null,
       }
     }
-    // Pagination belongs to the received list even if its replacement failed.
+    // Pagination belongs to the received list, independently of its replacement.
     const reading =
       !refresh && displayedListRequest
         ? displayedListRequest
@@ -159,8 +169,6 @@
       offset: pageOffset,
       limit: 100,
     }
-    loading = true
-    error = ''
     if (refresh) {
       range = nextRange
       queries = options.queries
@@ -172,7 +180,20 @@
         options,
         controller.signal
       )
-      if (controller.signal.aborted) return
+      if (
+        !alive ||
+        controller.signal.aborted ||
+        (refresh
+          ? request !== controller
+          : pageRequest !== controller || displayedListRequest !== reading)
+      )
+        return
+      if (refresh) {
+        // Only a successful replacement invalidates the retained list's page.
+        pageRequest?.abort()
+        pageRequest = undefined
+        pageError = ''
+      }
       services =
         pageOffset === 0
           ? page.items
@@ -184,10 +205,6 @@
                 ])
               ).values(),
             ]
-      if (!refresh && !loaded) {
-        range = nextRange
-        queries = options.queries
-      }
       displayedListRequest = reading
       totalServices = page.totals?.home
       navigation?.setHomeCounts(
@@ -235,9 +252,18 @@
         mapSelection = { kind: 'service', service: services[0] }
       }
     } catch (reason) {
-      if (!controller.signal.aborted) error = String(reason)
+      if (!alive || controller.signal.aborted) return
+      if (refresh && request === controller) error = String(reason)
+      else if (pageRequest === controller && displayedListRequest === reading)
+        pageError = String(reason)
     } finally {
-      if (!controller.signal.aborted) loading = false
+      if (alive && request === controller) {
+        request = undefined
+        requestKey++
+      } else if (alive && pageRequest === controller) {
+        pageRequest = undefined
+        requestKey++
+      }
     }
   }
   function ensureFields(): Promise<void> {
@@ -295,6 +321,7 @@
   onDestroy(() => {
     alive = false
     request?.abort()
+    pageRequest?.abort()
     statsRequest?.abort()
     navigation?.setHomeCounts(null)
   })
@@ -426,7 +453,7 @@
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
   onRefresh={submit}
-  {loading}
+  loading={!!request}
   loadingRequestKey={String(requestKey)}
 >
   {#snippet drawerSearch()}
@@ -480,8 +507,9 @@
       servicesLoaded={loaded}
       {totalServices}
       loadingServices={loading}
-      servicesRequestKey={request?.signal}
-      servicesError={error}
+      loadingMoreServices={!!pageRequest}
+      servicesRequestKey={requestKey}
+      servicesError={[error, pageError].filter(Boolean).join(' · ')}
       moreServices={more}
       onMoreServices={() => load(offset + 100)}
       options={discoveryScope}

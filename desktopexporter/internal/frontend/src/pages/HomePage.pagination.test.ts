@@ -12,7 +12,10 @@ import {
   type ServiceSummary,
 } from '@/services/discovery-types'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 const service = (serviceName: string): ServiceSummary => ({
   serviceName,
@@ -79,11 +82,19 @@ function mountDiscovery() {
     [...view.container.querySelectorAll('.service-map__node')]
       .map(node => node.getAttribute('data-service-identity'))
       .sort()
-  async function receive(index: number, names: string[], truncated = true) {
-    requests[index].resolve({ items: names.map(service), truncated })
-    await waitFor(() =>
-      expect(view.getByRole('button', { name: 'Refresh' })).toBeEnabled()
-    )
+  async function receive(
+    index: number,
+    names: string[],
+    truncated = true,
+    total = 300
+  ) {
+    const publications = publish.mock.calls.length
+    requests[index].resolve({
+      items: names.map(service),
+      truncated,
+      totals: { home: total, traces: total, metrics: 0, logs: 0 },
+    })
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(publications + 1))
     await tick()
   }
   async function search(text: string) {
@@ -108,6 +119,178 @@ function mountDiscovery() {
     expectNodes,
   }
 }
+
+it.each(['query', 'time range', 'refresh'])(
+  'continues and retries the displayed service page during a pending %s replacement',
+  async change => {
+    const {
+      view,
+      discovery,
+      requests,
+      publish,
+      receive,
+      search,
+      more,
+      expectNodes,
+    } = mountDiscovery()
+    await receive(0, ['A-first'])
+    await more()
+    await receive(1, ['A-second'])
+    const initial = discovery.mock.calls[0][0]
+    const links = publish.mock.lastCall![1]
+    const publications = publish.mock.calls.length
+    const canvas = view.container.querySelector('.service-map__canvas')
+    const button = view.getByRole('button', { name: 'More services' })
+
+    if (change === 'query') await search('search("B")')
+    else if (change === 'time range') navigate('/?start=3000&end=4000')
+    else await fireEvent.click(view.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(discovery).toHaveBeenCalledTimes(3))
+    expect(button).toBeEnabled()
+    expectNodes(['A-first', 'A-second'])
+    expect(view.getByText('2 of 300 services loaded')).toBeInTheDocument()
+    expect(publish).toHaveBeenCalledTimes(publications)
+    const stats = vi.mocked(telemetryAPI.getStats)
+    const statsRequests = stats.mock.calls.length
+    const connections = vi.mocked(telemetryAPI.discoverServiceConnections)
+    await waitFor(() => expect(connections).toHaveBeenCalledTimes(4))
+    const graphRequests = connections.mock.calls.length
+
+    await more()
+    expect(discovery.mock.calls[3][0]).toEqual({ ...initial, offset: 200 })
+    expect(discovery.mock.calls[2][1]?.aborted).toBe(false)
+    expect(button).toBeDisabled()
+    await more()
+    expect(discovery).toHaveBeenCalledTimes(4)
+    expect(connections).toHaveBeenCalledTimes(graphRequests)
+    expect(stats).toHaveBeenCalledTimes(statsRequests)
+    expect(stats.mock.lastCall![0]?.aborted).toBe(false)
+
+    requests[3].reject(new Error('Page failed'))
+    await view.findByText('Error: Page failed')
+    expect(button).toBeEnabled()
+    expectNodes(['A-first', 'A-second'])
+    expect(view.getByText('2 of 300 services loaded')).toBeInTheDocument()
+    await more()
+    expect(discovery.mock.calls[4][0]).toEqual(discovery.mock.calls[3][0])
+    await receive(4, ['A-third'], true, 400)
+    expectNodes(['A-first', 'A-second', 'A-third'])
+    expect(view.getByText('3 of 400 services loaded')).toBeInTheDocument()
+    expect(publish.mock.lastCall![1]).toEqual(links)
+    expect(publish.mock.lastCall![2]).toBe(false)
+    expect(discovery.mock.calls[2][1]?.aborted).toBe(false)
+    // New nodes use the current graph scope, not the retained list's scope.
+    await waitFor(() =>
+      expect(connections).toHaveBeenCalledTimes(graphRequests + 1)
+    )
+    expect(connections.mock.lastCall![0]).toMatchObject({
+      startTime: discovery.mock.calls[2][0]!.startTime,
+      endTime: discovery.mock.calls[2][0]!.endTime,
+      queries: discovery.mock.calls[2][0]!.queries,
+      serviceIdentity: serviceIdentity(service('A-third')),
+    })
+    expect(stats).toHaveBeenCalledTimes(statsRequests)
+    expect(view.container.querySelector('.service-map__canvas')).toBe(canvas)
+
+    await more()
+    expect(discovery.mock.calls[5][0]).toEqual({ ...initial, offset: 300 })
+    await receive(2, ['B-first'])
+    expect(discovery.mock.calls[5][1]?.aborted).toBe(true)
+    expectNodes(['B-first'])
+    expect(view.queryByText(/Page failed/)).toBeNull()
+    expect(button).toBeEnabled()
+    await more()
+    expect(discovery.mock.calls[6][0]).toEqual({
+      ...discovery.mock.calls[2][0],
+      offset: 100,
+    })
+  }
+)
+
+it('keeps replacement and page failures owned by their respective refresh and More controls', async () => {
+  const { view, discovery, requests, receive, search, more, expectNodes } =
+    mountDiscovery()
+  await receive(0, ['A-first'])
+  await search('search("B")')
+  await waitFor(() => expect(discovery).toHaveBeenCalledTimes(2))
+  await more()
+  expect(discovery).toHaveBeenCalledTimes(3)
+  requests[1].reject(new Error('Replacement failed'))
+  await view.findByText('Error: Replacement failed')
+  expect(discovery.mock.calls[2][1]?.aborted).toBe(false)
+  requests[2].reject(new Error('Page failed'))
+  await waitFor(() => {
+    expect(view.getByRole('alert')).toHaveTextContent('Replacement failed')
+    expect(view.getByRole('alert')).toHaveTextContent('Page failed')
+  })
+  await more()
+  expect(discovery.mock.calls[3][0]).toEqual(discovery.mock.calls[2][0])
+  expect(view.getByRole('alert')).toHaveTextContent('Replacement failed')
+  expect(view.queryByText(/Page failed/)).toBeNull()
+  await receive(3, ['A-second'])
+  expectNodes(['A-first', 'A-second'])
+  expect(view.getByRole('alert')).toHaveTextContent('Replacement failed')
+
+  await more()
+  requests[4].reject(new Error('Next page failed'))
+  await view.findByText(/Next page failed/)
+  await fireEvent.click(view.getByRole('button', { name: 'Refresh' }))
+  expect(discovery.mock.calls[5][0]!.offset).toBe(0)
+  expect(JSON.stringify(discovery.mock.calls[5][0]!.queries)).toContain('B')
+  expect(view.queryByText(/Replacement failed/)).toBeNull()
+  expect(view.getByRole('alert')).toHaveTextContent('Next page failed')
+  await receive(5, ['B-first'])
+  expectNodes(['B-first'])
+  expect(view.queryByRole('alert')).toBeNull()
+})
+
+it('starts independent work immediately and resets the shared 200ms notice when its identity changes', async () => {
+  const { view, discovery, requests, receive, more, expectNodes } =
+    mountDiscovery()
+  await receive(0, ['A-first'])
+  vi.useFakeTimers()
+  await more()
+  expect(discovery).toHaveBeenCalledTimes(2)
+  expect(view.getByRole('button', { name: 'Refresh' })).toBeEnabled()
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  await vi.advanceTimersByTimeAsync(199)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(view.getByText('Loading service map…')).toBeInTheDocument()
+
+  await fireEvent.click(view.getByRole('button', { name: 'Refresh' }))
+  expect(discovery).toHaveBeenCalledTimes(3)
+  expect(discovery.mock.calls[1][1]?.aborted).toBe(false)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  await vi.advanceTimersByTimeAsync(199)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(view.getByText('Loading service map…')).toBeInTheDocument()
+
+  requests[1].reject(new Error('Page failed'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  expect(view.getByRole('button', { name: 'More services' })).toBeEnabled()
+  await vi.advanceTimersByTimeAsync(199)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(view.getByText('Loading service map…')).toBeInTheDocument()
+  await more()
+  expect(discovery).toHaveBeenCalledTimes(4)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  requests[2].resolve({ items: [service('A-replaced')], truncated: true })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(discovery.mock.calls[3][1]?.aborted).toBe(true)
+  expectNodes(['A-replaced'])
+  await vi.advanceTimersByTimeAsync(200)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  await more()
+  expect(discovery).toHaveBeenCalledTimes(5)
+  view.unmount()
+  expect(discovery.mock.calls[4][1]?.aborted).toBe(true)
+  await vi.advanceTimersByTimeAsync(200)
+  expect(view.container).toBeEmptyDOMElement()
+})
 
 it.each(['query', 'time range'])(
   'keeps pagination and its navigation targets with the displayed list after a failed %s replacement',
@@ -150,7 +333,7 @@ it.each(['query', 'time range'])(
     await more()
     expect(discovery.mock.calls[3][0]).toEqual({ ...initial, offset: 200 })
     requests[3].reject(new Error('Page failed'))
-    await view.findByText('Error: Page failed')
+    await view.findByText(/Page failed/)
     expectNodes(['A-first', 'A-second'])
     await more()
     expect(discovery.mock.calls[4][0]).toEqual({ ...initial, offset: 200 })
@@ -186,7 +369,7 @@ it.each(['query', 'time range'])(
 )
 
 it.each(['success', 'failure'])(
-  'cancels superseded pagination through A/B/A and ignores late %s after supersession or unmount',
+  'cancels pagination only on successful A/B/A replacement and ignores late %s after replacement or unmount',
   async outcome => {
     const {
       view,
@@ -203,16 +386,14 @@ it.each(['success', 'failure'])(
     expect(discovery.mock.calls[1][0]!.offset).toBe(100)
     await search('search("B")')
     await waitFor(() => expect(discovery).toHaveBeenCalledTimes(3))
-    expect(discovery.mock.calls[1][1]?.aborted).toBe(true)
+    expect(discovery.mock.calls[1][1]?.aborted).toBe(false)
     await search('')
     await waitFor(() => expect(discovery).toHaveBeenCalledTimes(4))
     expect(discovery.mock.calls[2][1]?.aborted).toBe(true)
     const publications = publish.mock.calls.length
-    for (const index of [1, 2]) {
-      if (outcome === 'success')
-        requests[index].resolve({ items: [service('stale')], truncated: false })
-      else requests[index].reject(new Error('Stale failure'))
-    }
+    if (outcome === 'success')
+      requests[2].resolve({ items: [service('stale')], truncated: false })
+    else requests[2].reject(new Error('Stale failure'))
     await tick()
     expectNodes(['A-first'])
     expect(view.queryByText('Error: Stale failure')).toBeNull()
@@ -221,18 +402,32 @@ it.each(['success', 'failure'])(
     expect(publish).toHaveBeenCalledTimes(publications)
 
     await receive(3, ['A-replaced'])
+    expect(discovery.mock.calls[1][1]?.aborted).toBe(true)
+    if (outcome === 'success')
+      requests[1].resolve({ items: [service('stale page')], truncated: false })
+    else requests[1].reject(new Error('Stale page failure'))
+    await tick()
     expectNodes(['A-replaced'])
+    expect(view.queryByText(/Stale page failure/)).toBeNull()
     await more()
     expect(discovery.mock.calls[4][0]).toEqual({
       ...discovery.mock.calls[0][0],
       offset: 100,
     })
+    await search('search("C")')
+    expect(discovery).toHaveBeenCalledTimes(6)
     view.unmount()
     expect(discovery.mock.calls[4][1]?.aborted).toBe(true)
+    expect(discovery.mock.calls[5][1]?.aborted).toBe(true)
     const afterUnmount = publish.mock.calls.length
-    if (outcome === 'success')
-      requests[4].resolve({ items: [service('unmounted')], truncated: false })
-    else requests[4].reject(new Error('Unmounted failure'))
+    for (const index of [4, 5]) {
+      if (outcome === 'success')
+        requests[index].resolve({
+          items: [service('unmounted')],
+          truncated: false,
+        })
+      else requests[index].reject(new Error('Unmounted failure'))
+    }
     await tick()
     expect(publish).toHaveBeenCalledTimes(afterUnmount)
   }
