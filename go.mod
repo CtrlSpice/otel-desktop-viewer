@@ -8,7 +8,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.8.1-0.20261006142254-5fb2a2008bd0
 	github.com/duckdb/duckdb-go/v2 v2.20000.0
 	github.com/google/uuid v1.6.0
-	github.com/open-feature/go-sdk v1.19.0
+	github.com/open-feature/go-sdk v1.20.0
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.8.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza v0.163.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor v0.163.0
