@@ -71,7 +71,7 @@
     DEFAULT_HISTOGRAM_QUANTILES,
     HEATMAP_BUCKET_TARGET,
   } from '@/components/metrics/utils/histogram-aggregation'
-  import type { AggregateBucket } from '@/types/api-types'
+  import type { AggregateBucket, DataPoint } from '@/types/api-types'
   import { onDestroy, untrack } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import {
@@ -108,6 +108,7 @@
     paneTabID,
   } from '@/components/shared/WorkspaceHeader.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
   import { histogramViewTabs } from '@/components/metrics/utils/histogram-view-tabs'
@@ -330,6 +331,10 @@
   // Requested series can legitimately return no reduced datapoints (for
   // example, a cumulative baseline). Keep that distinct from omitted payloads.
   let loadedDatapointSeries = $state<ReadonlySet<string>>(new Set())
+  const chartDatapoints = new SvelteMap<string, DataPoint[]>()
+  let chartSeriesLoading = $state(false)
+  let chartSeriesError = $state('')
+  let chartSeriesRequestKey = $state.raw<AbortSignal>()
 
   // Cross-series histogram merge for the current legend selection.
   let selectedAggregate = $state<AggregateBucket[] | null>(null)
@@ -337,6 +342,18 @@
   let selectedAggregateSummary = $state<AggregateBucket | null>(null)
   // Scalar aggregates for the checked and full series pools.
   let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
+  // Keep each independent chart answer with its exact query inputs. These are
+  // references to displayed responses, not extra payloads or export data.
+  type AggregateScope = {
+    metric: MetricViewData
+    visibleKeys: string[]
+    timezoneOffsetNs: number
+    timezoneName: string | undefined
+  }
+  let aggregateScope = $state.raw<AggregateScope>()
+  let aggregateSummaryScope = $state.raw<AggregateScope>()
+  const aggregateMetric = $derived(aggregateScope?.metric)
+  const aggregateSummaryMetric = $derived(aggregateSummaryScope?.metric)
   let aggregateLoading = $state(false)
   let aggregateSummaryLoading = $state(false)
   let aggregateError = $state('')
@@ -379,7 +396,11 @@
     () => selectedScalarAggregate,
     key => seriesDatapoints.get(key)?.datapoints,
     () => columnDistribution,
-    () => histogramContribution
+    () => histogramContribution,
+    wholeWindow =>
+      (wholeWindow ? aggregateSummaryMetric : aggregateMetric) ??
+      selectedMetric,
+    seriesKey => chartDatapoints.get(seriesKey)
   )
   const metricCtx = getMetricViewContext()
 
@@ -475,6 +496,7 @@
     aggregateError = ''
     aggregateSummaryError = ''
     const summary = displayedMetricSummary
+    const metric = selectedMetric
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
     const scalar =
@@ -487,45 +509,41 @@
     if (
       !summary ||
       !needsAggregate ||
-      !selectedMetric ||
-      selectedMetric.metricRef !== summary.metricRef
+      !metric ||
+      metric.metricRef !== summary.metricRef
     ) {
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
+      aggregateScope = undefined
+      aggregateSummaryScope = undefined
       return
     }
-    const bounds = effectiveMetricBounds(selectedMetric)
+    const bounds = effectiveMetricBounds(metric)
     if (!bounds) {
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
+      aggregateScope = undefined
+      aggregateSummaryScope = undefined
       return
     }
 
     aggregateLoading = true
     aggregateSummaryLoading = !scalar
+    const scope: AggregateScope = {
+      metric,
+      visibleKeys,
+      timezoneOffsetNs: displayedDatapointScope?.timezoneOffsetNs ?? 0,
+      timezoneName: displayedDatapointScope?.timezoneName,
+    }
     const requestAggregates = () => {
-      void fetchAggregate(
-        summary,
-        visibleKeys,
-        bounds,
-        token,
-        false,
-        controller.signal
-      )
+      void fetchAggregate(scope, bounds, token, false, controller.signal)
       if (
         summary.metricType === 'Histogram' ||
         summary.metricType === 'ExponentialHistogram'
       ) {
-        void fetchAggregate(
-          summary,
-          visibleKeys,
-          bounds,
-          token,
-          true,
-          controller.signal
-        )
+        void fetchAggregate(scope, bounds, token, true, controller.signal)
       }
     }
     const controller = new AbortController()
@@ -539,8 +557,7 @@
   })
 
   async function fetchAggregate(
-    summary: MetricSelection,
-    visibleKeys: string[],
+    scope: AggregateScope,
     bounds: { startTime: bigint; endTime: bigint },
     token: number,
     wholeWindow: boolean,
@@ -551,19 +568,18 @@
       const quantiles = DEFAULT_HISTOGRAM_QUANTILES
       // Both shapes aggregate only checked series. The scoped whole pool is
       // sufficient for scalars; no second cross-series pool is needed.
-      const narrowTo = visibleKeys
       const result = await telemetryAPI.getMetricAggregateView(
-        summary.metricRef,
+        scope.metric.metricRef,
         startTime,
         endTime,
         wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
-        narrowTo,
+        scope.visibleKeys,
         quantiles,
-        displayedDatapointScope?.timezoneOffsetNs ?? 0,
+        scope.timezoneOffsetNs,
         // Keep pooled and per-series lines on the same bucket grid.
         wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
         wholeWindow ? undefined : [],
-        displayedDatapointScope?.timezoneName,
+        scope.timezoneName,
         undefined,
         signal
       )
@@ -571,9 +587,11 @@
       if (!signal.aborted && token === aggregateToken) {
         if (wholeWindow) {
           selectedAggregateSummary = result?.aggregate?.[0] ?? null
+          aggregateSummaryScope = scope
         } else {
           selectedAggregate = result?.aggregate ?? null
           selectedScalarAggregate = result?.scalarAggregate ?? null
+          aggregateScope = scope
         }
       }
     } catch (err) {
@@ -730,14 +748,15 @@
   // Request a source contribution with the exact window, grid and checked-series
   // pool of the existing chart. Never narrow to the selected source before delta.
   $effect(() => {
-    const metric = selectedMetric
     const datapointID = metricCtx.selectedDatapointID
     const seriesKey = metricCtx.selectedSeriesKey
-    const visibleKeys = [...metricCtx.visibleSeries].sort()
     const wholeWindow = metricCtx.activeHistogramTab === 'histogram'
+    const scope = wholeWindow ? aggregateSummaryScope : aggregateScope
+    const metric = scope?.metric
+    const visibleKeys = scope?.visibleKeys ?? []
     const source = metricCtx.selectionSource
-    const offset = displayedDatapointScope?.timezoneOffsetNs ?? 0
-    const zone = displayedDatapointScope?.timezoneName
+    const offset = scope?.timezoneOffsetNs ?? 0
+    const zone = scope?.timezoneName
     histogramContribution = null
     if (
       !metric ||
@@ -788,10 +807,9 @@
     // Primitive bounds avoid refetching when only the heatmap array identity changes.
     const startNs = metricCtx.heatmapColumnStartNs
     const endNs = metricCtx.heatmapColumnEndNs
-    const summary = displayedMetricSummary
-    const scope = displayedDatapointScope
+    const scope = aggregateScope
     const token = ++columnToken
-    if (startNs === null || endNs === null || !summary) {
+    if (startNs === null || endNs === null || !scope) {
       columnDistribution = undefined
       return
     }
@@ -801,18 +819,18 @@
     void (async () => {
       try {
         const result = await telemetryAPI.getMetricView(
-          summary.metricRef,
+          scope.metric.metricRef,
           // Preserve the inclusive nanosecond column boundary.
           startNs,
           endNs,
           1,
           undefined,
           DEFAULT_HISTOGRAM_QUANTILES,
-          scope?.timezoneOffsetNs ?? 0,
+          scope.timezoneOffsetNs,
           0,
           0,
           undefined,
-          scope?.timezoneName,
+          scope.timezoneName,
           undefined,
           undefined,
           controller.signal
@@ -833,20 +851,16 @@
   let detailController: AbortController | undefined
   let detailRevision = 0
 
-  // Fetch newly visible series immediately; fetchMetricDetail owns cancellation.
+  // Chart enrichment belongs to the displayed response, independently of a
+  // different requested metric. Each checkbox change supersedes only this work.
   $effect(() => {
-    const summary = selectedSummary
     const metric = selectedMetric
+    const scope = displayedDatapointScope
     const checked = metricCtx.visibleSeries
     const visible = [...checked].sort()
-    if (
-      !summary ||
-      !metric ||
-      detailLoading ||
-      metric.metricRef !== summary.metricRef ||
-      visible.length === 0
-    )
-      return
+    chartSeriesLoading = false
+    chartSeriesError = ''
+    if (!metric || !scope || visible.length === 0) return
 
     const missing = metric.timeseries.some(
       ts =>
@@ -856,25 +870,68 @@
     )
     if (!missing) return
 
-    untrack(() => {
-      void fetchMetricDetail(summary, visible, false)
-    })
+    const controller = new AbortController()
+    chartSeriesLoading = true
+    chartSeriesRequestKey = controller.signal
+    void enrichChartSeries(metric, scope, visible, controller.signal)
+    return () => controller.abort()
   })
 
-  async function fetchMetricDetail(
-    summary: MetricSelection,
-    /** Series that include datapoints. Null lets the store apply the initial limit. */
-    datapointSeries: string[] | null = null,
-    /** Whether to seed per-metric state from the result. */
-    reseed = true
+  async function enrichChartSeries(
+    metric: MetricViewData,
+    scope: NonNullable<typeof displayedDatapointScope>,
+    visible: string[],
+    signal: AbortSignal
   ) {
+    try {
+      const histogram =
+        metric.metricType === 'Histogram' ||
+        metric.metricType === 'ExponentialHistogram'
+      const result = await telemetryAPI.getMetricView(
+        metric.metricRef,
+        metric.window.requested.startNs,
+        metric.window.requested.endNs,
+        histogram ? HEATMAP_BUCKET_TARGET : METRIC_BUCKET_TARGET,
+        undefined,
+        histogram ? DEFAULT_HISTOGRAM_QUANTILES : undefined,
+        scope.timezoneOffsetNs,
+        SCALAR_VIEW_BUCKETS,
+        SPARKLINE_BUCKETS,
+        undefined,
+        scope.timezoneName,
+        visible,
+        DEFAULT_VISIBLE_TIMESERIES,
+        signal
+      )
+      if (signal.aborted || selectedMetric !== metric) return
+      // Only missing chart points were requested. Do not replace metadata,
+      // invalidate raw/context requests, or erase independently loaded aggregates.
+      for (const series of metric.timeseries) {
+        if (!visible.includes(series.seriesRef)) continue
+        const received = result?.timeseries.find(
+          candidate => candidate.seriesRef === series.seriesRef
+        )
+        if (received) chartDatapoints.set(series.seriesRef, received.datapoints)
+      }
+      loadedDatapointSeries = new Set([...loadedDatapointSeries, ...visible])
+    } catch (error) {
+      if (signal.aborted || selectedMetric !== metric) return
+      console.error('Failed to fetch chart series:', error)
+      chartSeriesError = 'Could not load the selected chart series.'
+    } finally {
+      if (!signal.aborted && selectedMetric === metric)
+        chartSeriesLoading = false
+    }
+  }
+
+  async function fetchMetricDetail(summary: MetricSelection) {
     const token = ++detailToken
     detailRequestKey = token
     detailController?.abort()
     const controller = new AbortController()
     detailController = controller
     const requestedDatapointSeries =
-      datapointSeries ?? persistedVisibleKeys(summary.metricRef) ?? undefined
+      persistedVisibleKeys(summary.metricRef) ?? undefined
     try {
       detailLoading = true
       detailError = ''
@@ -887,7 +944,7 @@
         timezone: timeContext.tz,
         timezoneOffsetNs: tzOffsetNs(),
         timezoneName: tzName(),
-        revision: detailRevision + (reseed ? 1 : 0),
+        revision: detailRevision + 1,
       }
       // Scalar lines and histogram heatmaps use different display resolutions.
       const isHistogramMetric =
@@ -925,8 +982,13 @@
         page.selectedID !== summary.metricRef
       )
         return
+      if (!result) {
+        detailError = 'The selected metric was not found.'
+        return
+      }
       // The store's default limit uses the response's own series order. Replace
       // this set with each response so a refresh or scope change loads afresh.
+      chartDatapoints.clear()
       loadedDatapointSeries = new Set(
         requestedDatapointSeries ??
           result?.timeseries
@@ -934,15 +996,22 @@
             .map(ts => ts.seriesRef) ??
           []
       )
-      selectedAggregate = null
-      selectedAggregateSummary = null
-      selectedScalarAggregate = null
+      if (
+        selectedMetric?.metricRef !== result?.metricRef ||
+        selectedMetric?.metricType !== result?.metricType
+      ) {
+        selectedAggregate = null
+        selectedAggregateSummary = null
+        selectedScalarAggregate = null
+        aggregateScope = undefined
+        aggregateSummaryScope = undefined
+      }
       selectedMetric = result
       displayedDatapointScope = scope
       detailRevision = scope.revision
       displayedMetricSummary = summary
       // Seed state before the result renders.
-      if (reseed) metricCtx.seedForMetric(selectedMetric)
+      metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
       if (controller.signal.aborted || token !== detailToken) return
       console.error('Failed to fetch metric detail:', err)
@@ -1202,11 +1271,22 @@
       </div>
     {:else}
       <div {...chartTabPanelAttrs} class="metrics-page__chart">
+        <LoadingStatus
+          pending={chartSeriesLoading}
+          requestKey={chartSeriesRequestKey}
+          label="Loading chart series…"
+          class="block p-3 text-subtle"
+        />
+        {#if chartSeriesError}<p role="alert" class="p-3 text-papaya">
+            {chartSeriesError}
+          </p>{/if}
         {#if selectedMetric || !page.selectedID}<MetricChartView
             {aggregateLoading}
             {aggregateSummaryLoading}
             {aggregateError}
             {aggregateSummaryError}
+            {aggregateMetric}
+            {aggregateSummaryMetric}
             requestKey={aggregateRequestKey}
           />{/if}
       </div>

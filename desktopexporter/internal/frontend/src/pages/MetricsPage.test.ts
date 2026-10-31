@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { tick } from 'svelte'
 import MetricsPage from './MetricsPage.svelte'
 import type {
+  AggregateBucket,
   DataPoint,
   MetricSummary,
   MetricViewData,
@@ -19,10 +20,13 @@ import {
   readRoute,
   withQueryPatch,
 } from '@/route'
-import { downloadOTLP } from '@/services/export-service'
+import { downloadOTLP, readOTLPText } from '@/services/export-service'
 import { savePersistedTimeseriesVisible } from '@/components/metrics/utils/metric-timeseries-visible'
 
-vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
+vi.mock('@/services/export-service', () => ({
+  downloadOTLP: vi.fn(),
+  readOTLPText: vi.fn(),
+}))
 
 // Only histograms request the whole-window bucket merge.
 
@@ -196,6 +200,8 @@ beforeEach(() => {
   clearMetrics.mockResolvedValue(undefined)
   vi.mocked(downloadOTLP).mockReset()
   vi.mocked(downloadOTLP).mockResolvedValue()
+  vi.mocked(readOTLPText).mockReset()
+  vi.mocked(readOTLPText).mockResolvedValue('{"asInt":"9007199254740993"}')
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetricView.mockReset()
@@ -224,8 +230,7 @@ async function renderSelected(metricType: MetricType) {
   })
   setTestUrl('/metrics/metric-1')
   renderWithContexts(MetricsPage)
-  // The aggregate fetch is debounced until after detail loading.
-  await waitFor(() => expect(getMetricView).toHaveBeenCalled())
+  await screen.findByRole('table', { name: 'Metric fields' })
   if (metricType === 'Histogram' || metricType === 'ExponentialHistogram')
     await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
       timeout: 3000,
@@ -612,7 +617,7 @@ describe('Metric main-header export', () => {
       })
       setTestUrl('/metrics/metric-1')
       renderWithContexts(MetricsPage)
-      await screen.findByRole('region', { name: 'Metric details' })
+      await screen.findByRole('table', { name: 'Metric fields' })
 
       const header = await screen.findByRole('region', { name: 'Metric chart' })
       const button = within(header).getByRole('button', {
@@ -658,6 +663,382 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
+  function aggregate(count: bigint) {
+    const bucket: AggregateBucket = {
+      timestamp: 1_700_000_000_000_000_000n,
+      startTime: 1_700_000_000_000_000_000n,
+      count,
+      sum: Number(count),
+      min: 0,
+      max: 1,
+      explicitBounds: [1],
+      bucketCounts: [count, 0n],
+      quantiles: null,
+    }
+    return { aggregate: [bucket], scalarAggregate: null }
+  }
+
+  function prepareHistogram() {
+    const metric = makeMetric('Histogram')
+    metric.aggregationTemporality = 'Delta'
+    metric.aggregationTemporalityCode = 1
+    metric.timeseries = ['first', 'second'].map(seriesRef => ({
+      ...metric.timeseries[0]!,
+      seriesRef,
+      attributes: [
+        { key: 'route', value: { kind: 'string', value: `/${seriesRef}` } },
+      ],
+    }))
+    searchMetricSummaries.mockResolvedValue([makeSummary('Histogram')])
+    getStats.mockResolvedValue(makeStats())
+    getMetricView.mockResolvedValue(metric)
+    getMetricAggregateView.mockResolvedValue(aggregate(7n))
+    setTestUrl('/metrics/metric-1?time=all')
+    return metric
+  }
+
+  it.each(['success', 'failure'] as const)(
+    'rejects superseded aggregate %s after an all→subset→all selection and unmount',
+    async outcome => {
+      prepareHistogram()
+      const view = renderWithContexts(MetricsPage)
+      await screen.findByRole('list', { name: 'Heatmap count scale' })
+      const stale = deferred<ReturnType<typeof aggregate>>()
+      getMetricAggregateView.mockReturnValue(stale.promise)
+      const checkbox = screen.getByRole('checkbox', {
+        name: 'Show route: /second in chart',
+      })
+      await fireEvent.click(checkbox)
+      await tick()
+      expect(getMetricAggregateView.mock.calls.at(-1)?.[4]).toEqual(['first'])
+      const staleSignal = getMetricAggregateView.mock.calls
+        .at(-1)!
+        .at(-1) as AbortSignal
+      getMetricAggregateView.mockResolvedValue(aggregate(17n))
+      await fireEvent.click(checkbox)
+      await waitFor(() =>
+        expect(
+          screen.getByRole('list', { name: 'Heatmap count scale' })
+        ).toHaveTextContent('17')
+      )
+      expect(staleSignal.aborted).toBe(true)
+      if (outcome === 'success') stale.resolve(aggregate(99n))
+      else stale.reject(new Error('obsolete aggregate failed'))
+      await tick()
+      expect(
+        screen.getByRole('list', { name: 'Heatmap count scale' })
+      ).toHaveTextContent('17')
+      expect(screen.queryByText(/Could not load .* aggregate/)).toBeNull()
+      const unmounted = deferred<ReturnType<typeof aggregate>>()
+      getMetricAggregateView.mockReturnValue(unmounted.promise)
+      await fireEvent.click(checkbox)
+      await tick()
+      const signal = getMetricAggregateView.mock.calls
+        .at(-1)!
+        .at(-1) as AbortSignal
+      view.unmount()
+      expect(signal.aborted).toBe(true)
+      if (outcome === 'success') unmounted.resolve(aggregate(101n))
+      else unmounted.reject(new Error('unmounted aggregate failed'))
+      await tick()
+    }
+  )
+
+  it('does not call an initial selected aggregate empty or zero while either independent reply is pending', async () => {
+    prepareHistogram()
+    const heatmap = deferred<ReturnType<typeof aggregate>>()
+    const histogram = deferred<ReturnType<typeof aggregate>>()
+    getMetricAggregateView.mockImplementation((...args: unknown[]) =>
+      args[3] === 1 ? histogram.promise : heatmap.promise
+    )
+    renderWithContexts(MetricsPage)
+    await screen.findByRole('table', { name: 'Metric fields' })
+    expect(
+      screen.queryByText(
+        /No bucket data|No observations|No histogram data|Not enough cumulative/
+      )
+    ).toBeNull()
+    expect(screen.queryByText('Loading chart aggregate…')).toBeNull()
+    await screen.findByText('Loading chart aggregate…')
+    // A fast whole-window answer can be inspected without the heatmap reply.
+    histogram.resolve(aggregate(11n))
+    await tick()
+    await fireEvent.click(screen.getByRole('tab', { name: 'Histogram' }))
+    expect(
+      screen.getByRole('list', { name: 'Histogram count scale' })
+    ).toHaveTextContent('11')
+    expect(screen.queryByText('Loading chart aggregate…')).toBeNull()
+    await fireEvent.click(screen.getByRole('tab', { name: 'Heatmap' }))
+    expect(screen.queryByText('Loading chart aggregate…')).toBeNull()
+    expect(
+      screen.queryByText(/No bucket data|No observations|No histogram data/)
+    ).toBeNull()
+    heatmap.resolve(aggregate(13n))
+    await screen.findByRole('list', { name: 'Heatmap count scale' })
+  })
+
+  it.each(['failure', 'missing'] as const)(
+    'retains metric identity, type, context, disclosures and on-demand actions through a replacement %s',
+    async outcome => {
+      userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      const metric = prepareHistogram()
+      searchMetricSummaries.mockResolvedValue([
+        makeSummary('Histogram'),
+        { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
+      ])
+      const replacement = deferred<MetricViewData | null>()
+      getMetricView.mockImplementation((id: string) =>
+        id === 'next' ? replacement.promise : Promise.resolve(metric)
+      )
+      renderWithContexts(MetricsPage)
+      const scale = await screen.findByRole('list', {
+        name: 'Heatmap count scale',
+      })
+      const fields = screen.getByRole('table', { name: 'Metric fields' })
+      const chartHeader = screen.getByRole('region', { name: 'Metric chart' })
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Expand attributes for route: /first',
+        })
+      )
+      const attributes = screen.getByRole('table', {
+        name: 'Attributes for route: /first',
+      })
+      navigateToItem('metrics', 'next')
+      await tick()
+      const url = window.location.href
+      expect(chartHeader).toHaveTextContent('demo.metric')
+      expect(fields).toHaveTextContent('Histogram')
+      expect(attributes.isConnected).toBe(true)
+      expect(screen.getByRole('list', { name: 'Heatmap count scale' })).toBe(
+        scale
+      )
+      expect(readOTLPText).not.toHaveBeenCalled()
+      expect(downloadOTLP).not.toHaveBeenCalled()
+      await fireEvent.click(screen.getByRole('button', { name: 'Copy metric' }))
+      await waitFor(() =>
+        expect(copy).toHaveBeenLastCalledWith('{"asInt":"9007199254740993"}')
+      )
+      expect(readOTLPText).toHaveBeenLastCalledWith(
+        'metric',
+        'metric-1',
+        expect.any(AbortSignal)
+      )
+      await fireEvent.click(
+        within(chartHeader).getByRole('button', { name: 'Download metric' })
+      )
+      expect(downloadOTLP).toHaveBeenLastCalledWith(
+        'metric',
+        'metric-1',
+        expect.any(AbortSignal)
+      )
+      if (outcome === 'failure')
+        replacement.reject(new Error('replacement failed'))
+      else replacement.resolve(null)
+      await screen.findByText(
+        outcome === 'failure'
+          ? 'Could not load the selected metric.'
+          : 'The selected metric was not found.'
+      )
+      expect(chartHeader).toHaveTextContent('demo.metric')
+      expect(fields.isConnected).toBe(true)
+      expect(attributes.isConnected).toBe(true)
+      expect(screen.getByRole('list', { name: 'Heatmap count scale' })).toBe(
+        scale
+      )
+      await fireEvent.click(screen.getByRole('tab', { name: 'Histogram' }))
+      expect(window.location.href).toBe(url)
+      expect(
+        screen.getByRole('list', { name: 'Histogram count scale' })
+      ).toHaveTextContent('7')
+      copy.mockRestore()
+    }
+  )
+
+  it.each(['success', 'failure'] as const)(
+    'retains both histogram aggregates across a detail refresh and independent aggregate %s',
+    async outcome => {
+      const metric = prepareHistogram()
+      renderWithContexts(MetricsPage)
+      const heatmapScale = await screen.findByRole('list', {
+        name: 'Heatmap count scale',
+      })
+      expect(heatmapScale).toHaveTextContent('7')
+      const fields = screen.getByRole('table', { name: 'Metric fields' })
+      const heatmap = deferred<ReturnType<typeof aggregate>>()
+      const histogram = deferred<ReturnType<typeof aggregate>>()
+      getMetricAggregateView.mockImplementation((...args: unknown[]) =>
+        args[3] === 1 ? histogram.promise : heatmap.promise
+      )
+      getMetricView.mockResolvedValue({
+        ...metric,
+        description: 'fresh metadata',
+      })
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await screen.findByText('fresh metadata')
+      // The independent detail response must not erase either successful chart.
+      expect(fields.isConnected).toBe(true)
+      expect(screen.getByRole('list', { name: 'Heatmap count scale' })).toBe(
+        heatmapScale
+      )
+      expect(heatmapScale).toHaveTextContent('7')
+      await fireEvent.click(screen.getByRole('tab', { name: 'Histogram' }))
+      expect(
+        screen.getByRole('list', { name: 'Histogram count scale' })
+      ).toHaveTextContent('7')
+      histogram.resolve(aggregate(11n))
+      await waitFor(() =>
+        expect(
+          screen.getByRole('list', { name: 'Histogram count scale' })
+        ).toHaveTextContent('11')
+      )
+      await fireEvent.click(screen.getByRole('tab', { name: 'Heatmap' }))
+      expect(
+        screen.getByRole('list', { name: 'Heatmap count scale' })
+      ).toHaveTextContent('7')
+      if (outcome === 'failure') {
+        heatmap.reject(new Error('aggregate unavailable'))
+        await screen.findByText('Could not load the chart aggregate.')
+        expect(
+          screen.getByRole('list', { name: 'Heatmap count scale' })
+        ).toHaveTextContent('7')
+      } else {
+        heatmap.resolve(aggregate(13n))
+        await waitFor(() =>
+          expect(
+            screen.getByRole('list', { name: 'Heatmap count scale' })
+          ).toHaveTextContent('13')
+        )
+      }
+    }
+  )
+
+  it('starts each checkbox enrichment immediately without cancelling a different requested metric', async () => {
+    const base = makeMetric('Gauge', [
+      {
+        ...makeSumDatapoint('first-point', 1_700_000_000_000, 7),
+        metricType: 'Gauge',
+      },
+    ])
+    base.timeseries = ['first', 'second', 'third'].map((seriesRef, index) => ({
+      ...base.timeseries[0]!,
+      seriesRef,
+      datapoints: index === 0 ? base.timeseries[0]!.datapoints : [],
+    }))
+    const next = deferred<MetricViewData | null>()
+    const enrichment = deferred<MetricViewData | null>()
+    searchMetricSummaries.mockResolvedValue([
+      makeSummary('Gauge'),
+      { ...makeSummary('Sum'), metricRef: 'next', name: 'next.metric' },
+    ])
+    getStats.mockResolvedValue(makeStats())
+    getMetricView.mockImplementation((...args: unknown[]) =>
+      args[0] === 'next'
+        ? next.promise
+        : args[11]
+          ? enrichment.promise
+          : Promise.resolve(base)
+    )
+    savePersistedTimeseriesVisible('metric-1', ['first'])
+    // The initial request also has persisted keys, so provide its answer explicitly.
+    getMetricView.mockResolvedValueOnce(base)
+    setTestUrl('/metrics/metric-1?time=all')
+    const view = renderWithContexts(MetricsPage)
+    await screen.findByRole('table', { name: 'Metric fields' })
+    navigateToItem('metrics', 'next')
+    await tick()
+    const nextSignal = getMetricView.mock.calls.at(-1)!.at(-1) as AbortSignal
+    const unchecked = screen
+      .getAllByRole('checkbox', { name: /^Show .* in chart$/ })
+      .filter(checkbox => !(checkbox as HTMLInputElement).checked)
+    await fireEvent.click(unchecked[0]!)
+    await tick()
+    expect(getMetricView.mock.calls.at(-1)?.[0]).toBe('metric-1')
+    expect(getMetricView.mock.calls.at(-1)?.[11]).toEqual(['first', 'second'])
+    const firstSignal = getMetricView.mock.calls.at(-1)!.at(-1) as AbortSignal
+    await fireEvent.click(unchecked[1]!)
+    await tick()
+    expect(getMetricView.mock.calls.at(-1)?.[11]).toEqual([
+      'first',
+      'second',
+      'third',
+    ])
+    expect(firstSignal.aborted).toBe(true)
+    expect(nextSignal.aborted).toBe(false)
+    view.unmount()
+    expect(nextSignal.aborted).toBe(true)
+    expect(
+      (getMetricView.mock.calls.at(-1)!.at(-1) as AbortSignal).aborted
+    ).toBe(true)
+  })
+
+  it('enriches read-only native series without mutating metadata or reloading terminal empty points', async () => {
+    const metric = makeMetric('Gauge')
+    metric.timeseries = ['first', 'second'].map(seriesRef =>
+      Object.defineProperty(
+        { ...metric.timeseries[0]!, seriesRef },
+        'datapoints',
+        { get: () => [], configurable: false }
+      )
+    )
+    Object.freeze(metric.timeseries)
+    searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
+    getStats.mockResolvedValue(makeStats())
+    getMetricView.mockResolvedValue(metric)
+    savePersistedTimeseriesVisible('metric-1', ['first'])
+    setTestUrl('/metrics/metric-1?time=all')
+    renderWithContexts(MetricsPage)
+    await screen.findByRole('table', { name: 'Metric fields' })
+    const checkbox = screen
+      .getAllByRole('checkbox', { name: /^Show .* in chart$/ })
+      .find(element => !(element as HTMLInputElement).checked)!
+    await fireEvent.click(checkbox)
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(2))
+    await tick()
+    expect(
+      screen.queryByText('Could not load the selected chart series.')
+    ).toBeNull()
+    await fireEvent.click(checkbox)
+    await fireEvent.click(checkbox)
+    await tick()
+    expect(getMetricView).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['pending', 'failed'] as const)(
+    'keeps retained chart controls local while a different metric is %s',
+    async outcome => {
+      const metric = prepareHistogram()
+      searchMetricSummaries.mockResolvedValue([
+        makeSummary('Histogram'),
+        { ...makeSummary('Gauge'), metricRef: 'next', name: 'next.metric' },
+      ])
+      const next = deferred<MetricViewData | null>()
+      getMetricView.mockImplementation((id: string) =>
+        id === 'next' ? next.promise : Promise.resolve(metric)
+      )
+      renderWithContexts(MetricsPage)
+      await screen.findByRole('list', { name: 'Heatmap count scale' })
+      navigateToItem('metrics', 'next')
+      await tick()
+      const requestedURL = window.location.href
+      if (outcome === 'failed') {
+        next.reject(new Error('replacement unavailable'))
+        await screen.findByText('Could not load the selected metric.')
+      }
+      await fireEvent.click(screen.getByRole('tab', { name: 'Histogram' }))
+      expect(window.location.href).toBe(requestedURL)
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Select route: /second' })
+      )
+      expect(window.location.href).toBe(requestedURL)
+      expect(rawSeriesCalls().at(-1)?.[0]).toBe('metric-1')
+      expect(rawSeriesCalls().at(-1)?.[4]).toEqual(['second'])
+    }
+  )
+
   it('uses an unbounded detail request and its effective window for aggregates', async () => {
     await renderSelected('Histogram')
     const detail = getMetricView.mock.calls.find(args => args[3] !== 0)
@@ -793,6 +1174,7 @@ describe('Metric Details request lifecycle', () => {
       Promise.resolve({
         ...makeMetric('Gauge'),
         metricRef: id,
+        name: id === 'next' ? 'next.metric' : 'demo.metric',
         timeseries: [
           {
             ...makeMetric('Gauge').timeseries[0]!,
@@ -850,7 +1232,11 @@ describe('Metric Details request lifecycle', () => {
     })
     expect(oldSignal.aborted).toBe(true)
     navigateToItem('metrics', 'metric-1')
-    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(3))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('table', { name: 'Metric fields' })
+      ).toHaveTextContent('demo.metric')
+    )
     await expand()
     await waitFor(() => expect(getMetricSeries).toHaveBeenCalledTimes(2))
     old.resolve({

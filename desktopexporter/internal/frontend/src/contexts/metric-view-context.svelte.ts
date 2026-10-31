@@ -386,7 +386,14 @@ export function createMetricViewContext(
   /** Per-series merges over the selected heatmap column, once fetched. */
   getColumnDistribution: () => MetricViewData | undefined = () => undefined,
   getHistogramContribution: () => HistogramContributionSelection | null = () =>
-    null
+    null,
+  /** Independent aggregate answers retain their source metadata and window. */
+  getAggregateMetric: (
+    wholeWindow: boolean
+  ) => MetricViewData | undefined = () => getMetric(),
+  /** Newly checked chart series are independent of the metadata response. */
+  getChartDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
+    undefined
 ): MetricViewContext {
   // The only mutable per-metric state cell.
   const view = $state<MetricViewState>({
@@ -551,6 +558,12 @@ export function createMetricViewContext(
   }
 
   function writeMetricUrl(mode: HistoryMode): void {
+    // Retained controls still operate on the displayed metric. They must not
+    // attach its series, datapoint or view choices to a different requested ID.
+    if (
+      signalIdFromPath('metrics', readRoute().path) !== getMetric()?.metricRef
+    )
+      return
     const q = viewStateToMetricViewQuery()
     urlMetricViewSnapshot = q
     setMetricViewQuery(q, mode)
@@ -560,12 +573,27 @@ export function createMetricViewContext(
     (): MetricType => getMetric()?.metricType ?? 'Empty'
   )
 
+  function chartPoints(series: MetricSeriesViewData): DataPoint[] {
+    return getChartDatapoints(series.seriesRef) ?? series.datapoints
+  }
+
+  function chartSeries(series: MetricSeriesViewData): MetricSeriesViewData {
+    const points = getChartDatapoints(series.seriesRef)
+    // Native Arrow views are read-only getters. Shadow only the loaded points;
+    // leave attributes, numeric types and all other lazy columns untouched.
+    return points === undefined
+      ? series
+      : Object.create(series, {
+          datapoints: { value: points, enumerable: true },
+        })
+  }
+
   function* allDatapoints(
     m: MetricViewData | undefined
   ): IterableIterator<DataPoint> {
     if (!m) return
     for (const ts of m.timeseries) {
-      for (const dp of ts.datapoints) yield dp
+      for (const dp of chartPoints(ts)) yield dp
     }
   }
 
@@ -594,7 +622,7 @@ export function createMetricViewContext(
         const seriesKey = ts.seriesRef
         seriesKeys.add(seriesKey)
 
-        for (const datapoint of ts.datapoints) {
+        for (const datapoint of chartPoints(ts)) {
           datapointByID.set(datapoint.id, datapoint)
           seriesKeyByDatapointID.set(datapoint.id, seriesKey)
           datapointIDs.add(datapoint.id)
@@ -695,7 +723,7 @@ export function createMetricViewContext(
       /** Project visible series in store order without further thinning. */
       projectVisible: (visible: { has: (key: string) => boolean }) =>
         timeseriesToChartTimeseries(
-          source.filter(ts => visible.has(ts.seriesRef)),
+          source.filter(ts => visible.has(ts.seriesRef)).map(chartSeries),
           labelFor
         ).chartTimeseries,
     }
@@ -933,7 +961,9 @@ export function createMetricViewContext(
   /** Effective store window. Null endpoints mean there is no chart domain. */
   const chartDataTimeRange = $derived.by(
     (): { startMs: number; endMs: number } | undefined => {
-      const effective = getMetric()?.window.effective
+      const effective = isHistogramKind
+        ? getAggregateMetric(false)?.window.effective
+        : getMetric()?.window.effective
       if (
         !effective ||
         effective.startNs === null ||
@@ -1008,7 +1038,8 @@ export function createMetricViewContext(
       candidate => candidate.seriesRef === owner
     )
     return series
-      ? (rateBucketStartForSourceDatapoint(series, datapointID) ?? null)
+      ? (rateBucketStartForSourceDatapoint(chartSeries(series), datapointID) ??
+          null)
       : null
   })
 
@@ -1080,6 +1111,13 @@ export function createMetricViewContext(
     }
   )
 
+  // Independent detail replies do not change either aggregate projection.
+  const histogramHeatmap = $derived(aggregateToSlices(getAggregate()))
+  const histogramSummary = $derived.by(() => {
+    const summary = getAggregateSummary()
+    return summary ? aggregateToSlices([summary])[0]! : null
+  })
+
   const histogramAggregation = $derived.by((): HistogramAggregationResult => {
     const m = getMetric()
     const empty = {
@@ -1098,33 +1136,43 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
-    // Report incompatible bounds only when no merged buckets survived.
-    const mismatch = m.boundsMismatch
-    if (mismatch && m.timeseries.every(ts => ts.datapoints.length === 0)) {
-      const err = histogramAggregationErrorToBucketSeriesError({
+    // A refreshed detail response cannot relabel a retained chart's answer.
+    function boundsError(
+      source: MetricViewData | undefined,
+      hasBuckets: boolean
+    ) {
+      const mismatch = source?.boundsMismatch
+      if (
+        !mismatch ||
+        hasBuckets ||
+        source.timeseries.some(ts => ts.datapoints.length > 0)
+      )
+        return null
+      return histogramAggregationErrorToBucketSeriesError({
         kind: 'boundsMismatch',
         message:
           `Histogram bounds disagree across datapoints in this window ` +
           `(${mismatch.seriesBuckets} series buckets, ` +
           `${mismatch.aggregateBuckets} aggregate buckets could not be merged)`,
       })
-      return { ...empty, error: err, aggregatedError: err }
     }
 
     // The store has already bucketed, merged and resolved temporality.
-    const perAttribute = seriesBucketsToSlices(m.timeseries)
+    const perAttribute = seriesBucketsToSlices(m.timeseries.map(chartSeries))
 
     // Null means the aggregate is loading or no series is selected.
-    const heatmapResult = aggregateToSlices(getAggregate())
-    const summary = getAggregateSummary()
-    const summaryResult = summary ? aggregateToSlices([summary])[0]! : null
+    const heatmapResult = histogramHeatmap
+    const summaryResult = histogramSummary
 
     return {
       perAttribute,
       heatmap: heatmapResult,
       summary: summaryResult,
-      error: null,
-      aggregatedError: null,
+      error: boundsError(getAggregateMetric(false), heatmapResult.length > 0),
+      aggregatedError: boundsError(
+        getAggregateMetric(true),
+        summaryResult !== null
+      ),
     }
   })
 
@@ -1159,14 +1207,15 @@ export function createMetricViewContext(
 
   const aggregatedDatapoint = $derived.by(
     (): HistogramChartDataPoint | undefined => {
-      const m = getMetric()
+      const m = getAggregateMetric(true)
       const summary = histogramAggregation.summary
-      if (!m || !summary || temporalityCode === null) return undefined
+      const code = m?.aggregationTemporalityCode ?? null
+      if (!m || !summary || code === null) return undefined
       return histogramSliceToChartDatapoint(
         summary,
         `${m.metricRef}:aggregated`,
-        temporality,
-        temporalityCode
+        m.aggregationTemporality ?? '',
+        code
       )
     }
   )
@@ -1211,7 +1260,7 @@ export function createMetricViewContext(
     if (startNs === null) return null
     const series = heatmapBucketSeries
     if (!series || series.length === 0) return null
-    const windowEndNs = getMetric()?.window.effective.endNs
+    const windowEndNs = getAggregateMetric(false)?.window.effective.endNs
     if (windowEndNs === null || windowEndNs === undefined) return null
     return columnEndNs(
       series.map(s => s.timestamp),
@@ -1712,7 +1761,8 @@ export function createMetricViewContext(
     const m = getMetric()
     if (!m) return
     const ts = m.timeseries.find(t => t.seriesRef === seriesKey)
-    if (!ts?.datapoints.some(datapoint => datapoint.id === datapointID)) return
+    if (!ts || !chartPoints(ts).some(datapoint => datapoint.id === datapointID))
+      return
 
     view.selectedSeriesKey = seriesKey
     view.selectedRateBucket = null
@@ -1821,7 +1871,7 @@ export function createMetricViewContext(
       return new Set<string>()
     const series = getMetric()?.timeseries.find(ts => ts.seriesRef === key)
     if (!series) return new Set<string>()
-    const points = getSeriesDatapoints(key) ?? series.datapoints
+    const points = getSeriesDatapoints(key) ?? chartPoints(series)
     const rateBucket = view.selectedRateBucket
     if (rateBucket) {
       return new Set(
