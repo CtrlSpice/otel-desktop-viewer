@@ -20,7 +20,6 @@
     discoverySignalHref,
     serviceIdentity,
   } from '@/services/discovery-types'
-  import { queryText } from './home-search'
   import {
     attributeOwners,
     discoverySignals,
@@ -154,15 +153,11 @@
           scrollTop: previous?.scrollTop ?? 0,
           loaded: previous?.loaded ?? false,
           attribute: previous ? previous.attribute : selection.attribute,
+          // Native item links keep the displayed range and clear Home search.
           query:
             previous?.query ??
-            parseRoute(
-              discoverySignalHref(
-                signal,
-                selection.options,
-                queryText(selection.options.queries?.[signal] ?? null)
-              )
-            ).query,
+            parseRoute(discoverySignalHref(signal, selection.options, ''))
+              .query,
         }
       })
       for (const group of groups) {
@@ -179,11 +174,7 @@
             group.cards = cards
             group.attribute = selection.attribute
             group.query = parseRoute(
-              discoverySignalHref(
-                group.signal,
-                selection.options,
-                queryText(selection.options.queries?.[group.signal] ?? null)
-              )
+              discoverySignalHref(group.signal, selection.options, '')
             ).query
             group.error = ''
             group.loaded = true
