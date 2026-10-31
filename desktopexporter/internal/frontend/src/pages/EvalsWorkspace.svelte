@@ -51,6 +51,7 @@
   import { exampleExperiments } from '@/components/evals/examples'
   import { loadEvalExperimentSource } from '@/services/eval-experiment-source'
   import type {
+    EvalExperimentSearch,
     EvalExperimentSearchPage,
     EvalStoredExperimentSummary,
   } from '@/services/eval-experiment-types'
@@ -64,6 +65,7 @@
   import type { EvalExperiment, EvalView } from '@/components/evals/model'
   import { onEvalExperimentsChanged } from '@/services/import-service'
   import { evalQuery } from '@/components/evals/eval-query'
+  import type { EvalRequestStatus } from '@/components/evals/eval-request-state'
 
   let {
     importFailure = null,
@@ -93,6 +95,14 @@
   let experimentListError = $state('')
   let experimentListRevision = $state(0)
   let experimentListRequestVersion = 0
+  let moreExperimentsController: AbortController | undefined
+  let displayedListRequest:
+    { query: EvalExperimentSearch; limit: number } | undefined
+  function cancelPagination() {
+    moreExperimentsController?.abort()
+    moreExperimentsController = undefined
+    experimentListLoadingMore = false
+  }
   let experimentIndexing = $state<EvalExperimentSearchPage['indexing']>({
     remaining: 0,
     unsupported: 0,
@@ -228,10 +238,13 @@
   const result = $derived(
     experiment?.results.find(item => item.id === displayedSelection.result)
   )
-  let resolvedRow = $state<EvalOutlineRow>()
-  let traceViews = $state<TraceData[]>([])
-  let toolLogs = $state<LogData[]>([])
+  let resolvedRow = $state.raw<EvalOutlineRow>()
+  let traceViews = $state.raw<TraceData[]>([])
+  let toolLogs = $state.raw<LogData[]>([])
   let telemetryLoading = $state(false)
+  let telemetryStatus = $state.raw<ReadonlyMap<string, EvalRequestStatus>>(
+    new Map()
+  )
   const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
   const detailExperiment = $derived(
     experiment
@@ -291,6 +304,7 @@
     const sort = experimentSort
     const direction = experimentSortDirection
     void experimentListRevision
+    cancelPagination()
     if (!enabled || request === undefined) {
       experimentListLoading = false
       return
@@ -298,29 +312,27 @@
     const requestVersion = ++experimentListRequestVersion
     const controller = new AbortController()
     experimentListLoading = true
-    experimentListLoadingMore = false
     experimentListError = ''
-    experimentListHasMore = false
+    const search: EvalExperimentSearch = {
+      criteria: request?.predicate,
+      outcomes,
+      sort,
+      direction,
+      limit: Math.min(100, cap),
+      offset: 0,
+    }
     void (async () => {
       try {
         let page: EvalExperimentSearchPage
         do {
-          page = await evalAPI.searchEvalExperiments(
-            {
-              criteria: request?.predicate,
-              outcomes,
-              sort,
-              direction,
-              limit: Math.min(100, cap),
-              offset: 0,
-            },
-            controller.signal
-          )
+          page = await evalAPI.searchEvalExperiments(search, controller.signal)
           if (
             controller.signal.aborted ||
             requestVersion !== experimentListRequestVersion
           )
             return
+          cancelPagination()
+          displayedListRequest = { query: search, limit: cap }
           storedExperiments = page.experiments
           storedFacets = page.facets
           experimentListHasMore = page.hasMore && page.experiments.length < cap
@@ -340,7 +352,10 @@
           experimentListLoading = false
       }
     })()
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      moreExperimentsController?.abort()
+    }
   })
 
   $effect(() => {
@@ -399,6 +414,7 @@
     traceViews = []
     toolLogs = []
     telemetryLoading = false
+    telemetryStatus = new Map()
   })
 
   // Store the first available experiment identity so reload/share preserves selection.
@@ -421,12 +437,12 @@
     update({ experiment: id, result: null, row: null })
   }
   function showDetail(result: string | null) {
-    if (!experiment || selectionPending) return
+    if (!experiment) return
     detailPanel.reveal()
     update({ experiment: experiment.id, result: result, row: null })
   }
   function selectRow(row: EvalOutlineRow) {
-    if (!experiment || selectionPending) return
+    if (!experiment) return
     detailPanel.reveal()
     update({
       experiment: experiment.id,
@@ -443,21 +459,33 @@
     if (item) selectExperiment(item.id)
   }
   async function loadMoreExperiments() {
-    if (!databaseMode || !experimentListHasMore || experimentListLoadingMore)
+    const source = displayedListRequest
+    if (
+      !databaseMode ||
+      !source ||
+      !experimentListHasMore ||
+      experimentListLoadingMore
+    )
       return
     const requestVersion = experimentListRequestVersion
+    const controller = new AbortController()
+    moreExperimentsController = controller
     experimentListLoadingMore = true
     experimentListError = ''
     try {
-      const page = await evalAPI.searchEvalExperiments({
-        criteria: searchRequest?.predicate,
-        outcomes: requestedOutcomes(query.outcomes),
-        sort: experimentSort,
-        direction: experimentSortDirection,
-        limit: Math.min(100, resultLimit - storedExperiments.length),
-        offset: storedExperiments.length,
-      })
-      if (requestVersion !== experimentListRequestVersion) return
+      const page = await evalAPI.searchEvalExperiments(
+        {
+          ...source.query,
+          limit: Math.min(100, source.limit - storedExperiments.length),
+          offset: storedExperiments.length,
+        },
+        controller.signal
+      )
+      if (
+        controller.signal.aborted ||
+        requestVersion !== experimentListRequestVersion
+      )
+        return
       const seen = new Set(storedExperiments.map(item => item.id))
       storedExperiments = [
         ...storedExperiments,
@@ -465,11 +493,12 @@
       ]
       storedFacets = page.facets
       experimentListHasMore =
-        page.hasMore && storedExperiments.length < resultLimit
+        page.hasMore && storedExperiments.length < source.limit
       experimentIndexing = page.indexing
     } catch (error) {
       if (
         requestVersion === experimentListRequestVersion &&
+        !controller.signal.aborted &&
         !isAbortError(error)
       )
         experimentListError =
@@ -477,15 +506,16 @@
             ? error.message
             : 'Could not load more experiments.'
     } finally {
-      if (requestVersion === experimentListRequestVersion)
+      if (moreExperimentsController === controller) {
+        moreExperimentsController = undefined
         experimentListLoadingMore = false
+      }
     }
   }
 </script>
 
 <PageLayout
   mainTitle="Evals"
-  mainHeaderInert={selectionPending}
   mainSurface="base"
   items={visibleExperiments}
   selectedID={selectedExperimentID ?? experiment?.id ?? null}
@@ -586,7 +616,6 @@
       <div
         class="flex min-h-0 flex-1 flex-col"
         aria-busy={databaseMode && storedExperimentLoading}
-        inert={selectionPending}
       >
         <EvalResults
           bind:viewKey={evalView}
@@ -598,10 +627,11 @@
           selectedRowID={detailRowID}
           onSelect={selectRow}
           onResolveSelection={row => (resolvedRow = row)}
-          onTraceViews={(traces, loading, logs) => {
+          onTraceViews={(traces, loading, logs, status) => {
             traceViews = traces
             toolLogs = logs
             telemetryLoading = loading
+            telemetryStatus = status
           }}
         >
           {#snippet loadingStatus()}
@@ -660,7 +690,6 @@
       <div
         class="flex min-h-0 flex-1 flex-col"
         aria-busy={databaseMode && storedExperimentLoading}
-        inert={selectionPending}
       >
         <div
           class="min-h-0 flex-1 flex-col"
@@ -674,6 +703,7 @@
               mode={evalView}
               {telemetryNodes}
               {telemetryLoading}
+              {telemetryStatus}
             />{/if}
         </div>
         <div

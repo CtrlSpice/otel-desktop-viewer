@@ -3,8 +3,10 @@
   import type { LogData, SpanNode } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import type { EvalTelemetrySummary } from './eval-telemetry-summaries'
+  import type { EvalRequestPart } from './eval-request-state'
 
   let {
     entries,
@@ -20,18 +22,26 @@
     evidenceLogs?: LogData[]
   } = $props()
   let traceCount = $state<number>()
-  let logRefs = $state<{ request: AbortSignal; refs: string[] }>()
-  let logRequest = $state.raw<AbortSignal>()
   const selection = $derived(
     JSON.stringify(entries.map(entry => entry.reference))
   )
   let logCount = $state<number>()
+  let logParts = $state.raw<Map<string, EvalRequestPart<string[]>>>()
+  let logRequestKey = $state(0)
+  const logsPending = $derived(
+    [...(logParts?.values() ?? [])].some(part => part.status === 'pending')
+  )
+  const logsFailed = $derived(
+    [...(logParts?.values() ?? [])].some(part => part.status === 'failed')
+  )
   $effect(() => {
-    if (logRefs && logRefs.request === logRequest && evidenceLogs)
-      logCount = new Set([
-        ...logRefs.refs,
-        ...evidenceLogs.map(log => log.logRef),
-      ]).size
+    if (!evidenceLogs || !logParts) return
+    const refs = new Set(evidenceLogs.map(log => log.logRef))
+    for (const part of logParts.values()) {
+      if (part.status !== 'ready') return
+      for (const ref of part.value) refs.add(ref)
+    }
+    logCount = refs.size
   })
   const counts = $derived(
     [
@@ -45,12 +55,20 @@
       .filter(value => value !== undefined)
       .join(' | ')
   )
-  let logController: AbortController | undefined
-  let logScope:
-    { selection: string; full: boolean; nodes: SpanNode[] } | undefined
-  onDestroy(() => logController?.abort())
+  const requests = new Map<
+    string,
+    {
+      controller: AbortController
+      selection: string
+      full: boolean
+      nodes: SpanNode[]
+    }
+  >()
+  onDestroy(() => {
+    for (const { controller } of requests.values()) controller.abort()
+  })
   $effect(() => {
-    const selected = selection
+    void selection
     const references = untrack(() =>
       entries.map(entry => ({ ...entry.reference }))
     )
@@ -58,51 +76,65 @@
     const ids = [
       ...new Set(references.map(reference => reference.traceID.toLowerCase())),
     ]
-    const selectedNodes = [...(nodes?.values() ?? [])].filter(node =>
-      ids.includes(node.spanData.traceID.toLowerCase())
-    )
-    if (
-      logScope?.selection === selected &&
-      logScope.full === full &&
-      logScope.nodes.length === selectedNodes.length &&
-      logScope.nodes.every((node, index) => node === selectedNodes[index])
-    )
-      return
-    logScope = { selection: selected, full, nodes: selectedNodes }
-    logController?.abort()
-    const controller = new AbortController()
-    logController = controller
-    logRequest = controller.signal
-    void (async () => {
-      const received = new Set<string>()
-      try {
-        const groups = await Promise.all(
-          ids.map(async traceID => {
-            const logs = await telemetryAPI.getTraceLogSummaries(
-              traceID,
-              controller.signal
-            )
-            const refs = references.filter(
-              reference => reference.traceID.toLowerCase() === traceID
-            )
-            return logs.filter(
-              log =>
-                full ||
-                refs.some(
-                  reference =>
-                    !reference.spanID ||
-                    reference.spanID.toLowerCase() === log.spanID?.toLowerCase()
-                )
-            )
-          })
-        )
+    const selectedNodes = [...(nodes?.values() ?? [])]
+    const parts = new Map(untrack(() => logParts))
+    for (const [id, request] of requests) {
+      if (ids.includes(id)) continue
+      request.controller.abort()
+      requests.delete(id)
+      parts.delete(id)
+    }
+    for (const traceID of ids) {
+      const refs = references.filter(
+        reference => reference.traceID.toLowerCase() === traceID
+      )
+      const selected = JSON.stringify(refs)
+      const traceNodes = selectedNodes.filter(
+        node => node.spanData.traceID.toLowerCase() === traceID
+      )
+      const previous = requests.get(traceID)
+      if (
+        previous?.selection === selected &&
+        previous.full === full &&
+        previous.nodes.length === traceNodes.length &&
+        previous.nodes.every((node, index) => node === traceNodes[index])
+      )
+        continue
+      previous?.controller.abort()
+      const controller = new AbortController()
+      requests.set(traceID, {
+        controller,
+        selection: selected,
+        full,
+        nodes: traceNodes,
+      })
+      parts.set(traceID, { status: 'pending' })
+      logRequestKey = untrack(() => logRequestKey) + 1
+      void telemetryAPI.getTraceLogSummaries(traceID, controller.signal).then(
+        logs =>
+          publish({
+            status: 'ready',
+            value: logs
+              .filter(
+                log =>
+                  full ||
+                  refs.some(
+                    reference =>
+                      !reference.spanID ||
+                      reference.spanID.toLowerCase() ===
+                        log.spanID?.toLowerCase()
+                  )
+              )
+              .map(log => log.logRef),
+          }),
+        () => publish({ status: 'failed' })
+      )
+      function publish(part: EvalRequestPart<string[]>) {
         if (controller.signal.aborted) return
-        for (const log of groups.flat()) received.add(log.logRef)
-        logRefs = { request: controller.signal, refs: [...received] }
-      } catch {
-        // A failed lookup is unavailable, not a received count of zero.
+        logParts = new Map(untrack(() => logParts)).set(traceID, part)
       }
-    })()
+    }
+    logParts = parts
   })
 </script>
 
@@ -117,6 +149,15 @@
     {/if}
   {/snippet}
   {#if entries.length}
+    <LoadingStatus
+      pending={logsPending}
+      requestKey={logRequestKey}
+      label="Loading log count…"
+      class="block px-3 py-2 text-sm text-subtle"
+    />
+    {#if logsFailed}<p class="px-3 py-2 text-sm text-subtle" role="status">
+        Log count could not be loaded.
+      </p>{/if}
     <EvalTelemetrySummaries
       {entries}
       {nodes}

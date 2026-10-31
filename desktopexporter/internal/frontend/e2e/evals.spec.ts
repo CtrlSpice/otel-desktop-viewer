@@ -219,6 +219,11 @@ test('Evals submits the shared grammar, validates errors, restores URLs and open
 test('case telemetry summarizes every repetition and links to its exact span', async ({
   page,
 }) => {
+  const identityWarnings: string[] = []
+  page.on('console', message => {
+    if (message.text().includes('state_proxy_equality_mismatch'))
+      identityWarnings.push(message.text())
+  })
   await enableEvals(page)
   await openExamples(page, 'experiment=direct&row=case%2Frequest-latency')
   const detail = page.getByRole('region', {
@@ -247,6 +252,7 @@ test('case telemetry summarizes every repetition and links to its exact span', a
   }
   await links.first().focus()
   await expect(links.first()).toBeFocused()
+  expect(identityWarnings).toEqual([])
   await openExamples(page, 'experiment=direct&result=request-latency')
   await expect(
     detail.locator('summary').filter({ hasText: /^Question/ })
