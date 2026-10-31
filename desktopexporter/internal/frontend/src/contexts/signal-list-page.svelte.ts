@@ -70,6 +70,8 @@ export type SignalListPage<TItem, TSortColumn extends string> = {
   handleRefresh(): void
   handleSearchResults(event: SearchResultEvent): void
   runListFetch(): Promise<void>
+  /** Publish a page of the displayed reading without superseding its replacement. */
+  publishItems(next: TItem[]): void
 }
 
 const POLL_INTERVAL_MS = 3000
@@ -315,5 +317,8 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
     handleRefresh,
     handleSearchResults,
     runListFetch,
+    publishItems(next) {
+      items = next
+    },
   }
 }
