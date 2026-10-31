@@ -4,6 +4,7 @@ import type {
   ServiceSummary,
   ServiceConnection,
   ServiceConnectionSpan,
+  DiscoveryOptions,
 } from '../src/services/discovery-types'
 
 const service = (serviceName: string): ServiceSummary => ({
@@ -34,10 +35,14 @@ type DiscoveryReply =
   | { result: { rows: unknown[][]; truncated: boolean } }
   | { error: { code: number; message: string } }
 
-async function holdDiscovery(page: Page) {
+async function holdDiscovery(
+  page: Page,
+  kinds: DiscoveryOptions['kind'][] = ['services', 'connections']
+) {
   const requests: Array<{
     kind: string
     owner?: string
+    options: DiscoveryOptions
     reply: { resolve: (value: DiscoveryReply) => void }
   }> = []
   await page.route('**/api/features', route =>
@@ -45,15 +50,13 @@ async function holdDiscovery(page: Page) {
   )
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
-    if (
-      method === 'discoverTelemetry' &&
-      ['services', 'connections'].includes(params.options.kind)
-    ) {
+    if (method === 'discoverTelemetry' && kinds.includes(params.options.kind)) {
       let resolve!: (value: DiscoveryReply) => void
       const pending = new Promise<DiscoveryReply>(done => (resolve = done))
       requests.push({
         kind: params.options.kind,
         owner: params.options.serviceIdentity,
+        options: params.options,
         reply: { resolve },
       })
       await route.fulfill({
@@ -82,6 +85,96 @@ async function holdDiscovery(page: Page) {
   })
   return requests
 }
+
+test('service-map pagination keeps the displayed query and time range after failed replacements', async ({
+  page,
+}) => {
+  const requests = await holdDiscovery(page, ['services'])
+  const nodes = page.locator('.service-map__node')
+  const identities = () =>
+    nodes.evaluateAll(elements =>
+      elements
+        .map(element => element.getAttribute('data-service-identity'))
+        .sort()
+    )
+  const reply = (index: number, name: string, truncated = true) =>
+    requests[index].reply.resolve({
+      result: { rows: [[service(name)]], truncated },
+    })
+  const more = page.getByRole('button', { name: 'More services', exact: true })
+  try {
+    await page.goto('/?start=1000&end=2000')
+    await expect.poll(() => requests.length).toBe(1)
+    reply(0, 'A-first')
+    await expect.poll(identities).toEqual(['A-first'])
+    await more.click()
+    await expect.poll(() => requests.length).toBe(2)
+    reply(1, 'A-second')
+    await expect.poll(identities).toEqual(['A-first', 'A-second'])
+    const canvas = await page.locator('.service-map__canvas').elementHandle()
+    const initial = requests[0].options
+    const search = page.getByRole('searchbox', { name: 'Search telemetry' })
+    await search.fill('search("B")')
+    await search.press('Enter')
+    await expect.poll(() => requests.length).toBe(3)
+    expect(JSON.stringify(requests[2].options.queries)).toContain('B')
+    await expect.poll(identities).toEqual(['A-first', 'A-second'])
+    requests[2].reply.resolve({
+      error: { code: -32603, message: 'Search unavailable' },
+    })
+    await expect(page.getByRole('alert')).toContainText('Search unavailable')
+
+    await page.evaluate(() => {
+      const next = new URL(window.location.href)
+      next.searchParams.set('start', '3000')
+      next.searchParams.set('end', '4000')
+      window.history.pushState(null, '', next)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await expect.poll(() => requests.length).toBe(4)
+    expect(requests[3].options).toMatchObject({
+      startTime: '3000000000',
+      endTime: '4000000000',
+      offset: 0,
+    })
+    requests[3].reply.resolve({
+      error: { code: -32603, message: 'Time range unavailable' },
+    })
+    await expect(page.getByRole('alert')).toContainText(
+      'Time range unavailable'
+    )
+    await more.click()
+    await expect.poll(() => requests.length).toBe(5)
+    expect(requests[4].options).toEqual({ ...initial, offset: 200 })
+    reply(4, 'A-third')
+    await expect.poll(identities).toEqual(['A-first', 'A-second', 'A-third'])
+    expect(
+      await page
+        .locator('.service-map__canvas')
+        .evaluate((element, previous) => element === previous, canvas)
+    ).toBe(true)
+
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => requests.length).toBe(6)
+    expect(requests[5].options).toMatchObject({
+      startTime: '3000000000',
+      endTime: '4000000000',
+      offset: 0,
+    })
+    expect(JSON.stringify(requests[5].options.queries)).toContain('B')
+    reply(5, 'B-first')
+    await expect.poll(identities).toEqual(['B-first'])
+    await more.click()
+    await expect.poll(() => requests.length).toBe(7)
+    expect(requests[6].options).toEqual({ ...requests[5].options, offset: 100 })
+    reply(6, 'B-second', false)
+    await expect.poll(identities).toEqual(['B-first', 'B-second'])
+    await expect(more).toHaveCount(0)
+  } finally {
+    for (const request of requests)
+      request.reply.resolve({ result: { rows: [], truncated: false } })
+  }
+})
 
 test('initial service-map failure leaves counts unknown; successful empty discovery publishes and retains zero', async ({
   page,
