@@ -37,6 +37,7 @@
     selection,
     onSelect,
     services,
+    servicesLoaded,
     totalServices,
     loadingServices,
     servicesRequestKey,
@@ -50,6 +51,7 @@
     selection: MapSelection | null
     onSelect: (selection: MapSelection) => void
     services: ServiceSummary[]
+    servicesLoaded: boolean
     totalServices?: number
     loadingServices: boolean
     servicesRequestKey?: AbortSignal
@@ -98,6 +100,27 @@
     inspected ? pages[serviceIdentity(inspected)] : undefined
   )
   const inspectedID = $derived(inspected ? serviceIdentity(inspected) : '')
+  const serviceCount = $derived(
+    servicesLoaded || nodes.length > 0 ? nodes.length : undefined
+  )
+  let connectionsKnown = $state(false)
+  const connectionCount = $derived(
+    connectionsKnown || connections.length > 0 ? connections.length : undefined
+  )
+  $effect(() => {
+    const complete =
+      servicesLoaded &&
+      !loadingServices &&
+      !busy &&
+      !Object.keys(failures).length &&
+      (services.length > 0 || !moreServices) &&
+      [...services, ...(inspected ? [inspected] : [])].every(service => {
+        const page = pages[serviceIdentity(service)]
+        return page?.revision === graphRevision && !page.more
+      })
+    // Retain a received count through replacement; initial empty arrays prove nothing.
+    if (connections.length > 0 || complete) connectionsKnown = true
+  })
 
   function measureCard(element: HTMLDivElement, identity: string) {
     // Card text and colour controls keep their native interactions. Map dragging
@@ -272,10 +295,10 @@
   ariaLabel="Service map"
   pill
 >
-  {#snippet metaLeft()}<span class="text-sm text-subtle"
-      >{nodes.length} services · {connections.length}
-      {connections.length === 1 ? 'connection' : 'connections'}</span
-    >{/snippet}
+  {#snippet metaLeft()}<span class="text-sm text-subtle">
+      {#if serviceCount !== undefined}{serviceCount} services{/if}{#if serviceCount !== undefined && connectionCount !== undefined}{' · '}{/if}{#if connectionCount !== undefined}{connectionCount}
+        {connectionCount === 1 ? 'connection' : 'connections'}{/if}
+    </span>{/snippet}
   {#snippet metaRight()}
     {#if inspected}<ServiceLabelsPopover service={inspected} />{/if}
     {#if inspectedPage?.more}<button
@@ -456,7 +479,7 @@
         </Svg>
       </Chart>
     </div>
-  {:else if !loadingServices && !busy && !servicesError && !Object.keys(failures).length}<p
+  {:else if servicesLoaded && !loadingServices && !busy && !servicesError && !Object.keys(failures).length}<p
       class="p-3 text-subtle"
     >
       No services match this search and time range.

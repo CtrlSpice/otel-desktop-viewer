@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import type {
   ServiceSummary,
   ServiceConnection,
@@ -28,6 +28,186 @@ const service = (serviceName: string): ServiceSummary => ({
   dataPointCount: 0,
   exemplarCount: 0,
   lastSeen: null,
+})
+
+type DiscoveryReply =
+  | { result: { rows: unknown[][]; truncated: boolean } }
+  | { error: { code: number; message: string } }
+
+async function holdDiscovery(page: Page) {
+  const requests: Array<{
+    kind: string
+    owner?: string
+    reply: { resolve: (value: DiscoveryReply) => void }
+  }> = []
+  await page.route('**/api/features', route =>
+    route.fulfill({ json: { evals: { enabled: false } } })
+  )
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (
+      method === 'discoverTelemetry' &&
+      ['services', 'connections'].includes(params.options.kind)
+    ) {
+      let resolve!: (value: DiscoveryReply) => void
+      const pending = new Promise<DiscoveryReply>(done => (resolve = done))
+      requests.push({
+        kind: params.options.kind,
+        owner: params.options.serviceIdentity,
+        reply: { resolve },
+      })
+      await route.fulfill({
+        json: { jsonrpc: '2.0', id, ...(await pending) },
+      })
+      return
+    }
+    const result =
+      method === 'getStats'
+        ? {
+            traces: {
+              traceCount: 0,
+              spanCount: 0,
+              serviceCount: 0,
+              errorCount: 0,
+              lastReceived: null,
+            },
+            logs: { logCount: 0, errorCount: 0, lastReceived: null },
+            metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
+            rejections: [],
+          }
+        : method === 'discoverTelemetry'
+          ? { rows: [], truncated: false }
+          : []
+    await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+  })
+  return requests
+}
+
+test('initial service-map failure leaves counts unknown; successful empty discovery publishes and retains zero', async ({
+  page,
+}) => {
+  const requests = await holdDiscovery(page)
+  try {
+    await page.goto('/?time=all')
+    const header = page.getByRole('region', {
+      name: 'Service map',
+      exact: true,
+    })
+    await expect(header).toBeVisible()
+    await expect.poll(() => requests.length).toBe(1)
+    await expect(header).not.toContainText(/\d+ (services|connections)/)
+    await expect(
+      page.getByText('Loading service map…', { exact: true })
+    ).toBeVisible()
+    requests[0].reply.resolve({
+      error: { code: -32603, message: 'Discovery unavailable' },
+    })
+    await expect(page.getByRole('alert')).toContainText('Discovery unavailable')
+    await expect(header).not.toContainText(/\d+ (services|connections)/)
+    await expect(
+      page.getByText('No services match this search and time range.')
+    ).toHaveCount(0)
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => requests.length).toBe(2)
+    requests[1].reply.resolve({ result: { rows: [], truncated: false } })
+    await expect(header).toContainText('0 services · 0 connections')
+    await expect(
+      page.getByText('No services match this search and time range.')
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => requests.length).toBe(3)
+    await expect(header).toContainText('0 services · 0 connections')
+    requests[2].reply.resolve({
+      error: { code: -32603, message: 'Refresh unavailable' },
+    })
+    await expect(page.getByRole('alert')).toContainText('Refresh unavailable')
+    await expect(header).toContainText('0 services · 0 connections')
+  } finally {
+    for (const request of requests)
+      request.reply.resolve({ result: { rows: [], truncated: false } })
+  }
+})
+
+test('service-map connection counts publish independently and survive failed refresh with the same canvas', async ({
+  page,
+}) => {
+  const requests = await holdDiscovery(page)
+  const services = ['api', 'worker', 'store'].map(service)
+  try {
+    await page.goto('/?time=all')
+    await expect.poll(() => requests.length).toBe(1)
+    requests[0].reply.resolve({
+      result: { rows: services.map(service => [service]), truncated: false },
+    })
+    await expect
+      .poll(
+        () => requests.filter(request => request.kind === 'connections').length
+      )
+      .toBe(3)
+    const header = page.getByRole('region', {
+      name: 'Service map',
+      exact: true,
+    })
+    const map = page.locator('.service-map')
+    await expect(header).toContainText('3 services')
+    await expect(header).not.toContainText(/\d+ connections?/)
+    requests
+      .find(request => request.owner === 'api')!
+      .reply.resolve({ result: { rows: [], truncated: false } })
+    requests
+      .find(request => request.owner === 'worker')!
+      .reply.resolve({ error: { code: -32603, message: 'Worker unavailable' } })
+    await expect(map.getByRole('alert')).toContainText('Worker unavailable')
+    await expect(header).not.toContainText(/\d+ connections?/)
+    await map.getByRole('button', { name: 'Retry', exact: true }).click()
+    await expect
+      .poll(() => requests.filter(request => request.owner === 'worker').length)
+      .toBe(2)
+    requests.at(-1)!.reply.resolve({
+      result: {
+        rows: [
+          [
+            {
+              source: services[0],
+              target: services[1],
+              spanCount: 2,
+              traceCount: 1,
+              errorSpanCount: 0,
+            },
+          ],
+        ],
+        truncated: false,
+      },
+    })
+    await expect(header).toContainText('3 services · 1 connection')
+    await expect(map).toHaveAttribute('aria-busy', 'true')
+    requests
+      .find(request => request.owner === 'store')!
+      .reply.resolve({ error: { code: -32603, message: 'Store unavailable' } })
+    await expect(map.getByRole('alert')).toContainText('Store unavailable')
+    const canvas = await map.locator('.service-map__canvas').elementHandle()
+    const before = requests.length
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => requests.length).toBe(before + 4)
+    await expect(header).toContainText('3 services · 1 connection')
+    await expect(
+      page.getByRole('button', { name: 'Zoom in service map' })
+    ).toBeEnabled()
+    for (const request of requests.slice(before))
+      request.reply.resolve({
+        error: { code: -32603, message: 'Refresh unavailable' },
+      })
+    await expect(map.getByRole('alert')).toHaveCount(4)
+    await expect(header).toContainText('3 services · 1 connection')
+    expect(
+      await map
+        .locator('.service-map__canvas')
+        .evaluate((element, previous) => element === previous, canvas)
+    ).toBe(true)
+  } finally {
+    for (const request of requests)
+      request.reply.resolve({ result: { rows: [], truncated: false } })
+  }
 })
 
 test('service cards are unique graph nodes with standalone services, stable inspection and exact connection evidence', async ({
