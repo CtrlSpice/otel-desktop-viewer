@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import { untrack } from 'svelte'
+  import type { EvalRequestPart, EvalRequestStatus } from './eval-request-state'
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -82,6 +86,7 @@
     viewKey = $bindable('results'),
     headerActions,
     beforeTable,
+    loadingStatus,
     disclosure = $bindable({}),
     sorts = $bindable({}),
   }: {
@@ -94,16 +99,42 @@
     onTraceViews?: (
       traces: TraceData[],
       loading: boolean,
-      logs: LogData[]
+      logs: LogData[],
+      status: ReadonlyMap<string, EvalRequestStatus>
     ) => void
     viewKey?: EvalView
     headerActions?: Snippet
     beforeTable?: Snippet
+    loadingStatus?: Snippet
     disclosure?: Record<string, Record<string, boolean>>
     sorts?: Record<string, ResultSort | undefined>
   } = $props()
-  let traceViews = $state<TraceData[]>([])
-  let correlationLogs = $state<LogData[]>([])
+  // Retained telemetry belongs to its experiment, not to the mounted pane.
+  // In particular, another experiment's bounds must not become this one's axis.
+  let displayedTraces = $state.raw<{
+    experimentID: string
+    traces: TraceData[]
+  }>()
+  const traceViews = $derived(
+    displayedTraces?.experimentID === sourceExperiment.id
+      ? displayedTraces.traces
+      : []
+  )
+  let displayedLogs = $state.raw<{
+    experimentID: string
+    owners: Map<string, LogData[]>
+  }>()
+  let displayedTimeline = $state.raw<{
+    experimentID: string
+    timeline: Map<string, TraceLogSummary[]>
+  }>()
+  const correlationLogs = $derived(
+    displayedLogs?.experimentID === sourceExperiment.id
+      ? [...displayedLogs.owners]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .flatMap(([, logs]) => logs)
+      : []
+  )
   const traceIndex = $derived(indexEvalTraces(traceViews))
   const experiment = $derived(
     projectEvalTraceEvidence(sourceExperiment, traceIndex, correlationLogs)
@@ -195,79 +226,234 @@
       ])
     )
   )
-  let timingsLoading = $state(false)
-  let timingsFailed = $state(false)
-  let timelineLogs = $state(new Map<string, TraceLogSummary[]>())
-  $effect(() => {
-    const nodes = traceIndex.nodes
-    const traces = traceViews
-    const controller = new AbortController()
-    timelineLogs = new Map()
-    correlationLogs = []
-    void (async () => {
-      const summaries = new Map<string, TraceLogSummary[]>()
-      for (let offset = 0; offset < traces.length; offset += 4) {
-        const batch = traces.slice(offset, offset + 4)
-        const results = await Promise.allSettled(
-          batch.map(trace =>
-            telemetryAPI.getTraceLogSummaries(trace.traceID, controller.signal)
-          )
-        )
-        if (controller.signal.aborted) return
-        results.forEach((result, index) => {
-          if (result.status === 'fulfilled')
-            summaries.set(batch[index]!.traceID.toLowerCase(), result.value)
-        })
-        timelineLogs = new Map(summaries)
+  let traceStatus = $state.raw(new Map<string, EvalRequestStatus>())
+  const timingsLoading = $derived(
+    [...traceStatus.values()].some(status => status === 'pending')
+  )
+  let timingRequest = $state.raw<AbortSignal>()
+  const timingNotice = createLoadingNotice(
+    () => timingsLoading,
+    () => timingRequest
+  )
+  const timingsFailed = $derived(
+    [...traceStatus.values()].some(status => status === 'failed')
+  )
+  const timelineLogs = $derived(
+    displayedTimeline?.experimentID === sourceExperiment.id
+      ? displayedTimeline.timeline
+      : new Map<string, TraceLogSummary[]>()
+  )
+  let activityProgress = $state.raw(
+    new Map<string, { pending: boolean; failed: boolean }>()
+  )
+  const activityLoading = $derived(
+    [...activityProgress.values()].some(part => part.pending)
+  )
+  const activityFailed = $derived(
+    [...activityProgress.values()].some(part => part.failed)
+  )
+  let activityRequest = $state.raw<AbortSignal>()
+  function loadTraceActivity(
+    traceID: string,
+    source: EvalExperiment,
+    controller: AbortController,
+    retainedTrace?: TraceData
+  ) {
+    const experimentID = source.id
+    const prefix = `${traceID}/`
+    let nodes = indexEvalTraces(retainedTrace ? [retainedTrace] : []).nodes
+    const summaries = new Map<string, EvalRequestPart<TraceLogSummary[]>>([
+      [traceID, { status: 'pending' }],
+    ])
+    const owners = new Map<string, EvalRequestPart<LogData[]>>()
+    const previousLogs = untrack(() => displayedLogs)
+    const received = new Map(
+      previousLogs?.experimentID === experimentID
+        ? [...previousLogs.owners].filter(([key]) => key.startsWith(prefix))
+        : []
+    )
+    // Successful summaries replace only their own trace's discovery scope.
+    // Explicit span references and native call ancestry authorize owners separately.
+    type OwnerReference = Pick<SpanData, 'traceID' | 'spanID'>
+    const independentOwners = new Map<string, OwnerReference>()
+    for (const reference of evalTraceReferences(source)) {
+      if (!reference.spanID || reference.traceID.toLowerCase() !== traceID)
+        continue
+      const key = referenceKey(reference)
+      independentOwners.set(key, {
+        traceID: reference.traceID,
+        spanID: reference.spanID,
+      })
+    }
+    const explicitOwners = new Map(independentOwners)
+    const summaryOwners = new Map<string, Set<string>>()
+    const ownerControllers = new Map<string, AbortController>()
+    function publishProgress() {
+      if (controller.signal.aborted) return
+      const parts = [...summaries.values(), ...owners.values()]
+      activityProgress = new Map(untrack(() => activityProgress)).set(traceID, {
+        pending: parts.some(part => part.status === 'pending'),
+        failed: parts.some(part => part.status === 'failed'),
+      })
+    }
+    function publishLogs() {
+      if (controller.signal.aborted) return
+      const previous = untrack(() => displayedLogs)
+      const siblings =
+        previous?.experimentID === experimentID
+          ? [...previous.owners].filter(([key]) => !key.startsWith(prefix))
+          : []
+      displayedLogs = {
+        experimentID,
+        owners: new Map([...siblings, ...received]),
       }
-      const owners = new Map<string, SpanData>()
-      for (const [traceID, logs] of summaries) {
-        for (const log of logs) {
-          if (
-            !log.spanID ||
-            !['tool.execution', 'tool.execution.start'].includes(log.eventName)
-          )
-            continue
-          const key = referenceKey({ traceID, spanID: log.spanID })
-          const span = nodes.get(key)?.spanData
-          if (span) owners.set(key, span)
+    }
+    function authorized(span: OwnerReference) {
+      const key = referenceKey(span)
+      const discovered = summaryOwners.get(span.traceID.toLowerCase())
+      return independentOwners.has(key) || !discovered || discovered.has(key)
+    }
+    function replaceSummaryOwners(traceID: string, discovered: Set<string>) {
+      summaryOwners.set(traceID, discovered)
+      for (const key of received.keys()) {
+        if (
+          key.startsWith(`${traceID}/`) &&
+          !independentOwners.has(key) &&
+          !discovered.has(key)
+        )
+          received.delete(key)
+      }
+      for (const [key, ownerController] of ownerControllers) {
+        if (
+          key.startsWith(`${traceID}/`) &&
+          !independentOwners.has(key) &&
+          !discovered.has(key)
+        ) {
+          ownerController.abort()
+          owners.delete(key)
         }
       }
-      for (const { spanData: span } of nodes.values()) {
-        const callID = uniqueToolCallID(span, nodes)
-        if (!callID) continue
-        for (const owner of toolLogOwners([span], nodes, callID).slice(1))
-          owners.set(referenceKey(owner), owner)
-      }
-      const selected = [...owners.values()]
-      const received: LogData[] = []
-      for (let offset = 0; offset < selected.length; offset += 4) {
-        const results = await Promise.allSettled(
-          selected
-            .slice(offset, offset + 4)
-            .map(span =>
-              telemetryAPI.getSpanLogs(
-                span.traceID,
-                span.spanID,
-                controller.signal
-              )
+      publishLogs()
+    }
+    function requestOwner(span: OwnerReference) {
+      const key = referenceKey(span)
+      if (owners.has(key) || controller.signal.aborted || !authorized(span))
+        return
+      const ownerController = new AbortController()
+      ownerControllers.set(key, ownerController)
+      owners.set(key, { status: 'pending' })
+      publishProgress()
+      void telemetryAPI
+        .getSpanLogs(span.traceID, span.spanID, ownerController.signal)
+        .then(
+          logs => {
+            if (
+              controller.signal.aborted ||
+              ownerController.signal.aborted ||
+              !authorized(span)
             )
+              return
+            received.set(key, logs)
+            owners.set(key, { status: 'ready', value: logs })
+            publishLogs()
+            publishProgress()
+          },
+          () => {
+            if (
+              controller.signal.aborted ||
+              ownerController.signal.aborted ||
+              !authorized(span)
+            )
+              return
+            owners.set(key, { status: 'failed' })
+            publishProgress()
+          }
         )
-        if (controller.signal.aborted) return
-        for (const result of results)
-          if (result.status === 'fulfilled') received.push(...result.value)
-        correlationLogs = [...received]
+    }
+    function updateTrace(trace: TraceData) {
+      if (controller.signal.aborted) return
+      nodes = indexEvalTraces([trace]).nodes
+      independentOwners.clear()
+      for (const [key, owner] of explicitOwners)
+        independentOwners.set(key, owner)
+      for (const { spanData: span } of nodes.values()) {
+        if (
+          !span.attributes.some(
+            attribute =>
+              attribute.key === 'gen_ai.operation.name' &&
+              attribute.value.kind === 'string' &&
+              attribute.value.value === 'execute_tool'
+          )
+        )
+          continue
+        const callID = uniqueToolCallID(span, nodes)
+        for (const owner of toolLogOwners([span], nodes, callID))
+          independentOwners.set(referenceKey(owner), owner)
       }
-    })()
-    return () => controller.abort()
-  })
+      const summary = summaries.get(traceID)
+      if (summary?.status === 'ready') discoverSummaryOwners(summary.value)
+      for (const owner of independentOwners.values()) requestOwner(owner)
+      publishProgress()
+    }
+    function discoverSummaryOwners(logs: TraceLogSummary[]) {
+      const discovered = new Map<string, OwnerReference>()
+      for (const log of logs) {
+        if (
+          !log.spanID ||
+          !['tool.execution', 'tool.execution.start'].includes(log.eventName)
+        )
+          continue
+        const owner = nodes.get(
+          referenceKey({ traceID, spanID: log.spanID })
+        )?.spanData
+        if (owner) discovered.set(referenceKey(owner), owner)
+      }
+      replaceSummaryOwners(traceID, new Set(discovered.keys()))
+      for (const owner of discovered.values()) requestOwner(owner)
+    }
+    publishProgress()
+    if (retainedTrace) updateTrace(retainedTrace)
+    // Exact recorded IDs authorize these requests without span or summary discovery.
+    for (const owner of independentOwners.values()) requestOwner(owner)
+    publishLogs()
+    void telemetryAPI.getTraceLogSummaries(traceID, controller.signal).then(
+      logs => {
+        if (controller.signal.aborted) return
+        summaries.set(traceID, { status: 'ready', value: logs })
+        const previous = untrack(() => displayedTimeline)
+        const timeline = new Map(
+          previous?.experimentID === experimentID ? previous.timeline : []
+        )
+        timeline.set(traceID, logs)
+        displayedTimeline = { experimentID, timeline }
+        discoverSummaryOwners(logs)
+        publishProgress()
+      },
+      () => {
+        if (controller.signal.aborted) return
+        summaries.set(traceID, { status: 'failed' })
+        publishProgress()
+      }
+    )
+    controller.signal.addEventListener(
+      'abort',
+      () => {
+        for (const ownerController of ownerControllers.values())
+          ownerController.abort()
+      },
+      { once: true }
+    )
+    return updateTrace
+  }
   function selectActivity(record: TimelineRecord, span: SpanTiming) {
     const params = new URLSearchParams({ span: span.spanID })
     if (record.kind === 'event') params.set('event', String(record.eventIndex))
     else params.set('log', record.log.logRef)
     navigate(`/traces/${span.traceID}?${params}`)
   }
-  $effect(() => onTraceViews?.(traceViews, timingsLoading, correlationLogs))
+  $effect(() =>
+    onTraceViews?.(traceViews, timingsLoading, correlationLogs, traceStatus)
+  )
   const timingKey = referenceKey
   const timingFor = (reference?: TelemetryReference) => {
     const node = resolveEvalReference(reference, traceIndex)
@@ -283,8 +469,9 @@
   }
   function missingTiming(reference?: TelemetryReference) {
     if (!reference?.spanID) return 'No recorded duration'
-    if (timingsLoading) return 'Loading span'
-    if (timingsFailed) return 'Span unavailable'
+    const status = traceStatus.get(reference.traceID.toLowerCase())
+    if (status === 'pending') return timingNotice.visible ? 'Loading span' : ''
+    if (status === 'failed') return 'Span unavailable'
     return timingFor(reference) ? 'Invalid span duration' : 'Span not stored'
   }
   function spanWindow(spans: (SpanTiming | undefined)[]) {
@@ -331,24 +518,68 @@
     }, extent)
   })
   $effect(() => {
-    const references = evalTraceReferences(sourceExperiment)
+    const source = sourceExperiment
+    const experimentID = source.id
+    const references = evalTraceReferences(source)
+    const ids = [
+      ...new Set(references.map(reference => reference.traceID.toLowerCase())),
+    ]
     const controller = new AbortController()
-    traceViews = []
-    timingsLoading = true
-    timingsFailed = false
+    timingRequest = controller.signal
+    activityRequest = controller.signal
+    activityProgress = new Map()
+    traceStatus = new Map(ids.map(id => [id, 'pending']))
+    const previous = untrack(() => displayedTraces)
+    const received = new Map(
+      (previous?.experimentID === experimentID ? previous.traces : [])
+        .filter(trace => ids.includes(trace.traceID.toLowerCase()))
+        .map(trace => [trace.traceID.toLowerCase(), trace])
+    )
+    const completed = new Set<string>()
+    const activity = new Map(
+      ids.map(id => [
+        id,
+        loadTraceActivity(id, source, controller, received.get(id)),
+      ])
+    )
+    function publishTrace(trace: TraceData) {
+      if (controller.signal.aborted) return
+      const id = trace.traceID.toLowerCase()
+      if (completed.has(id)) return
+      completed.add(id)
+      received.set(id, trace)
+      traceStatus = new Map(untrack(() => traceStatus)).set(id, 'ready')
+      displayedTraces = {
+        experimentID,
+        traces: ids.flatMap(id =>
+          received.has(id) ? [received.get(id)!] : []
+        ),
+      }
+      activity.get(id)?.(trace)
+    }
+    function failedTrace(id: string) {
+      if (controller.signal.aborted || completed.has(id)) return
+      traceStatus = new Map(untrack(() => traceStatus)).set(id, 'failed')
+    }
     void telemetryAPI
-      .getReferencedTraceViews(references, controller.signal)
+      .getReferencedTraceViews(references, controller.signal, result => {
+        if (result.status === 'ready') publishTrace(result.trace)
+        else failedTrace(result.traceID)
+      })
       .then(
         result => {
           if (controller.signal.aborted) return
-          traceViews = result.traces
-          timingsFailed = result.unavailableTraceIDs.length > 0
-          timingsLoading = false
+          for (const trace of result.traces) publishTrace(trace)
+          for (const id of result.unavailableTraceIDs) failedTrace(id)
+          if (!ids.length) displayedTraces = { experimentID, traces: [] }
+          const status = new Map(untrack(() => traceStatus))
+          for (const id of ids)
+            if (status.get(id) === 'pending') status.set(id, 'ready')
+          traceStatus = status
         },
         () => {
           if (controller.signal.aborted) return
-          timingsLoading = false
-          timingsFailed = true
+          for (const id of ids) failedTrace(id)
         }
       )
     return () => controller.abort()
@@ -515,12 +746,13 @@
     results: true,
     time:
       experiment.results.some(result => result.toolsKnown === true) ||
-      selectionOutline.some(row => row.kind === 'tool'),
+      selectionOutline.some(row => row.kind === 'tool') ||
+      (evalTraceReferences(sourceExperiment).length > 0 &&
+        (timingsLoading || timingsFailed || activityLoading || activityFailed)),
     cost: selectionOutline.some(row => row.estimate.total !== null),
   })
   $effect(() => {
-    if (!availableViews[viewKey] && !(viewKey === 'time' && timingsLoading))
-      viewKey = 'results'
+    if (!availableViews[viewKey]) viewKey = 'results'
   })
   const visibleRows = $derived(
     visibleOutlineRows(outline, enabledViews, overrides)
@@ -761,6 +993,20 @@
         </button>
       {/each}
     </div>
+  {/snippet}
+  {#snippet metaLeft()}
+    {@render loadingStatus?.()}
+    <LoadingStatus
+      pending={timingsLoading || activityLoading}
+      requestKey={timingsLoading ? timingRequest : activityRequest}
+      label={timingsLoading ? 'Loading telemetry…' : 'Loading tool evidence…'}
+      class="text-sm text-subtle"
+    />
+    {#if activityFailed || timingsFailed}
+      <span class="truncate text-sm text-subtle" role="status"
+        >Tool evidence could not be loaded.</span
+      >
+    {/if}
   {/snippet}
 </PaneHeader>
 

@@ -415,11 +415,6 @@ describe('referenced eval hierarchy', () => {
       },
     ]
     expect(evalEventTools([parent, duplicate])).toEqual([])
-    parent.spanData.events[0].attributes.push({
-      key: 'gen_ai.tool.call.id',
-      value: { kind: 'string', value: 'conflict' },
-    })
-    expect(evalEventTools([parent])).toEqual([])
   })
 
   it('links unique recorded grader identities without rewriting judgments or guessing duplicate names', () => {

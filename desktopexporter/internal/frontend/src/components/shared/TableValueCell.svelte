@@ -7,6 +7,7 @@
     numeric = false,
     inset = true,
     onInspect,
+    loadText,
     children,
   }: {
     label: string
@@ -14,8 +15,35 @@
     numeric?: boolean
     inset?: boolean
     onInspect?: () => void
+    loadText?: (signal: AbortSignal) => Promise<string>
     children?: Snippet
   } = $props()
+  let hoverText = $state<string>()
+  let pending = false
+  let controller: AbortController | undefined
+  $effect(() => {
+    void text
+    void loadText
+    hoverText = undefined
+    pending = false
+    return () => controller?.abort()
+  })
+  function loadHover() {
+    if (!loadText || pending || hoverText !== undefined) return
+    controller = new AbortController()
+    const request = controller
+    pending = true
+    void loadText(request.signal)
+      .then(full => {
+        if (!request.signal.aborted) hoverText = full
+      })
+      .catch(error => {
+        if (!request.signal.aborted) hoverText = String(error)
+      })
+      .finally(() => {
+        if (!request.signal.aborted) pending = false
+      })
+  }
 </script>
 
 <div class="table-value-cell" class:table-value-cell--inset={inset}>
@@ -24,7 +52,9 @@
       type="button"
       class="table-value-cell__inspect"
       class:text-right={numeric}
-      title={text}
+      title={hoverText ?? text}
+      onpointerenter={loadHover}
+      onfocus={loadHover}
       aria-label={`Show ${label} in details`}
       onclick={event => {
         event.stopPropagation()

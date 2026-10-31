@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
@@ -39,13 +41,6 @@ var (
 	ErrLogRefNotFound    = errors.New("log ID not found")
 )
 
-// flushIntervalLogs bounds how many log records accumulate in the appenders before
-// they are pushed to DuckDB, limiting memory used by large batches.
-const flushIntervalLogs = 500
-
-// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
-type scopeKey struct{ ri, si int }
-
 type queryRower interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
@@ -53,55 +48,27 @@ type queryRower interface {
 // Ingest ingests log records from pdata into the logs table.
 // The caller must hold any required lock on the connection.
 //
-// Two passes, matching spans.Ingest: hash and resolve resource/scope
-// identities, flush the dictionary, then append the log rows with the id
-// arrays. See spans.Ingest for why the dictionary cannot ride the appender.
+// Each log carries its body, attributes, Resource and Scope in one append.
 // Ingest is IngestReport for callers with nowhere to put the report. Records
 // the store refused are still skipped rather than failing the batch; this form
 // just cannot say how many there were.
-func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) error {
-	_, err := IngestReport(ctx, conn, logs, flushed)
+func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
+	_, err := IngestReport(ctx, conn, logs)
 	return err
 }
 
 // IngestReport ingests a batch and reports the records it could not write. A
 // non-empty Rejected is not a failure: the batch landed, minus those rows.
-func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) (_ ingest.Rejected, err error) {
+func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs) (_ ingest.Rejected, err error) {
 	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
 
 	if err := ctx.Err(); err != nil {
 		return ingest.Rejected{}, err
 	}
 
-	// Pass 1: dictionary.
-	dict := ingest.NewDictionary(flushed)
-	resourceIDs := map[int]duckdb.UUID{}
-	scopeIDs := map[scopeKey]duckdb.UUID{}
-
-	// AddAttributes already returns the array its owner stores; pass 2 reads it
-	// back instead of hashing the same attributes again. Consumed by position:
-	// both passes walk identical loops, and the cursor is checked against the
-	// length at the end so a desynchronising edit fails loudly.
-	var logAttrs [][]duckdb.UUID
-
-	for ri, resourceLogs := range logs.ResourceLogs().All() {
-		resourceIDs[ri] = dict.AddResource(resourceLogs.Resource(), resourceLogs.SchemaUrl()).ID
-		for si, scopeLogs := range resourceLogs.ScopeLogs().All() {
-			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeLogs.Scope(), scopeLogs.SchemaUrl())
-			for _, log := range scopeLogs.LogRecords().All() {
-				logAttrs = append(logAttrs, dict.AddAttributes(log.Attributes(), ingest.ScopeLog))
-			}
-		}
-	}
-
-	if err := dict.Flush(ctx, conn); err != nil {
-		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
-	}
-
-	// Pass 2: append, retrying in halves so a bad record costs only itself.
-	return ingest.BisectingWrite(ctx, len(logAttrs), nil, func(lo, hi int) error {
+	return ingest.BisectingWrite(ctx, logs.LogRecordCount(), nil, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
-			return appendPass(ctx, conn, logs, resourceIDs, scopeIDs, logAttrs,
+			return appendPass(ctx, conn, logs,
 				func(ordinal int) bool { return ordinal >= lo && ordinal < hi })
 		})
 	})
@@ -113,33 +80,45 @@ func appendPass(
 	ctx context.Context,
 	conn driver.Conn,
 	logs plog.Logs,
-	resourceIDs map[int]duckdb.UUID,
-	scopeIDs map[scopeKey]duckdb.UUID,
-	logAttrs [][]duckdb.UUID,
 	keep func(ordinal int) bool,
 ) (err error) {
 	tables := []string{"logs"}
-	appenders, err := ingest.NewAppenders(conn, tables)
+	appenders, err := arrowingest.NewAppenders(ctx, conn, tables)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 	}
+	var catalogue searchindex.Batch
 	defer func() {
-		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+		if err != nil {
+			for _, appender := range appenders {
+				appender.Discard()
+			}
+			return
+		}
+		err = errors.Join(err, arrowingest.CloseAppenders(appenders, tables))
+		if err == nil {
+			if indexErr := catalogue.Write(ctx, conn); indexErr != nil {
+				err = fmt.Errorf("%w: %w", ingest.ErrNotRowFault, indexErr)
+			}
+		}
 	}()
 
-	logCount := 0
 	logCur := 0
-	for ri, resourceLogs := range logs.ResourceLogs().All() {
+	for _, resourceLogs := range logs.ResourceLogs().All() {
 		resource := resourceLogs.Resource()
-		resourceID := resourceIDs[ri]
-		// Denormalize service.name onto every log row in this resource; the
-		// resource's attribute row, reached through resource_id, is still the
-		// source of truth. See spans.Ingest for the same pattern.
+		resourceInput, err := ingest.ResourceInput(resource, resourceLogs.SchemaUrl())
+		if err != nil {
+			return err
+		}
 		serviceName := resourceServiceName(resource.Attributes())
 
-		for si, scopeLogs := range resourceLogs.ScopeLogs().All() {
-			scopeID := scopeIDs[scopeKey{ri, si}]
+		for _, scopeLogs := range resourceLogs.ScopeLogs().All() {
+			scopeInput, err := ingest.ScopeInput(scopeLogs.Scope(), scopeLogs.SchemaUrl())
+			if err != nil {
+				return err
+			}
 
+			appenders["logs"].SetContext(resourceInput, scopeInput)
 			for _, log := range scopeLogs.LogRecords().All() {
 				if err := ctx.Err(); err != nil {
 					return err
@@ -160,90 +139,63 @@ func appendPass(
 					spanID = util.SpanIDUint64(sid)
 				}
 
-				bodyValue, err := util.EncodeValue(log.Body())
+				body, err := ingest.ValueBytes(log.Body())
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 				}
-				// Hashed in pass 1; read back by position.
-				logAttrIDs := logAttrs[logCur]
+				attributes, err := ingest.AttributeBytes(log.Attributes())
+				if err != nil {
+					return err
+				}
 				logCur++
 
-				err = appenders["logs"].AppendRow(
-					duckdb.UUID(uuid.New()),         // ID UUID
-					uint64(log.Timestamp()),         // Timestamp UBIGINT
-					uint64(log.ObservedTimestamp()), // ObservedTimestamp UBIGINT
-					traceUUID,                       // TraceID UUID
-					spanID,                          // SpanID UBIGINT or NULL
-					log.SeverityText(),              // SeverityText VARCHAR
-					int32(log.SeverityNumber()),     // SeverityNumber INTEGER
-					json.RawMessage(bodyValue),      // Body JSON
-					resourceID,                      // ResourceID UUID
-					scopeID,                         // ScopeID UUID
-					ingest.NonNil(logAttrIDs),       // AttributeIDs UUID[]
-					log.DroppedAttributesCount(),    // DroppedAttributesCount UINTEGER
-					uint32(log.Flags()),             // Flags UINTEGER
-					log.EventName(),                 // EventName VARCHAR
-					serviceName,                     // ServiceName VARCHAR (NOT NULL, '' = unknown)
-				)
+				id := uuid.New()
+				err = appenders["logs"].AppendLog(log, id, body, attributes, serviceName)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 				}
-
-				logCount++
-				if logCount%flushIntervalLogs == 0 {
-					if err := ingest.FlushAppenders(appenders, tables); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
-					}
+				resourceRef, scopeRef, err := catalogue.Contexts(resourceInput, scopeInput)
+				if err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
 				}
+				o := searchindex.Object{Ref: "log:log:" + id.String(), Signal: "log", Owner: "log", RootKey: id.String(), RecordKey: id.String(), ResourceRef: resourceRef, ScopeRef: scopeRef}
+				if err := o.AddNative("attributes", attributes); err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+				}
+				if err := o.AddNative("body", body); err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+				}
+				var traceWireID, spanWireID any
+				if traceUUID != nil {
+					traceWireID = log.TraceID().String()
+				}
+				if spanID != nil {
+					spanWireID = log.SpanID().String()
+				}
+				if err := o.AddStrings(map[string]any{"traceID": traceWireID, "spanID": spanWireID, "severityText": log.SeverityText(), "severityNumber": fmt.Sprint(int32(log.SeverityNumber())), "eventName": log.EventName()}); err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+				}
+				catalogue.Add(o)
+
 			}
 		}
-	}
-
-	// The two passes must have visited the same logs; a divergence would pair
-	// each record past that point with another record's attributes, silently.
-	if logCur != len(logAttrs) {
-		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
-		return fmt.Errorf("Ingest: %w: %w: pass mismatch (logs %d/%d)",
-			ErrLogsStoreInternal, ingest.ErrNotRowFault, logCur, len(logAttrs))
 	}
 
 	return nil
 }
 
-// fieldValueQueries names the log columns whose values the search box may
-// complete, keyed by the search grammar's field name. An allowlist of whole
-// baked queries rather than an identifier spliced into one: a field name from
-// the wire never becomes SQL.
-var fieldValueQueries = map[string]string{
-	"eventName": `
-		select cast(coalesce(
-			to_json(list(sub.v order by sub.cnt desc, sub.v)),
-			to_json([])) as varchar)
-		from (
-			select event_name as v, count(*) as cnt
-			from logs
-			where event_name is not null and event_name <> ''
-				and event_name ilike '%' || ? || '%' escape '\'
-			group by event_name
-			order by cnt desc, event_name
-			limit ?
-		) sub
-	`,
-}
-
 // GetFieldValueCompletions returns distinct values of one completable log column
 // matching term, most frequent first. Same contract as spans.GetFieldValueCompletions.
 func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
-	query, ok := fieldValueQueries[field]
-	if !ok {
+	query, args, err := searchindex.FieldValuesSQL("logs", field, term, limit)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidLogQuery, field)
 	}
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+	raw, err := searchindex.FieldValuesJSON(ctx, db, query, args)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrLogsStoreInternal, err)
 	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 // Search returns log summaries in the time range matching the optional
@@ -299,6 +251,26 @@ func GetErrorNavigation(ctx context.Context, db *sql.DB, timeRange timerange.Tim
 }
 
 func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page *PageOptions, selectedID *string) (json.RawMessage, error) {
+	query, err := logResultsSQL(timeRange, criteria, options, page, selectedID, false)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query.sql, query.args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+type logQuery struct {
+	sql  string
+	args []any
+}
+
+func logResultsSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page *PageOptions, selectedID *string, native bool) (*logQuery, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -328,41 +300,39 @@ func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeR
 		args = append(args, *options.Limit)
 	}
 	queryName := queries.SearchLogSummaries
+	nativeColumns := ""
 	if page != nil {
 		queryName = queries.SearchLogPage
 		args = append(args, page.Size, page.Offset)
 		if len(page.Columns) > 0 {
-			columns, err := json.Marshal(page.Columns)
+			nativeColumns, args, err = columnPreviews(page.Columns, args)
 			if err != nil {
 				return nil, err
 			}
-			args = append(args, string(columns))
 		}
 	}
 	if selectedID != nil {
 		queryName = queries.GetLogErrorNavigation
 		args = append(args, *selectedID)
 	}
-	finalQuery, err := queries.Render(queryName, searchLogSummariesParams{
-		CTEs:    cteSQL,
-		From:    logSearchFrom,
-		Where:   whereWithTime,
-		Order:   orderBy,
-		Limit:   limitClause,
-		Columns: page != nil && len(page.Columns) > 0,
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	finalQuery, err := render(queryName, searchLogSummariesParams{
+		CTEs:          cteSQL,
+		From:          logSearchFrom,
+		Where:         whereWithTime,
+		Order:         orderBy,
+		Limit:         limitClause,
+		Columns:       page != nil && len(page.Columns) > 0,
+		NativeColumns: nativeColumns,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return &logQuery{sql: finalQuery, args: args}, nil
 }
 
 func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
@@ -374,7 +344,7 @@ func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
 		"severity":  "coalesce(l.severity_number, 0)",
 		"service":   "coalesce(l.service_name, '')",
 		"name":      "coalesce(l.event_name, '')",
-		"body":      "coalesce(body_preview(l.body), '')",
+		"body":      "coalesce(body_preview(otel_value_json(l.body)), '')",
 	}
 	expression, ok := expressions[sortOption.Field]
 	if !ok {
@@ -479,30 +449,17 @@ func getTraceLogSummariesSQL(traceID string) (string, []any, error) {
 }
 
 // GetLogAttributeDefinitions returns every log-side attribute name/scope/type this store
-// knows about. See spans.GetTraceAttributeDefinitions for why the dictionary answers this
-// directly instead of unnesting every log in a window.
+// knows about, collected from the owned maps.
 func GetLogAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
-	query, err := queries.Render(queries.GetLogAttributeDefinitions, nil)
+	raw, err := searchindex.Definitions(ctx, db, "log")
 	if err != nil {
-		return nil, err
-	}
-
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetLogAttributeDefinitions: %w: %w", ErrLogsStoreInternal, err)
 	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
-// Clear truncates the logs table and all child attributes.
+// Clear deletes logs and their search documents.
 func Clear(ctx context.Context, db *sql.DB) error {
-	// Attribute, resource and scope rows are shared across signals, so this
-	// cannot know whether the ones it just abandoned are still in use.
-	// ingest.SweepOrphans collects them; the store runs it once for all three
-	// signals rather than three times here.
 	if err := ingest.DeleteLogs(ctx, db, `truncate table logs`); err != nil {
 		return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
 	}
@@ -523,7 +480,7 @@ func DeleteLogsByRefs(ctx context.Context, db *sql.DB, logRefs []any) error {
 
 func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("l.log_time", timeRange.Start, timeRange.End)
-	return search.BuildSearchSQL(queryNode, logFieldMapper(), timeCondition, timeParams)
+	return searchindex.BuildSearchSQL(queryNode, logFieldMapper(), timeCondition, timeParams, "log", "try_cast(search_record.root_key as uuid)=l.id")
 }
 
 // MatchingRowsSQL shares log search's exact predicate and timestamp fallback.
@@ -534,11 +491,7 @@ func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange)
 }
 
 // logSearchFrom is the FROM clause log search predicates are written against.
-// Mirrors spans.spanSearchFrom: resources and scopes are joined in
-// unconditionally so resource.* and scope.* fields have somewhere to resolve.
-const logSearchFrom = `from search_params, logs l
-			join resources r on r.id = l.resource_id
-			join scopes sc on sc.id = l.scope_id`
+const logSearchFrom = `from logs l`
 
 var logColumns = map[string]struct{}{
 	"id":                       {},
@@ -556,27 +509,16 @@ var logColumns = map[string]struct{}{
 }
 
 func logFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
-		switch field.SearchScope {
-		case "field":
-			expr, err := mapLogFieldExpression(field)
-			if err != nil {
-				return nil, err
-			}
-			return []search.ResolvedExpression{expr}, nil
-		case "attribute":
-			return mapLogAttributeExpressions(field, query, params)
-		case "global":
-			return mapLogGlobalExpressions()
-		default:
-			return nil, fmt.Errorf("unknown search scope %s: %w", field.SearchScope, ErrInvalidLogQuery)
-		}
-	}
+	return search.Resolver("log", map[string]search.ValueOwner{
+		"log":      {Documents: map[string]string{"attributes": "l.attributes", "body": "l.body"}},
+		"resource": {Documents: map[string]string{"attributes": "l.resource.attributes"}},
+		"scope":    {Documents: map[string]string{"attributes": "l.scope.attributes"}},
+	}, mapLogFieldExpression, search.RejectUnindexedText)
 }
 
 func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
-	if field.Name == "serviceIdentity" {
-		return search.Text(discovery.ServiceIdentity("r")), nil
+	if field.Name == "serviceIdentity" || field.Name == "resource.serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("l.resource")), nil
 	}
 	name := field.Name
 	if name == "" {
@@ -608,17 +550,17 @@ func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpres
 	case "flags":
 		return search.NativeInteger("l.flags"), nil
 	case "body":
-		return search.Text("coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar)"), nil
+		return search.Text("otel_search_text(l.body)"), nil
 	case "eventName":
 		return search.Text("l.event_name"), nil
 	case "scope.name":
-		return search.Text("sc.name"), nil
+		return search.Text("l.scope.name"), nil
 	case "scope.version":
-		return search.Text("sc.version"), nil
+		return search.Text("l.scope.version"), nil
 	case "resource.droppedAttributesCount":
-		return search.NativeInteger("r.dropped_attributes_count"), nil
+		return search.NativeInteger("l.resource.dropped_attributes_count"), nil
 	case "scope.droppedAttributesCount":
-		return search.NativeInteger("sc.dropped_attributes_count"), nil
+		return search.NativeInteger("l.scope.dropped_attributes_count"), nil
 	default:
 		col := util.CamelToSnake(name)
 		if err := util.ValidateColumnName(col, logColumns); err != nil {
@@ -628,111 +570,16 @@ func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpres
 	}
 }
 
-// mapLogAttributeExpressions resolves an attribute against the array named by
-// its scope.
-//
-// Resource and scope predicates are hoisted into the owner table -- see
-// spans.mapTraceAttributeExpressions for the measurement that motivates it.
-func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
-	kind, mode, err := search.AttributeKind(field.Type)
-	if err != nil {
-		return nil, err
-	}
-
-	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
-	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	kindParam := ""
-	if kind != "" {
-		kindParam = fmt.Sprintf("attr_kind_%d", len(*params))
-		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
-	}
-	kindPredicate := search.AttributeKindPredicate(kindParam)
-	valueExpression := search.AttributeValueExpression(kind)
-	if mode != search.OTelArrayOperand {
-		if expression, ok := search.OwnerNullExpression(field, query, keyParam, kindPredicate, valueExpression); ok {
-			return []search.ResolvedExpression{expression}, nil
-		}
-	}
-	if mode == search.OTelArrayOperand {
-		var attributeIDs string
-		switch field.AttributeScope {
-		case "resource":
-			attributeIDs = "r.attribute_ids"
-		case "scope":
-			attributeIDs = "sc.attribute_ids"
-		case "log":
-			attributeIDs = "l.attribute_ids"
-		default:
-			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
-		}
-		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, kindParam, query, params)
-		if err != nil {
-			return nil, err
-		}
-		switch field.AttributeScope {
-		case "resource":
-			predicate = fmt.Sprintf("l.resource_id in (select r.id from resources r where %s)", predicate)
-		case "scope":
-			predicate = fmt.Sprintf("l.scope_id in (select sc.id from scopes sc where %s)", predicate)
-		}
-		return []search.ResolvedExpression{search.Complete(predicate)}, nil
-	}
-
-	switch field.AttributeScope {
-	case "resource":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
-			`l.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s%s and
-				%s {COND})`,
-			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	case "scope":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
-			`l.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s%s and
-				%s {COND})`,
-			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	case "log":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
-			select 1 from unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s%s and %s {COND}
-		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	default:
-		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
-	}
-}
-
-func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
-	return search.TextExpressions([]string{
-		"replace(l.trace_id::varchar, '-', '') {COND}",
-		"span_id_wire(l.span_id) {COND}",
-		"coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar) {COND}",
-		"CAST(l.severity_text AS VARCHAR) {COND}",
-		"CAST(l.severity_number AS VARCHAR) {COND}",
-		"CAST(l.event_name AS VARCHAR) {COND}",
-		"CAST(sc.name AS VARCHAR) {COND}",
-		"CAST(sc.version AS VARCHAR) {COND}",
-		// Search the log, resource, and scope attribute arrays.
-		`EXISTS(
-			SELECT 1
-			FROM unnest(l.attribute_ids || r.attribute_ids || sc.attribute_ids) AS t(aid)
-			JOIN attributes a ON a.id = t.aid
-			WHERE (
-				a.key {COND} OR a.value::varchar {COND} OR
-				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
-			)
-		)`,
-	}), nil
-}
-
 // searchLogSummariesParams are the fragments Search assembles into
 // queries/logs/search_log_summaries.sql.
 //
 // SQL fragments and projection switches; values travel as bound arguments.
 type searchLogSummariesParams struct {
-	CTEs    string
-	From    string
-	Where   string
-	Order   string
-	Limit   string
-	Columns bool
+	CTEs          string
+	From          string
+	Where         string
+	Order         string
+	Limit         string
+	Columns       bool
+	NativeColumns string
 }

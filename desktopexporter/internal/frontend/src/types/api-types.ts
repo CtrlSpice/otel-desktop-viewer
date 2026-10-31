@@ -1,9 +1,3 @@
-import type {
-  JsonAggregateBucket,
-  JsonLinkSummary,
-  JsonLogColumn,
-} from '@/types/wire-types'
-
 export type RootSpan = {
   serviceName: string
   name: string
@@ -103,13 +97,44 @@ export type SpanData = {
   /** Readable label derived from statusCodeValue by SQL. */
   statusCode: string
   statusMessage: string
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
+}
+
+export type TraceColumn = { source: 'span' | 'resource' | 'scope'; key: string }
+export type TraceColumnOption = TraceColumn & { count: number }
+export type TraceColumnPreview = TraceColumn & {
+  spanID: string
+  values: { valueType: AttributeValue['kind']; preview: string }[]
+}
+
+/** Display projection only. No attribute, link or received-record export surface. */
+export type WaterfallEventData = Omit<EventData, 'attributes'> & {
+  /** Only tool label/error/timestamp provenance, never full received attributes. */
+  summaryAttributes: Attributes
+}
+export type WaterfallSpanData = Omit<
+  SpanData,
+  'attributes' | 'links' | 'resource' | 'scope' | 'events'
+> & {
+  resource: Omit<ResourceData, 'attributes'> & { serviceName: string }
+  scope: Omit<ScopeData, 'attributes'>
+  columnValues: TraceColumnPreview[]
+  events: WaterfallEventData[]
+}
+export type WaterfallSpan = SpanData | WaterfallSpanData
+export type WaterfallSpanNode = Omit<SpanNode, 'spanData'> & {
+  spanData: WaterfallSpan
+}
+export type TraceWaterfallData = Omit<TraceData, 'spans'> & {
+  spans: WaterfallSpanNode[]
+  availableColumns: TraceColumnOption[]
 }
 
 export type Attribute = {
   id?: string
   key: string
   value: AttributeValue
-  hasConflict?: boolean
 }
 
 export type AttributeValue =
@@ -118,8 +143,20 @@ export type AttributeValue =
   | { kind: 'bool'; value: boolean }
   | { kind: 'int64'; value: bigint }
   | { kind: 'double'; value: number }
-  | { kind: 'array'; value: AttributeValue[] }
-  | { kind: 'map'; value: AttributeMapEntry[]; conflictingKeys?: string[] }
+  | {
+      kind: 'array'
+      value: AttributeValue[]
+      readonly childCount?: number
+      readonly previewChildren?: AttributeValue[]
+      childAt?: (index: number) => AttributeValue
+    }
+  | {
+      kind: 'map'
+      value: AttributeMapEntry[]
+      readonly childCount?: number
+      readonly previewChildren?: AttributeMapEntry[]
+      childAt?: (index: number) => AttributeMapEntry
+    }
 
 export type AttributeMapEntry = {
   key: string
@@ -156,7 +193,7 @@ export type LinkData = {
   /** W3C trace flags for the linked context. */
   flags: number
   /** Read-time names for presentation only; never exported as OTLP fields. */
-  summary?: JsonLinkSummary
+  summary?: { target: { name: string; serviceName: string } | null }
 }
 
 export type LogData = {
@@ -179,7 +216,7 @@ export type LogData = {
 }
 
 // LogSummary is the lightweight card-shaped projection returned by
-// the searchLogSummaries JSON-RPC method. Full LogData (with body, attributes,
+// the searchLogSummaries dataset. Full LogData (with body, attributes,
 // resource, scope, etc) is fetched on demand via getLog(logRef).
 //
 // `logRef` is a tool-minted UUID -- in the wire payload because the UI
@@ -204,9 +241,17 @@ export type LogSummary = {
   eventName?: string
 }
 
-export type LogColumn = JsonLogColumn
+export type LogColumn = {
+  source: 'log' | 'resource' | 'scope'
+  kind: 'field' | 'attribute'
+  key: string
+}
 export type LogTableRow = LogSummary & {
-  columnValues?: (LogColumn & { values: AttributeValue[] })[]
+  columnValues?: (LogColumn & {
+    present: boolean
+    valueType: AttributeValue['kind']
+    preview: string
+  })[]
 }
 
 export type LogErrorTarget = { logRef: string; offset: number }
@@ -252,8 +297,7 @@ export type Exemplar = ExemplarBase &
 type BaseDataPoint = {
   id: string
   timestamp: bigint
-  /** The same instant in epoch milliseconds, from the store. Charts read this
-   *  rather than dividing `timestamp` per datapoint. */
+  /** The same instant truncated to epoch milliseconds for chart coordinates. */
   timestampMs: number
   startTime: bigint
   flags: number
@@ -376,7 +420,12 @@ export type SeriesRateStats = {
 export type MetricSeriesViewData = {
   /** Database-local series reference. */
   seriesRef: string
+  /** Empty in preview responses; exact context is available through getMetricSeries. */
   attributes: Attributes
+  /** False when received attributes were withheld. */
+  attributesComplete?: boolean
+  /** Bounded server-selected columns; getMetricSeriesOrder sorts exact values in the database. */
+  labelPreviews?: { key: string; text: string; kind?: string }[]
   /** Resource associated with the parent Metric. */
   resource: ResourceData
   datapoints: DataPoint[]
@@ -416,15 +465,22 @@ export type ScalarAggregate = {
   all: ScalarViewBucket[]
 }
 
-export type AggregateBucket = Omit<
-  JsonAggregateBucket,
-  'sum' | 'min' | 'max' | 'explicitBounds' | 'zeroThreshold' | 'quantiles'
-> & {
+export type AggregateBucket = {
+  timestamp: bigint
+  startTime: bigint
+  count: bigint
   sum: number | null
   min?: number
   max?: number
   explicitBounds?: number[]
   zeroThreshold?: number
+  bucketCounts?: bigint[]
+  scale?: number
+  zeroCount?: bigint
+  positiveBucketOffset?: number
+  positiveBucketCounts?: bigint[]
+  negativeBucketOffset?: number
+  negativeBucketCounts?: bigint[]
   quantiles: Record<string, number | null> | null
 }
 
@@ -602,7 +658,6 @@ export type SparklinePoint = {
 export type MetricSummary = {
   metricRef: string
   name: string
-  description: string
   unit: string
   metricType: MetricType
   aggregationTemporality: string | null
@@ -620,7 +675,7 @@ export type MetricSummary = {
    * histograms. */
   lastValue: number | null
   // Timestamp of the most recent in-range datapoint (nanoseconds).
-  lastSeen: bigint
+  lastSeen: bigint | null
 }
 
 export function metricSummaryKey(s: MetricSummary): string {

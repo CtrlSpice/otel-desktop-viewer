@@ -15,13 +15,13 @@ const isLiteral = (text: string) =>
 
 /** Display-only JSON; copy continues to use the original received value. */
 export function structuredValueText(value: AttributeValue): string | undefined {
-  const tokens =
-    value.kind === 'string'
-      ? jsonContainerTokens(value.value, true)
-      : value.kind === 'array' || value.kind === 'map'
-        ? attributeValueTokens(value, true)
-        : null
-  return tokens?.map(token => token.text).join('')
+  if (value.kind === 'map' || value.kind === 'array')
+    return attributeValueText(value, true)
+  if (value.kind === 'string')
+    return jsonContainerTokens(value.value, true)
+      ?.map(token => token.text)
+      .join('')
+  return undefined
 }
 
 /** Colour bounded previews; optionally decode embedded container strings for display. */
@@ -228,15 +228,18 @@ export function jsonContainerTokens(
   }
 }
 
-/** Format received values directly: do not round int64s or merge duplicate keys. */
-export function attributeValueTokens(
+/** One native traversal serves plain editor text and coloured token consumers. */
+function formatAttributeValue(
   value: AttributeValue,
-  expandStrings = false
-): ValueToken[] {
-  const tokens: ValueToken[] = []
+  expandStrings: boolean,
+  emit: (
+    text: string,
+    kind: ValueToken['kind'],
+    type?: AttributeValue['kind']
+  ) => void
+): void {
   const budget = formattingBudget()
-  const punctuation = (text: string) =>
-    tokens.push({ text, kind: 'punctuation' })
+  const punctuation = (text: string) => emit(text, 'punctuation')
   function visit(value: AttributeValue, depth: number): void {
     switch (value.kind) {
       case 'array':
@@ -246,95 +249,87 @@ export function attributeValueTokens(
         punctuation(map ? '{' : '[')
         if (children.length > 0) {
           punctuation('\n')
-          if (value.kind === 'map') {
-            value.value.forEach((entry, index) => {
-              punctuation('  '.repeat(depth + 1))
-              tokens.push({ text: JSON.stringify(entry.key), kind: 'key' })
+          children.forEach((child, index) => {
+            punctuation('  '.repeat(depth + 1))
+            if ('key' in child) {
+              emit(JSON.stringify(child.key), 'key')
               punctuation(': ')
-              visit(entry.value, depth + 1)
-              punctuation(index < children.length - 1 ? ',\n' : '\n')
-            })
-          } else {
-            value.value.forEach((child, index) => {
-              punctuation('  '.repeat(depth + 1))
+              visit(child.value, depth + 1)
+            } else {
               visit(child, depth + 1)
-              punctuation(index < children.length - 1 ? ',\n' : '\n')
-            })
-          }
+            }
+            punctuation(index < children.length - 1 ? ',\n' : '\n')
+          })
           punctuation('  '.repeat(depth))
         }
         punctuation(map ? '}' : ']')
         break
       }
-      case 'string':
+      case 'string': {
+        const text = value.value
         if (expandStrings) {
-          const nested = jsonContainerTokens(value.value, true, budget, depth)
+          const nested = jsonContainerTokens(text, true, budget, depth)
           if (nested) {
-            for (const token of nested) tokens.push(token)
+            for (const token of nested) emit(token.text, token.kind, token.type)
             break
           }
         }
-        tokens.push({
-          text: JSON.stringify(value.value),
-          kind: 'string',
-          type: value.kind,
-        })
+        emit(JSON.stringify(text), 'string', value.kind)
         break
+      }
       case 'bytes':
-        tokens.push({
-          text: JSON.stringify(value.value),
-          kind: 'string',
-          type: value.kind,
-        })
+        emit(JSON.stringify(value.value), 'string', value.kind)
         break
       case 'empty':
-        tokens.push({ text: 'null', kind: 'literal', type: value.kind })
+        emit('null', 'literal', value.kind)
         break
       case 'bool':
-        tokens.push({
-          text: String(value.value),
-          kind: 'literal',
-          type: value.kind,
-        })
+        emit(String(value.value), 'literal', value.kind)
         break
       case 'int64':
-        tokens.push({
-          text: value.value.toString(),
-          kind: 'number',
-          type: value.kind,
-        })
+        emit(value.value.toString(), 'number', value.kind)
         break
-      case 'double':
-        tokens.push({
-          // JSON has no non-finite number literals. Keep their OTLP spelling
-          // as a string instead of silently replacing the received value with null.
-          text: Number.isFinite(value.value)
-            ? Object.is(value.value, -0)
+      case 'double': {
+        const number = value.value
+        // Keep non-finite OTLP spelling instead of silently replacing it with null.
+        emit(
+          Number.isFinite(number)
+            ? Object.is(number, -0)
               ? '-0'
-              : String(value.value)
-            : JSON.stringify(String(value.value)),
-          kind: Number.isFinite(value.value) ? 'number' : 'string',
-          type: value.kind,
-        })
+              : String(number)
+            : JSON.stringify(String(number)),
+          Number.isFinite(number) ? 'number' : 'string',
+          value.kind
+        )
+        break
+      }
     }
   }
   visit(value, 0)
+}
+
+export function attributeValueTokens(
+  value: AttributeValue,
+  expandStrings = false
+): ValueToken[] {
+  const tokens: ValueToken[] = []
+  formatAttributeValue(value, expandStrings, (text, kind, type) => {
+    if (type === undefined) tokens.push({ text, kind })
+    else tokens.push({ text, kind, type })
+  })
   return tokens
+}
+
+function attributeValueText(
+  value: AttributeValue,
+  expandStrings: boolean
+): string {
+  const parts: string[] = []
+  formatAttributeValue(value, expandStrings, text => parts.push(text))
+  return parts.join('')
 }
 
 export function attributeValueCopy(value: AttributeValue): string {
   if (value.kind === 'string' || value.kind === 'bytes') return value.value
-  return attributeValueTokens(value)
-    .map(token => token.text)
-    .join('')
-}
-
-export function hasConflictingKeys(value: AttributeValue): boolean {
-  if (value.kind === 'map') {
-    return (
-      Boolean(value.conflictingKeys?.length) ||
-      value.value.some(entry => hasConflictingKeys(entry.value))
-    )
-  }
-  return value.kind === 'array' && value.value.some(hasConflictingKeys)
+  return attributeValueText(value, false)
 }

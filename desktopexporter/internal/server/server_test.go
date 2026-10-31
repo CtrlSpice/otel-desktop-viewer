@@ -70,7 +70,7 @@ func TestSearchTraceSummariesPublicRPCReturnsWholeTraceAndMatchedSpans(t *testin
 	addSpan("service-b", 2, 1, 200, 300, ptrace.StatusCodeOk)
 	addSpan("service-a", 3, 1, 50, 80, ptrace.StatusCodeError)
 	require.NoError(t, str.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, data, str.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, data)
 	}))
 
 	requestBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraceSummaries","params":{` +

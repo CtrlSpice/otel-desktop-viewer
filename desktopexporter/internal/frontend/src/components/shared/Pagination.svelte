@@ -24,7 +24,7 @@
   }: {
     page: number
     pageSize: number
-    total: number
+    total: number | null
     loading?: boolean
     onPage: (page: number) => void
     onPageSize: (size: number) => void
@@ -35,7 +35,7 @@
     onDeleteSelected?: () => void
   } = $props()
 
-  let pages = $derived(Math.max(1, Math.ceil(total / pageSize)))
+  let pages = $derived(Math.max(1, Math.ceil((total ?? 0) / pageSize)))
   let visible = $derived(
     [
       ...new Set([
@@ -76,7 +76,9 @@
             /></button
           >{/if}
         <span role="status" aria-label="Log count" class="tabular-nums"
-          >{total.toLocaleString()} {total === 1 ? 'log' : 'logs'}</span
+          >{total === null
+            ? ''
+            : `${total.toLocaleString()} ${total === 1 ? 'log' : 'logs'}`}</span
         >
       </div>
     {/snippet}
@@ -87,7 +89,7 @@
           class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="First page"
           aria-label="First page"
-          disabled={loading || page <= 1}
+          disabled={total === null || page <= 1}
           onclick={() => onPage(1)}
         >
           <HugeiconsIcon
@@ -103,7 +105,7 @@
           class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="Previous page"
           aria-label="Previous page"
-          disabled={loading || page <= 1}
+          disabled={total === null || page <= 1}
           onclick={() => onPage(page - 1)}
           ><HugeiconsIcon
             icon={ChevronLeftIcon}
@@ -123,7 +125,7 @@
             class:btn-active={number === page}
             aria-label={`Page ${number}`}
             aria-current={number === page ? 'page' : undefined}
-            disabled={loading}
+            disabled={total === null}
             onclick={() => onPage(number)}>{number}</button
           >
         {/each}
@@ -132,7 +134,7 @@
           class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="Next page"
           aria-label="Next page"
-          disabled={loading || page >= pages}
+          disabled={total === null || page >= pages}
           onclick={() => onPage(page + 1)}
           ><HugeiconsIcon
             icon={ChevronRightIcon}
@@ -147,7 +149,7 @@
           class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="Last page"
           aria-label="Last page"
-          disabled={loading || page >= pages}
+          disabled={total === null || page >= pages}
           onclick={() => onPage(pages)}
         >
           <HugeiconsIcon
@@ -178,8 +180,13 @@
             class="select page-size-select"
             aria-label="Logs per page"
             value={pageSize}
-            disabled={loading}
-            onchange={event => onPageSize(Number(event.currentTarget.value))}
+            disabled={total === null}
+            onchange={event => {
+              const size = Number(event.currentTarget.value)
+              // The selected size describes the displayed page until publication.
+              event.currentTarget.value = String(pageSize)
+              onPageSize(size)
+            }}
           >
             {#each [25, 50, 100, 250] as size}<option value={size}
                 >{size}</option

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"time"
 )
 
@@ -20,14 +21,24 @@ type ExperimentIndexCandidate struct {
 
 // The database-backed workspace indexes native ingested datasets only.
 const experimentCandidates = `select id, 'dataset' as kind from eval_datasets where not deleted and format='promptfoo-v3' and import_id in (select id from eval_imports where complete)`
-const experimentIndexNeedsWork = `((i.status is null or i.status='pending' or (i.status='ready' and exists(
-select 1 from eval_experiment_rows r left join eval_experiment_search s on s.dataset_id=r.dataset_id and s.ordinal=r.ordinal
-where r.dataset_id=c.id and s.dataset_id is null))) or (i.status='ready' and exists(
-select 1 from eval_experiments r where r.dataset_id=c.id and r.name <> coalesce(nullif(json_extract_string(r.adapter_id, '$[4]'), ''), r.evaluation))))`
+const experimentIndexStateCTEs = `with candidates as materialized (` + experimentCandidates + `),
+missing_search as (
+select distinct r.dataset_id from candidates c join eval_experiment_rows r on r.dataset_id=c.id
+left join eval_experiment_search s on s.dataset_id=r.dataset_id and s.ordinal=r.ordinal
+where s.dataset_id is null
+), stale_names as (
+select distinct r.dataset_id from candidates c join eval_experiments r on r.dataset_id=c.id
+where r.name <> coalesce(nullif(json_extract_string(r.adapter_id, '$[4]'), ''), r.evaluation)
+), index_state as (
+select c.id,c.kind,i.status,i.reason,
+(i.status is null or i.status='pending' or (i.status='ready' and (m.dataset_id is not null or n.dataset_id is not null))) as needs_work
+from candidates c left join eval_experiment_indexes i on i.dataset_id=c.id
+left join missing_search m on m.dataset_id=c.id left join stale_names n on n.dataset_id=c.id
+) `
 
 func NextExperimentIndex(ctx context.Context, db *sql.DB) (ExperimentIndexCandidate, error) {
 	var out ExperimentIndexCandidate
-	err := db.QueryRowContext(ctx, `select c.id, c.kind from (`+experimentCandidates+`) c left join eval_experiment_indexes i on i.dataset_id = c.id where `+experimentIndexNeedsWork+` order by c.id limit 1`).Scan(&out.ID, &out.Kind)
+	err := db.QueryRowContext(ctx, experimentIndexStateCTEs+`select id,kind from index_state where needs_work order by id limit 1`).Scan(&out.ID, &out.Kind)
 	return out, err
 }
 
@@ -39,13 +50,13 @@ func indexStatus(ctx context.Context, access ExperimentDB, id, kind, status, rea
 		// A retention pass may have invalidated the context while projection ran
 		// outside the lock. Do not recreate a derived copy after that deletion.
 		var live bool
-		if err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets where id=? and context=cast(? as json))`, id, string(raw)).Scan(&live); err != nil {
+		if err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets where id=? and context=?::json::variant)`, id, string(raw)).Scan(&live); err != nil {
 			return err
 		}
 		if !live {
 			return ErrEvalNotFound
 		}
-		_, err := db.ExecContext(ctx, `insert into eval_experiment_indexes values (?, ?, ?, ?, cast(? as json)) on conflict(dataset_id) do update set status=excluded.status, reason=excluded.reason, context=excluded.context`, id, kind, status, reason, string(raw))
+		_, err := db.ExecContext(ctx, `insert into eval_experiment_indexes values (?, ?, ?, ?, ?::json::variant) on conflict(dataset_id) do update set status=excluded.status, reason=excluded.reason, context=excluded.context`, id, kind, status, reason, string(raw))
 		return err
 	})
 }
@@ -56,19 +67,53 @@ func clearExperimentIndex(ctx context.Context, access ExperimentDB, id string) e
 		if table == "eval_experiments" {
 			key = "id"
 		}
+		firstBatch := true
 		for {
 			var n int64
 			err := access.WithDBWrite(func(db *sql.DB) error {
-				result, err := db.ExecContext(ctx, `delete from `+table+` where dataset_id = ? and `+key+` in (select `+key+` from `+table+` where dataset_id = ? limit 64)`, id, id)
+				tx, err := db.BeginTx(ctx, nil)
+				if err != nil {
+					return err
+				}
+				defer tx.Rollback()
+				if table == "eval_experiment_search" {
+					// A rebuild can start after disposable source/search tracking was
+					// discarded. Remove orphaned result documents by dataset identity,
+					// not only by rows still present in eval_experiment_search.
+					if firstBatch {
+						if _, err := tx.ExecContext(ctx, `delete from search_owners d where signal='experiment'
+							and starts_with(d.ref,?) and not exists(select 1 from eval_experiment_search x
+							where x.dataset_id=? and d.ref='experiment:result:'||x.dataset_id||':'||x.ordinal::varchar)`, "experiment:result:"+id+":", id); err != nil {
+							return err
+						}
+					}
+					if _, err := tx.ExecContext(ctx, `delete from search_owners where signal='experiment' and ref in (
+						select 'experiment:result:'||dataset_id||':'||ordinal::varchar from eval_experiment_search where dataset_id=? and ordinal in (select ordinal from eval_experiment_search where dataset_id=? limit 64))`, id, id); err != nil {
+						return err
+					}
+				}
+				if table == "eval_experiments" {
+					if _, err := tx.ExecContext(ctx, `delete from search_owners where signal='experiment' and owner='experiment' and root_key in(select id from eval_experiments where dataset_id=? and id in(select id from eval_experiments where dataset_id=? limit 64))`, id, id); err != nil {
+						return err
+					}
+				}
+				result, err := tx.ExecContext(ctx, `delete from `+table+` where dataset_id = ? and `+key+` in (select `+key+` from `+table+` where dataset_id = ? limit 64)`, id, id)
 				if err != nil {
 					return err
 				}
 				n, err = result.RowsAffected()
-				return err
+				if err != nil {
+					return err
+				}
+				if err := searchindex.CollectGarbage(ctx, tx); err != nil {
+					return err
+				}
+				return tx.Commit()
 			})
 			if err != nil {
 				return err
 			}
+			firstBatch = false
 			if n == 0 {
 				break
 			}
@@ -101,8 +146,8 @@ func readExperimentSource(ctx context.Context, db *sql.DB, id, experimentID stri
 	args := []any{id, after}
 	where += ` and r.ordinal > ?`
 	if experimentID != "" {
-		where += ` and exists (select 1 from eval_experiment_rows m where m.dataset_id = ? and m.ordinal=r.ordinal and m.experiment_id=?)`
-		args = append(args, id, experimentID)
+		from += ` join eval_experiment_rows m on m.dataset_id=d.id and m.ordinal=r.ordinal and m.experiment_id=?`
+		args = []any{experimentID, id, after}
 	}
 	sizes, err := db.QueryContext(ctx, `select r.ordinal, r.byte_size from `+from+` where `+where+` order by r.ordinal limit ?`, append(args, limit)...)
 	if err != nil {
@@ -126,7 +171,7 @@ func readExperimentSource(ctx context.Context, db *sql.DB, id, experimentID stri
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `select r.ordinal, cast(r.payload as varchar) from `+from+` where `+where+` and r.ordinal <= ? order by r.ordinal`, append(args, end)...)
+	rows, err := db.QueryContext(ctx, `select r.ordinal, to_json(r.payload)::varchar from `+from+` where `+where+` and r.ordinal <= ? order by r.ordinal`, append(args, end)...)
 	if err != nil {
 		return nil, err
 	}
@@ -149,10 +194,11 @@ func appendExperimentRows(ctx context.Context, db *sql.DB, rows []projectedExper
 		return err
 	}
 	defer tx.Rollback()
+	var catalogueRows []searchindex.Result
 	for _, row := range rows {
 		s := row.Summary
 		var live bool
-		if err := tx.QueryRowContext(ctx, `select exists(select 1 from eval_records r join eval_datasets d on d.import_id=r.import_id and d.envelope=r.envelope where d.id=? and r.ordinal=? and d.context<>cast('{}' as json))`, s.DatasetID, row.Ordinal).Scan(&live); err != nil {
+		if err := tx.QueryRowContext(ctx, `select exists(select 1 from eval_records r join eval_datasets d on d.import_id=r.import_id and d.envelope=r.envelope where d.id=? and r.ordinal=? and d.context<>'{}'::json::variant)`, s.DatasetID, row.Ordinal).Scan(&live); err != nil {
 			return err
 		}
 		if !live {
@@ -178,6 +224,10 @@ on conflict(id) do update set pass_count=eval_experiments.pass_count+excluded.pa
 		if err != nil {
 			return err
 		}
+		catalogueRows = append(catalogueRows, searchindex.Result{DatasetID: s.DatasetID, ExperimentID: s.ID, Name: s.Name, Evaluation: s.Evaluation, Source: s.Source, Ordinal: row.Ordinal, Values: row.SearchValues})
+	}
+	if err := searchindex.IndexResults(ctx, tx, catalogueRows); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -215,7 +265,7 @@ func EnsureExperimentIndex(ctx context.Context, access ExperimentDB, id, kind st
 	if status == "ready" {
 		var missing bool
 		err := access.WithDBRead(func(db *sql.DB) error {
-			return db.QueryRowContext(ctx, `select exists(select 1 from (`+experimentCandidates+`) c left join eval_experiment_indexes i on i.dataset_id=c.id where c.id=? and `+experimentIndexNeedsWork+`)`, id).Scan(&missing)
+			return db.QueryRowContext(ctx, experimentIndexStateCTEs+`select exists(select 1 from index_state where id=? and needs_work)`, id).Scan(&missing)
 		})
 		if err != nil {
 			return err
@@ -233,7 +283,7 @@ func EnsureExperimentIndex(ctx context.Context, access ExperimentDB, id, kind st
 	var metadata Metadata
 	var rawContext string
 	err = access.WithDBRead(func(db *sql.DB) error {
-		return scanMetadata(db.QueryRowContext(ctx, `select `+metadataColumns+`, cast(context as varchar) from eval_datasets where id=? and not deleted`, id), &metadata, &rawContext)
+		return scanMetadata(db.QueryRowContext(ctx, `select `+metadataColumns+`, to_json(context)::varchar from eval_datasets where id=? and not deleted`, id), &metadata, &rawContext)
 	})
 	if err != nil {
 		return err

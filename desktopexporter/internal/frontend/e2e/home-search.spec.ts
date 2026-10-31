@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 test('Home selection, map, telemetry and workspace links share the submitted query', async ({
@@ -35,7 +36,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries') metricQueries.push(params)
     if (method === 'searchLogSummaries') logQueries.push(params)
@@ -239,7 +240,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('link', { name: /^Logs(?: \[|$)/ })
   const target = new URL((await link.getAttribute('href'))!, page.url())
-  expect(target.searchParams.get('q')).toBe('search("declined")')
+  expect(target.searchParams.get('q')).toBe("search('declined')")
   expect(target.searchParams.get('start')).toBe(
     String(BigInt(String(reading.startTime)) / 1_000_000n)
   )
@@ -279,12 +280,12 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await page.goBack()
   expect(new URL(page.url()).searchParams.get('q')).toBe('declined')
   await expect(serviceCards).toHaveCount(1)
-  await input.fill('body !~ "healthcheck"')
+  await input.fill('body NOT REGEXP "healthcheck"')
   await input.press('Enter')
   await expect(link).toHaveAttribute('href', /healthcheck/)
   await link.click()
   expect(new URL(page.url()).searchParams.get('q')).toContain(
-    'body !~ "healthcheck"'
+    "body NOT REGEXP 'healthcheck'"
   )
   await expect(page.getByRole('alert')).toHaveCount(0)
   // Workspace navigation carries time, but each signal keeps its own query.

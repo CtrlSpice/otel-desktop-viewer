@@ -21,7 +21,7 @@ func BenchmarkSearchMetricSummariesLimit(b *testing.B) {
 	}
 	defer s.Close()
 	if err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(2_000), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(2_000))
 	}); err != nil {
 		b.Fatal(err)
 	}

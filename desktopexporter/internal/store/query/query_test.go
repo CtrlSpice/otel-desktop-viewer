@@ -86,6 +86,22 @@ func TestExecuteReturnsNativeScalarsAndExactTopLevelJSON(t *testing.T) {
 	})
 }
 
+func TestExecuteReturnsNestedNativeVariants(t *testing.T) {
+	withConnection(t, "", func(conn *sql.Conn) {
+		raw, err := query.Execute(t.Context(), conn, `select
+		 {'numbers': [9007199254740993::bigint, 9223372036854775807],
+		  'special': ['NaN'::double, 'Infinity'::double, '-Infinity'::double],
+		  'text': 'NaN "Infinity" \\ -Infinity', 'empty': null}::variant as native,
+		 '{"unsigned":18446744073709551615,"nested":{"id":7}}'::json::variant as payload`, 25)
+		require.NoError(t, err)
+		result := decodeResponse(t, raw)
+		require.Equal(t, "VARIANT", result.Columns[0].Type)
+		assert.JSONEq(t, `{"numbers":[9007199254740993,9223372036854775807],"special":["NaN","Infinity","-Infinity"],"text":"NaN \"Infinity\" \\\\ -Infinity","empty":null}`, string(result.Rows[0][0]))
+		assert.Contains(t, string(raw), "9223372036854775807")
+		assert.Contains(t, string(result.Rows[0][1]), "18446744073709551615")
+	})
+}
+
 func TestExecuteLimitLookaheadAndIntrospection(t *testing.T) {
 	withConnection(t, "", func(conn *sql.Conn) {
 		for _, tc := range []struct {
@@ -231,7 +247,7 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 	record.Attributes().PutInt("direct", 9_007_199_254_740_993)
 	record.Attributes().PutEmptyMap("map").PutInt("large", 9_007_199_254_740_993)
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+		return logs.Ingest(context.Background(), conn, telemetry)
 	}))
 
 	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
@@ -239,10 +255,8 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 		require.NoError(t, err)
 		defer conn.Close()
 		raw, err := query.Execute(context.Background(), conn, `
-			select l.body, a.value
-			from logs l, unnest(l.attribute_ids) ids(attribute_id)
-			join attributes a on a.id = ids.attribute_id
-			where a.key = 'direct'`, 25)
+			select otel_value_json(l.body), otel_value_json(l.attributes.direct)
+			from logs l where variant_exists(l.attributes, 'direct')`, 25)
 		require.NoError(t, err)
 		result := decodeResponse(t, raw)
 		require.Len(t, result.Rows, 1)
@@ -269,7 +283,7 @@ func TestExecuteReturnsCurrentMetricDatapointFields(t *testing.T) {
 	point.SetIntValue(9_007_199_254_740_993)
 	point.Attributes().PutStr("queue", "payments")
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
-		return storemetrics.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+		return storemetrics.Ingest(context.Background(), conn, telemetry)
 	}))
 
 	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
@@ -351,7 +365,7 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 		}
 	}
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+		return spans.Ingest(context.Background(), conn, telemetry)
 	}))
 
 	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
@@ -361,14 +375,12 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 		raw, err := query.Execute(context.Background(), conn, `
 			with owned_values as (
 				select s.trace_id, s.span_id,
-					json_extract_string(a.value, '$.kind') as value_kind,
-					a.value as tagged_value
+					otel_value_kind(s.attributes['http.request.method']) as value_kind,
+					otel_value_json(s.attributes['http.request.method']) as tagged_value
 				from spans s
-				cross join unnest(s.attribute_ids) owned(attribute_id)
-				join attributes a on a.id = owned.attribute_id
 				where s.start_time >= epoch_ns(current_timestamp - interval '1 hour')
 				  and s.start_time <= epoch_ns(current_timestamp)
-				  and a.key = 'http.request.method'
+				  and variant_exists(s.attributes, 'http.request.method')
 			), value_counts as (
 				select value_kind, tagged_value,
 					count(distinct struct_pack(trace_id := trace_id, span_id := span_id)) as owning_span_count

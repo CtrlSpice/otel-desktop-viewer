@@ -14,7 +14,13 @@ export type DiscoveryOwner =
   | 'exemplar'
   | 'metadata'
 export type DiscoveryOptions = {
-  kind: 'services' | 'keys' | 'values' | 'connections' | 'connection-spans'
+  kind:
+    | 'services'
+    | 'keys'
+    | 'connections'
+    | 'connection-spans'
+    | 'home-values'
+    | 'home-value'
   signal?: DiscoverySignal
   ownerType?: DiscoveryOwner
   serviceName?: string
@@ -30,8 +36,13 @@ export type DiscoveryOptions = {
   sortBy?: 'name' | 'frequency'
   sortDirection?: 'asc' | 'desc'
   queries?: HomeQueries
+  valueKind?: string
+  valueRef?: string
+  locale?: string
 }
 export type ServiceSummary = {
+  serviceColorKey?: string
+  labelsComplete?: boolean
   serviceName: string
   serviceNamespace: string
   serviceIdentity?: string
@@ -73,17 +84,6 @@ export type ServiceConnectionSpan = {
   endTime: string
   statusCode: number
 }
-export type AttributeFrequency = {
-  identity: string
-  value: AttributeValue
-  foundOn: AttributeKey['foundOn']
-  count: number
-  /** Distinct records carrying this key and received kind, before value pagination. */
-  kindCount: number
-  /** Distinct records carrying this key across all received kinds. */
-  denominator: number
-  relativeFrequency: number
-}
 export type DiscoveryTotals = {
   home: number
   traces: number
@@ -94,6 +94,31 @@ export type DiscoveryPage<T> = {
   items: T[]
   truncated: boolean
   totals?: DiscoveryTotals
+}
+
+export type HomeRecordCounts = Record<DiscoverySignal, number>
+export type HomeCoverageValue = {
+  /** Database-scoped exact reference. Never a preview or content hash. */
+  identity: string
+  /** Exact received representative; canonical row identity can span NaN payloads. */
+  valueRef: string
+  kind: AttributeValue['kind']
+  preview: string
+  colorHash: number
+  counts: HomeRecordCounts
+  count: number
+  kindCount: number
+  denominator: number
+  relativeFrequency: number
+  foundOn: AttributeKey['foundOn']
+}
+export type HomeCoveragePage = {
+  values: HomeCoverageValue[]
+  kinds: { kind: string; count: number; counts: HomeRecordCounts }[]
+  denominators: HomeRecordCounts
+  denominator: number
+  total: number
+  truncated: boolean
 }
 
 export function serviceIdentity(service: ServiceSummary): string {
@@ -114,9 +139,9 @@ export function serviceSignalHref(
 
 export function serviceQueryText(service: ServiceSummary, query = ''): string {
   const match = (key: string, value: string) => {
-    const field = `attr(resource, ${JSON.stringify(key)}, string)`
+    const field = `resource.attributes[${JSON.stringify(key)}]::VARCHAR`
     return value === ''
-      ? `(${field} = "" OR ${field} = NULL)`
+      ? `(${field} = "" OR ${field} IS NULL)`
       : `${field} = ${JSON.stringify(value)}`
   }
   const serviceQuery =

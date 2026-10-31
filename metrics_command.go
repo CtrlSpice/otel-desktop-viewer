@@ -14,7 +14,6 @@ import (
 var metricSummaryFields = []string{
 	"metricRef",
 	"name",
-	"description",
 	"unit",
 	"metricType",
 	"aggregationTemporalityCode",

@@ -101,7 +101,7 @@ describe('saved colour slots', () => {
   })
 
   it('validates saved entries and preserves valid slots', async () => {
-    const key = `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services:${AUTOMATIC_COLOR_VERSION}`
+    const key = `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services:${AUTOMATIC_COLOR_VERSION}:compact-service-names-v1`
     localStorage.setItem(
       key,
       JSON.stringify([
@@ -139,7 +139,7 @@ describe('saved colour slots', () => {
 
   it('merges newly saved owners before assigning another identity', async () => {
     const { identityColorSlot } = await import('./color-slots')
-    const key = `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services:${AUTOMATIC_COLOR_VERSION}`
+    const key = `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services:${AUTOMATIC_COLOR_VERSION}:compact-service-names-v1`
     const existing = identityColorSlot('existing', 'services')
     const target = colorIdentityHash('new') % SIZE
     const otherSlot = target === existing ? (target + 1) % SIZE : target

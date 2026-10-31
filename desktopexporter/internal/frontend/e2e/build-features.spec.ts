@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 test('public frontend cannot activate Evals from a server capability', async ({
@@ -12,7 +13,7 @@ test('public frontend cannot activate Evals from a server capability', async ({
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: true } } })
   )
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const { id, method } = route.request().postDataJSON()
     return route.fulfill({
       json: {

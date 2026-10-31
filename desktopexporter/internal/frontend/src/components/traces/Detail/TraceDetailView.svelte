@@ -1,5 +1,9 @@
 <script module lang="ts">
-  import type { AttributeScope, FieldDefinition } from '@/search/model'
+  import {
+    usesFieldToken,
+    type AttributeScope,
+    type FieldDefinition,
+  } from '@/search/model'
 
   /** When empty, show all detail rows; otherwise only matching search fields / attributes. */
   export function detailSearchFieldVisible(
@@ -7,10 +11,7 @@
     searchFieldName: string
   ): boolean {
     if (selected.length === 0) return true
-    return selected.some(
-      f =>
-        f.searchScope === 'field' && 'name' in f && f.name === searchFieldName
-    )
+    return selected.some(f => !usesFieldToken(f) && f.name === searchFieldName)
   }
 
   export function detailAttributeVisible(
@@ -20,12 +21,7 @@
   ): boolean {
     if (selected.length === 0) return true
     return selected.some(
-      f =>
-        f.searchScope === 'attribute' &&
-        'name' in f &&
-        'attributeScope' in f &&
-        f.name === key &&
-        f.attributeScope === attributeScope
+      f => usesFieldToken(f) && f.path[1] === key && f.owner === attributeScope
     )
   }
 
@@ -72,6 +68,7 @@
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import SpanField from '@/components/shared/DetailProperty.svelte'
   import ActivityPanel from './ActivityPanel.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import LinksPanel from './LinksPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
@@ -86,6 +83,8 @@
 
   type Props = {
     span: SpanData | undefined
+    loading?: boolean
+    error?: string
     rootSpanID?: string
     fieldTarget?: DetailFieldTarget
     /** Node-level flags from the salvage walk; absent on healthy traces. */
@@ -94,12 +93,19 @@
     selectedEventIndex?: number | null
     selectedLogRef?: string | null
     logs?: TraceLogSummary[]
+    logsKnown?: boolean
+    logsPending?: boolean
+    logsError?: string
+    logsRequestKey?: AbortSignal
+    onRetryLogs?: () => void
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
   }
 
   let {
     span,
+    loading = false,
+    error = '',
     rootSpanID,
     fieldTarget,
     salvaged = false,
@@ -107,15 +113,20 @@
     selectedEventIndex = null,
     selectedLogRef = null,
     logs = [],
+    logsKnown = true,
+    logsPending = false,
+    logsError = '',
+    logsRequestKey,
+    onRetryLogs,
     columnFilter = [],
   }: Props = $props()
 
   let timeContext = getTimeContext()
   $effect(() => {
-    const eventIndex = selectedEventIndex
-    const logRef = selectedLogRef
+    const eventIndex = activity.selectedEventIndex
+    const logRef = activity.selectedLogRef
     void detailPanel.revealRequest
-    if (!span || (eventIndex === null && logRef === null)) return
+    if (!actionSpan || (eventIndex === null && logRef === null)) return
 
     const target = document.getElementById(
       logRef !== null ? `span-log-${logRef}` : `span-event-${eventIndex}`
@@ -134,6 +145,44 @@
   })
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
+  const presentation = $derived({
+    span,
+    logs,
+    logsKnown,
+    logsPending,
+    logsError,
+    logsRequestKey,
+    selectedEventIndex,
+    selectedLogRef,
+    onRetryLogs,
+  })
+  let rawPresentation = $state.raw<typeof presentation>()
+  let rawActivity = $state.raw<typeof presentation>()
+  function sameSpan(a: SpanData | undefined, b: SpanData | undefined) {
+    return !!a && !!b && a.traceID === b.traceID && a.spanID === b.spanID
+  }
+  $effect.pre(() => {
+    const raw = rawPresentation
+    if (!raw) rawActivity = undefined
+    else if (sameSpan(raw.span, span)) rawActivity = presentation
+    else if (
+      !sameSpan(
+        untrack(() => rawActivity?.span),
+        raw.span
+      )
+    )
+      rawActivity = raw
+  })
+  const actionSpan = $derived(
+    detailView === 'raw' ? (rawPresentation?.span ?? span) : span
+  )
+  // Raw JSON owns its displayed span until replacement formatting completes.
+  // Correlated logs remain independently updatable for that same native span.
+  const activity = $derived(
+    detailView === 'raw' && rawPresentation
+      ? (rawActivity ?? rawPresentation)
+      : presentation
+  )
 
   function requestedField(key: string, source = 'span') {
     return (
@@ -143,9 +192,9 @@
     )
   }
 
-  let isRoot = $derived(!span?.parentSpanID)
+  let isRoot = $derived(!actionSpan?.parentSpanID)
   const loadSpanJSON = $derived.by(() => {
-    const selected = span
+    const selected = actionSpan
     return selected
       ? (signal: AbortSignal) => spanCopyJSON(selected, signal)
       : undefined
@@ -156,9 +205,9 @@
   let spanAttributes = $derived(span?.attributes ?? [])
   let resourceAttributes = $derived(span?.resource.attributes ?? [])
   let scopeAttributes = $derived(span?.scope.attributes ?? [])
-  let numEvents = $derived(span?.events.length ?? 0)
-  let numCombinedEvents = $derived(numEvents + logs.length)
-  let numLinks = $derived(span?.links.length ?? 0)
+  let numEvents = $derived(actionSpan?.events.length ?? 0)
+  let numCombinedEvents = $derived(numEvents + activity.logs.length)
+  let numLinks = $derived(actionSpan?.links.length ?? 0)
   let hasUnrecognisedStatusCode = $derived(
     span !== undefined &&
       span.statusCodeValue !== 0 &&
@@ -195,15 +244,21 @@
         {#snippet action()}{#if span}<ValueCopyButton
               grouped
               loadText={loadSpanJSON}
+              sourceKey={actionSpan}
               label="span"
               tooltip="Copy span as JSON"
             />{/if}{/snippet}
       </DetailViewTabs>
     {/snippet}
+    {#if error}<p class="p-3 text-papaya" role="alert">{error}</p>
+    {/if}
     {#if span}<DetailViews
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
+        record={presentation}
+        refreshKey={span}
+        bind:displayedRecord={rawPresentation}
         wholeURL={`/export/traces/${span.traceID}`}
         scopes={[
           {
@@ -457,33 +512,62 @@
             {/if}
           </tbody>
         </table>
-      </DetailViews>{:else}<p class="p-3 text-subtle">No span selected</p>{/if}
+      </DetailViews>{:else if !loading && !error}<p class="p-3 text-subtle">
+        No span selected
+      </p>{/if}
   </DetailBubble>
 {/snippet}
 {#snippet eventsSection()}
-  <DetailBubble label="Events" icon={eventsIcon} count={numCombinedEvents}>
-    {#if numCombinedEvents === 0}
+  <DetailBubble
+    label="Events"
+    icon={eventsIcon}
+    pending={!actionSpan}
+    count={actionSpan && activity.logsKnown ? numCombinedEvents : undefined}
+  >
+    <LoadingStatus
+      pending={activity.logsPending &&
+        activity.logsRequestKey === logsRequestKey &&
+        logsPending}
+      label="Loading correlated logs…"
+      requestKey={activity.logsRequestKey}
+      class="block px-3 py-2 text-subtle"
+    />
+    {#if activity.logsError}<p class="p-3 text-papaya" role="alert">
+        {activity.logsError}
+      </p>
+      {#if activity.onRetryLogs}<button
+          type="button"
+          class="btn btn-ghost mx-3"
+          onclick={activity.onRetryLogs}>Retry correlated logs</button
+        >{/if}
+    {/if}
+    {#if actionSpan && activity.logsKnown && numCombinedEvents === 0}
       <p class="detail-view__section-empty">No events recorded for this span</p>
-    {:else if span}
+    {:else if actionSpan}
       <ActivityPanel
-        spanKey={`${span.traceID}/${span.spanID}`}
-        events={span.events}
-        {logs}
-        spanStartTime={span.startTime}
-        {selectedEventIndex}
-        {selectedLogRef}
+        spanKey={`${actionSpan.traceID}/${actionSpan.spanID}`}
+        events={actionSpan.events}
+        logs={activity.logs}
+        spanStartTime={actionSpan.startTime}
+        selectedEventIndex={activity.selectedEventIndex}
+        selectedLogRef={activity.selectedLogRef}
       />
     {/if}
   </DetailBubble>
 {/snippet}
 {#snippet linksSection()}
-  <DetailBubble label="Links" icon={linksIcon} count={numLinks}>
-    {#if numLinks === 0}
+  <DetailBubble
+    label="Links"
+    icon={linksIcon}
+    pending={!actionSpan}
+    count={actionSpan ? numLinks : undefined}
+  >
+    {#if actionSpan && numLinks === 0}
       <p class="detail-view__section-empty">No links recorded for this span</p>
-    {:else if span}
+    {:else if actionSpan}
       <LinksPanel
-        links={span.links}
-        spanKey={`${span.traceID}/${span.spanID}`}
+        links={actionSpan.links}
+        spanKey={`${actionSpan.traceID}/${actionSpan.spanID}`}
       />
     {/if}
   </DetailBubble>

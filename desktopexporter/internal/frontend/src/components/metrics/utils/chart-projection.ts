@@ -17,24 +17,28 @@ export function rateBucketStartForSourceDatapoint(
   const datapoint = timeseries.datapoints.find(
     candidate => candidate.id === datapointID
   )
-  if (datapoint?.metricType !== 'Sum' || !timeseries.views?.length) {
+  if (datapoint?.metricType !== 'Sum') {
+    return undefined
+  }
+  const views = timeseries.views
+  if (!views?.length) {
     return undefined
   }
 
   // Views arrive ordered by bucket start. Find the greatest start at or before
   // the raw timestamp: the store uses half-open [start, nextStart) buckets.
   let low = 0
-  let high = timeseries.views.length
+  let high = views.length
   while (low < high) {
     const middle = Math.floor((low + high) / 2)
-    if (timeseries.views[middle]!.bucketStart <= datapoint.timestamp) {
+    if (views[middle]!.bucketStart <= datapoint.timestamp) {
       low = middle + 1
     } else {
       high = middle
     }
   }
 
-  const bucket = timeseries.views[low - 1]
+  const bucket = views[low - 1]
   // A populated bucket with a null rate is the first cumulative bucket. The
   // chart omits it because no preceding reading exists, so there is no honest
   // point to select.
@@ -71,9 +75,11 @@ export function timeseriesToChartTimeseries(
 
   for (const ts of timeseries) {
     const points: ChartPoint[] = []
+    // Arrow's lazy getter creates row views; open the array once per traversal.
+    const datapoints = ts.datapoints
     // Reverse traversal preserves wire order while producing oldest-first points.
-    for (let i = ts.datapoints.length - 1; i >= 0; i--) {
-      const dp = ts.datapoints[i]!
+    for (let i = datapoints.length - 1; i >= 0; i--) {
+      const dp = datapoints[i]!
       if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
       // Chart coordinates are IEEE-754 numbers. Received integer measurements
       // stay bigint on the datapoint; only this display projection approximates.

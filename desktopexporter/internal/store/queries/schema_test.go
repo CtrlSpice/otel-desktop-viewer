@@ -692,6 +692,32 @@ func TestMacros_SumBucketVectors(t *testing.T) {
 
 }
 
+func TestMacros_SumBucketVectorDomains(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  sql.NullString
+	}{
+		{"NULL", sql.NullString{}},
+		{"[]", sql.NullString{}},
+		{"[NULL]", sql.NullString{}},
+		{"[[]]", sql.NullString{String: "[]", Valid: true}},
+		{"[NULL, NULL]", sql.NullString{String: "[]", Valid: true}},
+		{"[[NULL]]", sql.NullString{String: "[NULL]", Valid: true}},
+		{"[[NULL], [NULL]]", sql.NullString{String: "[0]", Valid: true}},
+		{"[[1, NULL, 3], NULL, [], [4, 5]]", sql.NullString{String: "[5, 5, 3]", Valid: true}},
+		{"[[18446744073709551615], [18446744073709551615]]", sql.NullString{String: "[36893488147419103230]", Valid: true}},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			var got sql.NullString
+			require.NoError(t, macroDB(t).QueryRow("select sum_bucket_vectors("+tc.input+"::hugeint[][])::varchar").Scan(&got))
+			require.Equal(t, tc.want, got)
+		})
+	}
+	var overflow string
+	require.ErrorContains(t, macroDB(t).QueryRow(`select sum_bucket_vectors(
+		[[170141183460469231731687303715884105727::hugeint], [1::hugeint]])::varchar`).Scan(&overflow), "Overflow")
+}
+
 func TestMacros_Idempotent(t *testing.T) {
 	// CREATE OR REPLACE must make every macro safe to execute again.
 	db := macroDB(t)
@@ -845,4 +871,28 @@ func TestMacros_DiffBucketVectorsUnsignedReset(t *testing.T) {
 		).Scan(&got))
 		assert.Equal(t, "[3, 6]", got)
 	})
+}
+
+func TestMacros_DiffBucketVectorsBoundaries(t *testing.T) {
+	db := macroDB(t)
+	for _, tc := range []struct {
+		name, current, previous, want string
+	}{
+		{"absent current", "NULL", "[1]", ""},
+		{"absent previous preserves slots", "[NULL, 5]", "NULL", "[NULL, 5]"},
+		{"empty vectors", "[]", "[]", "[]"},
+		{"missing slots are zero", "[NULL, 5, 9]", "[NULL, 2]", "[0, 3, 9]"},
+		{"removed nonzero tail is reset", "[5]", "[2, 1]", ""},
+		{"removed zero tail", "[5]", "[2, 0]", "[3, 0]"},
+		{"uint64 boundary", "[18446744073709551615]", "[18446744073709551614]", "[1]"},
+		{"derived hugeint boundary", "[170141183460469231731687303715884105727]", "[170141183460469231731687303715884105726]", "[1]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got sql.NullString
+			require.NoError(t, db.QueryRow(`select diff_bucket_vectors(`+
+				tc.current+`::hugeint[], `+tc.previous+`::hugeint[])::varchar`).Scan(&got))
+			assert.Equal(t, tc.want != "", got.Valid)
+			assert.Equal(t, tc.want, got.String)
+		})
+	}
 }

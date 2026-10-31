@@ -27,6 +27,7 @@
     loading?: boolean
     /** Delayed feedback for a list or record request; never replaces pane content. */
     loadingMessage?: string
+    loadingRequestKey?: string
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
@@ -88,6 +89,7 @@
     refreshAsideTip,
     loading,
     loadingMessage,
+    loadingRequestKey,
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
@@ -178,7 +180,8 @@
         <LoadingStatus
           pending={!!loadingMessage}
           label={loadingMessage}
-          requestKey={`${routeContext.route.path}:${selectedID ?? ''}`}
+          requestKey={loadingRequestKey ??
+            `${routeContext.route.path}:${selectedID ?? ''}`}
         />
       </div>
       <div class="page-layout__region" aria-busy={!!loadingMessage}>

@@ -94,7 +94,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	s, storeCtx := storetest.New(t)
 	for _, md := range sink.batches {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(storeCtx, conn, md, s.FlushedIDs())
+			return metrics.Ingest(storeCtx, conn, md)
 		}))
 	}
 

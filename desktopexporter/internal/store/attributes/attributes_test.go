@@ -49,7 +49,7 @@ func setup(t *testing.T) (*store.Store, context.Context) {
 		sp.Attributes().PutInt("http.status_code", int64(200+i))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, td, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, td)
 	}))
 
 	// A log from the same service, so a cross-signal match is possible.
@@ -62,17 +62,22 @@ func setup(t *testing.T) (*store.Store, context.Context) {
 	lr.Body().SetStr("done")
 	lr.Attributes().PutStr("log.origin", "checkout-handler")
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ld, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, ld)
 	}))
 
 	return s, ctx
 }
 
-func search(t *testing.T, s *store.Store, ctx context.Context, term string) []match {
+func search(t *testing.T, s *store.Store, ctx context.Context, term string, selected ...attributes.SearchOptions) []match {
 	t.Helper()
 	var out []match
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		raw, err := attributes.Search(ctx, db, term)
+		options := attributes.SearchOptions{Term: term}
+		if len(selected) > 0 {
+			options = selected[0]
+			options.Term = term
+		}
+		raw, err := attributes.SearchScoped(ctx, db, options)
 		if err != nil {
 			return err
 		}
@@ -81,12 +86,12 @@ func search(t *testing.T, s *store.Store, ctx context.Context, term string) []ma
 	return out
 }
 
-// The question the feature exists to answer: a value seen in the UI, traced
-// back to the keys that hold it -- across signals, in one call.
-func TestSearchFindsKeysByValue(t *testing.T) {
+// Values are requested only after selecting an exact field in a signal.
+func TestSearchSelectedValuesAndSignalScope(t *testing.T) {
 	t.Parallel()
 	s, ctx := setup(t)
-	got := search(t, s, ctx, "checkout")
+	assert.Empty(t, search(t, s, ctx, "checkout"), "unselected discovery does not scan values")
+	got := search(t, s, ctx, "checkout", attributes.SearchOptions{Signal: "traces", Owner: "span", Path: []any{"attributes", "http.route"}, Kind: "string"})
 
 	byKey := map[string]match{}
 	for _, m := range got {
@@ -95,9 +100,9 @@ func TestSearchFindsKeysByValue(t *testing.T) {
 
 	// A resource attribute (shared by traces and logs), a span attribute, and a
 	// log attribute -- three scopes, two signals, one query.
-	assert.Contains(t, byKey, "service.name/resource")
+	assert.NotContains(t, byKey, "service.name/resource")
 	assert.Contains(t, byKey, "http.route/span")
-	assert.Contains(t, byKey, "log.origin/log")
+	assert.NotContains(t, byKey, "log.origin/log")
 
 	// http.route has two matching values (/checkout and /checkout/confirm) but
 	// three distinct values overall, so the count must reflect the match, not
@@ -109,6 +114,7 @@ func TestSearchFindsKeysByValue(t *testing.T) {
 
 	// /health does not match, so it must not be offered as an example.
 	assert.NotContains(t, byKey["http.route/span"].SampleValues, json.RawMessage(`{"kind":"string","value":"/health"}`))
+	assert.Empty(t, search(t, s, ctx, "checkout", attributes.SearchOptions{Signal: "logs", Owner: "span", Path: []any{"attributes", "http.route"}, Kind: "string"}))
 }
 
 func TestSearchMatchesKeyNamesToo(t *testing.T) {
@@ -118,12 +124,13 @@ func TestSearchMatchesKeyNamesToo(t *testing.T) {
 	got := search(t, s, ctx, "status")
 	require.Len(t, got, 1)
 	assert.Equal(t, "http.status_code", got[0].Name)
+	assert.Empty(t, got[0].SampleValues, "keys-first discovery must not fetch values")
 }
 
 func TestSearchIsCaseInsensitive(t *testing.T) {
 	t.Parallel()
 	s, ctx := setup(t)
-	assert.ElementsMatch(t, search(t, s, ctx, "CHECKOUT"), search(t, s, ctx, "checkout"))
+	assert.ElementsMatch(t, search(t, s, ctx, "STATUS"), search(t, s, ctx, "status"))
 }
 
 func TestSearchEmptyAndNoMatch(t *testing.T) {
@@ -135,21 +142,21 @@ func TestSearchEmptyAndNoMatch(t *testing.T) {
 }
 
 // TestSearchEscapesLikeWildcards verifies that literal wildcard characters do
-// not match the complete dictionary.
+// not match all stored attribute values.
 func TestSearchEscapesLikeWildcards(t *testing.T) {
 	t.Parallel()
 	s, ctx := setup(t)
 	assert.Empty(t, search(t, s, ctx, "%"), "%% must be a literal, not a wildcard")
 	assert.Empty(t, search(t, s, ctx, "_"))
-	assert.NotEmpty(t, search(t, s, ctx, "checkout"), "control: real terms still match")
+	assert.NotEmpty(t, search(t, s, ctx, "route"), "control: real key names still match")
 }
 
-// Samples are bounded, or a broad term returns the dictionary through the back
+// Samples are bounded, or a broad term returns every stored value through the back
 // door.
 func TestSearchBoundsSampleValues(t *testing.T) {
 	t.Parallel()
 	s, ctx := setup(t)
-	got := search(t, s, ctx, "/")
+	got := search(t, s, ctx, "/", attributes.SearchOptions{Signal: "traces", Owner: "span", Path: []any{"attributes", "http.route"}, Kind: "string"})
 
 	var routes match
 	for _, m := range got {

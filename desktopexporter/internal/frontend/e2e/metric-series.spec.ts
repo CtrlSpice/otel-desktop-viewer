@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { routeTelemetry, type FixtureRoute } from './telemetry-fixtures'
+import { expect, test, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { ThemeName } from '../src/themes'
 import heatmapPalette from '../src/themes/heatmap-palette.json' with { type: 'json' }
@@ -9,12 +10,17 @@ import {
   graphSwatch,
 } from '../src/themes/graph-inks'
 import type {
-  JsonAggregateBucket,
-  JsonDataPoint,
-  JsonMetricSeriesViewData,
-  JsonMetricSummary,
-  JsonMetricViewData,
-} from '../src/types/wire-types'
+  AggregateFixture,
+  PointFixture,
+  SeriesFixture,
+  MetricFixture,
+} from '../src/test/telemetry-fixture-types'
+import type { MetricSummary } from '../src/types/api-types'
+
+// The test transport encodes these readable timestamp fixtures as native Arrow.
+type MetricSummaryFixture = Omit<MetricSummary, 'lastSeen'> & {
+  lastSeen: string | null
+}
 
 const startMs = 1_700_000_000_000
 const startNs = String(BigInt(startMs) * 1_000_000n)
@@ -61,34 +67,30 @@ const resource = {
   ],
   droppedAttributesCount: 0,
 }
-const timeseries: JsonMetricSeriesViewData[] = ['first', 'second'].map(
-  name => ({
-    seriesRef: name,
-    attributes: [
-      { key: 'route', value: { kind: 'string', value: `/${name}` } },
-    ],
-    resource,
-    datapoints: Array.from({ length: 40 }, (_, index) => ({
-      id: `${name}-${index}`,
-      metricType: 'Gauge',
-      timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
-      timestampMs: startMs + index * 1000,
-      startTime: startNs,
-      flags: 0,
-      exemplars: [],
-      doubleValue: index + 1,
-      intValue: null,
-      valueType: 'Double',
-    })),
-    stats: null,
-    datapointCount: 40,
-    lastSeenNs: endNs,
-    rateStats: null,
-    views: null,
-    sparkline: null,
-  })
-)
-const metric: JsonMetricViewData = {
+const timeseries: SeriesFixture[] = ['first', 'second'].map(name => ({
+  seriesRef: name,
+  attributes: [{ key: 'route', value: { kind: 'string', value: `/${name}` } }],
+  resource,
+  datapoints: Array.from({ length: 40 }, (_, index) => ({
+    id: `${name}-${index}`,
+    metricType: 'Gauge',
+    timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
+    timestampMs: startMs + index * 1000,
+    startTime: startNs,
+    flags: 0,
+    exemplars: [],
+    doubleValue: index + 1,
+    intValue: null,
+    valueType: 'Double',
+  })),
+  stats: null,
+  datapointCount: 40,
+  lastSeenNs: endNs,
+  rateStats: null,
+  views: null,
+  sparkline: null,
+}))
+const metric: MetricFixture = {
   metricRef: 'series-layout',
   name: 'request.duration',
   description: '',
@@ -117,10 +119,9 @@ const metric: JsonMetricViewData = {
     effective: { startNs, endNs },
   },
 }
-const summary: JsonMetricSummary = {
+const summary: MetricSummaryFixture = {
   metricRef: metric.metricRef,
   name: metric.name,
-  description: '',
   unit: metric.unit,
   metricType: 'Gauge',
   aggregationTemporalityCode: null,
@@ -135,7 +136,7 @@ const summary: JsonMetricSummary = {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -165,14 +166,262 @@ test.beforeEach(async ({ page }) => {
                   },
                   rejections: [],
                 }
-              : []
+              : request.method === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
 })
 
-test('metric replacement keeps its displayed identity and mounted headers during delayed loading', async ({
+for (const statistics of ['pending', 'failed'] as const) {
+  test(`metric lists and details remain usable with ${statistics} freshness statistics`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem('signal-detail:open', 'true')
+    )
+    let statsRequests = 0
+    let listRequests = 0
+    await routeTelemetry(page, async route => {
+      const { id, method } = route.request().postDataJSON()
+      if (method === 'getStats') {
+        statsRequests++
+        if (statistics === 'failed') {
+          await route.fulfill({
+            json: {
+              jsonrpc: '2.0',
+              id,
+              error: { code: -32603, message: 'statistics unavailable' },
+            },
+          })
+        }
+      } else if (method === 'searchMetricSummaries') {
+        listRequests++
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            result: [
+              {
+                ...summary,
+                name: listRequests === 1 ? summary.name : 'refreshed.metric',
+              },
+            ],
+          },
+        })
+      } else await route.fallback()
+    })
+    await page.goto('/metrics?time=all')
+    await expect(
+      page.getByRole('button', { name: new RegExp(summary.name) })
+    ).toBeVisible()
+    const fields = page.getByRole('table', { name: 'Metric fields' })
+    await expect(fields).toContainText(metric.name)
+    await expect(
+      page.getByRole('button', { name: 'Download metric', exact: true })
+    ).toBeEnabled()
+    expect(statsRequests).toBeGreaterThan(0)
+    const initialFields = await fields.elementHandle()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect(
+      page.getByRole('button', { name: /refreshed.metric/ })
+    ).toBeVisible()
+    await expect(fields).toContainText(metric.name)
+    expect(
+      await fields.evaluate((node, before) => node === before, initialFields)
+    ).toBe(true)
+    await expect(
+      page.getByText('Loading metrics…', { exact: true })
+    ).toHaveCount(0)
+    await expect(
+      page.getByText('statistics unavailable', { exact: true })
+    ).toHaveCount(0)
+  })
+}
+
+test('a failed metric search retains the mounted chart and selected datapoint through recovery', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  let failSearch = false
+  await routeTelemetry(page, async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method === 'searchMetricSummaries' && failSearch) {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32603, message: 'metric search unavailable' },
+        },
+      })
+    } else await route.fallback()
+  })
+  await page.goto(
+    `/metrics/${metric.metricRef}?time=all&series=first&dp=first-0`
+  )
+  const chart = page.locator('.metrics-page__chart')
+  const line = chart.locator('.metric-series-line[data-series-key="first"]')
+  const datapoint = page.locator('[data-dp-id="first-0"]')
+  await expect(line).toBeVisible()
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  const originalChart = await chart.elementHandle()
+  const originalLine = await line.elementHandle()
+  failSearch = true
+  const editor = page.getByRole('textbox', {
+    name: 'Search metrics',
+    exact: true,
+  })
+  await editor.fill('name = "current"')
+  await editor.press('Enter')
+  await expect(page.getByRole('alert')).toContainText(
+    'metric search unavailable'
+  )
+  expect(
+    await chart.evaluate((node, before) => node === before, originalChart)
+  ).toBe(true)
+  expect(
+    await line.evaluate((node, before) => node === before, originalLine)
+  ).toBe(true)
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).searchParams.get('dp')).toBe('first-0')
+  failSearch = false
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(
+    await chart.evaluate((node, before) => node === before, originalChart)
+  ).toBe(true)
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).searchParams.get('q')).toBe('name = "current"')
+})
+
+test('compact series labels retain hidden rows and load exact context only on disclosure', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  const receivedContext = 'received context not included in the series labels'
+  const contextRequests: Record<string, unknown>[] = []
+  const comparisonRequests: Record<string, unknown>[] = []
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method === 'getMetricView') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...metric,
+            timeseries: timeseries.map(series => ({
+              ...series,
+              attributesComplete: false,
+              labelPreviews: [
+                {
+                  key: 'route',
+                  text: series.seriesRef === 'first' ? '/first' : '/second',
+                },
+              ],
+            })),
+          },
+        },
+      })
+    } else if (method === 'getMetricSeriesOrder') {
+      comparisonRequests.push(params)
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result:
+            params.direction === 'asc'
+              ? ['first', 'second']
+              : ['second', 'first'],
+        },
+      })
+    } else if (method === 'getMetricSeries') {
+      contextRequests.push(params)
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...metric,
+            seriesRef: params.seriesRef,
+            datapoints: [],
+            attributes: [
+              ...timeseries.find(
+                series => series.seriesRef === params.seriesRef
+              )!.attributes,
+              {
+                key: 'full.context',
+                value: { kind: 'string', value: receivedContext },
+              },
+            ],
+          },
+        },
+      })
+    } else await route.fallback()
+  })
+  await page.goto(`/metrics/${metric.metricRef}?time=all`)
+  const table = page.getByRole('grid', { name: 'Metric series', exact: true })
+  await expect(table).toContainText('/first')
+  expect(contextRequests).toHaveLength(0)
+  expect(comparisonRequests).toHaveLength(0)
+  await table
+    .getByRole('checkbox', { name: 'Show route: /second in chart' })
+    .uncheck()
+  await expect(
+    table.getByRole('button', { name: 'Select route: /first', exact: true })
+  ).toBeVisible()
+  await expect(
+    table.getByRole('button', { name: 'Select route: /second', exact: true })
+  ).toBeVisible()
+  const sort = table.getByRole('button', { name: 'Sort by route', exact: true })
+  await sort.click()
+  await expect.poll(() => comparisonRequests.length).toBe(1)
+  await expect(table.locator('th[aria-sort="ascending"]')).toContainText(
+    'route'
+  )
+  expect(comparisonRequests[0]).toEqual({
+    metricRef: metric.metricRef,
+    startTime: metric.window.requested.startNs,
+    endTime: metric.window.requested.endNs,
+    seriesRefs: ['first', 'second'],
+    key: 'route',
+    direction: 'asc',
+  })
+  await sort.click()
+  await expect(table.locator('tr[data-series-key]').first()).toHaveAttribute(
+    'data-series-key',
+    'second'
+  )
+  expect(comparisonRequests).toHaveLength(2)
+  await expect(
+    table.getByRole('checkbox', { name: 'Show route: /second in chart' })
+  ).not.toBeChecked()
+  await table
+    .getByRole('button', { name: 'Expand attributes for route: /first' })
+    .click()
+  await expect(table).toContainText(receivedContext)
+  expect(contextRequests).toEqual([
+    {
+      metricRef: metric.metricRef,
+      seriesRef: 'first',
+      startTime: null,
+      endTime: null,
+      includeDatapoints: false,
+    },
+  ])
+})
+
+test('metric replacement keeps its displayed identity and mounted headers during delayed loading', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'true')
@@ -183,7 +432,7 @@ test('metric replacement keeps its displayed identity and mounted headers during
     name: 'replacement.metric',
   }
   let release: (() => Promise<void>) | undefined
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries') {
       await route.fulfill({
@@ -208,10 +457,12 @@ test('metric replacement keeps its displayed identity and mounted headers during
         route.fulfill({ json: { jsonrpc: '2.0', id, result: replacement } })
     } else await route.fallback()
   })
-  await page.goto(`/metrics/${metric.metricRef}?time=all`)
+  await page.goto(`/metrics/${metric.metricRef}?time=all&series=first`)
   const fields = page.getByRole('table', { name: 'Metric fields' })
   const header = page.locator('.page-layout__main-chrome > .pane-header')
   await expect(fields).toContainText(metric.name)
+  const datapoint = page.locator('[data-dp-id="first-0"]')
+  await expect(datapoint).toBeVisible()
   const nodes = await page.evaluateHandle(() => [
     document.querySelector('.page-layout__main-chrome > .pane-header'),
     document.querySelector('[aria-label="Metric fields"]'),
@@ -224,11 +475,26 @@ test('metric replacement keeps its displayed identity and mounted headers during
     .getByRole('button', { name: /replacement.metric/ })
     .click()
   await expect.poll(() => !!release).toBe(true)
+  const requestedURL = page.url()
   await expect(header).toContainText(metric.name)
   await expect(fields).toContainText(metric.name)
   await expect(page.getByText('Loading selected metric…')).toHaveCount(0)
   await page.clock.runFor(200)
   await expect(page.getByText('Loading selected metric…')).toBeVisible()
+  await page.clock.resume()
+  await datapoint.click()
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(page.url()).toBe(requestedURL)
+  await page.getByRole('group', { name: 'asDouble', exact: true }).hover()
+  await page.getByRole('button', { name: 'Copy asDouble', exact: true }).click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('1')
+  await datapoint.press('Enter')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'false')
+  await datapoint.press('Space')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(page.url()).toBe(requestedURL)
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)
@@ -241,6 +507,163 @@ test('metric replacement keeps its displayed identity and mounted headers during
   ).toBe(true)
 })
 
+test('datapoints remain interactive when a chart response reuses the received-series cache', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() => {
+    localStorage.setItem('signal-detail:open', 'true')
+    localStorage.setItem(
+      'metrics:view:series-layout',
+      JSON.stringify({ visibleKeys: ['first'] })
+    )
+  })
+  let viewRequests = 0
+  let rawRequests = 0
+  let release: (() => Promise<void>) | undefined
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getMetricView') return route.fallback()
+    if (params.targetBuckets === 0) {
+      rawRequests++
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: { ...metric, timeseries: [timeseries[0]] },
+        },
+      })
+    }
+    if (++viewRequests === 1) {
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...metric,
+            timeseries: [timeseries[0], { ...timeseries[1], datapoints: [] }],
+          },
+        },
+      })
+    }
+    release = () =>
+      route.fulfill({ json: { jsonrpc: '2.0', id, result: metric } })
+  })
+  await page.goto(
+    `/metrics/${metric.metricRef}?time=all&series=first&dp=first-0`
+  )
+  const datapoint = page.locator('[data-dp-id="first-0"]')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  const original = await datapoint.elementHandle()
+  await page
+    .getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+    .check()
+  await expect.poll(() => !!release).toBe(true)
+  await release!()
+  await expect(page.getByText('Loading selected metric…')).toHaveCount(0)
+  await expect(
+    page.locator('#metric-chart-tabpanel .metric-series-line')
+  ).toHaveCount(2)
+  expect(rawRequests).toBe(1)
+  expect(
+    await datapoint.evaluate((node, before) => node === before, original)
+  ).toBe(true)
+  await datapoint.press('Enter')
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'false')
+  expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+  await datapoint.click()
+  await expect(datapoint).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).searchParams.get('dp')).toBe('first-0')
+})
+
+for (const change of ['series', 'refresh'] as const) {
+  test(`empty datapoints recover through a failed ${change} request and retry`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.setViewportSize({ width: 1920, height: 1100 })
+    await page.addInitScript(() =>
+      localStorage.setItem('signal-detail:open', 'true')
+    )
+    let requests = 0
+    const pending: FixtureRoute[] = []
+    await routeTelemetry(page, async route => {
+      const { id, method, params } = route.request().postDataJSON()
+      if (method !== 'getMetricView' || params.targetBuckets !== 0)
+        return route.fallback()
+      if (++requests === 1) {
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            result: { ...metric, timeseries: [], datapointCount: 0 },
+          },
+        })
+      } else pending.push(route)
+    })
+    await page.goto(`/metrics/${metric.metricRef}?time=all&series=first`)
+    const section = page.locator('[data-detail-section="datapoints"]')
+    await expect(section).toHaveAttribute('data-detail-group', 'inactive')
+    await expect(section).toContainText('[0]')
+    if (change === 'series') {
+      await page
+        .getByRole('button', { name: 'Select route: /second', exact: true })
+        .click()
+    } else
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => pending.length).toBe(1)
+    await expect(section).not.toHaveAttribute('data-detail-group', 'inactive')
+    await expect(section).not.toContainText('[0]')
+    await expect(
+      page.getByText('Loading datapoints…', { exact: true })
+    ).toBeVisible()
+    const failed = pending[0]!
+    await failed.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: failed.request().postDataJSON().id,
+        error: { code: -32603, message: 'raw series unavailable' },
+      },
+    })
+    await expect(section).toContainText('Could not load datapoints.')
+    await page
+      .getByRole('button', { name: 'Retry datapoints', exact: true })
+      .click()
+    await expect.poll(() => pending.length).toBe(2)
+    const next = pending[1]!
+    const seriesRef = change === 'series' ? 'second' : 'first'
+    await next.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: next.request().postDataJSON().id,
+        result: {
+          ...metric,
+          timeseries: timeseries.filter(
+            series => series.seriesRef === seriesRef
+          ),
+        },
+      },
+    })
+    const point = page.locator(`[data-dp-id="${seriesRef}-0"]`)
+    await expect(point).toBeVisible()
+    await expect(section.locator('summary')).toContainText('[40]')
+    await point.click()
+    await expect(point).toHaveAttribute('aria-expanded', 'true')
+    expect(new URL(page.url()).searchParams.get('dp')).toBe(`${seriesRef}-0`)
+    await page.getByRole('group', { name: 'asDouble', exact: true }).hover()
+    await page
+      .getByRole('button', { name: 'Copy asDouble', exact: true })
+      .click()
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe('1')
+  })
+}
+
 test('series IDs stay on one line beside a separate compact colour column', async ({
   page,
 }) => {
@@ -248,7 +671,7 @@ test('series IDs stay on one line beside a separate compact colour column', asyn
     '888d17a7-2d32-4945-bc9c-2f4bd2aab16f',
     '47801e24-eb28-4964-b691-79ca4638f84e',
   ]
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method !== 'getMetricView') return route.fallback()
     await route.fulfill({
@@ -412,7 +835,7 @@ test('metric descriptions stay in Details rather than summary cards', async ({
 }) => {
   const description =
     'Synthetic heatmap playground, same samples as the explicit histogram: Load burst'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries')
       return route.fulfill({
@@ -568,7 +991,7 @@ for (const { id: theme } of THEMES) {
 test('series colour picker overrides persist independently of visibility and disclosure and reset to automatic', async ({
   page,
 }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method !== 'getMetricView') return route.fallback()
     await route.fulfill({
@@ -710,7 +1133,7 @@ test('series table sorts attributes while retaining checked choices and colours'
     { key: 'b', model: 'haiku', type: 'output' },
     { key: 'c', model: 'sonnet', type: 'input' },
   ]
-  const received: JsonMetricViewData = {
+  const received: MetricFixture = {
     ...metric,
     timeseries: samples.map(sample => ({
       ...timeseries[0]!,
@@ -726,12 +1149,26 @@ test('series table sorts attributes while retaining checked choices and colours'
     })),
   }
   let requested: string[] = []
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     if (request.method === 'getMetricView')
       return route.fulfill({
         json: { jsonrpc: '2.0', id: request.id, result: received },
       })
+    if (request.method === 'getMetricSeriesOrder') {
+      const { key, direction } = request.params
+      const order =
+        key === 'model'
+          ? direction === 'asc'
+            ? ['a', 'b', 'c']
+            : ['c', 'a', 'b']
+          : direction === 'asc'
+            ? ['a', 'c', 'b']
+            : ['b', 'a', 'c']
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id: request.id, result: order },
+      })
+    }
     if (request.method === 'getMetricAggregateView') {
       requested = request.params.seriesRefs
       expect(request.params.selectedSeriesRefs).toEqual([])
@@ -814,7 +1251,7 @@ test('series table sorts attributes while retaining checked choices and colours'
 })
 
 test.describe('independent histogram aggregate loading', () => {
-  const bucket: JsonAggregateBucket = {
+  const bucket: AggregateFixture = {
     timestamp: startNs,
     startTime: startNs,
     count: 12,
@@ -831,7 +1268,7 @@ test.describe('independent histogram aggregate loading', () => {
     includeNextMetric = false,
     cumulativeReadings?: number
   ) {
-    const pending: { route: Route; wholeWindow: boolean }[] = []
+    const pending: { route: FixtureRoute; wholeWindow: boolean }[] = []
     const temporality =
       cumulativeReadings === undefined
         ? { aggregationTemporalityCode: 1, aggregationTemporality: 'Delta' }
@@ -839,7 +1276,7 @@ test.describe('independent histogram aggregate loading', () => {
             aggregationTemporalityCode: 2,
             aggregationTemporality: 'Cumulative',
           }
-    const histogramMetric: JsonMetricViewData = {
+    const histogramMetric: MetricFixture = {
       ...metric,
       metricType: 'Histogram',
       ...temporality,
@@ -862,12 +1299,12 @@ test.describe('independent histogram aggregate loading', () => {
           })),
       })),
     }
-    const histogramSummary: JsonMetricSummary = {
+    const histogramSummary: MetricSummaryFixture = {
       ...summary,
       metricType: 'Histogram',
       ...temporality,
     }
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON()
       if (request.method === 'getMetricAggregateView') {
         pending.push({ route, wholeWindow: request.params.targetBuckets === 1 })
@@ -930,7 +1367,7 @@ test.describe('independent histogram aggregate loading', () => {
     return pending
   }
 
-  async function respond(route: Route, value = bucket, fail = false) {
+  async function respond(route: FixtureRoute, value = bucket, fail = false) {
     await route.fulfill({
       json: {
         jsonrpc: '2.0',
@@ -939,6 +1376,124 @@ test.describe('independent histogram aggregate loading', () => {
           ? { error: { code: -32603, message: 'Aggregate unavailable' } }
           : { result: { aggregate: [value], scalarAggregate: null } }),
       },
+    })
+  }
+
+  for (const outcome of ['success', 'failure'] as const) {
+    test(`a fast detail refresh retains each histogram chart's own data and query scope through aggregate ${outcome}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1920, height: 1100 })
+      await page.addInitScript(() =>
+        localStorage.setItem('signal-detail:open', 'true')
+      )
+      const pending = await holdAggregates(page)
+      await Promise.all(pending.map(({ route }) => respond(route)))
+      const chart = page.locator('#metric-chart-tabpanel')
+      const cells = chart.locator('.heatmap-cell')
+      await expect(cells).toHaveCount(3)
+      const originalCell = await cells.nth(1).elementHandle()
+      const nextStart = String(BigInt(startNs) + 3_600_000_000_000n)
+      const nextEnd = String(BigInt(endNs) + 3_600_000_000_000n)
+      const columns: Record<string, unknown>[] = []
+      await routeTelemetry(page, async route => {
+        const { id, method, params } = route.request().postDataJSON()
+        if (method !== 'getMetricView') return route.fallback()
+        if (params.targetBuckets === 1) {
+          columns.push(params)
+          return route.fallback()
+        }
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              ...metric,
+              metricType: 'Histogram',
+              aggregationTemporality: 'Delta',
+              aggregationTemporalityCode: 1,
+              unit: 's',
+              description: 'fresh independent metadata',
+              timeseries: timeseries.map(series => ({
+                ...series,
+                datapoints: [],
+              })),
+              window: {
+                requested: { startNs: null, endNs: null },
+                effective: { startNs: nextStart, endNs: nextEnd },
+              },
+            },
+          },
+        })
+      })
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+      await expect.poll(() => pending.length).toBe(4)
+      await expect(
+        page.getByRole('table', { name: 'Metric fields' })
+      ).toContainText('fresh independent metadata')
+      await expect(cells).toHaveCount(3)
+      expect(
+        await cells
+          .nth(1)
+          .evaluate((node, before) => node === before, originalCell)
+      ).toBe(true)
+      await expect(chart.getByText('value (ms)', { exact: true })).toBeVisible()
+      const cellBounds = (await cells.nth(1).boundingBox())!
+      await page.mouse.click(
+        cellBounds.x + cellBounds.width / 2,
+        cellBounds.y + cellBounds.height / 2
+      )
+      await expect.poll(() => columns.length).toBe(1)
+      expect(columns[0]).toMatchObject({
+        metricRef: metric.metricRef,
+        startTime: startNs,
+        endTime: endNs,
+      })
+
+      const summaryRequest = pending
+        .slice(2)
+        .find(request => request.wholeWindow)!
+      const heatmapRequest = pending
+        .slice(2)
+        .find(request => !request.wholeWindow)!
+      await respond(summaryRequest.route, {
+        ...bucket,
+        count: 21,
+        bucketCounts: [5, 11, 5],
+        timestamp: nextStart,
+      })
+      await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+      await expect(chart.getByText('value (s)', { exact: true })).toBeVisible()
+      await expect(chart.locator('.lc-bars-bar')).toHaveCount(3)
+      await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
+      await expect(chart.getByText('value (ms)', { exact: true })).toBeVisible()
+      const returnedCell = await cells.nth(1).elementHandle()
+      await respond(
+        heatmapRequest.route,
+        { ...bucket, timestamp: nextStart },
+        outcome === 'failure'
+      )
+      if (outcome === 'failure') {
+        await expect(
+          page.getByText('Could not load the chart aggregate.')
+        ).toBeVisible()
+        await expect(
+          chart.getByText('value (ms)', { exact: true })
+        ).toBeVisible()
+        expect(
+          await cells
+            .nth(1)
+            .evaluate((node, before) => node === before, returnedCell)
+        ).toBe(true)
+      } else {
+        await expect(
+          chart.getByText('value (s)', { exact: true })
+        ).toBeVisible()
+      }
+      await expect(cells).toHaveCount(3)
+      await expect(
+        page.getByRole('table', { name: 'Metric fields' })
+      ).toContainText('fresh independent metadata')
     })
   }
 
@@ -953,8 +1508,8 @@ test.describe('independent histogram aggregate loading', () => {
     const before = await bars.evaluateAll(elements =>
       elements.map(element => element.getAttribute('fill'))
     )
-    let replacement: Route | undefined
-    await page.route('**/rpc', route => {
+    let replacement: FixtureRoute | undefined
+    await routeTelemetry(page, route => {
       const request = route.request().postDataJSON()
       if (
         request.method === 'getMetricView' &&
@@ -996,7 +1551,7 @@ test.describe('independent histogram aggregate loading', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
     const pending = await holdAggregates(page)
-    const large: JsonAggregateBucket = {
+    const large: AggregateFixture = {
       ...bucket,
       count: 9_000_000_000_000_000,
       sum: 1e20,
@@ -1026,7 +1581,7 @@ test.describe('independent histogram aggregate loading', () => {
     const pending = await holdAggregates(page)
     for (const { route } of pending) await respond(route)
     // Fulfil subsequent navigation/reload requests with the same distribution.
-    await page.route('**/rpc', route =>
+    await routeTelemetry(page, route =>
       route.request().postDataJSON().method === 'getMetricAggregateView'
         ? respond(route)
         : route.fallback()
@@ -1257,9 +1812,9 @@ test.describe('independent histogram aggregate loading', () => {
     })
     const requests: { datapointSeriesRefs?: string[] }[] = []
     page.on('request', request => {
-      if (!request.url().endsWith('/rpc')) return
+      if (!request.url().endsWith('/api/data/getMetricView')) return
       const body = request.postDataJSON()
-      if (body.method === 'getMetricView') requests.push(body.params)
+      requests.push(body)
     })
     await holdAggregates(page, false, 1)
     const checkbox = page.getByRole('checkbox', {
@@ -1310,7 +1865,7 @@ test.describe('independent histogram aggregate loading', () => {
       )
     const originalCells = await cellGeometry()
     const originalPaths = await paths()
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON()
       if (request.method !== 'getMetricAggregateView') return route.fallback()
       await route.fulfill({
@@ -1845,7 +2400,7 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
-  test('rapid checkbox changes still coalesce into one request pair after 120ms', async ({
+  test('pointer checkbox changes start each replacement immediately', async ({
     page,
   }) => {
     const now = new Date('2026-10-18T12:00:00Z')
@@ -1861,14 +2416,15 @@ test.describe('independent histogram aggregate loading', () => {
     await page.clock.runFor(32)
     await expect(checkbox).toBeVisible()
     await checkbox.uncheck({ force: true })
-    await page.clock.runFor(60)
-    expect(pending).toHaveLength(2)
-    await checkbox.check({ force: true })
-    await page.clock.runFor(119)
-    expect(pending).toHaveLength(2)
-    await page.clock.runFor(1)
     await expect.poll(() => pending.length).toBe(4)
     for (const { route } of pending.slice(2)) {
+      expect(route.request().postDataJSON().params.seriesRefs).toEqual([
+        'first',
+      ])
+    }
+    await checkbox.check({ force: true })
+    await expect.poll(() => pending.length).toBe(6)
+    for (const { route } of pending.slice(4)) {
       expect(route.request().postDataJSON().params.seriesRefs).toEqual([
         'first',
         'second',
@@ -1895,7 +2451,9 @@ test.describe('independent histogram aggregate loading', () => {
       await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
       if (fail)
         await expect(
-          page.getByText('No bucket data in range', { exact: true })
+          page.getByText('Could not load the histogram aggregate.', {
+            exact: true,
+          })
         ).toBeVisible()
       else await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
       await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
@@ -1923,11 +2481,57 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
   })
 
+  test('pending and failed selection aggregates retain both charts without claiming empty data', async ({
+    page,
+  }) => {
+    const pending = await holdAggregates(page)
+    await expect(
+      page.getByText('No bucket data in range', { exact: true })
+    ).toHaveCount(0)
+    await expect(page.getByText('Loading chart aggregate…')).toBeVisible()
+    for (const { route } of pending) await respond(route)
+    await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+    await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    const canvas = await page.locator('.lc-bars-bar').first().elementHandle()
+    await page
+      .getByRole('checkbox', {
+        name: 'Show route: /second in chart',
+        exact: true,
+      })
+      .uncheck()
+    await expect.poll(() => pending.length).toBe(4)
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    await expect(page.getByText('Loading chart aggregate…')).toBeVisible()
+    expect(await canvas!.evaluate(node => node.isConnected)).toBe(true)
+    for (const { route } of pending.slice(2)) await respond(route, bucket, true)
+    await expect(
+      page.getByText('Could not load the histogram aggregate.')
+    ).toBeVisible()
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    expect(await canvas!.evaluate(node => node.isConnected)).toBe(true)
+    await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
+    await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+    await expect(
+      page.getByText('Could not load the chart aggregate.')
+    ).toBeVisible()
+    await expect(
+      page.getByText('No bucket data in range', { exact: true })
+    ).toHaveCount(0)
+  })
+
   for (const fail of [false, true]) {
     test(`late aggregate ${fail ? 'errors' : 'results'} cannot replace a newer checked selection`, async ({
       page,
     }) => {
       const pending = await holdAggregates(page)
+      const cancelled = Promise.all(
+        pending.map(({ route }) =>
+          page.waitForEvent('requestfailed', {
+            predicate: request => request === route.originalRequest(),
+          })
+        )
+      )
       await page
         .getByRole('checkbox', {
           name: 'Show route: /second in chart',
@@ -1937,17 +2541,6 @@ test.describe('independent histogram aggregate loading', () => {
       await expect.poll(() => pending.length).toBe(4)
       for (const request of pending.slice(2)) await respond(request.route)
       await expect(page.locator('.heatmap-cell')).toHaveCount(3)
-      const finished = Promise.all(
-        pending
-          .slice(0, 2)
-          .map(({ route }) =>
-            page
-              .waitForResponse(
-                response => response.request() === route.request()
-              )
-              .then(response => response.finished())
-          )
-      )
       for (const request of pending.slice(0, 2)) {
         await respond(
           request.route,
@@ -1955,7 +2548,8 @@ test.describe('independent histogram aggregate loading', () => {
           fail
         )
       }
-      await finished
+      for (const request of await cancelled)
+        expect(request.failure()?.errorText).toContain('ABORTED')
       await page.evaluate(
         () =>
           new Promise(resolve =>
@@ -1977,7 +2571,7 @@ for (const { id: theme } of THEMES) {
     test(`${metricType} graph highlights use rounded neutral interaction roles in ${theme}`, async ({
       page,
     }) => {
-      const datapoints: JsonDataPoint[] = [0, 1].map(index => {
+      const datapoints: PointFixture[] = [0, 1].map(index => {
         const common = {
           id: `hist-${index}`,
           timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
@@ -2012,7 +2606,7 @@ for (const { id: theme } of THEMES) {
               negativeBucketCounts: [],
             }
       })
-      const aggregate: JsonAggregateBucket[] = datapoints.map(point => ({
+      const aggregate: AggregateFixture[] = datapoints.map(point => ({
         timestamp: point.timestamp,
         startTime: startNs,
         count: 12,
@@ -2032,7 +2626,7 @@ for (const { id: theme } of THEMES) {
               negativeBucketCounts: [],
             }),
       }))
-      const histogramMetric: JsonMetricViewData = {
+      const histogramMetric: MetricFixture = {
         ...metric,
         metricType,
         aggregationTemporalityCode: 1,
@@ -2040,7 +2634,7 @@ for (const { id: theme } of THEMES) {
         datapointCount: 2,
         timeseries: [{ ...timeseries[0]!, datapoints, datapointCount: 2 }],
       }
-      await page.route('**/rpc', async route => {
+      await routeTelemetry(page, async route => {
         const request = route.request().postDataJSON() as {
           id: number
           method: string
@@ -2429,6 +3023,7 @@ for (const { id: theme } of THEMES) {
           exact: true,
         })
         const urlBeforeEmphasis = page.url()
+        await expect(quantileLines).toHaveCount(3)
         const geometry = await quantileLines.evaluateAll(lines =>
           lines.map(line =>
             ['d', 'x1', 'x2', 'y1', 'y2'].map(attr => line.getAttribute(attr))
@@ -2527,7 +3122,7 @@ for (const { id: theme } of THEMES) {
 test('line stickies stay near their marker and avoid measured stat labels after resizing', async ({
   page,
 }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -2621,13 +3216,13 @@ test('extrema use the series colour and the backed average stays behind the seri
   await page.addInitScript(() =>
     localStorage.setItem('theme', 'madoromi-aki-hiru')
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
     }
     if (request.method !== 'getMetricView') return route.fallback()
-    const withStats: JsonMetricViewData = {
+    const withStats: MetricFixture = {
       ...metric,
       timeseries: metric.timeseries.map(series => ({
         ...series,
@@ -2803,7 +3398,7 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
     datapointCount: 1,
     timeseries: [{ ...timeseries[0]!, datapoints: [point], datapointCount: 1 }],
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -2863,7 +3458,7 @@ test('combined average labels avoid source statistics while staying near their e
     slope: null,
     hasReset: false,
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getMetricView'
@@ -2957,7 +3552,7 @@ test('combined sum and average toggle independently and labels emphasize without
     slope: null,
     hasReset: false,
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getMetricView'
@@ -3067,7 +3662,7 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
       },
     ],
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string

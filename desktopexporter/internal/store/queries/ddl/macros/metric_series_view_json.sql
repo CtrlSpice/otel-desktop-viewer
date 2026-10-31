@@ -1,8 +1,10 @@
 -- metric_series_view_json: one series in wire shape.
-create or replace macro metric_series_view_json(attrs_key, attributes, resource, datapoints, stats, datapoint_count, last_seen_ns, rate_stats, views, sparkline) as (
+create or replace macro metric_series_view_json(attrs_key, attributes, resource, datapoints, stats, datapoint_count, last_seen_ns, rate_stats, views, sparkline, label_previews) as (
 		json_object(
 			'seriesRef', attrs_key,
 			'attributes', attributes,
+			'attributesComplete', false,
+			'labelPreviews', label_previews,
 			'resource', resource,
 			'datapoints', datapoints,
 			'stats', stats,

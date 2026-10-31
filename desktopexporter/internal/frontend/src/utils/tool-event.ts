@@ -1,25 +1,28 @@
-import type { EventData, LogData } from '@/types/api-types'
+import type { EventData, LogData, WaterfallEventData } from '@/types/api-types'
 
-function attribute(event: Pick<EventData, 'attributes'>, key: string) {
-  const values = event.attributes.filter(item => item.key === key)
-  return values.length === 1 && !values[0]!.hasConflict
-    ? values[0]!.value
-    : undefined
+type EventAttributes =
+  Pick<EventData, 'attributes'> | Pick<WaterfallEventData, 'summaryAttributes'>
+type NamedEvent = EventAttributes & { name: string }
+
+function attribute(event: EventAttributes, key: string) {
+  return (
+    'attributes' in event ? event.attributes : event.summaryAttributes
+  ).find(item => item.key === key)?.value
 }
 
-export function toolEventError(event: Pick<EventData, 'attributes'>) {
+export function toolEventError(event: EventAttributes) {
   const error = attribute(event, 'tool.is_error')
   return error?.kind === 'bool' && error.value
 }
 
-export function toolEventName(event: Pick<EventData, 'name' | 'attributes'>) {
+export function toolEventName(event: NamedEvent) {
   if (!/^(tool\.|gen_ai\.tool\.)/.test(event.name)) return event.name
   const name = attribute(event, 'gen_ai.tool.name')
   return name?.kind === 'string' && name.value ? name.value : event.name
 }
 
 /** Collector-created tool events carry their own explicit timestamp provenance. */
-export function toolEventProvenance(event: EventData) {
+export function toolEventProvenance(event: NamedEvent) {
   if (!['tool.execution', 'tool.execution.start'].includes(event.name))
     return undefined
   for (const [key, runtime] of [

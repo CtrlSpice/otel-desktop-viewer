@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   attributeValueCopy,
   attributeValueTokens,
-  hasConflictingKeys,
+  structuredValueText,
   jsonContainerTokens,
   compactValueTokens,
   valueTokenTree,
@@ -11,6 +11,44 @@ import {
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it('opens each native container and scalar once when preparing editor text', () => {
+    let maps = 0,
+      arrays = 0,
+      scalars = 0
+    const value: AttributeValue = {
+      kind: 'map',
+      get value() {
+        maps++
+        return [
+          {
+            key: 'items',
+            value: {
+              kind: 'array' as const,
+              get value() {
+                arrays++
+                return [
+                  {
+                    kind: 'double' as const,
+                    get value() {
+                      scalars++
+                      return -0
+                    },
+                  },
+                ]
+              },
+            },
+          },
+        ]
+      },
+    }
+    expect(structuredValueText(value)).toBe('{\n  "items": [\n    -0\n  ]\n}')
+    expect({ maps, arrays, scalars }).toEqual({
+      maps: 1,
+      arrays: 1,
+      scalars: 1,
+    })
+  })
+
   it.each(['array', 'map'] as const)(
     'shares the embedded formatting budget across a native %s',
     kind => {
@@ -313,23 +351,5 @@ describe('detail value formatting', () => {
         JSON.stringify(String(value))
       )
     }
-  })
-  it('detects conflicts through nested arrays without merging the duplicate entries', () => {
-    const value: AttributeValue = {
-      kind: 'array',
-      value: [
-        {
-          kind: 'map',
-          conflictingKeys: ['same'],
-          value: [
-            { key: 'same', value: { kind: 'int64', value: 1n } },
-            { key: 'same', value: { kind: 'string', value: '1' } },
-          ],
-        },
-      ],
-    }
-    expect(hasConflictingKeys(value)).toBe(true)
-    expect(attributeValueCopy(value)).toContain('"same": 1,\n    "same": "1"')
-    expect(hasConflictingKeys({ kind: 'map', value: [] })).toBe(false)
   })
 })

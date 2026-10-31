@@ -1,33 +1,37 @@
 import { getStaticFieldsForSearch } from '@/constants/fields'
-import type { FieldDefinition, QueryNode, SearchSignal } from '@/search/model'
 import {
-  createAttributeFieldReference,
+  usesFieldToken,
+  type FieldDefinition,
+  type QueryNode,
+  type SearchSignal,
+} from '@/search/model'
+import {
+  createPathFieldReference,
   formatAttributeFieldReference,
   storedKindForField,
 } from '@/components/shared/Search/attribute-field-reference'
+import { quoteQueryString } from '@/components/shared/Search/query-literals'
 
 export type HomeQueries = Record<SearchSignal, QueryNode | false | null>
 
 /** An unavailable signal-specific condition cannot match that signal. */
 function forSignal(node: QueryNode, signal: SearchSignal): QueryNode | false {
+  if (node.type === 'text') return node
   if (node.type === 'condition') {
     const field = node.query.field
-    if (field.searchScope === 'global') return node
-    if (field.searchScope === 'attribute')
-      return createAttributeFieldReference(
-        field.attributeScope,
-        field.name,
+    if (usesFieldToken(field))
+      return createPathFieldReference(
+        field.path[0] === 'metadata' ? 'metadata' : field.owner,
+        field.path,
         storedKindForField(field),
         signal
       )
         ? node
         : false
-    return getStaticFieldsForSearch(signal).some(
-      candidate =>
-        candidate.searchScope === 'field' && candidate.name === field.name
+    const target = getStaticFieldsForSearch(signal).find(
+      candidate => !usesFieldToken(candidate) && candidate.name === field.name
     )
-      ? node
-      : false
+    return target ? { ...node, query: { ...node.query, field: target } } : false
   }
   const children: QueryNode[] = []
   for (const child of node.group.children) {
@@ -56,11 +60,9 @@ export function homeFields(
   const fields = new Map<string, FieldDefinition>()
   for (const group of groups)
     for (const field of group) {
-      if (field.searchScope === 'global') continue
-      const key =
-        field.searchScope === 'field'
-          ? `field:${field.name}`
-          : formatAttributeFieldReference(field)
+      const key = !usesFieldToken(field)
+        ? `field:${field.name}`
+        : formatAttributeFieldReference(field)
       fields.set(key, field)
     }
   return [...fields.values()]
@@ -71,21 +73,18 @@ export function queryText(node: QueryNode | false | null): string {
   if (!node) return ''
   if (node.type === 'group')
     return `(${node.group.children.map(queryText).join(` ${node.group.operator} `)})`
+  if (node.type === 'text')
+    return `search(${quoteQueryString(node.query.value)})`
   const { field, operator, value } = node.query
-  if (field.searchScope === 'global') return `search(${JSON.stringify(value)})`
-  const name =
-    field.searchScope === 'attribute'
-      ? formatAttributeFieldReference(field)
-      : field.name
-  if (operator.symbol === 'IS NULL') return `${name} = NULL`
-  if (operator.symbol === 'IS NOT NULL') return `${name} != NULL`
+  const name = usesFieldToken(field)
+    ? formatAttributeFieldReference(field)
+    : field.name
+  if (operator.symbol === 'IS NULL' || operator.symbol === 'IS NOT NULL')
+    return `${name} ${operator.symbol}`
+  // SAFETY: The query parser encodes IN operands as JSON string arrays, including numeric lexemes.
   const operand =
-    operator.symbol === 'IN' ||
-    operator.symbol === 'NOT IN' ||
-    (field.searchScope === 'attribute' && field.type.endsWith('[]')) ||
-    field.type === 'array'
-      ? value
-      : JSON.stringify(value)
-  const symbol = operator.symbol === 'NOT REGEXP' ? '!~' : operator.symbol
-  return `${name} ${symbol} ${operand}`
+    operator.symbol === 'IN' || operator.symbol === 'NOT IN'
+      ? `(${(JSON.parse(value) as string[]).map(quoteQueryString).join(', ')})`
+      : quoteQueryString(value)
+  return `${name} ${operator.symbol} ${operand}`
 }

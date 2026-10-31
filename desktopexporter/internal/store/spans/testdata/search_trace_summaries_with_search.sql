@@ -1,27 +1,17 @@
-with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end, ? as attr_key_2, ? as attr_kind_3, ? as value_4),
+with
 		eligible_spans as materialized (
 			select distinct s.trace_id
-			from search_params, spans s
-		join resources r on r.id = s.resource_id
-		join scopes sc on sc.id = s.scope_id
-			where (exists(
-			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = attr_key_2 and json_extract_string(a.value, '$.kind') = attr_kind_3 and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) = value_4
-		)) AND s.start_time >= time_start and s.start_time <= time_end
+			from spans s
+			where ((variant_exists(s.attributes, $3) and otel_value_kind(s.attributes[$3]) = $4 and try_cast(s.attributes[$3] as varchar) = $5)) AND s.start_time >= $1::ubigint and s.start_time <= $2::ubigint
 		),
 		selected_trace_ids as materialized (
 			select trace_id from eligible_spans
 		),
 		query_matches as materialized (
 			select distinct s.trace_id, s.span_id, s.start_time
-			from search_params, spans s
-		join resources r on r.id = s.resource_id
-		join scopes sc on sc.id = s.scope_id
+			from spans s
 			join selected_trace_ids selected on selected.trace_id = s.trace_id
-			where (exists(
-			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = attr_key_2 and json_extract_string(a.value, '$.kind') = attr_kind_3 and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) = value_4
-		))
+			where ((variant_exists(s.attributes, $3) and otel_value_kind(s.attributes[$3]) = $4 and try_cast(s.attributes[$3] as varchar) = $5))
 		),
 		matched_span_lists as (
 			select trace_id as matched_trace_id, list(json_object(

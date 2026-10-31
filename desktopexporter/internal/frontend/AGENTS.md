@@ -12,6 +12,16 @@
   assets for final verification and commits. Concurrent test/preview servers must
   use separate Vite caches so dependency optimization cannot break the preview.
 
+- Loading feedback follows one app-wide rule: start requests immediately, but
+  show a loading notice only after 200 ms. Use `LoadingStatus` or its shared
+  `createLoadingNotice` helper; do not add immediate loading text or independent
+  timers. Reset the grace period when the request identity changes and cancel it
+  on completion, cancellation or unmount. Keep existing record content, headers,
+  controls and disclosure state mounted while replacements load. Publish the
+  replacement's values, metadata, activity and action targets together. Copy and
+  Download always target the displayed record, even while a different record is
+  requested. Keep abort/generation guards and fresh-response invalidation.
+
 - Use the Madoromi seasonal interface themes in `src/themes/madoromi.json`.
   The approved background tint is 20% of upstream chroma for all four seasons,
   day and night. Generate shared colours with `scripts/generate-madoromi.mjs`;

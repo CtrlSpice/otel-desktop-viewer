@@ -1,12 +1,13 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 
 const traceID = '12345678901234567890123456789012'
 const rootID = '1111111111111111'
 const selectedID = '2222222222222222'
-const trace: JsonTraceData = {
+const trace: TraceFixture = {
   traceID,
   traceStart: '1700000000123456789',
   resources: {
@@ -77,9 +78,11 @@ const trace: JsonTraceData = {
   })),
 }
 
-test('trace selection keeps the waterfall and detail sections mounted until the replacement arrives', async ({
+test('trace selection retains the displayed record and delays feedback until its replacement arrives', async ({
   page,
+  context,
 }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'true')
@@ -87,8 +90,16 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
   const next = structuredClone(trace)
   next.traceID = 'abcdefabcdefabcdefabcdefabcdefab'
   next.spans[0]!.spanData.name = 'replacement trace'
-  let release: (() => Promise<void>) | undefined
-  await page.route('**/rpc', async route => {
+  const releases: (() => Promise<void>)[] = []
+  const copied: string[] = []
+  await page.route('**/export/traces/**', async route => {
+    const url = new URL(route.request().url())
+    copied.push(url.pathname + url.search)
+    await route.fulfill({
+      json: { trace: url.pathname, span: url.searchParams.get('spanId') },
+    })
+  })
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -125,11 +136,17 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     const fulfill = () =>
       route.fulfill({ json: { jsonrpc: '2.0', id, result } })
-    if (method === 'getTraceView' && params.traceID === next.traceID)
-      release = fulfill
+    if (
+      method === 'getTraceView' &&
+      params.traceID === next.traceID &&
+      route.originalRequest().url().endsWith('/api/data/getTraceView')
+    )
+      releases.push(fulfill)
     else await fulfill()
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}&time=all`)
@@ -141,7 +158,10 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
     document.querySelector('.page-layout__main-chrome > .pane-header'),
     document.querySelector('.waterfall-view'),
     document.querySelector('.waterfall-view__scroll'),
+    document.querySelector('#signal-drawer-detail'),
     document.querySelector('[aria-label="Span fields"]'),
+    document.querySelector('[aria-label="Copy span"]'),
+    document.querySelector('[aria-label="Detail view"]'),
     ...document.querySelectorAll('#signal-drawer-detail details'),
   ])
   await page.clock.install()
@@ -150,23 +170,37 @@ test('trace selection keeps the waterfall and detail sections mounted until the 
     .locator('#signal-drawer-panel')
     .getByRole('button', { name: /replacement trace/ })
     .click()
-  await expect.poll(() => !!release).toBe(true)
+  await expect.poll(() => releases.length).toBe(1)
   await expect(fields.locator('[data-field="name"]').first()).toContainText(
     'selected span'
   )
+  await expect(fields.locator('[data-field="traceId"]')).toContainText(
+    traceID.slice(0, 8)
+  )
+  await expect(page.getByText('Loading selected span…')).toHaveCount(0)
   await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
-  await page.clock.runFor(200)
+  await page.getByRole('button', { name: 'Copy span', exact: true }).click()
+  await expect
+    .poll(() => copied)
+    .toEqual([`/export/traces/${traceID}?spanId=${selectedID}`])
+  await page.clock.runFor(199)
+  await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
+  await page.clock.runFor(1)
   await expect(page.getByText('Loading selected trace…')).toBeVisible()
   await expect(page.locator('.waterfall-view')).toHaveCSS('opacity', '1')
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)
-  await release!()
+  await Promise.all(releases.map(release => release()))
   await expect(
     page.locator('.page-layout__main-chrome > .pane-header')
   ).toContainText('replacement trace')
   await expect(fields.locator('[data-field="traceId"]')).toContainText('abcdef')
   await expect(page.getByText('Loading selected trace…')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Copy span', exact: true }).click()
+  await expect
+    .poll(() => copied.at(-1))
+    .toBe(`/export/traces/${next.traceID}?spanId=${rootID}`)
   expect(
     await nodes.evaluate(original => original.every(node => node?.isConnected))
   ).toBe(true)
@@ -176,7 +210,7 @@ test('waterfall column groups toggle together without changing span selection', 
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     await route.fulfill({
       json: {
@@ -215,7 +249,9 @@ test('waterfall column groups toggle together without changing span selection', 
                     },
                     rejections: [],
                   }
-                : [],
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
@@ -249,7 +285,7 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
   await page.setViewportSize({ width: 1920, height: 1100 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const leafID = '3333333333333333'
-  const nestedTrace: JsonTraceData = {
+  const nestedTrace: TraceFixture = {
     ...trace,
     spans: [
       ...trace.spans,
@@ -265,7 +301,7 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
       },
     ],
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -300,7 +336,9 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${rootID}&time=all`)
@@ -369,12 +407,12 @@ for (const { id: theme } of THEMES) {
       theme
     )
     await page.setViewportSize({ width: 1920, height: 1100 })
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON() as {
         id: number
         method: string
       }
-      const statusTrace: JsonTraceData = {
+      const statusTrace: TraceFixture = {
         ...trace,
         spans: trace.spans.map(node =>
           node.spanData.spanID === selectedID
@@ -430,7 +468,9 @@ for (const { id: theme } of THEMES) {
                   },
                   rejections: [],
                 }
-              : []
+              : request.method === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
       await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
     })
     for (const code of [2, 0, 1, 99]) {
@@ -482,7 +522,7 @@ test('Waterfall columns persist across traces and align through resizing and ove
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
   const nextTraceID = 'abcdefabcdefabcdefabcdefabcdefab'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -540,7 +580,9 @@ test('Waterfall columns persist across traces and align through resizing and ove
                 },
                 rejections: [],
               }
-            : []
+            : request.method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
@@ -782,7 +824,7 @@ test('selected-span Copy and Download preserve schema URLs and exact numeric tex
     })
   })
   await page.route('**/api/features', route => route.fulfill({ json: {} }))
-  await page.route('**/rpc', route => {
+  await routeTelemetry(page, route => {
     const { id, method } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -817,7 +859,9 @@ test('selected-span Copy and Download preserve schema URLs and exact numeric tex
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     return route.fulfill({
       json: {
         jsonrpc: '2.0',
@@ -899,7 +943,7 @@ test('Copy span shares the section heading row and copies only the selected span
       headers: { 'Content-Length': String(Buffer.byteLength(selectedExport)) },
     })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -937,7 +981,9 @@ test('Copy span shares the section heading row and copies only the selected span
                 },
                 rejections: [],
               }
-            : []
+            : request.method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
@@ -1049,6 +1095,10 @@ test('Copy span shares the section heading row and copies only the selected span
   await expect(
     fields.locator('[data-field="sequence"] .detail-code--number')
   ).toHaveCSS('color', palette['base-content']!)
+  await fields
+    .locator('[data-field="payload"]')
+    .getByRole('button', { name: 'Full document / Find' })
+    .click()
   const json = fields.locator('[data-field="payload"] .cm-content')
   await expect(json).toHaveAttribute('contenteditable', 'false')
   await expect(json.getByText('example', { exact: true })).toHaveCSS(

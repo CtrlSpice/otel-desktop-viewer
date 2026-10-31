@@ -161,7 +161,7 @@ func TestGetStats_WithTraces(t *testing.T) {
 	tr := buildTestTraces(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, tr, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, tr)
 	})
 	require.NoError(t, err)
 
@@ -185,7 +185,7 @@ func TestGetStats_WithLogs(t *testing.T) {
 	lg := buildTestLogs(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, lg, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, lg)
 	})
 	require.NoError(t, err)
 
@@ -205,7 +205,7 @@ func TestGetStats_WithMetrics(t *testing.T) {
 	m := buildTestMetrics()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, m, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, m)
 	})
 	require.NoError(t, err)
 
@@ -225,13 +225,13 @@ func TestGetStats_AllSignals(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		if err := spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs()); err != nil {
+		if err := spans.Ingest(ctx, conn, buildTestTraces(baseTime)); err != nil {
 			return err
 		}
-		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime), s.FlushedIDs()); err != nil {
+		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime)); err != nil {
 			return err
 		}
-		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
 	})
 	require.NoError(t, err)
 
@@ -371,7 +371,7 @@ func TestGetStats_NoRejectionsWhenNothingRefused(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, buildTestTraces(baseTime))
 	}))
 
 	var got struct {
@@ -390,7 +390,7 @@ func TestGetStats_CarriesRejections(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	for range 2 {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs())
+			return spans.Ingest(ctx, conn, buildTestTraces(baseTime))
 		}))
 	}
 

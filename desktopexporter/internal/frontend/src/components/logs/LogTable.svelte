@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckListIcon } from '@hugeicons/core-free-icons'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
@@ -70,6 +71,7 @@
     sortColumn,
     sortDirection,
     loading = false,
+    loadingRequestKey,
     onSelect,
     onInspect,
     onSort,
@@ -86,13 +88,14 @@
     selectionBusy = false,
   }: {
     logs: LogTableRow[]
-    total: number
+    total: number | null
     pageNumber?: number
     pageSize?: number
     selectedID: string | null
     sortColumn: LogSortColumn
     sortDirection: LogSortDirection
     loading?: boolean
+    loadingRequestKey: number
     onSelect: (id: string, keyboard?: boolean) => void
     onInspect: (id: string, target: DetailFieldTarget) => void
     onSort: (column: LogSortColumn, direction: LogSortDirection) => void
@@ -457,12 +460,17 @@
       ?.querySelector<HTMLElement>(`[data-log-ref="${escapeForSelector(id)}"]`)
       ?.focus({ preventScroll: true })
   }
+  const loadingNotice = createLoadingNotice(
+    () => loading,
+    () => loadingRequestKey
+  )
+
   function text(log: LogTableRow, column: LogColumnOption) {
     const id = column.id
     if (column.projection)
       return (
         logColumnCell(log, column)?.text ??
-        (loading ? 'Loading…' : 'Unavailable')
+        (loading ? (loadingNotice.visible ? 'Loading…' : '') : 'Unavailable')
       )
     if (id === 'timestamp')
       return formatTimestamp(log.timestamp, time.tz, 'milliseconds')
@@ -511,8 +519,8 @@
             ).toLocaleString()}</span
           >
           of{' '}
-        {/if}{total.toLocaleString()}
-        {total === 1 ? 'record' : 'records'}</span
+        {/if}{total === null ? '' : total.toLocaleString()}
+        {total === null ? '' : total === 1 ? 'record' : 'records'}</span
       >
     {/snippet}
     {#snippet metaRight()}

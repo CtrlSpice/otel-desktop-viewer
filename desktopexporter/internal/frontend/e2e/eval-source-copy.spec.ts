@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
 
@@ -98,7 +99,7 @@ async function openSource(
       },
     })
   })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON()
     const result =
       request.method === 'getStats'
@@ -108,7 +109,9 @@ async function openSource(
             metrics: { count: 0 },
             rejections: [],
           }
-        : []
+        : request.method === 'discoverTelemetry'
+          ? { rows: [], truncated: false }
+          : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   const experiment = projection.experiments[0]
@@ -253,6 +256,67 @@ test('assessment packets stay readable and retain exact full-input Copy', async 
   await expect(
     detail.getByRole('button', { name: 'Telemetry', exact: true })
   ).toHaveAttribute('aria-disabled', 'true')
+})
+
+test('explicit Overall keeps one exact header Copy when outer Assessments is collapsed', async ({
+  page,
+}) => {
+  await openSource(page, [row(0, 'Fixture answer')])
+  const exact = 'Overall full input\n\t"exact" 🙂\r\nComplete instructions'
+  // Configure the supported normalized examples fixture before selecting it.
+  // This fixture can express an Overall rubric; Promptfoo's combined outcome has none.
+  await page.evaluate(async input => {
+    const modulePath = '/src/components/evals/examples.ts'
+    const examples: typeof import('../src/components/evals/examples') =
+      await import(modulePath)
+    const experiment = examples.exampleExperiments[0]
+    const result = experiment.results.find(
+      item => item.caseID === 'request-latency'
+    )!
+    const definition = experiment.assessments.find(
+      item => item.id === experiment.headlineAssessment
+    )!
+    definition.name = 'Overall'
+    const overall = result.assessments.find(item => item.id === definition.id)!
+    overall.rubric = input
+    overall.telemetry = undefined
+    result.telemetry = undefined
+    result.resultTelemetry = undefined
+    result.tools = []
+    result.assessments = [overall]
+    experiment.telemetry = undefined
+    experiment.results = [result]
+    const query = new URLSearchParams({
+      preview: 'examples',
+      experiment: experiment.id,
+      result: result.id,
+    })
+    window.history.pushState({}, '', `/evals?${query}`)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, exact)
+  const section = page.locator(
+    '#signal-drawer-detail [data-detail-section="assessments"]'
+  )
+  const disclosure = section.locator(':scope > details')
+  await expect(disclosure).toHaveAttribute('open')
+  const copy = section.getByRole('button', {
+    name: 'Copy grader input',
+    exact: true,
+  })
+  await expect(copy).toHaveCount(1)
+  const original = await copy.elementHandle()
+  await disclosure.locator(':scope > summary').click()
+  await expect(disclosure).not.toHaveAttribute('open')
+  await expect(copy).toBeVisible()
+  await expect(copy.locator('xpath=ancestor::details')).toHaveCount(0)
+  await expect(copy.locator('xpath=ancestor::summary')).toHaveCount(0)
+  expect(await original!.evaluate(element => element.isConnected)).toBe(true)
+  await copy.click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(exact)
+  await expect(disclosure).not.toHaveAttribute('open')
+  await expect(copy).toHaveCount(1)
 })
 
 test('native results need no ordinal or execution wrapper and show their own grades', async ({

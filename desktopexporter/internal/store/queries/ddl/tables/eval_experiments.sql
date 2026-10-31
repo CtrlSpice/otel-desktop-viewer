@@ -3,7 +3,7 @@ create table if not exists eval_experiment_indexes (
     source_kind varchar not null,
     status varchar not null,
     reason varchar not null default '',
-    context json not null default '{}'
+    context variant not null default '{}'::json::variant
 );
 create table if not exists eval_experiments (
     id varchar primary key,
@@ -29,7 +29,7 @@ create table if not exists eval_experiment_rows (
     experiment_id varchar not null,
     primary key (dataset_id, ordinal)
 );
--- Derived searchable text keeps retained JSON authoritative. One row mirrors one
+-- Derived searchable text keeps retained evidence authoritative. One row mirrors one
 -- source result, so search never requires assembling or parsing a whole experiment.
 create table if not exists eval_experiment_search (
     dataset_id varchar not null,

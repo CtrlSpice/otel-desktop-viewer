@@ -43,9 +43,10 @@ methods return normalized viewer data without OTLP wrappers.
 
 ## Encoding
 
-DuckDB performs reconstruction in one statement per request. Stored tagged
-values are converted in batches and attached to their owners. Go binds the
-identifier, scans the JSON text, and maps errors.
+DuckDB selects, orders and groups records in one statement per request. A Go
+scalar function decodes each owned native VARIANT value and writes OTLP AnyValue
+JSON directly. Resource and scope wrappers retain the received record context.
+The request handler binds the identifier, scans the JSON text, and maps errors.
 
 The output follows these rules:
 

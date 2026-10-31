@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowbridge"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
@@ -36,22 +36,12 @@ type Store struct {
 
 	// mu protects db and conn. Queries and ingest hold it for reading so they
 	// may overlap. Pool mutations and Close hold it for writing and exclude
-	// ingest; otherwise a sweep could delete dictionary rows before ingest writes
-	// their owners. Store locking methods are not reentrant.
+	// ingest; otherwise a sweep could delete histogram bounds before ingest writes
+	// their datapoints. Store locking methods are not reentrant.
 	mu sync.RWMutex
 
 	// ingestMu serializes appender use on the dedicated ingest connection.
 	ingestMu sync.Mutex
-
-	// flushed records which dictionary rows this store has already written, so
-	// a batch whose attributes, resource and scope are all known can skip its
-	// insert. Owned here because the set describes one database: sharing it
-	// across stores would skip inserts into the wrong one. Warmed from disk in
-	// NewStore via ingest.LoadFlushedIDs, so a persistent --db that already
-	// holds the dictionary does not re-insert everything until the cache
-	// refills. Invalidated by ingest.SweepOrphans, the only thing that deletes
-	// dictionary rows.
-	flushed *ingest.FlushedIDs
 
 	// retentionCapBytes is the store size cap enforced by EnforceRetention
 	// and reported by getStats. 0 means retention is disabled. Set once via
@@ -113,6 +103,9 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 			_ = conn.Close()
 		}
 	}()
+	if err := arrowbridge.Load(ctx, conn); err != nil {
+		return nil, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
+	}
 	schemaInitializationMu.Lock()
 	defer schemaInitializationMu.Unlock()
 
@@ -121,6 +114,11 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	schemaCompat, shouldStamp, err := inspectSchemaVersion(ctx, db, dbPath, logger)
 	if err != nil {
 		return nil, err
+	}
+	// Viewer captures are often smaller than DuckDB's default 30,000-row
+	// shredding threshold. Make every row group eligible at checkpoint.
+	if _, err := db.ExecContext(ctx, "SET variant_minimum_shredding_size = 0"); err != nil {
+		return nil, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
 	}
 	// Create types; DuckDB has no IF NOT EXISTS for these statements.
 	for _, stmt := range queries.Types() {
@@ -151,16 +149,13 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}
 
 	// Create macros. Queries use CREATE OR REPLACE so reopening is safe.
+	if err := queries.RegisterFunctions(ctx, db); err != nil {
+		return nil, fmt.Errorf("%w while registering value functions: %w", ErrStoreInitFailed, err)
+	}
 	for _, stmt := range queries.Macros() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating macro %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
-	}
-
-	// Warm the dictionary cache with every retained ID.
-	flushed, err := ingest.LoadFlushedIDs(ctx, db)
-	if err != nil {
-		return nil, fmt.Errorf("%w while warming the dictionary flush cache: %w", ErrStoreInitFailed, err)
 	}
 
 	initialized = true
@@ -170,19 +165,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		dbPath:       dbPath,
 		logger:       logger,
 		schemaCompat: schemaCompat,
-		flushed:      flushed,
 	}, nil
-}
-
-// FlushedIDs is the store's record of which dictionary rows are already
-// written. Pass it to spans.Ingest, logs.Ingest and metrics.Ingest so a batch
-// whose content has all been seen can skip its dictionary insert.
-//
-// Passing nil instead is always safe -- it just reinserts every time -- but
-// passing *another* store's set is not, which is why this hangs off the store
-// rather than being a package-level singleton.
-func (s *Store) FlushedIDs() *ingest.FlushedIDs {
-	return s.flushed
 }
 
 // Close closes the store and the underlying database connection.

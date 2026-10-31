@@ -76,7 +76,7 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 
 func TestMetricNamedParamContracts(t *testing.T) {
 	require.Equal(t, []string{"metricRef"}, methodParamNames["getMetric"])
-	require.Equal(t, []string{"metricRef", "seriesRef", "startTime", "endTime"}, methodParamNames["getMetricSeries"])
+	require.Equal(t, []string{"metricRef", "seriesRef", "startTime", "endTime", "includeDatapoints"}, methodParamNames["getMetricSeries"])
 	require.Equal(t, []string{
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets", "sparklineBuckets",
@@ -157,6 +157,7 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 		"rpc.discover": true,
 		"clearTraces":  true, "clearLogs": true, "clearMetrics": true,
 		"getStats":                      true,
+		"getServiceCount":               true,
 		"getImportConfig":               true,
 		"getTraceAttributeDefinitions":  true,
 		"getLogAttributeDefinitions":    true,

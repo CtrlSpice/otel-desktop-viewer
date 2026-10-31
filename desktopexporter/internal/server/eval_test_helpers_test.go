@@ -41,7 +41,7 @@ func enabledEvalFlags(t *testing.T) *features.Flags {
 func startEvalReceiver(t *testing.T, s *Server) {
 	t.Helper()
 	sink, err := consumer.NewLogs(func(ctx context.Context, data plog.Logs) error {
-		return s.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.store.FlushedIDs()) })
+		return s.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) })
 	})
 	require.NoError(t, err)
 	policy, err := os.ReadFile("../../../collector_redaction.yaml")

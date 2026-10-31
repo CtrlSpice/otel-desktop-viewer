@@ -1,24 +1,27 @@
 <script lang="ts">
+  import {
+    createLoadingNotice,
+    type LoadingRequestKey,
+  } from './utils/loading-notice.svelte'
+
   let {
     pending,
     label = 'Loading…',
     requestKey,
+    class: className = 'text-sm text-subtle',
   }: {
     pending: boolean
     label?: string
-    requestKey?: string | null
+    requestKey?: LoadingRequestKey
+    class?: string
   } = $props()
 
-  let visible = $state(false)
-  $effect(() => {
-    void requestKey
-    visible = false
-    if (!pending) return
-    const timer = setTimeout(() => (visible = true), 200)
-    return () => clearTimeout(timer)
-  })
+  const notice = createLoadingNotice(
+    () => pending,
+    () => requestKey
+  )
 </script>
 
-{#if pending && visible}
-  <span class="text-sm text-subtle" role="status">{label}</span>
+{#if notice.visible}
+  <span class={className} role="status">{label}</span>
 {/if}

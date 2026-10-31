@@ -37,7 +37,7 @@ func TestSearchLogPageSelectedColumns(t *testing.T) {
 	other := sl.LogRecords().AppendEmpty()
 	other.SetTimestamp(1)
 	other.Body().SetStr("outside page")
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	columns := []logs.Column{
 		{Source: "log", Kind: "field", Key: "timeUnixNano"},
 		{Source: "log", Kind: "field", Key: "flags"},
@@ -62,30 +62,38 @@ func TestSearchLogPageSelectedColumns(t *testing.T) {
 		Logs  []struct {
 			ColumnValues []struct {
 				logs.Column
-				Values json.RawMessage `json:"values"`
+				Present   bool   `json:"present"`
+				ValueType string `json:"valueType"`
+				Preview   string `json:"preview"`
 			} `json:"columnValues"`
 		} `json:"logs"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &page))
 	require.Equal(t, 2, page.Total)
 	require.Len(t, page.Logs, 1)
-	want := []string{
-		`[{"kind":"string","value":"18446744073709551615"}]`,
-		`[{"kind":"int64","value":"128"}]`,
-		`[{"kind":"int64","value":"0"}]`,
-		`[{"kind":"int64","value":"9223372036854775807"}]`,
-		`[{"kind":"string","value":"resource"}]`,
-		`[{"kind":"bool","value":false}]`,
-		`[]`, `[{"kind":"empty","value":null}]`,
-		`[{"kind":"string","value":"literal key"}]`,
-		`[{"kind":"double","value":"0x8000000000000000"}]`,
-		`[]`, `[{"kind":"string","value":"https://example.test/resource"}]`,
-		`[{"kind":"string","value":"instrumentation"}]`,
+	want := []struct {
+		present bool
+		kind    string
+		preview string
+	}{
+		{true, "string", "18446744073709551615"},
+		{true, "int64", "128"},
+		{true, "int64", "0"},
+		{true, "int64", "9223372036854775807"},
+		{true, "string", "resource"},
+		{true, "bool", "false"},
+		{false, "empty", "null"}, {true, "empty", "null"},
+		{true, "string", "literal key"},
+		{true, "double", "-0"},
+		{false, "empty", "null"}, {true, "string", "https://example.test/resource"},
+		{true, "string", "instrumentation"},
 	}
 	require.Len(t, page.Logs[0].ColumnValues, len(columns))
 	for i, cell := range page.Logs[0].ColumnValues {
 		require.Equal(t, columns[i], cell.Column)
-		require.JSONEq(t, want[i], string(cell.Values), "%+v", columns[i])
+		require.Equal(t, want[i].present, cell.Present, "%+v", columns[i])
+		require.Equal(t, want[i].kind, cell.ValueType, "%+v", columns[i])
+		require.Equal(t, want[i].preview, cell.Preview, "%+v", columns[i])
 	}
 }
 
@@ -100,7 +108,7 @@ func TestSearchLogPage(t *testing.T) {
 		record.SetTimestamp(0)
 		record.SetObservedTimestamp(pcommon.Timestamp(18446744073709551614))
 	}
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	type result struct {
 		Logs  []logSummaryJSON `json:"logs"`
 		Total int              `json:"total"`
@@ -159,7 +167,7 @@ func TestSearchLogPageSortsSeverityNumerically(t *testing.T) {
 		records.At(i).SetSeverityNumber(severity)
 		records.At(i).SetSeverityText([]string{"ZZZ", "AAA", "MMM"}[i])
 	}
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) }))
 	for _, tc := range []struct {
 		direction string
 		want      []int32

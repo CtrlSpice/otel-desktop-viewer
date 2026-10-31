@@ -33,6 +33,16 @@ type encodedValue struct {
 	value any
 }
 
+// CanonicalDouble gives NaN one representation for content identity.
+// Native storage may also canonicalize NaN sign and payload bits.
+// OTLP JSON represents all NaNs as "NaN", without a sign or payload.
+func CanonicalDouble(value float64) float64 {
+	if math.IsNaN(value) {
+		return math.Float64frombits(0x7ff8000000000000)
+	}
+	return value
+}
+
 func encodeValuePayload(v pcommon.Value) (encodedValue, error) {
 	switch v.Type() {
 	case pcommon.ValueTypeEmpty:
@@ -44,7 +54,7 @@ func encodeValuePayload(v pcommon.Value) (encodedValue, error) {
 	case pcommon.ValueTypeInt:
 		return encodedValue{kind: "int64", value: strconv.FormatInt(v.Int(), 10)}, nil
 	case pcommon.ValueTypeDouble:
-		n := v.Double()
+		n := CanonicalDouble(v.Double())
 		bits := math.Float64bits(n)
 		if n == 0 && math.Signbit(n) || math.IsInf(n, 0) || math.IsNaN(n) {
 			return encodedValue{kind: "double", value: fmt.Sprintf("0x%016x", bits)}, nil

@@ -69,7 +69,7 @@ describe('multiline query paste', () => {
       normalizeQueryPaste('search("first\nsecond")\n and body != null')
     ).toBe('search("first\\nsecond") and body != null')
     const query = normalizeQueryPaste(
-      'attr(log, "first\nsecond", string) = "value"'
+      'log.attributes["first\nsecond"]::VARCHAR = "value"'
     )
     expect(parseSearchRequest(query, [], 'logs')?.predicate).toMatchObject({
       query: { field: { name: 'first\nsecond' }, value: 'value' },

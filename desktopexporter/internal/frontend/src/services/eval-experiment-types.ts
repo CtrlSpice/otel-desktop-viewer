@@ -1,3 +1,5 @@
+import type { QueryNode } from '@/search/model'
+
 /** Stored source facts, independent of the Evals presentation model. */
 export type EvalExperimentOutcome = {
   key: string
@@ -25,7 +27,7 @@ export type EvalStoredExperimentSummary = {
 }
 
 export type EvalExperimentSearch = {
-  query?: string
+  criteria?: QueryNode | null
   outcomes?: readonly string[]
   sort?: 'started' | 'name'
   direction?: 'asc' | 'desc'

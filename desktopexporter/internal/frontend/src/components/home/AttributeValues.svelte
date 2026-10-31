@@ -1,12 +1,12 @@
 <script module lang="ts">
   import { GRAPH_INKS } from '@/themes/graph-inks'
-  import { colorIdentityHash } from '@/utils/color-slots'
   // Middle-strength official shades stay clear as small marks in Day and Night.
   const valueColors = GRAPH_INKS.flatMap(ink => ink.swatches.slice(2, 5))
 </script>
 
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import { onDestroy, untrack, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
@@ -17,7 +17,6 @@
   import {
     coverageCounts,
     loadAttributeCoverage,
-    sortCoverageValues,
     type AttributeCoverage,
     type AttributeValueSort,
     type CoverageValue,
@@ -27,9 +26,10 @@
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import {
     attributeValueCopy,
-    attributeValueTokens,
+    compactValueTokens,
     jsonContainerTokens,
   } from '@/components/shared/detail-value'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import {
     valuePresentation,
     valuePresentationKey,
@@ -63,54 +63,175 @@
     selectedValue?: string
     onSelect: () => void
     onSelectValue: (value: CoverageValue) => void
-    onCount: (count: number) => void
+    onCount: (count: number, source: Omit<DiscoveryOptions, 'kind'>) => void
     expanded: boolean
-    onExpandedChange: (expanded: boolean) => void
+    onExpandedChange: (
+      expanded: boolean,
+      source: Omit<DiscoveryOptions, 'kind'>
+    ) => void
     hidden?: boolean
   } = $props()
   let coverage = $state<AttributeCoverage>()
   const kindCoverage = $derived(coverage?.kinds.get(kind))
   const PAGE_SIZE = 25
-  let offset = $state(0)
-  const values = $derived(
-    sortCoverageValues(
-      coverage?.values.filter(item => item.value.kind === kind) ?? [],
-      sortBy,
-      sortDirection
-    )
+  const limit = $derived(expanded && !hidden ? PAGE_SIZE : 0)
+  type Navigation = { offset: number; previous: number[] }
+  type Reading = {
+    options: Omit<DiscoveryOptions, 'kind'>
+    name: string
+    kind: string
+    sortBy: AttributeValueSort
+    sortDirection: 'asc' | 'desc'
+    navigation: Navigation
+  }
+  type Work = { controller: AbortController; pending: boolean; error: string }
+  let displayed = $state.raw<Reading>()
+  const displayedNavigation = $derived(
+    displayed?.navigation ?? { offset: 0, previous: [] }
   )
-  const page = $derived(values.slice(offset, offset + PAGE_SIZE))
-  const pageIndex = $derived(Math.floor(offset / PAGE_SIZE))
-  const pageCount = $derived(Math.max(1, Math.ceil(values.length / PAGE_SIZE)))
+  let replacement = $state.raw<Work>()
+  let interaction = $state.raw<Work>()
+  const values = $derived(coverage?.values ?? [])
+  const page = $derived(values)
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
-  let loading = $state(false)
+  const loading = $derived(
+    Boolean(replacement?.pending || interaction?.pending)
+  )
+  let requestKey = $state(0)
   let error = $state('')
+  const failures = $derived(
+    [replacement?.error, interaction?.error, error].filter(Boolean)
+  )
+  async function copyValue(item: CoverageValue, signal: AbortSignal) {
+    try {
+      return attributeValueCopy(
+        await telemetryAPI.getHomeAttributeValue(item.valueRef, signal)
+      )
+    } catch (reason) {
+      if (!signal.aborted) error = String(reason)
+      throw reason
+    }
+  }
   const headingID = $props.id()
-  const canExpand = $derived(values.length > 0)
-  $effect.pre(() => {
-    void sortBy
-    void sortDirection
-    offset = 0
-  })
-  $effect(() => {
+  const canExpand = $derived(coverage?.total !== 0)
+  function cancelInteraction() {
+    interaction?.controller.abort()
+    interaction = undefined
+  }
+  async function load(reading: Reading, replacing: boolean, size: number) {
+    if (replacing) replacement?.controller.abort()
+    else cancelInteraction()
     const controller = new AbortController()
-    loading = true
-    error = ''
-    void loadAttributeCoverage({ ...options, key: name }, controller.signal)
-      .then(result => {
-        if (controller.signal.aborted) return
-        coverage = result
-        onCount(result.kinds.get(kind)?.count ?? 0)
-      })
-      .catch(reason => {
-        if (!controller.signal.aborted) error = String(reason)
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) loading = false
-      })
-    return () => controller.abort()
+    const work: Work = { controller, pending: true, error: '' }
+    if (replacing) replacement = work
+    else interaction = work
+    requestKey++
+    try {
+      const result = await loadAttributeCoverage(
+        {
+          ...reading.options,
+          key: reading.name,
+          valueKind: reading.kind,
+          offset: reading.navigation.offset,
+          limit: size,
+          sortBy: reading.sortBy,
+          sortDirection: reading.sortDirection,
+          locale: navigator.language,
+        },
+        controller.signal
+      )
+      if (controller.signal.aborted) return
+      if (replacing) cancelInteraction()
+      coverage = result
+      displayed = reading
+      error = ''
+      onCount(result.kinds.get(reading.kind)?.count ?? 0, reading.options)
+      // A bulk disclosure or sort can change while the first page is pending.
+      if (
+        size !== limit ||
+        reading.sortBy !== sortBy ||
+        reading.sortDirection !== sortDirection
+      )
+        void load(
+          {
+            ...reading,
+            sortBy,
+            sortDirection,
+            navigation: { offset: 0, previous: [] },
+          },
+          false,
+          limit
+        )
+    } catch (reason) {
+      work.error = String(reason)
+    } finally {
+      if (!controller.signal.aborted) {
+        const completed = { ...work, pending: false }
+        if (replacing) replacement = completed
+        else interaction = completed
+      }
+    }
+  }
+  function navigate(navigation: Navigation) {
+    if (displayed) void load({ ...displayed, navigation }, false, PAGE_SIZE)
+  }
+  $effect(() => {
+    const reading = { options, name, kind }
+    untrack(
+      () =>
+        void load(
+          {
+            ...reading,
+            sortBy,
+            sortDirection,
+            navigation: { offset: 0, previous: [] },
+          },
+          true,
+          limit
+        )
+    )
+  })
+  let previousSort = ''
+  $effect(() => {
+    const size = limit
+    const order = { sortBy, sortDirection }
+    const sortKey = JSON.stringify(order)
+    const initial = previousSort === ''
+    const changedSort = previousSort !== sortKey
+    previousSort = sortKey
+    untrack(() => {
+      if (!displayed) {
+        if (!initial)
+          void load(
+            {
+              options,
+              name,
+              kind,
+              ...order,
+              navigation: { offset: 0, previous: [] },
+            },
+            true,
+            size
+          )
+      } else
+        void load(
+          {
+            ...displayed,
+            ...order,
+            navigation: changedSort
+              ? { offset: 0, previous: [] }
+              : displayed.navigation,
+          },
+          false,
+          size
+        )
+    })
+  })
+  onDestroy(() => {
+    replacement?.controller.abort()
+    interaction?.controller.abort()
   })
 </script>
 
@@ -120,7 +241,8 @@
       <TreeToggle
         label={`${expanded ? 'Collapse' : 'Expand'} ${name} · ${options.ownerType} values`}
         {expanded}
-        onclick={() => onExpandedChange(!expanded)}
+        onclick={() =>
+          onExpandedChange(!expanded, displayed?.options ?? options)}
       >
         <HugeiconsIcon
           icon={ArrowRight01Icon}
@@ -159,7 +281,7 @@
     >
       <span
         title={kindCoverage
-          ? `${values.length.toLocaleString()} distinct ${values.length === 1 ? 'value' : 'values'} · ${coverageCounts(kindCoverage.counts)}`
+          ? `${coverage?.total.toLocaleString()} distinct ${coverage?.total === 1 ? 'value' : 'values'} · ${coverageCounts(kindCoverage.counts)}`
           : undefined}
         >{coverage ? (kindCoverage?.count ?? 0).toLocaleString() : '—'}</span
       >
@@ -167,31 +289,35 @@
     <td class="table-cell text-right" data-attribute-column="frequency"></td>
     <td class="table-cell" data-attribute-column="copy"></td>
   </tr>
-  {#if error || values.length === 0}
+  {#if failures.length || loading || (expanded && values.length === 0)}
     <tr
       ><td class="table-cell" colspan="4"
         ><div class="pl-6">
-          {#if error}<span role="alert" class="text-papaya">{error}</span>
-          {:else}<span class="text-subtle" role="status"
-              >{loading ? 'Loading values…' : 'No retained values.'}</span
+          {#each failures as failure}<span role="alert" class="text-papaya"
+              >{failure}</span
+            >{/each}
+          <LoadingStatus
+            pending={loading}
+            label="Loading values…"
+            {requestKey}
+          />
+          {#if !loading && !failures.length && expanded && values.length === 0}<span
+              class="text-subtle"
+              role="status">No retained values.</span
             >{/if}
         </div></td
       ></tr
     >
-  {:else}
+  {/if}
+  {#if values.length > 0}
     {#each page as item (item.identity)}
-      {@const text = attributeValueCopy(item.value)}
-      {@const color =
-        valueColors[
-          colorIdentityHash(
-            JSON.stringify([options.ownerType, name, item.identity])
-          ) % valueColors.length
-        ]!.color}
+      {@const text = item.preview}
+      {@const color = valueColors[item.colorHash % valueColors.length]!.color}
       {@const tokens =
-        item.value.kind === 'string'
-          ? jsonContainerTokens(item.value.value, true)
-          : item.value.kind === 'array' || item.value.kind === 'map'
-            ? attributeValueTokens(item.value, true)
+        item.kind === 'string'
+          ? jsonContainerTokens(text, true)
+          : item.kind === 'array' || item.kind === 'map'
+            ? compactValueTokens(text, true)
             : null}
       <tr
         class="table-row"
@@ -221,9 +347,16 @@
                 {text}
                 inset={false}
                 onInspect={() => onSelectValue(item)}
+                loadText={async signal =>
+                  attributeValueCopy(
+                    await telemetryAPI.getHomeAttributeValue(
+                      item.valueRef,
+                      signal
+                    )
+                  )}
               >
-                {#if item.value.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
-                    text={item.value.value}
+                {#if item.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
+                    {text}
                   />
                 {:else if tokens}<ValueSyntax {tokens} />{:else}{text === ''
                     ? '""'
@@ -260,22 +393,39 @@
           >
         </td>
         <td class="table-cell text-right" data-attribute-column="copy"
-          ><ValueCopyButton {text} label={`${name} value`} tooltip="Copy" /></td
+          ><ValueCopyButton
+            loadText={signal => copyValue(item, signal)}
+            sourceKey={item.valueRef}
+            label={`${name} value`}
+            tooltip="Copy"
+          /></td
         >
       </tr>
     {/each}
-    {#if pageCount > 1}
+    {#if displayedNavigation.offset > 0 || coverage?.truncated}
       <tr hidden={!expanded}
         ><td class="table-cell" colspan="4"
           ><div class="flex justify-center">
             <DetailNav
-              index={pageIndex}
-              total={pageCount}
+              index={displayedNavigation.previous.length}
+              total={undefined}
+              hasNext={!!coverage?.truncated && values.length > 0}
+              busy={interaction?.pending}
               label="page"
-              onFirst={() => (offset = 0)}
-              onPrev={() => (offset -= PAGE_SIZE)}
-              onNext={() => (offset += PAGE_SIZE)}
-              onLast={() => (offset = (pageCount - 1) * PAGE_SIZE)}
+              onFirst={() => navigate({ offset: 0, previous: [] })}
+              onPrev={() =>
+                navigate({
+                  offset: displayedNavigation.previous.at(-1) ?? 0,
+                  previous: displayedNavigation.previous.slice(0, -1),
+                })}
+              onNext={() =>
+                navigate({
+                  offset: displayedNavigation.offset + values.length,
+                  previous: [
+                    ...displayedNavigation.previous,
+                    displayedNavigation.offset,
+                  ],
+                })}
             />
           </div></td
         ></tr

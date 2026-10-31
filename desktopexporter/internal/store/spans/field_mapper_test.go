@@ -55,7 +55,7 @@ func TestNumericTraceAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 	for _, scope := range []string{"resource", "scope", "span", "event", "link"} {
 		t.Run(scope, func(t *testing.T) {
 			params := []search.NamedParam{}
-			resolved, err := mapTraceAttributeExpressions(
+			resolved, err := traceFieldMapper()(
 				&search.FieldDefinition{Name: "number", SearchScope: "attribute", AttributeScope: scope, Type: "int64"},
 				&search.Query{FieldOperator: ">", Value: "2"},
 				&params,
@@ -63,8 +63,10 @@ func TestNumericTraceAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, resolved, 1)
 			assert.Equal(t, search.AttributeSignedIntegerOperand, resolved[0].OperandMode)
-			assert.Contains(t, resolved[0].SQL, "attribute_int64(a.value)")
-			assert.Contains(t, resolved[0].SQL, "json_extract_string(a.value, '$.kind') = attr_kind_1")
+			predicate, err := search.BuildOperatorCondition(resolved[0], &search.Query{FieldOperator: ">", Value: "2"}, &params)
+			require.NoError(t, err)
+			assert.Contains(t, predicate, "attributes[$1] as bigint)")
+			assert.Contains(t, predicate, "attributes[$1]) = $2")
 		})
 	}
 }

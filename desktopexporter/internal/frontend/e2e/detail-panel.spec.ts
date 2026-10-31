@@ -1,9 +1,13 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
-import type { JsonLogData, JsonTraceData } from '../src/types/wire-types'
+import type {
+  LogFixture,
+  TraceFixture,
+} from '../src/test/telemetry-fixture-types'
 
 const traceID = '12345678901234567890123456789012'
 const spanID = '1234567890123456'
-const trace: JsonTraceData = {
+const trace: TraceFixture = {
   traceID,
   traceStart: '1700000000000000000',
   resources: {
@@ -88,7 +92,7 @@ for (const kind of ['event', 'log'] as const) {
       droppedAttributesCount: 0,
     })
     const logRef = '00000000-0000-0000-0000-000000000001'
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const { id, method } = route.request().postDataJSON()
       const result =
         method === 'getTraceView'
@@ -139,7 +143,9 @@ for (const kind of ['event', 'log'] as const) {
                     },
                     rejections: [],
                   }
-                : []
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : []
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
     await page.goto(`/traces/${traceID}?span=${spanID}`)
@@ -251,7 +257,7 @@ test('detail headers keep fixed order and resize without collapsing while retain
     attributes: [],
     droppedAttributesCount: 0,
   })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     await route.fulfill({
       json: {
@@ -293,7 +299,9 @@ test('detail headers keep fixed order and resize without collapsing while retain
                     },
                     rejections: [],
                   }
-                : [],
+                : method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
@@ -556,7 +564,7 @@ test('associated logs reuse summary cards and open the full log without losing t
   page,
 }) => {
   const logRef = '00000000-0000-0000-0000-000000000001'
-  const log: JsonLogData = {
+  const log: LogFixture = {
     logRef,
     timestamp: '1700000002500000000',
     observedTimestamp: '1700000002500000000',
@@ -648,9 +656,10 @@ test('associated logs reuse summary cards and open the full log without losing t
         metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
         rejections: [],
       }
+    if (method === 'discoverTelemetry') return { rows: [], truncated: false }
     return []
   }
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -854,7 +863,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'false')
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
@@ -896,7 +905,9 @@ test('detail targets reopen the panel with independent native disclosures', asyn
                     },
                     rejections: [],
                   }
-                : [],
+                : request.method === 'discoverTelemetry'
+                  ? { rows: [], truncated: false }
+                  : [],
       },
     })
   })
@@ -1031,7 +1042,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(span).toBeVisible()
   await expect(detail).toBeHidden()
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string

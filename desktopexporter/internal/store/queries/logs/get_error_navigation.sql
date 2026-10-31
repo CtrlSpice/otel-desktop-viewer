@@ -1,4 +1,4 @@
-{{.CTEs}},
+{{if .CTEs}}{{.CTEs}},{{else}}with{{end}}
 filtered as (
     select l.* {{.From}}
     where {{.Where}}

@@ -10,11 +10,12 @@ import (
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 )
 
 func evalExperimentHTTPError(w http.ResponseWriter, err error) {
 	status := 500
-	if errors.Is(err, evals.ErrInvalidEval) {
+	if errors.Is(err, evals.ErrInvalidEval) || errors.Is(err, search.ErrInvalidQuery) {
 		status = 400
 	}
 	if errors.Is(err, evals.ErrEvalNotFound) {
@@ -29,7 +30,23 @@ func (s *Server) searchEvalExperiments(w http.ResponseWriter, r *http.Request) {
 		evalExperimentHTTPError(w, err)
 		return
 	}
-	query := evals.ExperimentSearch{Query: r.URL.Query().Get("q"), Outcomes: r.URL.Query()["outcome"], Sort: r.URL.Query().Get("sort"), Direction: r.URL.Query().Get("direction"), Limit: 50}
+	query := evals.ExperimentSearch{Outcomes: r.URL.Query()["outcome"], Sort: r.URL.Query().Get("sort"), Direction: r.URL.Query().Get("direction"), Limit: 50}
+	if r.URL.Query().Has("q") {
+		http.Error(w, "use the shared search criteria tree", 400)
+		return
+	}
+	if criteria := r.URL.Query().Get("criteria"); criteria != "" {
+		if len(criteria) > 64*1024 {
+			http.Error(w, "search criteria too large", 400)
+			return
+		}
+		var err error
+		query.Criteria, err = search.ParseQueryTree(json.RawMessage(criteria))
+		if err != nil {
+			evalExperimentHTTPError(w, err)
+			return
+		}
+	}
 	if query.Sort == "" {
 		query.Sort = "started"
 	}

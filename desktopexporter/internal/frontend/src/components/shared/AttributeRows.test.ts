@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { screen, within } from '@testing-library/svelte'
+import { screen, within, fireEvent } from '@testing-library/svelte'
 import AttributeRows from './AttributeRows.svelte'
 import { renderWithContexts } from '@/test/render-helpers'
 import type { Attributes } from '@/types/api-types'
@@ -15,12 +15,11 @@ function renderAttributes(attributes: Attributes, origin?: string) {
 }
 
 describe('AttributeRows', () => {
-  it('shows formatted JSON immediately and preserves duplicate attribute entries', () => {
+  it('shows native fields and scalars immediately, formatting a full document on request', async () => {
     const { container } = renderAttributes([
       {
         id: 'one',
         key: 'payload',
-        hasConflict: true,
         value: {
           kind: 'map',
           value: [
@@ -34,22 +33,23 @@ describe('AttributeRows', () => {
       },
       {
         id: 'two',
-        key: 'payload',
-        hasConflict: true,
+        key: 'message',
         value: { kind: 'string', value: 'raw' },
       },
     ])
+    expect(container.querySelector('.cm-editor')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Expand flags' })
+    ).toHaveAttribute('aria-expanded', 'false')
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual({
       attempts: 2,
       flags: [true],
     })
     expect(screen.getByText('raw')).toBeInTheDocument()
-    expect(container.querySelectorAll('[data-field="payload"]')).toHaveLength(2)
-    expect(
-      screen.getAllByRole('img', {
-        name: 'Conflicting typed values retained for payload in span attributes.',
-      })
-    ).toHaveLength(2)
+    expect(container.querySelectorAll('[data-field="payload"]')).toHaveLength(1)
     expect(container.querySelector('details')).toBeNull()
   })
 
@@ -86,15 +86,7 @@ describe('AttributeRows', () => {
     expect(attributes[0]!.key).toBe('service.name')
   })
 
-  it('does not warn for exact repeated canonical values', () => {
-    renderAttributes([
-      { id: 'one', key: 'retry', value: { kind: 'int64', value: 1n } },
-      { id: 'two', key: 'retry', value: { kind: 'int64', value: 1n } },
-    ])
-    expect(screen.queryByRole('img')).toBeNull()
-  })
-
-  it('preserves punctuation, escaping, int64 precision and negative zero', () => {
+  it('preserves punctuation, escaping, int64 precision and negative zero', async () => {
     const { container } = renderAttributes([
       {
         key: 'payload',
@@ -108,13 +100,16 @@ describe('AttributeRows', () => {
         },
       },
     ])
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(jsonEditorView(container).state.doc.toString()).toBe(
       '[\n  "line\\n\\"quoted\\"",\n  9223372036854775807,\n  -0\n]'
     )
     expect(screen.getByLabelText('JSON value of payload')).toBeInTheDocument()
   })
 
-  it('uses JSON array syntax rather than injecting indices into the copied value', () => {
+  it('uses JSON array syntax rather than injecting indices into the copied value', async () => {
     const { container } = renderAttributes([
       {
         key: 'payload',
@@ -130,33 +125,12 @@ describe('AttributeRows', () => {
         },
       },
     ])
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Full document / Find' })
+    )
     expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual([
       'first',
       { '[0]': 'key' },
     ])
-  })
-
-  it('warns once on a conflicted structured value while preserving every duplicate key', () => {
-    const { container } = renderAttributes([
-      {
-        key: 'payload',
-        value: {
-          kind: 'map',
-          conflictingKeys: ['same'],
-          value: [
-            { key: 'same', value: { kind: 'int64', value: 1n } },
-            { key: 'same', value: { kind: 'string', value: '1' } },
-            { key: 'clear', value: { kind: 'bool', value: true } },
-          ],
-        },
-      },
-    ])
-    expect(screen.getAllByRole('img')).toHaveLength(1)
-    expect(screen.getByRole('img')).toHaveAccessibleName(
-      /Conflicting typed values retained in payload/
-    )
-    expect(jsonEditorView(container).state.doc.toString()).toBe(
-      '{\n  "same": 1,\n  "same": "1",\n  "clear": true\n}'
-    )
   })
 })

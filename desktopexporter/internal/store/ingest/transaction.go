@@ -18,10 +18,6 @@ import (
 // The boundary is per attempt rather than around the whole ingest because
 // bisection retries need to fail independently, and DuckDB has no nested
 // transactions and no SAVEPOINT.
-//
-// The dictionary flush stays outside: its rows are written on-conflict-do-
-// nothing and swept if orphaned, and rolling them back would leave FlushedIDs
-// claiming rows that no longer exist.
 func InTransaction(ctx context.Context, conn driver.Conn, fn func() error) (err error) {
 	exec, ok := conn.(driver.ExecerContext)
 	if !ok {

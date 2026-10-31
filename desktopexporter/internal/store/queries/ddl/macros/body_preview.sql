@@ -15,11 +15,29 @@ create or replace macro body_preview(body) as (
     case when body is null then null else
     case json_extract_string(body, '$.kind')
         when 'string' then substring(regexp_replace(json_extract_string(body, '$.value'), '\s+', ' ', 'g'), 1, case when length(regexp_replace(json_extract_string(body, '$.value'), '\s+', ' ', 'g')) > 300 then 299 else 300 end) || case when length(regexp_replace(json_extract_string(body, '$.value'), '\s+', ' ', 'g')) > 300 then '…' else '' end
-        when 'map' then '{' || array_to_string(list_transform(list_slice(from_json(json_extract(body, '$.value'), '["JSON"]'), 1, 3), entry ->
+        when 'map' then '{' || array_to_string(list_transform(list_slice(from_json(json_extract(body, '$.value'), '["JSON"]'), 1, 3), lambda entry:
             substring(json_extract_string(entry, '$.key'), 1, 32) || case when length(json_extract_string(entry, '$.key')) > 32 then '…' else '' end || ': ' || body_preview_item(json_extract(entry, '$.value'))), ', ')
             || case when json_array_length(body, '$.value') > 3 then ', … (+' || cast(json_array_length(body, '$.value') - 3 as varchar) || ' fields)' else '' end || '}'
-        when 'array' then '[' || array_to_string(list_transform(list_slice(from_json(json_extract(body, '$.value'), '["JSON"]'), 1, 3), item -> body_preview_item(item)), ', ')
+        when 'array' then '[' || array_to_string(list_transform(list_slice(from_json(json_extract(body, '$.value'), '["JSON"]'), 1, 3), lambda item: body_preview_item(item)), ', ')
             || case when json_array_length(body, '$.value') > 3 then ', … (+' || cast(json_array_length(body, '$.value') - 3 as varchar) || ' items)' else '' end || ']'
         else body_preview_item(body)
     end end
+);
+
+-- Project the native bytes once. The formatter opens at most three children and
+-- uses container sizes without recursively converting their contents to JSON.
+create or replace macro native_body_preview_parts(parts) as (
+    otel_native_preview(parts.metadata, parts.value)
+);
+create or replace macro native_body_preview(body) as (
+    coalesce(native_body_preview_parts(
+        variant_to_parquet_variant(variant_normalize(body))::struct(metadata blob, value blob)), 'empty')
+);
+
+create or replace macro native_column_preview_parts(parts) as (
+    otel_native_column_preview(parts.metadata, parts.value)
+);
+create or replace macro native_column_preview(value) as (
+    coalesce(native_column_preview_parts(
+        variant_to_parquet_variant(variant_normalize(value))::struct(metadata blob, value blob)), 'null')
 )

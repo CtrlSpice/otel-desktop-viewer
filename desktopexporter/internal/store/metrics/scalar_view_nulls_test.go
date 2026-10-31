@@ -46,7 +46,7 @@ func TestScalarMetricViewIncludesInactiveValueNulls(t *testing.T) {
 					dp.SetDoubleValue(math.Copysign(0, -1))
 				}
 				require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-					return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+					return metrics.Ingest(ctx, conn, data)
 				}))
 				view := getMetricFullByNameInRange(t, s, ctx, "scalar.nulls", store.TimeRange{})
 				datapoints := metricDatapoints(view)

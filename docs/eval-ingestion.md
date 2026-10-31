@@ -38,6 +38,11 @@ field values without changing the stored data.
 
 ## HTTP API and storage
 
+In Evals builds, `/openapi.json` describes the import, experiment search and
+source-row HTTP routes. Public builds omit those operations from the document
+and omit their handlers. Check `/api/features` for current availability within
+the selected build.
+
 `POST /api/evals/ingest?name=<filename>` accepts the raw Blob body on the existing
 viewer origin. No JSON-RPC escaping or whole-file parsing is used. A disabled
 feature returns 403 with an explicit message. Successful replies contain
@@ -225,7 +230,7 @@ dataset's index unsupported; the import remains incomplete and its processed
 evidence remains in retained logs. The upload reports this as HTTP 422. Unsupported indexes never
 expose partial experiment counts.
 
-Collector-backed Evals uses schema version 24. Older databases are rejected;
+Collector-backed Evals uses schema version 26. Older databases are rejected;
 there is no migration or parallel legacy table set. Use a new database and
 reimport retained source exports. Experiment IDs remain stable for the same
 imported data. The UI accepts old `run`/`rep` selection links and replaces their

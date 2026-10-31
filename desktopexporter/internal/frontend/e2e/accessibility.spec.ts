@@ -1,7 +1,8 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import { SEASONS } from '../src/themes'
 
 type RpcRequest = {
@@ -25,7 +26,6 @@ const EMPTY_STATS = {
 
 const EMPTY_LIST_METHODS = new Set([
   'getTraceAttributeDefinitions',
-  'getTraceAttributeDefinitionsByTraceID',
   'getLogAttributeDefinitions',
   'getMetricAttributeDefinitions',
   'searchTraceSummaries',
@@ -79,31 +79,37 @@ async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     // SAFETY: This page's /rpc requests come from callRPC, which supplies a
     // numeric request-correlation id and a string method.
     const request = route.request().postDataJSON() as RpcRequest
     const response =
       request.method === 'getStats'
         ? { jsonrpc: '2.0', id: request.id, result: EMPTY_STATS }
-        : request.method === 'discoverTelemetry'
-          ? {
-              jsonrpc: '2.0',
-              id: request.id,
-              result: { rows: [], truncated: false },
-            }
-          : request.method === 'getImportConfig'
-            ? { jsonrpc: '2.0', id: request.id, result: { otlpHttpPort: 4318 } }
-            : EMPTY_LIST_METHODS.has(request.method)
-              ? { jsonrpc: '2.0', id: request.id, result: [] }
-              : {
+        : request.method === 'getServiceCount'
+          ? { jsonrpc: '2.0', id: request.id, result: 0 }
+          : request.method === 'discoverTelemetry'
+            ? {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: { rows: [], truncated: false },
+              }
+            : request.method === 'getImportConfig'
+              ? {
                   jsonrpc: '2.0',
                   id: request.id,
-                  error: {
-                    code: -32601,
-                    message: `No accessibility-test fixture for ${request.method}`,
-                  },
+                  result: { otlpHttpPort: 4318 },
                 }
+              : EMPTY_LIST_METHODS.has(request.method)
+                ? { jsonrpc: '2.0', id: request.id, result: [] }
+                : {
+                    jsonrpc: '2.0',
+                    id: request.id,
+                    error: {
+                      code: -32601,
+                      message: `No accessibility-test fixture for ${request.method}`,
+                    },
+                  }
 
     await route.fulfill({
       status: 200,
@@ -120,7 +126,7 @@ const TRACE_SERVICES = ['checkout', 'payments', 'database']
 
 /** Exercise the shared cards, rows and Details with the Evals flag off. */
 async function interceptTraces(page: Page): Promise<void> {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchTraceSummaries') {
       return route.fulfill({
@@ -146,7 +152,7 @@ async function interceptTraces(page: Page): Promise<void> {
     }
     if (method !== 'getTraceView') return route.fallback()
     const traceID: string = params.traceID
-    const trace: JsonTraceData = {
+    const trace: TraceFixture = {
       traceID,
       traceStart: '1700000000000000000',
       unplacedSpanCount: 0,
@@ -710,7 +716,7 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
   page.on('pageerror', error => errors.push(error.message))
   await interceptRpc(page)
   const label = `service-${'recorded-service-segment-'.repeat(240)}end`
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'getTraceLogSummaries')
       return route.fulfill({ json: { jsonrpc: '2.0', id, result: [] } })

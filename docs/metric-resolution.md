@@ -113,6 +113,16 @@ The inactive value is JSON `null`; an empty datapoint has both values null.
 Derived rates, quantiles, and chart coordinates use IEEE-754 numbers. They are
 labelled and typed as computed display values.
 
+At rate and histogram-quantile arithmetic boundaries, signed 128-bit integers
+convert to binary64 with round-to-nearest, ties-to-even, matching JavaScript
+`Number(BigInt(value))`. Exact deltas and histogram counts retain their integer
+representation until that boundary.
+
+Floating-point sums and averages use a stable addition order: received timestamp,
+then stored datapoint ID within each series; series ID when folding series; and
+bucket timestamp for rate statistics. These remain ordinary `DOUBLE` sums and
+averages, with their usual rounding, rather than compensated or decimal sums.
+
 ## Frontend responsibility
 
 The frontend does not recompute metric aggregates. It handles presentation:

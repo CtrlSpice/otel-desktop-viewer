@@ -99,19 +99,35 @@
   let submittedText = $state('')
   let pageNumber = $state(1)
   let pageSize = $state(100)
-  let total = $state(0)
+  let total = $state<number | null>(null)
   let listVersion = $state(0)
   let errorNavigation = $state<LogErrorNavigation | null>(null)
   let errorNavigationError = $state('')
   let errorNavigationLoading = $state(false)
   let requestedPage = 1
-  let requestedSize = 100
   let fetchVersion = 0
   let listRequest: AbortController | undefined
-  onDestroy(() => listRequest?.abort())
+  let pageRequest: AbortController | undefined
+  let pageLoading = $state(false)
+  let pageRequestKey = $state(0)
+  let pageError = $state<string | null>(null)
+  let disposed = false
+  onDestroy(() => {
+    disposed = true
+    listRequest?.abort()
+    pageRequest?.abort()
+  })
   let lastTimeSelection = untrack(() => timeContext.selection)
   let queryWindow: ReturnType<typeof selectionToQueryRangeNs> | null = null
   let services = $state<string[]>([])
+  type Reading = {
+    window: ReturnType<typeof selectionToQueryRangeNs>
+    query: ParsedSearchRequest | null
+    text: string
+    sort: { field: LogSortColumn; direction: LogSortDirection }
+    columns: ReturnType<typeof logColumnRequests>
+  }
+  let displayed = $state<Reading | null>(null)
   let inspection = $state<{ id: string; target: DetailFieldTarget } | null>(
     null
   )
@@ -141,8 +157,9 @@
         return {
           ...queryWindow,
           number: requestedPage,
-          size: requestedSize,
+          size: pageSize,
           query: submittedQuery,
+          text: submittedText,
           sort: { field: page.sortColumn, direction: page.sortDirection },
           columns: logColumnRequests(selectedColumns),
         }
@@ -160,13 +177,24 @@
           controller.signal
         )
       let result = await fetchPage(request.number)
-      if (version !== fetchVersion) return result.logs
+      if (disposed || version !== fetchVersion) return result.logs
       const lastPage = Math.max(1, Math.ceil(result.total / request.size))
       if (request.number > lastPage) {
         request.number = lastPage
         result = await fetchPage(lastPage)
       }
-      if (version !== fetchVersion) return result.logs
+      if (disposed || version !== fetchVersion) return result.logs
+      pageRequest?.abort()
+      pageLoading = false
+      pageError = null
+      errorNavigation = null
+      displayed = {
+        window: { startTime: request.startTime, endTime: request.endTime },
+        query: request.query,
+        text: request.text,
+        sort: request.sort,
+        columns: request.columns,
+      }
       total = result.total
       pageNumber = request.number
       pageSize = request.size
@@ -176,7 +204,7 @@
       void telemetryAPI
         .getStats()
         .then(stats => {
-          if (version !== fetchVersion) return
+          if (disposed || version !== fetchVersion) return
           baselineLogCount = stats.logs.logCount
           polledLogCount = stats.logs.logCount
         })
@@ -202,12 +230,13 @@
 
   // Debouncing avoids a detail request for every row during keyboard navigation.
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
-    fetch: id => telemetryAPI.getLog(id),
+    fetch: (id, signal) => telemetryAPI.getLog(id, signal),
     keysEqual: (a, b) => a === b,
     fallbackErrorMessage: 'Failed to load log details',
   })
 
-  let displayError = $derived(page.error ?? actionError)
+  let displayError = $derived(page.error ?? pageError ?? actionError)
+  let listLoading = $derived(page.loading || pageLoading)
   let selectedLog = $derived(
     page.selectedID ? (detailFetcher.data ?? undefined) : undefined
   )
@@ -229,20 +258,19 @@
   $effect(() => {
     void listVersion
     const selected = page.selectedID
-    const loading = page.loading
     const mounted = page.mounted
+    const reading = displayed
     errorNavigationError = ''
-    if (!mounted || loading) {
-      errorNavigationLoading = loading
+    if (!mounted || !reading) {
+      errorNavigationLoading = false
       return
     }
     const controller = new AbortController()
     const request = untrack(() => ({
-      window: queryWindow,
-      query: submittedQuery,
-      sort: { field: page.sortColumn, direction: page.sortDirection },
+      window: reading.window,
+      query: reading.query,
+      sort: reading.sort,
     }))
-    if (!request.window) return
     errorNavigationLoading = true
     void telemetryAPI
       .getLogErrorNavigation(
@@ -273,10 +301,9 @@
   })
 
   function selectError(target: LogErrorTarget) {
-    const number = Math.floor(target.offset / requestedSize) + 1
-    requestedPage = number
+    const number = Math.floor(target.offset / pageSize) + 1
     selectLog(target.logRef, true)
-    if (number !== pageNumber) void page.runListFetch()
+    if (number !== pageNumber) void fetchDisplayedPage(number, pageSize)
   }
 
   function selectLog(logRef: string, keyboard = false) {
@@ -300,15 +327,68 @@
   }
 
   function changePage(number: number) {
-    if (number === pageNumber || page.loading) return
-    requestedPage = number
-    void page.runListFetch()
+    if (number === pageNumber) return
+    void fetchDisplayedPage(number, pageSize)
   }
 
   function changePageSize(size: number) {
-    requestedSize = size
-    requestedPage = 1
-    void page.runListFetch()
+    void fetchDisplayedPage(1, size)
+  }
+
+  async function fetchDisplayedPage(number: number, size: number) {
+    const reading = displayed
+    if (!reading) return
+    pageRequest?.abort()
+    const controller = new AbortController()
+    pageRequest = controller
+    pageRequestKey++
+    pageLoading = true
+    pageError = null
+    const current = () =>
+      !disposed && !controller.signal.aborted && displayed === reading
+    const fetchPage = (number: number) =>
+      telemetryAPI.searchLogPage(
+        reading.window.startTime,
+        reading.window.endTime,
+        size,
+        (number - 1) * size,
+        reading.query?.predicate ?? undefined,
+        reading.query?.limit ?? undefined,
+        reading.sort,
+        reading.columns,
+        controller.signal
+      )
+    try {
+      let result = await fetchPage(number)
+      if (!current()) return
+      const lastPage = Math.max(1, Math.ceil(result.total / size))
+      if (number > lastPage) {
+        number = lastPage
+        result = await fetchPage(number)
+      }
+      if (!current()) return
+      total = result.total
+      pageNumber = number
+      pageSize = size
+      if (
+        reading.text === submittedText &&
+        reading.sort.field === page.sortColumn &&
+        reading.sort.direction === page.sortDirection &&
+        reading.window.startTime === queryWindow?.startTime &&
+        reading.window.endTime === queryWindow?.endTime
+      ) {
+        requestedPage = number
+      }
+      page.publishItems(result.logs)
+      listVersion++
+    } catch (error) {
+      if (current()) {
+        pageError =
+          error instanceof Error ? error.message : 'Failed to load logs'
+      }
+    } finally {
+      if (current()) pageLoading = false
+    }
   }
 
   function changeSort(column: LogSortColumn, direction: LogSortDirection) {
@@ -373,10 +453,11 @@
   onRefresh={handleRefresh}
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
-  loading={page.loading}
+  loading={listLoading}
+  loadingRequestKey={`${page.requestKey}:${pageRequestKey}:${detailFetcher.requestKey}`}
   loadingMessage={detailFetcher.loading
     ? 'Loading selected log…'
-    : page.loading
+    : listLoading
       ? 'Loading logs…'
       : undefined}
   itemKey={l => l.logRef}
@@ -430,9 +511,10 @@
         onSelectError={selectError}
         logs={page.sortedItems}
         selectedID={page.selectedID}
-        sortColumn={page.sortColumn}
-        sortDirection={page.sortDirection}
-        loading={page.loading}
+        sortColumn={displayed?.sort.field ?? page.sortColumn}
+        sortDirection={displayed?.sort.direction ?? page.sortDirection}
+        loading={listLoading}
+        loadingRequestKey={page.requestKey + pageRequestKey}
         onSelect={selectLog}
         onInspect={inspectLog}
         onSort={changeSort}
@@ -445,7 +527,7 @@
       >
         {#snippet filters()}<LogFilters
             {query}
-            appliedQuery={submittedText}
+            appliedQuery={displayed?.text ?? ''}
             {fields}
             {services}
             editor={page.searchEditorApi}
@@ -456,7 +538,7 @@
       page={pageNumber}
       {pageSize}
       {total}
-      loading={page.loading}
+      loading={listLoading}
       onPage={changePage}
       onPageSize={changePageSize}
       onDeleteAll={handleDeleteAllLogs}

@@ -17,6 +17,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
 	"go.uber.org/zap"
@@ -28,6 +29,7 @@ type JSONRPCHandler struct {
 	logger       *zap.Logger
 	otlpHTTPPort int
 	otlpGRPCPort int
+	homeValues   homeValueReferences
 }
 
 func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
@@ -106,6 +108,10 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	req.Params = normalized
 
 	switch req.Method {
+	case "getServiceCount":
+		return h.getServiceCount(ctx, req)
+	case "getServiceLabels":
+		return h.getServiceLabels(ctx, req)
 	case "rpc.discover":
 		if err := validateNoParams(req.Params); err != nil {
 			return nil, err
@@ -143,6 +149,14 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getMetric(ctx, req)
 	case "getMetricSeries":
 		return h.getMetricSeries(ctx, req)
+	case "getMetricSeriesOrder":
+		args, err := parseMetricSeriesOrderParams(req.Params)
+		if err != nil {
+			return nil, err
+		}
+		return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeriesOrder(ctx, db, args.metricRef, args.timeRange, args.seriesRefs, args.key, args.descending)
+		})
 	case "getMetricView":
 		return h.getMetricView(ctx, req)
 	case "getMetricAggregateView":
@@ -221,7 +235,24 @@ func (h *JSONRPCHandler) searchTraceSummaries(ctx context.Context, req *jsonrpc2
 }
 
 func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	params, err := decodePositionalParams(req.Params, 1, 3)
+	params, err := parseTraceViewParams(req.Params)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceView(ctx, db, params.traceID, params.query, params.spanIDs...)
+	})
+}
+
+type traceViewParams struct {
+	traceID string
+	query   any
+	spanIDs []uint64
+	columns []spans.WaterfallColumn
+}
+
+func parseTraceViewParams(raw json.RawMessage) (*traceViewParams, error) {
+	params, err := decodePositionalParams(raw, 1, 4)
 	if err != nil {
 		return nil, err
 	}
@@ -249,9 +280,20 @@ func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request
 		}
 	}
 
-	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetTraceView(ctx, db, traceID, query, spanIDs...)
-	})
+	var columns []spans.WaterfallColumn
+	if len(params) >= 4 && params[3] != nil {
+		encoded, err := json.Marshal(params[3])
+		if err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if err := json.Unmarshal(encoded, &columns); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if err := spans.ValidateWaterfallColumns(columns); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	return &traceViewParams{traceID: traceID, query: query, spanIDs: spanIDs, columns: columns}, nil
 }
 
 type compactTraceResult struct {
@@ -503,7 +545,22 @@ func (h *JSONRPCHandler) searchLogSummaries(ctx context.Context, req *jsonrpc2.R
 }
 
 func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	values, err := decodePositionalParams(req.Params, 2, 8)
+	params, err := parseLogPageParams(req.Params)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, params.page)
+	})
+}
+
+type logPageParams struct {
+	searchParams
+	page logs.PageOptions
+}
+
+func parseLogPageParams(raw json.RawMessage) (*logPageParams, error) {
+	values, err := decodePositionalParams(raw, 2, 8)
 	if err != nil {
 		return nil, err
 	}
@@ -548,9 +605,7 @@ func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Reques
 			return nil, jsonrpc2.ErrInvalidParams
 		}
 	}
-	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, logs.PageOptions{Size: size, Offset: offset, Columns: columns})
-	})
+	return &logPageParams{searchParams: params, page: logs.PageOptions{Size: size, Offset: offset, Columns: columns}}, nil
 }
 
 func (h *JSONRPCHandler) getLogErrorNavigation(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -630,7 +685,7 @@ func (h *JSONRPCHandler) getMetricSeries(ctx context.Context, req *jsonrpc2.Requ
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricSeries(ctx, db, args.metricRef, args.seriesRef, args.timeRange)
+		return metrics.GetMetricSeries(ctx, db, args.metricRef, args.seriesRef, args.timeRange, args.includeDatapoints)
 	})
 }
 
@@ -655,16 +710,9 @@ func (h *JSONRPCHandler) clearSignal(
 	clear func(context.Context, *sql.DB) error,
 	successMessage string,
 ) (any, error) {
-	// Clear deletes the signal's own rows but never the dictionary: attribute,
-	// resource and scope rows are shared across signals, so only a sweep can
-	// prove one is unreferenced. It has to run here rather than being left to
-	// retention -- retention is size-driven and does not run at all when the
-	// cap is disabled, which would leak every orphaned row until restart.
+	// Clear removes owning rows and their search catalogue atomically.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		if err := clear(ctx, db); err != nil {
-			return err
-		}
-		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
+		return clear(ctx, db)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(ctx, err)
@@ -728,23 +776,83 @@ func (h *JSONRPCHandler) deleteLogsByRefs(ctx context.Context, req *jsonrpc2.Req
 	}, nil
 }
 
-// searchAttributeMatches answers "which attribute keys hold this text?" across every
-// signal at once, from the dictionary alone.
-//
-// Deliberately not scoped to a signal or a time window, unlike the
-// getXAttributes discovery methods. The dictionary is shared -- one row per
-// distinct (key, value, type, scope) for the whole store -- so narrowing to one
-// signal would mean unnesting owner arrays to find out which signals reference
-// a row, which is the cost this avoids. The scope on each result says which
-// signals can carry it.
+// searchAttributeMatches finds keys/owners first and values only after selection.
 func (h *JSONRPCHandler) searchAttributeMatches(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	term, err := parseSingleStringParam(req.Params)
+	options, err := parseAttributeMatchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return attributes.Search(ctx, db, term)
+		return attributes.SearchScoped(ctx, db, *options)
 	})
+}
+
+func parseAttributeMatchParams(raw json.RawMessage) (*searchindex.DiscoveryOptions, error) {
+	params, err := decodePositionalParams(raw, 1, 5)
+	if err != nil {
+		return nil, err
+	}
+	options := &searchindex.DiscoveryOptions{}
+	term, ok := params[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	options.Term = term
+	for i, target := range map[int]*string{1: &options.Signal, 2: &options.Owner, 4: &options.Kind} {
+		if i < len(params) && params[i] != nil {
+			v, ok := params[i].(string)
+			if !ok {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			*target = v
+		}
+	}
+	if len(params) > 3 && params[3] != nil {
+		path, ok := params[3].([]any)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		options.Path = path
+	}
+	if _, err := searchindex.NormalizeSignal(options.Signal); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if options.Owner != "" {
+		switch options.Owner {
+		case "span", "event", "link", "log", "metric", "datapoint", "exemplar", "resource", "scope":
+		default:
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	if options.Kind != "" {
+		switch options.Kind {
+		case "string", "int64", "double", "bool", "bytes", "empty", "map", "array":
+		default:
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	if len(options.Path) > 0 {
+		if options.Owner == "" {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		root, ok := options.Path[0].(string)
+		if !ok || (root != "attributes" && root != "body" && root != "metadata") {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		for _, segment := range options.Path {
+			switch v := segment.(type) {
+			case string:
+			case json.Number:
+				index, err := v.Int64()
+				if err != nil || index < 0 || index >= math.MaxUint32 {
+					return nil, jsonrpc2.ErrInvalidParams
+				}
+			default:
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+		}
+	}
+	return options, nil
 }
 
 func (h *JSONRPCHandler) getFieldValueCompletions(ctx context.Context, req *jsonrpc2.Request) (any, error) {

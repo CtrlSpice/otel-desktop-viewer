@@ -1,3 +1,19 @@
+<script module lang="ts">
+  import type { DataPoint, MetricType } from '@/types/api-types'
+
+  export type DatapointOwner = {
+    metricRef: string
+    seriesRef: string
+    unit: string
+    metricType: MetricType
+  }
+
+  export type DatapointSeries = DatapointOwner & {
+    datapoints: DataPoint[]
+    count: number
+  }
+</script>
+
 <script lang="ts">
   import ExemplarTraceReference from './ExemplarTraceReference.svelte'
   import DatapointFields from './DatapointFields.svelte'
@@ -14,25 +30,63 @@
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
-  import type { DataPoint, Exemplar } from '@/types/api-types'
+  import type { Exemplar } from '@/types/api-types'
 
   type Props = {
     datapoints: DataPoint[]
+    owner?: DatapointOwner
+    /** The displayed metric still owns the requested page selection. */
+    selectionCurrent?: boolean
   }
 
-  let { datapoints }: Props = $props()
+  let { datapoints, owner, selectionCurrent = true }: Props = $props()
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
 
-  let metricUnit = $derived(ctx.metric?.unit ?? '')
+  const ownsSelection = $derived(
+    selectionCurrent &&
+      (!owner ||
+        (owner.metricRef === ctx.metric?.metricRef &&
+          owner.seriesRef === ctx.selectedSeriesKey &&
+          ctx.seriesDatapoints(owner.seriesRef) === datapoints))
+  )
+  let selectedID = $state<string | null>(null)
+  let relatedIDs = $state<ReadonlySet<string>>(new Set())
+  let revealedID = $state<string | null>(null)
+  $effect.pre(() => {
+    if (!ownsSelection) return
+    const selected = ctx.selectedDatapointID
+    const related = new Set(ctx.chartRelatedDatapointIDs)
+    selectedID = selected
+    relatedIDs = related
+    revealedID =
+      ctx.selectionSource === 'chart'
+        ? (related.values().next().value ?? null)
+        : selected
+  })
+  function selectDatapoint(dp: DataPoint) {
+    if (ownsSelection) {
+      ctx.onDatapointClick(dp)
+    } else {
+      // Inspection belongs to the displayed rows even when the shared chart
+      // and URL already belong to a replacement. Keep those actions local.
+      selectedID = selectedID === dp.id ? null : dp.id
+      revealedID = selectedID
+    }
+  }
+  const isHistogramKind = $derived(
+    owner
+      ? owner.metricType === 'Histogram' ||
+          owner.metricType === 'ExponentialHistogram'
+      : ctx.isHistogramKind
+  )
+  let metricUnit = $derived(owner?.unit ?? ctx.metric?.unit ?? '')
   let valueUnit = $derived(displayUnit(metricUnit))
   let hasDetails = $derived(
     datapoints.some(dp => dp.flags > 0 || dp.exemplars.length > 0)
   )
-  let columnCount = $derived(
-    (ctx.isHistogramKind ? 3 : 2) + (hasDetails ? 1 : 0)
-  )
+  let columnCount = $derived((isHistogramKind ? 3 : 2) + (hasDetails ? 1 : 0))
 
   const PAGE_SIZES = [25, 50, 100] as const
   type PageSize = (typeof PAGE_SIZES)[number]
@@ -50,11 +104,7 @@
   let cachedDatapointIndexByID = new Map<string, number>()
   let revealedDatapoints: DataPoint[] | undefined
   let revealedSelectedID: string | null | undefined
-  const revealDatapointID = $derived(
-    ctx.selectionSource === 'chart'
-      ? (ctx.chartRelatedDatapointIDs.values().next().value ?? null)
-      : ctx.selectedDatapointID
-  )
+  const revealDatapointID = $derived(revealedID)
 
   $effect(() => {
     const id = revealDatapointID
@@ -236,7 +286,7 @@
   ): void {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      ctx.onDatapointClick(dp)
+      selectDatapoint(dp)
       return
     }
     moveDatapointFocus(e, index)
@@ -317,9 +367,9 @@
 </script>
 
 {#snippet datapointRows(dp: DataPoint, datapointIndex: number)}
-  {@const selected = ctx.selectedDatapointID === dp.id}
+  {@const selected = selectedID === dp.id}
   {@const expanded = selected}
-  {@const chartRelated = ctx.chartRelatedDatapointIDs.has(dp.id)}
+  {@const chartRelated = relatedIDs.has(dp.id)}
   {@const valueParts = datapointValueParts(dp)}
   {@const formattedTime = formatDatapointTime(dp.timestamp)}
   <tr
@@ -332,14 +382,14 @@
     aria-expanded={expanded}
     title={chartRelated ? 'In selected chart point or interval' : undefined}
     onclick={() => {
-      if (!window.getSelection()?.toString()) ctx.onDatapointClick(dp)
+      if (!window.getSelection()?.toString()) selectDatapoint(dp)
     }}
     onkeydown={e => handleDatapointKeydown(e, dp, datapointIndex)}
   >
     <td class="dp-list__td dp-list__td--time tabular-nums">
       {formattedTime}
     </td>
-    {#if ctx.isHistogramKind}
+    {#if isHistogramKind}
       <td class="dp-list__td dp-list__td--value">{valueParts.count}</td>
     {/if}
     <td class="dp-list__td dp-list__td--value">{valueParts.number}</td>
@@ -410,12 +460,12 @@
           {#if datapoints.length > 0}
             <tr class="dp-list__header-row">
               <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
-              {#if ctx.isHistogramKind}
+              {#if isHistogramKind}
                 <th scope="col" class="dp-list__th dp-list__th--value">Count</th
                 >
               {/if}
               <th scope="col" class="dp-list__th dp-list__th--value">
-                {ctx.isHistogramKind ? 'Sum' : 'Value'}{#if valueUnit}
+                {isHistogramKind ? 'Sum' : 'Value'}{#if valueUnit}
                   <span class="dp-list__header-unit">{' '}({valueUnit})</span>
                 {/if}
               </th>

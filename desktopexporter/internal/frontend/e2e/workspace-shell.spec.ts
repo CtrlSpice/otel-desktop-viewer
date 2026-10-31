@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 const shellSelectors = [
@@ -51,7 +52,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const logsGate = new Promise<void>(resolve => {
       releaseLogs = resolve
     })
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const { id, method } = route.request().postDataJSON()
       if (method === 'searchLogPage') {
         await logsGate

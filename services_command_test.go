@@ -133,7 +133,7 @@ func TestServicesCountsAcrossSignalsAndNamespaces(t *testing.T) {
 	assert.Equal(t, "6400000000000", *result.StartTime)
 	assert.Equal(t, "10000000000000", *result.EndTime)
 	assert.False(t, result.Truncated)
-	assert.Equal(t, stringServiceSummaries([]serviceSummary{
+	assertServiceSummaries(t, stringServiceSummaries([]serviceSummary{
 		{ServiceName: "logs-only", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8500000000001"},
 		{ServiceName: "metrics-only", MetricCount: 1, DataPointCount: 1, LastSeen: "8500000000002"},
 		{ServiceNamespace: "internal", ServiceName: "payments", TraceCount: 2, SpanCount: 2, ErrorSpanCount: 1, LogCount: 3, ErrorLogCount: 2, LogSeverityCounts: logSeverityCounts{Warn: 1, Error: 1, Fatal: 1}, MetricCount: 3, DataPointCount: 5, ExemplarCount: 4, LastSeen: "9000000000002"},
@@ -170,14 +170,14 @@ func TestServicesNamespacePresenceAndQuotedNames(t *testing.T) {
 	unnamed.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(8000000000004)
 	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
 	result := servicesTestResult(t, endpoint, "--service", name)
-	assert.Equal(t, stringServiceSummaries([]serviceSummary{
+	assertServiceSummaries(t, stringServiceSummaries([]serviceSummary{
 		{ServiceName: name, LogCount: 2, LogSeverityCounts: logSeverityCounts{Other: 2}, LastSeen: "8000000000001"},
 		{ServiceNamespace: "internal", ServiceName: name, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000003"},
 		{ServiceNamespace: "shop", ServiceName: name, LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000002"},
 	}), result.Services)
 	all := servicesTestResult(t, endpoint)
 	require.Len(t, all.Services, 4)
-	assert.Equal(t, serviceSummary{ServiceIdentity: `[null,{"kind":"string","value":""}]`, ServiceNameKind: "missing", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000004"}, all.Services[0])
+	assertServiceSummaries(t, []serviceSummary{{ServiceNameKind: "missing", ServiceNamespaceKind: "string", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "8000000000004"}}, all.Services[:1])
 	output, err := servicesTestRun(t, endpoint, "--service", name)
 	require.NoError(t, err)
 	assert.NotContains(t, output, "\x1b")
@@ -242,15 +242,15 @@ func TestServicesTimeBoundsSeverityAndExactTimestamps(t *testing.T) {
 	require.NoError(t, te.ConsumeTraces(context.Background(), traces))
 	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
 	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
-	assert.Equal(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", TraceCount: 2, SpanCount: 2, ErrorSpanCount: 1, LogCount: 6, ErrorLogCount: 2, LogSeverityCounts: logSeverityCounts{Warn: 1, Error: 1, Fatal: 1, Other: 3}, MetricCount: 1, DataPointCount: 2, ExemplarCount: 2, LastSeen: "10000000000000"}}), servicesTestResult(t, endpoint).Services)
+	assertServiceSummaries(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", TraceCount: 2, SpanCount: 2, ErrorSpanCount: 1, LogCount: 6, ErrorLogCount: 2, LogSeverityCounts: logSeverityCounts{Warn: 1, Error: 1, Fatal: 1, Other: 3}, MetricCount: 1, DataPointCount: 2, ExemplarCount: 2, LastSeen: "10000000000000"}}), servicesTestResult(t, endpoint).Services)
 	maxTime := "2554-07-21T23:34:33.709551615Z"
-	assert.Equal(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", LogCount: 1, ErrorLogCount: 1, LogSeverityCounts: logSeverityCounts{Error: 1}, LastSeen: "18446744073709551615"}}), servicesTestResult(t, endpoint, "--start", maxTime, "--end", maxTime).Services)
+	assertServiceSummaries(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", LogCount: 1, ErrorLogCount: 1, LogSeverityCounts: logSeverityCounts{Error: 1}, LastSeen: "18446744073709551615"}}), servicesTestResult(t, endpoint, "--start", maxTime, "--end", maxTime).Services)
 	openEnd := servicesTestResult(t, endpoint, "--start", maxTime)
 	assert.Nil(t, openEnd.EndTime)
 	assert.Equal(t, "18446744073709551615", openEnd.Services[0].LastSeen)
 	zero := servicesTestResult(t, endpoint, "--end", "1970-01-01T00:00:00Z")
 	assert.Nil(t, zero.StartTime)
-	assert.Equal(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "0"}}), zero.Services)
+	assertServiceSummaries(t, stringServiceSummaries([]serviceSummary{{ServiceName: "time-test", LogCount: 1, LogSeverityCounts: logSeverityCounts{Other: 1}, LastSeen: "0"}}), zero.Services)
 }
 
 func TestServicesDefaultLimitAndEmptyStore(t *testing.T) {
@@ -279,16 +279,21 @@ func stringServiceSummaries(services []serviceSummary) []serviceSummary {
 	for i := range services {
 		services[i].ServiceNameKind = "string"
 		services[i].ServiceNamespaceKind = "string"
-		services[i].ServiceIdentity = expectedServiceIdentity(services[i])
 	}
 	return services
 }
 
-func expectedServiceIdentity(service serviceSummary) string {
-	name, _ := json.Marshal(service.ServiceName)
-	namespace, _ := json.Marshal(service.ServiceNamespace)
-	// DuckDB uses uppercase hex for the ESC in the quoted-name fixture.
-	return strings.ReplaceAll(fmt.Sprintf(`[{"kind":%q,"value":%s},{"kind":%q,"value":%s}]`, service.ServiceNameKind, name, service.ServiceNamespaceKind, namespace), `\u001b`, `\u001B`)
+func assertServiceSummaries(t *testing.T, expected, actual []serviceSummary) {
+	t.Helper()
+	values := append([]serviceSummary(nil), actual...)
+	seen := map[string]bool{}
+	for i, service := range values {
+		require.Regexp(t, `^[0-9a-f]{64}$`, service.ServiceIdentity)
+		require.False(t, seen[service.ServiceIdentity], "distinct groups need distinct references")
+		seen[service.ServiceIdentity] = true
+		values[i].ServiceIdentity = ""
+	}
+	assert.Equal(t, expected, values)
 }
 
 func TestServicesPreserveSameKindDisplayCollisionIdentities(t *testing.T) {
@@ -308,11 +313,9 @@ func TestServicesPreserveSameKindDisplayCollisionIdentities(t *testing.T) {
 	require.Equal(t, left.ServiceNameKind, right.ServiceNameKind)
 	require.NotEmpty(t, left.ServiceIdentity)
 	require.NotEqual(t, left.ServiceIdentity, right.ServiceIdentity)
-	identities := []string{left.ServiceIdentity, right.ServiceIdentity}
-	require.ElementsMatch(t, []string{
-		`[{"kind":"array","value":[{"kind":"int64","value":"1"}]},{"kind":"string","value":""}]`,
-		`[{"kind":"array","value":[{"kind":"double","value":1}]},{"kind":"string","value":""}]`,
-	}, identities)
+	require.Regexp(t, `^[0-9a-f]{64}$`, left.ServiceIdentity)
+	require.Regexp(t, `^[0-9a-f]{64}$`, right.ServiceIdentity)
+	require.Equal(t, result.Services, servicesTestResult(t, endpoint).Services)
 }
 
 func TestServicesSeparateReceivedIdentityTypes(t *testing.T) {
@@ -359,8 +362,7 @@ func TestServicesSeparateReceivedIdentityTypes(t *testing.T) {
 			} else {
 				expected[0].ServiceNamespaceKind = "int64"
 			}
-			expected[0].ServiceIdentity = expectedServiceIdentity(expected[0])
-			assert.Equal(t, expected, result.Services)
+			assertServiceSummaries(t, expected, result.Services)
 			filtered := servicesTestResult(t, endpoint, "--service", "42")
 			assert.Equal(t, result.Services[:2], filtered.Services)
 			limited := servicesTestResult(t, endpoint, "--limit", "1")

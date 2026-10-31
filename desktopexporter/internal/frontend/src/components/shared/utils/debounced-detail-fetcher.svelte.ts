@@ -7,13 +7,14 @@ export type DebouncedDetailFetcher<K, D> = {
   select(key: K | null, debounce?: boolean): void
   readonly data: D | null
   readonly loading: boolean
+  readonly requestKey: number
   readonly error: string | null
   /** Refetch the current key; no-op when the key is null. */
   refresh(): void
 }
 
 export type CreateDebouncedDetailFetcherOptions<K, D> = {
-  fetch: (key: K) => Promise<D>
+  fetch: (key: K, signal: AbortSignal) => Promise<D>
   keysEqual: (a: K, b: K) => boolean
   /** Quiet period after a key change, in milliseconds. */
   delayMs?: number
@@ -29,18 +30,23 @@ export function createDebouncedDetailFetcher<K, D>(
   let key: K | null = null
   let data = $state<D | null>(null)
   let loading = $state(false)
+  let requestKey = $state(0)
   let error = $state<string | null>(null)
 
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
   let generation = 0
+  let activeRequest: AbortController | null = null
 
   onDestroy(() => {
     ++generation
+    activeRequest?.abort()
     if (pendingTimer !== null) clearTimeout(pendingTimer)
   })
 
   function clear() {
     ++generation
+    activeRequest?.abort()
+    activeRequest = null
     if (pendingTimer !== null) {
       clearTimeout(pendingTimer)
       pendingTimer = null
@@ -52,13 +58,17 @@ export function createDebouncedDetailFetcher<K, D>(
 
   function schedule(forKey: K, debounce = false) {
     const request = ++generation
+    requestKey = request
+    activeRequest?.abort()
+    activeRequest = null
     if (pendingTimer !== null) clearTimeout(pendingTimer)
     loading = true
     error = null
     const run = () => {
       pendingTimer = null
       if (request !== generation) return
-      opts.fetch(forKey).then(
+      activeRequest = new AbortController()
+      opts.fetch(forKey, activeRequest.signal).then(
         result => {
           if (request !== generation) return
           data = result
@@ -91,6 +101,9 @@ export function createDebouncedDetailFetcher<K, D>(
     },
     get loading() {
       return loading
+    },
+    get requestKey() {
+      return requestKey
     },
     get error() {
       return error

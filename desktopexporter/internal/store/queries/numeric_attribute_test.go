@@ -1,7 +1,6 @@
 package queries_test
 
 import (
-	"database/sql"
 	"fmt"
 	"math"
 	"testing"
@@ -15,17 +14,17 @@ func TestTypedAttributeNumericDecoding(t *testing.T) {
 
 	var version string
 	require.NoError(t, db.QueryRow(`select version()`).Scan(&version))
-	assert.Equal(t, "v1.5.6", version)
+	assert.Equal(t, "v2.0.0", version)
 
 	var textOrder, typedOrder string
 	require.NoError(t, db.QueryRow(`
 		with attrs(label, value) as (values
-			('two', '{"kind":"int64","value":"2"}'::json),
-			('ten', '{"kind":"int64","value":"10"}'::json)
+			('two', 2::bigint::variant),
+			('ten', 10::bigint::variant)
 		)
 		select
-			string_agg(label, ',' order by json_extract_string(value, '$.value')),
-			string_agg(label, ',' order by attribute_int64(value))
+			string_agg(label, ',' order by value::varchar),
+			string_agg(label, ',' order by value::bigint)
 		from attrs
 	`).Scan(&textOrder, &typedOrder))
 	assert.Equal(t, "ten,two", textOrder)
@@ -33,10 +32,10 @@ func TestTypedAttributeNumericDecoding(t *testing.T) {
 
 	var min, largeEven, largeOdd, max int64
 	require.NoError(t, db.QueryRow(`select
-		attribute_int64('{"kind":"int64","value":"-9223372036854775808"}'::json),
-		attribute_int64('{"kind":"int64","value":"9007199254740992"}'::json),
-		attribute_int64('{"kind":"int64","value":"9007199254740993"}'::json),
-		attribute_int64('{"kind":"int64","value":"9223372036854775807"}'::json)
+		(-9223372036854775808)::bigint::variant::bigint,
+		9007199254740992::bigint::variant::bigint,
+		9007199254740993::bigint::variant::bigint,
+		9223372036854775807::bigint::variant::bigint
 	`).Scan(&min, &largeEven, &largeOdd, &max))
 	assert.Equal(t, int64(math.MinInt64), min)
 	assert.Equal(t, int64(9_007_199_254_740_992), largeEven)
@@ -67,12 +66,12 @@ func TestTypedAttributeNumericDecoding(t *testing.T) {
 
 	var finiteOrder, nanEqual, nanAboveInfinity, signedZeroEqual, in, notIn bool
 	require.NoError(t, db.QueryRow(`select
-		attribute_double('{"kind":"double","value":1.5}'::json) < attribute_double('{"kind":"double","value":2.5}'::json),
-		attribute_double('{"kind":"double","value":"0x7ff8000000000001"}'::json) = attribute_double('{"kind":"double","value":"0xfff8000000000002"}'::json),
-		attribute_double('{"kind":"double","value":"0x7ff8000000000001"}'::json) > attribute_double('{"kind":"double","value":"0x7ff0000000000000"}'::json),
-		attribute_double('{"kind":"double","value":"0x8000000000000000"}'::json) = 0.0,
-		attribute_double('{"kind":"double","value":2.0}'::json) in [1.0, 2.0],
-		attribute_double('{"kind":"double","value":2.0}'::json) not in [1.0, 3.0]
+		1.5::double::variant::double < 2.5::double::variant::double,
+		(unhex('7ff8000000000001')::bit)::double::variant::double = (unhex('fff8000000000002')::bit)::double::variant::double,
+		(unhex('7ff8000000000001')::bit)::double::variant::double > (unhex('7ff0000000000000')::bit)::double::variant::double,
+		(unhex('8000000000000000')::bit)::double::variant::double = 0.0,
+		2.0::double::variant::double in [1.0, 2.0],
+		2.0::double::variant::double not in [1.0, 3.0]
 	`).Scan(&finiteOrder, &nanEqual, &nanAboveInfinity, &signedZeroEqual, &in, &notIn))
 	assert.True(t, finiteOrder)
 	assert.True(t, nanEqual)
@@ -81,21 +80,9 @@ func TestTypedAttributeNumericDecoding(t *testing.T) {
 	assert.True(t, in)
 	assert.True(t, notIn)
 
-	var malformed, wrongKind, missingKind, missingValue sql.NullFloat64
-	require.NoError(t, db.QueryRow(`select
-		attribute_double('{"kind":"double","value":"not-hex"}'::json),
-		attribute_double('{"kind":"string","value":"1.5"}'::json),
-		attribute_double('{"value":1.5}'::json),
-		attribute_double('{"kind":"double"}'::json)
-	`).Scan(&malformed, &wrongKind, &missingKind, &missingValue))
-	assert.False(t, malformed.Valid)
-	assert.False(t, wrongKind.Valid)
-	assert.False(t, missingKind.Valid)
-	assert.False(t, missingValue.Valid)
-
 	var explainType, plan string
-	require.NoError(t, db.QueryRow(`explain select id from attributes where attribute_int64(value) > 42`).Scan(&explainType, &plan))
+	require.NoError(t, db.QueryRow(`explain select id from logs where attributes['number']::bigint > 42`).Scan(&explainType, &plan))
 	assert.Equal(t, "physical_plan", explainType)
-	assert.NotContains(t, plan, "attribute_int64")
-	assert.Contains(t, plan, "json_extract_string")
+	assert.NotContains(t, plan, "otel_wire_json")
+	assert.NotContains(t, plan, "json_extract_string")
 }

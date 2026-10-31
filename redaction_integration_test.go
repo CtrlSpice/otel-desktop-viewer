@@ -26,11 +26,21 @@ import (
 
 func redactionTestPort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
-	require.NoError(t, l.Close())
-	return port
+	return redactionTestPorts(t, 1)[0]
+}
+
+func redactionTestPorts(t *testing.T, count int) []int {
+	t.Helper()
+	ports := make([]int, count)
+	for i := range ports {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		// Hold every reservation until all ports are chosen, so sibling
+		// listeners cannot receive the same ephemeral port.
+		defer func() { require.NoError(t, l.Close()) }()
+		ports[i] = l.Addr().(*net.TCPAddr).Port
+	}
+	return ports
 }
 
 // Both wire protocols feed the real upstream processor and desktop exporter.
@@ -43,7 +53,8 @@ func TestRedactionReceiveStoreExport(t *testing.T) {
 			tp, lp, mp := startRedaction(t, te, le, me)
 			o := testOptions()
 			o.host = "127.0.0.1"
-			o.httpPort, o.grpcPort = redactionTestPort(t), redactionTestPort(t)
+			ports := redactionTestPorts(t, 2)
+			o.httpPort, o.grpcPort = ports[0], ports[1]
 			cfg, err := resolveConfig(t, o)
 			require.NoError(t, err)
 			factories, err := components()
@@ -89,7 +100,13 @@ func TestRedactionReceiveStoreExport(t *testing.T) {
 				}
 			}
 			_, result, err := requestQuery(t.Context(), http.DefaultClient, viewer, `select count(*)::varchar from (
-				select value::varchar as v from attributes union all select body::varchar from logs
+				select to_json(s)::varchar as v from spans s
+				union all select to_json(l)::varchar from logs l
+				union all select to_json(m)::varchar from metrics m
+				union all select to_json(d)::varchar from metric_datapoints d
+				union all select to_json(e)::varchar from events e
+				union all select to_json(l)::varchar from links l
+				union all select to_json(e)::varchar from exemplars e
 			) where contains(v, 'synthetic-secret')`, 1)
 			require.NoError(t, err)
 			require.Equal(t, "0", result.Rows[0][0], "secrets must never reach stored attributes or log bodies")

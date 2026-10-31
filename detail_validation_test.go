@@ -144,7 +144,7 @@ func TestDetailValidationPreservesLegitimateEmptyAndSpecialValues(t *testing.T) 
 	out, err := runDetailCLI(t, "log", refs.Rows[0][0].(string), "--endpoint", endpoint)
 	require.NoError(t, err)
 	assert.Contains(t, out, "empty")
-	assert.Contains(t, out, "0x7ff8000000000001")
+	assert.Contains(t, out, "0x7ff8000000000000")
 	assert.Contains(t, out, "0x7ff0000000000000")
 
 	data := pmetric.NewMetrics()

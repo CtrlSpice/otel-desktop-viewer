@@ -25,7 +25,10 @@ flowchart TB
   subgraph serve [Serving]
     Browser[Browser] -->|GET /| Static[Embedded assets]
     Browser -->|POST /rpc| RPC[JSON-RPC handler]
+    CLI[CLI / agent] -->|POST /rpc| RPC
+    Browser -->|POST /api/data/method| Arrow[Arrow dataset handler]
     RPC --> Queries[SQL queries]
+    Arrow --> Queries
     Queries --> DuckDB
   end
 
@@ -33,13 +36,14 @@ flowchart TB
   DuckDBExt --> HTTP[HTTP server :8000]
   HTTP --> Static
   HTTP --> RPC
+  HTTP --> Arrow
 ```
 
 | Port | Purpose |
 | --- | --- |
 | 4317 | OTLP gRPC |
 | 4318 | OTLP HTTP |
-| 8000 | Web UI and JSON-RPC |
+| 8000 | Web UI, JSON-RPC, Arrow datasets and exports |
 | 3001 | Vite development server |
 
 ## Components
@@ -104,17 +108,19 @@ The frontend build is committed under
 
 | Handle | Access | Purpose |
 | --- | --- | --- |
-| `driver.Conn` | `WithConn` | Ingest appenders |
+| `driver.Conn` | `WithConn` | Transactional Arrow ingestion |
 | `*sql.DB` | `WithDBRead`, `WithDBWrite` | Queries, deletion, retention, checkpointing |
 
 `WithConn` serializes ingest calls and takes the store read lock. Queries may run
 at the same time as ingest. `WithDBWrite` excludes ingest and queries while a
 pool mutation runs.
 
-DuckDB appenders buffer rows until a flush or close. A query can therefore lag
-ingest by one batch. Dictionary rows may become visible before their owner rows,
-but read queries join from owners to dictionary entries and do not expose
-unowned values.
+The desktop exporter builds Arrow batches from pdata using C-owned buffers.
+An application-owned, statically linked C API v2 extension hands these batches
+to the stock DuckDB driver on the existing connection. Telemetry owners and
+their search catalogue entries commit in one transaction. Reads see committed
+batches. Arrow conversion stays inside the exporter; Collector batching still
+counts logs, spans, and metric points.
 
 Callers never receive the raw `*sql.DB`. Production code runs database work
 inside a store closure so lock ownership covers the full operation.
@@ -126,7 +132,7 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 24. Store startup validates `schema_meta` before
+The current schema version is 27. Store startup validates `schema_meta` before
 running DDL. A mismatched, malformed, or unversioned telemetry database is
 rejected without modification. The store does not migrate or reset databases.
 
@@ -134,24 +140,19 @@ rejected without modification. The store does not migrate or reset databases.
 
 | Table | Stored data |
 | --- | --- |
-| `attributes` | Distinct typed attribute values |
-| `resources` | Received Resource payloads |
-| `scopes` | Received InstrumentationScope payloads |
-| `spans` | Span records |
-| `events` | Span events |
-| `links` | Span links |
-| `logs` | Log records |
-| `metrics` | One exact OTel Metric identity |
-| `metric_series` | One series for a Metric and datapoint attribute set |
-| `metric_datapoints` | Gauge, Sum, Histogram, and ExponentialHistogram datapoints |
-| `histogram_bounds` | Deduplicated explicit histogram bounds |
-| `exemplars` | Metric exemplars |
+| `spans` | Span records with owned Resource, Scope, attributes, and nested event/link lists |
+| `logs` | Log records with owned Resource, Scope, and attributes |
+| `metric_records` | Append-only received Metric records, each owning its descriptor, context, points, bounds, and exemplars |
 | `ingest_rejections` | Refused record diagnostics |
 
-`metrics.id` and `metric_series.id` are viewer-generated UUIDs. Public APIs call
+`events`, `links`, `metric_datapoints`, and `exemplars` are views of nested
+children. `metrics` exposes the latest received descriptor per logical identity;
+`metric_series` derives the identities of retained point attribute sets.
+
+`metrics.id` and `metric_series.id` are deterministic viewer-generated UUIDs. Public APIs call
 them `metricRef` and `seriesRef`. `getMetricSeries` exposes `metric_datapoints.id`
 as `datapointRef`; `getLog` exposes `logs.id` as `logRef`. These references are
-scoped to one database. Received OTel trace/span identifiers remain `traceID`
+opaque viewer references. Received OTel trace/span identifiers remain `traceID`
 and `spanID`.
 
 Metric identity includes the complete Resource payload key, complete Scope,
@@ -161,20 +162,35 @@ fields but do not identify a Metric. `service_name` is a derived search and
 display field from Resource attributes.
 
 `metric_series` identifies one Metric plus one datapoint attribute set.
-`metric_datapoints` keeps both `metric_id` and `series_id`, along with the exact
-attribute IDs needed to render the datapoint.
+`metric_datapoints` projects both `metric_id` and `series_id`, along with the exact
+attribute map and the Resource and Scope of the owning received record.
+Metric OTLP export preserves each received descriptor with its own points,
+including earlier descriptions and metadata. Metric Details shows the latest
+description and metadata. Deleting an owner removes its nested children;
+retention filters point lists and removes records emptied by pruning.
 
 ### Values and precision
 
-Attributes, log bodies, and Metric metadata use recursive tagged JSON. Every
-value is `{kind,value}`.
+Attributes, log bodies, and Metric metadata use native VARIANT storage, retaining
+nested scalar types. SQL can query fields directly, for example
+`body.user.id::bigint`. Automatic VARIANT shredding is enabled.
+
+The UI wire projection uses recursive tagged JSON: every value is `{kind,value}`.
 
 - int64 values use decimal strings.
 - finite doubles use JSON numbers.
-- negative zero and non-finite doubles use exact IEEE-754 bit text.
+- negative zero and non-finite doubles use IEEE-754 bit text. NaN remains NaN,
+  but its sign and payload bits are not a preservation contract and may normalize
+  during storage. Content-identity hashing normalizes NaNs; transport dictionaries
+  also compare received attribute bytes.
 - arrays preserve order.
 - maps keep the last received value per key, then sort the surviving entry list.
 - empty values use `null` inside the tagged value.
+
+Evals records and context also use native VARIANT. Reads use normalized JSON
+number formatting and retain exact signed and unsigned 64-bit integers. Numbers
+outside the native JSON conversion range remain text for inspection. Retained
+log evidence keeps the producer's original numeric text.
 
 Received OTLP timestamps use DuckDB `UBIGINT`. Span kind, span status code, and
 Metric aggregation temporality use signed `INTEGER`, including unknown values.
@@ -189,20 +205,26 @@ absent. The store does not invent zero IDs.
 
 ### Attributes
 
-The attribute dictionary is keyed by a 128-bit prefix of SHA-256 over the key
-and canonical tagged value. Owners store sorted UUID arrays. Identical typed
-values deduplicate across owner categories. Each owner's attribute collection
+Every owner stores a complete native VARIANT attribute map. Resource and Scope
+are embedded structs with their own attributes, schema URLs, and dropped counts;
+Scope also retains its name and version. Content hashes preserve their grouping
+identities without referencing separate payload tables. DuckDB handles repeated
+values through compression and automatic shredding. Each attribute collection
 keeps the last received occurrence of each key before encoding and hashing.
 Selection is local to that collection: it never combines Resource, Scope, record,
 event, link, datapoint, exemplar or metadata attributes. Earlier conflicting values
 are not stored. The incoming pdata is not mutated.
 
-DuckDB cannot enforce foreign keys into UUID arrays. Ingest writes dictionary
-rows before owner rows. Store tests check for dangling references.
+The same last-occurrence rule applies recursively to native OTel maps, including
+maps inside arrays. "Last" refers to payload order within that map, not record
+timestamps. Details, search and Copy/Download use the surviving values; the UI
+does not rescan maps for duplicate-key conflicts. String content is unchanged,
+including strings that happen to contain JSON.
 
-`ingest.SweepOrphans` removes dictionary entries with no owners. Clear operations
-sweep immediately. Retention sweeps before measuring and after each prune round.
-Single-entity deletes leave cleanup to the next clear or retention sweep.
+Deleting a signal row also deletes its owned context and attributes.
+`ingest.SweepOrphans` collects unreferenced shared histogram bounds. Clear
+operations sweep immediately; retention sweeps before measuring and after each
+prune round.
 
 Cross-signal correlation fields are not foreign keys. Logs and exemplars can
 arrive before a span, after it, or without it. Link target IDs may point outside
@@ -213,14 +235,19 @@ the stored trace set.
 Ingest reads OpenTelemetry pdata directly. It does not build intermediate Go
 domain objects.
 
-Each request uses two passes:
+Logs append owned payloads directly. Traces first check span identities, then
+append accepted spans and their children. Metrics resolve Metric and series
+identities in batches before appending datapoints and exemplars.
 
-1. Encode and hash attributes, then resolve Resource, Scope, Metric, and series
-   identities.
-2. Append spans, logs, Metric datapoints, exemplars, events, and links.
-
-The dictionary and identity tables use inserts with conflict handling. High
-volume owner tables use DuckDB appenders.
+Query appenders transport each complete pdata value as a BLOB containing standard
+Parquet Variant metadata and value bytes. `variant_bytes_to_variant` decodes the
+BLOB directly into a self-contained native VARIANT. Resource and Scope transports
+retain their typed scalar fields; their attribute bytes are prepared once per
+received group and reused for its rows. Metric identity resolution keeps this
+received context separate from the latest Metric metadata. The encoder preserves
+integer/double distinctions, bytes, signed zero, empty containers, and last-key-
+wins maps, and canonicalizes NaN. Returned buffers own their storage. Tagged JSON
+is generated on reads, not stored beside the native values.
 
 ## Query layer
 
@@ -240,15 +267,34 @@ Shared JSON shapes and numeric encoders live in SQL macros. Ordered arrays use
 ## Search
 
 The frontend sends a query tree. Signal-specific mappers convert supported
-fields and operators to parameterized SQL.
+fields and operators to parameterized SQL. Repeated parameter references reuse
+their positional binding. Parameters are direct expressions, not one-row tables
+or scalar subqueries. Conditional metric projections bind only used inputs.
 
 Built-in fields keep their native types. Received attribute keys keep exact
 case and spelling. Explicit attribute references include owner scope, key, and
 stored kind, for example:
 
 ```text
-attr(span, "attempts", int64) > 2
+WHERE span.attributes['attempts']::BIGINT > 2 LIMIT 100
 ```
+
+`WHERE` is optional. Predicates support `AND`, `OR`, parentheses, comparisons,
+inclusive `BETWEEN ... AND ...`, `IN (...)`, `NOT IN (...)`, `IS NULL`,
+`IS NOT NULL`, `LIKE`, `NOT LIKE`, `REGEXP` and `NOT REGEXP`. `CONTAINS` and
+`NOT CONTAINS` retain selected-field substring matching. Durations accept units
+such as `500ms` and `2s`. This language compiles to the existing query tree;
+it does not execute submitted SQL.
+
+Bracket paths preserve literal dotted keys and distinguish array indices from
+numeric string keys: `attributes['items'][0]['0']`. An omitted owner searches
+applicable owners; a specified owner narrows that search. Type annotations select
+received types, not conversions: `VARCHAR`, `BIGINT`, `DOUBLE`, `BOOLEAN`, `BLOB`,
+`EMPTY`, `MAP` and `ARRAY`. Without an annotation, bracket-addressed predicates
+infer string, integer, double or boolean from the operand. Quoted numbers remain
+strings; discovery does not change that choice. Both quote styles are accepted;
+doubling the quote escapes it, and backslash escapes encode control characters.
+Plain text and `search('text')` retain token matching.
 
 In the signal search editor, explicit attribute references appear as editable
 name-first tokens with scope and type metadata. Selecting a token opens the
@@ -263,9 +309,44 @@ quoted query values, pasted line endings become `\n` or `\r` escapes, preserving
 the received characters and indentation. Each multiline paste is one undoable
 edit and does not submit the search.
 
-Attribute equality can calculate the dictionary ID before querying and use
-`list_contains(attribute_ids, ?::uuid)`. Other operators join the dictionary and
-compare the stored value.
+Attribute filters extract the requested key directly from the owner's native
+map. Keys use bound parameters because VARIANT field extraction requires a
+bind-time constant. Scoped discovery reads distinct typed catalogue paths. Selected-field
+operators, including substring `contains`, retain their native comparison rules.
+
+Untargeted text searches distinct catalogue scalar values and received keys with
+DuckDB predicates. It matches case-insensitive complete tokens and
+punctuation-separated component words, not substrings. Complete IDs, URLs and
+dotted names remain searchable. Quoted free text requires all its words, not an
+exact phrase. There is no text extension, token table, inverted text index,
+stemming, stop-word list or relevance ranking. Result ordering and trace grouping
+are unchanged.
+
+One candidate owner satisfies the complete expression. Events, links,
+datapoints and exemplars reference their parent context, but never a
+sibling's values. An experiment predicate must match one result before selecting
+its parent experiment. Selected native child predicates remain native and must
+belong to that candidate's context chain when combined with untargeted text.
+
+Native VARIANT rows remain the telemetry source of truth. The derived catalogue
+contains owner records, distinct typed paths, distinct scalar values and
+owner/path/value associations. Values retain exact typed identities.
+The service catalogue stores each typed name/namespace pair once, with compact
+resource-to-service associations, exact display labels and bounded previews.
+Shared Resource/Scope context is referenced,
+not copied into every child. Native preparation walks Arrow VARIANT metadata and
+bytes without serializing received payloads to JSON. Container identities do not
+store another nested payload; selected discovery samples are read from native
+rows and encoded for the UI only then.
+
+Discovery selects keys and owners first, scoped to a signal where known. An exact
+owner/path selection requests typed value samples. It does not search every
+value before field selection. Catalogue changes occur synchronously in the
+native mutation transaction, including descriptor updates, deletion and
+retention. Unreferenced context, paths, values and owner/path entries are removed
+transactionally.
+Current-schema databases retain the catalogue on reopen; there is no migration,
+upgrade backfill or telemetry reconstruction from catalogue rows.
 
 ## Metric views
 
@@ -289,18 +370,37 @@ The server exposes these routes:
 | Route | Purpose |
 | --- | --- |
 | `POST /rpc` | JSON-RPC 2.0, with a 1 MB request limit |
+| `POST /api/data/{method}` | Native Arrow IPC datasets, with a 1 MB parameter-body limit |
+| `GET /api/features` | Build-selected frontend feature availability |
 | `GET /openrpc.json` | OpenRPC method descriptions, also returned by `rpc.discover` |
+| `GET /openapi.json` | OpenAPI 3.1 HTTP routes, media types and status codes |
 | `GET /llms.txt` | Agent guide, including HTTP discovery instructions |
 | `GET /export/{signal}/{id}` | Store-backed OTLP JSON download |
 | `GET /*` | Embedded frontend and client-route fallback |
 
-The HTTP root advertises `/openrpc.json` and `/llms.txt` with a `Link` header.
+The HTTP root advertises `/openrpc.json`, `/openapi.json` and `/llms.txt` with a
+`Link` header and HTML links.
 Discovery uses existing method names. The document describes the `View` naming
 convention once, without audience tags or aliases. OpenRPC is a
-JSON-RPC description, not an OpenAPI description of HTTP routes. GET and HEAD
+JSON-RPC description; the companion OpenAPI document describes HTTP routes. GET and HEAD
 are supported for the document. Named/positional params, exact numeric input
 rules and wire representations are described alongside each method. The two
 variadic delete methods accept repeated positional IDs, not a nested array.
+
+Both descriptions have ETags and support conditional requests. OpenAPI directs
+agents to the OpenRPC inspection methods and `/llms.txt`, and labels Arrow
+datasets as browser-oriented. It describes the RPC envelope without duplicating
+method schemas. Evals HTTP operations appear only in Evals builds; runtime
+feature availability is reported separately by `/api/features`. The description
+does not register or enable operations, and does not redirect requests.
+
+Arrow dataset requests contain the method parameters directly, without a JSON-RPC
+envelope. Supported reads share parameter validation and store query builders with
+RPC. Successful responses use `application/vnd.apache.arrow.stream`, include
+`X-Arrow-Rows`, and disable caching. Errors before streaming use HTTP status and
+JSON error objects; oversized bodies return HTTP 413. A failed response stream is
+aborted rather than presented as a complete dataset. OpenRPC result schemas apply
+only to `/rpc`; they do not describe Arrow record schemas or export routes.
 
 The server binds to `localhost` by default. CORS accepts HTTP and HTTPS origins
 so the Vite development server can call `/rpc`.
@@ -313,6 +413,7 @@ so the Vite development server can call `/rpc`.
 | `getImportConfig` | Configured OTLP HTTP import port |
 | `query` | Read-only SQL rows |
 | `discoverTelemetry` | Typed service groups, directed service connections, child-span evidence, attribute keys and value frequencies |
+| `getServiceLabels` | Complete name/namespace display text for an opaque service reference |
 | `searchTraceSummaries` | Trace list summaries |
 | `getTraceOverview` | Compact spans and trace-linked log summaries |
 | `getTraceView` | Full trace display data |
@@ -326,6 +427,7 @@ so the Vite development server can call `/rpc`.
 | `getMetricSeries` | Exact retained datapoints for one series and window |
 | `getMetricView` | Chart data for one Metric and window |
 | `getMetricAggregateView` | Cross-series aggregate data |
+| `getMetricSeriesOrder` | Database-ordered series IDs after time/cohort filtering |
 | `getTraceAttributeDefinitions` | Trace attribute definitions |
 | `getTraceAttributeDefinitionsByTraceID` | Attribute definitions for one trace |
 | `getLogAttributeDefinitions` | Log attribute definitions |
@@ -345,16 +447,44 @@ Requests for missing entities return signal-specific errors. Invalid received
 IDs and invalid viewer references return separate parameter errors. Caller
 cancellation maps to `-32010` rather than an internal error.
 
+### Shared searches and output formats
+
+The CLI and browser share signal search compilation, time eligibility, sorting
+and limit placement. Their common builders are `traceSummariesSQL` in
+`store/spans`, `logResultsSQL` in `store/logs`, and `summariesSQL` in `store/metrics`.
+Each selects a JSON or native Arrow projection from the same SQL template.
+The log page additionally supports totals, offsets and selected column previews.
+The output formats have different serialization costs; Arrow rendering timings
+do not measure CLI latency.
+
+CLI commands use JSON-RPC. Lists render tables by default and JSON with `--json`;
+detail commands render sections or complete JSON. Custom `query` returns
+`{columns, rows, truncated}` through a separate read-only SQL execution path.
+Exports return OTLP JSON. The CLI does not decode Arrow.
+
+Summaries are for selection. Metric summaries omit description and metadata;
+`getMetric` retains these fields and its series catalogue, and `getMetricSeries`
+returns complete selected datapoints. Logs use bounded body previews with exact
+values available through `getLog`. Trace summaries lead to exact composite-ID
+span detail. This is progressive disclosure for both clients, not a second set
+of agent-only signal summaries. JSON projections also provide display labels
+and exact decimal text where their wire contract requires it.
+
 ## Service discovery
 
 The CLI `services` command uses the read-only `query` RPC. Home uses
-`discoverTelemetry`; both share query builders in `internal/discovery/`, with no
-stored service entity. Groups retain the exact typed Resource `service.name` and
+`discoverTelemetry`; both share query builders in `internal/discovery/` and the
+derived service catalogue. Groups retain the exact typed Resource `service.name` and
 `service.namespace` values. An absent namespace equals an empty-string namespace;
 an absent name remains distinct. Equal display text with different types does
-not merge groups. Both CLI JSON and Home return `serviceIdentity`, preserving
-the typed values even when names and outer kinds have identical display text.
+not merge groups. Both CLI JSON and Home return an opaque, compact `serviceIdentity`
+reference, distinguishing typed values even when their previews are identical.
 Home carries this identity into attribute discovery and signal searches.
+Arrow summaries carry bounded labels; filtering and sorting use complete labels
+in the database. `getServiceLabels(serviceRef)` returns complete display text on
+demand for inspection and Copy. CLI JSON retains complete display labels.
+Service catalogue updates and orphan cleanup share the native mutation transaction.
+Navigation's `getServiceCount` aggregates compact references without formatting labels.
 
 Each field is computed within the selected inclusive time window:
 
@@ -396,9 +526,20 @@ Route and time contexts own navigation and time selection. Pages own their data
 requests and signal presentation state. URL updates use explicit push or replace
 history modes.
 
-`telemetry-service.ts` is the wire boundary. It sends JSON-RPC requests,
-validates runtime payloads, converts exact integer text to `bigint`, decodes
-tagged values, and maps wire types to domain types.
+`telemetry-service.ts` is the wire boundary. Native telemetry reads use the
+`arrow-*` adapters over `/api/data/{method}`, retaining Arrow buffers and lazy
+accessors. Control/count requests and remaining tabular reads use JSON-RPC.
+The adapters validate runtime payloads, preserve exact integers as `bigint`,
+and map transport-specific representations to domain types.
+Metric adapters memoize collections and nested views on first access for each
+response. Repeated reads reuse those wrappers; scalar values remain lazily read
+from Arrow. Returned collections are immutable; consumers derive their own arrays
+when sorting or filtering.
+
+Trace selection normalizes uppercase and dashed trace IDs to the lowercase OTLP
+form. Exact span Details uses a 16-entry cache within one trace activation.
+Reopening or refreshing a trace invalidates that cache, including resolved link
+targets, and cancels superseded Details requests.
 
 Metric aggregation remains in SQL. The frontend chooses tabs, colours, visible
 series, chart coordinates, and selected datapoints. Legend changes request only
@@ -543,13 +684,45 @@ than formatted previews. Shared formatting lives in
 `components/shared/detail-value.ts` and `components/shared/utils/editor-highlighting.ts`
 under the frontend's `src/` directory.
 
+Properties opens native map/list containers lazily from retained Arrow buffers.
+Closed descendants are not formatted into an editor document. Open containers
+show children in batches of 100; additional children remain available on demand.
+Full document / Find and Expand all materialize the complete display document
+with CodeMirror folding and search. Copy and Download remain complete regardless
+of which containers or child batches are visible.
+
 ## Trace view wire format
 
-`getTraceView` sends Resources and Scopes once in top-level maps. Spans refer to
-them by sequence key. Sequence values are stable within one database and are not
-reused after deletion.
+The viewer reads `/api/data/getTraceView` as native Arrow. Its ordinary response
+contains the complete ordered tree, exact span identities and timestamps, status,
+service identity, activity-marker summaries, and an independent attribute-column
+catalogue. The catalogue includes every retained span/resource/scope attribute
+key with its span count, whether or not that column is selected. Scalar field
+columns remain available independently of attribute previews.
 
-The response stores one absolute `traceStart`. Each span carries a start offset
+The optional `columns` parameter selects span/resource/scope attribute previews.
+Each preview opens at most three map/list children, summarizes nested containers
+by their size, and bounds strings. Missing attributes have no values; received
+null, empty containers, empty strings, booleans and numeric kinds remain distinct.
+Adding columns uses one trace-wide `/api/data/getTraceColumnPreviews` request,
+not one request per span. Preview values never determine tree or timing order.
+
+`/api/data/getSpan` requires both `traceID` and `spanID` and returns complete
+received attributes, resource/scope descriptors, events and links for that exact
+pair. When the selected identity is known, its request starts alongside the tree
+request. Superseded selections cancel their requests and cannot replace current
+Details. The mounted trace workspace keeps at most 16 selected-span Details
+responses and invalidates them when refreshing the trace. Copy and Download use
+the complete record export endpoints, never waterfall previews.
+
+Explicit `spanIDs` selections, bounded to 256 spans, retain full evidence for
+Evals consumers. These requests are separate from ordinary waterfall reads.
+
+The legacy JSON-RPC `getTraceView` response retains its full display projection.
+It sends Resources and Scopes once in top-level maps; spans refer to them by
+response-local sequence key.
+
+That JSON response stores one absolute `traceStart`. Each span carries a start offset
 and duration. `traceStart` is the minimum span start in the response, which
 handles traces without roots and clock skew between hosts.
 
