@@ -48,6 +48,20 @@
   )
   let displayed = $state.raw<EvidenceReading>()
   const shownConnection = $derived(displayed?.connection ?? connection)
+  const labelCopies = $derived.by(() => {
+    const parent = serviceIdentity(shownConnection.source)
+    const child = serviceIdentity(shownConnection.target)
+    return {
+      parentService: async (signal: AbortSignal) =>
+        (await telemetryAPI.getServiceLabels(parent, signal)).serviceName,
+      parentNamespace: async (signal: AbortSignal) =>
+        (await telemetryAPI.getServiceLabels(parent, signal)).serviceNamespace,
+      childService: async (signal: AbortSignal) =>
+        (await telemetryAPI.getServiceLabels(child, signal)).serviceName,
+      childNamespace: async (signal: AbortSignal) =>
+        (await telemetryAPI.getServiceLabels(child, signal)).serviceNamespace,
+    }
+  })
   let requestKey = $state(0)
   function publishWork(work: EvidenceWork) {
     if (work.kind === 'replacement') replacement = work
@@ -123,49 +137,25 @@
           fieldName="Parent service"
           fieldType={shownConnection.source.serviceNameKind ?? 'string'}
           fieldValue={shownConnection.source.serviceName}
-          loadText={async signal =>
-            (
-              await telemetryAPI.getServiceLabels(
-                serviceIdentity(shownConnection.source),
-                signal
-              )
-            ).serviceName}
+          loadText={labelCopies.parentService}
         />
         <DetailProperty
           fieldName="Parent namespace"
           fieldType={shownConnection.source.serviceNamespaceKind ?? 'string'}
           fieldValue={shownConnection.source.serviceNamespace}
-          loadText={async signal =>
-            (
-              await telemetryAPI.getServiceLabels(
-                serviceIdentity(shownConnection.source),
-                signal
-              )
-            ).serviceNamespace}
+          loadText={labelCopies.parentNamespace}
         />
         <DetailProperty
           fieldName="Child service"
           fieldType={shownConnection.target.serviceNameKind ?? 'string'}
           fieldValue={shownConnection.target.serviceName}
-          loadText={async signal =>
-            (
-              await telemetryAPI.getServiceLabels(
-                serviceIdentity(shownConnection.target),
-                signal
-              )
-            ).serviceName}
+          loadText={labelCopies.childService}
         />
         <DetailProperty
           fieldName="Child namespace"
           fieldType={shownConnection.target.serviceNamespaceKind ?? 'string'}
           fieldValue={shownConnection.target.serviceNamespace}
-          loadText={async signal =>
-            (
-              await telemetryAPI.getServiceLabels(
-                serviceIdentity(shownConnection.target),
-                signal
-              )
-            ).serviceNamespace}
+          loadText={labelCopies.childNamespace}
         />
         <DetailProperty
           fieldName="Parent-child connections"
