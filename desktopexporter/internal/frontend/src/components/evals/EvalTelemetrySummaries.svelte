@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
@@ -28,7 +28,10 @@
 
   let traces = $state<Map<string, TraceSummary | null>>(new Map())
   let pending = $state.raw(new Set<string>())
-  let requestKey = $state.raw<AbortSignal>()
+  const requests = new Map<string, AbortController>()
+  onDestroy(() => {
+    for (const controller of requests.values()) controller.abort()
+  })
   $effect(() => {
     const ids = [
       ...new Set(entries.map(entry => entry.reference.traceID.toLowerCase())),
@@ -56,14 +59,22 @@
   )
   $effect.pre(() => {
     const ids = lookupIDs ? lookupIDs.split(',') : []
+    for (const [id, controller] of requests) {
+      if (ids.includes(id)) continue
+      controller.abort()
+      requests.delete(id)
+    }
     // Absence belongs to the completed lookup, not a later pending or failed one.
     const current = new Map(untrack(() => traces))
-    for (const id of ids) if (current.get(id) === null) current.delete(id)
+    const added = ids.filter(id => !requests.has(id))
+    for (const id of added) if (current.get(id) === null) current.delete(id)
     traces = current
-    const controller = new AbortController()
-    requestKey = controller.signal
-    pending = new Set(ids)
-    for (const id of ids) {
+    pending = new Set(
+      [...untrack(() => pending)].filter(id => ids.includes(id)).concat(added)
+    )
+    for (const id of added) {
+      const controller = new AbortController()
+      requests.set(id, controller)
       void (async () => {
         try {
           const trace = await telemetryAPI.getTraceSummary(
@@ -83,7 +94,6 @@
         }
       })()
     }
-    return () => controller.abort()
   })
 </script>
 
@@ -138,7 +148,8 @@
         <LoadingStatus
           pending={tracePending}
           label="Loading trace…"
-          {requestKey}
+          requestKey={requests.get(entry.reference.traceID.toLowerCase())
+            ?.signal}
           class="text-sm text-secondary"
         />
       </span>

@@ -68,6 +68,82 @@ async function showOnlyTime() {
 }
 
 describe('EvalResults repetitions', () => {
+  it('publishes per-trace success and failure while unrelated trace work is pending', async () => {
+    const references = ['a', 'b', 'c'].map(letter => ({
+      traceID: letter.repeat(32),
+      spanID: '1'.repeat(16),
+    }))
+    const results = references.map((telemetry, index) => ({
+      ...exampleExperiments[0].results[0],
+      id: `result-${index}`,
+      caseID: `case-${index}`,
+      telemetry,
+      resultTelemetry: undefined,
+      tools: [],
+      assessments: [],
+    }))
+    const experiment = {
+      ...exampleExperiments[0],
+      telemetry: undefined,
+      results,
+    }
+    const pending =
+      Promise.withResolvers<
+        Awaited<ReturnType<typeof telemetryAPI.getReferencedTraceViews>>
+      >()
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockReturnValue(pending.promise)
+    const summaries = vi
+      .spyOn(telemetryAPI, 'getTraceLogSummaries')
+      .mockResolvedValue([])
+    const onTraceViews = vi.fn()
+    try {
+      const view = render(EvalResults, { experiment, results, onTraceViews })
+      await waitFor(() => expect(lookup).toHaveBeenCalledOnce())
+      const publish = lookup.mock.calls[0][2]!
+      const a: TraceData = {
+        traceID: references[0].traceID,
+        spans: [],
+        unplacedSpanCount: 0,
+      }
+      publish({ status: 'ready', trace: a })
+      publish({ status: 'failed', traceID: references[1].traceID })
+      await waitFor(() =>
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          [a],
+          true,
+          [],
+          new Map([
+            [references[0].traceID, 'ready'],
+            [references[1].traceID, 'failed'],
+            [references[2].traceID, 'pending'],
+          ])
+        )
+      )
+      const c = { ...a, traceID: references[2].traceID }
+      publish({ status: 'ready', trace: c })
+      await waitFor(() =>
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          [a, c],
+          false,
+          [],
+          new Map([
+            [references[0].traceID, 'ready'],
+            [references[1].traceID, 'failed'],
+            [references[2].traceID, 'ready'],
+          ])
+        )
+      )
+      view.unmount()
+      expect(lookup.mock.calls[0][1]?.aborted).toBe(true)
+    } finally {
+      pending.resolve({ traces: [], unavailableTraceIDs: [] })
+      lookup.mockRestore()
+      summaries.mockRestore()
+    }
+  })
+
   it.each(['explicit', 'native-ancestor'])(
     'preserves independently authorized owners across an empty summary and another trace failure: %s',
     async authorization => {
@@ -541,9 +617,12 @@ describe('EvalResults repetitions', () => {
       }
       pending[2].resolve([fresh])
       await waitFor(() =>
-        expect(onTraceViews).toHaveBeenLastCalledWith(views.traces, false, [
-          fresh,
-        ])
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          views.traces,
+          false,
+          [fresh],
+          expect.any(Map)
+        )
       )
       pending[0].resolve([{ ...fresh, logRef: 'stale' }])
       pending[1].reject(new Error('stale B failure'))
@@ -569,9 +648,12 @@ describe('EvalResults repetitions', () => {
       for (let index = 3; index < pending.length; index++)
         pending[index].reject(new Error('refresh unavailable'))
       await screen.findByText('Tool evidence could not be loaded.')
-      expect(onTraceViews).toHaveBeenLastCalledWith(views.traces, false, [
-        fresh,
-      ])
+      expect(onTraceViews).toHaveBeenLastCalledWith(
+        views.traces,
+        false,
+        [fresh],
+        expect.any(Map)
+      )
     } finally {
       lookup.mockRestore()
       summaries.mockRestore()
@@ -662,9 +744,12 @@ describe('EvalResults repetitions', () => {
         )
       )
       await waitFor(() =>
-        expect(onTraceViews).toHaveBeenLastCalledWith(views.traces, false, [
-          received,
-        ])
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          views.traces,
+          false,
+          [received],
+          expect.any(Map)
+        )
       )
       expect(await screen.findByText('Loading tool evidence…')).toBeVisible()
       release([])
@@ -902,7 +987,12 @@ describe('EvalResults repetitions', () => {
         onTraceViews,
       })
       await waitFor(() =>
-        expect(onTraceViews).toHaveBeenLastCalledWith(traces, false, [])
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          traces,
+          false,
+          [],
+          expect.any(Map)
+        )
       )
       const second = {
         ...first,
@@ -915,11 +1005,21 @@ describe('EvalResults repetitions', () => {
         onTraceViews,
       })
       await waitFor(() =>
-        expect(onTraceViews).toHaveBeenLastCalledWith([], true, [])
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          [],
+          true,
+          [],
+          expect.any(Map)
+        )
       )
       finish(traceViews([]))
       await waitFor(() =>
-        expect(onTraceViews).toHaveBeenLastCalledWith([], false, [])
+        expect(onTraceViews).toHaveBeenLastCalledWith(
+          [],
+          false,
+          [],
+          expect.any(Map)
+        )
       )
     } finally {
       lookup.mockRestore()

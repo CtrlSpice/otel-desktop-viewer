@@ -2,6 +2,12 @@ import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
 
+declare global {
+  interface Window {
+    evalRequests?: Array<{ url: string; aborted: boolean }>
+  }
+}
+
 test.use({ viewport: { width: 1600, height: 900 }, reducedMotion: 'reduce' })
 
 function deferred() {
@@ -10,14 +16,18 @@ function deferred() {
   return { promise, resolve }
 }
 
-function responseGate() {
+function responseGate(status = 200) {
   const requested = deferred()
   const released = deferred()
   const finished = deferred()
-  return { requested, released, finished }
+  return { requested, released, finished, status }
 }
 
-async function openWorkspace(page: Page, legacyBookmark = false) {
+async function openWorkspace(
+  page: Page,
+  legacyBookmark = false,
+  pageSize = 100
+) {
   const datasetID = 'd'.repeat(64)
   const rows = ['Alpha', 'Beta', 'Gamma'].flatMap(provider =>
     Array.from({ length: 32 }, (_, index) => ({
@@ -114,15 +124,27 @@ async function openWorkspace(page: Page, legacyBookmark = false) {
     gate?.requested.resolve()
     if (gate) await gate.released.promise
     try {
+      if (gate && gate.status !== 200) {
+        await route.fulfill({
+          status: gate.status,
+          body: 'Replacement unavailable',
+        })
+        return
+      }
       if (!source) {
         const experiments = summaries.filter(item =>
           item.name.toLowerCase().includes(query.toLowerCase())
         )
+        const offset = Number(url.searchParams.get('offset') ?? 0)
+        const limit = Math.min(
+          pageSize,
+          Number(url.searchParams.get('limit') ?? 100)
+        )
         await route.fulfill({
           json: {
-            experiments,
+            experiments: experiments.slice(offset, offset + limit),
             total: experiments.length,
-            hasMore: false,
+            hasMore: offset + limit < experiments.length,
             facets: summaries[0].outcomes,
             indexing: {
               remaining: 0,
@@ -191,13 +213,13 @@ async function openWorkspace(page: Page, legacyBookmark = false) {
       rows.find(
         item => item.id === `${provider.toLowerCase()}-result-${index}`
       )!.response.output,
-    holdSource(name: string) {
-      const gate = responseGate()
+    holdSource(name: string, status = 200) {
+      const gate = responseGate(status)
       sourceGates.set(summaries.find(item => item.name === name)!.id, gate)
       return gate
     },
-    holdList(query: string) {
-      const gate = responseGate()
+    holdList(query: string, status = 200) {
+      const gate = responseGate(status)
       listGates.set(query, gate)
       return gate
     },
@@ -279,6 +301,176 @@ test('row selection reuses Details sections and Copy controls while updating tit
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(fixture.output('Alpha', 1))
+  expect(fixture.sourceRequests).toEqual([fixture.alpha.id])
+})
+
+for (const outcome of ['pending', 'failed']) {
+  test(`retained Evals controls and exact Copy remain usable after a ${outcome} replacement`, async ({
+    page,
+  }) => {
+    const fixture = await openWorkspace(page)
+    const detail = page.locator('#signal-drawer-detail')
+    const copy = detail.getByRole('button', {
+      name: 'Copy output',
+      exact: true,
+    })
+    const sameCopy = await rememberNode(copy)
+    const gate = fixture.holdSource('Beta', outcome === 'failed' ? 500 : 200)
+    try {
+      await selectExperiment(page, 'Beta')
+      await gate.requested.promise
+      if (outcome === 'failed') {
+        gate.released.resolve()
+        await expect(page.getByRole('alert')).toContainText(
+          'Replacement unavailable'
+        )
+      } else
+        await expect(
+          page.getByRole('status').filter({ hasText: 'Loading experiment…' })
+        ).toBeVisible()
+      await sameCopy()
+      await copy.focus()
+      await page.keyboard.press('Enter')
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe(fixture.output('Alpha', 0))
+      const assessments = detail
+        .locator('.detail-stack:visible details')
+        .filter({
+          has: page.locator('summary', { hasText: /^\s*Assessments/ }),
+        })
+      await assessments.locator('summary').click()
+      await expect(assessments).not.toHaveAttribute('open')
+      await page
+        .getByRole('table', { name: 'Results for Alpha', exact: true })
+        .getByRole('button', { name: 'Alpha case 1', exact: true })
+        .click()
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('experiment'))
+        .toBe(fixture.alpha.id)
+      await expect(detail).toContainText('Alpha answer 1')
+      gate.released.resolve()
+      await gate.finished.promise
+      await detail.getByRole('group', { name: 'output', exact: true }).hover()
+      await copy.click()
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe(fixture.output('Alpha', 1))
+      await expect(
+        page.getByRole('table', { name: 'Results for Alpha', exact: true })
+      ).toBeVisible()
+    } finally {
+      gate.released.resolve()
+    }
+  })
+}
+
+for (const action of ['search', 'replacement', 'unmount']) {
+  test(`cancels Evals pagination on ${action} and rejects its late response`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const fetch = window.fetch
+      const requests: Array<{ url: string; aborted: boolean }> = []
+      Object.assign(window, { evalRequests: requests })
+      window.fetch = (input, init) => {
+        const request = {
+          url: input instanceof Request ? input.url : String(input),
+          aborted: false,
+        }
+        requests.push(request)
+        init?.signal?.addEventListener('abort', () => {
+          request.aborted = true
+        })
+        return fetch(input, init)
+      }
+    })
+    const fixture = await openWorkspace(page, false, 1)
+    const gate = fixture.holdList('')
+    const replacement =
+      action === 'replacement' ? fixture.holdList('Beta') : undefined
+    try {
+      if (replacement) {
+        const search = page.getByRole('textbox', { name: 'Search evals' })
+        await search.fill('Beta')
+        await search.press('Enter')
+        await replacement.requested.promise
+      }
+      await page
+        .getByRole('button', { name: 'Load more experiments', exact: true })
+        .click()
+      await gate.requested.promise
+      if (action === 'search') {
+        const search = page.getByRole('textbox', { name: 'Search evals' })
+        await search.fill('Beta')
+        await search.press('Enter')
+        await expect(page.getByRole('button', { name: /^Beta/ })).toBeVisible()
+      } else if (replacement) {
+        expect(fixture.listRequests.at(-1)).toBe('')
+        replacement.released.resolve()
+        await expect(page.getByRole('button', { name: /^Beta/ })).toBeVisible()
+      } else {
+        await page.evaluate(() => {
+          window.history.pushState(null, '', '/traces')
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        })
+        await expect(
+          page.getByRole('table', { name: 'Results for Alpha', exact: true })
+        ).toHaveCount(0)
+      }
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            return window.evalRequests?.find(
+              request =>
+                new URL(request.url, location.href).searchParams.get(
+                  'offset'
+                ) === '1'
+            )?.aborted
+          })
+        )
+        .toBe(true)
+      gate.released.resolve()
+      await gate.finished.promise
+      if (action !== 'unmount') {
+        await expect(
+          page
+            .getByRole('region', { name: 'Evals list', exact: true })
+            .getByRole('button', { name: /^Alpha/ })
+        ).toHaveCount(0)
+        await expect(
+          page.getByRole('button', {
+            name: 'Load more experiments',
+            exact: true,
+          })
+        ).toHaveCount(0)
+      }
+    } finally {
+      gate.released.resolve()
+      replacement?.released.resolve()
+    }
+  })
+}
+
+test('retained experiment pagination uses the displayed list query after a failed replacement', async ({
+  page,
+}) => {
+  const fixture = await openWorkspace(page, false, 1)
+  const gate = fixture.holdList('Beta', 500)
+  const search = page.getByRole('textbox', { name: 'Search evals' })
+  await search.fill('Beta')
+  await search.press('Enter')
+  await gate.requested.promise
+  gate.released.resolve()
+  await expect(page.getByRole('alert')).toContainText('Replacement unavailable')
+  const list = page.getByRole('region', { name: 'Evals list', exact: true })
+  await expect(list.getByRole('button', { name: /^Alpha/ })).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Load more experiments', exact: true })
+    .click()
+  await expect(list.getByRole('button', { name: /^Beta/ })).toBeVisible()
+  await expect(list.getByRole('button', { name: /^Alpha/ })).toBeVisible()
+  expect(fixture.listRequests.at(-1)).toBe('')
   expect(fixture.sourceRequests).toEqual([fixture.alpha.id])
 })
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
-  import type { EvalRequestPart } from './eval-request-state'
+  import type { EvalRequestPart, EvalRequestStatus } from './eval-request-state'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailStack from '@/components/shared/DetailStack.svelte'
@@ -43,6 +43,7 @@
     mode = 'results',
     telemetryNodes,
     telemetryLoading = false,
+    telemetryStatus,
     sourceCopy,
   }: {
     experiment: EvalExperiment
@@ -50,6 +51,7 @@
     mode?: EvalView
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
+    telemetryStatus?: ReadonlyMap<string, EvalRequestStatus>
     sourceCopy?: EvalSourceFieldCopy
   } = $props()
   const requested = $derived(
@@ -85,10 +87,17 @@
       owners: nodes ? toolLogOwners(spans, nodes, callID) : [],
     }
   })
+  const spanStatus = $derived(
+    row.reference && telemetryStatus
+      ? (telemetryStatus.get(row.reference.traceID.toLowerCase()) ?? 'pending')
+      : telemetryLoading
+        ? 'pending'
+        : 'ready'
+  )
   let displayedSpans = $state.raw<typeof spanRequest>()
   $effect(() => {
     const next = spanRequest
-    if (!next.applicable || next.selectedSpan || !telemetryLoading)
+    if (!next.applicable || next.selectedSpan || spanStatus === 'ready')
       displayedSpans = next
   })
   const spanEvidence = $derived(evalSpanEvidence(displayedSpans?.spans ?? []))
@@ -164,7 +173,7 @@
   $effect(() => {
     const selected = spanRequest
     const waiting =
-      selected.applicable && !selected.selectedSpan && telemetryLoading
+      selected.applicable && !selected.selectedSpan && spanStatus !== 'ready'
     const previous = untrack(() => logRequest?.request)
     if (
       logController &&
@@ -364,6 +373,11 @@
           reference={packet.request.row.reference}
         />
       {/each}
+      {#if spanRequest.applicable && spanStatus === 'failed'}
+        <p class="px-3 py-2 text-sm text-subtle" role="status">
+          Referenced span could not be loaded.
+        </p>
+      {/if}
       {#if evidenceLoading}
         <LoadingStatus
           pending

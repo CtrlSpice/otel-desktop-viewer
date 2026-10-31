@@ -2,7 +2,7 @@
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
-  import type { EvalRequestPart } from './eval-request-state'
+  import type { EvalRequestPart, EvalRequestStatus } from './eval-request-state'
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -99,7 +99,8 @@
     onTraceViews?: (
       traces: TraceData[],
       loading: boolean,
-      logs: LogData[]
+      logs: LogData[],
+      status: ReadonlyMap<string, EvalRequestStatus>
     ) => void
     viewKey?: EvalView
     headerActions?: Snippet
@@ -225,13 +226,18 @@
       ])
     )
   )
-  let timingsLoading = $state(false)
+  let traceStatus = $state.raw(new Map<string, EvalRequestStatus>())
+  const timingsLoading = $derived(
+    [...traceStatus.values()].some(status => status === 'pending')
+  )
   let timingRequest = $state.raw<AbortSignal>()
   const timingNotice = createLoadingNotice(
     () => timingsLoading,
     () => timingRequest
   )
-  let timingsFailed = $state(false)
+  const timingsFailed = $derived(
+    [...traceStatus.values()].some(status => status === 'failed')
+  )
   const timelineLogs = $derived(
     displayedTimeline?.experimentID === sourceExperiment.id
       ? displayedTimeline.timeline
@@ -442,7 +448,9 @@
     else params.set('log', record.log.logRef)
     navigate(`/traces/${span.traceID}?${params}`)
   }
-  $effect(() => onTraceViews?.(traceViews, timingsLoading, correlationLogs))
+  $effect(() =>
+    onTraceViews?.(traceViews, timingsLoading, correlationLogs, traceStatus)
+  )
   const timingKey = referenceKey
   const timingFor = (reference?: TelemetryReference) => {
     const node = resolveEvalReference(reference, traceIndex)
@@ -458,8 +466,9 @@
   }
   function missingTiming(reference?: TelemetryReference) {
     if (!reference?.spanID) return 'No recorded duration'
-    if (timingsLoading) return timingNotice.visible ? 'Loading span' : ''
-    if (timingsFailed) return 'Span unavailable'
+    const status = traceStatus.get(reference.traceID.toLowerCase())
+    if (status === 'pending') return timingNotice.visible ? 'Loading span' : ''
+    if (status === 'failed') return 'Span unavailable'
     return timingFor(reference) ? 'Invalid span duration' : 'Span not stored'
   }
   function spanWindow(spans: (SpanTiming | undefined)[]) {
@@ -516,8 +525,7 @@
     timingRequest = controller.signal
     activityRequest = controller.signal
     activityProgress = new Map()
-    timingsLoading = true
-    timingsFailed = false
+    traceStatus = new Map(ids.map(id => [id, 'pending']))
     const previous = untrack(() => displayedTraces)
     const received = new Map(
       (previous?.experimentID === experimentID ? previous.traces : [])
@@ -531,6 +539,7 @@
       if (completed.has(id)) return
       completed.add(id)
       received.set(id, trace)
+      traceStatus = new Map(untrack(() => traceStatus)).set(id, 'ready')
       displayedTraces = {
         experimentID,
         traces: ids.flatMap(id =>
@@ -540,8 +549,8 @@
       loadTraceActivity(trace, source, controller)
     }
     function failedTrace(id: string) {
-      if (controller.signal.aborted) return
-      timingsFailed = true
+      if (controller.signal.aborted || completed.has(id)) return
+      traceStatus = new Map(untrack(() => traceStatus)).set(id, 'failed')
       activityProgress = new Map(untrack(() => activityProgress)).set(id, {
         pending: false,
         failed: true,
@@ -558,13 +567,13 @@
           for (const trace of result.traces) publishTrace(trace)
           for (const id of result.unavailableTraceIDs) failedTrace(id)
           if (!ids.length) displayedTraces = { experimentID, traces: [] }
-          timingsFailed = result.unavailableTraceIDs.length > 0
-          timingsLoading = false
+          const status = new Map(untrack(() => traceStatus))
+          for (const id of ids)
+            if (status.get(id) === 'pending') status.set(id, 'ready')
+          traceStatus = status
         },
         () => {
           if (controller.signal.aborted) return
-          timingsLoading = false
-          timingsFailed = true
           for (const id of ids) failedTrace(id)
         }
       )

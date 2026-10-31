@@ -10,6 +10,7 @@ import type { EvalOutlineRow } from './eval-outline'
 import { copyText } from '@/utils/clipboard'
 import { referenceKey } from './eval-traces'
 import { tick } from 'svelte'
+import type { EvalRequestStatus } from './eval-request-state'
 
 function span(spanID: string): SpanData {
   return {
@@ -88,6 +89,91 @@ function log(owner: SpanData, body: string): LogData {
     droppedAttributesCount: 0,
   }
 }
+
+it.each(['present', 'absent'])(
+  'retains complete identified evidence after a failed span lookup until its own successful %s result',
+  async outcome => {
+    const a = span('1'.repeat(16))
+    const b = { ...span('2'.repeat(16)), traceID: 'b'.repeat(32) }
+    const nodes = new Map([
+      [referenceKey(a), { spanData: a, depth: 0, matched: true }],
+    ])
+    const logs = vi
+      .spyOn(telemetryAPI, 'getSpanLogs')
+      .mockResolvedValue([log(a, 'Retained complete A log')])
+    vi.spyOn(telemetryAPI, 'getTraceLogSummaries').mockResolvedValue([])
+    const props = {
+      experiment,
+      row: row(a),
+      telemetryNodes: nodes,
+      telemetryStatus: new Map<string, EvalRequestStatus>([
+        [a.traceID, 'ready'],
+      ]),
+    }
+    const view = render(EvalRowDetail, props)
+    const original = await screen.findByText(`output-${a.spanID}`)
+    const originalLog = await screen.findByText('Retained complete A log')
+    await view.rerender({
+      componentProps: {
+        ...props,
+        row: row(b),
+        telemetryLoading: true,
+        telemetryStatus: new Map([[b.traceID, 'pending']]),
+      },
+    })
+    await view.rerender({
+      componentProps: {
+        ...props,
+        row: row(b),
+        telemetryLoading: false,
+        telemetryStatus: new Map([[b.traceID, 'failed']]),
+      },
+    })
+    await screen.findByText('Referenced span could not be loaded.')
+    expect(screen.getByText(`output-${a.spanID}`)).toBe(original)
+    expect(screen.getByText('Retained complete A log')).toBe(originalLog)
+    expect(
+      original.closest('table')?.querySelector('caption')
+    ).toHaveTextContent(a.name)
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy output' }))
+    expect(copyText).toHaveBeenLastCalledWith(`output-${a.spanID}`)
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy body' }))
+    expect(copyText).toHaveBeenLastCalledWith('Retained complete A log')
+    const replacement = Promise.withResolvers<LogData[]>()
+    logs.mockReturnValue(replacement.promise)
+    await view.rerender({
+      componentProps: {
+        ...props,
+        row: row(b),
+        telemetryLoading: true,
+        telemetryNodes:
+          outcome === 'present'
+            ? new Map(nodes).set(referenceKey(b), {
+                spanData: b,
+                depth: 0,
+                matched: true,
+              })
+            : nodes,
+        telemetryStatus: new Map([
+          [b.traceID, 'ready'],
+          ['c'.repeat(32), 'pending'],
+        ]),
+      },
+    })
+    expect(screen.queryByText(`output-${a.spanID}`)).toBeNull()
+    expect(
+      screen.queryByText('Referenced span could not be loaded.')
+    ).toBeNull()
+    if (outcome === 'present') {
+      expect(screen.getByText(`output-${b.spanID}`)).toBeVisible()
+      expect(screen.getByText('Retained complete A log')).toBe(originalLog)
+      replacement.resolve([])
+    } else expect(logs).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(screen.queryByText('Retained complete A log')).toBeNull()
+    )
+  }
+)
 
 it('keeps selected-row log work and complete counts when another trace arrives', async () => {
   const a = span('1'.repeat(16))
