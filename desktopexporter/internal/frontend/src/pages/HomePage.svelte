@@ -99,6 +99,9 @@
     endTime: null,
   })
   const discoveryScope = $derived({ ...range, queries })
+  let displayedListRequest:
+    | { range: typeof range; queries: typeof queries; searchActive: boolean }
+    | undefined
   let request = $state.raw<AbortController>()
   let requestKey = $state(0)
   const rejections = $derived(stats?.rejections ?? [])
@@ -141,9 +144,18 @@
         endTime: bounds.endTime?.toString() ?? null,
       }
     }
+    // Pagination belongs to the received list even if its replacement failed.
+    const reading =
+      !refresh && displayedListRequest
+        ? displayedListRequest
+        : {
+            range: nextRange,
+            queries: pendingQueries,
+            searchActive: term.trim().length > 0,
+          }
     const options = {
-      ...nextRange,
-      queries: pendingQueries,
+      ...reading.range,
+      queries: reading.queries,
       offset: pageOffset,
       limit: 100,
     }
@@ -176,23 +188,28 @@
         range = nextRange
         queries = options.queries
       }
+      displayedListRequest = reading
       totalServices = page.totals?.home
       navigation?.setHomeCounts(
         page.totals ?? {},
         {
           traces: discoverySignalHref(
             'traces',
-            range,
-            queryText(queries.traces)
+            reading.range,
+            queryText(reading.queries.traces)
           ),
           metrics: discoverySignalHref(
             'metrics',
-            range,
-            queryText(queries.metrics)
+            reading.range,
+            queryText(reading.queries.metrics)
           ),
-          logs: discoverySignalHref('logs', range, queryText(queries.logs)),
+          logs: discoverySignalHref(
+            'logs',
+            reading.range,
+            queryText(reading.queries.logs)
+          ),
         },
-        term.trim().length > 0
+        reading.searchActive
       )
       more = page.truncated
       offset = pageOffset
