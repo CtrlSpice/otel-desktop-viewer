@@ -177,7 +177,7 @@ const node: SpanNode = {
   },
 }
 
-it('counts distinct connected traces and scoped logs, keeping failed counts unavailable', async () => {
+it('counts distinct connected traces and scoped logs, retaining the last complete count on failure', async () => {
   const logs = vi
     .spyOn(telemetryAPI, 'getTraceLogSummaries')
     .mockResolvedValue([
@@ -227,7 +227,8 @@ it('counts distinct connected traces and scoped logs, keeping failed counts unav
   )
   logs.mockRejectedValueOnce(new Error('offline'))
   await rerender({ componentProps: { ...props, wholeTraces: true } })
-  await waitFor(() => expect(screen.getByText('[1 trace]')).toBeVisible())
+  await waitFor(() => expect(logs).toHaveBeenCalledTimes(3))
+  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
   expect(screen.queryByText(/0 logs/)).toBeNull()
 })
 

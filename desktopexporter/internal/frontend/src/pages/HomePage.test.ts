@@ -4,6 +4,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/svelte'
 import HomePage, { rejectionLabel } from './HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import type { Stats } from '@/types/api-types'
 
 describe('rejectionLabel', () => {
   it('labels known rejection kinds', () => {
@@ -149,12 +150,75 @@ describe('Home service discovery', () => {
     expect(telemetryAPI.searchMetricSummaries).toHaveBeenCalledTimes(2)
     expect(telemetryAPI.searchLogSummaries).toHaveBeenCalledTimes(2)
     const calls = traces.mock.calls.length
+    let finishDiscovery!: () => void
+    services.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishDiscovery = () =>
+            resolve({
+              items: [base, { ...base, serviceNamespace: 'internal' }],
+              truncated: false,
+            })
+        })
+    )
+    const canvas = document.querySelector('.service-map__canvas svg')
+    expect(canvas).not.toBeNull()
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(services).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(traces.mock.calls.length).toBeGreaterThan(calls))
+    await waitFor(() => expect(traces).toHaveBeenCalledTimes(calls + 1))
+    expect(document.querySelector('.service-map__canvas svg')).toBe(canvas)
     expect(JSON.stringify(traces.mock.lastCall?.[2])).toContain('internal')
     expect(JSON.stringify(traces.mock.lastCall?.[2])).not.toContain(
       'storefront'
     )
+    finishDiscovery()
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /^Logs/ })).toBeDisabled()
+    )
+    expect(traces).toHaveBeenCalledTimes(calls + 1)
+    expect(document.querySelector('.service-map__canvas svg')).toBe(canvas)
+  })
+
+  it('keeps pending statistics independent of service pagination without displaying an invented zero', async () => {
+    let finish!: (stats: Stats) => void
+    const stats = vi.spyOn(telemetryAPI, 'getStats').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        })
+    )
+    vi.spyOn(telemetryAPI, 'getImportConfig').mockResolvedValue({
+      otlpHttpPort: 4318,
+    })
+    vi.spyOn(telemetryAPI, 'discoverServices').mockResolvedValue({
+      items: [],
+      truncated: true,
+    })
+    setTestUrl('/')
+    renderWithContexts(HomePage)
+    await screen.findByText('Loading storage information…')
+    expect(screen.queryByText('Storage information unavailable.')).toBeNull()
+    expect(
+      screen.getByText('Ingestion issues').closest('summary')
+    ).not.toHaveTextContent('[0]')
+    const signal = stats.mock.calls[0]![0]!
+    await fireEvent.click(screen.getByRole('button', { name: 'More services' }))
+    expect(stats).toHaveBeenCalledTimes(1)
+    expect(signal.aborted).toBe(false)
+    finish({
+      traces: {
+        traceCount: 0,
+        spanCount: 0,
+        serviceCount: 0,
+        errorCount: 0,
+        lastReceived: null,
+      },
+      logs: { logCount: 0, errorCount: 0, lastReceived: null },
+      metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
+      rejections: [],
+      storage: { sizeBytes: 123, maxSizeBytes: 456, inMemory: true },
+    })
+    await screen.findByText('123 bytes')
+    expect(screen.queryByText('Loading storage information…')).toBeNull()
   })
 })

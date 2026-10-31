@@ -1,12 +1,11 @@
 export type ExportSignal = 'trace' | 'log' | 'metric'
 
 async function fetchOTLP(
-  signal: ExportSignal,
-  id: string,
+  url: string,
   abortSignal: AbortSignal
 ): Promise<Response> {
   const contentType = 'application/json'
-  const response = await fetch(`/export/${signal}s/${encodeURIComponent(id)}`, {
+  const response = await fetch(url, {
     signal: abortSignal,
     headers: { Accept: contentType },
   })
@@ -29,7 +28,18 @@ export async function readOTLPText(
   id: string,
   abortSignal: AbortSignal
 ): Promise<string> {
-  const response = await fetchOTLP(signal, id, abortSignal)
+  return readOTLPURL(
+    `/export/${signal}s/${encodeURIComponent(id)}`,
+    abortSignal
+  )
+}
+
+/** Read complete server-produced text, never the bounded visual preview. */
+export async function readOTLPURL(
+  url: string,
+  abortSignal: AbortSignal
+): Promise<string> {
+  const response = await fetchOTLP(url, abortSignal)
   const text = await response.text()
   abortSignal.throwIfAborted()
   return text
@@ -40,7 +50,10 @@ export async function downloadOTLP(
   id: string,
   abortSignal: AbortSignal
 ): Promise<void> {
-  const response = await fetchOTLP(signal, id, abortSignal)
+  const response = await fetchOTLP(
+    `/export/${signal}s/${encodeURIComponent(id)}`,
+    abortSignal
+  )
   // Keep response bytes intact: JSON.parse/stringify would turn -0 into 0.
   const blob = await response.blob()
   abortSignal.throwIfAborted()

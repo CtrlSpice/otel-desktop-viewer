@@ -12,6 +12,7 @@ import { navigate } from '@/route'
 import { setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
 import type { ImportFailure } from '@/types/import-types'
+import { telemetryAPI } from '@/services/telemetry-service'
 
 const {
   getStats,
@@ -102,6 +103,33 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('publishes available navigation counts without waiting for service counts', async () => {
+    setTestUrl('/traces')
+    vi.mocked(telemetryAPI.getServiceCount).mockImplementationOnce(
+      () => new Promise(() => {})
+    )
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 7 },
+      logs: { ...EMPTY_STATS.logs, logCount: 8 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 9 },
+    })
+    const { unmount } = render(App)
+    const navigation = within(
+      screen.getByRole('navigation', { name: 'Primary' })
+    )
+    await navigation.findByRole('link', { name: 'Traces [7]' })
+    expect(
+      navigation.getByRole('link', { name: 'Logs [8]' })
+    ).toBeInTheDocument()
+    expect(
+      navigation.getByRole('link', { name: 'Metrics [9]' })
+    ).toBeInTheDocument()
+    const signal = vi.mocked(telemetryAPI.getServiceCount).mock.calls[0]![0]!
+    await unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
   it('keeps failed-file counts separate from rejected telemetry in Home Overview', async () => {
     setTestUrl('/')
     const timestamp = BigInt(Date.now()) * 1_000_000n

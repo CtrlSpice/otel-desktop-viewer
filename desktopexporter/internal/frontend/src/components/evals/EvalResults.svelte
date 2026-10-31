@@ -2,7 +2,7 @@
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
-  import { evalRequestQueue, type EvalRequestPart } from './eval-request-queue'
+  import type { EvalRequestPart } from './eval-request-state'
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -237,50 +237,46 @@
       ? displayedTimeline.timeline
       : new Map<string, TraceLogSummary[]>()
   )
-  let activityProgress = $state.raw<{
-    generation: typeof displayedTraces
-    summaries: Map<string, EvalRequestPart<TraceLogSummary[]>>
-    owners: Map<string, EvalRequestPart<LogData[]>>
-  }>()
+  let activityProgress = $state.raw(
+    new Map<string, { pending: boolean; failed: boolean }>()
+  )
   const activityLoading = $derived(
-    traceViews.length > 0 &&
-      (!activityProgress ||
-        activityProgress.generation !== displayedTraces ||
-        [
-          ...activityProgress.summaries.values(),
-          ...activityProgress.owners.values(),
-        ].some(part => part.status === 'pending'))
+    traceViews.some(
+      trace =>
+        activityProgress.get(trace.traceID.toLowerCase())?.pending ?? true
+    )
   )
   const activityFailed = $derived(
-    activityProgress?.generation === displayedTraces &&
-      !!activityProgress &&
-      [
-        ...activityProgress.summaries.values(),
-        ...activityProgress.owners.values(),
-      ].some(part => part.status === 'failed')
+    [...activityProgress.values()].some(part => part.failed)
   )
   let activityRequest = $state.raw<AbortSignal>()
-  $effect(() => {
-    const experimentID = sourceExperiment.id
-    const nodes = traceIndex.nodes
-    const traces = traceViews
-    const generation = displayedTraces
-    const controller = new AbortController()
-    activityRequest = controller.signal
+  function loadTraceActivity(
+    trace: TraceData,
+    source: EvalExperiment,
+    controller: AbortController
+  ) {
+    const experimentID = source.id
+    const traceID = trace.traceID.toLowerCase()
+    const prefix = `${traceID}/`
+    const nodes = indexEvalTraces([trace]).nodes
+    const traces = [trace]
     const summaries = new Map<string, EvalRequestPart<TraceLogSummary[]>>(
       traces.map(trace => [trace.traceID.toLowerCase(), { status: 'pending' }])
     )
     const owners = new Map<string, EvalRequestPart<LogData[]>>()
     const previousLogs = untrack(() => displayedLogs)
     const received = new Map(
-      previousLogs?.experimentID === experimentID ? previousLogs.owners : []
+      previousLogs?.experimentID === experimentID
+        ? [...previousLogs.owners].filter(([key]) => key.startsWith(prefix))
+        : []
     )
     // Successful summaries replace only their own trace's discovery scope.
     // Explicit span references and native call ancestry authorize owners separately.
     type OwnerReference = Pick<SpanData, 'traceID' | 'spanID'>
     const independentOwners = new Map<string, OwnerReference>()
-    for (const reference of evalTraceReferences(sourceExperiment)) {
-      if (!reference.spanID) continue
+    for (const reference of evalTraceReferences(source)) {
+      if (!reference.spanID || reference.traceID.toLowerCase() !== traceID)
+        continue
       const key = referenceKey(reference)
       independentOwners.set(key, {
         traceID: reference.traceID,
@@ -299,19 +295,25 @@
     }
     const summaryOwners = new Map<string, Set<string>>()
     const ownerControllers = new Map<string, AbortController>()
-    const summaryQueue = evalRequestQueue(controller.signal)
-    const logQueue = evalRequestQueue(controller.signal)
     function publishProgress() {
-      if (!controller.signal.aborted)
-        activityProgress = {
-          generation,
-          summaries: new Map(summaries),
-          owners: new Map(owners),
-        }
+      if (controller.signal.aborted) return
+      const parts = [...summaries.values(), ...owners.values()]
+      activityProgress = new Map(untrack(() => activityProgress)).set(traceID, {
+        pending: parts.some(part => part.status === 'pending'),
+        failed: parts.some(part => part.status === 'failed'),
+      })
     }
     function publishLogs() {
-      if (!controller.signal.aborted)
-        displayedLogs = { experimentID, owners: new Map(received) }
+      if (controller.signal.aborted) return
+      const previous = untrack(() => displayedLogs)
+      const siblings =
+        previous?.experimentID === experimentID
+          ? [...previous.owners].filter(([key]) => !key.startsWith(prefix))
+          : []
+      displayedLogs = {
+        experimentID,
+        owners: new Map([...siblings, ...received]),
+      }
     }
     function authorized(span: OwnerReference) {
       const key = referenceKey(span)
@@ -348,15 +350,8 @@
       ownerControllers.set(key, ownerController)
       owners.set(key, { status: 'pending' })
       publishProgress()
-      void logQueue
-        .run(() => {
-          ownerController.signal.throwIfAborted()
-          return telemetryAPI.getSpanLogs(
-            span.traceID,
-            span.spanID,
-            ownerController.signal
-          )
-        })
+      void telemetryAPI
+        .getSpanLogs(span.traceID, span.spanID, ownerController.signal)
         .then(
           logs => {
             if (
@@ -395,10 +390,8 @@
         received.delete(key)
     publishLogs()
     for (const trace of traces) {
-      void summaryQueue
-        .run(() =>
-          telemetryAPI.getTraceLogSummaries(trace.traceID, controller.signal)
-        )
+      void telemetryAPI
+        .getTraceLogSummaries(trace.traceID, controller.signal)
         .then(
           logs => {
             if (controller.signal.aborted) return
@@ -434,12 +427,15 @@
           }
         )
     }
-    return () => {
-      controller.abort()
-      for (const ownerController of ownerControllers.values())
-        ownerController.abort()
-    }
-  })
+    controller.signal.addEventListener(
+      'abort',
+      () => {
+        for (const ownerController of ownerControllers.values())
+          ownerController.abort()
+      },
+      { once: true }
+    )
+  }
   function selectActivity(record: TimelineRecord, span: SpanTiming) {
     const params = new URLSearchParams({ span: span.spanID })
     if (record.kind === 'event') params.set('event', String(record.eventIndex))
@@ -510,18 +506,58 @@
     }, extent)
   })
   $effect(() => {
-    const experimentID = sourceExperiment.id
-    const references = evalTraceReferences(sourceExperiment)
+    const source = sourceExperiment
+    const experimentID = source.id
+    const references = evalTraceReferences(source)
+    const ids = [
+      ...new Set(references.map(reference => reference.traceID.toLowerCase())),
+    ]
     const controller = new AbortController()
     timingRequest = controller.signal
+    activityRequest = controller.signal
+    activityProgress = new Map()
     timingsLoading = true
     timingsFailed = false
+    const previous = untrack(() => displayedTraces)
+    const received = new Map(
+      (previous?.experimentID === experimentID ? previous.traces : [])
+        .filter(trace => ids.includes(trace.traceID.toLowerCase()))
+        .map(trace => [trace.traceID.toLowerCase(), trace])
+    )
+    const completed = new Set<string>()
+    function publishTrace(trace: TraceData) {
+      if (controller.signal.aborted) return
+      const id = trace.traceID.toLowerCase()
+      if (completed.has(id)) return
+      completed.add(id)
+      received.set(id, trace)
+      displayedTraces = {
+        experimentID,
+        traces: ids.flatMap(id =>
+          received.has(id) ? [received.get(id)!] : []
+        ),
+      }
+      loadTraceActivity(trace, source, controller)
+    }
+    function failedTrace(id: string) {
+      if (controller.signal.aborted) return
+      timingsFailed = true
+      activityProgress = new Map(untrack(() => activityProgress)).set(id, {
+        pending: false,
+        failed: true,
+      })
+    }
     void telemetryAPI
-      .getReferencedTraceViews(references, controller.signal)
+      .getReferencedTraceViews(references, controller.signal, result => {
+        if (result.status === 'ready') publishTrace(result.trace)
+        else failedTrace(result.traceID)
+      })
       .then(
         result => {
           if (controller.signal.aborted) return
-          displayedTraces = { experimentID, traces: result.traces }
+          for (const trace of result.traces) publishTrace(trace)
+          for (const id of result.unavailableTraceIDs) failedTrace(id)
+          if (!ids.length) displayedTraces = { experimentID, traces: [] }
           timingsFailed = result.unavailableTraceIDs.length > 0
           timingsLoading = false
         },
@@ -529,6 +565,7 @@
           if (controller.signal.aborted) return
           timingsLoading = false
           timingsFailed = true
+          for (const id of ids) failedTrace(id)
         }
       )
     return () => controller.abort()

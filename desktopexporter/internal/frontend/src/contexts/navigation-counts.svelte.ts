@@ -22,29 +22,27 @@ export function createNavigationCounts() {
     const controller = new AbortController()
     request = controller
     const current = ++generation
-    const results = await Promise.allSettled([
-      telemetryAPI.getStats(),
-      telemetryAPI.getServiceCount(controller.signal),
-      __EVALS_BUILT__ && get(evalsEnabled)
-        ? evalAPI.searchEvalExperiments({ limit: 1 }, controller.signal)
-        : Promise.resolve(undefined),
-    ])
-    if (current !== generation || controller.signal.aborted) return
-    const [stats, services, evals] = results
-    counts = {
-      traces:
-        stats.status === 'fulfilled'
-          ? stats.value.traces.traceCount
-          : undefined,
-      metrics:
-        stats.status === 'fulfilled'
-          ? stats.value.metrics.metricCount
-          : undefined,
-      logs:
-        stats.status === 'fulfilled' ? stats.value.logs.logCount : undefined,
-      home: services.status === 'fulfilled' ? services.value : undefined,
-      evals: evals.status === 'fulfilled' ? evals.value?.total : undefined,
+    function publish(value: NavigationCounts) {
+      if (current === generation && !controller.signal.aborted)
+        counts = { ...counts, ...value }
     }
+    await Promise.allSettled([
+      telemetryAPI.getStats(controller.signal).then(stats =>
+        publish({
+          traces: stats.traces.traceCount,
+          metrics: stats.metrics.metricCount,
+          logs: stats.logs.logCount,
+        })
+      ),
+      telemetryAPI
+        .getServiceCount(controller.signal)
+        .then(home => publish({ home })),
+      __EVALS_BUILT__ && get(evalsEnabled)
+        ? evalAPI
+            .searchEvalExperiments({ limit: 1 }, controller.signal)
+            .then(evals => publish({ evals: evals.total }))
+        : publish({ evals: undefined }),
+    ])
   }
   const state = {
     get counts() {

@@ -57,11 +57,16 @@
     moreServices: boolean
     onMoreServices: () => void
   } = $props()
-  let connections = $state<ServiceConnection[]>([])
-  let pages = $state<Record<string, { offset: number; more: boolean }>>({})
+  let received = $state.raw(
+    new Map<string, { service: ServiceSummary; items: ServiceConnection[] }>()
+  )
+  let connections = $state.raw<ServiceConnection[]>([])
+  let pages = $state<
+    Record<string, { offset: number; more: boolean; revision: number }>
+  >({})
   let pending = $state(0)
   const busy = $derived(pending > 0)
-  let layoutReady = $state(false)
+  let connectionRequestKey = $state(0)
   let failures = $state<
     Record<string, { service: ServiceSummary; message: string }>
   >({})
@@ -165,7 +170,9 @@
     const controller = new AbortController()
     requests.set(identity, controller)
     pending = requests.size
-    const offset = pages[identity]?.offset ?? 0
+    connectionRequestKey++
+    const offset =
+      pages[identity]?.revision === graphRevision ? pages[identity].offset : 0
     const remaining = { ...failures }
     delete remaining[identity]
     failures = remaining
@@ -176,15 +183,35 @@
       )
       if (controller.signal.aborted) return
       const merged = new Map(
-        connections.map(edge => [connectionIdentity(edge), edge])
+        (offset ? (received.get(identity)?.items ?? []) : []).map(edge => [
+          connectionIdentity(edge),
+          edge,
+        ])
       )
       for (const edge of page.items) merged.set(connectionIdentity(edge), edge)
-      connections = [...merged.values()]
+      received = new Map(received).set(identity, {
+        service: node,
+        items: [...merged.values()],
+      })
+      const retained = new Set(
+        [...received.values()].flatMap(page =>
+          page.items.map(connectionIdentity)
+        )
+      )
+      // Only this response's edges replace values; sibling pages retain membership.
+      const next = new Map(
+        connections.map(edge => [connectionIdentity(edge), edge])
+      )
+      for (const edge of page.items) next.set(connectionIdentity(edge), edge)
+      connections = [...next.values()].filter(edge =>
+        retained.has(connectionIdentity(edge))
+      )
       pages = {
         ...pages,
         [identity]: {
           offset: offset + page.items.length,
           more: page.truncated,
+          revision: graphRevision,
         },
       }
     } catch (reason) {
@@ -198,7 +225,6 @@
       if (requests.get(identity) === controller) {
         requests.delete(identity)
         pending = requests.size
-        if (pending === 0) layoutReady = true
       }
     }
   }
@@ -213,23 +239,22 @@
       if (!sameScope) {
         for (const controller of requests.values()) controller.abort()
         requests.clear()
-        connections = []
-        pages = {}
-        sizes = new Map()
         failures = {}
         pending = 0
-        layoutReady = false
         graphRevision++
+        for (const page of received.values()) void expand(page.service)
       }
       for (const node of visible) {
-        if (!pages[serviceIdentity(node)]) void expand(node)
+        if (pages[serviceIdentity(node)]?.revision !== graphRevision)
+          void expand(node)
       }
     })
   })
   $effect(() => {
     const node = inspected
     untrack(() => {
-      if (node && !pages[serviceIdentity(node)]) void expand(node)
+      if (node && pages[serviceIdentity(node)]?.revision !== graphRevision)
+        void expand(node)
     })
   })
   onDestroy(() => {
@@ -255,7 +280,7 @@
     {#if inspected}<ServiceLabelsPopover service={inspected} />{/if}
     {#if inspectedPage?.more}<button
         class="btn btn-ghost btn-sm"
-        disabled={busy}
+        disabled={requests.has(inspectedID) && busy}
         onclick={() => inspected && expand(inspected)}>More connections</button
       >{/if}
     <div
@@ -267,7 +292,7 @@
         class="header-icon-button tooltip tooltip-left"
         aria-label="Zoom out service map"
         data-tip="Zoom out"
-        disabled={!layoutReady || nodes.length === 0}
+        disabled={nodes.length === 0}
         onclick={() => transform?.zoomOut()}
         ><HugeiconsIcon icon={MinusSignIcon} size={16} /></button
       >
@@ -275,7 +300,7 @@
         class="header-icon-button tooltip tooltip-left"
         aria-label="Zoom in service map"
         data-tip="Zoom in"
-        disabled={!layoutReady || nodes.length === 0}
+        disabled={nodes.length === 0}
         onclick={() => transform?.zoomIn()}
         ><HugeiconsIcon icon={Add01Icon} size={16} /></button
       >
@@ -283,7 +308,7 @@
         class="header-icon-button tooltip tooltip-left"
         aria-label="Reset service map view"
         data-tip="Fit graph"
-        disabled={!layoutReady || nodes.length === 0}
+        disabled={nodes.length === 0}
         onclick={() => viewRevision++}
         ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
       >
@@ -305,7 +330,13 @@
         onclick={() => expand(failure.service)}>Retry</button
       >
     </div>{/each}
-  {#if nodes.length && layoutReady}
+  <LoadingStatus
+    pending={loadingServices || busy}
+    label="Loading service map…"
+    requestKey={loadingServices ? servicesRequestKey : connectionRequestKey}
+    class="block p-3 text-subtle"
+  />
+  {#if nodes.length}
     <p class="px-[var(--pane-inline-inset)] py-3 text-subtle">
       Scroll to move. Pinch to zoom.
       <span class="sr-only"
@@ -314,126 +345,120 @@
       >
     </p>
     <div class="service-map__canvas">
-      {#key graphRevision}
-        <Chart
-          padding={0}
-          bind:context={chart}
-          transform={{
-            mode: 'canvas',
-            scrollMode: 'translate',
-            motion: 'none',
-            constrain: constrainView,
-            processTranslate: panView,
-          }}
-        >
-          <Svg title="Service connections">
-            {#snippet defs()}<marker
-                id={markerID}
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-                ><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker
-              >{/snippet}
-            <ServiceMapLayout
-              bind:this={layoutController}
-              services={nodes}
-              {connections}
-              {viewRevision}
-              {sizes}
-            >
-              {#snippet children({ positions, paths })}
-                {#each connections as edge (connectionIdentity(edge))}
-                  {@const chosen =
-                    selection?.kind === 'connection' &&
-                    connectionIdentity(selection.connection) ===
-                      connectionIdentity(edge)}
-                  {@const path = paths.get(connectionIdentity(edge)) ?? ''}
-                  <g
-                    class="service-map__edge"
-                    class:service-map__edge--selected={chosen}
+      <Chart
+        padding={0}
+        bind:context={chart}
+        transform={{
+          mode: 'canvas',
+          scrollMode: 'translate',
+          motion: 'none',
+          constrain: constrainView,
+          processTranslate: panView,
+        }}
+      >
+        <Svg title="Service connections">
+          {#snippet defs()}<marker
+              id={markerID}
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+              ><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker
+            >{/snippet}
+          <ServiceMapLayout
+            bind:this={layoutController}
+            services={nodes}
+            {connections}
+            {viewRevision}
+            {sizes}
+          >
+            {#snippet children({ positions, paths })}
+              {#each connections as edge (connectionIdentity(edge))}
+                {@const chosen =
+                  selection?.kind === 'connection' &&
+                  connectionIdentity(selection.connection) ===
+                    connectionIdentity(edge)}
+                {@const path = paths.get(connectionIdentity(edge)) ?? ''}
+                <g
+                  class="service-map__edge"
+                  class:service-map__edge--selected={chosen}
+                >
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width={chosen ? 2 : 1}
+                    marker-end={`url(#${markerID})`}
+                  />
+                  <path
+                    class="service-map__edge-target"
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    stroke-width="16"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed={chosen}
+                    aria-label={`${edge.source.serviceName || 'Unnamed service'} → ${edge.target.serviceName || 'Unnamed service'}: ${edge.spanCount} parent-child connections in ${edge.traceCount} traces`}
+                    onclick={() =>
+                      onSelect({ kind: 'connection', connection: edge })}
+                    onkeydown={event => {
+                      panKey(event)
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onSelect({ kind: 'connection', connection: edge })
+                      }
+                    }}
                   >
-                    <path
-                      d={path}
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width={chosen ? 2 : 1}
-                      marker-end={`url(#${markerID})`}
+                    <title
+                      >{edge.spanCount} parent-child connections · {edge.traceCount}
+                      traces</title
+                    >
+                  </path>
+                </g>
+              {/each}
+              {#each nodes as node (serviceIdentity(node))}
+                {@const identity = serviceIdentity(node)}
+                {@const point = positions.get(identity)!}
+                {@const chosen =
+                  selection?.kind === 'service' &&
+                  serviceIdentity(selection.service) === identity}
+                <foreignObject
+                  x={point.x - SERVICE_CARD_WIDTH / 2}
+                  y={point.y -
+                    (sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT) / 2}
+                  width={SERVICE_CARD_WIDTH}
+                  height={sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT}
+                  overflow="visible"
+                >
+                  <div
+                    class="service-map__node"
+                    data-service-identity={identity}
+                    use:measureCard={identity}
+                  >
+                    <ServiceCard
+                      service={node}
+                      selected={chosen}
+                      onSelect={() =>
+                        onSelect({
+                          kind: 'service',
+                          service: node,
+                        })}
+                      onkeydown={panKey}
                     />
-                    <path
-                      class="service-map__edge-target"
-                      d={path}
-                      fill="none"
-                      stroke="transparent"
-                      stroke-width="16"
-                      role="button"
-                      tabindex="0"
-                      aria-pressed={chosen}
-                      aria-label={`${edge.source.serviceName || 'Unnamed service'} → ${edge.target.serviceName || 'Unnamed service'}: ${edge.spanCount} parent-child connections in ${edge.traceCount} traces`}
-                      onclick={() =>
-                        onSelect({ kind: 'connection', connection: edge })}
-                      onkeydown={event => {
-                        panKey(event)
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          onSelect({ kind: 'connection', connection: edge })
-                        }
-                      }}
-                    >
-                      <title
-                        >{edge.spanCount} parent-child connections · {edge.traceCount}
-                        traces</title
-                      >
-                    </path>
-                  </g>
-                {/each}
-                {#each nodes as node (serviceIdentity(node))}
-                  {@const identity = serviceIdentity(node)}
-                  {@const point = positions.get(identity)!}
-                  {@const chosen =
-                    selection?.kind === 'service' &&
-                    serviceIdentity(selection.service) === identity}
-                  <foreignObject
-                    x={point.x - SERVICE_CARD_WIDTH / 2}
-                    y={point.y -
-                      (sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT) / 2}
-                    width={SERVICE_CARD_WIDTH}
-                    height={sizes.get(identity)?.height ?? SERVICE_CARD_HEIGHT}
-                    overflow="visible"
-                  >
-                    <div
-                      class="service-map__node"
-                      data-service-identity={identity}
-                      use:measureCard={identity}
-                    >
-                      <ServiceCard
-                        service={node}
-                        selected={chosen}
-                        onSelect={() =>
-                          onSelect({
-                            kind: 'service',
-                            service: node,
-                          })}
-                        onkeydown={panKey}
-                      />
-                    </div>
-                  </foreignObject>
-                {/each}
-              {/snippet}
-            </ServiceMapLayout>
-          </Svg>
-        </Chart>
-      {/key}
+                  </div>
+                </foreignObject>
+              {/each}
+            {/snippet}
+          </ServiceMapLayout>
+        </Svg>
+      </Chart>
     </div>
-  {:else if loadingServices || busy}<LoadingStatus
-      pending
-      label="Loading service map…"
-      requestKey={loadingServices ? servicesRequestKey : graphRevision}
-      class="block p-3 text-subtle"
-    />
-  {:else}<p class="p-3 text-subtle">
+  {:else if !loadingServices && !busy && !servicesError && !Object.keys(failures).length}<p
+      class="p-3 text-subtle"
+    >
       No services match this search and time range.
     </p>{/if}
   {#if moreServices}<SignalFooter label="services" compact>

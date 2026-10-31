@@ -337,6 +337,11 @@
   let selectedAggregateSummary = $state<AggregateBucket | null>(null)
   // Scalar aggregates for the checked and full series pools.
   let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
+  let aggregateLoading = $state(false)
+  let aggregateSummaryLoading = $state(false)
+  let aggregateError = $state('')
+  let aggregateSummaryError = $state('')
+  let aggregateRequestKey = $state.raw<AbortSignal>()
 
   // Unreduced inspected-series datapoints belong to the displayed response.
   let seriesDatapoints = new SvelteMap<string, DatapointSeries>()
@@ -461,12 +466,14 @@
   })
 
   // Aggregates depend on legend selection; metric detail depends on metric identity.
-  let aggregateTimer: ReturnType<typeof setTimeout> | undefined
   let aggregateToken = 0
-  let aggregateMetric: MetricViewData | undefined
 
   $effect(() => {
     const token = ++aggregateToken
+    aggregateLoading = false
+    aggregateSummaryLoading = false
+    aggregateError = ''
+    aggregateSummaryError = ''
     const summary = displayedMetricSummary
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
@@ -483,7 +490,6 @@
       !selectedMetric ||
       selectedMetric.metricRef !== summary.metricRef
     ) {
-      aggregateMetric = undefined
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
@@ -491,21 +497,14 @@
     }
     const bounds = effectiveMetricBounds(selectedMetric)
     if (!bounds) {
-      aggregateMetric = undefined
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
       return
     }
 
-    // A fresh detail response already establishes the selection and bounds.
-    // Only changes to the legend on that same response need coalescing.
-    const debounce = aggregateMetric === selectedMetric
-    aggregateMetric = selectedMetric
-    clearTimeout(aggregateTimer)
-    // Do not display a previous selection's summary beside the new plot.
-    selectedAggregateSummary = null
-    selectedScalarAggregate = null
+    aggregateLoading = true
+    aggregateSummaryLoading = !scalar
     const requestAggregates = () => {
       void fetchAggregate(
         summary,
@@ -530,11 +529,10 @@
       }
     }
     const controller = new AbortController()
-    if (debounce) aggregateTimer = setTimeout(requestAggregates, 120)
-    else untrack(requestAggregates)
+    aggregateRequestKey = controller.signal
+    untrack(requestAggregates)
 
     return () => {
-      clearTimeout(aggregateTimer)
       controller.abort()
       ++aggregateToken
     }
@@ -583,11 +581,15 @@
       console.error('Failed to fetch metric aggregate:', err)
       if (token === aggregateToken) {
         if (wholeWindow) {
-          selectedAggregateSummary = null
+          aggregateSummaryError = 'Could not load the histogram aggregate.'
         } else {
-          selectedAggregate = null
-          selectedScalarAggregate = null
+          aggregateError = 'Could not load the chart aggregate.'
         }
+      }
+    } finally {
+      if (!signal.aborted && token === aggregateToken) {
+        if (wholeWindow) aggregateSummaryLoading = false
+        else aggregateLoading = false
       }
     }
   }
@@ -831,9 +833,7 @@
   let detailController: AbortController | undefined
   let detailRevision = 0
 
-  // Fetch datapoints for newly visible series and coalesce rapid legend changes.
-  let datapointTimer: ReturnType<typeof setTimeout> | undefined
-
+  // Fetch newly visible series immediately; fetchMetricDetail owns cancellation.
   $effect(() => {
     const summary = selectedSummary
     const metric = selectedMetric
@@ -856,12 +856,9 @@
     )
     if (!missing) return
 
-    clearTimeout(datapointTimer)
-    datapointTimer = setTimeout(() => {
+    untrack(() => {
       void fetchMetricDetail(summary, visible, false)
-    }, 120)
-
-    return () => clearTimeout(datapointTimer)
+    })
   })
 
   async function fetchMetricDetail(
@@ -1205,7 +1202,13 @@
       </div>
     {:else}
       <div {...chartTabPanelAttrs} class="metrics-page__chart">
-        {#if selectedMetric || !page.selectedID}<MetricChartView />{/if}
+        {#if selectedMetric || !page.selectedID}<MetricChartView
+            {aggregateLoading}
+            {aggregateSummaryLoading}
+            {aggregateError}
+            {aggregateSummaryError}
+            requestKey={aggregateRequestKey}
+          />{/if}
       </div>
     {/if}
   {/snippet}

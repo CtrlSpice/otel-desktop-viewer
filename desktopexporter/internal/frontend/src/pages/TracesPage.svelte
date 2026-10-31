@@ -71,7 +71,6 @@
     TraceWaterfallData,
     SpanData,
     TraceColumnPreview,
-    SearchResultEvent,
     TraceStats,
     TraceLogSummary,
   } from '@/types/api-types'
@@ -80,7 +79,6 @@
     ParsedSearchRequest,
     QueryNode,
   } from '@/search/model'
-  import { parseSearchRequest } from '@/components/shared/Search/queryParser'
   import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
 
@@ -118,6 +116,8 @@
 
   let baselineStats = $state<TraceStats | null>(null)
   let polledStats = $state<TraceStats | null>(null)
+  let listRequest: AbortController | undefined
+  let statsRequest: AbortController | undefined
   let actionError = $state<string | null>(null)
   let query = $state('')
   let submittedText = $state('')
@@ -130,48 +130,81 @@
     initialSort: { column: 'startTime', direction: 'desc' },
     compare: compareTraceSummaries,
     fetchList: async () => {
+      listRequest?.abort()
+      statsRequest?.abort()
+      const controller = new AbortController()
+      const statsController = new AbortController()
+      listRequest = controller
+      statsRequest = statsController
+      const request = submittedRequest
+      const stats = telemetryAPI
+        .getStats(statsController.signal)
+        .catch(() => null)
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchTraceSummaries(
-        startTime,
-        endTime,
-        submittedRequest?.predicate ?? undefined,
-        submittedRequest?.limit ?? undefined,
-        untrack(() => ({
-          field: page.sortColumn,
-          direction: page.sortDirection,
-        }))
-      )
-      const s = await telemetryAPI.getStats()
-      baselineStats = s.traces
-      polledStats = s.traces
-      return results
+      try {
+        const results = await telemetryAPI.searchTraceSummaries(
+          startTime,
+          endTime,
+          request?.predicate ?? undefined,
+          request?.limit ?? undefined,
+          untrack(() => ({
+            field: page.sortColumn,
+            direction: page.sortDirection,
+          })),
+          controller.signal
+        )
+        if (!controller.signal.aborted) {
+          activeQueryTree = request?.predicate ?? undefined
+          baselineStats = null
+          void stats.then(result => {
+            if (statsController.signal.aborted) return
+            if (result) {
+              baselineStats = result.traces
+              polledStats = result.traces
+            }
+            if (statsRequest === statsController) statsRequest = undefined
+          })
+        }
+        return results
+      } catch (error) {
+        statsController.abort()
+        if (statsRequest === statsController) statsRequest = undefined
+        throw error
+      }
     },
     pollStats: async () => {
-      const s = await telemetryAPI.getStats()
-      polledStats = s.traces
+      if (statsRequest) return
+      const controller = new AbortController()
+      statsRequest = controller
+      try {
+        const stats = await telemetryAPI.getStats(controller.signal)
+        if (controller.signal.aborted) return
+        baselineStats ??= stats.traces
+        polledStats = stats.traces
+      } finally {
+        if (statsRequest === controller) statsRequest = undefined
+      }
     },
-    refreshFromStats: () => {
-      if (!baselineStats || !polledStats) {
-        return { pulse: false, tip: '' }
-      }
-      const parts: string[] = []
-      const traceDelta = polledStats.traceCount - baselineStats.traceCount
-      if (traceDelta > 0) {
-        parts.push(
-          `+${traceDelta.toLocaleString()} trace${traceDelta !== 1 ? 's' : ''}`
-        )
-      }
-      const spanDelta = polledStats.spanCount - baselineStats.spanCount
-      if (spanDelta > 0) {
-        parts.push(
-          `+${spanDelta.toLocaleString()} span${spanDelta !== 1 ? 's' : ''}`
-        )
-      }
-      return { pulse: parts.length > 0, tip: parts.join(', ') }
-    },
+  })
+  const freshness = $derived.by(() => {
+    if (!baselineStats || !polledStats) return { pulse: false, tip: '' }
+    const parts: string[] = []
+    const traceDelta = polledStats.traceCount - baselineStats.traceCount
+    if (traceDelta > 0) {
+      parts.push(
+        `+${traceDelta.toLocaleString()} trace${traceDelta !== 1 ? 's' : ''}`
+      )
+    }
+    const spanDelta = polledStats.spanCount - baselineStats.spanCount
+    if (spanDelta > 0) {
+      parts.push(
+        `+${spanDelta.toLocaleString()} span${spanDelta !== 1 ? 's' : ''}`
+      )
+    }
+    return { pulse: parts.length > 0, tip: parts.join(', ') }
   })
   let services = $derived([
     ...new Set(
@@ -545,20 +578,14 @@
     }
   })
 
-  function handleSearchResults(event: SearchResultEvent) {
-    page.handleSearchResults(event)
-    if (event.signal === 'traces') {
-      // SAFETY: The traces search producer attaches a QueryNode queryTree to this event variant.
-      activeQueryTree = event.queryTree as QueryNode | undefined
-    }
-  }
-
   // Abort superseded detail queries so they release the store read lock.
   let detailFetch: AbortController | null = null
   let logsFetch: AbortController | null = null
   let requestedTraceID: string | null = null
 
   onDestroy(() => {
+    listRequest?.abort()
+    statsRequest?.abort()
     detailFetch?.abort()
     logsFetch?.abort()
   })
@@ -731,8 +758,8 @@
   drawerID="signal-drawer"
   drawerLabel="Traces"
   onRefresh={page.handleRefresh}
-  refreshPulse={page.refreshPulse}
-  refreshAsideTip={page.refreshAsideTip}
+  refreshPulse={freshness.pulse}
+  refreshAsideTip={freshness.tip}
   loading={page.loading}
   loadingRequestKey={`${page.requestKey}:${page.selectedID}:${selectedSpanID}:${detailEpoch}`}
   loadingMessage={detailLoading
@@ -750,7 +777,6 @@
       signal="traces"
       sortValue={page.sortColumn}
       sortDirection={page.sortDirection}
-      onSearchResults={handleSearchResults}
       onSearchReady={api => (page.searchEditorApi = api)}
       onQueryChange={(text, availableFields) => {
         query = text
@@ -758,7 +784,10 @@
       }}
       onQuerySubmit={text => {
         submittedText = text
-        submittedRequest = parseSearchRequest(text, fields, 'traces')
+      }}
+      onSearchRequest={request => {
+        submittedRequest = request
+        void page.runListFetch()
       }}
     />
   {/snippet}
@@ -817,9 +846,10 @@
           >
         {/if}
       </div>
-    {:else if page.loading && !hasTraceRows && !currentTraceData}
+    {/if}
+    {#if page.loading && !hasTraceRows && !currentTraceData}
       <div class="traces-page__placeholder traces-empty"></div>
-    {:else if !page.loading && !hasTraceRows && !currentTraceData}
+    {:else if !page.loading && !displayError && !hasTraceRows && !currentTraceData}
       <div class="traces-page__placeholder traces-empty">
         <p class="text-subtle">No traces in this time range</p>
         <p class="mt-2 text-sm text-subtle">

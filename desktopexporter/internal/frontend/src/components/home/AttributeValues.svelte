@@ -71,6 +71,7 @@
   let coverage = $state<AttributeCoverage>()
   const kindCoverage = $derived(coverage?.kinds.get(kind))
   const PAGE_SIZE = 25
+  const limit = $derived(expanded && !hidden ? PAGE_SIZE : 0)
   type Navigation = { offset: number; previous: number[] }
   let navigation = $state.raw<Navigation>({ offset: 0, previous: [] })
   let displayedNavigation = $state.raw<Navigation>({ offset: 0, previous: [] })
@@ -93,7 +94,7 @@
     }
   }
   const headingID = $props.id()
-  const canExpand = $derived((coverage?.total ?? 0) > 0)
+  const canExpand = $derived(coverage?.total !== 0)
   $effect.pre(() => {
     void sortBy
     void sortDirection
@@ -114,7 +115,7 @@
         key: name,
         valueKind: kind,
         offset: selectedNavigation.offset,
-        limit: expanded && !hidden ? PAGE_SIZE : 0,
+        limit,
         sortBy,
         sortDirection,
         locale: navigator.language,
@@ -190,18 +191,20 @@
     <td class="table-cell text-right" data-attribute-column="frequency"></td>
     <td class="table-cell" data-attribute-column="copy"></td>
   </tr>
-  {#if error || (expanded && values.length === 0)}
+  {#if error || loading || (expanded && values.length === 0)}
     <tr
       ><td class="table-cell" colspan="4"
         ><div class="pl-6">
           {#if error}<span role="alert" class="text-papaya">{error}</span>
-          {:else if loading}<LoadingStatus
-              pending
-              label="Loading values…"
-              {requestKey}
-            />
-          {:else}<span class="text-subtle" role="status"
-              >No retained values.</span
+          {/if}
+          <LoadingStatus
+            pending={loading}
+            label="Loading values…"
+            {requestKey}
+          />
+          {#if !loading && !error && expanded && values.length === 0}<span
+              class="text-subtle"
+              role="status">No retained values.</span
             >{/if}
         </div></td
       ></tr

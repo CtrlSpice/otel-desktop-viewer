@@ -63,32 +63,26 @@
     const controller = new AbortController()
     requestKey = controller.signal
     pending = new Set(ids)
-    async function load() {
-      for (let offset = 0; offset < ids.length; offset += 4) {
-        if (controller.signal.aborted) return
-        await Promise.all(
-          ids.slice(offset, offset + 4).map(async id => {
-            try {
-              const trace = await telemetryAPI.getTraceSummary(
-                id,
-                controller.signal
-              )
-              if (!controller.signal.aborted)
-                traces = new Map(untrack(() => traces)).set(id, trace)
-            } catch {
-              // A failed request does not establish that the trace is absent.
-            } finally {
-              if (!controller.signal.aborted) {
-                const next = new Set(untrack(() => pending))
-                next.delete(id)
-                pending = next
-              }
-            }
-          })
-        )
-      }
+    for (const id of ids) {
+      void (async () => {
+        try {
+          const trace = await telemetryAPI.getTraceSummary(
+            id,
+            controller.signal
+          )
+          if (!controller.signal.aborted)
+            traces = new Map(untrack(() => traces)).set(id, trace)
+        } catch {
+          // A failed request does not establish that the trace is absent.
+        } finally {
+          if (!controller.signal.aborted) {
+            const next = new Set(untrack(() => pending))
+            next.delete(id)
+            pending = next
+          }
+        }
+      })()
     }
-    void load()
     return () => controller.abort()
   })
 </script>

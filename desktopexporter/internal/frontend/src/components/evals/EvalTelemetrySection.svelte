@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import type { LogData, SpanNode } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
@@ -20,15 +20,19 @@
     evidenceLogs?: LogData[]
   } = $props()
   let traceCount = $state<number>()
-  let logRefs = $state<string[]>()
+  let logRefs = $state<{ request: AbortSignal; refs: string[] }>()
+  let logRequest = $state.raw<AbortSignal>()
   const selection = $derived(
     JSON.stringify(entries.map(entry => entry.reference))
   )
-  const logCount = $derived(
-    logRefs && evidenceLogs
-      ? new Set([...logRefs, ...evidenceLogs.map(log => log.logRef)]).size
-      : undefined
-  )
+  let logCount = $state<number>()
+  $effect(() => {
+    if (logRefs && logRefs.request === logRequest && evidenceLogs)
+      logCount = new Set([
+        ...logRefs.refs,
+        ...evidenceLogs.map(log => log.logRef),
+      ]).size
+  })
   const counts = $derived(
     [
       traceCount === undefined
@@ -41,54 +45,64 @@
       .filter(value => value !== undefined)
       .join(' | ')
   )
+  let logController: AbortController | undefined
+  let logScope:
+    { selection: string; full: boolean; nodes: SpanNode[] } | undefined
+  onDestroy(() => logController?.abort())
   $effect(() => {
-    void nodes
-    void selection
+    const selected = selection
     const references = untrack(() =>
       entries.map(entry => ({ ...entry.reference }))
     )
     const full = wholeTraces
+    const ids = [
+      ...new Set(references.map(reference => reference.traceID.toLowerCase())),
+    ]
+    const selectedNodes = [...(nodes?.values() ?? [])].filter(node =>
+      ids.includes(node.spanData.traceID.toLowerCase())
+    )
+    if (
+      logScope?.selection === selected &&
+      logScope.full === full &&
+      logScope.nodes.length === selectedNodes.length &&
+      logScope.nodes.every((node, index) => node === selectedNodes[index])
+    )
+      return
+    logScope = { selection: selected, full, nodes: selectedNodes }
+    logController?.abort()
     const controller = new AbortController()
-    logRefs = undefined
+    logController = controller
+    logRequest = controller.signal
     void (async () => {
-      const ids = [
-        ...new Set(
-          references.map(reference => reference.traceID.toLowerCase())
-        ),
-      ]
       const received = new Set<string>()
       try {
-        for (let offset = 0; offset < ids.length; offset += 4) {
-          const groups = await Promise.all(
-            ids.slice(offset, offset + 4).map(async traceID => {
-              const logs = await telemetryAPI.getTraceLogSummaries(
-                traceID,
-                controller.signal
-              )
-              const refs = references.filter(
-                reference => reference.traceID.toLowerCase() === traceID
-              )
-              return logs.filter(
-                log =>
-                  full ||
-                  refs.some(
-                    reference =>
-                      !reference.spanID ||
-                      reference.spanID.toLowerCase() ===
-                        log.spanID?.toLowerCase()
-                  )
-              )
-            })
-          )
-          if (controller.signal.aborted) return
-          for (const log of groups.flat()) received.add(log.logRef)
-        }
-        logRefs = [...received]
+        const groups = await Promise.all(
+          ids.map(async traceID => {
+            const logs = await telemetryAPI.getTraceLogSummaries(
+              traceID,
+              controller.signal
+            )
+            const refs = references.filter(
+              reference => reference.traceID.toLowerCase() === traceID
+            )
+            return logs.filter(
+              log =>
+                full ||
+                refs.some(
+                  reference =>
+                    !reference.spanID ||
+                    reference.spanID.toLowerCase() === log.spanID?.toLowerCase()
+                )
+            )
+          })
+        )
+        if (controller.signal.aborted) return
+        for (const log of groups.flat()) received.add(log.logRef)
+        logRefs = { request: controller.signal, refs: [...received] }
       } catch {
         // A failed lookup is unavailable, not a received count of zero.
       }
     })()
-    return () => controller.abort()
   })
 </script>
 

@@ -609,7 +609,8 @@ describe('TracesPage unplaced spans banner', () => {
       null,
       undefined,
       undefined,
-      { field: 'startTime', direction: 'desc' }
+      { field: 'startTime', direction: 'desc' },
+      expect.any(AbortSignal)
     )
     expect(getTraceLogSummaries).toHaveBeenCalledWith(
       'trace-1',
@@ -637,6 +638,57 @@ describe('TracesPage unplaced spans banner', () => {
     )
     expect(normalizedText(alert)).not.toContain('3 span is')
   })
+})
+
+describe('TracesPage independent list loading', () => {
+  it.each(['pending', 'failed'] as const)(
+    'publishes the trace list and opens its tree while statistics are %s',
+    async outcome => {
+      const stats = deferred<Stats>()
+      searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+      getStats.mockReturnValue(stats.promise)
+      getTraceView.mockResolvedValue(makeTraceData(0))
+      setTestUrl('/traces')
+      renderWithContexts(TracesPage)
+      await screen.findByText('GET /orders')
+      await waitFor(() =>
+        expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
+      )
+      if (outcome === 'failed') {
+        stats.reject(new Error('statistics failed'))
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
+      expect(screen.queryByText('Loading traces…')).toBeNull()
+      expect(screen.queryByText(/statistics failed/)).toBeNull()
+    }
+  )
+
+  it.each(['success', 'failure'] as const)(
+    'retains the displayed tree during direct search and ignores stale %s',
+    async outcome => {
+      await renderSelectedTrace(0)
+      const tree = document.querySelector('tr[data-span-id="root"]')
+      const old = deferred<TraceSummary[]>()
+      const current = deferred<TraceSummary[]>()
+      searchTraceSummaries
+        .mockReturnValueOnce(old.promise)
+        .mockReturnValueOnce(current.promise)
+      navigate('/traces/trace-1?span=root&q=name%20%3D%20%22old%22')
+      await waitFor(() => expect(searchTraceSummaries).toHaveBeenCalledTimes(2))
+      navigate('/traces/trace-1?span=root&q=name%20%3D%20%22current%22')
+      await waitFor(() => expect(searchTraceSummaries).toHaveBeenCalledTimes(3))
+      expect(searchTraceSummaries.mock.calls[1]![5].aborted).toBe(true)
+      if (outcome === 'success') old.resolve([])
+      else old.reject(new Error('stale search failed'))
+      await screen.findByText('Loading traces…')
+      expect(document.querySelector('tr[data-span-id="root"]')).toBe(tree)
+      expect(screen.queryByText(/stale search failed/)).toBeNull()
+      current.reject(new Error('current search failed'))
+      await screen.findByText('Error: current search failed')
+      expect(document.querySelector('tr[data-span-id="root"]')).toBe(tree)
+      expect(screen.queryByText('Loading traces…')).toBeNull()
+    }
+  )
 })
 
 describe('TracesPage trace detail lifecycle', () => {

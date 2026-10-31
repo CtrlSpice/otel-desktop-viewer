@@ -9,6 +9,7 @@ import { exampleExperiments } from './examples'
 import type { EvalOutlineRow } from './eval-outline'
 import { copyText } from '@/utils/clipboard'
 import { referenceKey } from './eval-traces'
+import { tick } from 'svelte'
 
 function span(spanID: string): SpanData {
   return {
@@ -88,6 +89,107 @@ function log(owner: SpanData, body: string): LogData {
   }
 }
 
+it('keeps selected-row log work and complete counts when another trace arrives', async () => {
+  const a = span('1'.repeat(16))
+  const b = { ...span('2'.repeat(16)), traceID: 'b'.repeat(32) }
+  const node = { spanData: a, depth: 0, matched: true }
+  const nodes = new Map([[referenceKey(a), node]])
+  const pending = Promise.withResolvers<LogData[]>()
+  const logs = vi
+    .spyOn(telemetryAPI, 'getSpanLogs')
+    .mockReturnValue(pending.promise)
+  const summaries = vi
+    .spyOn(telemetryAPI, 'getTraceLogSummaries')
+    .mockResolvedValue([])
+  const props = {
+    experiment,
+    row: row(a),
+    telemetryNodes: nodes,
+    telemetryLoading: true,
+  }
+  const view = render(EvalRowDetail, props)
+  await waitFor(() => expect(logs).toHaveBeenCalledTimes(1))
+  const signal = logs.mock.calls[0][2]!
+  const siblings = new Map(nodes).set(referenceKey(b), {
+    spanData: b,
+    depth: 0,
+    matched: true,
+  })
+  await view.rerender({
+    componentProps: { ...props, row: row(a), telemetryNodes: siblings },
+  })
+  expect(logs).toHaveBeenCalledTimes(1)
+  expect(summaries).toHaveBeenCalledTimes(1)
+  expect(signal.aborted).toBe(false)
+  pending.resolve([log(a, 'Selected evidence')])
+  await screen.findByText('Selected evidence')
+  await screen.findByText('[1 trace | 1 log]')
+  await view.rerender({
+    componentProps: {
+      ...props,
+      row: row(a),
+      telemetryNodes: new Map(siblings),
+      telemetryLoading: false,
+    },
+  })
+  expect(logs).toHaveBeenCalledTimes(1)
+  expect(summaries).toHaveBeenCalledTimes(1)
+  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
+  const fresh = Promise.withResolvers<LogData[]>()
+  logs.mockReturnValue(fresh.promise)
+  await view.rerender({
+    componentProps: {
+      ...props,
+      telemetryNodes: new Map(siblings).set(referenceKey(a), {
+        ...node,
+        spanData: { ...a },
+      }),
+    },
+  })
+  expect(signal.aborted).toBe(true)
+  expect(logs).toHaveBeenCalledTimes(2)
+  expect(summaries).toHaveBeenCalledTimes(2)
+  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
+  fresh.reject(new Error('Fresh logs unavailable'))
+  await screen.findByText('Linked log evidence could not be loaded.')
+  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
+  expect(screen.getByText('Selected evidence')).toBeVisible()
+  view.unmount()
+  expect(logs.mock.calls[1][2]?.aborted).toBe(true)
+})
+
+it('restarts A after selecting a still-missing B and ignores the cancelled A response', async () => {
+  const a = span('1'.repeat(16)),
+    b = span('2'.repeat(16))
+  const nodes = new Map([
+    [referenceKey(a), { spanData: a, depth: 0, matched: true }],
+  ])
+  const first = Promise.withResolvers<LogData[]>()
+  const second = Promise.withResolvers<LogData[]>()
+  const logs = vi
+    .spyOn(telemetryAPI, 'getSpanLogs')
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise)
+  vi.spyOn(telemetryAPI, 'getTraceLogSummaries').mockResolvedValue([])
+  const props = {
+    experiment,
+    row: row(a),
+    telemetryNodes: nodes,
+    telemetryLoading: true,
+  }
+  const view = render(EvalRowDetail, props)
+  await waitFor(() => expect(logs).toHaveBeenCalledTimes(1))
+  await view.rerender({ componentProps: { ...props, row: row(b) } })
+  expect(logs.mock.calls[0][2]?.aborted).toBe(true)
+  await view.rerender({ componentProps: props })
+  expect(logs).toHaveBeenCalledTimes(2)
+  first.resolve([log(a, 'Stale A')])
+  await tick()
+  expect(screen.queryByText('Stale A')).toBeNull()
+  second.resolve([log(a, 'Current A')])
+  await screen.findByText('Current A')
+})
+
 it.each(['root-first', 'child-first', 'child-failure'])(
   'publishes each ready log owner independently with deterministic order and exact Copy: %s',
   async order => {
@@ -138,7 +240,7 @@ it.each(['root-first', 'child-first', 'child-failure'])(
     const telemetry = [...view.container.querySelectorAll('summary')].find(
       element => element.textContent?.includes('Telemetry')
     )!
-    expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
+    expect(telemetry).toHaveTextContent('1 log')
     await fireEvent.click(
       within(ready.closest('table')!).getByRole('button', { name: 'Copy body' })
     )
@@ -159,7 +261,7 @@ it.each(['root-first', 'child-first', 'child-failure'])(
       expect(
         screen.getByText('Linked log evidence could not be loaded.')
       ).toBeVisible()
-      expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
+      expect(telemetry).toHaveTextContent('1 log')
     } else {
       await waitFor(() =>
         expect(screen.queryByText('A retained log')).toBeNull()
@@ -660,9 +762,17 @@ it('keeps identified log evidence and Copy when all replacement owners fail, unt
   const telemetry = [...view.container.querySelectorAll('summary')].find(
     element => element.textContent?.includes('Telemetry')
   )!
-  expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
+  expect(telemetry).toHaveTextContent('1 log')
   await view.rerender({
-    componentProps: { experiment, row: row(b), telemetryNodes: new Map(nodes) },
+    componentProps: {
+      experiment,
+      row: row(b),
+      telemetryNodes: new Map(nodes).set(referenceKey(b), {
+        spanData: { ...b },
+        depth: 0,
+        matched: true,
+      }),
+    },
   })
   await waitFor(() => expect(lookup).toHaveBeenCalledTimes(3))
   await waitFor(() => expect(screen.queryByText('retained A log')).toBeNull())
