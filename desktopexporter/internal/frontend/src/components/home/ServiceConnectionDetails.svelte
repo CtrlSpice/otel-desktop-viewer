@@ -9,11 +9,13 @@
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     serviceIdentity,
+    discoverySignalHref,
     type ServiceConnection,
     type ServiceConnectionSpan,
     type DiscoveryOptions,
   } from '@/services/discovery-types'
-  import { itemHref } from '@/route'
+  import { itemHref, parseRoute } from '@/route'
+  import { queryText } from './home-search'
   import { formatDuration } from '@/utils/time'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
@@ -48,20 +50,15 @@
   )
   let displayed = $state.raw<EvidenceReading>()
   const shownConnection = $derived(displayed?.connection ?? connection)
-  const labelCopies = $derived.by(() => {
-    const parent = serviceIdentity(shownConnection.source)
-    const child = serviceIdentity(shownConnection.target)
-    return {
-      parentService: async (signal: AbortSignal) =>
-        (await telemetryAPI.getServiceLabels(parent, signal)).serviceName,
-      parentNamespace: async (signal: AbortSignal) =>
-        (await telemetryAPI.getServiceLabels(parent, signal)).serviceNamespace,
-      childService: async (signal: AbortSignal) =>
-        (await telemetryAPI.getServiceLabels(child, signal)).serviceName,
-      childNamespace: async (signal: AbortSignal) =>
-        (await telemetryAPI.getServiceLabels(child, signal)).serviceNamespace,
-    }
-  })
+  const evidenceQuery = $derived(
+    parseRoute(
+      discoverySignalHref(
+        'traces',
+        displayed?.options ?? options,
+        queryText((displayed?.options ?? options).queries?.traces ?? null)
+      )
+    ).query
+  )
   let requestKey = $state(0)
   function publishWork(work: EvidenceWork) {
     if (work.kind === 'replacement') replacement = work
@@ -137,25 +134,53 @@
           fieldName="Parent service"
           fieldType={shownConnection.source.serviceNameKind ?? 'string'}
           fieldValue={shownConnection.source.serviceName}
-          loadText={labelCopies.parentService}
+          sourceKey={shownConnection}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(shownConnection.source),
+                signal
+              )
+            ).serviceName}
         />
         <DetailProperty
           fieldName="Parent namespace"
           fieldType={shownConnection.source.serviceNamespaceKind ?? 'string'}
           fieldValue={shownConnection.source.serviceNamespace}
-          loadText={labelCopies.parentNamespace}
+          sourceKey={shownConnection}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(shownConnection.source),
+                signal
+              )
+            ).serviceNamespace}
         />
         <DetailProperty
           fieldName="Child service"
           fieldType={shownConnection.target.serviceNameKind ?? 'string'}
           fieldValue={shownConnection.target.serviceName}
-          loadText={labelCopies.childService}
+          sourceKey={shownConnection}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(shownConnection.target),
+                signal
+              )
+            ).serviceName}
         />
         <DetailProperty
           fieldName="Child namespace"
           fieldType={shownConnection.target.serviceNamespaceKind ?? 'string'}
           fieldValue={shownConnection.target.serviceNamespace}
-          loadText={labelCopies.childNamespace}
+          sourceKey={shownConnection}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(shownConnection.target),
+                signal
+              )
+            ).serviceNamespace}
         />
         <DetailProperty
           fieldName="Parent-child connections"
@@ -198,7 +223,12 @@
       <SignalCard
         id={`${span.traceID}:${span.spanID}`}
         title={span.name}
-        href={itemHref('traces', span.traceID, { span: span.spanID })}
+        href={itemHref(
+          'traces',
+          span.traceID,
+          { span: span.spanID },
+          evidenceQuery
+        )}
       >
         {#snippet titleContent()}<span class="flex min-w-0 items-center gap-2"
             ><span

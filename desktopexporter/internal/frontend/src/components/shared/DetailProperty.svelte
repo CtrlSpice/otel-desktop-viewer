@@ -26,6 +26,7 @@
     value,
     copyValue,
     loadText,
+    sourceKey,
     valueLabel,
     valueTone,
     valueColor,
@@ -51,6 +52,8 @@
     value?: Snippet
     copyValue?: string
     loadText?: (signal: AbortSignal) => Promise<string>
+    /** Identity owning the displayed field and its exact on-demand source. */
+    sourceKey?: unknown
     valueLabel?: string
     valueTone?: 'error'
     valueColor?: string
@@ -175,6 +178,7 @@
     {/if}
     <ValueCopyButton
       loadText={copyLoader}
+      sourceKey={sourceKey ?? typedValue ?? copyValue ?? fieldValue}
       label={origin ? `${fieldName} (${origin})` : fieldName}
       contextual
     />

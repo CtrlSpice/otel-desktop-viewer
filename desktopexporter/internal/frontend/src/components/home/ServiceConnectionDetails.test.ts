@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/svelte'
 import { tick } from 'svelte'
+import { navigate } from '@/route'
 import ServiceConnectionDetails from './ServiceConnectionDetails.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { copyText } from '@/utils/clipboard'
@@ -181,6 +182,7 @@ it.each(['pending', 'failed'])(
       truncated: true,
     })
     await view.findByRole('link', { name: /worker evidence/ })
+    navigate('/?start=3000&end=4000')
     await view.rerender({
       componentProps: {
         ...props,
@@ -206,7 +208,17 @@ it.each(['pending', 'failed'])(
       items: [evidence('worker page two', '3')],
       truncated: false,
     })
-    await view.findByRole('link', { name: /worker page two/ })
+    const retainedLink = await view.findByRole('link', {
+      name: /worker page two/,
+    })
+    expect(retainedLink).toHaveAttribute(
+      'href',
+      expect.stringContaining('start=1000')
+    )
+    expect(retainedLink).toHaveAttribute(
+      'href',
+      expect.stringContaining('end=2000')
+    )
     expect(
       view.container.querySelector(
         '[data-field="Child service"] .detail-property__body'
@@ -220,7 +232,17 @@ it.each(['pending', 'failed'])(
       items: [evidence('store evidence', '4')],
       truncated: false,
     })
-    await view.findByRole('link', { name: /store evidence/ })
+    const replacementLink = await view.findByRole('link', {
+      name: /store evidence/,
+    })
+    expect(replacementLink).toHaveAttribute(
+      'href',
+      expect.stringContaining('start=3000')
+    )
+    expect(replacementLink).toHaveAttribute(
+      'href',
+      expect.stringContaining('end=4000')
+    )
     expect(view.getByText('Page 1')).toBeInTheDocument()
     expect(
       view.container.querySelector(

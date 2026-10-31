@@ -574,6 +574,65 @@ test('evidence pagination retries failed pages and keeps the displayed target du
   }
 })
 
+test('retained evidence pagination keeps the successful window in its actual trace link', async ({
+  page,
+}) => {
+  const h = await holdConnections(page)
+  try {
+    await page.goto('/?start=1000&end=2000')
+    await h.ok('services', 0, [service('api')])
+    await h.ok('connections', 0, [connection()])
+    const edge = page.getByRole('button', { name: /^api → worker:/ })
+    await edge.focus()
+    await edge.press('Enter')
+    await h.ok('connection-spans', 0, [connectedSpan('first evidence')], true)
+    await expect(
+      page.getByRole('link', { name: /first evidence/ })
+    ).toBeVisible()
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/?start=3000&end=4000')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await h.get('services', 1)
+    await page
+      .getByRole('region', { name: 'Home details' })
+      .getByRole('button', { name: 'Next', exact: true })
+      .click()
+    expect((await h.get('connection-spans', 1)).options).toMatchObject({
+      startTime: '1000000000',
+      endTime: '2000000000',
+      offset: 25,
+    })
+    await h.ok('connection-spans', 1, [
+      connectedSpan('retained page evidence', '3'),
+    ])
+    const link = page.getByRole('link', { name: /retained page evidence/ })
+    await expect(link).toBeVisible()
+    const href = new URL((await link.getAttribute('href'))!, page.url())
+    expect(href.searchParams.get('start')).toBe('1000')
+    expect(href.searchParams.get('end')).toBe('2000')
+    await page.route(
+      /\/api\/data\/(?:getTraceView|getSpan|getSpanLogs)$/,
+      route =>
+        route.fulfill({
+          status: 503,
+          contentType: 'text/plain',
+          body: 'Destination data withheld by navigation fixture',
+        })
+    )
+    await link.click()
+    await expect(page).toHaveURL(
+      url =>
+        url.pathname === '/traces/' + '1'.repeat(32) &&
+        url.searchParams.get('span') === '3'.repeat(16) &&
+        url.searchParams.get('start') === '1000' &&
+        url.searchParams.get('end') === '2000'
+    )
+  } finally {
+    h.release()
+  }
+})
+
 test('service-map pagination keeps the displayed query and time range after failed replacements', async ({
   page,
 }) => {

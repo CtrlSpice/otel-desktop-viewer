@@ -114,6 +114,7 @@
             label="log"
             tooltip="Copy log"
             loadText={loadLogJSON}
+            sourceKey={actionLog}
           />
           <ExportButton signal="log" id={actionLog.logRef} />
         </div>

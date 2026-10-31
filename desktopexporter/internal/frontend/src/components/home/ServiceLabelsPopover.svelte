@@ -11,16 +11,6 @@
     type ServiceSummary,
   } from '@/services/discovery-types'
   let { service }: { service: ServiceSummary } = $props()
-  const labelCopies = $derived.by(() => {
-    const identity = serviceIdentity(service)
-    return {
-      name: async (signal: AbortSignal) =>
-        (await telemetryAPI.getServiceLabels(identity, signal)).serviceName,
-      namespace: async (signal: AbortSignal) =>
-        (await telemetryAPI.getServiceLabels(identity, signal))
-          .serviceNamespace,
-    }
-  })
   let labels = $state<{ serviceName: string; serviceNamespace: string }>()
   let loading = $state(false)
   const loadingNotice = createLoadingNotice(
@@ -103,13 +93,27 @@
           fieldName="service.name"
           fieldType={service.serviceNameKind ?? 'string'}
           fieldValue={labels?.serviceName ?? service.serviceName}
-          loadText={labelCopies.name}
+          sourceKey={service}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(service),
+                signal
+              )
+            ).serviceName}
         />
         <DetailProperty
           fieldName="service.namespace"
           fieldType={service.serviceNamespaceKind ?? 'string'}
           fieldValue={labels?.serviceNamespace ?? service.serviceNamespace}
-          loadText={labelCopies.namespace}
+          sourceKey={service}
+          loadText={async signal =>
+            (
+              await telemetryAPI.getServiceLabels(
+                serviceIdentity(service),
+                signal
+              )
+            ).serviceNamespace}
         />
       </tbody>
     </table>

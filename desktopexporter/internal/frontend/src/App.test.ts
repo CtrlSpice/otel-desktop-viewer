@@ -17,6 +17,8 @@ import { telemetryAPI } from '@/services/telemetry-service'
 const {
   getStats,
   searchTraceSummaries,
+  getTraceView,
+  getTraceLogSummaries,
   searchLogPage,
   getLogErrorNavigation,
   getLog,
@@ -29,6 +31,8 @@ const {
 } = vi.hoisted(() => ({
   getStats: vi.fn(),
   searchTraceSummaries: vi.fn(),
+  getTraceView: vi.fn(),
+  getTraceLogSummaries: vi.fn(),
   searchLogPage: vi.fn(),
   getLogErrorNavigation: vi.fn(),
   getLog: vi.fn(),
@@ -54,6 +58,8 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getImportConfig: vi.fn().mockResolvedValue({ otlpHttpPort: 4318 }),
       getStats,
       searchTraceSummaries,
+      getTraceView,
+      getTraceLogSummaries,
       searchLogPage,
       getLogErrorNavigation,
       getLog,
@@ -86,6 +92,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
   searchTraceSummaries.mockResolvedValue([])
+  getTraceView.mockImplementation(async (traceID: string) => ({
+    traceID,
+    spans: [],
+    unplacedSpanCount: 0,
+  }))
+  getTraceLogSummaries.mockResolvedValue([])
   searchLogPage.mockResolvedValue({ total: 0, logs: [] })
   getLogErrorNavigation.mockResolvedValue({
     count: 0,
@@ -300,8 +312,18 @@ describe('App real-page composition', () => {
     setTestUrl('/traces/trace-1')
     render(App)
 
-    await screen.findByText('No traces in this time range')
+    await waitFor(() =>
+      expect(getTraceView).toHaveBeenCalledWith(
+        'trace-1',
+        undefined,
+        expect.any(AbortSignal),
+        expect.any(Array)
+      )
+    )
+    expect(window.location.pathname).toBe('/traces/trace-1')
     expect(searchTraceSummaries).toHaveBeenCalled()
+    navigate('/traces')
+    await screen.findByText('No traces in this time range')
 
     navigate('/metrics/metric-1')
     await screen.findByText('The selected metric was not found.')
