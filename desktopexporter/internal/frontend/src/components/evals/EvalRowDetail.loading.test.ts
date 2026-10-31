@@ -149,13 +149,21 @@ it.each(['root-first', 'child-first', 'child-failure'])(
       const last = first === child ? b : child
       pending.get(last.spanID)!.resolve([log(last, `received-${last.spanID}`)])
     }
-    await waitFor(() => expect(screen.queryByText('A retained log')).toBeNull())
     if (order === 'child-failure') {
+      const retained = screen.getByText('A retained log').closest('table')!
+      expect(retained.querySelector('caption')).toHaveTextContent(a.spanID)
+      await fireEvent.click(
+        within(retained).getByRole('button', { name: 'Copy body' })
+      )
+      expect(copyText).toHaveBeenLastCalledWith('A retained log')
       expect(
         screen.getByText('Linked log evidence could not be loaded.')
       ).toBeVisible()
       expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
     } else {
+      await waitFor(() =>
+        expect(screen.queryByText('A retained log')).toBeNull()
+      )
       const bodies = [...view.container.querySelectorAll('table')].flatMap(
         table =>
           table.textContent?.includes('received-') ? [table.textContent] : []
@@ -606,6 +614,58 @@ it('publishes a failed replacement with its own span evidence and context', asyn
   expect(screen.queryByText(`output-${first.spanID}`)).toBeNull()
   await fireEvent.click(screen.getByRole('button', { name: 'Copy output' }))
   expect(copyText).toHaveBeenLastCalledWith(`output-${second.spanID}`)
+})
+
+it('keeps identified log evidence and Copy when all replacement owners fail, until a successful replacement', async () => {
+  const a = span('1'.repeat(16)),
+    b = span('2'.repeat(16))
+  const nodes = new Map(
+    [a, b].map(spanData => [
+      referenceKey(spanData),
+      { spanData, depth: 0, matched: true },
+    ])
+  )
+  let fail!: (error: Error) => void
+  vi.spyOn(telemetryAPI, 'getTraceLogSummaries').mockResolvedValue([])
+  const lookup = vi
+    .spyOn(telemetryAPI, 'getSpanLogs')
+    .mockResolvedValueOnce([log(a, 'retained A log')])
+    .mockReturnValueOnce(
+      new Promise((_, reject) => {
+        fail = reject
+      })
+    )
+    .mockResolvedValueOnce([])
+  const view = render(EvalRowDetail, {
+    experiment,
+    row: row(a),
+    telemetryNodes: nodes,
+  })
+  const value = await screen.findByText('retained A log')
+  const table = value.closest('table')!
+  await view.rerender({
+    componentProps: { experiment, row: row(b), telemetryNodes: nodes },
+  })
+  await waitFor(() => expect(lookup).toHaveBeenCalledTimes(2))
+  expect(table.isConnected).toBe(true)
+  fail(new Error('replacement logs failed'))
+  await screen.findByText('Linked log evidence could not be loaded.')
+  expect(table.isConnected).toBe(true)
+  expect(table.querySelector('caption')).toHaveTextContent(a.spanID)
+  expect(screen.getByText(`output-${b.spanID}`)).toBeVisible()
+  await fireEvent.click(
+    within(table).getByRole('button', { name: 'Copy body' })
+  )
+  expect(copyText).toHaveBeenLastCalledWith('retained A log')
+  const telemetry = [...view.container.querySelectorAll('summary')].find(
+    element => element.textContent?.includes('Telemetry')
+  )!
+  expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
+  await view.rerender({
+    componentProps: { experiment, row: row(b), telemetryNodes: new Map(nodes) },
+  })
+  await waitFor(() => expect(lookup).toHaveBeenCalledTimes(3))
+  await waitFor(() => expect(screen.queryByText('retained A log')).toBeNull())
 })
 
 it('cancels pending evidence when selecting a row without a span', async () => {
