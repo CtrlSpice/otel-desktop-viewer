@@ -122,6 +122,7 @@
             fieldType="string"
             fieldValue={assessment.explanation}
             loadText={loadExplanation}
+            sourceKey={assessment}
             multiline
           >
             {#snippet value()}<MarkdownText
@@ -151,6 +152,7 @@
           <ValueCopyButton
             text={rubric}
             loadText={rubricCopy}
+            sourceKey={displayed}
             label="grader input"
           />
         {/if}
@@ -186,6 +188,7 @@
           fieldType="string"
           fieldValue={rubric}
           loadText={rubricCopy}
+          sourceKey={displayed}
           multiline
         >
           {#snippet value()}<MarkdownText text={rubric} />{/snippet}
@@ -288,6 +291,7 @@
         <ValueCopyButton
           text={rubric}
           loadText={rubricCopy}
+          sourceKey={displayed}
           label="grader input"
         />
       </div>

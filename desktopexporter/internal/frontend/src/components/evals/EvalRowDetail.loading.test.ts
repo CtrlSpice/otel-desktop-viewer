@@ -71,6 +71,44 @@ function row(span: SpanData): EvalOutlineRow {
 
 const experiment = { ...exampleExperiments[0], results: [] }
 
+it('does not clear retained evidence merely because a missing span stopped loading', async () => {
+  const a = span('1'.repeat(16))
+  const b = { ...span('2'.repeat(16)), traceID: 'b'.repeat(32) }
+  const nodes = new Map([
+    [referenceKey(a), { spanData: a, depth: 0, matched: true }],
+  ])
+  vi.spyOn(telemetryAPI, 'getSpanLogs').mockResolvedValue([
+    log(a, 'Retained A log'),
+  ])
+  vi.spyOn(telemetryAPI, 'getTraceLogSummaries').mockResolvedValue([])
+  const props = { experiment, row: row(a), telemetryNodes: nodes }
+  const view = render(EvalRowDetail, props)
+  const original = await screen.findByText(`output-${a.spanID}`)
+  const originalLog = await screen.findByText('Retained A log')
+  await screen.findByText('[1 trace | 1 log]')
+  await view.rerender({
+    componentProps: { ...props, row: row(b), telemetryLoading: true },
+  })
+  await view.rerender({
+    componentProps: { ...props, row: row(b), telemetryLoading: false },
+  })
+  expect(screen.getByText(`output-${a.spanID}`)).toBe(original)
+  expect(screen.getByText('Retained A log')).toBe(originalLog)
+  expect(screen.queryByText(/0 logs/)).toBeNull()
+  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
+  await fireEvent.click(screen.getByRole('button', { name: 'Copy body' }))
+  expect(copyText).toHaveBeenLastCalledWith('Retained A log')
+  await view.rerender({
+    componentProps: {
+      ...props,
+      row: row(b),
+      telemetryStatus: new Map([[b.traceID, 'ready']]),
+    },
+  })
+  expect(screen.queryByText(`output-${a.spanID}`)).toBeNull()
+  expect(screen.queryByText('Retained A log')).toBeNull()
+})
+
 function log(owner: SpanData, body: string): LogData {
   return {
     logRef: `log-${owner.spanID}`,

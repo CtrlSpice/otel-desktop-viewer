@@ -247,28 +247,24 @@
     new Map<string, { pending: boolean; failed: boolean }>()
   )
   const activityLoading = $derived(
-    traceViews.some(
-      trace =>
-        activityProgress.get(trace.traceID.toLowerCase())?.pending ?? true
-    )
+    [...activityProgress.values()].some(part => part.pending)
   )
   const activityFailed = $derived(
     [...activityProgress.values()].some(part => part.failed)
   )
   let activityRequest = $state.raw<AbortSignal>()
   function loadTraceActivity(
-    trace: TraceData,
+    traceID: string,
     source: EvalExperiment,
-    controller: AbortController
+    controller: AbortController,
+    retainedTrace?: TraceData
   ) {
     const experimentID = source.id
-    const traceID = trace.traceID.toLowerCase()
     const prefix = `${traceID}/`
-    const nodes = indexEvalTraces([trace]).nodes
-    const traces = [trace]
-    const summaries = new Map<string, EvalRequestPart<TraceLogSummary[]>>(
-      traces.map(trace => [trace.traceID.toLowerCase(), { status: 'pending' }])
-    )
+    let nodes = indexEvalTraces(retainedTrace ? [retainedTrace] : []).nodes
+    const summaries = new Map<string, EvalRequestPart<TraceLogSummary[]>>([
+      [traceID, { status: 'pending' }],
+    ])
     const owners = new Map<string, EvalRequestPart<LogData[]>>()
     const previousLogs = untrack(() => displayedLogs)
     const received = new Map(
@@ -289,16 +285,7 @@
         spanID: reference.spanID,
       })
     }
-    const nativeOwners = new Map<string, SpanData>()
-    for (const { spanData: span } of nodes.values()) {
-      const callID = uniqueToolCallID(span, nodes)
-      if (!callID) continue
-      for (const owner of toolLogOwners([span], nodes, callID).slice(1)) {
-        const key = referenceKey(owner)
-        nativeOwners.set(key, owner)
-        independentOwners.set(key, owner)
-      }
-    }
+    const explicitOwners = new Map(independentOwners)
     const summaryOwners = new Map<string, Set<string>>()
     const ownerControllers = new Map<string, AbortController>()
     function publishProgress() {
@@ -383,56 +370,71 @@
           }
         )
     }
-    publishProgress()
-    for (const owner of nativeOwners.values()) requestOwner(owner)
-    // Refresh known explicit owners even if summary discovery no longer lists them.
-    for (const key of received.keys()) {
-      const owner = independentOwners.get(key)
-      if (owner) requestOwner(owner)
-    }
-    const traceIDs = new Set(traces.map(trace => trace.traceID.toLowerCase()))
-    for (const key of received.keys())
-      if (!traceIDs.has(key.split('/')[0]!) && !independentOwners.has(key))
-        received.delete(key)
-    publishLogs()
-    for (const trace of traces) {
-      void telemetryAPI
-        .getTraceLogSummaries(trace.traceID, controller.signal)
-        .then(
-          logs => {
-            if (controller.signal.aborted) return
-            const id = trace.traceID.toLowerCase()
-            summaries.set(id, { status: 'ready', value: logs })
-            const previous = untrack(() => displayedTimeline)
-            const timeline = new Map(
-              previous?.experimentID === experimentID ? previous.timeline : []
-            )
-            timeline.set(id, logs)
-            displayedTimeline = { experimentID, timeline }
-            const discovered = new Map<string, SpanData>()
-            for (const log of logs) {
-              if (
-                !log.spanID ||
-                !['tool.execution', 'tool.execution.start'].includes(
-                  log.eventName
-                )
-              )
-                continue
-              const owner = nodes.get(
-                referenceKey({ traceID: id, spanID: log.spanID })
-              )?.spanData
-              if (owner) discovered.set(referenceKey(owner), owner)
-            }
-            replaceSummaryOwners(id, new Set(discovered.keys()))
-            for (const owner of discovered.values()) requestOwner(owner)
-            publishProgress()
-          },
-          () => {
-            summaries.set(trace.traceID.toLowerCase(), { status: 'failed' })
-            publishProgress()
-          }
+    function updateTrace(trace: TraceData) {
+      if (controller.signal.aborted) return
+      nodes = indexEvalTraces([trace]).nodes
+      independentOwners.clear()
+      for (const [key, owner] of explicitOwners)
+        independentOwners.set(key, owner)
+      for (const { spanData: span } of nodes.values()) {
+        if (
+          !span.attributes.some(
+            attribute =>
+              attribute.key === 'gen_ai.operation.name' &&
+              attribute.value.kind === 'string' &&
+              attribute.value.value === 'execute_tool'
+          )
         )
+          continue
+        const callID = uniqueToolCallID(span, nodes)
+        for (const owner of toolLogOwners([span], nodes, callID))
+          independentOwners.set(referenceKey(owner), owner)
+      }
+      const summary = summaries.get(traceID)
+      if (summary?.status === 'ready') discoverSummaryOwners(summary.value)
+      for (const owner of independentOwners.values()) requestOwner(owner)
+      publishProgress()
     }
+    function discoverSummaryOwners(logs: TraceLogSummary[]) {
+      const discovered = new Map<string, OwnerReference>()
+      for (const log of logs) {
+        if (
+          !log.spanID ||
+          !['tool.execution', 'tool.execution.start'].includes(log.eventName)
+        )
+          continue
+        const owner = nodes.get(
+          referenceKey({ traceID, spanID: log.spanID })
+        )?.spanData
+        if (owner) discovered.set(referenceKey(owner), owner)
+      }
+      replaceSummaryOwners(traceID, new Set(discovered.keys()))
+      for (const owner of discovered.values()) requestOwner(owner)
+    }
+    publishProgress()
+    if (retainedTrace) updateTrace(retainedTrace)
+    // Exact recorded IDs authorize these requests without span or summary discovery.
+    for (const owner of independentOwners.values()) requestOwner(owner)
+    publishLogs()
+    void telemetryAPI.getTraceLogSummaries(traceID, controller.signal).then(
+      logs => {
+        if (controller.signal.aborted) return
+        summaries.set(traceID, { status: 'ready', value: logs })
+        const previous = untrack(() => displayedTimeline)
+        const timeline = new Map(
+          previous?.experimentID === experimentID ? previous.timeline : []
+        )
+        timeline.set(traceID, logs)
+        displayedTimeline = { experimentID, timeline }
+        discoverSummaryOwners(logs)
+        publishProgress()
+      },
+      () => {
+        if (controller.signal.aborted) return
+        summaries.set(traceID, { status: 'failed' })
+        publishProgress()
+      }
+    )
     controller.signal.addEventListener(
       'abort',
       () => {
@@ -441,6 +443,7 @@
       },
       { once: true }
     )
+    return updateTrace
   }
   function selectActivity(record: TimelineRecord, span: SpanTiming) {
     const params = new URLSearchParams({ span: span.spanID })
@@ -533,6 +536,12 @@
         .map(trace => [trace.traceID.toLowerCase(), trace])
     )
     const completed = new Set<string>()
+    const activity = new Map(
+      ids.map(id => [
+        id,
+        loadTraceActivity(id, source, controller, received.get(id)),
+      ])
+    )
     function publishTrace(trace: TraceData) {
       if (controller.signal.aborted) return
       const id = trace.traceID.toLowerCase()
@@ -546,15 +555,11 @@
           received.has(id) ? [received.get(id)!] : []
         ),
       }
-      loadTraceActivity(trace, source, controller)
+      activity.get(id)?.(trace)
     }
     function failedTrace(id: string) {
       if (controller.signal.aborted || completed.has(id)) return
       traceStatus = new Map(untrack(() => traceStatus)).set(id, 'failed')
-      activityProgress = new Map(untrack(() => activityProgress)).set(id, {
-        pending: false,
-        failed: true,
-      })
     }
     void telemetryAPI
       .getReferencedTraceViews(references, controller.signal, result => {
@@ -997,7 +1002,7 @@
       label={timingsLoading ? 'Loading telemetry…' : 'Loading tool evidence…'}
       class="text-sm text-subtle"
     />
-    {#if !activityLoading && activityFailed}
+    {#if activityFailed || timingsFailed}
       <span class="truncate text-sm text-subtle" role="status"
         >Tool evidence could not be loaded.</span
       >

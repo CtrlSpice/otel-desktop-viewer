@@ -93,8 +93,11 @@
   let experimentListLoading = $state(false)
   let experimentListLoadingMore = $state(false)
   let experimentListError = $state('')
+  let moreExperimentsError = $state('')
   let experimentListRevision = $state(0)
   let experimentListRequestVersion = 0
+  let experimentListRequestKey = $state.raw<AbortSignal>()
+  let moreExperimentsRequestKey = $state.raw<AbortSignal>()
   let moreExperimentsController: AbortController | undefined
   let displayedListRequest:
     { query: EvalExperimentSearch; limit: number } | undefined
@@ -181,15 +184,16 @@
   let storedExperimentSource = $state<EvalSourceDataset>()
   let storedExperimentProjection = $state<EvalSourceProjection>()
   let storedExperimentLoading = $state(false)
+  let storedExperimentRequestKey = $state.raw<AbortSignal>()
   let storedExperimentError = $state('')
-  const loadingResults = $derived(
-    experimentListLoading || storedExperimentLoading
-  )
   const loadingNotice = createLoadingNotice(
-    () => loadingResults,
-    () => selectedExperimentID
+    () => storedExperimentLoading,
+    () => storedExperimentRequestKey
   )
-  const loadingMoreNotice = createLoadingNotice(() => experimentListLoadingMore)
+  const loadingMoreNotice = createLoadingNotice(
+    () => experimentListLoadingMore,
+    () => moreExperimentsRequestKey
+  )
 
   const localExperiment = $derived(
     localExperiments.find(item => item.id === query.experiment) ??
@@ -311,6 +315,7 @@
     }
     const requestVersion = ++experimentListRequestVersion
     const controller = new AbortController()
+    experimentListRequestKey = controller.signal
     experimentListLoading = true
     experimentListError = ''
     const search: EvalExperimentSearch = {
@@ -332,6 +337,7 @@
           )
             return
           cancelPagination()
+          moreExperimentsError = ''
           displayedListRequest = { query: search, limit: cap }
           storedExperiments = page.experiments
           storedFacets = page.facets
@@ -365,6 +371,7 @@
     storedExperimentLoading = Boolean(enabled && id)
     if (!enabled || !id) return
     const controller = new AbortController()
+    storedExperimentRequestKey = controller.signal
     void (async () => {
       try {
         const { summary, source } = await loadEvalExperimentSource(
@@ -469,9 +476,10 @@
       return
     const requestVersion = experimentListRequestVersion
     const controller = new AbortController()
+    moreExperimentsRequestKey = controller.signal
     moreExperimentsController = controller
     experimentListLoadingMore = true
-    experimentListError = ''
+    moreExperimentsError = ''
     try {
       const page = await evalAPI.searchEvalExperiments(
         {
@@ -501,7 +509,7 @@
         !controller.signal.aborted &&
         !isAbortError(error)
       )
-        experimentListError =
+        moreExperimentsError =
           error instanceof Error
             ? error.message
             : 'Could not load more experiments.'
@@ -566,6 +574,14 @@
     />
   {/snippet}
   {#snippet drawerFooter()}
+    <LoadingStatus
+      pending={databaseMode &&
+        experimentListLoading &&
+        visibleExperiments.length > 0}
+      requestKey={experimentListRequestKey}
+      label="Loading experiments…"
+      class="block px-3 py-2 text-sm text-subtle"
+    />
     <div class="flex justify-center">
       <DetailNav
         index={selectedExperimentIndex}
@@ -577,7 +593,7 @@
         onLast={() => selectExperimentIndex(visibleExperiments.length - 1)}
       />
     </div>
-    {#if (databaseMode && (experimentIndexing.remaining || experimentIndexing.unsupported || experimentIndexing.empty || experimentListHasMore)) || experimentListError}
+    {#if (databaseMode && (experimentIndexing.remaining || experimentIndexing.unsupported || experimentIndexing.empty || experimentListHasMore)) || experimentListError || moreExperimentsError}
       <div class="flex min-w-0 flex-col px-2 py-1 text-sm">
         <LoadingStatus
           pending={databaseMode && experimentIndexing.remaining > 0}
@@ -592,6 +608,9 @@
           </p>{/if}
         {#if experimentListError}<p class="px-2 py-1" role="alert">
             {experimentListError}
+          </p>{/if}
+        {#if moreExperimentsError}<p class="px-2 py-1" role="alert">
+            {moreExperimentsError}
           </p>{/if}
         {#if databaseMode && experimentListHasMore}<button
             type="button"
@@ -658,7 +677,7 @@
       />
       <LoadingStatus
         pending={storedExperimentLoading}
-        requestKey={selectedExperimentID}
+        requestKey={storedExperimentRequestKey}
         label="Loading experiment…"
         class="p-3 text-sm text-subtle"
       />
@@ -670,11 +689,12 @@
       />
       <p class="p-3 text-sm" role="alert">{storedExperimentError}</p>
     {:else if experimentListLoading}
-      {#if loadingNotice.visible}
-        <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
-          Loading evals…
-        </div>
-      {/if}
+      <LoadingStatus
+        pending={experimentListLoading}
+        requestKey={experimentListRequestKey}
+        label="Loading evals…"
+        class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle"
+      />
     {:else if !experimentListError}
       <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
         <p>No evals found</p>
@@ -718,6 +738,7 @@
             {experimentCopy}
             {telemetryNodes}
             {telemetryLoading}
+            {telemetryStatus}
           />
         </div>
       </div>

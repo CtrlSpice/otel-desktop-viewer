@@ -314,7 +314,9 @@ it('retains the recorded result start and exact Copy when its spans are unavaila
     indexEvalTraces([])
   ).find(row => row.kind === 'result')!
   const view = render(EvalRowDetail, { experiment, row, mode: 'results' })
-  expect(screen.getAllByText('Span unavailable').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Span lookup unavailable').length).toBeGreaterThan(
+    0
+  )
 
   for (const mode of ['results', 'time'] as const) {
     await view.rerender({ componentProps: { experiment, row, mode } })

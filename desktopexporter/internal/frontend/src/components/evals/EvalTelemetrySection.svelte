@@ -6,18 +6,20 @@
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import type { EvalTelemetrySummary } from './eval-telemetry-summaries'
-  import type { EvalRequestPart } from './eval-request-state'
+  import type { EvalRequestPart, EvalRequestStatus } from './eval-request-state'
 
   let {
     entries,
     nodes,
     loading = false,
+    status,
     wholeTraces = false,
     evidenceLogs,
   }: {
     entries: EvalTelemetrySummary[]
     nodes?: Map<string, SpanNode>
     loading?: boolean
+    status?: ReadonlyMap<string, EvalRequestStatus>
     wholeTraces?: boolean
     evidenceLogs?: LogData[]
   } = $props()
@@ -162,7 +164,10 @@
       {entries}
       {nodes}
       {loading}
-      ontracecount={count => (traceCount = count)}
+      {status}
+      ontracecount={count => {
+        if (count !== undefined) traceCount = count
+      }}
     />
   {/if}
 </DetailBubble>
