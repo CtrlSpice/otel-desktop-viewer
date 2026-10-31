@@ -69,6 +69,7 @@ it.each(['failure', 'pagination'])(
     const props = {
       service: b,
       services: [a, b],
+      servicesLoaded: true,
       options: {},
       revision: 0,
       selection: null,
@@ -179,6 +180,7 @@ it('shows ready services immediately and retains the canvas and connections duri
   const props = {
     service,
     services: [service],
+    servicesLoaded: true,
     options: {},
     revision: 0,
     selection: { kind: 'service' as const, service },
@@ -225,6 +227,7 @@ it('restarts the service-map feedback grace period when service discovery is rep
     selection: null,
     onSelect: vi.fn(),
     services: [],
+    servicesLoaded: false,
     loadingServices: true,
     servicesRequestKey: new AbortController().signal,
     servicesError: '',
@@ -246,3 +249,168 @@ it('restarts the service-map feedback grace period when service discovery is rep
   await vi.advanceTimersByTimeAsync(200)
   expect(view.queryByRole('status')).toBeNull()
 })
+
+it('keeps initial counts unknown until discovery succeeds and retains confirmed zeros on refresh', async () => {
+  vi.useFakeTimers()
+  const view = render(ServiceMap, {
+    service: null,
+    services: [],
+    servicesLoaded: false,
+    options: {},
+    revision: 0,
+    selection: null,
+    onSelect: vi.fn(),
+    loadingServices: false,
+    servicesError: '',
+    moreServices: false,
+    onMoreServices: vi.fn(),
+  })
+  const header = view.getByRole('region', { name: 'Service map' })
+  expect(header).not.toHaveTextContent(/\d+ (services|connections)/)
+  expect(
+    view.queryByText('No services match this search and time range.')
+  ).toBeNull()
+  await view.rerender({ loadingServices: true })
+  await vi.advanceTimersByTimeAsync(199)
+  expect(view.queryByText('Loading service map…')).toBeNull()
+  expect(header).not.toHaveTextContent(/\d+ (services|connections)/)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(view.getByText('Loading service map…')).toBeVisible()
+  await view.rerender({
+    loadingServices: false,
+    servicesError: 'Discovery failed',
+  })
+  expect(header).not.toHaveTextContent(/\d+ (services|connections)/)
+  expect(view.getByRole('alert')).toHaveTextContent('Discovery failed')
+  expect(
+    view.queryByText('No services match this search and time range.')
+  ).toBeNull()
+  await view.rerender({ servicesLoaded: true, servicesError: '' })
+  expect(header).toHaveTextContent('0 services · 0 connections')
+  expect(
+    view.getByText('No services match this search and time range.')
+  ).toBeVisible()
+  await view.rerender({ loadingServices: true, revision: 1 })
+  expect(header).toHaveTextContent('0 services · 0 connections')
+  await view.rerender({
+    loadingServices: false,
+    servicesError: 'Refresh failed',
+  })
+  expect(header).toHaveTextContent('0 services · 0 connections')
+  expect(view.getByRole('region', { name: 'Service map' })).toBe(header)
+})
+
+it.each(['empty', 'connection'])(
+  'publishes a successful %s sibling without turning unfinished connection discovery into zero',
+  async outcome => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
+    const a: ServiceSummary = {
+      serviceName: 'A',
+      serviceNamespace: '',
+      traceCount: 1,
+      spanCount: 1,
+      errorSpanCount: 0,
+      logCount: 0,
+      errorLogCount: 0,
+      logSeverityCounts: {
+        trace: 0,
+        debug: 0,
+        info: 0,
+        warn: 0,
+        error: 0,
+        fatal: 0,
+        other: 0,
+      },
+      metricCount: 0,
+      dataPointCount: 0,
+      exemplarCount: 0,
+      lastSeen: null,
+    }
+    const b = { ...a, serviceName: 'B' }
+    const edge: ServiceConnection = {
+      source: a,
+      target: b,
+      spanCount: 1,
+      traceCount: 1,
+      errorSpanCount: 0,
+    }
+    type Page = Awaited<
+      ReturnType<typeof telemetryAPI.discoverServiceConnections>
+    >
+    const pending = new Map<
+      string,
+      ReturnType<typeof Promise.withResolvers<Page>>
+    >()
+    const lookup = vi
+      .spyOn(telemetryAPI, 'discoverServiceConnections')
+      .mockImplementation(options => {
+        const request = Promise.withResolvers<Page>()
+        pending.set(options.serviceIdentity!, request)
+        return request.promise
+      })
+    const props = {
+      service: null,
+      services: [a, b],
+      servicesLoaded: true,
+      options: {},
+      revision: 0,
+      selection: null,
+      onSelect: vi.fn(),
+      loadingServices: false,
+      servicesError: '',
+      moreServices: false,
+      onMoreServices: vi.fn(),
+    }
+    const view = renderWithContexts(ServiceMap, props)
+    const header = view.getByRole('region', {
+      name: 'Service map',
+    })
+    await waitFor(() => expect(lookup).toHaveBeenCalledTimes(2))
+    expect(header).toHaveTextContent('2 services')
+    expect(header).not.toHaveTextContent(/\d+ connections?/)
+    const aRequest = pending.get(serviceIdentity(a))!
+    const bRequest = pending.get(serviceIdentity(b))!
+    aRequest.resolve({
+      items: outcome === 'connection' ? [edge] : [],
+      truncated: false,
+    })
+    await tick()
+    if (outcome === 'connection')
+      await waitFor(() =>
+        expect(header).toHaveTextContent('2 services · 1 connection')
+      )
+    else expect(header).not.toHaveTextContent(/\d+ connections?/)
+    expect(lookup).toHaveBeenCalledTimes(2)
+    expect(lookup.mock.calls[1][1]?.aborted).toBe(false)
+    bRequest.reject(new Error('B unavailable'))
+    await view.findByRole('alert')
+    if (outcome === 'connection')
+      expect(header).toHaveTextContent('2 services · 1 connection')
+    else expect(header).not.toHaveTextContent(/\d+ connections?/)
+    await fireEvent.click(view.getByRole('button', { name: 'Retry' }))
+    pending.get(serviceIdentity(b))!.resolve({ items: [], truncated: false })
+    const count = outcome === 'connection' ? '1 connection' : '0 connections'
+    await waitFor(() =>
+      expect(header).toHaveTextContent(`2 services · ${count}`)
+    )
+    const canvas = view.container.querySelector('.service-map__canvas')
+    await view.rerender({
+      componentProps: { ...props, revision: 1, loadingServices: true },
+    })
+    await waitFor(() => expect(lookup).toHaveBeenCalledTimes(5))
+    expect(header).toHaveTextContent(`2 services · ${count}`)
+    for (const request of pending.values())
+      request.reject(new Error('Refresh unavailable'))
+    await waitFor(() => expect(view.getAllByRole('alert')).toHaveLength(2))
+    await view.rerender({
+      componentProps: {
+        ...props,
+        revision: 1,
+        servicesError: 'Services unavailable',
+      },
+    })
+    expect(header).toHaveTextContent(`2 services · ${count}`)
+    expect(view.container.querySelector('.service-map__canvas')).toBe(canvas)
+  }
+)

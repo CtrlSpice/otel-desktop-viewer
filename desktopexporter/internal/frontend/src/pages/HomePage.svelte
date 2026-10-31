@@ -466,6 +466,7 @@
     <ServiceMap
       service={inspectedService}
       {services}
+      servicesLoaded={loaded}
       {totalServices}
       loadingServices={loading}
       servicesRequestKey={request?.signal}
