@@ -10,12 +10,177 @@ import {
   type ServiceConnection,
 } from '@/services/discovery-types'
 import { renderWithContexts } from '@/test/render-helpers'
+import type { MapSelection } from './service-map'
 
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
+
+it.each([
+  ['page-first', 'fresh-first'],
+  ['page-first', 'old-first'],
+  ['refresh-first', 'fresh-first'],
+  ['refresh-first', 'old-first'],
+])(
+  'keeps shared-edge generation with %s start and %s settlement',
+  async (start, settlement) => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
+    const a: ServiceSummary = {
+      serviceName: 'A',
+      serviceNamespace: '',
+      traceCount: 1,
+      spanCount: 1,
+      errorSpanCount: 0,
+      logCount: 0,
+      errorLogCount: 0,
+      logSeverityCounts: {
+        trace: 0,
+        debug: 0,
+        info: 0,
+        warn: 0,
+        error: 0,
+        fatal: 0,
+        other: 0,
+      },
+      metricCount: 0,
+      dataPointCount: 0,
+      exemplarCount: 0,
+      lastSeen: null,
+    }
+    const b = { ...a, serviceName: 'B' }
+    const c = { ...a, serviceName: 'C' }
+    const edge: ServiceConnection = {
+      source: a,
+      target: b,
+      spanCount: 1,
+      traceCount: 1,
+      errorSpanCount: 0,
+    }
+    const fresh = { ...edge, spanCount: 9 }
+    const sibling = { ...edge, source: b, target: c }
+    type Page = Awaited<
+      ReturnType<typeof telemetryAPI.discoverServiceConnections>
+    >
+    const work: ReturnType<typeof Promise.withResolvers<Page>>[] = []
+    const read = vi
+      .spyOn(telemetryAPI, 'discoverServiceConnections')
+      .mockImplementation(() => {
+        const request = Promise.withResolvers<Page>()
+        work.push(request)
+        return request.promise
+      })
+    const oldOptions = { startTime: '100', endTime: '200' }
+    const newOptions = { startTime: '300', endTime: '400' }
+    const props = {
+      service: b,
+      services: [a, b],
+      servicesLoaded: true,
+      options: oldOptions,
+      revision: 0,
+      selection: null as MapSelection | null,
+      onSelect: vi.fn(),
+      onUpdateSelection: vi.fn(),
+      loadingServices: false,
+      servicesError: '',
+      moreServices: false,
+      onMoreServices: vi.fn(),
+    }
+    const view = renderWithContexts(ServiceMap, props)
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    work[0].resolve({ items: [edge], truncated: false })
+    work[1].resolve({ items: [edge], truncated: true })
+    await waitFor(() =>
+      expect(
+        view.getByRole('button', { name: 'More connections' })
+      ).toBeEnabled()
+    )
+    await tick()
+    const canvas = view.container.querySelector('.service-map__canvas')
+    const requestPage = () =>
+      fireEvent.click(view.getByRole('button', { name: 'More connections' }))
+    if (start === 'page-first') await requestPage()
+    await view.rerender({
+      componentProps: { ...props, options: newOptions, revision: 1 },
+    })
+    if (start === 'refresh-first') await requestPage()
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(5))
+    const oldIndex = start === 'page-first' ? 2 : 4
+    const aIndex = start === 'page-first' ? 3 : 2
+    const bIndex = aIndex + 1
+    expect(read.mock.calls[oldIndex][0]).toMatchObject({
+      ...oldOptions,
+      offset: 1,
+      serviceIdentity: serviceIdentity(b),
+    })
+    expect(read.mock.calls[aIndex][0]).toMatchObject({
+      ...newOptions,
+      offset: 0,
+      serviceIdentity: serviceIdentity(a),
+    })
+    const publishOld = async () => {
+      work[oldIndex].resolve({ items: [edge, sibling], truncated: false })
+      await view.findByRole('button', {
+        name: 'B → C: 1 parent-child connections in 1 traces',
+      })
+      expect(read.mock.calls[oldIndex][1]?.aborted).toBe(false)
+    }
+    if (settlement === 'old-first') await publishOld()
+    work[aIndex].resolve({ items: [fresh], truncated: false })
+    const freshButton = await view.findByRole('button', {
+      name: 'A → B: 9 parent-child connections in 1 traces',
+    })
+    const selected: MapSelection = {
+      kind: 'connection',
+      connection: fresh,
+      options: newOptions,
+      revision: 1,
+    }
+    await view.rerender({
+      componentProps: {
+        ...props,
+        options: newOptions,
+        revision: 1,
+        selection: selected,
+      },
+    })
+    props.onUpdateSelection.mockClear()
+    if (settlement === 'fresh-first') await publishOld()
+    expect(freshButton).toHaveAttribute(
+      'aria-label',
+      'A → B: 9 parent-child connections in 1 traces'
+    )
+    expect(props.onUpdateSelection).not.toHaveBeenCalled()
+    await fireEvent.click(freshButton)
+    expect(props.onSelect).toHaveBeenLastCalledWith(selected)
+    expect(view.container.querySelector('.service-map__canvas')).toBe(canvas)
+    expect(view.queryByRole('button', { name: 'More connections' })).toBeNull()
+    // A failed replacement cannot remove B's independently published membership.
+    work[bIndex].reject(new Error('B unavailable'))
+    await view.findByRole('alert')
+    expect(
+      view.getByRole('button', {
+        name: 'B → C: 1 parent-child connections in 1 traces',
+      })
+    ).toBeInTheDocument()
+    await fireEvent.click(view.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(6))
+    work[5].resolve({ items: [], truncated: false })
+    await waitFor(() =>
+      expect(
+        view.queryByRole('button', {
+          name: 'B → C: 1 parent-child connections in 1 traces',
+        })
+      ).toBeNull()
+    )
+    expect(freshButton).toHaveAttribute(
+      'aria-label',
+      'A → B: 9 parent-child connections in 1 traces'
+    )
+  }
+)
 
 it.each(['failure', 'pagination'])(
   'keeps a fresh edge when a sibling retains an older copy: %s',
