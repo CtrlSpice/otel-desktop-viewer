@@ -373,6 +373,14 @@
     timezoneName: string | undefined
     revision: number
   }>()
+  // Scalar source lines and their aggregate share one coordinate system.
+  // Keep a replacement private until both answers can replace that chart.
+  let pendingScalarDetail = $state.raw<{
+    metric: MetricViewData
+    scope: NonNullable<typeof displayedDatapointScope>
+    summary: MetricSelection
+    requestedDatapointSeries: string[] | undefined
+  }>()
   const seriesScopeKey = $derived(
     JSON.stringify([
       seriesDatapointsMetricID,
@@ -470,6 +478,7 @@
     void detailRefresh
     const requestedID = page.selectedID
     const id = selectedMetricRef
+    pendingScalarDetail = undefined
     detailController?.abort()
     ++detailToken
     if (!id) {
@@ -495,8 +504,9 @@
     aggregateSummaryLoading = false
     aggregateError = ''
     aggregateSummaryError = ''
-    const summary = displayedMetricSummary
-    const metric = selectedMetric
+    const pending = pendingScalarDetail
+    const summary = pending?.summary ?? displayedMetricSummary
+    const metric = pending?.metric ?? selectedMetric
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
     const scalar =
@@ -517,6 +527,7 @@
       selectedScalarAggregate = null
       aggregateScope = undefined
       aggregateSummaryScope = undefined
+      if (pending) untrack(() => publishMetricDetail(pending))
       return
     }
     const bounds = effectiveMetricBounds(metric)
@@ -526,16 +537,30 @@
       selectedScalarAggregate = null
       aggregateScope = undefined
       aggregateSummaryScope = undefined
+      if (pending) untrack(() => publishMetricDetail(pending))
       return
     }
+
+    // An atomic scalar publication already includes this exact aggregate.
+    if (
+      scalar &&
+      untrack(
+        () =>
+          aggregateScope?.metric === metric &&
+          JSON.stringify(aggregateScope.visibleKeys) ===
+            JSON.stringify(visibleKeys)
+      )
+    )
+      return
 
     aggregateLoading = true
     aggregateSummaryLoading = !scalar
     const scope: AggregateScope = {
       metric,
       visibleKeys,
-      timezoneOffsetNs: displayedDatapointScope?.timezoneOffsetNs ?? 0,
-      timezoneName: displayedDatapointScope?.timezoneName,
+      timezoneOffsetNs:
+        (pending?.scope ?? displayedDatapointScope)?.timezoneOffsetNs ?? 0,
+      timezoneName: (pending?.scope ?? displayedDatapointScope)?.timezoneName,
     }
     const requestAggregates = () => {
       void fetchAggregate(scope, bounds, token, false, controller.signal)
@@ -589,9 +614,14 @@
           selectedAggregateSummary = result?.aggregate?.[0] ?? null
           aggregateSummaryScope = scope
         } else {
+          const pending = pendingScalarDetail
+          if (pending?.metric === scope.metric) publishMetricDetail(pending)
           selectedAggregate = result?.aggregate ?? null
           selectedScalarAggregate = result?.scalarAggregate ?? null
-          aggregateScope = scope
+          aggregateScope =
+            pending?.metric === scope.metric && selectedMetric
+              ? { ...scope, metric: selectedMetric }
+              : scope
         }
       }
     } catch (err) {
@@ -986,32 +1016,19 @@
         detailError = 'The selected metric was not found.'
         return
       }
-      // The store's default limit uses the response's own series order. Replace
-      // this set with each response so a refresh or scope change loads afresh.
-      chartDatapoints.clear()
-      loadedDatapointSeries = new Set(
-        requestedDatapointSeries ??
-          result?.timeseries
-            .slice(0, DEFAULT_VISIBLE_TIMESERIES)
-            .map(ts => ts.seriesRef) ??
-          []
-      )
-      if (
-        selectedMetric?.metricRef !== result?.metricRef ||
-        selectedMetric?.metricType !== result?.metricType
-      ) {
-        selectedAggregate = null
-        selectedAggregateSummary = null
-        selectedScalarAggregate = null
-        aggregateScope = undefined
-        aggregateSummaryScope = undefined
+      const detail = {
+        metric: result,
+        scope,
+        summary,
+        requestedDatapointSeries,
       }
-      selectedMetric = result
-      displayedDatapointScope = scope
-      detailRevision = scope.revision
-      displayedMetricSummary = summary
-      // Seed state before the result renders.
-      metricCtx.seedForMetric(selectedMetric)
+      if (
+        selectedScalarAggregate &&
+        selectedMetric?.metricRef === result.metricRef &&
+        selectedMetric.metricType === result.metricType
+      ) {
+        pendingScalarDetail = detail
+      } else publishMetricDetail(detail)
     } catch (err) {
       if (controller.signal.aborted || token !== detailToken) return
       console.error('Failed to fetch metric detail:', err)
@@ -1021,6 +1038,41 @@
       if (!controller.signal.aborted && token === detailToken)
         detailLoading = false
     }
+  }
+
+  function publishMetricDetail({
+    metric: result,
+    scope,
+    summary,
+    requestedDatapointSeries,
+  }: NonNullable<typeof pendingScalarDetail>) {
+    const changedIdentity =
+      selectedMetric?.metricRef !== result.metricRef ||
+      selectedMetric?.metricType !== result.metricType
+    // The store's default limit uses the response's own series order. Replace
+    // this set with each response so a refresh or scope change loads afresh.
+    chartDatapoints.clear()
+    loadedDatapointSeries = new Set(
+      requestedDatapointSeries ??
+        result?.timeseries
+          .slice(0, DEFAULT_VISIBLE_TIMESERIES)
+          .map(ts => ts.seriesRef) ??
+        []
+    )
+    if (changedIdentity) {
+      selectedAggregate = null
+      selectedAggregateSummary = null
+      selectedScalarAggregate = null
+      aggregateScope = undefined
+      aggregateSummaryScope = undefined
+    }
+    selectedMetric = result
+    displayedDatapointScope = scope
+    detailRevision = scope.revision
+    displayedMetricSummary = summary
+    // Seed state before the result renders.
+    if (changedIdentity) metricCtx.seedForMetric(selectedMetric)
+    pendingScalarDetail = undefined
   }
 
   async function handleDeleteMetric(metricRef: string) {
