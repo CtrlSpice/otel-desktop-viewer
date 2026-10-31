@@ -56,6 +56,7 @@
           fieldName={attribute.key}
           fieldType={attribute.value.kind}
           typedValue={attribute.value}
+          sourceKey={attribute.value}
           fieldKind="attribute"
         />
       {/each}

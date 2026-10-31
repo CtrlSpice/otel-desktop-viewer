@@ -62,6 +62,7 @@
       row.reference && referenceKey(row.reference),
     ])
   )
+  const copySource = $derived({ source: sourceCopy, selection: requested })
   const spanRequest = $derived.by(() => {
     const nodes = telemetryNodes
     const reference = row.reference
@@ -92,7 +93,7 @@
       ? (telemetryStatus.get(row.reference.traceID.toLowerCase()) ?? 'pending')
       : telemetryLoading
         ? 'pending'
-        : 'ready'
+        : undefined
   )
   let displayedSpans = $state.raw<typeof spanRequest>()
   $effect(() => {
@@ -412,6 +413,7 @@
               fieldType="string"
               fieldValue={result.question}
               loadText={sourceCopy?.(result.id, 'question')}
+              sourceKey={copySource}
               multiline
             />
           </tbody>
@@ -444,6 +446,7 @@
                   : 'string'}
                 fieldValue={prose}
                 loadText={proseCopy}
+                sourceKey={copySource}
                 multiline
               >
                 {#snippet value()}
@@ -469,6 +472,7 @@
               fieldType="string"
               fieldValue={result.error}
               loadText={sourceCopy?.(result.id, 'error')}
+              sourceKey={copySource}
               multiline
             /></tbody
           >
@@ -528,6 +532,7 @@
             loadText={members[0]
               ? sourceCopy?.(members[0].id, 'name')
               : undefined}
+            sourceKey={copySource}
           />
         {/if}
       </tbody>
@@ -587,6 +592,7 @@
       <ValueCopyButton
         text={overallInput.text}
         loadText={overallInput.loadText}
+        sourceKey={overallInput}
         label="grader input"
       />
     </span>
@@ -597,14 +603,9 @@
     entries={references}
     nodes={telemetryNodes}
     loading={telemetryLoading}
+    status={telemetryStatus}
     wholeTraces={row.kind === 'result' || row.kind === 'case'}
-    evidenceLogs={span &&
-    (row.kind === 'tool' ||
-      row.kind === 'span' ||
-      row.kind === 'grader' ||
-      row.kind === 'execution')
-      ? evidenceLogs
-      : []}
+    evidenceLogs={spanRequest.applicable ? evidenceLogs : []}
   />
 {/snippet}
 <DetailStack

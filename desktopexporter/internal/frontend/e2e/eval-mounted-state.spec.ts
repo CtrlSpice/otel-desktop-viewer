@@ -1,6 +1,7 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
+import { exampleExperiments } from '../src/components/evals/examples'
 
 declare global {
   interface Window {
@@ -472,6 +473,312 @@ test('retained experiment pagination uses the displayed list query after a faile
   await expect(list.getByRole('button', { name: /^Alpha/ })).toBeVisible()
   expect(fixture.listRequests.at(-1)).toBe('')
   expect(fixture.sourceRequests).toEqual([fixture.alpha.id])
+  await expect(page.getByRole('alert')).toContainText('Replacement unavailable')
+})
+
+test('retained list loading feedback resets after 200ms for each submitted query', async ({
+  page,
+}) => {
+  const fixture = await openWorkspace(page)
+  const beta = fixture.holdList('Beta')
+  const gamma = fixture.holdList('Gamma')
+  const search = page.getByRole('textbox', { name: 'Search evals' })
+  const notice = page.getByText('Loading experiments…', { exact: true })
+  await page.clock.install({ time: 0 })
+  await page.clock.pauseAt(1000)
+  try {
+    await search.fill('Beta')
+    await search.press('Enter')
+    await beta.requested.promise
+    await page.clock.runFor(199)
+    await expect(notice).toHaveCount(0)
+    await page.clock.runFor(1)
+    await expect(notice).toBeVisible()
+    await search.fill('Gamma')
+    await search.press('Enter')
+    await gamma.requested.promise
+    await expect(notice).toHaveCount(0)
+    await page.clock.runFor(199)
+    await expect(notice).toHaveCount(0)
+    await expect(
+      page.getByRole('table', { name: 'Results for Alpha', exact: true })
+    ).toBeVisible()
+    gamma.released.resolve()
+    await gamma.finished.promise
+    await page.clock.resume()
+    await expect(page.getByRole('button', { name: /^Gamma/ })).toBeVisible()
+    await expect(notice).toHaveCount(0)
+    expect(fixture.sourceRequests).toEqual([fixture.alpha.id])
+  } finally {
+    beta.released.resolve()
+    gamma.released.resolve()
+  }
+})
+
+test('starts known native activity before span views and retains identified exact evidence after a failed next span', async ({
+  page,
+}) => {
+  const experiment = exampleExperiments[0]
+  const selected = experiment.results[4]
+  const selectedTrace = selected.telemetry!.traceID
+  const tool = selected.tools[0].telemetry!
+  const references = experiment.results.flatMap(result =>
+    [
+      result.telemetry,
+      ...result.tools.map(tool => tool.telemetry),
+      ...result.assessments.map(assessment => assessment.telemetry),
+    ].flatMap(reference => (reference?.spanID ? [reference] : []))
+  )
+  const traceIDs = [...new Set(references.map(ref => ref.traceID))]
+  const views = new Map(traceIDs.map(id => [id, deferred()]))
+  const summaries = new Map(traceIDs.map(id => [id, deferred()]))
+  const requestedViews = new Set<string>()
+  const requestedSummaries = new Set<string>()
+  const requestedOwners = new Set<string>()
+  const body =
+    'Retained complete browser body 🙂\\\n' +
+    'Exact native log evidence '.repeat(3000)
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.route('**/api/features', route =>
+    route.fulfill({ json: { evals: { enabled: true } } })
+  )
+  await page.route('**/api/evals/experiments?*', route =>
+    route.fulfill({
+      json: {
+        experiments: [],
+        total: 0,
+        hasMore: false,
+        facets: [],
+        indexing: {
+          remaining: 0,
+          unsupported: 0,
+          empty: 0,
+          issues: [],
+          hasMoreIssues: false,
+        },
+      },
+    })
+  )
+  await routeTelemetry(page, async route => {
+    const request = route.request().postDataJSON()
+    const nativeMethod = new URL(route.originalRequest().url()).pathname
+      .split('/')
+      .at(-1)
+    const traceID = request.params?.traceID
+    if (nativeMethod === 'getTraceView') {
+      requestedViews.add(traceID)
+      if (views.has(traceID)) await views.get(traceID)!.promise
+      else
+        return route.fulfill({
+          json: { error: { message: 'Next span lookup failed' } },
+        })
+      return route.fulfill({
+        json: {
+          result: {
+            traceID,
+            traceStart: '1700000000000000000',
+            unplacedSpanCount: 0,
+            resources: {
+              1: {
+                attributes: [
+                  {
+                    key: 'service.name',
+                    value: { kind: 'string', value: 'browser-runner' },
+                  },
+                ],
+                droppedAttributesCount: 0,
+              },
+            },
+            scopes: {
+              1: {
+                name: 'browser',
+                version: '',
+                attributes: [],
+                droppedAttributesCount: 0,
+              },
+            },
+            spans: request.params.spanIDs.map((spanID: string) => ({
+              depth: 0,
+              matched: true,
+              spanData: {
+                spanID,
+                parentSpanID: null,
+                name:
+                  spanID === tool.spanID
+                    ? 'Received native tool'
+                    : 'Received native span',
+                traceState: '',
+                flags: 0,
+                start: '0',
+                dur: '1000000000',
+                r: 1,
+                s: 1,
+                kind: 'Internal',
+                kindCode: 1,
+                statusCode: 'Ok',
+                statusCodeValue: 1,
+                statusMessage: '',
+                attributes: [],
+                events: [],
+                links: [],
+                droppedAttributesCount: 0,
+                droppedEventsCount: 0,
+                droppedLinksCount: 0,
+              },
+            })),
+          },
+        },
+      })
+    }
+    if (nativeMethod === 'getTraceLogSummaries') {
+      requestedSummaries.add(traceID)
+      if (summaries.has(traceID)) await summaries.get(traceID)!.promise
+      return route.fulfill({
+        json: {
+          result:
+            traceID === selectedTrace
+              ? [
+                  {
+                    logRef: '1'.repeat(64),
+                    spanID: tool.spanID,
+                    timestamp: '1700000000500000000',
+                    eventName: 'tool.output',
+                    severityNumber: 0,
+                    severityText: '',
+                    serviceName: 'browser-runner',
+                    bodyPreview: 'Ready activity',
+                  },
+                ]
+              : [],
+        },
+      })
+    }
+    if (nativeMethod === 'getSpanLogs') {
+      requestedOwners.add(`${traceID}/${request.params.spanID}`)
+      return route.fulfill({
+        json: {
+          result: {
+            logs:
+              traceID === selectedTrace && request.params.spanID === tool.spanID
+                ? [
+                    {
+                      logRef: '1'.repeat(64),
+                      traceID,
+                      spanID: tool.spanID,
+                      timestamp: '1700000000500000000',
+                      observedTimestamp: '1700000000500000000',
+                      severityNumber: 0,
+                      severityText: '',
+                      eventName: 'tool.output',
+                      body: { kind: 'string', value: body },
+                      attributes: [],
+                      resource: { attributes: [], droppedAttributesCount: 0 },
+                      scope: {
+                        name: 'browser',
+                        version: '',
+                        attributes: [],
+                        droppedAttributesCount: 0,
+                      },
+                      flags: 0,
+                      droppedAttributesCount: 0,
+                    },
+                  ]
+                : [],
+          },
+        },
+      })
+    }
+    if (nativeMethod === 'searchTraceSummaries')
+      return route.fulfill({
+        json: { error: { message: 'Summary lookup failed' } },
+      })
+    return route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result:
+          request.method === 'getStats'
+            ? {
+                traces: { count: 0 },
+                logs: { count: 0 },
+                metrics: { count: 0 },
+                rejections: [],
+              }
+            : [],
+      },
+    })
+  })
+  try {
+    await page.goto(
+      `/evals?preview=examples&experiment=${experiment.id}&result=${selected.id}&row=${encodeURIComponent(`${selected.id}/tool/0`)}`
+    )
+    await expect.poll(() => requestedViews.size).toBe(traceIDs.length)
+    await expect.poll(() => requestedSummaries.size).toBe(traceIDs.length)
+    await expect.poll(() => requestedOwners.size).toBe(references.length)
+    // The fifth trace can publish without the first four, using the real Arrow decoder.
+    expect(traceIDs[4]).toBe(selectedTrace)
+    views.get(selectedTrace)!.resolve()
+    summaries.get(selectedTrace)!.resolve()
+    const detail = page.locator('#signal-drawer-detail')
+    const evidence = detail.getByRole('group', { name: 'body', exact: true })
+    await expect(evidence).toContainText('Retained complete browser body')
+    await page.getByRole('radio', { name: 'Tool calls', exact: true }).click()
+    await expect(page.locator('.timeline-marker').first()).toBeVisible()
+    const copy = evidence.getByRole('button', {
+      name: 'Copy body',
+      exact: true,
+    })
+    const sameEvidence = await rememberNode(evidence)
+    await copy.focus()
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(body)
+    const next = exampleExperiments[1]
+    await page.evaluate(
+      ({ id, result }) => {
+        history.pushState(
+          null,
+          '',
+          `/evals?preview=examples&experiment=${id}&result=${result}&row=${encodeURIComponent(`${result}/tool/0`)}`
+        )
+        dispatchEvent(new PopStateEvent('popstate'))
+      },
+      { id: next.id, result: next.results[0].id }
+    )
+    await expect(
+      detail.getByText('Referenced span could not be loaded.', { exact: true })
+    ).toBeVisible()
+    await expect(
+      detail
+        .locator('.detail-stack:visible')
+        .getByText('Span lookup failed', { exact: true })
+    ).toBeVisible()
+    await sameEvidence()
+    await expect(
+      evidence.locator('xpath=ancestor::table[1]').locator('caption')
+    ).toContainText(tool.traceID)
+    await expect(
+      detail.getByRole('link').filter({ hasText: tool.traceID })
+    ).toHaveCount(0)
+    const nextRef = next.results[0].tools[0].telemetry!
+    await expect(
+      detail.locator(
+        `a[href="/traces/${nextRef.traceID}?span=${nextRef.spanID}"]`
+      )
+    ).toBeVisible()
+    await copy.focus()
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(body)
+    await expect(
+      detail.locator('.detail-stack:visible').getByText(/0 logs/)
+    ).toHaveCount(0)
+  } finally {
+    for (const gate of views.values()) gate.resolve()
+    for (const gate of summaries.values()) gate.resolve()
+  }
 })
 
 test('a delayed experiment source keeps Results mounted through loading and replacement', async ({

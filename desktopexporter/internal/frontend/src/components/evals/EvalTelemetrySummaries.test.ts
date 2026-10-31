@@ -13,6 +13,7 @@ import { buildEvalOutline } from './eval-outline'
 import { groupResults } from './group-results'
 import { indexEvalTraces, referenceKey } from './eval-traces'
 import { traceHref } from './model'
+import type { EvalRequestStatus } from './eval-request-state'
 
 beforeEach(() => {
   vi.spyOn(telemetryAPI, 'getTraceSummary').mockRejectedValue(
@@ -176,6 +177,50 @@ const node: SpanNode = {
     scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
   },
 }
+
+it('does not call a pending or failed referenced span absent when its trace exists', async () => {
+  const found: TraceSummary = {
+    traceID: reference.traceID,
+    hasRootSpan: true,
+    rootSpan: { name: 'Stored root', serviceName: 'runner' },
+    startTime: 1n,
+    durationNs: 100n,
+    spanCount: 1,
+    errorCount: 0,
+  }
+  vi.mocked(telemetryAPI.getTraceSummary).mockResolvedValue(found)
+  const props = {
+    entries: [{ reference, label: 'Execution' }],
+    status: new Map<string, EvalRequestStatus>([
+      [reference.traceID, 'pending'],
+    ]),
+    loading: true,
+  }
+  const view = render(EvalTelemetrySummaries, props)
+  await waitFor(() =>
+    expect(telemetryAPI.getTraceSummary).toHaveBeenCalledOnce()
+  )
+  expect(screen.queryByText('Span unavailable')).toBeNull()
+  await view.rerender({
+    componentProps: {
+      ...props,
+      loading: false,
+      status: new Map([[reference.traceID, 'failed']]),
+    },
+  })
+  expect(screen.queryByText('Span unavailable')).toBeNull()
+  expect(screen.getByText('Span lookup failed')).toBeVisible()
+  expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(reference))
+  await view.rerender({
+    componentProps: {
+      ...props,
+      loading: false,
+      status: new Map([[reference.traceID, 'ready']]),
+    },
+  })
+  expect(screen.getByText('Span not stored')).toBeVisible()
+  expect(screen.queryByText('Span lookup failed')).toBeNull()
+})
 
 it('keeps unfinished summary lookups when a sibling span arrives', async () => {
   const references = ['a', 'b', 'c'].map(letter => ({
@@ -406,7 +451,7 @@ it('keeps unavailable references navigable and does not borrow a same-ID span fr
     entries: [{ reference: other, label: 'Execution' }],
     nodes: new Map([[referenceKey(reference), node]]),
   })
-  expect(screen.getByText('Span unavailable')).toBeVisible()
+  expect(screen.getByText('Span lookup unavailable')).toBeVisible()
   expect(screen.queryByText('recorded operation')).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(other))
 })

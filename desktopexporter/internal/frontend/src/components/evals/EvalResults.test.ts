@@ -68,6 +68,80 @@ async function showOnlyTime() {
 }
 
 describe('EvalResults repetitions', () => {
+  it.each([true, false])(
+    'starts a newly received native tool owner before its trace summary completes (call ID: %s)',
+    async callID => {
+      const reference = { traceID: 'a'.repeat(32), spanID: '1'.repeat(16) }
+      const views = traceViews([
+        {
+          ...reference,
+          name: 'execution',
+          serviceName: 'runner',
+          startTime: 10n,
+          endTime: 100n,
+          statusCodeValue: 0,
+        },
+        {
+          ...reference,
+          spanID: '2'.repeat(16),
+          name: 'tool child',
+          serviceName: 'runner',
+          startTime: 20n,
+          endTime: 90n,
+          statusCodeValue: 0,
+        },
+      ])
+      views.traces[0].spans[1].spanData.attributes = [
+        {
+          key: 'gen_ai.operation.name',
+          value: { kind: 'string', value: 'execute_tool' },
+        },
+        ...(callID
+          ? [
+              {
+                key: 'gen_ai.tool.call.id',
+                value: { kind: 'string' as const, value: 'call' },
+              },
+            ]
+          : []),
+      ]
+      const pending = Promise.withResolvers<TraceLogSummary[]>()
+      const lookup = vi
+        .spyOn(telemetryAPI, 'getReferencedTraceViews')
+        .mockResolvedValue(views)
+      const summaries = vi
+        .spyOn(telemetryAPI, 'getTraceLogSummaries')
+        .mockReturnValue(pending.promise)
+      const logs = vi.spyOn(telemetryAPI, 'getSpanLogs').mockResolvedValue([])
+      const result = {
+        ...exampleExperiments[0].results[0],
+        telemetry: reference,
+        resultTelemetry: undefined,
+        tools: [],
+        assessments: [],
+      }
+      const experiment = {
+        ...exampleExperiments[0],
+        telemetry: undefined,
+        results: [result],
+      }
+      try {
+        render(EvalResults, { experiment, results: [result] })
+        await waitFor(() => expect(logs).toHaveBeenCalledTimes(2))
+        expect(logs.mock.calls.map(([, id]) => id)).toEqual([
+          reference.spanID,
+          '2'.repeat(16),
+        ])
+        expect(summaries).toHaveBeenCalledOnce()
+      } finally {
+        pending.resolve([])
+        lookup.mockRestore()
+        summaries.mockRestore()
+        logs.mockRestore()
+      }
+    }
+  )
+
   it('publishes per-trace success and failure while unrelated trace work is pending', async () => {
     const references = ['a', 'b', 'c'].map(letter => ({
       traceID: letter.repeat(32),
@@ -228,10 +302,12 @@ describe('EvalResults repetitions', () => {
         )
       const logs = vi
         .spyOn(telemetryAPI, 'getSpanLogs')
-        .mockImplementation(id =>
-          refresh && id === a.traceID
-            ? new Promise(resolve => held.push(resolve))
-            : Promise.resolve([full(id === a.traceID ? a : b)])
+        .mockImplementation((id, spanID) =>
+          spanID === child.spanID
+            ? Promise.resolve([])
+            : refresh && id === a.traceID
+              ? new Promise(resolve => held.push(resolve))
+              : Promise.resolve([full(id === a.traceID ? a : b)])
         )
       const results = [a, b].map((reference, index) => ({
         ...exampleExperiments[0].results[0],
@@ -721,7 +797,7 @@ describe('EvalResults repetitions', () => {
     }
     const logs = vi
       .spyOn(telemetryAPI, 'getSpanLogs')
-      .mockResolvedValue([received])
+      .mockImplementation(async id => (id === a.traceID ? [received] : []))
     const onTraceViews = vi.fn()
     try {
       const results = [a, b].map((telemetry, index) => ({
@@ -733,7 +809,11 @@ describe('EvalResults repetitions', () => {
         tools: [],
         assessments: [],
       }))
-      const experiment = { ...exampleExperiments[0], results }
+      const experiment = {
+        ...exampleExperiments[0],
+        telemetry: undefined,
+        results,
+      }
       render(EvalResults, { experiment, results, onTraceViews })
       await waitFor(() => expect(summaries).toHaveBeenCalledTimes(2))
       await waitFor(() =>

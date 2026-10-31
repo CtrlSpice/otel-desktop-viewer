@@ -13,16 +13,19 @@
   import type { EvalTelemetrySummary } from './eval-telemetry-summaries'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
+  import type { EvalRequestStatus } from './eval-request-state'
 
   let {
     entries,
     nodes = new Map<string, SpanNode>(),
     loading = false,
+    status,
     ontracecount,
   }: {
     entries: EvalTelemetrySummary[]
     nodes?: Map<string, SpanNode>
     loading?: boolean
+    status?: ReadonlyMap<string, EvalRequestStatus>
     ontracecount?: (count: number | undefined) => void
   } = $props()
 
@@ -104,6 +107,7 @@
     {@const unavailable = !span && trace === null}
     {@const traceOnly = !entry.reference.spanID}
     {@const tracePending = pending.has(entry.reference.traceID.toLowerCase())}
+    {@const spanStatus = status?.get(entry.reference.traceID.toLowerCase())}
     {@const startedAt =
       span?.startTime ?? (traceOnly ? trace?.startTime : undefined)}
     {@const service = span
@@ -175,13 +179,15 @@
             title={entry.label}
           >
             {#if span}{entry.label}
-            {:else if loading}<LoadingStatus
+            {:else if spanStatus === 'pending' || (spanStatus === undefined && loading)}<LoadingStatus
                 pending
                 label="Loading span…"
                 requestKey={referenceKey(entry.reference)}
                 class="text-sm text-secondary"
               />
-            {:else}Span unavailable{/if}
+            {:else if spanStatus === 'failed'}Span lookup failed
+            {:else if spanStatus === 'ready'}Span not stored
+            {:else}Span lookup unavailable{/if}
           </div>
         {/if}
       {/snippet}
