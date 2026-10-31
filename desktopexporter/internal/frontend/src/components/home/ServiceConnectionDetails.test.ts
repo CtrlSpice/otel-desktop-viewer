@@ -14,6 +14,8 @@ import {
   store,
 } from '@/test/service-map-fixtures'
 import type { ServiceConnectionSpan } from '@/services/discovery-types'
+import { homeQueries } from './home-search'
+import { parseQuery } from '@/components/shared/Search/queryParser'
 
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
@@ -30,7 +32,11 @@ function mountEvidence() {
   )
   const props = {
     connection: edge(),
-    options: { startTime: '1000000000', endTime: '2000000000' },
+    options: {
+      startTime: '1000000000',
+      endTime: '2000000000',
+      queries: homeQueries(parseQuery("search('A')", [])),
+    },
     revision: 0,
   }
   const view = renderWithContexts(ServiceConnectionDetails, props)
@@ -189,12 +195,16 @@ it.each([
     await view.findByRole('link', { name: /worker evidence/ })
     if (order === 'page-first')
       await fireEvent.click(view.getByRole('button', { name: 'Next' }))
-    navigate('/?start=3000&end=4000')
+    navigate('/?start=3000&end=4000&q=B')
     await view.rerender({
       componentProps: {
         ...props,
         connection: edge(9, store),
-        options: { startTime: '3000000000', endTime: '4000000000' },
+        options: {
+          startTime: '3000000000',
+          endTime: '4000000000',
+          queries: homeQueries(parseQuery("search('B')", [])),
+        },
         revision: 1,
       },
     })
@@ -233,6 +243,12 @@ it.each([
       expect.stringContaining('end=2000')
     )
     expect(
+      new URL(
+        retainedLink.getAttribute('href')!,
+        'http://local'
+      ).searchParams.has('q')
+    ).toBe(false)
+    expect(
       view.container.querySelector(
         '[data-field="Child service"] .detail-property__body'
       )
@@ -256,6 +272,12 @@ it.each([
       'href',
       expect.stringContaining('end=4000')
     )
+    expect(
+      new URL(
+        replacementLink.getAttribute('href')!,
+        'http://local'
+      ).searchParams.has('q')
+    ).toBe(false)
     expect(view.getByText('Page 1')).toBeInTheDocument()
     expect(
       view.container.querySelector(
