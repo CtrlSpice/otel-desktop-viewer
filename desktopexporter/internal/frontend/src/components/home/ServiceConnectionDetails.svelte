@@ -70,7 +70,7 @@
   }
   async function load(reading: EvidenceReading, kind: EvidenceWork['kind']) {
     if (kind === 'replacement') replacement?.controller.abort()
-    cancelPagination()
+    else cancelPagination()
     const controller = new AbortController()
     const work: EvidenceWork = {
       kind,

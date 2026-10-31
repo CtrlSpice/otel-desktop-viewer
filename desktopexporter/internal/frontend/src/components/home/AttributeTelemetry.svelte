@@ -10,13 +10,17 @@
   import { loadPageSize, savePageSize, type PageSize } from '@/utils/page-size'
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
-  import { itemHref } from '@/route'
+  import { itemHref, parseRoute } from '@/route'
   import type {
     DiscoveryOptions,
     DiscoverySignal,
     ServiceSummary,
   } from '@/services/discovery-types'
-  import { serviceIdentity } from '@/services/discovery-types'
+  import {
+    discoverySignalHref,
+    serviceIdentity,
+  } from '@/services/discovery-types'
+  import { queryText } from './home-search'
   import {
     attributeOwners,
     discoverySignals,
@@ -49,6 +53,7 @@
     scrollTop: number
     loaded: boolean
     attribute: DiscoveredAttribute | null
+    query: ReturnType<typeof parseRoute>['query']
   }
   const PAGE_SIZE_KEY = 'home-telemetry-page-size'
   let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
@@ -149,6 +154,15 @@
           scrollTop: previous?.scrollTop ?? 0,
           loaded: previous?.loaded ?? false,
           attribute: previous ? previous.attribute : selection.attribute,
+          query:
+            previous?.query ??
+            parseRoute(
+              discoverySignalHref(
+                signal,
+                selection.options,
+                queryText(selection.options.queries?.[signal] ?? null)
+              )
+            ).query,
         }
       })
       for (const group of groups) {
@@ -164,6 +178,13 @@
             if (controller.signal.aborted) return
             group.cards = cards
             group.attribute = selection.attribute
+            group.query = parseRoute(
+              discoverySignalHref(
+                group.signal,
+                selection.options,
+                queryText(selection.options.queries?.[group.signal] ?? null)
+              )
+            ).query
             group.error = ''
             group.loaded = true
             group.pageIndex = 0
@@ -256,17 +277,30 @@
             <TraceCard
               trace={card.trace}
               matchingSpanCount={card.count}
-              href={itemHref('traces', card.trace.traceID, {
-                span: card.trace.matchedSpans?.[0]?.spanID,
-              })}
+              href={itemHref(
+                'traces',
+                card.trace.traceID,
+                {
+                  span: card.trace.matchedSpans?.[0]?.spanID,
+                },
+                active.query
+              )}
             />
           {:else if card.signal === 'logs'}
-            <LogCard log={card.log} href={itemHref('logs', card.log.logRef)} />
+            <LogCard
+              log={card.log}
+              href={itemHref('logs', card.log.logRef, {}, active.query)}
+            />
           {:else}
             <MetricCard
               metric={card.metric}
               matchingPointCount={card.count}
-              href={itemHref('metrics', card.metric.metricRef)}
+              href={itemHref(
+                'metrics',
+                card.metric.metricRef,
+                {},
+                active.query
+              )}
             />
           {/if}
         {/each}

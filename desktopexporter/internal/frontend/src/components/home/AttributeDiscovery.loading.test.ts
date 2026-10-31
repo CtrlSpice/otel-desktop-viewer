@@ -381,9 +381,14 @@ it('resets the shared 200ms grace on A → B → A and rejects obsolete key/valu
   expect(view.container).toBeEmptyDOMElement()
 })
 
-it.each(['pending', 'failed'] as const)(
-  'pages the displayed value scope while a different scope is %s without replacing its request',
-  async outcome => {
+it.each([
+  { order: 'page-first', outcome: 'pending' },
+  { order: 'page-first', outcome: 'failed' },
+  { order: 'replacement-first', outcome: 'pending' },
+  { order: 'replacement-first', outcome: 'failed' },
+] as const)(
+  'pages the displayed value scope with $outcome replacement: $order',
+  async ({ order, outcome }) => {
     vi.useFakeTimers()
     const requests = transport()
     const view = render(AttributeDiscovery, {
@@ -402,12 +407,6 @@ it.each(['pending', 'failed'] as const)(
     )
     requests.at(-1)!.result(first)
     await settle()
-    await view.rerender({ service: { ...props.service, serviceName: 'B' } })
-    const replacement = requests.findLast(
-      ({ options }) => options.kind === 'home-values'
-    )!
-    if (outcome === 'failed') replacement.reject(new Error('B unavailable'))
-    await settle()
     const navigation = within(view.container.querySelector('tbody')!).getByRole(
       'group',
       { name: 'page navigation' }
@@ -415,17 +414,31 @@ it.each(['pending', 'failed'] as const)(
     expect(
       within(navigation).getByRole('button', { name: 'Next page' })
     ).toBeEnabled()
-    await fireEvent.click(
-      within(navigation).getByRole('button', { name: 'Next page' })
-    )
-    expect(requests.at(-1)!.options).toMatchObject({
+    if (order === 'page-first')
+      await fireEvent.click(
+        within(navigation).getByRole('button', { name: 'Next page' })
+      )
+    const initialPage = order === 'page-first' ? requests.at(-1) : undefined
+    await view.rerender({ service: { ...props.service, serviceName: 'B' } })
+    const replacement = requests.findLast(
+      ({ options }) => options.kind === 'home-values'
+    )!
+    if (outcome === 'failed') replacement.reject(new Error('B unavailable'))
+    await settle()
+    if (order === 'replacement-first')
+      await fireEvent.click(
+        within(navigation).getByRole('button', { name: 'Next page' })
+      )
+    const retainedPage = initialPage ?? requests.at(-1)!
+    expect(retainedPage.signal.aborted).toBe(false)
+    expect(retainedPage.options).toMatchObject({
       kind: 'home-values',
       serviceName: 'A',
       offset: 1,
       limit: 25,
     })
     expect(replacement.signal.aborted).toBe(false)
-    requests.at(-1)!.result(coverage('home:A-next'))
+    retainedPage.result(coverage('home:A-next'))
     await settle()
     expect(
       view.container.querySelector('[data-value-identity="home:A-next"]')
@@ -446,9 +459,20 @@ it.each(['pending', 'failed'] as const)(
   }
 )
 
-it.each(['success', 'failure'] as const)(
-  'cancels obsolete retained-page %s when the replacement publishes',
-  async outcome => {
+it.each(
+  (['page-first', 'replacement-first'] as const).flatMap(order =>
+    (
+      [
+        { ending: 'replacement', outcome: 'success' },
+        { ending: 'replacement', outcome: 'failure' },
+        { ending: 'unmount', outcome: 'success' },
+        { ending: 'unmount', outcome: 'failure' },
+      ] as const
+    ).map(ending => ({ order, ...ending }))
+  )
+)(
+  'cancels obsolete retained-page $outcome after $ending: $order',
+  async ({ order, ending, outcome }) => {
     vi.useFakeTimers()
     const requests = transport()
     const view = render(AttributeDiscovery, {
@@ -467,25 +491,35 @@ it.each(['success', 'failure'] as const)(
     )
     requests.at(-1)!.result(first)
     await settle()
+    const next = within(view.container.querySelector('tbody')!).getByRole(
+      'button',
+      {
+        name: 'Next page',
+      }
+    )
+    if (order === 'page-first') await fireEvent.click(next)
+    const initialPage = order === 'page-first' ? requests.at(-1) : undefined
     await view.rerender({ service: { ...props.service, serviceName: 'B' } })
     const replacement = requests.findLast(
       ({ options }) => options.kind === 'home-values'
     )!
-    await fireEvent.click(
-      within(view.container.querySelector('tbody')!).getByRole('button', {
-        name: 'Next page',
-      })
-    )
-    const oldPage = requests.at(-1)!
-    replacement.result(coverage('home:B'))
-    await settle()
+    if (order === 'replacement-first') await fireEvent.click(next)
+    const oldPage = initialPage ?? requests.at(-1)!
+    expect(oldPage.signal.aborted).toBe(false)
+    if (ending === 'unmount') view.unmount()
+    else {
+      replacement.result(coverage('home:B'))
+      await settle()
+    }
     expect(oldPage.signal.aborted).toBe(true)
     if (outcome === 'success') oldPage.result(coverage('home:obsolete-page'))
     else oldPage.reject(new Error('Obsolete page failure'))
     await settle()
-    expect(
-      view.container.querySelector('[data-value-identity="home:B"]')
-    ).toBeInTheDocument()
+    if (ending === 'unmount') expect(view.container).toBeEmptyDOMElement()
+    else
+      expect(
+        view.container.querySelector('[data-value-identity="home:B"]')
+      ).toBeInTheDocument()
     expect(
       view.container.querySelector('[data-value-identity="home:obsolete-page"]')
     ).toBeNull()

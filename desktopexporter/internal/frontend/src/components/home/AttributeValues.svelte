@@ -122,7 +122,7 @@
   }
   async function load(reading: Reading, replacing: boolean, size: number) {
     if (replacing) replacement?.controller.abort()
-    cancelInteraction()
+    else cancelInteraction()
     const controller = new AbortController()
     const work: Work = { controller, pending: true, error: '' }
     if (replacing) replacement = work
