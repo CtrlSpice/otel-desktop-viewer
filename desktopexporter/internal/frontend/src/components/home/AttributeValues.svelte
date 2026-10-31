@@ -6,7 +6,7 @@
 
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
-  import type { Snippet } from 'svelte'
+  import { onDestroy, untrack, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
@@ -63,9 +63,12 @@
     selectedValue?: string
     onSelect: () => void
     onSelectValue: (value: CoverageValue) => void
-    onCount: (count: number) => void
+    onCount: (count: number, source: Omit<DiscoveryOptions, 'kind'>) => void
     expanded: boolean
-    onExpandedChange: (expanded: boolean) => void
+    onExpandedChange: (
+      expanded: boolean,
+      source: Omit<DiscoveryOptions, 'kind'>
+    ) => void
     hidden?: boolean
   } = $props()
   let coverage = $state<AttributeCoverage>()
@@ -73,16 +76,34 @@
   const PAGE_SIZE = 25
   const limit = $derived(expanded && !hidden ? PAGE_SIZE : 0)
   type Navigation = { offset: number; previous: number[] }
-  let navigation = $state.raw<Navigation>({ offset: 0, previous: [] })
-  let displayedNavigation = $state.raw<Navigation>({ offset: 0, previous: [] })
+  type Reading = {
+    options: Omit<DiscoveryOptions, 'kind'>
+    name: string
+    kind: string
+    sortBy: AttributeValueSort
+    sortDirection: 'asc' | 'desc'
+    navigation: Navigation
+  }
+  type Work = { controller: AbortController; pending: boolean; error: string }
+  let displayed = $state.raw<Reading>()
+  const displayedNavigation = $derived(
+    displayed?.navigation ?? { offset: 0, previous: [] }
+  )
+  let replacement = $state.raw<Work>()
+  let interaction = $state.raw<Work>()
   const values = $derived(coverage?.values ?? [])
   const page = $derived(values)
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
-  let loading = $state(false)
-  let requestKey = $state.raw<AbortSignal>()
+  const loading = $derived(
+    Boolean(replacement?.pending || interaction?.pending)
+  )
+  let requestKey = $state(0)
   let error = $state('')
+  const failures = $derived(
+    [replacement?.error, interaction?.error, error].filter(Boolean)
+  )
   async function copyValue(item: CoverageValue, signal: AbortSignal) {
     try {
       return attributeValueCopy(
@@ -95,46 +116,122 @@
   }
   const headingID = $props.id()
   const canExpand = $derived(coverage?.total !== 0)
-  $effect.pre(() => {
-    void sortBy
-    void sortDirection
-    void options
-    void name
-    void kind
-    navigation = { offset: 0, previous: [] }
-  })
-  $effect(() => {
-    const selectedNavigation = navigation
+  function cancelInteraction() {
+    interaction?.controller.abort()
+    interaction = undefined
+  }
+  async function load(reading: Reading, replacing: boolean, size: number) {
+    if (replacing) replacement?.controller.abort()
+    cancelInteraction()
     const controller = new AbortController()
-    requestKey = controller.signal
-    loading = true
-    error = ''
-    void loadAttributeCoverage(
-      {
-        ...options,
-        key: name,
-        valueKind: kind,
-        offset: selectedNavigation.offset,
-        limit,
-        sortBy,
-        sortDirection,
-        locale: navigator.language,
-      },
-      controller.signal
+    const work: Work = { controller, pending: true, error: '' }
+    if (replacing) replacement = work
+    else interaction = work
+    requestKey++
+    try {
+      const result = await loadAttributeCoverage(
+        {
+          ...reading.options,
+          key: reading.name,
+          valueKind: reading.kind,
+          offset: reading.navigation.offset,
+          limit: size,
+          sortBy: reading.sortBy,
+          sortDirection: reading.sortDirection,
+          locale: navigator.language,
+        },
+        controller.signal
+      )
+      if (controller.signal.aborted) return
+      if (replacing) cancelInteraction()
+      coverage = result
+      displayed = reading
+      error = ''
+      onCount(result.kinds.get(reading.kind)?.count ?? 0, reading.options)
+      // A bulk disclosure or sort can change while the first page is pending.
+      if (
+        size !== limit ||
+        reading.sortBy !== sortBy ||
+        reading.sortDirection !== sortDirection
+      )
+        void load(
+          {
+            ...reading,
+            sortBy,
+            sortDirection,
+            navigation: { offset: 0, previous: [] },
+          },
+          false,
+          limit
+        )
+    } catch (reason) {
+      work.error = String(reason)
+    } finally {
+      if (!controller.signal.aborted) {
+        const completed = { ...work, pending: false }
+        if (replacing) replacement = completed
+        else interaction = completed
+      }
+    }
+  }
+  function navigate(navigation: Navigation) {
+    if (displayed) void load({ ...displayed, navigation }, false, PAGE_SIZE)
+  }
+  $effect(() => {
+    const reading = { options, name, kind }
+    untrack(
+      () =>
+        void load(
+          {
+            ...reading,
+            sortBy,
+            sortDirection,
+            navigation: { offset: 0, previous: [] },
+          },
+          true,
+          limit
+        )
     )
-      .then(result => {
-        if (controller.signal.aborted) return
-        coverage = result
-        displayedNavigation = selectedNavigation
-        onCount(result.kinds.get(kind)?.count ?? 0)
-      })
-      .catch(reason => {
-        if (!controller.signal.aborted) error = String(reason)
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) loading = false
-      })
-    return () => controller.abort()
+  })
+  let previousSort = ''
+  $effect(() => {
+    const size = limit
+    const order = { sortBy, sortDirection }
+    const sortKey = JSON.stringify(order)
+    const initial = previousSort === ''
+    const changedSort = previousSort !== sortKey
+    previousSort = sortKey
+    untrack(() => {
+      if (!displayed) {
+        if (!initial)
+          void load(
+            {
+              options,
+              name,
+              kind,
+              ...order,
+              navigation: { offset: 0, previous: [] },
+            },
+            true,
+            size
+          )
+      } else
+        void load(
+          {
+            ...displayed,
+            ...order,
+            navigation: changedSort
+              ? { offset: 0, previous: [] }
+              : displayed.navigation,
+          },
+          false,
+          size
+        )
+    })
+  })
+  onDestroy(() => {
+    replacement?.controller.abort()
+    interaction?.controller.abort()
   })
 </script>
 
@@ -144,7 +241,8 @@
       <TreeToggle
         label={`${expanded ? 'Collapse' : 'Expand'} ${name} · ${options.ownerType} values`}
         {expanded}
-        onclick={() => onExpandedChange(!expanded)}
+        onclick={() =>
+          onExpandedChange(!expanded, displayed?.options ?? options)}
       >
         <HugeiconsIcon
           icon={ArrowRight01Icon}
@@ -191,18 +289,19 @@
     <td class="table-cell text-right" data-attribute-column="frequency"></td>
     <td class="table-cell" data-attribute-column="copy"></td>
   </tr>
-  {#if error || loading || (expanded && values.length === 0)}
+  {#if failures.length || loading || (expanded && values.length === 0)}
     <tr
       ><td class="table-cell" colspan="4"
         ><div class="pl-6">
-          {#if error}<span role="alert" class="text-papaya">{error}</span>
-          {/if}
+          {#each failures as failure}<span role="alert" class="text-papaya"
+              >{failure}</span
+            >{/each}
           <LoadingStatus
             pending={loading}
             label="Loading values…"
             {requestKey}
           />
-          {#if !loading && !error && expanded && values.length === 0}<span
+          {#if !loading && !failures.length && expanded && values.length === 0}<span
               class="text-subtle"
               role="status">No retained values.</span
             >{/if}
@@ -310,16 +409,16 @@
               index={displayedNavigation.previous.length}
               total={undefined}
               hasNext={!!coverage?.truncated && values.length > 0}
-              busy={loading}
+              busy={interaction?.pending}
               label="page"
-              onFirst={() => (navigation = { offset: 0, previous: [] })}
+              onFirst={() => navigate({ offset: 0, previous: [] })}
               onPrev={() =>
-                (navigation = {
+                navigate({
                   offset: displayedNavigation.previous.at(-1) ?? 0,
                   previous: displayedNavigation.previous.slice(0, -1),
                 })}
               onNext={() =>
-                (navigation = {
+                navigate({
                   offset: displayedNavigation.offset + values.length,
                   previous: [
                     ...displayedNavigation.previous,

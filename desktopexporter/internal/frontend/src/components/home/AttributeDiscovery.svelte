@@ -14,13 +14,13 @@
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import { loadPageSize, savePageSize, type PageSize } from '@/utils/page-size'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import {
-    serviceIdentity,
-    type ServiceSummary,
-    type DiscoveryOptions,
+  import type {
+    ServiceSummary,
+    DiscoveryOptions,
   } from '@/services/discovery-types'
   import {
     attributeIdentity,
+    attributeScope,
     attributeOwners,
     discoverySignals,
     mergeAttributeKeys,
@@ -130,7 +130,7 @@
           namespace: service?.serviceNamespace,
         }),
   })
-  const identity = $derived(service ? serviceIdentity(service) : '')
+  const identity = $derived(service ? attributeScope(options) : '')
   let displayedOptions = $state.raw<Omit<DiscoveryOptions, 'kind'>>({})
   let disclosureScope = ''
   let requestKey = $state(0)
@@ -184,6 +184,7 @@
       for (const owner of received.keys())
         if (!enabled.has(owner)) received.delete(owner)
       let pending = owners.length
+      let published = false
       loading = pending > 0
       for (const { signal, ownerType } of owners) {
         void (async () => {
@@ -200,21 +201,22 @@
               items.push(...page.items.map(entry => ({ ...entry, ownerType })))
               more = page.truncated
               const owner = `${signal}/${ownerType}`
+              const previous = received.get(owner) ?? []
               received.set(
                 owner,
-                more
-                  ? mergeAttributeKeys([
-                      ...(received.get(owner) ?? []),
-                      ...items,
-                    ])
-                  : items
+                more ? mergeAttributeKeys([...previous, ...items]) : items
               )
               keys = mergeAttributeKeys([...received.values()].flat())
+              if (!published && (previous.length || items.length)) {
+                pageIndex = 0
+                published = true
+              }
+              pageIndex = Math.min(
+                pageIndex,
+                Math.max(0, Math.ceil(keys.length / pageSize) - 1)
+              )
             }
             if (controller.signal.aborted) return
-            received.set(`${signal}/${ownerType}`, items)
-            keys = mergeAttributeKeys([...received.values()].flat())
-            pageIndex = 0
           } catch (reason) {
             if (!controller.signal.aborted) error = String(reason)
           } finally {
@@ -375,16 +377,23 @@
                   options={displayedOptions}
                   sortBy={sortBy === 'name' ? 'name' : 'frequency'}
                   {sortDirection}
-                  onCount={count => {
+                  onCount={(count, source) => {
                     counts[id] = count
                     const retained = expansionOverrides[id]
-                    if (retained && retained.scope !== identity)
+                    if (
+                      retained &&
+                      retained.scope !== identity &&
+                      attributeScope(source) === identity
+                    )
                       delete expansionOverrides[id]
                   }}
                   pinnedLeft={layout.pinned.name}
                   expanded={expansionOverrides[id]?.expanded ?? allExpanded}
-                  onExpandedChange={expanded =>
-                    (expansionOverrides[id] = { scope: identity, expanded })}
+                  onExpandedChange={(expanded, source) =>
+                    (expansionOverrides[id] = {
+                      scope: attributeScope(source),
+                      expanded,
+                    })}
                   selected={selectedAttribute !== null &&
                     attributeIdentity(selectedAttribute) === id}
                   onSelect={() => onSelectAttribute(entry)}

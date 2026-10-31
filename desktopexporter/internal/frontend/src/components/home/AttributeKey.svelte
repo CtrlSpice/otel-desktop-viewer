@@ -31,9 +31,12 @@
     onSelect: () => void
     selectedValue?: string
     onSelectValue: (value: CoverageValue) => void
-    onCount: (count: number) => void
+    onCount: (count: number, source: Omit<DiscoveryOptions, 'kind'>) => void
     expanded: boolean
-    onExpandedChange: (expanded: boolean) => void
+    onExpandedChange: (
+      expanded: boolean,
+      source: Omit<DiscoveryOptions, 'kind'>
+    ) => void
     hidden?: boolean
   } = $props()
   const ownerType = $derived(entry.ownerType)
