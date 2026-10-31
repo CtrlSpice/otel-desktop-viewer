@@ -150,6 +150,100 @@ const connectedSpan = (name: string, digit = '2'): ServiceConnectionSpan => ({
   statusCode: 0,
 })
 
+test('Copy uses the displayed child and cancels old completion when new evidence appears', async ({
+  page,
+  context,
+}) => {
+  const h = await holdConnections(page)
+  type Labels = { serviceName: string; serviceNamespace: string }
+  const copies: Array<{
+    identity: string
+    complete: (labels: Labels) => void
+  }> = []
+  let replies = 0
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getServiceLabels') return route.fallback()
+    let complete!: (labels: Labels) => void
+    const reply = new Promise<Labels>(resolve => (complete = resolve))
+    copies.push({ identity: params.serviceRef, complete })
+    await route.fulfill({
+      json: { jsonrpc: '2.0', id, result: await reply },
+    })
+    replies++
+  })
+  try {
+    await page.goto('/?time=all')
+    await page.evaluate(() =>
+      navigator.clipboard.writeText('unchanged clipboard')
+    )
+    await h.ok('services', 0, [service('api')])
+    await h.ok('connections', 0, [connection(), connection(9, 'store')])
+    const worker = page.getByRole('button', { name: /^api → worker:/ })
+    await worker.focus()
+    await worker.press('Enter')
+    await h.ok('connection-spans', 0, [connectedSpan('worker evidence')])
+    await expect(
+      page.getByRole('link', { name: /worker evidence/ })
+    ).toBeVisible()
+    expect(copies).toHaveLength(0)
+    const details = page.getByRole('table', { name: 'Connection details' })
+    const copy = details.getByRole('button', {
+      name: 'Copy Child service',
+      exact: true,
+    })
+    await details.locator('[data-field="Child service"]').hover()
+    await copy.click()
+    await expect.poll(() => copies.length).toBe(1)
+    expect(copies[0].identity).toBe('worker')
+    const store = page.getByRole('button', { name: /^api → store:/ })
+    await store.focus()
+    await store.press('Enter')
+    await h.fail('connection-spans', 1)
+    await expect(
+      page.getByRole('region', { name: 'Home details' }).getByRole('alert')
+    ).toBeVisible()
+    await expect(copy).toHaveAttribute('aria-busy', 'true')
+    await page
+      .getByRole('region', { name: 'Home details' })
+      .getByRole('button', { name: 'Retry', exact: true })
+      .click()
+    await h.ok('connection-spans', 2, [connectedSpan('store evidence', '3')])
+    await expect(
+      page.getByRole('link', { name: /store evidence/ })
+    ).toBeVisible()
+    await expect(copy).toHaveAttribute('aria-busy', 'false')
+    copies[0].complete({
+      serviceName: 'complete old worker',
+      serviceNamespace: '',
+    })
+    await expect.poll(() => replies).toBe(1)
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      'unchanged clipboard'
+    )
+    await expect(details.getByRole('status')).not.toContainText([
+      'Copied Child service.',
+    ])
+    await details.locator('[data-field="Child service"]').hover()
+    await copy.click()
+    await expect.poll(() => copies.length).toBe(2)
+    expect(copies[1].identity).toBe('store')
+    copies[1].complete({
+      serviceName: 'complete new store',
+      serviceNamespace: '',
+    })
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe('complete new store')
+    await expect(copy).toHaveAttribute('data-tip', 'Copied')
+  } finally {
+    for (const copy of copies)
+      copy.complete({ serviceName: '', serviceNamespace: '' })
+    h.release()
+  }
+})
+
 test('retained edge inspection owns its time range and survives unrelated service-list success', async ({
   page,
 }) => {
