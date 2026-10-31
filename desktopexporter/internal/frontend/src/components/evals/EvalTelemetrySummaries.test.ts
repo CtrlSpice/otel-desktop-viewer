@@ -329,7 +329,66 @@ it('refreshes only the arriving trace log count and never publishes a partial co
   expect(lookup.mock.calls.every(([, signal]) => signal?.aborted)).toBe(true)
 })
 
-it('counts distinct connected traces and scoped logs, retaining the last complete count on failure', async () => {
+it.each(['success', 'failure'] as const)(
+  'does not attribute previous telemetry counts to a new selection ending in %s',
+  async outcome => {
+    type Logs = Awaited<ReturnType<typeof telemetryAPI.getTraceLogSummaries>>
+    const nextTrace = Promise.withResolvers<TraceSummary | null>()
+    const nextLogs = Promise.withResolvers<Logs>()
+    const a = { reference: { traceID: 'a'.repeat(32) }, label: 'A' }
+    const b = { reference: { traceID: 'b'.repeat(32) }, label: 'B' }
+    vi.mocked(telemetryAPI.getTraceSummary)
+      .mockResolvedValueOnce({
+        traceID: a.reference.traceID,
+        hasRootSpan: true,
+        rootSpan: { name: 'Trace A', serviceName: 'runner' },
+        startTime: 1n,
+        durationNs: 100n,
+        spanCount: 1,
+        errorCount: 0,
+      })
+      .mockReturnValueOnce(nextTrace.promise)
+    vi.spyOn(telemetryAPI, 'getTraceLogSummaries')
+      .mockResolvedValueOnce(
+        ['one', 'two', 'three'].map(logRef => ({
+          logRef,
+          timestamp: 1n,
+          spanID: reference.spanID,
+          eventName: '',
+          severityNumber: 0,
+          severityText: '',
+          serviceName: '',
+          bodyPreview: '',
+        }))
+      )
+      .mockReturnValueOnce(nextLogs.promise)
+    const props = { entries: [a], wholeTraces: true, evidenceLogs: [] }
+    const view = render(EvalTelemetrySection, props)
+    await screen.findByText('[1 trace | 3 logs]')
+    await view.rerender({ componentProps: { ...props, entries: [b] } })
+    expect(screen.getByRole('link')).toHaveAttribute(
+      'href',
+      traceHref(b.reference)
+    )
+    expect(screen.queryByText(/\d+ traces?/)).toBeNull()
+    expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+    if (outcome === 'failure') {
+      nextTrace.reject(new Error('trace lookup failed'))
+      nextLogs.reject(new Error('log lookup failed'))
+      await screen.findByText('Log count could not be loaded.')
+      expect(screen.queryByText(/\d+ traces?/)).toBeNull()
+      expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+    } else {
+      nextTrace.resolve(null)
+      await screen.findByText('[0 traces]')
+      expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+      nextLogs.resolve([])
+      await screen.findByText('[0 traces | 0 logs]')
+    }
+  }
+)
+
+it('counts distinct connected traces and scoped logs, retaining same-selection counts on failure', async () => {
   const logs = vi
     .spyOn(telemetryAPI, 'getTraceLogSummaries')
     .mockResolvedValue([
@@ -378,7 +437,14 @@ it('counts distinct connected traces and scoped logs, retaining the last complet
     expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
   )
   logs.mockRejectedValueOnce(new Error('offline'))
-  await rerender({ componentProps: { ...props, wholeTraces: true } })
+  await rerender({
+    componentProps: {
+      ...props,
+      entries: props.entries.slice(0, 1),
+      wholeTraces: false,
+      nodes: new Map([[referenceKey(reference), { ...node }]]),
+    },
+  })
   await waitFor(() => expect(logs).toHaveBeenCalledTimes(3))
   expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
   expect(screen.queryByText(/0 logs/)).toBeNull()
