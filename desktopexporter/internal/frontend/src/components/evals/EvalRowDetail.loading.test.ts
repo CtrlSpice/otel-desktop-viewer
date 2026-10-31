@@ -95,7 +95,11 @@ it('does not clear retained evidence merely because a missing span stopped loadi
   expect(screen.getByText(`output-${a.spanID}`)).toBe(original)
   expect(screen.getByText('Retained A log')).toBe(originalLog)
   expect(screen.queryByText(/0 logs/)).toBeNull()
-  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
+  expect(screen.queryByText(/\d+ traces?/)).toBeNull()
+  expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+  expect(
+    originalLog.closest('table')?.querySelector('caption')
+  ).toHaveTextContent(a.spanID)
   await fireEvent.click(screen.getByRole('button', { name: 'Copy body' }))
   expect(copyText).toHaveBeenLastCalledWith('Retained A log')
   await view.rerender({
@@ -364,7 +368,8 @@ it.each(['root-first', 'child-first', 'child-failure'])(
     const telemetry = [...view.container.querySelectorAll('summary')].find(
       element => element.textContent?.includes('Telemetry')
     )!
-    expect(telemetry).toHaveTextContent('1 log')
+    expect(telemetry).toHaveTextContent('[1 trace]')
+    expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
     await fireEvent.click(
       within(ready.closest('table')!).getByRole('button', { name: 'Copy body' })
     )
@@ -385,7 +390,7 @@ it.each(['root-first', 'child-first', 'child-failure'])(
       expect(
         screen.getByText('Linked log evidence could not be loaded.')
       ).toBeVisible()
-      expect(telemetry).toHaveTextContent('1 log')
+      expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
     } else {
       await waitFor(() =>
         expect(screen.queryByText('A retained log')).toBeNull()
@@ -886,7 +891,8 @@ it('keeps identified log evidence and Copy when all replacement owners fail, unt
   const telemetry = [...view.container.querySelectorAll('summary')].find(
     element => element.textContent?.includes('Telemetry')
   )!
-  expect(telemetry).toHaveTextContent('1 log')
+  expect(telemetry).toHaveTextContent('[1 trace]')
+  expect(telemetry).not.toHaveTextContent(/\d+ logs?/)
   await view.rerender({
     componentProps: {
       experiment,

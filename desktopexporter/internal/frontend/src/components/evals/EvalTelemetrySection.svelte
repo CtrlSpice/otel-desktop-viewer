@@ -25,10 +25,14 @@
   } = $props()
   let traceCount = $state<number>()
   const selection = $derived(
-    JSON.stringify(entries.map(entry => entry.reference))
+    JSON.stringify([wholeTraces, entries.map(entry => entry.reference)])
   )
-  let logCount = $state<number>()
+  let lastLogCount = $state.raw<{ selection: string; count: number }>()
+  const logCount = $derived(
+    lastLogCount?.selection === selection ? lastLogCount.count : undefined
+  )
   let logParts = $state.raw<Map<string, EvalRequestPart<string[]>>>()
+  let logPartsSelection = $state('')
   let logRequestKey = $state(0)
   const logsPending = $derived(
     [...(logParts?.values() ?? [])].some(part => part.status === 'pending')
@@ -37,13 +41,13 @@
     [...(logParts?.values() ?? [])].some(part => part.status === 'failed')
   )
   $effect(() => {
-    if (!evidenceLogs || !logParts) return
+    if (!evidenceLogs || !logParts || logPartsSelection !== selection) return
     const refs = new Set(evidenceLogs.map(log => log.logRef))
     for (const part of logParts.values()) {
       if (part.status !== 'ready') return
       for (const ref of part.value) refs.add(ref)
     }
-    logCount = refs.size
+    lastLogCount = { selection, count: refs.size }
   })
   const counts = $derived(
     [
@@ -136,6 +140,7 @@
         logParts = new Map(untrack(() => logParts)).set(traceID, part)
       }
     }
+    logPartsSelection = selection
     logParts = parts
   })
 </script>
@@ -166,7 +171,7 @@
       {loading}
       {status}
       ontracecount={count => {
-        if (count !== undefined) traceCount = count
+        traceCount = count
       }}
     />
   {/if}
