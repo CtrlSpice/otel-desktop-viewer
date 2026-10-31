@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -17,6 +17,7 @@
   import { formatDuration } from '@/utils/time'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
+  import type { ConnectionReading } from './service-map'
 
   let {
     connection,
@@ -27,57 +28,87 @@
     options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>
     revision: number
   } = $props()
+  type EvidenceReading = ConnectionReading & { offset: number }
+  type EvidenceWork = {
+    kind: 'replacement' | 'page'
+    reading: EvidenceReading
+    controller: AbortController
+    pending: boolean
+    error: string
+  }
   let spans = $state<ServiceConnectionSpan[]>([])
-  let offset = $state(0)
   let more = $state(false)
-  let loading = $state(false)
-  let error = $state('')
-  let retry = $state(0)
-  let displayed = $state.raw<ServiceConnection>()
-  const shownConnection = $derived(displayed ?? connection)
-  let displayedOffset = $state(0)
+  let replacement = $state.raw<EvidenceWork>()
+  let pagination = $state.raw<EvidenceWork>()
+  const loading = $derived(Boolean(replacement?.pending || pagination?.pending))
+  const failures = $derived(
+    [replacement, pagination].filter((work): work is EvidenceWork =>
+      Boolean(work?.error)
+    )
+  )
+  let displayed = $state.raw<EvidenceReading>()
+  const shownConnection = $derived(displayed?.connection ?? connection)
   let requestKey = $state(0)
-  $effect(() => {
-    void connection
-    void options
-    void revision
-    offset = 0
-  })
-  $effect(() => {
+  function publishWork(work: EvidenceWork) {
+    if (work.kind === 'replacement') replacement = work
+    else pagination = work
+  }
+  function cancelPagination() {
+    pagination?.controller.abort()
+    pagination = undefined
+  }
+  async function load(reading: EvidenceReading, kind: EvidenceWork['kind']) {
+    if (kind === 'replacement') replacement?.controller.abort()
+    cancelPagination()
     const controller = new AbortController()
-    void revision
-    void retry
-    const selected = connection
-    const selectedOffset = offset
-    requestKey = untrack(() => requestKey) + 1
-    loading = true
-    error = ''
-    void telemetryAPI
-      .discoverServiceConnectionSpans(
+    const work: EvidenceWork = {
+      kind,
+      reading,
+      controller,
+      pending: true,
+      error: '',
+    }
+    publishWork(work)
+    requestKey++
+    try {
+      const page = await telemetryAPI.discoverServiceConnectionSpans(
         {
-          ...options,
-          serviceIdentity: serviceIdentity(connection.source),
-          targetIdentity: serviceIdentity(connection.target),
-          offset,
+          ...reading.options,
+          serviceIdentity: serviceIdentity(reading.connection.source),
+          targetIdentity: serviceIdentity(reading.connection.target),
+          offset: reading.offset,
           limit: 25,
         },
         controller.signal
       )
-      .then(page => {
-        if (!controller.signal.aborted) {
-          spans = page.items
-          more = page.truncated
-          displayed = selected
-          displayedOffset = selectedOffset
-        }
-      })
-      .catch(reason => {
-        if (!controller.signal.aborted) error = String(reason)
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) loading = false
-      })
-    return () => controller.abort()
+      if (controller.signal.aborted) return
+      if (kind === 'replacement') {
+        // A received replacement supersedes pages of the retained reading.
+        cancelPagination()
+      }
+      spans = page.items
+      more = page.truncated
+      displayed = reading
+    } catch (reason) {
+      work.error = String(reason)
+    } finally {
+      if (!controller.signal.aborted) publishWork({ ...work, pending: false })
+    }
+  }
+  function paginate(step: number) {
+    if (displayed)
+      void load(
+        { ...displayed, offset: Math.max(0, displayed.offset + step) },
+        'page'
+      )
+  }
+  $effect(() => {
+    const reading = { connection, options, revision, offset: 0 }
+    untrack(() => void load(reading, 'replacement'))
+  })
+  onDestroy(() => {
+    replacement?.controller.abort()
+    pagination?.controller.abort()
   })
 </script>
 
@@ -162,10 +193,17 @@
       label="Loading connected spans…"
       {requestKey}
     />
-    {#if error}<p role="alert" class="text-papaya">{error}</p>
-      <button class="btn btn-ghost btn-sm" onclick={() => retry++}>Retry</button
+    {#each failures as failure (failure.kind)}<p
+        role="alert"
+        class="text-papaya"
       >
-    {/if}
+        {failure.error}
+      </p>
+      <button
+        class="btn btn-ghost btn-sm"
+        onclick={() => load(failure.reading, failure.kind)}>Retry</button
+      >
+    {/each}
     {#each spans as span (`${span.traceID}:${span.spanID}`)}
       <SignalCard
         id={`${span.traceID}:${span.spanID}`}
@@ -200,7 +238,7 @@
             ></span
           >{/snippet}
       </SignalCard>
-    {:else}{#if !loading && !error}<p class="text-subtle">
+    {:else}{#if !loading && !failures.length}<p class="text-subtle">
           No connected spans match this search and time range.
         </p>{/if}{/each}
   </div>
@@ -208,12 +246,14 @@
     {#snippet navigation()}<div class="flex items-center gap-2">
         <button
           class="btn btn-ghost btn-sm"
-          disabled={loading || offset === 0}
-          onclick={() => (offset = Math.max(0, offset - 25))}>Previous</button
-        ><span class="text-subtle">Page {displayedOffset / 25 + 1}</span><button
+          disabled={!displayed || pagination?.pending || displayed.offset === 0}
+          onclick={() => paginate(-25)}>Previous</button
+        ><span class="text-subtle"
+          >Page {(displayed?.offset ?? 0) / 25 + 1}</span
+        ><button
           class="btn btn-ghost btn-sm"
-          disabled={loading || !more}
-          onclick={() => (offset += 25)}>Next</button
+          disabled={!displayed || pagination?.pending || !more}
+          onclick={() => paginate(25)}>Next</button
         >
       </div>{/snippet}
   </SignalFooter>

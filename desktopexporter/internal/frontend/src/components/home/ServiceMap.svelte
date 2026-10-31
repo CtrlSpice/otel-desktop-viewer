@@ -1,6 +1,7 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { onDestroy, untrack } from 'svelte'
+  import { SvelteMap } from 'svelte/reactivity'
   import { Chart, Svg, type ChartState } from 'layerchart'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -24,6 +25,7 @@
     connectionIdentity,
     graphServices,
     type MapSelection,
+    type ConnectionReading,
     SERVICE_CARD_WIDTH,
     SERVICE_CARD_HEIGHT,
     type ServiceSizes,
@@ -36,6 +38,7 @@
     revision,
     selection,
     onSelect,
+    onUpdateSelection,
     services,
     servicesLoaded,
     totalServices,
@@ -50,6 +53,7 @@
     revision: number
     selection: MapSelection | null
     onSelect: (selection: MapSelection) => void
+    onUpdateSelection?: (selection: MapSelection | null) => void
     services: ServiceSummary[]
     servicesLoaded: boolean
     totalServices?: number
@@ -62,12 +66,15 @@
   let received = $state.raw(
     new Map<string, { service: ServiceSummary; items: ServiceConnection[] }>()
   )
-  let connections = $state.raw<ServiceConnection[]>([])
+  let connectionReadings = $state.raw(new Map<string, ConnectionReading>())
+  const connections = $derived(
+    [...connectionReadings.values()].map(reading => reading.connection)
+  )
   let pages = $state<
     Record<string, { offset: number; more: boolean; revision: number }>
   >({})
-  let pending = $state(0)
-  const busy = $derived(pending > 0)
+  const requests = new SvelteMap<string, AbortController>()
+  const busy = $derived(requests.size > 0)
   let connectionRequestKey = $state(0)
   let failures = $state<
     Record<string, { service: ServiceSummary; message: string }>
@@ -85,7 +92,6 @@
     }).translate
   }
   const transform = $derived(chart?.transform)
-  const requests = new Map<string, AbortController>()
   let sizes = $state<ServiceSizes>(new Map())
   let graphRevision = $state(0)
   let viewRevision = $state(0)
@@ -192,16 +198,17 @@
     if (requests.has(identity)) return
     const controller = new AbortController()
     requests.set(identity, controller)
-    pending = requests.size
     connectionRequestKey++
     const offset =
       pages[identity]?.revision === graphRevision ? pages[identity].offset : 0
+    const scope = options
+    const readingRevision = revision
     const remaining = { ...failures }
     delete remaining[identity]
     failures = remaining
     try {
       const page = await telemetryAPI.discoverServiceConnections(
-        { ...options, serviceIdentity: identity, offset, limit: 100 },
+        { ...scope, serviceIdentity: identity, offset, limit: 100 },
         controller.signal
       )
       if (controller.signal.aborted) return
@@ -222,13 +229,34 @@
         )
       )
       // Only this response's edges replace values; sibling pages retain membership.
-      const next = new Map(
-        connections.map(edge => [connectionIdentity(edge), edge])
+      const next = new Map(connectionReadings)
+      for (const edge of page.items)
+        next.set(connectionIdentity(edge), {
+          connection: edge,
+          options: scope,
+          revision: readingRevision,
+        })
+      connectionReadings = new Map(
+        [...next].filter(([identity]) => retained.has(identity))
       )
-      for (const edge of page.items) next.set(connectionIdentity(edge), edge)
-      connections = [...next.values()].filter(edge =>
-        retained.has(connectionIdentity(edge))
-      )
+      if (selection?.kind === 'connection') {
+        const reading = connectionReadings.get(
+          connectionIdentity(selection.connection)
+        )
+        if (!reading) {
+          const sourceID = serviceIdentity(selection.connection.source)
+          const source =
+            nodes.find(node => serviceIdentity(node) === sourceID) ?? nodes[0]
+          onUpdateSelection?.(
+            source ? { kind: 'service', service: source } : null
+          )
+        } else if (
+          reading.connection !== selection.connection ||
+          reading.options !== selection.options ||
+          reading.revision !== selection.revision
+        )
+          onUpdateSelection?.({ kind: 'connection', ...reading })
+      }
       pages = {
         ...pages,
         [identity]: {
@@ -247,9 +275,12 @@
     } finally {
       if (requests.get(identity) === controller) {
         requests.delete(identity)
-        pending = requests.size
       }
     }
+  }
+  function inspectConnection(edge: ServiceConnection) {
+    const reading = connectionReadings.get(connectionIdentity(edge))
+    if (reading) onSelect({ kind: 'connection', ...reading })
   }
   $effect(() => {
     const scope = options
@@ -263,7 +294,6 @@
         for (const controller of requests.values()) controller.abort()
         requests.clear()
         failures = {}
-        pending = 0
         graphRevision++
         for (const page of received.values()) void expand(page.service)
       }
@@ -303,7 +333,7 @@
     {#if inspected}<ServiceLabelsPopover service={inspected} />{/if}
     {#if inspectedPage?.more}<button
         class="btn btn-ghost btn-sm"
-        disabled={requests.has(inspectedID) && busy}
+        disabled={requests.has(inspectedID)}
         onclick={() => inspected && expand(inspected)}>More connections</button
       >{/if}
     <div
@@ -425,13 +455,12 @@
                     tabindex="0"
                     aria-pressed={chosen}
                     aria-label={`${edge.source.serviceName || 'Unnamed service'} → ${edge.target.serviceName || 'Unnamed service'}: ${edge.spanCount} parent-child connections in ${edge.traceCount} traces`}
-                    onclick={() =>
-                      onSelect({ kind: 'connection', connection: edge })}
+                    onclick={() => inspectConnection(edge)}
                     onkeydown={event => {
                       panKey(event)
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
-                        onSelect({ kind: 'connection', connection: edge })
+                        inspectConnection(edge)
                       }
                     }}
                   >
