@@ -24,9 +24,10 @@
   const ctx = getMetricViewContext()
   let panel: HTMLDivElement | undefined = $state()
   const series = $derived(
-    ctx.metric?.timeseries.find(
-      series => series.seriesRef === ctx.selectedSeriesKey
-    )
+    (ctx.selectionSource === 'chart'
+      ? ctx.chartMetric
+      : ctx.metric
+    )?.timeseries.find(series => series.seriesRef === ctx.selectedSeriesKey)
   )
   let displayed = $state.raw<DatapointSeries>()
   // This component owns availability and stays mounted when its body is empty.

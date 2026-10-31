@@ -23,6 +23,11 @@ import {
 import { downloadOTLP, readOTLPText } from '@/services/export-service'
 import { savePersistedTimeseriesVisible } from '@/components/metrics/utils/metric-timeseries-visible'
 import * as metricContexts from '@/contexts/metric-view-context.svelte'
+import * as timeContexts from '@/contexts/time-context.svelte'
+import { ArrowFrame } from '@/services/arrow-data'
+import { metricView } from '@/services/arrow-metrics'
+import { telemetryDataset } from '@/test/native-telemetry-fixtures'
+import { tableToIPC } from 'apache-arrow'
 
 vi.mock('@/services/export-service', () => ({
   downloadOTLP: vi.fn(),
@@ -664,9 +669,194 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
-  it.each(['success', 'failure', 'superseded', 'unmount', 'raw'] as const)(
-    'keeps scalar detail and aggregate in one displayed window through replacement %s',
-    async outcome => {
+  it('enriches and inspects the retained native scalar source while fresh detail publishes and current empty detail replaces it', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_001_000)
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ type: 'preset', durationMs: 15 * 60_000 })
+    )
+    const context = vi.spyOn(metricContexts, 'createMetricViewContext')
+    const time = vi.spyOn(timeContexts, 'createTimeContext')
+    const old = makeMetric('Sum', [
+      { ...makeSumDatapoint('old', 1_700_000_000_000, 7), valueType: 'Double' },
+    ])
+    old.window.requested = {
+      startNs: BigInt(1_700_000_001_000 - 15 * 60_000) * 1_000_000n,
+      endNs: 1_700_000_001_000_000_000n,
+    }
+    old.timeseries = ['first', 'second', 'third'].map((seriesRef, i) => ({
+      ...old.timeseries[0]!,
+      seriesRef,
+      datapoints: i === 2 ? [] : old.timeseries[0]!.datapoints,
+    }))
+    const table = telemetryDataset('getMetricView', old)
+    const bytes = tableToIPC(table)
+    const native = metricView(new ArrowFrame(table))!
+    const series = native.timeseries
+    const attributes = series[2]!.attributes
+    const scalar = {
+      aggregate: null,
+      scalarAggregate: {
+        all: [
+          {
+            bucketStart: 1_700_000_000_000_000_000n,
+            sum: 42,
+            avg: 21,
+            rate: 42,
+            sampleCount: 2,
+            hasReset: false,
+          },
+        ],
+        selected: null,
+      },
+    }
+    searchMetricSummaries.mockResolvedValue([makeSummary('Sum')])
+    getStats.mockResolvedValue(makeStats())
+    getMetricView.mockResolvedValue(native)
+    getMetricAggregateView.mockResolvedValue(scalar)
+    savePersistedTimeseriesVisible('metric-1', ['first', 'second'])
+    setTestUrl('/metrics/metric-1')
+    renderWithContexts(MetricsPage)
+    await screen.findByRole('table', { name: 'Metric fields' })
+    const ctx = context.mock.results[0]!
+      .value as metricContexts.MetricViewContext
+    ctx.setAggregationView('sum')
+    await waitFor(() =>
+      expect(
+        ctx.transformedGaugeSumChartTimeseries.some(s => s.label === 'Sum')
+      ).toBe(true)
+    )
+    const fresh = {
+      ...old,
+      unit: 's',
+      description: 'independent native metadata',
+      window: {
+        requested: {
+          startNs: 1_700_003_600_000_000_000n,
+          endNs: 1_700_003_601_000_000_000n,
+        },
+        effective: {
+          startNs: 1_700_003_600_000_000_000n,
+          endNs: 1_700_003_601_000_000_000n,
+        },
+      },
+    }
+    getMetricView.mockResolvedValue(
+      metricView(new ArrowFrame(telemetryDataset('getMetricView', fresh)))
+    )
+    getMetricAggregateView.mockReturnValue(deferred<typeof scalar>().promise)
+    now.mockReturnValue(1_700_003_901_000)
+    time.mock.results[0]!.value.setSelection({
+      type: 'custom',
+      start: 1_700_003_600_000,
+      end: 1_700_003_601_000,
+    })
+    await screen.findByText('independent native metadata')
+    expect(ctx.metric?.unit).toBe('s')
+    expect(ctx.chartMetric?.unit).toBe('ms')
+    const enrichment = deferred<MetricViewData | null>()
+    getMetricView.mockReturnValue(enrichment.promise)
+    const before = getMetricView.mock.calls.length
+    ctx.toggleTimeseriesVisible('third', true)
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(before + 1))
+    expect(getMetricView.mock.calls.at(-1)?.slice(1, 3)).toEqual([
+      old.window.requested.startNs,
+      old.window.requested.endNs,
+    ])
+    const enriched = {
+      ...old,
+      timeseries: old.timeseries.map(ts =>
+        ts.seriesRef === 'third'
+          ? {
+              ...ts,
+              datapoints: [
+                {
+                  ...makeSumDatapoint('third-old', 1_700_000_000_000, 8),
+                  valueType: 'Double',
+                },
+              ],
+            }
+          : ts
+      ),
+    }
+    enrichment.resolve(
+      metricView(new ArrowFrame(telemetryDataset('getMetricView', enriched)))
+    )
+    await waitFor(() =>
+      expect(
+        ctx.transformedGaugeSumChartTimeseries.find(s => s.key === 'third')
+          ?.points[0]?.value
+      ).toBe(8)
+    )
+    ctx.onChartPointClick('third', 'third-old')
+    await tick()
+    expect(ctx.selectedDatapoint?.id).toBe('third-old')
+    // Chart inspection uses the original preset bounds, not a newly anchored preset.
+    expect(getMetricView.mock.calls.at(-1)?.slice(1, 3)).toEqual([
+      old.window.requested.startNs,
+      old.window.requested.endNs,
+    ])
+    ctx.toggleTimeseriesVisible('third', false)
+    ctx.toggleTimeseriesVisible('third', true)
+    await tick()
+    expect(getMetricView).toHaveBeenCalledTimes(before + 2)
+    expect(native.timeseries).toBe(series)
+    expect(native.timeseries[2]!.attributes).toBe(attributes)
+    expect(native.timeseries[2]!.datapoints).toHaveLength(0)
+    expect(tableToIPC(table)).toEqual(bytes)
+    getMetricView.mockResolvedValue({
+      ...fresh,
+      description: 'confirmed current empty',
+      timeseries: [],
+      window: {
+        requested: fresh.window.requested,
+        effective: { startNs: null, endNs: null },
+      },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await screen.findByText('confirmed current empty')
+    expect(ctx.metric?.timeseries).toHaveLength(0)
+    expect(ctx.transformedGaugeSumChartTimeseries).toEqual([])
+    expect(ctx.chartDataTimeRange).toBeUndefined()
+    getMetricView.mockResolvedValue(fresh)
+    getMetricAggregateView.mockResolvedValue({
+      ...scalar,
+      scalarAggregate: {
+        ...scalar.scalarAggregate,
+        all: scalar.scalarAggregate.all.map(b => ({
+          ...b,
+          bucketStart: fresh.window.effective.startNs,
+        })),
+      },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await screen.findByText('independent native metadata')
+    expect(ctx.metric?.timeseries).toHaveLength(3)
+    context.mockRestore()
+    time.mockRestore()
+    now.mockRestore()
+  })
+
+  it.each(
+    (['sum', 'avg', 'sum-avg', 'rate'] as const).flatMap(mode =>
+      (
+        [
+          'success',
+          'failure',
+          'same-window',
+          'empty',
+          'superseded',
+          'stale-failure',
+          'aba',
+          'unmount',
+          'unmount-failure',
+          'raw',
+        ] as const
+      ).map(outcome => ({ mode, outcome }))
+    )
+  )(
+    'publishes details independently and retains the $mode chart through $outcome',
+    async ({ mode, outcome }) => {
       const context = vi.spyOn(metricContexts, 'createMetricViewContext')
       const metric = makeMetric('Sum', [
         makeSumDatapoint('old', 1_700_000_000_000, 7),
@@ -684,6 +874,7 @@ describe('MetricsPage aggregate fetching', () => {
               sum: 42,
               avg: 21,
               rate: 42,
+              slope: null,
               sampleCount: 2,
               hasReset: false,
             },
@@ -692,27 +883,38 @@ describe('MetricsPage aggregate fetching', () => {
         },
       }
       getMetricAggregateView.mockResolvedValue(scalar)
+      metric.timeseries.forEach(ts => {
+        ts.views = scalar.scalarAggregate.all
+      })
       setTestUrl('/metrics/metric-1?time=all')
       const mounted = renderWithContexts(MetricsPage)
       await screen.findByRole('table', { name: 'Metric fields' })
       const ctx = context.mock.results[0]!
         .value as metricContexts.MetricViewContext
-      ctx.setAggregationView('sum')
+      ctx.setAggregationView(mode)
+      const label =
+        mode === 'rate' ? 'Rate' : mode === 'avg' ? 'Average' : 'Sum'
       await waitFor(() =>
         expect(
-          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === 'Sum')
+          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === label)
         ).toBe(true)
       )
       const domain = ctx.chartDataTimeRange
       const replacement = deferred<typeof scalar>()
       getMetricAggregateView.mockReturnValue(replacement.promise)
-      const next = {
+      const freshUnit = outcome === 'same-window' ? 'ms' : 's'
+      const next: MetricViewData = {
         ...metric,
-        unit: 's',
+        unit: freshUnit,
         description: 'replacement metadata',
         timeseries: metric.timeseries.map(ts => ({
           ...ts,
-          datapoints: [makeSumDatapoint('new', 1_700_003_600_000, 99)],
+          datapoints: [makeSumDatapoint('old', 1_700_003_600_000, 99)],
+          views: scalar.scalarAggregate.all.map(b => ({
+            ...b,
+            bucketStart: 1_700_003_600_000_000_000n,
+            rate: 99,
+          })),
         })),
         window: {
           requested: metric.window.requested,
@@ -722,56 +924,156 @@ describe('MetricsPage aggregate fetching', () => {
           },
         },
       }
-      getMetricView.mockResolvedValue(next)
+      if (outcome === 'same-window') {
+        next.timeseries = metric.timeseries
+        next.window = metric.window
+      }
+      const freshScalar = {
+        ...scalar,
+        scalarAggregate: {
+          ...scalar.scalarAggregate,
+          all: scalar.scalarAggregate.all.map(b => ({
+            ...b,
+            bucketStart: next.window.effective.startNs!,
+            sum: 99,
+            avg: 99,
+            rate: 99,
+          })),
+        },
+      }
+      getMetricView.mockImplementation((...args: unknown[]) =>
+        Promise.resolve(args[3] === 0 ? metric : next)
+      )
       await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
       await waitFor(() =>
         expect(getMetricAggregateView).toHaveBeenCalledTimes(2)
       )
       expect.soft(ctx.chartDataTimeRange).toEqual(domain)
-      expect.soft(ctx.metric?.unit).toBe('ms')
+      expect.soft(ctx.metric?.unit).toBe(freshUnit)
+      expect.soft(ctx.chartMetric?.unit).toBe('ms')
+      expect.soft(screen.queryByText('replacement metadata')).not.toBeNull()
       expect
         .soft(ctx.transformedGaugeSumChartTimeseries[0]?.points[0]?.value)
-        .toBe(7)
-      if (outcome === 'superseded' || outcome === 'unmount') {
+        .toBe(mode === 'rate' ? 42 : 7)
+      if (mode === 'rate') {
+        ctx.onRateChartPointClick('route=/checkout', 1_700_000_000_000_000_000n)
+        await tick()
+        expect(ctx.highlightedTimestamp).toBe(1_700_000_000_000_000_000n)
+      } else {
+        ctx.onChartPointClick('route=/checkout', 'old')
+        await tick()
+        expect(ctx.selectedDatapoint?.id).toBe('old')
+        const selected = ctx.selectedDatapoint
+        expect(
+          selected?.metricType === 'Sum' ? selected.doubleValue : undefined
+        ).toBe(7)
+        expect(ctx.highlightedTimestamp).toBe(1_700_000_000_000_000_000n)
+      }
+      if (
+        outcome === 'superseded' ||
+        outcome === 'stale-failure' ||
+        outcome === 'aba' ||
+        outcome === 'unmount' ||
+        outcome === 'unmount-failure'
+      ) {
         const signal = getMetricAggregateView.mock.calls
           .at(-1)!
           .at(-1) as AbortSignal
-        if (outcome === 'unmount') mounted.unmount()
-        else navigateToItem('metrics', 'missing')
+        if (outcome === 'unmount' || outcome === 'unmount-failure')
+          mounted.unmount()
+        else {
+          if (outcome === 'aba') {
+            navigateToItem('metrics', 'other')
+            await tick()
+            navigateToItem('metrics', 'metric-1')
+            await tick()
+          }
+          getMetricAggregateView.mockResolvedValue({
+            aggregate: null,
+            scalarAggregate: null,
+          })
+          getMetricView.mockResolvedValue({
+            ...next,
+            description: 'newest metadata',
+          })
+          await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+          await screen.findByText('newest metadata')
+        }
         await tick()
         expect(signal.aborted).toBe(true)
-        replacement.resolve(scalar)
+        if (outcome === 'stale-failure' || outcome === 'unmount-failure')
+          replacement.reject(new Error('obsolete aggregate failure'))
+        else replacement.resolve(scalar)
         await tick()
-        expect(ctx.metric?.unit).toBe('ms')
+        expect(ctx.metric?.unit).toBe('s')
+        if (
+          outcome === 'superseded' ||
+          outcome === 'stale-failure' ||
+          outcome === 'aba'
+        ) {
+          expect(
+            ctx.transformedGaugeSumChartTimeseries.some(s => s.label === label)
+          ).toBe(false)
+          expect(
+            screen.queryByText('Could not load the chart aggregate.')
+          ).toBeNull()
+        }
       } else if (outcome === 'raw') {
         ctx.setAggregationView('raw')
         await waitFor(() => expect(ctx.metric?.unit).toBe('s'))
         replacement.resolve(scalar)
         await tick()
         expect(
-          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === 'Sum')
+          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === label)
         ).toBe(false)
-      } else if (outcome === 'failure') {
+        expect(
+          ctx.transformedGaugeSumChartTimeseries[0]?.points[0]?.value
+        ).toBe(99)
+      } else if (outcome === 'failure' || outcome === 'same-window') {
         replacement.reject(new Error('replacement aggregate failed'))
         await screen.findByText('Could not load the chart aggregate.')
         expect(ctx.chartDataTimeRange).toEqual(domain)
-        expect(ctx.metric?.unit).toBe('ms')
-      } else {
+        expect(ctx.metric?.unit).toBe(freshUnit)
+        expect(ctx.chartMetric?.unit).toBe('ms')
+        getMetricAggregateView.mockResolvedValue(freshScalar)
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+        await waitFor(() =>
+          expect(
+            ctx.transformedGaugeSumChartTimeseries.find(s => s.label === label)
+              ?.points[0]?.value
+          ).toBe(99)
+        )
+        expect(ctx.chartMetric?.unit).toBe(freshUnit)
+        expect(
+          screen.queryByText('Could not load the chart aggregate.')
+        ).toBeNull()
+      } else if (outcome === 'empty') {
         replacement.resolve({
           ...scalar,
-          scalarAggregate: {
-            ...scalar.scalarAggregate,
-            all: scalar.scalarAggregate.all.map(b => ({
-              ...b,
-              bucketStart: 1_700_003_600_000_000_000n,
-              sum: 99,
-            })),
-          },
+          scalarAggregate: { ...scalar.scalarAggregate, all: [] },
         })
-        await waitFor(() => expect(ctx.metric?.unit).toBe('s'))
+        await waitFor(() =>
+          expect(
+            ctx.transformedGaugeSumChartTimeseries.some(s => s.label === label)
+          ).toBe(false)
+        )
+        expect(ctx.chartMetric?.unit).toBe('s')
+        getMetricAggregateView.mockResolvedValue(freshScalar)
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+        await waitFor(() =>
+          expect(
+            ctx.transformedGaugeSumChartTimeseries.find(s => s.label === label)
+              ?.points[0]?.value
+          ).toBe(99)
+        )
+      } else {
+        replacement.resolve(freshScalar)
+        await waitFor(() =>
+          expect(ctx.chartDataTimeRange?.startMs).toBe(1_700_003_600_000)
+        )
         expect(ctx.chartDataTimeRange?.startMs).toBe(1_700_003_600_000)
         expect(
-          ctx.transformedGaugeSumChartTimeseries.find(s => s.label === 'Sum')
+          ctx.transformedGaugeSumChartTimeseries.find(s => s.label === label)
             ?.points[0]?.value
         ).toBe(99)
         expect(getMetricAggregateView).toHaveBeenCalledTimes(2)
