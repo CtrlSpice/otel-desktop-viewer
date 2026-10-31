@@ -244,6 +244,7 @@
         {#snippet action()}{#if span}<ValueCopyButton
               grouped
               loadText={loadSpanJSON}
+              sourceKey={actionSpan}
               label="span"
               tooltip="Copy span as JSON"
             />{/if}{/snippet}

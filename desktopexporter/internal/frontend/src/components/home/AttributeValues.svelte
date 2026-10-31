@@ -395,6 +395,7 @@
         <td class="table-cell text-right" data-attribute-column="copy"
           ><ValueCopyButton
             loadText={signal => copyValue(item, signal)}
+            sourceKey={item.valueRef}
             label={`${name} value`}
             tooltip="Copy"
           /></td

@@ -238,13 +238,15 @@ function itemDestinationQuery(signal: SignalName): RouteQuery {
  * @param signal - traces, metrics, or logs
  * @param id - item id
  * @param itemQuery - optional scoped params (e.g. span, event) applied after strip
+ * @param sourceQuery - query owned by the displayed reading; defaults to the current workspace
  */
 export function itemHref(
   signal: SignalName,
   id: string,
-  itemQuery?: ItemQueryPatch
+  itemQuery?: ItemQueryPatch,
+  sourceQuery: RouteQuery = itemDestinationQuery(signal)
 ): string {
-  const query = mergeItemQuery(itemDestinationQuery(signal), itemQuery)
+  const query = mergeItemQuery(sourceQuery, itemQuery)
   const path = `${signalPath(signal)}/${encodeURIComponent(id)}`
   return path + buildSearch(query)
 }

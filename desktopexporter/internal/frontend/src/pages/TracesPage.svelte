@@ -918,7 +918,7 @@
       <WaterfallView
         traceID={currentTraceData?.traceID ?? ''}
         spans={waterfallSpans}
-        columnCatalogue={currentTraceData.availableColumns}
+        columnCatalogue={currentTraceData?.availableColumns}
         onColumnsChange={columns => {
           if (
             columns.map(columnID).join() !==

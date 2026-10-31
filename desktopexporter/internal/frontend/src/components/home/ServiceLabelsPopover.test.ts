@@ -31,9 +31,7 @@ it('keeps the popover and controls mounted while invalidating Copy when the exac
     service: service('old'),
   })
   const popover = view.container.querySelector<HTMLElement>('[popover]')!
-  await fireEvent.click(
-    view.getByRole('button', { name: 'Service labels', exact: true })
-  )
+  await fireEvent.click(view.getByRole('button', { name: 'Service labels' }))
   const button = await view.findByRole('button', {
     name: 'Copy service.namespace',
   })
