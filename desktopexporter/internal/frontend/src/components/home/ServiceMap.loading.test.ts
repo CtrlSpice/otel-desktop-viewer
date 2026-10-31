@@ -136,6 +136,8 @@ it.each(['failure', 'pagination'])(
     expect(props.onSelect).toHaveBeenLastCalledWith({
       kind: 'connection',
       connection: { ...edge, spanCount: 9 },
+      options: {},
+      revision: 1,
     })
   }
 )

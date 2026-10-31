@@ -12,11 +12,17 @@ import {
   serviceIdentity,
   type ServiceConnection,
   type ServiceSummary,
+  type DiscoveryOptions,
 } from '@/services/discovery-types'
 
+export type ConnectionReading = {
+  connection: ServiceConnection
+  options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>
+  revision: number
+}
 export type MapSelection =
   | { kind: 'service'; service: ServiceSummary }
-  | { kind: 'connection'; connection: ServiceConnection }
+  | ({ kind: 'connection' } & ConnectionReading)
 
 export const SERVICE_CARD_WIDTH = 320
 export const SERVICE_CARD_HEIGHT = 96

@@ -86,6 +86,218 @@ async function holdDiscovery(
   return requests
 }
 
+async function holdConnections(page: Page) {
+  await page.setViewportSize({ width: 2400, height: 1100 })
+  const requests = await holdDiscovery(page, [
+    'services',
+    'connections',
+    'connection-spans',
+  ])
+  const get = async (kind: DiscoveryOptions['kind'], index: number) => {
+    await expect
+      .poll(() => requests.filter(request => request.kind === kind).length)
+      .toBeGreaterThan(index)
+    return requests.filter(request => request.kind === kind)[index]
+  }
+  return {
+    get,
+    ok: async (
+      kind: DiscoveryOptions['kind'],
+      index: number,
+      items: unknown[],
+      truncated = false
+    ) => {
+      const request = await get(kind, index)
+      request.reply.resolve({
+        result: { rows: items.map(item => [item]), truncated },
+      })
+    },
+    fail: async (kind: DiscoveryOptions['kind'], index: number) => {
+      const request = await get(kind, index)
+      request.reply.resolve({
+        error: { code: -32603, message: 'Discovery unavailable' },
+      })
+    },
+    release: () => {
+      for (const request of requests)
+        request.reply.resolve({ result: { rows: [], truncated: false } })
+    },
+  }
+}
+
+const connection = (spanCount = 1, target = 'worker'): ServiceConnection => ({
+  source: service('api'),
+  target: service(target),
+  spanCount,
+  traceCount: 1,
+  errorSpanCount: 0,
+})
+const connectedSpan = (name: string, digit = '2'): ServiceConnectionSpan => ({
+  traceID: '1'.repeat(32),
+  spanID: digit.repeat(16),
+  name,
+  startTime: '1000000000',
+  endTime: '1000000100',
+  statusCode: 0,
+})
+
+test('retained edge inspection owns its time range and survives unrelated service-list success', async ({
+  page,
+}) => {
+  const h = await holdConnections(page)
+  try {
+    await page.goto('/?start=1000&end=2000')
+    await h.ok('services', 0, [service('api'), service('worker')])
+    await h.ok('connections', 0, [connection()])
+    await h.ok('connections', 1, [connection()])
+    const edge = page.getByRole('button', { name: /^api → worker: 1 / })
+    await expect(edge).toBeAttached()
+    await expect(
+      page.getByRole('figure', { name: 'Service connections' })
+    ).toBeVisible()
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/?start=3000&end=4000')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await h.fail('services', 1)
+    await h.fail('connections', 2)
+    await h.fail('connections', 3)
+    await expect(page.locator('.service-map').getByRole('alert')).toHaveCount(3)
+    await edge.focus()
+    await edge.press('Enter')
+    expect((await h.get('connection-spans', 0)).options).toMatchObject({
+      startTime: '1000000000',
+      endTime: '2000000000',
+    })
+    await h.ok('connection-spans', 0, [connectedSpan('retained evidence')])
+    const link = page.getByRole('link', { name: /retained evidence/ })
+    await expect(link).toBeVisible()
+    const original = await link.elementHandle()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await h.ok('services', 2, [service('api'), service('worker')])
+    await h.fail('connections', 4)
+    await h.fail('connections', 5)
+    await expect(page.locator('.service-map').getByRole('alert')).toHaveCount(2)
+    await expect(edge).toHaveAttribute('aria-pressed', 'true')
+    await expect(
+      page.getByRole('table', { name: 'Connection details' })
+    ).toBeVisible()
+    expect(
+      await link.evaluate((element, previous) => element === previous, original)
+    ).toBe(true)
+    await expect(link).toHaveAttribute('href', /span=2222222222222222/)
+  } finally {
+    h.release()
+  }
+})
+
+test('ready connection pagination does not wait for an unrelated pending owner', async ({
+  page,
+}) => {
+  const h = await holdConnections(page)
+  try {
+    await page.goto('/?time=all')
+    await h.ok('services', 0, [service('api'), service('worker')])
+    await h.ok('connections', 0, [connection()], true)
+    await h.ok('connections', 1, [])
+    const more = page.getByRole('button', {
+      name: 'More connections',
+      exact: true,
+    })
+    await expect(more).toBeEnabled()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await h.get('connections', 3)
+    const cards = page.locator('.service-map__node')
+    await cards.getByRole('button', { name: /^worker / }).click()
+    await cards.getByRole('button', { name: /^api / }).click()
+    await expect(more).toBeDisabled()
+    await h.ok('connections', 2, [connection(9)], true)
+    await expect(more).toBeEnabled()
+    await more.click()
+    expect((await h.get('connections', 4)).options).toMatchObject({
+      serviceIdentity: 'api',
+      offset: 1,
+    })
+    await h.ok('connections', 4, [])
+    await expect(more).toHaveCount(0)
+    await expect(page.locator('.service-map')).toHaveAttribute(
+      'aria-busy',
+      'true'
+    )
+  } finally {
+    h.release()
+  }
+})
+
+test('evidence pagination retries failed pages and keeps the displayed target during another selection', async ({
+  page,
+}) => {
+  const h = await holdConnections(page)
+  try {
+    await page.goto('/?time=all')
+    await h.ok('services', 0, [service('api')])
+    await h.ok('connections', 0, [connection(), connection(9, 'store')])
+    const worker = page.getByRole('button', { name: /^api → worker:/ })
+    await worker.focus()
+    await worker.press('Enter')
+    await h.ok('connection-spans', 0, [connectedSpan('worker first')], true)
+    const details = page.getByRole('region', { name: 'Home details' })
+    const next = details.getByRole('button', { name: 'Next', exact: true })
+    await next.click()
+    await h.fail('connection-spans', 1)
+    await expect(details.getByRole('alert')).toBeVisible()
+    await next.click()
+    expect((await h.get('connection-spans', 2)).options.offset).toBe(25)
+    await h.ok(
+      'connection-spans',
+      2,
+      [connectedSpan('worker second', '3')],
+      true
+    )
+    await expect(details.getByText('Page 2', { exact: true })).toBeVisible()
+    const store = page.getByRole('button', { name: /^api → store:/ })
+    await store.focus()
+    await store.press('Enter')
+    await h.get('connection-spans', 3)
+    await next.click()
+    expect((await h.get('connection-spans', 4)).options).toMatchObject({
+      targetIdentity: 'worker',
+      offset: 50,
+    })
+    await h.ok(
+      'connection-spans',
+      4,
+      [connectedSpan('worker third', '4')],
+      false
+    )
+    await expect(
+      details.getByRole('link', { name: /worker third/ })
+    ).toBeVisible()
+    await h.fail('connection-spans', 3)
+    await expect(details.getByRole('alert')).toBeVisible()
+    await details.getByRole('button', { name: 'Retry', exact: true }).click()
+    expect((await h.get('connection-spans', 5)).options).toMatchObject({
+      targetIdentity: 'store',
+      offset: 0,
+    })
+    await h.ok('connection-spans', 5, [connectedSpan('store first', '5')])
+    await expect(
+      details.getByRole('link', { name: /store first/ })
+    ).toBeVisible()
+    await expect(details.getByText('Page 1', { exact: true })).toBeVisible()
+    await expect(details.locator('[data-field="Child service"]')).toContainText(
+      'store'
+    )
+    await expect(
+      details.locator(
+        '[data-field="Parent-child connections"] .detail-property__value'
+      )
+    ).toHaveText('9')
+  } finally {
+    h.release()
+  }
+})
+
 test('service-map pagination keeps the displayed query and time range after failed replacements', async ({
   page,
 }) => {
@@ -593,13 +805,11 @@ test('service cards are unique graph nodes with standalone services, stable insp
     })
   })
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expect(connectionDetails).toHaveCount(0)
-  await expect(apiNode).toHaveAttribute('aria-pressed', 'true')
+  await expect(connectionDetails).toBeVisible()
+  await expect(connection).toHaveAttribute('aria-pressed', 'true')
   await expect(connection).toHaveAccessibleName(
     'api → worker: 7 parent-child connections in 3 traces'
   )
-  await connection.focus()
-  await connection.press('Enter')
   await expect(
     connectionDetails.locator(
       '[data-field="Parent-child connections"] .detail-property__value'

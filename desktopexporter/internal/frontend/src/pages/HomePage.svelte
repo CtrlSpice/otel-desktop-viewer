@@ -73,7 +73,7 @@
   let alive = true
   let initialized = false
   let services = $state<ServiceSummary[]>([])
-  let mapSelection = $state<MapSelection | null>(null)
+  let mapSelection = $state.raw<MapSelection | null>(null)
   const inspectedService = $derived(
     mapSelection?.kind === 'service' ? mapSelection.service : null
   )
@@ -214,13 +214,8 @@
       more = page.truncated
       offset = pageOffset
       loaded = true
-      // Connection totals belong to the old discovery scope. Invalidate that
-      // inspection on successful refresh, retaining its source-service context.
-      const previousService =
-        inspectedService ??
-        (mapSelection?.kind === 'connection'
-          ? mapSelection.connection.source
-          : null)
+      // Connection inspection follows its own received graph membership.
+      const previousService = inspectedService
       if (previousService && refresh) {
         const selected =
           services.find(
@@ -230,7 +225,6 @@
           services[0] ??
           null
         if (
-          mapSelection?.kind !== 'service' ||
           !selected ||
           serviceIdentity(selected) !== serviceIdentity(previousService)
         )
@@ -335,8 +329,8 @@
   {#if mapSelection?.kind === 'connection'}
     <ServiceConnectionDetails
       connection={mapSelection.connection}
-      options={discoveryScope}
-      {revision}
+      options={mapSelection.options}
+      revision={mapSelection.revision}
     />
   {/if}
 {/snippet}
@@ -494,6 +488,7 @@
       {revision}
       selection={mapSelection}
       onSelect={inspect}
+      onUpdateSelection={selection => (mapSelection = selection)}
     />
   {/snippet}
   {#snippet detail()}
