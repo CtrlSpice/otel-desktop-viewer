@@ -28,18 +28,23 @@
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import type { MetricViewData } from '@/types/api-types'
 
   let {
     aggregateLoading = false,
     aggregateSummaryLoading = false,
     aggregateError = '',
     aggregateSummaryError = '',
+    aggregateMetric,
+    aggregateSummaryMetric,
     requestKey,
   }: {
     aggregateLoading?: boolean
     aggregateSummaryLoading?: boolean
     aggregateError?: string
     aggregateSummaryError?: string
+    aggregateMetric?: MetricViewData
+    aggregateSummaryMetric?: MetricViewData
     requestKey?: AbortSignal
   } = $props()
 
@@ -119,7 +124,7 @@
           <HistogramHeatmap
             points={ctx.heatmapBucketSeries}
             height={plotHeight}
-            unit={ctx.metric!.unit}
+            unit={(aggregateMetric ?? ctx.metric)!.unit}
             timeRange={ctx.chartDataTimeRange ?? null}
             plotPaddingBottom={chartPadding.bottom}
             onSelect={ctx.onHeatmapSelect}
@@ -142,7 +147,7 @@
         {:else}
           <HistogramChart
             datapoint={ctx.histogramChartDatapoint}
-            unit={ctx.metric!.unit}
+            unit={(aggregateSummaryMetric ?? ctx.metric)!.unit}
             height={plotHeight}
             onClearSelection={ctx.clearChartSelection}
           />
@@ -192,12 +197,14 @@
   </div>
 {/snippet}
 
-<LoadingStatus
-  {pending}
-  {requestKey}
-  label="Loading chart aggregate…"
-  class="block p-3 text-subtle"
-/>
+{#key ctx.isHistogramKind ? ctx.activeHistogramTab : 'scalar'}
+  <LoadingStatus
+    {pending}
+    {requestKey}
+    label="Loading chart aggregate…"
+    class="block p-3 text-subtle"
+  />
+{/key}
 {#if error}<p role="alert" class="p-3 text-papaya">{error}</p>{/if}
 {#if !ctx.metric}
   <div class="metric-chart-view metric-chart-view--empty">

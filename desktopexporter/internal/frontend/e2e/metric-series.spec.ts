@@ -1379,6 +1379,124 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
+  for (const outcome of ['success', 'failure'] as const) {
+    test(`a fast detail refresh retains each histogram chart's own data and query scope through aggregate ${outcome}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1920, height: 1100 })
+      await page.addInitScript(() =>
+        localStorage.setItem('signal-detail:open', 'true')
+      )
+      const pending = await holdAggregates(page)
+      await Promise.all(pending.map(({ route }) => respond(route)))
+      const chart = page.locator('#metric-chart-tabpanel')
+      const cells = chart.locator('.heatmap-cell')
+      await expect(cells).toHaveCount(3)
+      const originalCell = await cells.nth(1).elementHandle()
+      const nextStart = String(BigInt(startNs) + 3_600_000_000_000n)
+      const nextEnd = String(BigInt(endNs) + 3_600_000_000_000n)
+      const columns: Record<string, unknown>[] = []
+      await routeTelemetry(page, async route => {
+        const { id, method, params } = route.request().postDataJSON()
+        if (method !== 'getMetricView') return route.fallback()
+        if (params.targetBuckets === 1) {
+          columns.push(params)
+          return route.fallback()
+        }
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              ...metric,
+              metricType: 'Histogram',
+              aggregationTemporality: 'Delta',
+              aggregationTemporalityCode: 1,
+              unit: 's',
+              description: 'fresh independent metadata',
+              timeseries: timeseries.map(series => ({
+                ...series,
+                datapoints: [],
+              })),
+              window: {
+                requested: { startNs: null, endNs: null },
+                effective: { startNs: nextStart, endNs: nextEnd },
+              },
+            },
+          },
+        })
+      })
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+      await expect.poll(() => pending.length).toBe(4)
+      await expect(
+        page.getByRole('table', { name: 'Metric fields' })
+      ).toContainText('fresh independent metadata')
+      await expect(cells).toHaveCount(3)
+      expect(
+        await cells
+          .nth(1)
+          .evaluate((node, before) => node === before, originalCell)
+      ).toBe(true)
+      await expect(chart.getByText('value (ms)', { exact: true })).toBeVisible()
+      const cellBounds = (await cells.nth(1).boundingBox())!
+      await page.mouse.click(
+        cellBounds.x + cellBounds.width / 2,
+        cellBounds.y + cellBounds.height / 2
+      )
+      await expect.poll(() => columns.length).toBe(1)
+      expect(columns[0]).toMatchObject({
+        metricRef: metric.metricRef,
+        startTime: startNs,
+        endTime: endNs,
+      })
+
+      const summaryRequest = pending
+        .slice(2)
+        .find(request => request.wholeWindow)!
+      const heatmapRequest = pending
+        .slice(2)
+        .find(request => !request.wholeWindow)!
+      await respond(summaryRequest.route, {
+        ...bucket,
+        count: 21,
+        bucketCounts: [5, 11, 5],
+        timestamp: nextStart,
+      })
+      await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+      await expect(chart.getByText('value (s)', { exact: true })).toBeVisible()
+      await expect(chart.locator('.lc-bars-bar')).toHaveCount(3)
+      await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
+      await expect(chart.getByText('value (ms)', { exact: true })).toBeVisible()
+      const returnedCell = await cells.nth(1).elementHandle()
+      await respond(
+        heatmapRequest.route,
+        { ...bucket, timestamp: nextStart },
+        outcome === 'failure'
+      )
+      if (outcome === 'failure') {
+        await expect(
+          page.getByText('Could not load the chart aggregate.')
+        ).toBeVisible()
+        await expect(
+          chart.getByText('value (ms)', { exact: true })
+        ).toBeVisible()
+        expect(
+          await cells
+            .nth(1)
+            .evaluate((node, before) => node === before, returnedCell)
+        ).toBe(true)
+      } else {
+        await expect(
+          chart.getByText('value (s)', { exact: true })
+        ).toBeVisible()
+      }
+      await expect(cells).toHaveCount(3)
+      await expect(
+        page.getByRole('table', { name: 'Metric fields' })
+      ).toContainText('fresh independent metadata')
+    })
+  }
+
   test('retains histogram aggregates through a pending and failed metric replacement', async ({
     page,
   }) => {

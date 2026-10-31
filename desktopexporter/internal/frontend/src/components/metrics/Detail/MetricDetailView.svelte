@@ -119,6 +119,7 @@
             <ValueCopyButton
               grouped
               loadText={loadMetricJSON}
+              sourceKey={actionMetric}
               label="metric"
               tooltip="Copy metric as OTLP JSON"
             />
