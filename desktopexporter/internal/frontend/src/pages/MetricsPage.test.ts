@@ -22,6 +22,7 @@ import {
 } from '@/route'
 import { downloadOTLP, readOTLPText } from '@/services/export-service'
 import { savePersistedTimeseriesVisible } from '@/components/metrics/utils/metric-timeseries-visible'
+import * as metricContexts from '@/contexts/metric-view-context.svelte'
 
 vi.mock('@/services/export-service', () => ({
   downloadOTLP: vi.fn(),
@@ -663,6 +664,148 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
+  it.each(['success', 'failure', 'superseded', 'unmount', 'raw'] as const)(
+    'keeps scalar detail and aggregate in one displayed window through replacement %s',
+    async outcome => {
+      const context = vi.spyOn(metricContexts, 'createMetricViewContext')
+      const metric = makeMetric('Sum', [
+        makeSumDatapoint('old', 1_700_000_000_000, 7),
+      ])
+      metric.timeseries.push({ ...metric.timeseries[0]!, seriesRef: 'second' })
+      searchMetricSummaries.mockResolvedValue([makeSummary('Sum')])
+      getStats.mockResolvedValue(makeStats())
+      getMetricView.mockResolvedValue(metric)
+      const scalar = {
+        aggregate: null,
+        scalarAggregate: {
+          all: [
+            {
+              bucketStart: 1_700_000_000_000_000_000n,
+              sum: 42,
+              avg: 21,
+              rate: 42,
+              sampleCount: 2,
+              hasReset: false,
+            },
+          ],
+          selected: null,
+        },
+      }
+      getMetricAggregateView.mockResolvedValue(scalar)
+      setTestUrl('/metrics/metric-1?time=all')
+      const mounted = renderWithContexts(MetricsPage)
+      await screen.findByRole('table', { name: 'Metric fields' })
+      const ctx = context.mock.results[0]!
+        .value as metricContexts.MetricViewContext
+      ctx.setAggregationView('sum')
+      await waitFor(() =>
+        expect(
+          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === 'Sum')
+        ).toBe(true)
+      )
+      const domain = ctx.chartDataTimeRange
+      const replacement = deferred<typeof scalar>()
+      getMetricAggregateView.mockReturnValue(replacement.promise)
+      const next = {
+        ...metric,
+        unit: 's',
+        description: 'replacement metadata',
+        timeseries: metric.timeseries.map(ts => ({
+          ...ts,
+          datapoints: [makeSumDatapoint('new', 1_700_003_600_000, 99)],
+        })),
+        window: {
+          requested: metric.window.requested,
+          effective: {
+            startNs: 1_700_003_600_000_000_000n,
+            endNs: 1_700_003_601_000_000_000n,
+          },
+        },
+      }
+      getMetricView.mockResolvedValue(next)
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() =>
+        expect(getMetricAggregateView).toHaveBeenCalledTimes(2)
+      )
+      expect.soft(ctx.chartDataTimeRange).toEqual(domain)
+      expect.soft(ctx.metric?.unit).toBe('ms')
+      expect
+        .soft(ctx.transformedGaugeSumChartTimeseries[0]?.points[0]?.value)
+        .toBe(7)
+      if (outcome === 'superseded' || outcome === 'unmount') {
+        const signal = getMetricAggregateView.mock.calls
+          .at(-1)!
+          .at(-1) as AbortSignal
+        if (outcome === 'unmount') mounted.unmount()
+        else navigateToItem('metrics', 'missing')
+        await tick()
+        expect(signal.aborted).toBe(true)
+        replacement.resolve(scalar)
+        await tick()
+        expect(ctx.metric?.unit).toBe('ms')
+      } else if (outcome === 'raw') {
+        ctx.setAggregationView('raw')
+        await waitFor(() => expect(ctx.metric?.unit).toBe('s'))
+        replacement.resolve(scalar)
+        await tick()
+        expect(
+          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === 'Sum')
+        ).toBe(false)
+      } else if (outcome === 'failure') {
+        replacement.reject(new Error('replacement aggregate failed'))
+        await screen.findByText('Could not load the chart aggregate.')
+        expect(ctx.chartDataTimeRange).toEqual(domain)
+        expect(ctx.metric?.unit).toBe('ms')
+      } else {
+        replacement.resolve({
+          ...scalar,
+          scalarAggregate: {
+            ...scalar.scalarAggregate,
+            all: scalar.scalarAggregate.all.map(b => ({
+              ...b,
+              bucketStart: 1_700_003_600_000_000_000n,
+              sum: 99,
+            })),
+          },
+        })
+        await waitFor(() => expect(ctx.metric?.unit).toBe('s'))
+        expect(ctx.chartDataTimeRange?.startMs).toBe(1_700_003_600_000)
+        expect(
+          ctx.transformedGaugeSumChartTimeseries.find(s => s.label === 'Sum')
+            ?.points[0]?.value
+        ).toBe(99)
+        expect(getMetricAggregateView).toHaveBeenCalledTimes(2)
+      }
+      context.mockRestore()
+    }
+  )
+
+  it('retains heatmap selection while refreshed detail leaves its chart pending or failed', async () => {
+    const context = vi.spyOn(metricContexts, 'createMetricViewContext')
+    const metric = prepareHistogram()
+    renderWithContexts(MetricsPage)
+    await screen.findByRole('list', { name: 'Heatmap count scale' })
+    const ctx = context.mock.results[0]!
+      .value as metricContexts.MetricViewContext
+    ctx.onHeatmapSelect(1_700_000_000_000_000_000n)
+    await tick()
+    const chart = ctx.heatmapBucketSeries
+    const replacement = deferred<ReturnType<typeof aggregate>>()
+    getMetricAggregateView.mockReturnValue(replacement.promise)
+    getMetricView.mockResolvedValue({
+      ...metric,
+      description: 'fresh metadata',
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await screen.findByText('fresh metadata')
+    expect(ctx.heatmapBucketSeries).toBe(chart)
+    expect.soft(ctx.heatmapColumnStartNs).toBe(1_700_000_000_000_000_000n)
+    replacement.reject(new Error('replacement unavailable'))
+    await screen.findByText('Could not load the chart aggregate.')
+    expect(ctx.heatmapColumnStartNs).toBe(1_700_000_000_000_000_000n)
+    context.mockRestore()
+  })
+
   function aggregate(count: bigint) {
     const bucket: AggregateBucket = {
       timestamp: 1_700_000_000_000_000_000n,
