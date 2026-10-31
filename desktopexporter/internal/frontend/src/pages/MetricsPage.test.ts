@@ -669,6 +669,302 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
+  it.each(['replacement', 'failed', 'aba', 'unmount'] as const)(
+    'keeps aggregate work with the displayed owner through navigation: %s',
+    async lifecycle => {
+      const context = vi.spyOn(metricContexts, 'createMetricViewContext')
+      const metric = prepareHistogram()
+      searchMetricSummaries.mockResolvedValue([
+        makeSummary('Histogram'),
+        {
+          ...makeSummary('Histogram'),
+          metricRef: 'next',
+          name: 'next.histogram',
+        },
+      ])
+      const old = deferred<ReturnType<typeof aggregate>>()
+      const next = deferred<MetricViewData | null>()
+      const back = deferred<MetricViewData | null>()
+      getMetricAggregateView.mockReturnValue(old.promise)
+      getMetricView.mockImplementation((id: string) =>
+        id === 'next' ? next.promise : Promise.resolve(metric)
+      )
+      const mounted = renderWithContexts(MetricsPage)
+      await screen.findByRole('table', { name: 'Metric fields' })
+      await waitFor(() =>
+        expect(getMetricAggregateView).toHaveBeenCalledTimes(2)
+      )
+      const signals = getMetricAggregateView.mock.calls.map(
+        args => args.at(-1) as AbortSignal
+      )
+      const ctx = context.mock.results[0]!
+        .value as metricContexts.MetricViewContext
+      navigateToItem('metrics', 'next')
+      await tick()
+      expect.soft(getMetricAggregateView).toHaveBeenCalledTimes(2)
+      expect.soft(signals.every(signal => !signal.aborted)).toBe(true)
+      expect(ctx.metric?.metricRef).toBe('metric-1')
+      if (lifecycle === 'unmount') {
+        mounted.unmount()
+        expect(signals.every(signal => signal.aborted)).toBe(true)
+        old.reject(new Error('unmounted owner'))
+        next.reject(new Error('unmounted detail'))
+        await tick()
+        expect(screen.queryByRole('alert')).toBeNull()
+      } else if (lifecycle === 'failed') {
+        next.reject(new Error('selection failed'))
+        await screen.findByText('Could not load the selected metric.')
+        old.resolve(aggregate(7n))
+        await waitFor(() =>
+          expect(ctx.heatmapBucketSeries?.[0]?.totals.count).toBe(7)
+        )
+        const owned = deferred<ReturnType<typeof aggregate>>()
+        getMetricAggregateView.mockReturnValue(owned.promise)
+        ctx.toggleTimeseriesVisible('second', false)
+        await tick()
+        expect(getMetricAggregateView).toHaveBeenCalledTimes(4)
+        expect(
+          getMetricAggregateView.mock.calls.slice(2).map(args => args[0])
+        ).toEqual(['metric-1', 'metric-1'])
+        expect(window.location.pathname).toBe('/metrics/next')
+        owned.reject(new Error('owned selection failed'))
+        await screen.findByText('Could not load the chart aggregate.')
+        expect(ctx.heatmapBucketSeries?.[0]?.totals.count).toBe(7)
+      } else {
+        const current = deferred<ReturnType<typeof aggregate>>()
+        getMetricAggregateView.mockReturnValue(current.promise)
+        if (lifecycle === 'aba') {
+          getMetricView.mockReturnValue(back.promise)
+          navigateToItem('metrics', 'metric-1')
+          await tick()
+          expect(getMetricAggregateView).toHaveBeenCalledTimes(2)
+          expect(signals.every(signal => !signal.aborted)).toBe(true)
+          back.resolve({ ...metric, description: 'current A' })
+          next.resolve({
+            ...metric,
+            metricRef: 'next',
+            description: 'obsolete B',
+          })
+        } else
+          next.resolve({ ...metric, metricRef: 'next', name: 'next.histogram' })
+        await waitFor(() =>
+          expect(getMetricAggregateView).toHaveBeenCalledTimes(4)
+        )
+        expect(signals.every(signal => signal.aborted)).toBe(true)
+        const owner = lifecycle === 'aba' ? 'metric-1' : 'next'
+        expect(
+          getMetricAggregateView.mock.calls.slice(2).map(args => args[0])
+        ).toEqual([owner, owner])
+        current.resolve(aggregate(11n))
+        await waitFor(() =>
+          expect(ctx.heatmapBucketSeries?.[0]?.totals.count).toBe(11)
+        )
+        if (lifecycle === 'aba') old.reject(new Error('obsolete A failure'))
+        else old.resolve(aggregate(99n))
+        await tick()
+        expect(ctx.metric?.metricRef).toBe(owner)
+        expect(ctx.heatmapBucketSeries?.[0]?.totals.count).toBe(11)
+        expect(
+          screen.queryByText('Could not load the chart aggregate.')
+        ).toBeNull()
+      }
+      context.mockRestore()
+    }
+  )
+
+  it.each(
+    (['sum', 'avg', 'sum-avg', 'rate'] as const).flatMap(mode =>
+      (['success', 'failure'] as const).map(outcome => ({ mode, outcome }))
+    )
+  )(
+    'keeps a fresh native third-series control while the retained $mode chart replacement has $outcome',
+    async ({ mode, outcome }) => {
+      const context = vi.spyOn(metricContexts, 'createMetricViewContext')
+      const start = 1_700_000_000_000_000_000n
+      const shifted = start + 3_600_000_000_000n
+      const bucket = (timestamp: bigint, value: number) => ({
+        bucketStart: timestamp,
+        sum: value,
+        avg: value,
+        rate: value,
+        slope: null,
+        sampleCount: 2,
+        hasReset: false,
+      })
+      const scalar = (timestamp: bigint, value: number) => ({
+        aggregate: null,
+        scalarAggregate: { all: [bucket(timestamp, value)], selected: null },
+      })
+      const metric = makeMetric('Sum')
+      metric.timeseries = ['first', 'second'].map(seriesRef => ({
+        ...metric.timeseries[0]!,
+        seriesRef,
+        attributes: [
+          { key: 'route', value: { kind: 'string', value: `/${seriesRef}` } },
+        ],
+        views: [bucket(start, 7)],
+        datapoints: [
+          {
+            ...makeSumDatapoint(
+              `${seriesRef}-old`,
+              Number(start / 1_000_000n),
+              7
+            ),
+            valueType: 'Double',
+          },
+        ],
+      }))
+      const native = (source: MetricViewData) =>
+        metricView(new ArrowFrame(telemetryDataset('getMetricView', source)))!
+      searchMetricSummaries.mockResolvedValue([makeSummary('Sum')])
+      getStats.mockResolvedValue(makeStats())
+      getMetricView.mockResolvedValue(native(metric))
+      getMetricAggregateView.mockResolvedValue(scalar(start, 42))
+      savePersistedTimeseriesVisible('metric-1', ['first', 'second'])
+      setTestUrl('/metrics/metric-1?time=all')
+      renderWithContexts(MetricsPage)
+      await screen.findByRole('table', { name: 'Metric fields' })
+      const ctx = context.mock.results[0]!
+        .value as metricContexts.MetricViewContext
+      ctx.setAggregationView(mode)
+      const label =
+        mode === 'avg' ? 'Average' : mode === 'rate' ? 'Rate' : 'Sum'
+      await waitFor(() =>
+        expect(
+          ctx.transformedGaugeSumChartTimeseries.some(s => s.label === label)
+        ).toBe(true)
+      )
+      const oldChart = ctx.chartMetric
+      const fresh: MetricViewData = {
+        ...metric,
+        unit: 's',
+        description: 'fresh third-series Details',
+        window: {
+          requested: { startNs: shifted, endNs: shifted + 1_000_000_000n },
+          effective: { startNs: shifted, endNs: shifted + 1_000_000_000n },
+        },
+        timeseries: [
+          ...metric.timeseries.map(ts => ({
+            ...ts,
+            views: [bucket(shifted, 21)],
+            datapoints: [
+              {
+                ...makeSumDatapoint(
+                  `${ts.seriesRef}-new`,
+                  Number(shifted / 1_000_000n),
+                  21
+                ),
+                valueType: 'Double',
+              },
+            ],
+          })),
+          {
+            ...metric.timeseries[0]!,
+            seriesRef: 'third',
+            attributes: [
+              { key: 'route', value: { kind: 'string', value: '/third' } },
+            ],
+            views: [bucket(shifted, 33)],
+            datapoints: [],
+          },
+        ],
+      }
+      const frame = telemetryDataset('getMetricView', fresh)
+      const bytes = tableToIPC(frame)
+      const received = metricView(new ArrowFrame(frame))!
+      const series = received.timeseries
+      const attributes = series[2]!.attributes
+      const obsolete = deferred<ReturnType<typeof scalar>>()
+      const replacement = deferred<ReturnType<typeof scalar>>()
+      getMetricView.mockResolvedValue(received)
+      getMetricAggregateView.mockReturnValue(obsolete.promise)
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await screen.findByText('fresh third-series Details')
+      expect(ctx.metric?.unit).toBe('s')
+      expect(ctx.chartMetric).toBe(oldChart)
+      getMetricAggregateView.mockReturnValue(replacement.promise)
+      const enriched = native({
+        ...fresh,
+        timeseries: fresh.timeseries.map(ts =>
+          ts.seriesRef === 'third'
+            ? {
+                ...ts,
+                datapoints: [
+                  {
+                    ...makeSumDatapoint(
+                      'third-new',
+                      Number(shifted / 1_000_000n),
+                      33
+                    ),
+                    valueType: 'Double',
+                  },
+                ],
+              }
+            : ts
+        ),
+      })
+      getMetricView.mockResolvedValue(enriched)
+      const checkbox = screen.getByRole('checkbox', {
+        name: 'Show route: /third in chart',
+      })
+      await fireEvent.click(checkbox)
+      await tick()
+      expect.soft(checkbox).toBeChecked()
+      expect.soft(ctx.visibleSeries.has('third')).toBe(true)
+      expect
+        .soft(getMetricAggregateView.mock.calls.at(-1)?.[4])
+        .toEqual(['first', 'second', 'third'])
+      expect(ctx.chartMetric).toBe(oldChart)
+      expect(ctx.chartDataTimeRange?.startMs).toBe(Number(start / 1_000_000n))
+      if (outcome === 'failure') obsolete.resolve(scalar(start, 666))
+      else obsolete.reject(new Error('obsolete selection failure'))
+      await tick()
+      expect(
+        ctx.transformedGaugeSumChartTimeseries.find(s => s.label === label)
+          ?.points[0]?.value
+      ).toBe(42)
+      if (outcome === 'failure') {
+        replacement.reject(new Error('third-series aggregate failed'))
+        await screen.findByText('Could not load the chart aggregate.')
+        expect(checkbox).toBeChecked()
+        expect(ctx.chartMetric).toBe(oldChart)
+        ctx.setAggregationView('raw')
+        await waitFor(() =>
+          expect(
+            ctx.transformedGaugeSumChartTimeseries.find(s => s.key === 'third')
+              ?.points[0]?.value
+          ).toBe(33)
+        )
+        expect(ctx.chartMetric?.unit).toBe('s')
+        getMetricAggregateView.mockResolvedValue(scalar(shifted, 99))
+        ctx.setAggregationView(mode)
+      } else replacement.resolve(scalar(shifted, 99))
+      await waitFor(() =>
+        expect(
+          ctx.transformedGaugeSumChartTimeseries.find(s => s.label === label)
+            ?.points[0]?.value
+        ).toBe(99)
+      )
+      await waitFor(() =>
+        expect(
+          ctx.transformedGaugeSumChartTimeseries.find(s => s.key === 'third')
+            ?.points[0]?.value
+        ).toBe(33)
+      )
+      expect(checkbox).toBeChecked()
+      expect(ctx.chartMetric?.unit).toBe('s')
+      expect(ctx.chartDataTimeRange?.startMs).toBe(Number(shifted / 1_000_000n))
+      expect(
+        screen.queryByText('Could not load the chart aggregate.')
+      ).toBeNull()
+      expect(received.timeseries).toBe(series)
+      expect(received.timeseries[2]!.attributes).toBe(attributes)
+      expect(received.timeseries[2]!.datapoints).toHaveLength(0)
+      expect(tableToIPC(frame)).toEqual(bytes)
+      context.mockRestore()
+    }
+  )
+
   it('enriches and inspects the retained native scalar source while fresh detail publishes and current empty detail replaces it', async () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_001_000)
     localStorage.setItem(

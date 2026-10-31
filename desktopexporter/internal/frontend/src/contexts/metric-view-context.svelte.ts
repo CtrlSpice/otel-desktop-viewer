@@ -1636,7 +1636,8 @@ export function createMetricViewContext(
     if (!metricRef) return
 
     if (metricType === 'Gauge' || metricType === 'Sum') {
-      const keys = gaugeSumGroups.keys
+      // Details controls use current rows, not a retained chart's source rows.
+      const keys = gaugeSumKeys
       void keys.join('\0')
       const next = reconcileTimeseriesVisible(
         view.visibleSeries,
