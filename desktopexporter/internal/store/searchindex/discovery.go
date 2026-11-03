@@ -99,7 +99,7 @@ func discover(ctx context.Context, db *sql.DB, options DiscoveryOptions, allKeys
 		for i := range out {
 			m := &out[i]
 			r, err := db.QueryContext(ctx, discoveryOwners("$3")+`select min(o.record_key) from search_postings l join discovery_owners o on o.id=l.owner_id join search_values v on v.id=l.value_id
-			 where l.path_id=$1 and (v.value ilike $2 or ($2='%%' and v.kind in('map','array','empty')))
+			 where l.path_id=$1 and (v.value ilike $2 escape '\' or ($2='%%' and v.kind in('map','array','empty')))
 			group by v.identity,v.value order by v.value,v.identity limit 3`, m.pathID, pattern, signal)
 			if err != nil {
 				return nil, err
@@ -140,9 +140,9 @@ func discoverySQL(options DiscoveryOptions, allKeys bool, owners string) (string
 		pathText = jsonText(options.Path)
 	}
 	args := []any{signal, options.Owner, pathText, options.Kind, pattern}
-	filter := `p.key ilike $5`
+	filter := `p.key ilike $5 escape '\'`
 	if selected {
-		filter = `(v.value ilike $5 or ($5='%%' and v.kind in('map','array','empty')))`
+		filter = `(v.value ilike $5 escape '\' or ($5='%%' and v.kind in('map','array','empty')))`
 	} else if strings.TrimSpace(options.Term) == "" && !allKeys {
 		filter = "($5 IS NULL AND false)"
 	}

@@ -42,7 +42,7 @@ func DiscoverArrowSQL(options DiscoveryOptions) (string, []any, error) {
  row_number() over(partition by l.path_id order by v.value,v.identity) as ordinal
  from search_postings l join matches m on m.id=l.path_id
  join discovery_owners o on o.id=l.owner_id join search_values v on v.id=l.value_id
- where v.value ilike $5 or ($5='%%' and v.kind in('map','array','empty'))
+ where v.value ilike $5 escape '\' or ($5='%%' and v.kind in('map','array','empty'))
  group by l.path_id,v.identity,v.value qualify ordinal<=3
 ), native_samples as (
  select r.path_id,r.ordinal,` + value.ValueSQL + ` as value from ` + from + `
