@@ -142,12 +142,14 @@ func TestSearchEmptyAndNoMatch(t *testing.T) {
 }
 
 // TestSearchEscapesLikeWildcards verifies that literal wildcard characters do
-// not match all stored attribute values.
+// not match all stored attribute keys.
 func TestSearchEscapesLikeWildcards(t *testing.T) {
 	t.Parallel()
 	s, ctx := setup(t)
 	assert.Empty(t, search(t, s, ctx, "%"), "%% must be a literal, not a wildcard")
-	assert.Empty(t, search(t, s, ctx, "_"))
+	got := search(t, s, ctx, "_")
+	require.Len(t, got, 1)
+	assert.Equal(t, "http.status_code", got[0].Name, "only the key containing a literal underscore matches")
 	assert.NotEmpty(t, search(t, s, ctx, "route"), "control: real key names still match")
 }
 
