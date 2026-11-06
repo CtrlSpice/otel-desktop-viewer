@@ -5,6 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>otel-desktop-viewer</title>
+    <!-- Establish Tailwind's layer order before Vite's split chart styles load. -->
+    <style>@layer properties,theme,base,components,utilities;</style>
     <script type="module" crossorigin src="/assets/index-hXQNt8QX.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/chart-I0ufp9bF.js">
     <link rel="modulepreload" crossorigin href="/assets/transition-D1wyAMcO.js">

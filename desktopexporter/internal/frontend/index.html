@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>otel-desktop-viewer</title>
+    <!-- Establish Tailwind's layer order before Vite's split chart styles load. -->
+    <style>
+      @layer properties, theme, base, components, utilities;
+    </style>
   </head>
   <body>
     <div id="app"></div>
