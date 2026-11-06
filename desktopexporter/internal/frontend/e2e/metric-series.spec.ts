@@ -216,6 +216,9 @@ test('a fresh metric deep link opens while its list is pending and survives list
   expect(exactReads).toBe(1)
   expect(pendingList).toBeDefined()
   const mountedChart = await chart.elementHandle()
+  const failedList = page.waitForResponse(response =>
+    response.url().endsWith('/api/data/searchMetricSummaries')
+  )
   await pendingList!.fulfill({
     json: {
       jsonrpc: '2.0',
@@ -223,12 +226,16 @@ test('a fresh metric deep link opens while its list is pending and survives list
       error: { code: -32603, message: 'metric list unavailable' },
     },
   })
+  await (await failedList).finished()
+  await expect(page.getByText('Loading metrics…', { exact: true })).toHaveCount(
+    0
+  )
   await expect(chart.locator('.metric-series-line')).toHaveCount(2)
   expect(await mountedChart!.evaluate(element => element.isConnected)).toBe(
     true
   )
   await expect(
-    chart.getByRole('button', { name: 'Download metric' })
+    page.getByRole('button', { name: 'Download metric', exact: true })
   ).toBeEnabled()
   expect(exactReads).toBe(1)
 })
