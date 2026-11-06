@@ -5,13 +5,19 @@
 #ifdef _WIN32
 #include <windows.h>
 static SRWLOCK registry_mutex = SRWLOCK_INIT;
+static SRWLOCK owner_mutex = SRWLOCK_INIT;
 #define LOCK() AcquireSRWLockExclusive(&registry_mutex)
 #define UNLOCK() ReleaseSRWLockExclusive(&registry_mutex)
+#define OWNER_LOCK() AcquireSRWLockExclusive(&owner_mutex)
+#define OWNER_UNLOCK() ReleaseSRWLockExclusive(&owner_mutex)
 #else
 #include <pthread.h>
 static pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t owner_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define LOCK() pthread_mutex_lock(&registry_mutex)
 #define UNLOCK() pthread_mutex_unlock(&registry_mutex)
+#define OWNER_LOCK() pthread_mutex_lock(&owner_mutex)
+#define OWNER_UNLOCK() pthread_mutex_unlock(&owner_mutex)
 #endif
 
 #define CHECK(call) do { if ((call) != DUCKDB_V2_ERROR_NONE) goto cleanup; } while (0)
@@ -21,12 +27,15 @@ static pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 // dereference an input after its caller has released it.
 struct input {
     uint64_t token;
+    uint64_t owner;
     struct ArrowSchema *schema;
     struct ArrowArray *array;
     struct input *next;
 };
 static struct input *inputs;
 static uint64_t next_token;
+static uint64_t next_owner;
+static const duckdb_v2_identifier_t owner_option = {"otel_arrow_owner", 16};
 
 static struct input *find_input(uint64_t token) {
     for (struct input *p = inputs; p; p = p->next) {
@@ -35,13 +44,15 @@ static struct input *find_input(uint64_t token) {
     return NULL;
 }
 
-uint64_t otel_arrow_publish(struct ArrowSchema *schema, struct ArrowArray *array) {
+uint64_t otel_arrow_publish(uint64_t owner, struct ArrowSchema *schema, struct ArrowArray *array) {
+    if (!owner) return 0;
     struct input *p = malloc(sizeof(*p));
     if (!p) return 0;
     LOCK();
     // Do not reuse a token even after wraparound.
     if (next_token == UINT64_MAX) { UNLOCK(); free(p); return 0; }
     p->token = ++next_token;
+    p->owner = owner;
     p->schema = schema;
     p->array = array;
     p->next = inputs;
@@ -72,6 +83,47 @@ static void fail(duckdb_v2_error_info_handle *err, const char *message) {
     duckdb_v2_error_info_set_text(*err, &text);
 }
 
+// A session may request a fresh identity, but cannot assign an existing one.
+// IDs are process-wide because the input registry spans database instances.
+static void update_owner(duckdb_v2_custom_option_update_info_handle info,
+                         duckdb_v2_context_handle context, duckdb_v2_error_info_handle *err) {
+    duckdb_v2_value_handle requested = NULL, minted = NULL;
+    duckdb_v2_factory_handle factory;
+    DUCKDB_V2_SETTING_SCOPE scope;
+    uint64_t value, owner;
+    CHECK(duckdb_v2_custom_option_update_get_scope(info, &scope, err));
+    if (scope != DUCKDB_V2_SETTING_SCOPE_SESSION) { fail(err, "Arrow owner must be session-scoped"); goto cleanup; }
+    CHECK(duckdb_v2_custom_option_update_get_value(info, &requested, err));
+    CHECK(duckdb_v2_value_get_ubigint(requested, &value, err));
+    if (value != 0) { fail(err, "Arrow owner is assigned by the bridge"); goto cleanup; }
+    OWNER_LOCK();
+    if (next_owner == UINT64_MAX) { OWNER_UNLOCK(); fail(err, "Arrow owner space exhausted"); goto cleanup; }
+    owner = ++next_owner;
+    OWNER_UNLOCK();
+    CHECK(duckdb_v2_context_get_factory(context, &factory, err));
+    CHECK(duckdb_v2_value_create_ubigint(factory, owner, &minted, err));
+    CHECK(duckdb_v2_custom_option_update_set_value(info, minted, err));
+cleanup:
+    duckdb_v2_value_destroy(&requested);
+    duckdb_v2_value_destroy(&minted);
+}
+
+static bool read_owner(duckdb_v2_context_handle context, uint64_t *owner, duckdb_v2_error_info_handle *err) {
+    duckdb_v2_config_handle config;
+    duckdb_v2_value_handle value = NULL;
+    DUCKDB_V2_SETTING_SCOPE scope;
+    uint64_t actual;
+    bool result = false;
+    CHECK(duckdb_v2_context_get_config(context, &config, err));
+    CHECK(duckdb_v2_config_get_option_value(config, &owner_option, &value, &scope, err));
+    CHECK(duckdb_v2_value_get_ubigint(value, &actual, err));
+    *owner = scope == DUCKDB_V2_SETTING_SCOPE_SESSION ? actual : 0;
+    result = true;
+cleanup:
+    duckdb_v2_value_destroy(&value);
+    return result;
+}
+
 struct bound { uint64_t token; };
 static void destroy_bound(void *data) { free(data); }
 struct scan { duckdb_v2_arrow_importer_handle importer; };
@@ -88,13 +140,15 @@ static void bind_input(duckdb_v2_function_bind_info_handle info,
     duckdb_v2_arrow_importer_handle importer = NULL;
     duckdb_v2_schema_handle schema = NULL;
     struct bound *bound = NULL;
-    uint64_t token;
+    uint64_t token, owner = 0;
     bool locked = false;
     CHECK(duckdb_v2_function_bind_get_arg_value(info, 0, &value, err));
     CHECK(duckdb_v2_value_get_ubigint(value, &token, err));
+    if (!read_owner(context, &owner, err)) goto cleanup;
     LOCK(); locked = true;
     struct input *input = find_input(token);
     if (!input) { fail(err, "expired Arrow batch token"); goto cleanup; }
+    if (!owner || input->owner != owner) { fail(err, "Arrow batch belongs to a different connection"); goto cleanup; }
     CHECK(duckdb_v2_arrow_importer_create(context, input->schema, 2048, &importer, err));
     CHECK(duckdb_v2_arrow_importer_get_schema(importer, &schema, err));
     idx_t count;
@@ -124,13 +178,17 @@ static void init_scan(duckdb_v2_table_function_init_global_info_handle info,
                       duckdb_v2_context_handle context, duckdb_v2_error_info_handle *err) {
     struct bound *bound = NULL;
     struct scan *scan = NULL;
+    uint64_t owner = 0;
     bool locked = false;
     CHECK(duckdb_v2_table_function_init_global_get_bind_data(info, (void **)&bound, err));
+    if (!read_owner(context, &owner, err)) goto cleanup;
     scan = calloc(1, sizeof(*scan));
     if (!scan) { fail(err, "Arrow scan allocation failed"); goto cleanup; }
     LOCK(); locked = true;
     struct input *input = find_input(bound->token);
-    if (!input || !input->array->release) { fail(err, "Arrow batch expired or already consumed"); goto cleanup; }
+    if (!input) { fail(err, "Arrow batch expired or already consumed"); goto cleanup; }
+    if (!owner || input->owner != owner) { fail(err, "Arrow batch belongs to a different connection"); goto cleanup; }
+    if (!input->array->release) { fail(err, "Arrow batch expired or already consumed"); goto cleanup; }
     CHECK(duckdb_v2_arrow_importer_create(context, input->schema, 2048, &scan->importer, err));
     CHECK(duckdb_v2_arrow_importer_append(scan->importer, input->array, true, true, err));
     CHECK(duckdb_v2_table_function_init_global_set_max_threads(info, 1, err));
@@ -171,8 +229,18 @@ static void initialize(duckdb_v2_extension_input *input) {
     duckdb_v2_table_function_handle function = NULL;
     duckdb_v2_logical_type_handle type = NULL;
     duckdb_v2_function_signature_handle signature = NULL;
+    duckdb_v2_custom_option_handle option = NULL;
+    duckdb_v2_value_handle default_owner = NULL;
     duckdb_v2_str name = {"otel_arrow_scan", 15}, arg = {"batch", 5};
     CHECK(duckdb_v2_context_get_factory(context, &factory, err));
+    CHECK(duckdb_v2_custom_option_create(factory, &option, err));
+    CHECK(duckdb_v2_custom_option_set_name(option, &owner_option, err));
+    CHECK(duckdb_v2_value_create_ubigint(factory, 0, &default_owner, err));
+    CHECK(duckdb_v2_custom_option_set_default_value(option, default_owner, err));
+    CHECK(duckdb_v2_custom_option_set_supports_scope(option, DUCKDB_V2_SETTING_SCOPE_GLOBAL, false, err));
+    CHECK(duckdb_v2_custom_option_set_default_scope(option, DUCKDB_V2_SETTING_SCOPE_SESSION, err));
+    CHECK(duckdb_v2_custom_option_set_update_callback(option, update_owner, err));
+    CHECK(duckdb_v2_extension_register_custom_option(extension, option, err));
     CHECK(duckdb_v2_table_function_create(factory, &function, err));
     CHECK(duckdb_v2_table_function_set_name(function, &name, err));
     CHECK(duckdb_v2_factory_create_type_from_id(factory, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT, NULL, NULL, 0, &type, err));
@@ -184,6 +252,8 @@ static void initialize(duckdb_v2_extension_input *input) {
     CHECK(duckdb_v2_extension_register_table_function(extension, function, err));
     CHECK(otel_arrow_register_output(extension, factory, err));
 cleanup:
+    duckdb_v2_custom_option_destroy(&option);
+    duckdb_v2_value_destroy(&default_owner);
     duckdb_v2_logical_type_destroy(&type);
     duckdb_v2_table_function_destroy(&function);
 }

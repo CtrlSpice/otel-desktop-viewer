@@ -522,7 +522,8 @@ describe('Metric main-header range', () => {
   })
 
   it('opens an exact route-selected metric outside the filtered list on a fresh mount', async () => {
-    searchMetricSummaries.mockResolvedValue([])
+    const list = deferred<MetricSummary[]>()
+    searchMetricSummaries.mockReturnValue(list.promise)
     getStats.mockResolvedValue(makeStats())
     getMetric.mockResolvedValue({
       metricRef: 'metric-1',
@@ -567,7 +568,67 @@ describe('Metric main-header range', () => {
     expect(new URLSearchParams(window.location.search).get('q')).toBe(
       'name = "excluded"'
     )
+    list.resolve([])
+    await tick()
+    expect(getMetric).toHaveBeenCalledTimes(1)
+    expect(
+      screen.getByRole('region', { name: 'Metric chart' })
+    ).toHaveTextContent('demo.metric')
   })
+
+  it('keeps a fresh deep-linked metric usable when its independent list fails', async () => {
+    const list = deferred<MetricSummary[]>()
+    searchMetricSummaries.mockReturnValue(list.promise)
+    getStats.mockResolvedValue(makeStats())
+    getMetric.mockResolvedValue(makeMetric('Gauge'))
+    getMetricView.mockResolvedValue(makeMetric('Gauge'))
+    setTestUrl('/metrics/metric-1')
+    renderWithContexts(MetricsPage)
+    const fields = await screen.findByRole('table', { name: 'Metric fields' })
+    list.reject(new Error('list failed'))
+    await list.promise.catch(() => {})
+    await tick()
+    expect(fields.isConnected).toBe(true)
+    expect(fields).toHaveTextContent('demo.metric')
+    await fireEvent.click(
+      within(screen.getByRole('region', { name: 'Metric chart' })).getByRole(
+        'button',
+        { name: 'Download metric' }
+      )
+    )
+    expect(downloadOTLP).toHaveBeenCalledWith(
+      'metric',
+      'metric-1',
+      expect.any(AbortSignal)
+    )
+  })
+
+  it.each(['success', 'failure'] as const)(
+    'cancels a fresh deep-link lookup on unmount while the list is pending and ignores late %s',
+    async outcome => {
+      const list = deferred<MetricSummary[]>()
+      const metric = deferred<ReturnType<typeof makeMetric> | null>()
+      searchMetricSummaries.mockReturnValue(list.promise)
+      getStats.mockResolvedValue(makeStats())
+      getMetric.mockReturnValue(metric.promise)
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      setTestUrl('/metrics/metric-1')
+      const view = renderWithContexts(MetricsPage)
+      await waitFor(() => expect(getMetric).toHaveBeenCalledTimes(1))
+      const signal = getMetric.mock.calls[0]![1] as AbortSignal
+      view.unmount()
+      expect(signal.aborted).toBe(true)
+      if (outcome === 'success') metric.resolve(makeMetric('Gauge'))
+      else metric.reject(new Error('late lookup failure'))
+      list.resolve([])
+      await tick()
+      expect(getMetricView).not.toHaveBeenCalled()
+      expect(consoleError).not.toHaveBeenCalled()
+      consoleError.mockRestore()
+    }
+  )
   it('requires confirmation before deleting all stored metrics', async () => {
     await renderSelected('Gauge')
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
