@@ -236,6 +236,26 @@ func TestQueryRejectsInvalidParametersAndWrites(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidQuery)
 }
 
+func TestQueryRejectedStatementsPreserveStoredTelemetry(t *testing.T) {
+	handler := setupHandler(t)
+	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(t.Context(), conn, buildTestTraces())
+	}))
+	for _, statement := range []string{
+		"delete from spans; select 1",
+		"commit; delete from spans; select 1",
+		"rollback; drop table spans; select 1",
+	} {
+		_, err := handler.Handle(t.Context(), createRequest("query", []any{statement}))
+		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+		result, err := handler.Handle(t.Context(), createRequest("query", []any{"select count(*) from spans"}))
+		require.NoError(t, err)
+		encoded, err := json.Marshal(result)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"rows":[[1]]`, statement)
+	}
+}
+
 // buildTestTraces returns ptrace.Traces with one span (trace ID 00...01) for handler tests.
 func buildTestTraces() ptrace.Traces {
 	tr := ptrace.NewTraces()

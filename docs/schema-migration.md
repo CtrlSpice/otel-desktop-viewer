@@ -1,10 +1,10 @@
 # Schema compatibility
 
-The store uses schema version 26. It does not migrate databases.
+The store uses schema version 27. It does not migrate databases.
 
 The viewer uses DuckDB 2.0.0. Attributes, log bodies, and Evals payloads use
-native VARIANT storage. Schema-24 databases require a fresh database and reloading
-the source data.
+native VARIANT storage. Databases with any other schema version require a fresh
+database and reloading the source data.
 The application schema version is independent of the DuckDB engine version.
 
 Evals source tables remain rebuildable caches of retained, Collector-processed
@@ -21,7 +21,7 @@ To continue after a version mismatch, delete the database or choose another
 
 Tests cover these cases:
 
-- a new empty database is stamped with version 25;
+- a new empty database is stamped with version 27;
 - a matching database opens normally;
 - malformed, empty, duplicate, older, and newer version metadata is rejected;
 - an unversioned telemetry database is rejected;

@@ -136,8 +136,8 @@ release:
     delete it, or pass a different `--db`. Nothing is migrated and nothing is
     silently reinterpreted.
 
-    **0.6.0 uses schema 24.** Databases from 0.5.x and earlier will not open.
-    To keep viewing an older database, use its original binary. Start 0.6.0
+    **This release uses schema 27.** Databases with any other schema version will not open.
+    To keep viewing an older database, use its original binary. Start this release
     with a new `--db` path, or delete the old file if you no longer need it.
     Running without `--db` is unaffected: it starts with an empty in-memory store.
 

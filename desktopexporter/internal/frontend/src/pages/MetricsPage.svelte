@@ -250,12 +250,12 @@
         ? retainedSummary
         : undefined)
   )
-  // A list refresh cannot cancel an exact-identity lookup already in flight.
+  // Exact-identity reads start independently of the list and survive its refresh.
   $effect(() => {
     const id = page.selectedID
     if (!id || page.selectedSummary) {
       summaryLookupID = null
-    } else if (page.mounted && !page.loading) {
+    } else if (page.mounted) {
       summaryLookupID = id
     } else if (untrack(() => summaryLookupID) !== id) {
       summaryLookupID = null

@@ -150,27 +150,49 @@ func TestLifecycle(t *testing.T) {
 }
 
 func TestTokenLifetimeAndConcurrentInputs(t *testing.T) {
-	db, _ := openDB(t, "")
+	db, writer := openDB(t, "")
 	const workers = 4
+	type input struct {
+		conn    *sql.Conn
+		token   uint64
+		release func()
+		alloc   *mallocator.Mallocator
+	}
+	inputs := make([]input, workers)
+	for i := range inputs {
+		conn, err := db.Conn(t.Context())
+		require.NoError(t, err)
+		defer conn.Close()
+		rec, alloc := batch(t, 4097)
+		var token uint64
+		var release func()
+		require.NoError(t, conn.Raw(func(raw any) error {
+			writer := raw.(driver.Conn)
+			if err := Load(t.Context(), writer); err != nil {
+				return err
+			}
+			var err error
+			token, release, err = publish(t.Context(), writer, rec)
+			return err
+		}))
+		rec.Release()
+		inputs[i] = input{conn, token, release, alloc}
+	}
+	// All inputs coexist before any writer can consume its batch.
 	var wg sync.WaitGroup
 	errors := make(chan error, workers)
-	for i := 0; i < workers; i++ {
-		// Export all inputs before any execution to exercise registry coexistence.
-		rec, alloc := batch(t, 4097)
-		token, release, err := publish(rec)
-		require.NoError(t, err)
-		rec.Release()
+	for _, input := range inputs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			runtime.GC()
 			var n int
-			err := db.QueryRow(fmt.Sprintf(`select count(*) from otel_arrow_scan(%d::ubigint) where context.name='雪'`, token)).Scan(&n)
+			err := input.conn.QueryRowContext(t.Context(), fmt.Sprintf(`select count(*) from otel_arrow_scan(%d::ubigint) where context.name='雪'`, input.token)).Scan(&n)
 			if err == nil && n != 2049 {
 				err = fmt.Errorf("row count: %d", n)
 			}
-			release()
-			alloc.AssertSize(t, 0)
+			input.release()
+			input.alloc.AssertSize(t, 0)
 			errors <- err
 		}()
 	}
@@ -180,7 +202,7 @@ func TestTokenLifetimeAndConcurrentInputs(t *testing.T) {
 		require.NoError(t, err)
 	}
 	rec, alloc := batch(t, 3)
-	token, release, err := publish(rec)
+	token, release, err := publish(t.Context(), writer, rec)
 	require.NoError(t, err)
 	rec.Release()
 	release()

@@ -135,11 +135,34 @@ const summary: MetricSummaryFixture = {
   lastSeen: endNs,
 }
 
+function exactMetricFixture(value: MetricFixture) {
+  return {
+    ...value,
+    series: value.timeseries.map(series => ({
+      seriesRef: series.seriesRef,
+      attributes: series.attributes,
+      datapointCount: series.datapointCount,
+      firstDatapointTimestamp: series.datapoints[0]?.timestamp ?? null,
+      lastDatapointTimestamp: series.datapoints.at(-1)?.timestamp ?? null,
+    })),
+  }
+}
+
 test.beforeEach(async ({ page }) => {
   await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
+    }
+    if (request.method === 'getMetric') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: exactMetricFixture(metric),
+        },
+      })
+      return
     }
     const result =
       request.method === 'getMetricView'
@@ -171,6 +194,43 @@ test.beforeEach(async ({ page }) => {
                 : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
+})
+
+test('a fresh metric deep link opens while its list is pending and survives list failure', async ({
+  page,
+}) => {
+  let pendingList: FixtureRoute | undefined
+  let exactReads = 0
+  await routeTelemetry(page, async route => {
+    const { method } = route.request().postDataJSON()
+    if (method === 'searchMetricSummaries') {
+      pendingList = route
+      return
+    }
+    if (method === 'getMetric') exactReads++
+    await route.fallback()
+  })
+  await page.goto(`/metrics/${metric.metricRef}?time=all`)
+  const chart = page.locator('.metrics-page__chart')
+  await expect(chart.locator('.metric-series-line')).toHaveCount(2)
+  expect(exactReads).toBe(1)
+  expect(pendingList).toBeDefined()
+  const mountedChart = await chart.elementHandle()
+  await pendingList!.fulfill({
+    json: {
+      jsonrpc: '2.0',
+      id: pendingList!.request().postDataJSON().id,
+      error: { code: -32603, message: 'metric list unavailable' },
+    },
+  })
+  await expect(chart.locator('.metric-series-line')).toHaveCount(2)
+  expect(await mountedChart!.evaluate(element => element.isConnected)).toBe(
+    true
+  )
+  await expect(
+    chart.getByRole('button', { name: 'Download metric' })
+  ).toBeEnabled()
+  expect(exactReads).toBe(1)
 })
 
 for (const statistics of ['pending', 'failed'] as const) {
@@ -1306,6 +1366,16 @@ test.describe('independent histogram aggregate loading', () => {
     }
     await routeTelemetry(page, async route => {
       const request = route.request().postDataJSON()
+      if (request.method === 'getMetric') {
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id: request.id,
+            result: exactMetricFixture(histogramMetric),
+          },
+        })
+        return
+      }
       if (request.method === 'getMetricAggregateView') {
         pending.push({ route, wholeWindow: request.params.targetBuckets === 1 })
         return
@@ -2639,6 +2709,16 @@ for (const { id: theme } of THEMES) {
           id: number
           method: string
         }
+        if (request.method === 'getMetric') {
+          await route.fulfill({
+            json: {
+              jsonrpc: '2.0',
+              id: request.id,
+              result: exactMetricFixture(histogramMetric),
+            },
+          })
+          return
+        }
         const result =
           request.method === 'getMetricView'
             ? histogramMetric
@@ -3382,14 +3462,16 @@ test('extrema use the series colour and the backed average stays behind the seri
 test('a new single-point cumulative counter opens in Raw without preferences', async ({
   page,
 }) => {
+  const source = timeseries[0]!.datapoints[0]!
+  if (source.metricType !== 'Gauge') throw new Error('Expected a gauge fixture')
   const point = {
-    ...timeseries[0]!.datapoints[0]!,
+    ...source,
     metricType: 'Sum' as const,
     isMonotonic: true,
     aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
   }
-  const counter = {
+  const counter: MetricFixture = {
     ...metric,
     metricType: 'Sum',
     isMonotonic: true,
@@ -3403,7 +3485,15 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
       id: number
       method: string
     }
-    if (request.method === 'getMetricView') {
+    if (request.method === 'getMetric') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: exactMetricFixture(counter),
+        },
+      })
+    } else if (request.method === 'getMetricView') {
       await route.fulfill({
         json: { jsonrpc: '2.0', id: request.id, result: counter },
       })
@@ -3538,7 +3628,7 @@ test('combined sum and average toggle independently and labels emphasize without
   page,
 }) => {
   const counterMetadata = {
-    metricType: 'Sum',
+    metricType: 'Sum' as const,
     isMonotonic: true,
     aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
@@ -3554,6 +3644,16 @@ test('combined sum and average toggle independently and labels emphasize without
   }))
   await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
+    if (method === 'getMetric') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: exactMetricFixture({ ...metric, ...counterMetadata }),
+        },
+      })
+      return
+    }
     const result =
       method === 'getMetricView'
         ? {
@@ -3631,7 +3731,7 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
   await page.addInitScript(() =>
     localStorage.setItem('theme', 'madoromi-aki-hiru')
   )
-  const counter = {
+  const counter: MetricFixture = {
     ...metric,
     metricType: 'Sum',
     isMonotonic: true,
@@ -3641,13 +3741,17 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
     timeseries: [
       {
         ...timeseries[0]!,
-        datapoints: timeseries[0]!.datapoints.slice(0, 4).map(point => ({
-          ...point,
-          metricType: 'Sum',
-          isMonotonic: true,
-          aggregationTemporalityCode: 2,
-          aggregationTemporality: 'Cumulative',
-        })),
+        datapoints: timeseries[0]!.datapoints.slice(0, 4).map(point => {
+          if (point.metricType !== 'Gauge')
+            throw new Error('Expected a gauge fixture')
+          return {
+            ...point,
+            metricType: 'Sum',
+            isMonotonic: true,
+            aggregationTemporalityCode: 2,
+            aggregationTemporality: 'Cumulative',
+          }
+        }),
         datapointCount: 4,
         rateStats: { min: 2, max: 6, avg: 4 },
         views: [0, 1, 2, 3].map(index => ({
@@ -3666,6 +3770,16 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
     const request = route.request().postDataJSON() as {
       id: number
       method: string
+    }
+    if (request.method === 'getMetric') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: exactMetricFixture(counter),
+        },
+      })
+      return
     }
     const result =
       request.method === 'getMetricView'

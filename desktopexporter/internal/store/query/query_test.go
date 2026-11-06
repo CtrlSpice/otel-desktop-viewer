@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -166,6 +167,38 @@ func TestExecuteCancellationLeavesConnectionReusable(t *testing.T) {
 		require.NoError(t, err)
 		result := decodeResponse(t, raw)
 		assert.JSONEq(t, `1`, string(result.Rows[0][0]))
+	})
+}
+
+func TestExecuteRejectsMultipleStatementsBeforeSideEffects(t *testing.T) {
+	withConnection(t, "", func(conn *sql.Conn) {
+		_, err := conn.ExecContext(t.Context(), "create table protected_rows(value integer); insert into protected_rows values (7)")
+		require.NoError(t, err)
+		output := filepath.Join(t.TempDir(), "rejected.csv")
+		for _, statement := range []string{
+			"delete from protected_rows; select 1",
+			"commit; delete from protected_rows; select 1",
+			"rollback; delete from protected_rows; select 1",
+			"insert into protected_rows values (42); select 1",
+			"create table rejected_table(i integer); select 1",
+			"copy protected_rows to '" + output + "'; select 1",
+		} {
+			_, err := query.Execute(t.Context(), conn, statement, 25)
+			assert.ErrorIs(t, err, query.ErrReadOnly, statement)
+			var count, total int
+			require.NoError(t, conn.QueryRowContext(t.Context(), "select count(*), coalesce(sum(value), 0) from protected_rows").Scan(&count, &total))
+			assert.Equal(t, 1, count, statement)
+			assert.Equal(t, 7, total, statement)
+		}
+		_, err = os.Stat(output)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+		var count int
+		require.NoError(t, conn.QueryRowContext(t.Context(), "select count(*) from duckdb_tables() where table_name='rejected_table'").Scan(&count))
+		assert.Zero(t, count)
+		// DuckDB's parser distinguishes statement separators from quoted data.
+		raw, err := query.Execute(t.Context(), conn, "select '; DELETE FROM protected_rows' as text /* ; COMMIT */;", 25)
+		require.NoError(t, err)
+		assert.JSONEq(t, `"; DELETE FROM protected_rows"`, string(decodeResponse(t, raw).Rows[0][0]))
 	})
 }
 

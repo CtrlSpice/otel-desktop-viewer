@@ -38,11 +38,6 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 	if strings.TrimSpace(statement) == "" {
 		return nil, fmt.Errorf("empty SQL: %w", ErrReadOnly)
 	}
-	originalNames, err := requireReadOnly(ctx, conn, statement)
-	if err != nil {
-		return nil, err
-	}
-
 	if _, err := conn.ExecContext(ctx, "BEGIN TRANSACTION READ ONLY"); err != nil {
 		return nil, fmt.Errorf("begin read-only transaction: %w", err)
 	}
@@ -53,15 +48,19 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 		}
 	}()
 
+	// query() uses DuckDB's parser to reject multiple statements without running
+	// them. Do this before PrepareContext, which executes every leading statement
+	// in a multi-statement string, including transaction control.
 	sourceNames, databaseTypes, err := describeQuery(ctx, conn, statement)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, errors.Join(ctxErr, err)
 		}
-		// PrepareContext supports cancellation but, unlike Prepare, accepts a
-		// multi-statement string. DuckDB's query table function supplies the
-		// existing single-statement check, so keep that failure in ErrReadOnly.
 		return nil, fmt.Errorf("%w: %w", err, ErrReadOnly)
+	}
+	originalNames, err := requireReadOnly(ctx, conn, statement)
+	if err != nil {
+		return nil, err
 	}
 	if len(originalNames) != len(databaseTypes) {
 		return nil, fmt.Errorf("query metadata changed from %d to %d columns", len(originalNames), len(databaseTypes))

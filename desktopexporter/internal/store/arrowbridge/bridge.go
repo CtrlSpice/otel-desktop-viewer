@@ -38,10 +38,47 @@ func Load(ctx context.Context, conn driver.Conn) error {
 		return fmt.Errorf("register otel_arrow: %d", registration)
 	}
 	_, err := conn.(driver.ExecerContext).ExecContext(ctx, "LOAD otel_arrow", nil)
+	if err != nil {
+		return err
+	}
+	// The extension is database-wide; each writer needs its own session owner.
+	_, err = conn.(driver.ExecerContext).ExecContext(ctx, "SET SESSION otel_arrow_owner = 0", nil)
 	return err
 }
 
-func publish(record arrow.RecordBatch) (uint64, func(), error) {
+func ownerID(ctx context.Context, conn driver.Conn) (owner uint64, err error) {
+	rows, err := conn.(driver.QueryerContext).QueryContext(ctx, "SELECT current_setting('otel_arrow_owner')", nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	values := make([]driver.Value, 1)
+	if err := rows.Next(values); err != nil {
+		return 0, err
+	}
+	owner, ok := values[0].(uint64)
+	if !ok {
+		return 0, errors.New("invalid Arrow connection owner")
+	}
+	return owner, nil
+}
+
+func publish(ctx context.Context, conn driver.Conn, record arrow.RecordBatch) (uint64, func(), error) {
+	owner, err := ownerID(ctx, conn)
+	if err != nil {
+		return 0, nil, err
+	}
+	// Standalone appenders may use another connection in an already loaded
+	// database. Initialize only that publisher; never adopt a caller-supplied ID.
+	if owner == 0 {
+		if _, err := conn.(driver.ExecerContext).ExecContext(ctx, "SET SESSION otel_arrow_owner = 0", nil); err != nil {
+			return 0, nil, err
+		}
+		owner, err = ownerID(ctx, conn)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
 	schema := (*C.struct_ArrowSchema)(C.calloc(1, C.sizeof_struct_ArrowSchema))
 	array := (*C.struct_ArrowArray)(C.calloc(1, C.sizeof_struct_ArrowArray))
 	if schema == nil || array == nil {
@@ -50,7 +87,7 @@ func publish(record arrow.RecordBatch) (uint64, func(), error) {
 		return 0, nil, errors.New("allocate Arrow C structures")
 	}
 	cdata.ExportArrowRecordBatch(record, (*cdata.CArrowArray)(unsafe.Pointer(array)), (*cdata.CArrowSchema)(unsafe.Pointer(schema)))
-	token := C.otel_arrow_publish(schema, array)
+	token := C.otel_arrow_publish(C.uint64_t(owner), schema, array)
 	if token == 0 {
 		cdata.ReleaseCArrowArray((*cdata.CArrowArray)(unsafe.Pointer(array)))
 		cdata.ReleaseCArrowSchema((*cdata.CArrowSchema)(unsafe.Pointer(schema)))
@@ -77,7 +114,7 @@ func Insert(ctx context.Context, conn driver.Conn, query string, record arrow.Re
 	if strings.Count(query, "appended_data") != 1 {
 		return errors.New("Arrow insert requires exactly one appended_data input")
 	}
-	token, release, err := publish(record)
+	token, release, err := publish(ctx, conn, record)
 	if err != nil {
 		return err
 	}
