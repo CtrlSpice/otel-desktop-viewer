@@ -207,7 +207,7 @@ test('pinned Promptfoo delivers matching tool evidence only to the fresh grader'
   assert.equal(
     record(readJson(path.join(SUITE, 'node_modules/promptfoo/package.json')))
       .version,
-    '0.124.1'
+    '0.125.1'
   )
   const result = spawnSync(
     process.execPath,

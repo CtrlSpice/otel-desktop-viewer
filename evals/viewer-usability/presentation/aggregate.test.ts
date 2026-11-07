@@ -9,6 +9,9 @@ import { pricingSnapshot } from '../pricing.ts'
 import goPrices from '../go-api-prices.json' with { type: 'json' }
 
 const secret = 'PRIVATE_SENTINEL_DO_NOT_EMBED'
+// These structural assertions inspect elements, not Svelte hydration comments.
+const elementMarkup = (data: ReturnType<typeof aggregate>) =>
+  render(data).replace(/<!--[\s\S]*?-->/g, '')
 const metadata = (model: string, seconds = 2) => ({
   model,
   elapsedSeconds: seconds,
@@ -388,7 +391,7 @@ test('grading score columns follow the plan, extend beyond three, and leave miss
   }))
   const data = aggregate({ models: [investigator], tasks: 2, repetitions: 3 }, { results: { results: [] } }, undefined,
     { models: [{ model: grader, attempts: judgments.length }], judgments })
-  const html = render(data)
+  const html = elementMarkup(data)
   for (const run of [1, 2, 3, 4]) assert.ok(html.includes(`<th scope="col" class="grading-run">Score ${run}</th>`))
   assert.ok(!html.includes('class="grading-run">Score 5'))
   assert.match(html, /<td class="grading-run"><span aria-label="Not recorded">—<\/span>\s*<\/td>/)
@@ -398,7 +401,7 @@ test('grading score columns follow the plan, extend beyond three, and leave miss
 test('model-header status replaces grading coverage lines while pending zeros stay display-only', () => {
   const data = aggregate({ models: ['other/cedar', 'other/pine'], tasks: 2, repetitions: 3 }, { results: { results: [] } }, undefined,
     { models: [{ model: 'openai/gpt-6.1-sol', attempts: 1 }], judgments: [{ taskID: 'inspect', score: 1, status: 'pass', investigator: { model: 'other/cedar' }, metadata: metadata('openai/gpt-6.1-sol') }] })
-  const html = render(data)
+  const html = elementMarkup(data)
   assert.ok(!html.includes('class="grading-status"'))
   assert.ok(!html.includes('class="grading-status-column"'))
   assert.match(html, /<span class="grading-model-name">[^<]+<\/span>\s*<span class="badge badge-soft result-badge grading-status-badge grading-status-in-progress">In Progress<\/span><\/button><\/th><th scope="col" class="grading-run">Score 1<\/th>/)

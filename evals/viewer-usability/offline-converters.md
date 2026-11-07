@@ -77,7 +77,7 @@ large fixture or accessing private saved results:
 
 - Kit `native-evaluate.ts:78-99`, `run-overnight.ts:30-48`, existing
   `presentation/aggregate.test.ts`, and `presentation/telemetry-links.ts`.
-  The kit pins Promptfoo 0.124.1; this is not assumed identical to current upstream.
+  The kit pins Promptfoo 0.125.1; this is not assumed identical to current upstream.
 - `promptfoo/promptfoo@ea8b3d073a63769f7be243ac3c3460f72881a930`:
   `test/__fixtures__/sample-export.json`, `src/types/index.ts`,
   `src/types/results.ts`, `src/util/output.ts`. The public fixture uses v3
