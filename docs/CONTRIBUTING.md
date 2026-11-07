@@ -256,7 +256,7 @@ Every behavioral change requires focused automated tests at the nearest useful b
 
 Run the broad suite after focused tests. If the current harness lacks a useful test seam, add one and discuss it with a maintainer before opening the pull request.
 
-For interface work, verify both visual presentation and assistive access in the running application. Preserve the established visual language and include screenshots or short recordings with a text description for visible changes. Check the relevant responsive layouts, themes, zoom behavior, keyboard operation, focus management, screen-reader names, visible alternatives for audio feedback, reduced-motion behavior, and loading, empty, and error states.
+For interface work, verify both visual presentation and assistive access in the running application. Preserve the established visual language. Keep screenshot and recording evidence local. Check the relevant responsive layouts, themes, zoom behavior, keyboard operation, focus management, screen-reader names, visible alternatives for audio feedback, reduced-motion behavior, and loading, empty, and error states.
 
 Automated component and Playwright/axe tests should target the affected interaction. Maintainers also review usability, visual quality, and accessibility as product behavior.
 
@@ -298,15 +298,15 @@ Run `git diff --check` before committing. CI regenerates the search parser and c
 
 ## Opening a pull request
 
-Use a draft pull request while implementation or verification is still in progress. Complete the pull request template before requesting review:
+Use a draft pull request while implementation or verification is still in progress.
 
-- Explain the problem and why the change belongs in the project.
-- Link the issue discussion where a maintainer agreed to a substantial approach.
-- Describe the implementation and important trade-offs.
-- Name the focused tests and the behavior each test establishes.
-- Include exact verification commands and results.
-- Include visual and accessibility evidence for interface changes.
-- Include regenerated parser or embedded frontend assets where applicable.
+- Use plain bullet points as the entire PR description.
+- Use concise, standalone bullet points explaining what changed and why.
+- Write in plain language that makes sense six months later without the conversation.
+- Keep each bullet focused on concrete behaviour.
+- Preserve wording the user supplies or corrects.
+- Include verification when it adds new, change-specific evidence.
+- Apply these rules automatically whenever creating or updating a PR.
 
 Keep each pull request focused and independently reviewable. Respond to review with the same care used for the implementation, and regenerate derived files after resolving source conflicts.
 
