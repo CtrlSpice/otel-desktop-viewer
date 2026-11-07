@@ -1,14 +1,15 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 import type {
-  JsonLogData,
-  JsonTraceData,
-  JsonAttributeValue,
-} from '../src/types/wire-types'
+  LogFixture,
+  TraceFixture,
+  AttributeFixture,
+} from '../src/test/telemetry-fixture-types'
 import type { LogErrorNavigation, LogColumn } from '../src/types/api-types'
 
 const firstID = '00000000-0000-0000-0000-000000000001'
 const secondID = '00000000-0000-0000-0000-000000000002'
-const logs: JsonLogData[] = [firstID, secondID].map((logRef, index) => ({
+const logs: LogFixture[] = [firstID, secondID].map((logRef, index) => ({
   logRef,
   timestamp: index === 0 ? '0' : '1700000000123456789',
   observedTimestamp: '1700000000987654321',
@@ -44,7 +45,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
     localStorage.setItem('signal-detail:open', 'true')
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
       method === 'getLog'
@@ -94,7 +95,9 @@ test.beforeEach(async ({ page }) => {
                   },
                   rejections: [],
                 }
-              : []
+              : method === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto(`/logs/${firstID}?time=all`)
@@ -116,7 +119,7 @@ test('log selection retains the inspector, delays loading feedback and rejects s
   await page.clock.install()
   await page.clock.pauseAt(new Date())
   const pending: Array<() => Promise<void>> = []
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'getLog') return route.fallback()
     const log = logs.find(record => record.logRef === params.logRef)!
@@ -173,7 +176,7 @@ test('a failed log replacement keeps the displayed record and its Download targe
   const detail = page.getByRole('table', { name: 'Log fields' })
   await expect(detail).toContainText('Full body 0: exact retained text')
   let fail = true
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'getLog' || params.logRef !== secondID || !fail)
       return route.fallback()
@@ -316,7 +319,7 @@ test('Details pins enriched trace context above scrolling fields', async ({
   await expect(page.getByRole('table', { name: 'Log fields' })).toBeVisible()
   const traceID = '00000000000000000000000000000011'
   const spanID = '0000000000000001'
-  const traceData: JsonTraceData = {
+  const traceData: TraceFixture = {
     traceID,
     traceStart: '1700000000000000000',
     unplacedSpanCount: 0,
@@ -355,7 +358,7 @@ test('Details pins enriched trace context above scrolling fields', async ({
   }
   let waterfallFetches = 0
   let associatedFetches = 0
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getLog' && params.logRef === firstID) {
       return route.fulfill({
@@ -741,7 +744,7 @@ test('field Copy fallback preserves CRLF and lone carriage returns', async ({
 }) => {
   const received = 'first\r\nsecond\rthird\nfourth'
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'getLog' || params.logRef !== firstID)
       return route.fallback()
@@ -1072,7 +1075,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
       ),
     pattern: command,
   })
-  const body: JsonAttributeValue = {
+  const body: AttributeFixture = {
     kind: 'array',
     value: [
       { kind: 'string', value: 'loading' },
@@ -1080,7 +1083,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
     ],
   }
   const preview = `["loading", ${JSON.stringify(inner.slice(0, 48) + '…')}]`
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'getLog')
       return route.fulfill({
@@ -1102,6 +1105,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
                 serviceName: 'api',
                 bodyPreview: preview,
                 bodyType: 'array',
+                body,
                 eventName: '',
               },
             ],
@@ -1119,7 +1123,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   await expect(cell).toContainText('…')
   await expect(cell.locator('.cm-editor')).toHaveCount(0)
   const bodyField = page.locator('[data-field="body"]')
-  const editor = bodyField.locator('.cm-editor')
+  const editor = bodyField.locator('.cm-editor:visible')
   await bodyField.getByRole('button', { name: 'Expand all body JSON' }).click()
   await expect
     .poll(() =>
@@ -1194,39 +1198,35 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   await search.press('Enter')
   await expect(editor.locator('.cm-searchMatch')).toHaveText('getTraceView')
   await page.keyboard.press('Escape')
-  const braces = bodyField.locator('.json-fold-bracket')
+  const braces = editor.locator('.json-fold-bracket')
   await braces.nth(1).hover()
-  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+  await expect(editor.locator('.json-fold-bracket--active')).toHaveText([
     '{',
     '}',
   ])
   await expect(
-    bodyField.locator(
-      '.cm-foldGutter .json-fold-group-active .json-fold-marker'
-    )
+    editor.locator('.cm-foldGutter .json-fold-group-active .json-fold-marker')
   ).toHaveCount(1)
-  await bodyField.locator('.cm-foldGutter [title="Fold line"]').nth(1).hover()
-  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+  await editor.locator('.cm-foldGutter [title="Fold line"]').nth(1).hover()
+  await expect(editor.locator('.json-fold-bracket--active')).toHaveText([
     '{',
     '}',
   ])
   await braces.nth(2).click()
-  await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
-  await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
+  await expect(editor.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(editor.locator('.cm-content')).not.toContainText('"path"')
   await braces.nth(1).click()
-  await expect(bodyField.locator('.cm-content')).toContainText('"path"')
+  await expect(editor.locator('.cm-content')).toContainText('"path"')
   await braces.first().hover()
-  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+  await expect(editor.locator('.json-fold-bracket--active')).toHaveText([
     '[',
     ']',
   ])
   await braces.first().click()
-  await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
-  await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
-  await bodyField
-    .locator('.cm-foldGutter [title="Unfold line"]:visible')
-    .click()
-  await expect(bodyField.locator('.cm-content')).toContainText('"path"')
+  await expect(editor.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(editor.locator('.cm-content')).not.toContainText('"path"')
+  await editor.locator('.cm-foldGutter [title="Unfold line"]:visible').click()
+  await expect(editor.locator('.cm-content')).toContainText('"path"')
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await bodyField
     .getByRole('button', { name: 'Copy body', exact: true })
@@ -1270,7 +1270,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
   page,
 }) => {
-  const structured: JsonLogData = {
+  const structured: LogFixture = {
     ...logs[0]!,
     body: {
       kind: 'map',
@@ -1319,7 +1319,7 @@ test('structured previews have static syntax colours and Details folds Body and 
     ],
   }
   const preview = '{message: "ready", request: object (1 fields)}'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getLog' && params.logRef === firstID) {
       return route.fulfill({ json: { jsonrpc: '2.0', id, result: structured } })
@@ -1340,6 +1340,7 @@ test('structured previews have static syntax colours and Details folds Body and 
                 serviceName: 'api',
                 bodyPreview: preview,
                 bodyType: 'map',
+                body: structured.body,
               },
             ],
           },
@@ -1490,6 +1491,9 @@ test('structured previews have static syntax colours and Details folds Body and 
   await expect(searchInput).toHaveCount(0)
 
   const input = page.locator('[data-field="gen_ai.input.messages"]')
+  await expect(input).toContainText('Explain the trace')
+  await input.getByRole('button', { name: 'Full document / Find' }).click()
+  await page.keyboard.press('Escape')
   await expect(input.locator('.json-indent-guides')).toHaveCount(0)
   await expect(input.locator('.json-indent-bands')).toHaveCount(0)
   await expect(input.locator('.json-fold-icon').first()).toHaveCSS(
@@ -1498,7 +1502,9 @@ test('structured previews have static syntax colours and Details folds Body and 
   )
   await input.scrollIntoViewIfNeeded()
   await input.locator('.cm-foldGutter [title="Fold line"]').nth(1).click()
-  await expect(input).not.toContainText('Explain the trace')
+  await expect(input.locator('.cm-editor:visible')).not.toContainText(
+    'Explain the trace'
+  )
   await expect(input.locator('.cm-foldPlaceholder')).toHaveText('…')
   await input.locator('.cm-foldPlaceholder').click()
   await expect(input).toContainText('Explain the trace')
@@ -1536,7 +1542,7 @@ test('Severity header sorts by the severity number rather than the received labe
     bodyType: 'string',
   }))
   const sorts: { field: string; direction: string }[] = []
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     sorts.push(params.sort)
@@ -1577,7 +1583,7 @@ test('Severity fits the longest received label without adding a resize handle', 
   page,
 }) => {
   const longest = 'REMOTE_PROVIDER_TIMEOUT'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     await route.fulfill({
@@ -1641,7 +1647,7 @@ test('extreme severity labels have bounded width and retain their exact inspecta
 }) => {
   const label = 'VERY_LONG_ERROR_LABEL_'.repeat(25)
   await page.setViewportSize({ width: 1700, height: 900 })
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method === 'getLog')
       return route.fulfill({
@@ -1700,41 +1706,53 @@ test('extreme severity labels have bounded width and retain their exact inspecta
 test('discovered columns retain typed values, provenance, drafts and saved selections', async ({
   page,
 }) => {
-  const values: { column: LogColumn; values: JsonAttributeValue[] }[] = [
+  const values: {
+    column: LogColumn
+    values: AttributeFixture[]
+    preview: string
+  }[] = [
     {
       column: { source: 'log', kind: 'field', key: 'flags' },
       values: [{ kind: 'int64', value: '0' }],
+      preview: '0',
     },
     {
       column: { source: 'log', kind: 'attribute', key: 'flags' },
       values: [{ kind: 'int64', value: '9223372036854775807' }],
+      preview: '9223372036854775807',
     },
     {
       column: { source: 'log', kind: 'attribute', key: 'timestamp' },
       values: [{ kind: 'string', value: 'received attribute' }],
+      preview: 'received attribute',
     },
     {
       column: { source: 'resource', kind: 'attribute', key: 'flags' },
       values: [{ kind: 'bool', value: false }],
+      preview: 'false',
     },
     {
       column: { source: 'scope', kind: 'attribute', key: 'flags' },
-      values: [{ kind: 'double', value: '0x8000000000000000' }],
+      values: [{ kind: 'double', value: -0 }],
+      preview: '-0',
     },
     {
       column: { source: 'scope', kind: 'field', key: 'name' },
       values: [{ kind: 'string', value: '' }],
+      preview: '""',
     },
     {
       column: { source: 'resource', kind: 'field', key: 'schemaUrl' },
       values: [{ kind: 'string', value: 'https://example.test/schema' }],
+      preview: 'https://example.test/schema',
     },
     {
       column: { source: 'log', kind: 'attribute', key: 'missing' },
       values: [],
+      preview: '',
     },
   ]
-  const detail: JsonLogData = {
+  const detail: LogFixture = {
     ...logs[0]!,
     resourceSchemaURL: 'https://example.test/schema',
     attributes: values
@@ -1754,14 +1772,14 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
       attributes: [
         {
           key: 'flags',
-          value: { kind: 'double', value: '0x8000000000000000' },
+          value: { kind: 'double', value: -0 },
         },
       ],
     },
   }
   const requests: { columns?: LogColumn[]; query?: unknown }[] = []
   let discovery = true
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     let result
     if (method === 'getLog') result = detail
@@ -1789,15 +1807,20 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
             timestamp: detail.observedTimestamp,
             serviceName: 'api',
             bodyPreview: 'body preview',
-            columnValues: (params.columns ?? []).map((column: LogColumn) => ({
-              ...column,
-              values: values.find(
+            columnValues: (params.columns ?? []).map((column: LogColumn) => {
+              const selected = values.find(
                 entry =>
                   entry.column.source === column.source &&
                   entry.column.kind === column.kind &&
                   entry.column.key === column.key
-              )!.values,
-            })),
+              )!
+              return {
+                ...column,
+                present: selected.values.length > 0,
+                valueType: selected.values[0]?.kind ?? '',
+                preview: selected.preview,
+              }
+            }),
           },
         ],
       }
@@ -1885,11 +1908,7 @@ test('toolbar filters draft service and severity selections and search once on A
   })
   let searches = 0
   page.on('request', request => {
-    if (
-      request.url().endsWith('/rpc') &&
-      request.postDataJSON().method === 'searchLogPage'
-    )
-      searches++
+    if (request.url().endsWith('/api/data/searchLogPage')) searches++
   })
   await expect(page.locator('.drawer-side')).toBeHidden()
   await expect(page.locator('.log-table__row').first()).toHaveCSS(
@@ -1918,7 +1937,7 @@ test('toolbar filters draft service and severity selections and search once on A
   await expect(filtersToggle).toBeFocused()
   await expect(filtersToggle).toContainText('[2]')
   expect(new URL(page.url()).searchParams.get('q')).toContain(
-    'attr(resource, "service.name", string) IN ["api"]'
+    "resource.attributes['service.name']::VARCHAR IN ('api')"
   )
   await expect(editor.locator('.cm-attribute-token')).toHaveText(
     'service.name · Resource · String'
@@ -1953,19 +1972,18 @@ test('toolbar filters draft service and severity selections and search once on A
   await expect(error).toHaveAttribute('aria-pressed', 'false')
   await expect(error).toBeEnabled()
   await editor.click()
-  await editor.fill('body CONTAINS "exact" | LIMIT 10')
+  await editor.fill('body CONTAINS "exact" LIMIT 10')
   const search = page.waitForRequest(
     request =>
-      request.url().endsWith('/rpc') &&
-      request.postDataJSON().method === 'searchLogPage' &&
-      request.postDataJSON().params.limit === 10
+      request.url().endsWith('/api/data/searchLogPage') &&
+      request.postDataJSON().limit === 10
   )
   await filtersToggle.click()
   await service.click()
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
-  expect((await search).postDataJSON().params.query).toBeTruthy()
+  expect((await search).postDataJSON().query).toBeTruthy()
   await expect(editor).toContainText('body CONTAINS "exact"')
-  await expect(editor).toContainText('| LIMIT 10')
+  await expect(editor).toContainText('LIMIT 10')
   await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'false')
   await expect(filtersToggle).toBeFocused()
@@ -1991,7 +2009,7 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
     serviceName: 'api',
     bodyPreview: `Record ${index + 1}`,
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     requests.push(params)
@@ -2261,7 +2279,7 @@ test('narrow panes expose every column by scrolling instead of overlapping pinne
 }) => {
   await page.setViewportSize({ width: 1024, height: 900 })
   const preview = 'id: abc123-END'
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     if (method !== 'searchLogPage') return route.fallback()
     await route.fulfill({
@@ -2434,7 +2452,7 @@ test('explicit selection mode supports all, some and none and deletes only check
   const calls: string[][] = []
   let fail = true
   let deleted = false
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'deleteLogsByRefs') {
       calls.push(params)
@@ -2533,7 +2551,7 @@ test('footer delete controls dispatch only their intended mocked operations', as
 }) => {
   let deleted = false
   let cleared = false
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'deleteLogsByRefs') {
       expect(params).toEqual([firstID])
@@ -2642,10 +2660,10 @@ test('header error navigation crosses pages within the current result', async ({
     bodyPreview: `Record ${index + 1}`,
     bodyType: 'string',
   }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     let result:
-      { total: number; logs: typeof records } | JsonLogData | LogErrorNavigation
+      { total: number; logs: typeof records } | LogFixture | LogErrorNavigation
     if (method === 'searchLogPage') {
       await pageResponse
       result = {
@@ -2765,10 +2783,8 @@ test('header error navigation crosses pages within the current result', async ({
     .toBe(0)
   // A same-selection rerender must not pull the viewport back to the error.
   await viewport.evaluate(element => (element.scrollTop = 320))
-  const refreshed = page.waitForResponse(
-    response =>
-      response.url().endsWith('/rpc') &&
-      response.request().postDataJSON().method === 'searchLogPage'
+  const refreshed = page.waitForResponse(response =>
+    response.url().endsWith('/api/data/searchLogPage')
   )
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await refreshed

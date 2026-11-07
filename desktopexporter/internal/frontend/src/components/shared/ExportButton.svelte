@@ -9,6 +9,14 @@
   let error = $state('')
   let activeRequest: AbortController | undefined
 
+  $effect(() => {
+    void signal
+    void id
+    activeRequest?.abort()
+    activeRequest = undefined
+    pending = false
+    error = ''
+  })
   onDestroy(() => activeRequest?.abort())
 
   async function download() {
@@ -24,8 +32,10 @@
         error = err instanceof Error ? err.message : 'Download failed'
       }
     } finally {
-      pending = false
-      activeRequest = undefined
+      if (activeRequest === controller) {
+        pending = false
+        activeRequest = undefined
+      }
     }
   }
 </script>

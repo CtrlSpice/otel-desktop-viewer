@@ -41,11 +41,13 @@
     error = '',
   }: Props = $props()
   const detailViewID = $props.id()
+  let rawLog = $state.raw<LogData>()
+  const actionLog = $derived(detailView === 'raw' ? (rawLog ?? log) : log)
   const exportURL = $derived(
     log ? `/export/logs/${encodeURIComponent(log.logRef)}` : ''
   )
   const loadLogJSON = $derived.by(() => {
-    const id = log?.logRef
+    const id = actionLog?.logRef
     return id
       ? (signal: AbortSignal) => readOTLPText('log', id, signal)
       : undefined
@@ -106,28 +108,28 @@
       />{/snippet}
     {#snippet metaRight()}
       <DetailViewTabs id={detailViewID} bind:view={detailView} />
-      {#if log}{#key log.logRef}
-          <div
-            class="header-icon-controls"
-            role="group"
-            aria-label="Log actions"
-          >
-            <ValueCopyButton
-              label="log"
-              tooltip="Copy log"
-              loadText={loadLogJSON}
-            />
-            <ExportButton signal="log" id={log.logRef} />
-          </div>
-        {/key}{/if}
+      {#if actionLog}
+        <div class="header-icon-controls" role="group" aria-label="Log actions">
+          <ValueCopyButton
+            label="log"
+            tooltip="Copy log"
+            loadText={loadLogJSON}
+            sourceKey={actionLog}
+          />
+          <ExportButton signal="log" id={actionLog.logRef} />
+        </div>
+      {/if}
     {/snippet}
   </PaneHeader>
 
   {#if error}<p class="p-3" role="alert">Error: {error}</p>{/if}
   {#if log}
-    {#if log.traceID}
+    {#if actionLog?.traceID}
       <div class="log-detail-panel__trace">
-        <AssociatedTrace traceID={log.traceID} spanID={log.spanID} />
+        <AssociatedTrace
+          traceID={actionLog.traceID}
+          spanID={actionLog.spanID}
+        />
       </div>
     {/if}
 
@@ -137,6 +139,9 @@
           id={detailViewID}
           showTabs={false}
           bind:view={detailView}
+          record={log}
+          refreshKey={log}
+          bind:displayedRecord={rawLog}
           wholeURL={exportURL}
           scopes={[
             {

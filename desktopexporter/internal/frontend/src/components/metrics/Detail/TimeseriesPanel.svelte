@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { SvelteSet } from 'svelte/reactivity'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import { untrack } from 'svelte'
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
@@ -16,20 +18,33 @@
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import { selectableTableRow } from '@/components/shared/utils/selectable-table-row'
-  import {
-    compareSeriesCells,
-    type SeriesCell,
-  } from '@/components/metrics/utils/minimal-series-labels'
+  import type { SeriesCell } from '@/components/metrics/utils/minimal-series-labels'
+  import { validateSeriesOrder } from '@/components/metrics/utils/series-order'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
+  import { telemetryAPI } from '@/services/telemetry-service'
+  import type { Attribute } from '@/types/api-types'
 
   const ctx = getMetricViewContext()
   const metricRef = $derived(ctx.metric?.metricRef)
   const id = $props.id()
   const expandedAttributes = new SvelteSet<string>()
+  const receivedAttributes = new SvelteMap<string, Attribute[]>()
+  const attributeErrors = new SvelteMap<string, string>()
+  const loadingAttributes = new SvelteSet<string>()
+  const attributeRequests = new SvelteMap<string, AbortController>()
+  const attributeRevisions = new Map<string, typeof ctx.metric>()
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
   let sort = $state<{ key: string; direction: 'asc' | 'desc' } | null>(null)
+  let seriesOrder = $state.raw<{
+    key: string
+    asc?: string[]
+    desc?: string[]
+  }>()
+  let sortLoading = $state(false)
+  let sortError = $state('')
+  let sortRetry = $state(0)
 
   $effect.pre(() => {
     void metricRef
@@ -37,6 +52,35 @@
     focusedSeriesKey = null
     sort = null
     expandedAttributes.clear()
+    receivedAttributes.clear()
+    attributeRevisions.clear()
+    attributeErrors.clear()
+    loadingAttributes.clear()
+  })
+  // A refreshed response can have the same metric/series IDs and new context.
+  // Keep disclosures, but replace exact values and reject every older request.
+  $effect.pre(() => {
+    void ctx.metric
+    seriesOrder = undefined
+    // Keep the displayed exact values until their replacement is ready. A
+    // revision check below invalidates reuse without unmounting the table.
+    for (const series of ctx.metric?.timeseries ?? []) {
+      if (series.attributesComplete !== false)
+        receivedAttributes.delete(series.seriesRef)
+    }
+    attributeErrors.clear()
+    loadingAttributes.clear()
+    return () => {
+      for (const controller of attributeRequests.values()) controller.abort()
+      attributeRequests.clear()
+    }
+  })
+  $effect(() => {
+    void ctx.metric
+    const expanded = [...expandedAttributes]
+    untrack(() => {
+      for (const key of expanded) void loadAttributes(key)
+    })
   })
   $effect(() => {
     ctx.previewSeriesKey = ctx.isHistogramKind
@@ -53,6 +97,59 @@
       : ctx.gaugeSumLegendTimeseries
   )
   const table = $derived(ctx.seriesTable)
+  $effect(() => {
+    const metric = ctx.metric
+    const key = sort?.key
+    const direction = sort?.direction
+    void sortRetry
+    sortLoading = false
+    sortError = ''
+    if (
+      !metric ||
+      key === undefined ||
+      !direction ||
+      !table.columns.some(column => column.key === key)
+    )
+      return
+    if (untrack(() => seriesOrder?.key === key && seriesOrder[direction]))
+      return
+    const refs = metric.timeseries.map(series => series.seriesRef)
+    const controller = new AbortController()
+    sortLoading = true
+    void telemetryAPI
+      .getMetricSeriesOrder(
+        metric.metricRef,
+        metric.window.requested.startNs,
+        metric.window.requested.endNs,
+        refs,
+        key,
+        direction,
+        controller.signal
+      )
+      .then(order => {
+        if (controller.signal.aborted) return
+        validateSeriesOrder(order, refs)
+        seriesOrder = {
+          ...(seriesOrder?.key === key ? seriesOrder : { key }),
+          [direction]: order,
+        }
+      })
+      .catch(error => {
+        if (!controller.signal.aborted)
+          sortError =
+            error instanceof Error ? error.message : 'Could not sort series.'
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) sortLoading = false
+      })
+    return () => controller.abort()
+  })
+  const appliedOrder = $derived(
+    sort && seriesOrder?.key === sort.key
+      ? seriesOrder[sort.direction]
+      : undefined
+  )
+  const sortApplied = $derived(appliedOrder !== undefined)
   const checkedKeys = $derived(ctx.visibleSeries)
   const capReached = $derived(
     !ctx.isHistogramKind && checkedKeys.size >= MAX_VISIBLE_TIMESERIES
@@ -64,8 +161,59 @@
   )
 
   function toggleAttributes(key: string) {
-    if (expandedAttributes.has(key)) expandedAttributes.delete(key)
-    else expandedAttributes.add(key)
+    if (expandedAttributes.has(key)) {
+      expandedAttributes.delete(key)
+      attributeRequests.get(key)?.abort()
+      attributeRequests.delete(key)
+      loadingAttributes.delete(key)
+    } else {
+      expandedAttributes.add(key)
+    }
+  }
+  async function loadAttributes(key: string) {
+    const series = timeseriesByKey.get(key)
+    const owner = metricRef
+    if (
+      !owner ||
+      !series ||
+      series.attributesComplete !== false ||
+      (receivedAttributes.has(key) &&
+        attributeRevisions.get(key) === ctx.metric) ||
+      loadingAttributes.has(key)
+    )
+      return
+    loadingAttributes.add(key)
+    const revision = ctx.metric
+    const controller = new AbortController()
+    attributeRequests.set(key, controller)
+    attributeErrors.delete(key)
+    try {
+      const received = await telemetryAPI.getMetricSeries(
+        owner,
+        key,
+        null,
+        null,
+        false,
+        controller.signal
+      )
+      if (controller.signal.aborted) return
+      if (!received) throw new Error('Series is no longer available')
+      receivedAttributes.set(key, received.attributes)
+      attributeRevisions.set(key, revision)
+    } catch (error) {
+      if (!controller.signal.aborted)
+        attributeErrors.set(
+          key,
+          error instanceof Error
+            ? error.message
+            : 'Failed to load series attributes'
+        )
+    } finally {
+      if (attributeRequests.get(key) === controller) {
+        attributeRequests.delete(key)
+        loadingAttributes.delete(key)
+      }
+    }
   }
   const identityColumn = $derived(
     table.columns.length === 0 ||
@@ -100,17 +248,12 @@
     { id: 'show', label: 'Show', min: 56, width: 56, fixed: true },
   ])
   const sortedRows = $derived.by(() => {
-    const column = table.columns.find(column => column.key === sort?.key)
-    if (!column || !sort) return rows
-    const direction = sort.direction === 'asc' ? 1 : -1
-    return [...rows].sort(
-      (a, b) =>
-        direction *
-          compareSeriesCells(
-            column.cells.get(a.key)!,
-            column.cells.get(b.key)!
-          ) || a.key.localeCompare(b.key)
-    )
+    if (!appliedOrder) return rows
+    const byKey = new Map(rows.map(row => [row.key, row]))
+    return appliedOrder.flatMap(id => {
+      const row = byKey.get(id)
+      return row ? [row] : []
+    })
   })
 
   function sortBy(key: string) {
@@ -124,15 +267,20 @@
 
   function attrsTooltip(attrs: PanelTimeseries['attributes']): string {
     return (
-      attrs.map(a => `${a.key}: ${attributeValueLabel(a.value)}`).join(' ') ||
-      'default series'
+      attrs
+        .map(
+          attribute =>
+            `${attribute.key}: ${attributeValueLabel(attribute.value)}`
+        )
+        .join(' ') || 'default series'
     )
   }
   function identifierValue(key: string, cell: SeriesCell): string | undefined {
-    const value = cell.values[0]
-    return cell.values.length === 1 &&
-      value?.kind === 'string' &&
-      /(?:^|[._])(?:id|uuid)$/i.test(key)
+    if (!/(?:^|[._])(?:id|uuid)$/i.test(key)) return undefined
+    if (cell.kind === 'string') return cell.preview
+    const values = cell.values
+    const value = values[0]
+    return values.length === 1 && value?.kind === 'string'
       ? value.value
       : undefined
   }
@@ -140,10 +288,10 @@
 
 {#snippet cellContent(key: string, cell: SeriesCell)}
   {@const identifier = identifierValue(key, cell)}
-  <span class="block max-w-full truncate" title={cell.label}>
+  <span class="block max-w-full truncate" title={cell.preview ?? cell.label}>
     {#if identifier !== undefined}<Identifier
         value={identifier}
-      />{:else}{cell.label}{/if}
+      />{:else}{cell.preview ?? cell.label}{/if}
   </span>
 {/snippet}
 
@@ -159,7 +307,23 @@
   {/if}
 {/snippet}
 
-<div class="ts-panel" role="region" aria-label="Timeseries">
+<div
+  class="ts-panel"
+  role="region"
+  aria-label="Timeseries"
+  aria-busy={sortLoading}
+>
+  <LoadingStatus
+    pending={sortLoading}
+    label="Sorting series…"
+    requestKey={`${metricRef}:${sort?.key}:${sort?.direction}`}
+    class="block px-3 py-2 text-subtle"
+  />
+  {#if sortError}<p role="alert" class="px-3 py-2 text-papaya">{sortError}</p>
+    <button type="button" class="btn btn-ghost mx-3" onclick={() => sortRetry++}
+      >Retry sort</button
+    >
+  {/if}
   <ResizableTable
     {columns}
     caption="Metric series"
@@ -192,7 +356,7 @@
             class:table-cell--pinned={layout.pinned[`attr:${column.key}`] !==
               undefined}
             style:left="{layout.pinned[`attr:${column.key}`]}px"
-            aria-sort={sort?.key === column.key
+            aria-sort={sortApplied && sort?.key === column.key
               ? sort.direction === 'asc'
                 ? 'ascending'
                 : 'descending'
@@ -232,7 +396,9 @@
         {@const headerLabel = label.needsIdentity
           ? `${label.text} · ${ts.key}`
           : label.text}
-        {@const attributes = timeseriesByKey.get(ts.key)?.attributes ?? []}
+        {@const series = timeseriesByKey.get(ts.key)}
+        {@const attributes =
+          receivedAttributes.get(ts.key) ?? series?.attributes ?? []}
         {@const expanded = expandedAttributes.has(ts.key)}
         {@const detailID = `${id}-attributes-${ts.key}`}
         <tr
@@ -254,22 +420,23 @@
             style:left="{layout.pinned.controls}px"
           >
             <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="ts-row__caret"
-                disabled={!attributes.length}
-                aria-label={`${expanded ? 'Collapse' : 'Expand'} attributes for ${headerLabel}`}
-                aria-expanded={expanded}
-                aria-controls={detailID}
-                onclick={() => toggleAttributes(ts.key)}
-              >
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  size={16}
-                  strokeWidth={1.5}
-                  class={expanded ? 'rotate-90' : ''}
-                />
-              </button>
+              {#if attributes.length || series?.attributesComplete === false}
+                <button
+                  type="button"
+                  class="ts-row__caret"
+                  aria-label={`${expanded ? 'Collapse' : 'Expand'} attributes for ${headerLabel}`}
+                  aria-expanded={expanded}
+                  aria-controls={detailID}
+                  onclick={() => toggleAttributes(ts.key)}
+                >
+                  <HugeiconsIcon
+                    icon={ArrowRight01Icon}
+                    size={16}
+                    strokeWidth={1.5}
+                    class={expanded ? 'rotate-90' : ''}
+                  />
+                </button>
+              {/if}
             </div>
           </td>
           {#if !ctx.isHistogramKind}<td
@@ -286,7 +453,9 @@
               class:table-cell--pinned={layout.pinned[`attr:${column.key}`] !==
                 undefined}
               style:left="{layout.pinned[`attr:${column.key}`]}px"
-              title={attrsTooltip(ts.attributes)}
+              title={series?.labelPreviews !== undefined
+                ? headerLabel
+                : attrsTooltip(ts.attributes)}
               >{#if column === table.columns[0]}<button
                   type="button"
                   class="block max-w-full text-left"
@@ -307,7 +476,9 @@
               class="table-cell"
               class:ts-row__first-value={!ctx.isHistogramKind &&
                 table.columns.length === 0}
-              title={attrsTooltip(ts.attributes)}
+              title={series?.labelPreviews !== undefined
+                ? headerLabel
+                : attrsTooltip(ts.attributes)}
             >
               <button
                 type="button"
@@ -346,17 +517,38 @@
         {#if expanded}
           <tr id={detailID} data-series-attributes={ts.key}>
             <td colspan={columns.length} class="p-0">
-              <table
-                class="detail-fields w-full"
-                aria-label={`Attributes for ${headerLabel}`}
-              >
-                <tbody
-                  ><AttributeRows
-                    {attributes}
-                    owner={`timeseries ${ts.key}`}
-                  /></tbody
+              {#if loadingAttributes.has(ts.key)}
+                <LoadingStatus
+                  pending
+                  label="Loading series attributes…"
+                  requestKey={attributeRequests.get(ts.key)?.signal}
+                  class="block px-3 py-2 text-subtle"
+                />
+              {/if}
+              {#if attributeErrors.has(ts.key)}
+                <p role="alert" class="px-3 py-2 text-papaya">
+                  {attributeErrors.get(ts.key)}
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-ghost mx-3"
+                  onclick={() => loadAttributes(ts.key)}
+                  >Retry attributes</button
                 >
-              </table>
+              {/if}
+              {#if receivedAttributes.has(ts.key) || series?.attributesComplete !== false}
+                <table
+                  class="detail-fields w-full"
+                  aria-label={`Attributes for ${headerLabel}`}
+                >
+                  <tbody
+                    ><AttributeRows
+                      {attributes}
+                      owner={`timeseries ${ts.key}`}
+                    /></tbody
+                  >
+                </table>
+              {/if}
             </td>
           </tr>
         {/if}
@@ -380,7 +572,7 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
   .ts-row__caret {
-    @apply inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle focus-visible:outline-2 focus-visible:outline-primary disabled:text-muted disabled:cursor-default;
+    @apply inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-subtle focus-visible:outline-2 focus-visible:outline-primary;
   }
   .ts-row__attrs {
     @apply text-sm;

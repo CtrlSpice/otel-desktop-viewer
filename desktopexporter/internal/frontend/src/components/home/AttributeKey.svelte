@@ -31,18 +31,24 @@
     onSelect: () => void
     selectedValue?: string
     onSelectValue: (value: CoverageValue) => void
-    onCount: (count: number) => void
+    onCount: (count: number, source: Omit<DiscoveryOptions, 'kind'>) => void
     expanded: boolean
-    onExpandedChange: (expanded: boolean) => void
+    onExpandedChange: (
+      expanded: boolean,
+      source: Omit<DiscoveryOptions, 'kind'>
+    ) => void
     hidden?: boolean
   } = $props()
-  const valueOptions = $derived({ ...options, ownerType: entry.ownerType })
+  const ownerType = $derived(entry.ownerType)
+  const name = $derived(entry.key)
+  const kind = $derived(entry.kind)
+  const valueOptions = $derived({ ...options, ownerType })
 </script>
 
 <AttributeValues
   options={valueOptions}
-  name={entry.key}
-  kind={entry.kind}
+  {name}
+  {kind}
   {sortBy}
   {sortDirection}
   {pinnedLeft}

@@ -7,6 +7,7 @@
   let {
     text = '',
     loadText,
+    sourceKey,
     label,
     tooltip = 'Copy value',
     contextual = false,
@@ -15,6 +16,8 @@
     text?: string
     /** Fetch exact source text only when the user requests a copy. */
     loadText?: (signal: AbortSignal) => Promise<string>
+    /** Identity of the displayed source, not a pending selection. */
+    sourceKey?: unknown
     label: string
     tooltip?: string
     contextual?: boolean
@@ -37,6 +40,7 @@
   $effect(() => {
     void text
     void loadText
+    void sourceKey
     void label
     activeRequest?.abort()
     activeRequest = undefined
@@ -53,6 +57,7 @@
     if (pending) return
     const current = text
     const currentLoader = loadText
+    const currentSource = sourceKey
     const currentLabel = label
     const controller = new AbortController()
     activeRequest = controller
@@ -66,6 +71,7 @@
       if (
         text !== current ||
         loadText !== currentLoader ||
+        sourceKey !== currentSource ||
         label !== currentLabel
       )
         return
@@ -74,6 +80,7 @@
         controller.signal.aborted ||
         text !== current ||
         loadText !== currentLoader ||
+        sourceKey !== currentSource ||
         label !== currentLabel
       )
         return
@@ -85,6 +92,7 @@
         !controller.signal.aborted &&
         text === current &&
         loadText === currentLoader &&
+        sourceKey === currentSource &&
         label === currentLabel
       ) {
         failed = true

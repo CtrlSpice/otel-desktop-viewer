@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { evalAPI } from './eval-service'
+import { parseQuery } from '@/components/shared/Search/queryParser'
+import { evalSearchDefinition } from '@/components/evals/search-fields'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -48,7 +50,7 @@ it('sends outcome choices as repeated server-side filters and preserves global t
   )
   vi.stubGlobal('fetch', fetcher)
   const page = await evalAPI.searchEvalExperiments({
-    query: 'Experiment 2',
+    criteria: parseQuery('name = "Experiment 2"', evalSearchDefinition.fields),
     outcomes: ['success:Pass', 'error:Fail'],
     sort: 'name',
     limit: 10,
@@ -59,7 +61,15 @@ it('sends outcome choices as repeated server-side filters and preserves global t
     'success:Pass',
     'error:Fail',
   ])
-  expect(url.searchParams.get('q')).toBe('Experiment 2')
+  expect(url.searchParams.has('q')).toBe(false)
+  expect(JSON.parse(url.searchParams.get('criteria')!)).toMatchObject({
+    type: 'condition',
+    query: {
+      field: { owner: 'experiment', path: ['name'] },
+      fieldOperator: '=',
+      value: 'Experiment 2',
+    },
+  })
   expect(page.total).toBe(300)
   expect(page.indexing.remaining).toBe(2)
 })

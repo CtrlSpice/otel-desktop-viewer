@@ -6,8 +6,8 @@
    *   - Series: independently selectable series and chart visibility
    *   - Datapoints: received rows for the selected series
    *
-   * Reads everything through MetricViewContext: this is a near-pure
-   * renderer. Disclosure state stays local to the panel.
+   * Uses MetricViewContext and the received-series response for rendering.
+   * Disclosure state stays local to the panel.
    */
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
@@ -26,23 +26,36 @@
   import MetricField from '@/components/shared/DetailProperty.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import DatapointsPanel from './DatapointsPanel.svelte'
+  import type { DatapointSeries } from './SeriesDatapointList.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { readOTLPText } from '@/services/export-service'
 
   const ctx = getMetricViewContext()
   let {
+    datapointSeries,
     datapointsError,
     retryDatapoints,
-  }: { datapointsError?: string; retryDatapoints?: () => void } = $props()
-  const selectedSeries = $derived(
-    ctx.metric?.timeseries.find(
-      series => series.seriesRef === ctx.selectedSeriesKey
-    )
-  )
+    selectionCurrent = true,
+  }: {
+    datapointSeries?: DatapointSeries
+    datapointsError?: string
+    retryDatapoints?: () => void
+    selectionCurrent?: boolean
+  } = $props()
   const timeContext = getTimeContext()
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
+  let rawMetric = $state.raw<typeof ctx.metric>()
+  const actionMetric = $derived(
+    detailView === 'raw' ? (rawMetric ?? ctx.metric) : ctx.metric
+  )
+  const loadMetricJSON = $derived.by(() => {
+    const id = actionMetric?.metricRef
+    return id
+      ? (signal: AbortSignal) => readOTLPText('metric', id, signal)
+      : undefined
+  })
 
   let seriesCount = $derived.by(() => {
     if (!ctx.metric) return 0
@@ -89,30 +102,28 @@
   </DetailBubble>
 {/snippet}
 {#snippet datapointsSection()}
-  <DetailBubble
-    label="Datapoints"
-    contained
+  <DatapointsPanel
     icon={seriesIcon}
-    disabled={!selectedSeries}
-    count={selectedSeries?.datapointCount}
-  >
-    <DatapointsPanel error={datapointsError} onretry={retryDatapoints} />
-  </DetailBubble>
+    response={datapointSeries}
+    {selectionCurrent}
+    error={datapointsError}
+    onretry={retryDatapoints}
+  />
 {/snippet}
 {#snippet metricSection()}
   <DetailBubble label="Metric" icon={metricIcon}>
     {#snippet action()}
       <DetailViewTabs id={detailViewID} bind:view={detailView}>
         {#snippet action()}
-          {#if ctx.metric}{@const metric = ctx.metric}{#key metric.metricRef}
-              <ValueCopyButton
-                grouped
-                loadText={signal =>
-                  readOTLPText('metric', metric.metricRef, signal)}
-                label="metric"
-                tooltip="Copy metric as OTLP JSON"
-              />
-            {/key}{/if}
+          {#if actionMetric}
+            <ValueCopyButton
+              grouped
+              loadText={loadMetricJSON}
+              sourceKey={actionMetric}
+              label="metric"
+              tooltip="Copy metric as OTLP JSON"
+            />
+          {/if}
         {/snippet}
       </DetailViewTabs>
     {/snippet}
@@ -120,8 +131,11 @@
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
+        record={metric}
+        bind:displayedRecord={rawMetric}
         scopes={rawScopes}
         wholeURL={metricURL}
+        refreshKey={metric}
       >
         <table class="detail-fields w-full" aria-label="Metric fields">
           <tbody>

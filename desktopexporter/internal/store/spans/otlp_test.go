@@ -28,7 +28,7 @@ const otlpTraceID = "fedcba98765432100123456789abcdef"
 func TestGetTraceSelectionOTLP(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, otlpTraceFixture())
 	}))
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceSelectionOTLP(ctx, db, otlpTraceID, "18446744073709551615")
@@ -56,7 +56,7 @@ func TestGetTraceOTLP(t *testing.T) {
 	s, ctx := storetest.New(t)
 	input := otlpTraceFixture()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, input, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, input)
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -82,6 +82,40 @@ func TestGetTraceOTLP(t *testing.T) {
 	decoded, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(raw)
 	require.NoError(t, err)
 	t.Run("json", func(t *testing.T) { assertTraceOTLP(t, decoded) })
+}
+
+func TestTraceChildrenRetainOrderInLargeNestedLists(t *testing.T) {
+	s, ctx := storetest.New(t)
+	input := ptrace.NewTraces()
+	span := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetTraceID(mustDecodeTraceID(otlpTraceID))
+	span.SetSpanID(mustDecodeSpanID("0000000000000001"))
+	span.SetName("many children")
+	const children = 8193
+	for i := range children {
+		event := span.Events().AppendEmpty()
+		event.SetTimestamp(100)
+		event.SetName(fmt.Sprintf("event-%d", i))
+		link := span.Links().AppendEmpty()
+		link.TraceState().FromRaw(fmt.Sprintf("order=%d", i))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, input)
+	}))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceOTLP(ctx, db, otlpTraceID)
+	})
+	require.NoError(t, err)
+	decoded, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(raw)
+	require.NoError(t, err)
+	require.Equal(t, 1, decoded.SpanCount())
+	got := decoded.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, children, got.Events().Len())
+	require.Equal(t, children, got.Links().Len())
+	for i := range children {
+		require.Equal(t, span.Events().At(i).Name(), got.Events().At(i).Name())
+		require.Equal(t, span.Links().At(i).TraceState().AsRaw(), got.Links().At(i).TraceState().AsRaw())
+	}
 }
 
 func assertTraceOTLP(t *testing.T, decoded ptrace.Traces) {
@@ -196,7 +230,7 @@ func assertTraceOTLP(t *testing.T, decoded ptrace.Traces) {
 func TestValidateTraceOTLPRejectsInvalidWireShapes(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, otlpTraceFixture())
 	}))
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceOTLP(ctx, db, otlpTraceID)
@@ -243,11 +277,11 @@ func TestGetTraceOTLPNotFound(t *testing.T) {
 func TestGetTraceOTLPRejectsStoredSQLNull(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, otlpTraceFixture())
 	}))
 
 	err := s.WithDBRead(func(db *sql.DB) error {
-		if _, err := db.ExecContext(ctx, `update events set name = null`); err != nil {
+		if _, err := db.ExecContext(ctx, `update spans set events=list_transform(events,lambda e:struct_update(e,name:=null))`); err != nil {
 			return err
 		}
 		_, err := spans.GetTraceOTLP(ctx, db, otlpTraceID)
@@ -257,23 +291,17 @@ func TestGetTraceOTLPRejectsStoredSQLNull(t *testing.T) {
 	assert.ErrorContains(t, err, "OTLP document contains SQL NULL")
 }
 
-func TestGetTraceOTLPRejectsDanglingAttribute(t *testing.T) {
+func TestSpanAttributesCannotBecomeSQLNull(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, otlpTraceFixture())
 	}))
 
 	err := s.WithDBRead(func(db *sql.DB) error {
-		if _, err := db.ExecContext(ctx, `
-			delete from attributes
-			where id = (select unnest(attribute_ids) from spans limit 1)`); err != nil {
-			return err
-		}
-		_, err := spans.GetTraceOTLP(ctx, db, otlpTraceID)
+		_, err := db.ExecContext(ctx, `update spans set attributes = null where span_id = 2`)
 		return err
 	})
-	assert.ErrorIs(t, err, spans.ErrSpansStoreInternal)
-	assert.ErrorContains(t, err, "stored OTel value is SQL NULL")
+	assert.ErrorContains(t, err, "NOT NULL constraint failed")
 }
 
 func otlpTraceFixture() ptrace.Traces {
@@ -514,7 +542,7 @@ func BenchmarkGetTraceOTLP(b *testing.B) {
 		}
 	}
 	require.NoError(b, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	for _, threads := range []int{1, 4} {

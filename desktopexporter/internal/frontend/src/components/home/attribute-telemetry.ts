@@ -39,8 +39,8 @@ export async function loadAttributeTelemetry(
     : serviceQuery
   const start = options.startTime == null ? null : BigInt(options.startTime)
   const end = options.endTime == null ? null : BigInt(options.endTime)
-  const matches = attribute
-    ? await telemetryAPI.getAttributeRecordMatches(
+  const matchesRequest = attribute
+    ? telemetryAPI.getAttributeRecordMatches(
         {
           ...options,
           signal: source,
@@ -52,20 +52,22 @@ export async function loadAttributeTelemetry(
         signal
       )
     : undefined
-  signal.throwIfAborted()
-  if (matches?.length === 0) return []
-  const byID = matches
-    ? new Map(matches.map(match => [match.itemRef, match]))
-    : undefined
+  const byIDRequest = Promise.resolve(matchesRequest).then(matches =>
+    matches ? new Map(matches.map(match => [match.itemRef, match])) : undefined
+  )
   if (source === 'traces') {
-    const traces = await telemetryAPI.searchTraceSummaries(
-      start,
-      end,
-      query,
-      undefined,
-      undefined,
-      signal
-    )
+    const [byID, traces] = await Promise.all([
+      byIDRequest,
+      telemetryAPI.searchTraceSummaries(
+        start,
+        end,
+        query,
+        undefined,
+        undefined,
+        signal
+      ),
+    ])
+    signal.throwIfAborted()
     if (!byID) return traces.map(trace => ({ signal: 'traces', trace }))
     return traces.flatMap(trace => {
       const match = byID.get(trace.traceID)
@@ -85,26 +87,34 @@ export async function loadAttributeTelemetry(
     })
   }
   if (source === 'logs') {
-    const logs = await telemetryAPI.searchLogSummaries(
+    const [byID, logs] = await Promise.all([
+      byIDRequest,
+      telemetryAPI.searchLogSummaries(
+        start,
+        end,
+        query,
+        undefined,
+        undefined,
+        signal
+      ),
+    ])
+    signal.throwIfAborted()
+    return logs
+      .filter(log => !byID || byID.has(log.logRef))
+      .map(log => ({ signal: 'logs', log }))
+  }
+  const [byID, metrics] = await Promise.all([
+    byIDRequest,
+    telemetryAPI.searchMetricSummaries(
       start,
       end,
       query,
       undefined,
       undefined,
       signal
-    )
-    return logs
-      .filter(log => !byID || byID.has(log.logRef))
-      .map(log => ({ signal: 'logs', log }))
-  }
-  const metrics = await telemetryAPI.searchMetricSummaries(
-    start,
-    end,
-    query,
-    undefined,
-    undefined,
-    signal
-  )
+    ),
+  ])
+  signal.throwIfAborted()
   return metrics.flatMap(metric => {
     if (!byID) return [{ signal: 'metrics', metric }]
     const match = byID.get(metric.metricRef)

@@ -1,5 +1,9 @@
 import type {
   TraceData,
+  TraceWaterfallData,
+  TraceColumn,
+  TraceColumnPreview,
+  SpanData,
   TraceSummary,
   SpanTiming,
   LogData,
@@ -9,53 +13,17 @@ import type {
   LogErrorNavigation,
   TraceLogSummary,
   MetricViewData,
-  MetricSeriesViewData,
   MetricSummary,
   Stats,
-  Exemplar,
-  DataPoint,
-  ScalarAggregate,
-  ScalarViewBucket,
   MetricAggregateViewData,
   ExactMetric,
   ExactMetricSeries,
-  ReceivedNumberDataPoint,
-  ReceivedHistogramDataPoint,
-  ReceivedExponentialHistogramDataPoint,
-  AggregateBucket,
 } from '@/types/api-types'
 import type {
-  JsonAttributeDefinition,
-  JsonDataPoint,
   JsonDeleteResult,
-  JsonExemplar,
-  JsonLogData,
-  JsonLogSummary,
-  JsonLogTableRow,
-  JsonTraceLogSummary,
-  JsonMetricViewData,
-  JsonMetricSummary,
-  JsonMetricSeriesViewData,
   JsonStats,
-  JsonTraceData,
-  JsonTraceSummary,
-  JsonAttributeType,
   JsonQueryNode,
-  JsonAttributeMatch,
-  JsonAttribute,
-  JsonAttributeValue,
-  JsonMetricAggregateViewData,
-  JsonExactMetric,
-  JsonExactMetricSeries,
-  JsonReceivedNumberDataPoint,
-  JsonReceivedHistogramDataPoint,
-  JsonReceivedExponentialHistogramDataPoint,
-  JsonScalarAggregate,
-  JsonScalarViewBucket,
-  JsonAggregateBucket,
-  JsonDouble,
 } from '@/types/wire-types'
-import type { Attribute, AttributeValue } from '@/types/api-types'
 import type {
   DiscoveryOptions,
   DiscoveryPage,
@@ -63,19 +31,51 @@ import type {
   ServiceConnection,
   ServiceConnectionSpan,
   AttributeKey,
-  AttributeFrequency,
+  HomeCoveragePage,
 } from './discovery-types'
 import {
   attributeMatchesSQL,
   type AttributeMatchOptions,
   type AttributeRecordMatch,
 } from './attribute-matches'
+import type { FieldDefinition, QueryNode } from '@/search/model'
 import {
-  getOperatorsForFieldType,
-  type FieldDefinition,
-  type FieldType,
-  type QueryNode,
-} from '@/search/model'
+  attributeDefinitions,
+  attributeMatch,
+  type AttributeMatch,
+} from './arrow-search'
+import { fetchArrow } from './arrow-fetch'
+import { attributeValue, rowViews } from './arrow-values'
+import { ArrowFrame } from './arrow-data'
+import {
+  traceData,
+  traceWaterfallData,
+  traceColumnPreviews,
+} from './arrow-traces'
+import {
+  discoveryPage,
+  serviceSummary,
+  serviceConnection,
+  serviceConnectionSpan,
+  attributeKey,
+} from './arrow-discovery'
+import {
+  exactMetric,
+  exactMetricSeries,
+  metricSeriesOrder,
+  metricView,
+  metricAggregateView,
+} from './arrow-metrics'
+import {
+  logData,
+  logSummary,
+  logTableRow,
+  traceLogSummary,
+  traceSummary,
+  metricSummary,
+} from './arrow-summaries'
+import { JsonRpcError } from './service-error'
+export { JsonRpcError } from './service-error'
 
 type JsonRpcParamValue =
   | string
@@ -84,9 +84,9 @@ type JsonRpcParamValue =
   | null
   | JsonQueryNode
   | SearchSort
-  | readonly string[]
-  | readonly number[]
+  | readonly (string | number)[]
   | readonly LogColumn[]
+  | readonly TraceColumn[]
   | (Omit<DiscoveryOptions, 'queries'> & {
       queries?: Record<
         'traces' | 'metrics' | 'logs',
@@ -112,16 +112,6 @@ interface JsonRpcResponse {
     message: string
   }
   id: number
-}
-
-/** Preserves the JSON-RPC code for error-specific UI. */
-export class JsonRpcError extends Error {
-  code: number
-  constructor(code: number, message: string) {
-    super(message)
-    this.name = 'JsonRpcError'
-    this.code = code
-  }
 }
 
 export type SearchSort = {
@@ -154,92 +144,6 @@ function bigintFromWire(value: unknown): bigint {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accepts null; otherwise delegates to the validating wire decoder.
 function nullableBigintFromWire(value: unknown): bigint | null {
   return value === null ? null : bigintFromWire(value)
-}
-
-function doubleFromWire(value: number | string): number {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decodes the two double wire encodings: JSON numbers and hexadecimal IEEE-754 bit strings.
-  if (typeof value === 'number') return value
-  if (!/^0x[0-9a-f]{16}$/i.test(value)) {
-    throw new Error(`Invalid double wire value: ${value}`)
-  }
-  const bytes = new ArrayBuffer(8)
-  const view = new DataView(bytes)
-  view.setBigUint64(0, BigInt(value), false)
-  return view.getFloat64(0, false)
-}
-
-function nullableDoubleFromWire(value: JsonDouble | null): number | null {
-  return value === null ? null : doubleFromWire(value)
-}
-
-function scalarDeltaFromWire(
-  value: JsonDouble | string | null | undefined
-): number | bigint | null | undefined {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decodes calculated-delta wire values: numbers and nullish values pass through; strings go to the bigint or double decoder.
-  if (typeof value !== 'string') return value
-  return value.startsWith('0x') ? doubleFromWire(value) : bigintFromWire(value)
-}
-
-function doubleRecordFromJSON(
-  values: Record<string, JsonDouble | null> | null | undefined
-): Record<string, number | null> | null {
-  if (values === null || values === undefined) return null
-  return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [
-      key,
-      nullableDoubleFromWire(value),
-    ])
-  )
-}
-
-function attributeValueFromJSON(value: JsonAttributeValue): AttributeValue {
-  switch (value.kind) {
-    case 'empty':
-    case 'string':
-    case 'bytes':
-    case 'bool':
-      return value
-    case 'int64':
-      return { ...value, value: bigintFromWire(value.value) }
-    case 'double':
-      return { ...value, value: doubleFromWire(value.value) }
-    case 'array':
-      return { ...value, value: value.value.map(attributeValueFromJSON) }
-    case 'map':
-      const encodedValuesByKey = new Map<string, Set<string>>()
-      for (const entry of value.value) {
-        const encodedValues =
-          encodedValuesByKey.get(entry.key) ?? new Set<string>()
-        encodedValues.add(JSON.stringify(entry.value))
-        encodedValuesByKey.set(entry.key, encodedValues)
-      }
-      return {
-        ...value,
-        value: value.value.map(entry => ({
-          key: entry.key,
-          value: attributeValueFromJSON(entry.value),
-        })),
-        conflictingKeys: [...encodedValuesByKey].flatMap(([key, values]) =>
-          values.size > 1 ? [key] : []
-        ),
-      }
-  }
-}
-
-function attributesFromJSON(attributes: JsonAttribute[]): Attribute[] {
-  const encodedValuesByKey = new Map<string, Set<string>>()
-  for (const attribute of attributes) {
-    const encodedValues =
-      encodedValuesByKey.get(attribute.key) ?? new Set<string>()
-    encodedValues.add(JSON.stringify(attribute.value))
-    encodedValuesByKey.set(attribute.key, encodedValues)
-  }
-  return attributes.map(attribute => ({
-    id: attribute.id,
-    key: attribute.key,
-    value: attributeValueFromJSON(attribute.value),
-    hasConflict: encodedValuesByKey.get(attribute.key)!.size > 1,
-  }))
 }
 
 /** Thrown when a superseded request is abandoned. */
@@ -318,494 +222,17 @@ async function callRPC<T>(
   return data.result as T
 }
 
-function traceSummaryFromJSON(json: JsonTraceSummary): TraceSummary {
-  return {
-    ...json,
-    // The wire sends null for orphaned traces and for an empty root
-    // service name (nullif in the projection); the domain wants
-    // undefined / '' respectively.
-    rootSpan: json.rootSpan
-      ? {
-          serviceName: json.rootSpan.serviceName ?? '',
-          name: json.rootSpan.name,
-        }
-      : undefined,
-    startTime: bigintFromWire(json.startTime),
-    // durationNs arrives as a varchar-encoded int64 (ns precision
-    // would otherwise be clipped by JSON's float64 numbers).
-    durationNs: nullableBigintFromWire(json.durationNs),
+async function callArrow(
+  method: string,
+  params: JsonRpcNamedParams,
+  signal?: AbortSignal
+): Promise<ArrowFrame> {
+  try {
+    return await fetchArrow(method, JSON.stringify(params), signal)
+  } catch (error) {
+    if (signal?.aborted || isAbortError(error)) throw new RequestAbortedError()
+    throw error
   }
-}
-
-function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
-  return json.map(traceSummaryFromJSON)
-}
-
-// Decodes compressed spans and shares each resolved resource and scope object.
-function traceDataFromJSON(json: JsonTraceData): TraceData {
-  const traceStart = bigintFromWire(json.traceStart)
-  const resources = Object.fromEntries(
-    Object.entries(json.resources).map(([id, resource]) => [
-      id,
-      { ...resource, attributes: attributesFromJSON(resource.attributes) },
-    ])
-  )
-  const scopes = Object.fromEntries(
-    Object.entries(json.scopes).map(([id, scope]) => [
-      id,
-      { ...scope, attributes: attributesFromJSON(scope.attributes) },
-    ])
-  )
-
-  return {
-    traceID: json.traceID,
-    unplacedSpanCount: json.unplacedSpanCount,
-    spans: json.spans.map(spanNode => {
-      const { r, s, start, dur, ...rest } = spanNode.spanData
-      const startTime = traceStart + BigInt(start)
-      const node: TraceData['spans'][number] = {
-        spanData: {
-          ...rest,
-          attributes: attributesFromJSON(rest.attributes),
-          links: rest.links.map(link => ({
-            ...link,
-            attributes: attributesFromJSON(link.attributes),
-          })),
-          traceID: json.traceID,
-          resource: resources[String(r)]!,
-          scope: scopes[String(s)]!,
-          startTime,
-          endTime: startTime + BigInt(dur),
-          events: spanNode.spanData.events.map(event => ({
-            ...event,
-            attributes: attributesFromJSON(event.attributes),
-            timestamp: bigintFromWire(event.timestamp),
-          })),
-        },
-        depth: spanNode.depth,
-        matched: spanNode.matched,
-      }
-      // Keep both properties absent on every span of a healthy trace.
-      if (spanNode.salvaged) {
-        node.salvaged = true
-        node.cyclePoint = spanNode.cyclePoint
-      }
-      return node
-    }),
-  }
-}
-
-function logSummaryFromJSON(json: JsonLogSummary): LogSummary {
-  return {
-    ...json,
-    timestamp: bigintFromWire(json.timestamp),
-  }
-}
-
-function logSummariesFromJSON(json: JsonLogSummary[]): LogSummary[] {
-  return json.map(logSummaryFromJSON)
-}
-
-function traceLogSummariesFromJSON(
-  json: JsonTraceLogSummary[]
-): TraceLogSummary[] {
-  return json.map(log => ({ ...log, timestamp: bigintFromWire(log.timestamp) }))
-}
-
-function logDataFromJSON(json: JsonLogData): LogData {
-  return {
-    ...json,
-    body: attributeValueFromJSON(json.body),
-    attributes: attributesFromJSON(json.attributes),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-    timestamp: bigintFromWire(json.timestamp),
-    observedTimestamp: bigintFromWire(json.observedTimestamp),
-  }
-}
-
-function exemplarFromJSON(json: JsonExemplar): Exemplar {
-  const base = {
-    timestamp: bigintFromWire(json.timestamp),
-    traceID: json.traceID,
-    spanID: json.spanID,
-    filteredAttributes: attributesFromJSON(json.filteredAttributes),
-  }
-  switch (json.valueType) {
-    case 'Double':
-      return {
-        ...base,
-        valueType: 'Double',
-        doubleValue: doubleFromWire(json.doubleValue),
-        intValue: null,
-      }
-    case 'Int':
-      return {
-        ...base,
-        valueType: 'Int',
-        doubleValue: null,
-        intValue: bigintFromWire(json.intValue),
-      }
-    case 'Empty':
-      return {
-        ...base,
-        valueType: 'Empty',
-        doubleValue: null,
-        intValue: null,
-      }
-  }
-}
-
-function dataPointFromJSON(json: JsonDataPoint): DataPoint {
-  const base = {
-    id: json.id,
-    timestamp: bigintFromWire(json.timestamp),
-    timestampMs: json.timestampMs,
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-    exemplarCount: json.exemplarCount,
-  }
-  switch (json.metricType) {
-    case 'Gauge':
-      return {
-        ...base,
-        metricType: 'Gauge',
-        doubleValue: nullableDoubleFromWire(json.doubleValue),
-        intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
-        valueType: json.valueType,
-      }
-    case 'Sum':
-      return {
-        ...base,
-        metricType: 'Sum',
-        doubleValue: nullableDoubleFromWire(json.doubleValue),
-        intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
-        valueType: json.valueType,
-        isMonotonic: json.isMonotonic,
-        aggregationTemporalityCode: json.aggregationTemporalityCode,
-        aggregationTemporality: json.aggregationTemporality,
-        delta: scalarDeltaFromWire(json.delta),
-        isReset: json.isReset,
-      }
-    case 'Histogram':
-      return {
-        ...base,
-        metricType: 'Histogram',
-        count: bigintFromWire(json.count),
-        sum: nullableDoubleFromWire(json.sum),
-        min: nullableDoubleFromWire(json.min),
-        max: nullableDoubleFromWire(json.max),
-        bucketCounts: json.bucketCounts.map(bigintFromWire),
-        explicitBounds: json.explicitBounds.map(doubleFromWire),
-        quantiles: doubleRecordFromJSON(json.quantiles),
-        aggregationTemporalityCode: json.aggregationTemporalityCode,
-        aggregationTemporality: json.aggregationTemporality,
-      }
-    case 'ExponentialHistogram':
-      return {
-        ...base,
-        metricType: 'ExponentialHistogram',
-        count: bigintFromWire(json.count),
-        sum: nullableDoubleFromWire(json.sum),
-        min: nullableDoubleFromWire(json.min),
-        max: nullableDoubleFromWire(json.max),
-        scale: json.scale,
-        zeroCount: bigintFromWire(json.zeroCount),
-        zeroThreshold: doubleFromWire(json.zeroThreshold),
-        positiveBucketOffset: json.positiveBucketOffset,
-        positiveBucketCounts: json.positiveBucketCounts.map(bigintFromWire),
-        negativeBucketOffset: json.negativeBucketOffset,
-        negativeBucketCounts: json.negativeBucketCounts.map(bigintFromWire),
-        quantiles: doubleRecordFromJSON(json.quantiles),
-        aggregationTemporalityCode: json.aggregationTemporalityCode,
-        aggregationTemporality: json.aggregationTemporality,
-      }
-  }
-}
-
-function timeseriesFromJSON(
-  json: JsonMetricSeriesViewData
-): MetricSeriesViewData {
-  return {
-    seriesRef: json.seriesRef,
-    attributes: attributesFromJSON(json.attributes),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    datapoints: json.datapoints.map(dataPointFromJSON),
-    stats: json.stats
-      ? {
-          ...json.stats,
-          min: doubleFromWire(json.stats.min),
-          max: doubleFromWire(json.stats.max),
-          sum: doubleFromWire(json.stats.sum),
-          avg: doubleFromWire(json.stats.avg),
-        }
-      : null,
-    datapointCount: json.datapointCount ?? 0,
-    lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
-    views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
-    rateStats: json.rateStats
-      ? {
-          min: doubleFromWire(json.rateStats.min),
-          max: doubleFromWire(json.rateStats.max),
-          avg: doubleFromWire(json.rateStats.avg),
-        }
-      : null,
-    sparkline:
-      json.sparkline?.map(p => ({
-        ...p,
-        timestamp: bigintFromWire(p.timestamp),
-        value: doubleFromWire(p.value),
-      })) ?? null,
-  }
-}
-
-/** Decodes nanosecond bucket starts and scalar values at the wire boundary. */
-function scalarViewBucketsFromJSON(
-  json: JsonScalarViewBucket[]
-): ScalarViewBucket[] {
-  return json.map(b => ({
-    ...b,
-    bucketStart: bigintFromWire(b.bucketStart),
-    sum: nullableDoubleFromWire(b.sum),
-    avg: nullableDoubleFromWire(b.avg),
-    rate: nullableDoubleFromWire(b.rate),
-    slope: nullableDoubleFromWire(b.slope),
-  }))
-}
-
-function aggregateBucketsFromJSON(
-  json: JsonAggregateBucket[] | null
-): MetricAggregateViewData['aggregate'] {
-  if (!json) return null
-  return json.map(bucket => {
-    const { sum, min, max, explicitBounds, zeroThreshold, quantiles, ...rest } =
-      bucket
-    const decoded: AggregateBucket = {
-      ...rest,
-      sum: nullableDoubleFromWire(sum),
-      quantiles: doubleRecordFromJSON(quantiles),
-    }
-    if (min !== undefined) decoded.min = doubleFromWire(min)
-    if (max !== undefined) decoded.max = doubleFromWire(max)
-    if (explicitBounds !== undefined) {
-      decoded.explicitBounds = explicitBounds.map(doubleFromWire)
-    }
-    if (zeroThreshold !== undefined) {
-      decoded.zeroThreshold = doubleFromWire(zeroThreshold)
-    }
-    return decoded
-  })
-}
-
-function scalarAggregateFromJSON(
-  json: JsonScalarAggregate | null
-): ScalarAggregate | null {
-  if (!json) return null
-  return {
-    selected: scalarViewBucketsFromJSON(json.selected),
-    all: scalarViewBucketsFromJSON(json.all),
-  }
-}
-
-function metricViewDataFromJSON(json: JsonMetricViewData): MetricViewData {
-  const {
-    aggregate: _aggregate,
-    scalarAggregate: _scalarAggregate,
-    ...rest
-  } = json
-  return {
-    ...rest,
-    metadata: attributesFromJSON(json.metadata),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-    timeseries: json.timeseries.map(timeseriesFromJSON),
-    boundsMismatch: json.boundsMismatch ?? null,
-    lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
-    window: {
-      requested: {
-        startNs: nullableBigintFromWire(json.window.requested.startNs),
-        endNs: nullableBigintFromWire(json.window.requested.endNs),
-      },
-      effective: {
-        startNs: nullableBigintFromWire(json.window.effective.startNs),
-        endNs: nullableBigintFromWire(json.window.effective.endNs),
-      },
-    },
-  }
-}
-
-function exactMetricIdentityFromJSON<
-  T extends JsonExactMetric | JsonExactMetricSeries,
->(json: T) {
-  return {
-    ...json,
-    metadata: attributesFromJSON(json.metadata),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-  }
-}
-
-function exactMetricFromJSON(json: JsonExactMetric): ExactMetric {
-  return {
-    ...exactMetricIdentityFromJSON(json),
-    series: json.series.map(series => ({
-      ...series,
-      attributes: attributesFromJSON(series.attributes),
-      datapointCount: bigintFromWire(series.datapointCount),
-      firstDatapointTimestamp: nullableBigintFromWire(
-        series.firstDatapointTimestamp
-      ),
-      lastDatapointTimestamp: nullableBigintFromWire(
-        series.lastDatapointTimestamp
-      ),
-    })),
-  }
-}
-
-function receivedNumberDataPointFromJSON(
-  json: JsonReceivedNumberDataPoint
-): ReceivedNumberDataPoint {
-  const base = {
-    datapointRef: json.datapointRef,
-    timestamp: bigintFromWire(json.timestamp),
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-  }
-  switch (json.valueType) {
-    case 'Int':
-      return {
-        ...base,
-        valueType: 'Int',
-        intValue: bigintFromWire(json.intValue),
-        doubleValue: null,
-      }
-    case 'Double':
-      return {
-        ...base,
-        valueType: 'Double',
-        intValue: null,
-        doubleValue: doubleFromWire(json.doubleValue),
-      }
-    case 'Empty':
-      return {
-        ...base,
-        valueType: 'Empty',
-        intValue: null,
-        doubleValue: null,
-      }
-  }
-}
-
-function receivedHistogramDataPointFromJSON(
-  json: JsonReceivedHistogramDataPoint
-): ReceivedHistogramDataPoint {
-  const decoded: ReceivedHistogramDataPoint = {
-    datapointRef: json.datapointRef,
-    timestamp: bigintFromWire(json.timestamp),
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-    count: bigintFromWire(json.count),
-    bucketCounts: json.bucketCounts.map(bigintFromWire),
-    explicitBounds: json.explicitBounds.map(doubleFromWire),
-  }
-  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
-  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
-  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
-  return decoded
-}
-
-function receivedExponentialHistogramDataPointFromJSON(
-  json: JsonReceivedExponentialHistogramDataPoint
-): ReceivedExponentialHistogramDataPoint {
-  const decoded: ReceivedExponentialHistogramDataPoint = {
-    datapointRef: json.datapointRef,
-    timestamp: bigintFromWire(json.timestamp),
-    startTime: bigintFromWire(json.startTime),
-    flags: json.flags,
-    exemplars: json.exemplars.map(exemplarFromJSON),
-    count: bigintFromWire(json.count),
-    scale: json.scale,
-    zeroCount: bigintFromWire(json.zeroCount),
-    zeroThreshold: doubleFromWire(json.zeroThreshold),
-    positive: {
-      offset: json.positive.offset,
-      bucketCounts: json.positive.bucketCounts.map(bigintFromWire),
-    },
-    negative: {
-      offset: json.negative.offset,
-      bucketCounts: json.negative.bucketCounts.map(bigintFromWire),
-    },
-  }
-  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
-  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
-  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
-  return decoded
-}
-
-function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
-  let datapoints: ExactMetricSeries['datapoints']
-  switch (json.metricType) {
-    case 'Gauge':
-    case 'Sum':
-      datapoints = json.datapoints.map(receivedNumberDataPointFromJSON)
-      break
-    case 'Histogram':
-      datapoints = json.datapoints.map(receivedHistogramDataPointFromJSON)
-      break
-    case 'ExponentialHistogram':
-      datapoints = json.datapoints.map(
-        receivedExponentialHistogramDataPointFromJSON
-      )
-      break
-  }
-  return datapoints
-}
-
-function exactMetricSeriesFromJSON(
-  json: JsonExactMetricSeries
-): ExactMetricSeries {
-  return {
-    ...exactMetricIdentityFromJSON(json),
-    attributes: attributesFromJSON(json.attributes),
-    datapoints: receivedMetricDatapointsFromJSON(json),
-  }
-}
-
-function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
-  return {
-    ...json,
-    description: json.description ?? '',
-    lastValue: nullableDoubleFromWire(json.lastValue),
-    lastSeen: bigintFromWire(json.lastSeen),
-  }
-}
-
-function metricSummariesFromJSON(json: JsonMetricSummary[]): MetricSummary[] {
-  return json.map(metricSummaryFromJSON)
 }
 
 function statsFromJSON(json: JsonStats): Stats {
@@ -834,6 +261,7 @@ function statsFromJSON(json: JsonStats): Stats {
 
 async function discover<T>(
   options: DiscoveryOptions,
+  view: (frame: ArrowFrame, row: number) => T,
   signal?: AbortSignal
 ): Promise<DiscoveryPage<T>> {
   const convert = (query: QueryNode | false | null) =>
@@ -849,35 +277,91 @@ async function discover<T>(
         },
       }
     : plainOptions
-  const result = await callRPC<{
-    rows: [T][]
-    truncated: boolean
-    totals?: DiscoveryPage<T>['totals']
-  }>('discoverTelemetry', named({ options: wireOptions }), signal)
-  return {
-    items: result.rows.map(row => row[0]),
-    truncated: result.truncated,
-    totals: result.totals,
-  }
+  return discoveryPage(
+    await fetchArrow(
+      'discoverTelemetry',
+      JSON.stringify({ options: wireOptions }),
+      signal
+    ),
+    view
+  )
 }
 
 export let telemetryAPI = {
+  getServiceLabels: (
+    serviceRef: string,
+    signal?: AbortSignal
+  ): Promise<{ serviceName: string; serviceNamespace: string }> =>
+    callRPC('getServiceLabels', named({ serviceRef }), signal),
+  discoverHomeAttributeValues: (
+    options: Omit<DiscoveryOptions, 'kind' | 'signal'>,
+    signal?: AbortSignal
+  ): Promise<HomeCoveragePage> => {
+    const convert = (query: QueryNode | false | null) =>
+      query ? convertQueryTreeForBackend(query) : query
+    return callRPC(
+      'discoverTelemetry',
+      named({
+        options: {
+          ...options,
+          kind: 'home-values',
+          queries: options.queries
+            ? {
+                traces: convert(options.queries.traces),
+                metrics: convert(options.queries.metrics),
+                logs: convert(options.queries.logs),
+              }
+            : undefined,
+        },
+      }),
+      signal
+    )
+  },
+  getHomeAttributeValue: async (valueRef: string, signal?: AbortSignal) => {
+    const frame = await callArrow(
+      'discoverTelemetry',
+      named({
+        options: {
+          kind: 'home-value',
+          valueRef,
+        },
+      }),
+      signal
+    )
+    return attributeValue(frame.cell('value', 0))
+  },
   discoverServiceConnections: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
-  ) => discover<ServiceConnection>({ ...options, kind: 'connections' }, signal),
+  ) =>
+    discover<ServiceConnection>(
+      { ...options, kind: 'connections' },
+      serviceConnection,
+      signal
+    ),
   discoverServiceConnectionSpans: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
   ) =>
     discover<ServiceConnectionSpan>(
       { ...options, kind: 'connection-spans' },
+      serviceConnectionSpan,
       signal
     ),
   getAttributeRecordMatches: async (
     options: AttributeMatchOptions,
     signal?: AbortSignal
   ): Promise<AttributeRecordMatch[]> => {
+    if (options.valueIdentity?.startsWith('home:')) {
+      const resolved = await callRPC<{ identity: string }>(
+        'discoverTelemetry',
+        named({
+          options: { kind: 'home-value', valueRef: options.valueIdentity },
+        }),
+        signal
+      )
+      options = { ...options, valueIdentity: resolved.identity }
+    }
     const matches: AttributeRecordMatch[] = []
     let more = true
     while (more) {
@@ -904,36 +388,22 @@ export let telemetryAPI = {
     }
     return matches
   },
+  getServiceCount: (signal?: AbortSignal) =>
+    callRPC<number>('getServiceCount', undefined, signal),
   discoverServices: (
     options: Omit<DiscoveryOptions, 'kind'> = {},
     signal?: AbortSignal
-  ) => discover<ServiceSummary>({ ...options, kind: 'services' }, signal),
+  ) =>
+    discover<ServiceSummary>(
+      { ...options, kind: 'services' },
+      serviceSummary,
+      signal
+    ),
   discoverAttributeKeys: (
     options: Omit<DiscoveryOptions, 'kind'>,
     signal?: AbortSignal
-  ) => discover<AttributeKey>({ ...options, kind: 'keys' }, signal),
-  discoverAttributeValues: async (
-    options: Omit<DiscoveryOptions, 'kind'>,
-    signal?: AbortSignal
-  ): Promise<DiscoveryPage<AttributeFrequency>> => {
-    const page = await discover<
-      Omit<AttributeFrequency, 'value' | 'identity'> & {
-        value: JsonAttributeValue
-      }
-    >({ ...options, kind: 'values' }, signal)
-    return {
-      ...page,
-      items: page.items.map(item => ({
-        ...item,
-        identity: JSON.stringify(item.value),
-        value: attributeValueFromJSON(item.value),
-      })),
-    }
-  },
-  // Value-first discovery: given text the user can see, which attribute keys
-  // hold it. Cross-signal by nature -- the dictionary it reads is shared by
-  // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
-  // no time range.
+  ) =>
+    discover<AttributeKey>({ ...options, kind: 'keys' }, attributeKey, signal),
   // Distinct values of one completable column, most frequent first. Fetched
   // once per field per completion session with a generous limit; the editor
   // filters the list client-side per keystroke, so this does not round-trip
@@ -944,73 +414,40 @@ export let telemetryAPI = {
     term: string,
     limit: number
   ): Promise<string[]> => {
-    const rawData = await callRPC<string[]>(
+    const rawData = await callArrow(
       'getFieldValueCompletions',
       named({ signal, field, term, limit })
     )
-    return Array.isArray(rawData) ? rawData : []
+    return rowViews(rawData, (frame, row) => frame.cell('value', row).text())
   },
 
   searchAttributeMatches: async (
-    term: string
-  ): Promise<JsonAttributeMatch[]> => {
-    if (!term.trim()) return []
-    const rawData = await callRPC<JsonAttributeMatch[]>(
+    term: string,
+    options: {
+      signal?: string
+      owner?: string
+      path?: readonly (string | number)[]
+      type?: string
+    } = {}
+  ): Promise<AttributeMatch[]> => {
+    if (!term.trim() && !options.path) return []
+    const rawData = await callArrow(
       'searchAttributeMatches',
-      named({ term })
+      named({ term, ...options })
     )
-    if (!Array.isArray(rawData)) {
-      console.warn('searchAttributeMatches: Expected array, got:', rawData)
-      return []
-    }
-    return rawData
+    return rowViews(rawData, attributeMatch)
   },
 
   getTraceAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getTraceAttributeDefinitions'
+    return attributeDefinitions(
+      await callArrow('getTraceAttributeDefinitions', named({}))
     )
-
-    if (!Array.isArray(rawData)) {
-      console.warn(
-        'getTraceAttributeDefinitions: Expected array, got:',
-        rawData
-      )
-      return []
-    }
-
-    const converted = convertAttributesToFieldDefinitions(rawData)
-    return converted
-  },
-
-  getTraceAttributeDefinitionsByTraceID: async (
-    traceID: string
-  ): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getTraceAttributeDefinitionsByTraceID',
-      named({ traceID })
-    )
-    if (!Array.isArray(rawData)) {
-      console.warn(
-        'getTraceAttributeDefinitionsByTraceID: Expected array, got:',
-        rawData
-      )
-      return []
-    }
-    return convertAttributesToFieldDefinitions(rawData)
   },
 
   getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getLogAttributeDefinitions'
+    return attributeDefinitions(
+      await callArrow('getLogAttributeDefinitions', named({}))
     )
-
-    if (!Array.isArray(rawData)) {
-      console.warn('getLogAttributeDefinitions: Expected array, got:', rawData)
-      return []
-    }
-
-    return convertAttributesToFieldDefinitions(rawData)
   },
 
   searchTraceSummaries: async (
@@ -1024,7 +461,7 @@ export let telemetryAPI = {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
 
-    const rawData = await callRPC<JsonTraceSummary[]>(
+    const rawData = await callArrow(
       'searchTraceSummaries',
       named({
         startTime: startTimeNs,
@@ -1035,7 +472,7 @@ export let telemetryAPI = {
       }),
       signal
     )
-    return traceSummariesFromJSON(rawData)
+    return rowViews(rawData, traceSummary)
   },
 
   /** Fetch only timing fields for exact span references, in bounded batches. */
@@ -1114,7 +551,12 @@ LIMIT ${batch.length}`,
   /** Resolve trace-only references to a bounded span selection; retain exact selections. */
   getReferencedTraceViews: async (
     references: readonly { traceID: string; spanID?: string }[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onTrace?: (
+      result:
+        | { status: 'ready'; trace: TraceData }
+        | { status: 'failed'; traceID: string }
+    ) => void
   ): Promise<{ traces: TraceData[]; unavailableTraceIDs: string[] }> => {
     const groups = new Map<string, Set<string> | null>()
     for (const reference of references) {
@@ -1139,12 +581,11 @@ LIMIT ${batch.length}`,
     const unavailableTraceIDs: string[] = []
     const entries = [...groups]
     // Never split a trace's selection: that would lose ancestry across batches.
-    // Four concurrent trace queries, each with at most 256 exact span identities.
-    for (let offset = 0; offset < entries.length; offset += 4) {
-      if (signal?.aborted) throw new RequestAbortedError()
-      const batch = entries.slice(offset, offset + 4)
-      const results = await Promise.allSettled(
-        batch.map(async ([traceID, ids]) => {
+    if (signal?.aborted) throw new RequestAbortedError()
+    const results = await Promise.allSettled(
+      entries.map(([traceID, selection]) => {
+        const load = async () => {
+          let ids = selection
           if (ids === null) {
             const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
             const selection = await callRPC<{
@@ -1168,20 +609,30 @@ LIMIT ${batch.length}`,
           }
           if (ids.size > 256)
             throw new Error('Referenced trace exceeds the 256-span view limit.')
-          const raw = await callRPC<JsonTraceData>(
+          const raw = await callArrow(
             'getTraceView',
             named({ traceID, spanIDs: [...ids] }),
             signal
           )
-          return traceDataFromJSON(raw)
-        })
-      )
-      if (signal?.aborted) throw new RequestAbortedError()
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') traces.push(result.value)
-        else unavailableTraceIDs.push(batch[index]![0])
+          return traceData(raw)
+        }
+        return load().then(
+          trace => {
+            if (!signal?.aborted) onTrace?.({ status: 'ready', trace })
+            return trace
+          },
+          error => {
+            if (!signal?.aborted) onTrace?.({ status: 'failed', traceID })
+            throw error
+          }
+        )
       })
-    }
+    )
+    if (signal?.aborted) throw new RequestAbortedError()
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') traces.push(result.value)
+      else unavailableTraceIDs.push(entries[index]![0])
+    })
     return { traces, unavailableTraceIDs }
   },
 
@@ -1190,7 +641,7 @@ LIMIT ${batch.length}`,
     traceID: string,
     signal?: AbortSignal
   ): Promise<TraceSummary | null> => {
-    const result = await callRPC<JsonTraceSummary[]>(
+    const result = await callArrow(
       'searchTraceSummaries',
       named({
         startTime: null,
@@ -1200,7 +651,7 @@ LIMIT ${batch.length}`,
           id: 'associated-trace',
           type: 'condition',
           query: {
-            field: { name: 'traceID', searchScope: 'field', type: 'string' },
+            field: { owner: 'span', path: ['traceID'], type: 'string' },
             fieldOperator: '=',
             value: traceID,
           },
@@ -1208,35 +659,60 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return traceSummariesFromJSON(result)[0] ?? null
+    return result.length ? traceSummary(result, 0) : null
   },
 
   getTraceView: async (
     traceID: string,
     queryTree?: QueryNode,
-    signal?: AbortSignal
-  ): Promise<TraceData> => {
-    const rawData = await callRPC<JsonTraceData>(
+    signal?: AbortSignal,
+    columns?: readonly TraceColumn[]
+  ): Promise<TraceWaterfallData> => {
+    const rawData = await callArrow(
       'getTraceView',
       named({
         traceID,
         query: queryTree && convertQueryTreeForBackend(queryTree),
+        columns,
       }),
       signal
     )
-    return traceDataFromJSON(rawData)
+    return traceWaterfallData(rawData)
+  },
+
+  getSpan: async (
+    traceID: string,
+    spanID: string,
+    signal?: AbortSignal
+  ): Promise<SpanData | null> => {
+    const frame = await callArrow('getSpan', named({ traceID, spanID }), signal)
+    return frame.length ? (traceData(frame).spans[0]?.spanData ?? null) : null
+  },
+
+  getTraceColumnPreviews: async (
+    traceID: string,
+    columns: readonly TraceColumn[],
+    signal?: AbortSignal
+  ): Promise<TraceColumnPreview[]> => {
+    return traceColumnPreviews(
+      await callArrow(
+        'getTraceColumnPreviews',
+        named({ traceID, columns }),
+        signal
+      )
+    )
   },
 
   getTraceLogSummaries: async (
     traceID: string,
     signal?: AbortSignal
   ): Promise<TraceLogSummary[]> => {
-    const rawData = await callRPC<JsonTraceLogSummary[]>(
+    const rawData = await callArrow(
       'getTraceLogSummaries',
       named({ traceID }),
       signal
     )
-    return traceLogSummariesFromJSON(rawData)
+    return rowViews(rawData, traceLogSummary)
   },
 
   /** Full logs for one exact received trace/span pair. No trace-wide association. */
@@ -1245,14 +721,12 @@ LIMIT ${batch.length}`,
     spanID: string,
     signal?: AbortSignal
   ): Promise<LogData[]> => {
-    const result = await callRPC<
-      | { status: 'found'; logs: JsonLogData[] }
-      | { status: 'notFound' | 'ambiguous' }
-    >('getSpan', named({ traceID, spanID }), signal)
-    if (result.status === 'notFound') return []
-    if (result.status !== 'found')
-      throw new Error('Span identity is ambiguous.')
-    return result.logs.map(logDataFromJSON)
+    const result = await callArrow(
+      'getSpanLogs',
+      named({ traceID, spanID }),
+      signal
+    )
+    return rowViews(result, logData)
   },
 
   clearTraces: () => callRPC<string>('clearTraces', undefined),
@@ -1269,7 +743,7 @@ LIMIT ${batch.length}`,
   ): Promise<LogSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
-    const rawData = await callRPC<JsonLogSummary[]>(
+    const rawData = await callArrow(
       'searchLogSummaries',
       named({
         startTime: startTimeNs,
@@ -1280,7 +754,7 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return logSummariesFromJSON(rawData)
+    return rowViews(rawData, logSummary)
   },
 
   searchLogPage: async (
@@ -1294,7 +768,7 @@ LIMIT ${batch.length}`,
     columns?: LogColumn[],
     signal?: AbortSignal
   ): Promise<{ logs: LogTableRow[]; total: number }> => {
-    const data = await callRPC<{ logs: JsonLogTableRow[]; total: number }>(
+    const data = await callArrow(
       'searchLogPage',
       named({
         startTime: serializeNanoseconds(startTime),
@@ -1309,14 +783,11 @@ LIMIT ${batch.length}`,
       signal
     )
     return {
-      logs: data.logs.map(log => ({
-        ...logSummaryFromJSON(log),
-        columnValues: log.columnValues?.map(column => ({
-          ...column,
-          values: column.values.map(attributeValueFromJSON),
-        })),
-      })),
-      total: data.total,
+      logs: rowViews(
+        new ArrowFrame(data.cell('logs', 0).list()),
+        (frame, row) => logTableRow(frame, row, columns ?? [])
+      ),
+      total: data.cell('total', 0).number(),
     }
   },
 
@@ -1342,9 +813,9 @@ LIMIT ${batch.length}`,
       signal
     ),
 
-  getLog: async (logRef: string): Promise<LogData> => {
-    const rawData = await callRPC<JsonLogData>('getLog', named({ logRef }))
-    return logDataFromJSON(rawData)
+  getLog: async (logRef: string, signal?: AbortSignal): Promise<LogData> => {
+    const rawData = await callArrow('getLog', named({ logRef }), signal)
+    return logData(rawData, 0)
   },
 
   deleteLogsByRefs: (...logRefs: string[]) =>
@@ -1361,7 +832,7 @@ LIMIT ${batch.length}`,
   ): Promise<MetricSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
-    const rawData = await callRPC<JsonMetricSummary[]>(
+    const rawData = await callArrow(
       'searchMetricSummaries',
       named({
         startTime: startTimeNs,
@@ -1372,16 +843,16 @@ LIMIT ${batch.length}`,
       }),
       signal
     )
-    return metricSummariesFromJSON(rawData)
+    return rowViews(rawData, metricSummary)
   },
 
-  getMetric: async (metricRef: string): Promise<ExactMetric | null> => {
+  getMetric: async (
+    metricRef: string,
+    signal?: AbortSignal
+  ): Promise<ExactMetric | null> => {
     try {
-      const rawData = await callRPC<JsonExactMetric>(
-        'getMetric',
-        named({ metricRef })
-      )
-      return exactMetricFromJSON(rawData)
+      const rawData = await callArrow('getMetric', named({ metricRef }), signal)
+      return exactMetric(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1393,23 +864,51 @@ LIMIT ${batch.length}`,
     }
   },
 
+  getMetricSeriesOrder: async (
+    metricRef: string,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
+    seriesRefs: string[],
+    key: string,
+    direction: 'asc' | 'desc',
+    signal?: AbortSignal
+  ): Promise<string[]> =>
+    metricSeriesOrder(
+      await callArrow(
+        'getMetricSeriesOrder',
+        named({
+          metricRef,
+          startTime: serializeNanoseconds(startTime),
+          endTime: serializeNanoseconds(endTime),
+          seriesRefs,
+          key,
+          direction,
+        }),
+        signal
+      )
+    ),
+
   getMetricSeries: async (
     metricRef: string,
     seriesRef: string,
     startTime: QueryTimeBound,
-    endTime: QueryTimeBound
+    endTime: QueryTimeBound,
+    includeDatapoints?: boolean,
+    signal?: AbortSignal
   ): Promise<ExactMetricSeries | null> => {
     try {
-      const rawData = await callRPC<JsonExactMetricSeries>(
+      const rawData = await callArrow(
         'getMetricSeries',
         named({
           metricRef,
           seriesRef,
+          includeDatapoints,
           startTime: serializeNanoseconds(startTime),
           endTime: serializeNanoseconds(endTime),
-        })
+        }),
+        signal
       )
-      return exactMetricSeriesFromJSON(rawData)
+      return exactMetricSeries(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1447,14 +946,14 @@ LIMIT ${batch.length}`,
      *  empty array requests none. */
     datapointSeriesRefs?: string[],
     /** Number of leading series that include datapoints when refs are omitted. */
-    datapointSeriesLimit?: number
+    datapointSeriesLimit?: number,
+    signal?: AbortSignal
   ): Promise<MetricViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
-    // Not-found arrives as a JSON-RPC error (one wire convention across all
-    // signals); translate it to null here so callers keep a simple contract.
+    // Keep the established not-found code and nullable consumer contract.
     try {
-      const rawData = await callRPC<JsonMetricViewData>(
+      const rawData = await callArrow(
         'getMetricView',
         named({
           metricRef,
@@ -1472,9 +971,10 @@ LIMIT ${batch.length}`,
           tzName,
           datapointSeriesRefs,
           datapointSeriesLimit,
-        })
+        }),
+        signal
       )
-      return metricViewDataFromJSON(rawData)
+      return metricView(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1502,12 +1002,13 @@ LIMIT ${batch.length}`,
     /** Bucket time zone. It must match the per-series view. */
     tzName?: string,
     /** Highlight this source's interval activity inside the aggregate. */
-    datapointRef?: string
+    datapointRef?: string,
+    signal?: AbortSignal
   ): Promise<MetricAggregateViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
     try {
-      const raw = await callRPC<JsonMetricAggregateViewData | null>(
+      const raw = await callArrow(
         'getMetricAggregateView',
         named({
           metricRef,
@@ -1521,17 +1022,10 @@ LIMIT ${batch.length}`,
           selectedSeriesRefs: selectedSeriesRefs ?? null,
           tzName,
           datapointRef,
-        })
+        }),
+        signal
       )
-      if (!raw) return null
-      const result: MetricAggregateViewData = {
-        aggregate: aggregateBucketsFromJSON(raw.aggregate),
-        scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
-      }
-      if (raw.contribution !== undefined) {
-        result.contribution = aggregateBucketsFromJSON(raw.contribution)
-      }
-      return result
+      return raw.length ? metricAggregateView(raw) : null
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -1544,19 +1038,9 @@ LIMIT ${batch.length}`,
   },
 
   getMetricAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getMetricAttributeDefinitions'
+    return attributeDefinitions(
+      await callArrow('getMetricAttributeDefinitions', named({}))
     )
-
-    if (!Array.isArray(rawData)) {
-      console.warn(
-        'getMetricAttributeDefinitions: Expected array, got:',
-        rawData
-      )
-      return []
-    }
-
-    return convertAttributesToFieldDefinitions(rawData)
   },
 
   deleteMetric: (metricRef: string) =>
@@ -1589,32 +1073,35 @@ LIMIT ${batch.length}`,
     return config
   },
 
-  getStats: async (): Promise<Stats> => {
-    const rawData = await callRPC<JsonStats>('getStats')
+  getStats: async (signal?: AbortSignal): Promise<Stats> => {
+    const rawData = await callRPC<JsonStats>('getStats', undefined, signal)
     return statsFromJSON(rawData)
-  },
-
-  getTraceSpanCount: async (traceID: string): Promise<number> => {
-    return await callRPC<number>('getTraceSpanCount', named({ traceID }))
   },
 }
 
 // Helper function to convert frontend query tree to minimal backend format
-function convertQueryTreeForBackend(queryTree: QueryNode): JsonQueryNode {
+export function convertQueryTreeForBackend(
+  queryTree: QueryNode
+): JsonQueryNode {
+  if (queryTree.type === 'text') {
+    return {
+      id: queryTree.id,
+      type: 'text',
+      query: {
+        fieldOperator: queryTree.query.operator.symbol,
+        value: queryTree.query.value,
+      },
+    }
+  }
   if (queryTree.type === 'condition') {
     return {
       id: queryTree.id,
       type: 'condition',
       query: {
         field: {
-          ...(queryTree.query.field.searchScope !== 'global' && {
-            name: queryTree.query.field.name,
-            type: queryTree.query.field.type,
-          }),
-          searchScope: queryTree.query.field.searchScope,
-          ...(queryTree.query.field.searchScope === 'attribute' && {
-            attributeScope: queryTree.query.field.attributeScope,
-          }),
+          owner: queryTree.query.field.owner,
+          path: queryTree.query.field.path,
+          type: queryTree.query.field.type,
         },
         fieldOperator: queryTree.query.operator.symbol,
         value: queryTree.query.value,
@@ -1630,35 +1117,4 @@ function convertQueryTreeForBackend(queryTree: QueryNode): JsonQueryNode {
       },
     }
   }
-}
-
-// Frontend field names retain the established scalar spellings.
-function fieldTypeFromWire(type: JsonAttributeType): FieldType {
-  switch (type) {
-    case 'bool':
-      return 'boolean'
-    case 'double':
-      return 'float64'
-    default:
-      return type
-  }
-}
-
-// Helper function to convert backend attribute data to FieldDefinition objects
-function convertAttributesToFieldDefinitions(
-  attributes: JsonAttributeDefinition[]
-): FieldDefinition[] {
-  const definitions: FieldDefinition[] = []
-  for (const attr of attributes) {
-    if (!attr?.name || !attr.type || !attr.attributeScope) continue
-    const type = fieldTypeFromWire(attr.type)
-    definitions.push({
-      name: attr.name,
-      type,
-      searchScope: 'attribute',
-      attributeScope: attr.attributeScope,
-      operators: getOperatorsForFieldType(type),
-    })
-  }
-  return definitions
 }

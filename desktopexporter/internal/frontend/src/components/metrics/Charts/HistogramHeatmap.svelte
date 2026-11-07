@@ -746,7 +746,7 @@
                         fill={cellColorRange[blob.band]}
                         fill-rule="evenodd"
                       />{/if}
-                    {#each blob.cells as cell (cell.datum)}
+                    {#each blob.cells as cell (`${cell.datum.columnKey}:${cell.datum.bucketKey}`)}
                       <rect
                         x={cell.x}
                         y={cell.y}
@@ -774,7 +774,7 @@
                         mask={`url(#${blob.clipID}-outline)`}
                         aria-hidden="true"
                       >
-                        {#each blob.cells as cell (cell.datum)}
+                        {#each blob.cells as cell (`${cell.datum.columnKey}:${cell.datum.bucketKey}`)}
                           <rect
                             x={cell.x}
                             y={cell.y}

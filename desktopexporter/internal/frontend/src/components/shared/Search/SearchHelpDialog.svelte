@@ -2,40 +2,44 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import type { SearchSignal } from '@/search/model'
+  import type { SearchDefinition } from './search-editor-api'
 
   let {
     element = $bindable(null),
     signal,
+    definition,
   }: {
     element?: HTMLDialogElement | null
-    signal: SearchSignal
+    signal?: SearchSignal
+    definition?: SearchDefinition
   } = $props()
 
   const titleID = $props.id()
   const examples = $derived(
-    signal === 'logs'
-      ? [
-          { label: 'Filter a field', query: 'body contains "disk"' },
-          {
-            label: 'Combine filters',
-            query: 'severityNumber >= 17 and body contains "disk"',
-          },
-        ]
-      : signal === 'traces'
+    definition?.examples ??
+      (signal === 'logs'
         ? [
-            { label: 'Filter a field', query: 'name contains "http"' },
+            { label: 'Filter a field', query: 'body contains "disk"' },
             {
               label: 'Combine filters',
-              query: 'kind = Server and statusCode = Error',
+              query: 'severityNumber >= 17 and body contains "disk"',
             },
           ]
-        : [
-            { label: 'Filter a field', query: 'name contains "requests"' },
-            {
-              label: 'Combine filters',
-              query: 'type = Gauge and name contains "requests"',
-            },
-          ]
+        : signal === 'traces'
+          ? [
+              { label: 'Filter a field', query: 'name contains "http"' },
+              {
+                label: 'Combine filters',
+                query: 'kind = Server and statusCode = Error',
+              },
+            ]
+          : [
+              { label: 'Filter a field', query: 'name contains "requests"' },
+              {
+                label: 'Combine filters',
+                query: 'type = Gauge and name contains "requests"',
+              },
+            ])
   )
 </script>
 
@@ -47,7 +51,7 @@
   tabindex="-1"
 >
   <header class="help-dialog__header">
-    <h2 id={titleID}>Search {signal}</h2>
+    <h2 id={titleID}>Search {definition?.label ?? signal}</h2>
     <button
       type="button"
       class="header-icon-button tooltip tooltip-left"
@@ -71,17 +75,24 @@
           <tr
             ><th scope="row">Find text</th><td
               ><code>checkout</code><span
-                >Search fields, attributes and values.</span
+                >Case-insensitive tokens, not substrings. Full IDs, URLs and
+                dotted names, plus punctuation-separated words, are searchable.
+                Results keep their existing order.</span
               ></td
             ></tr
           >
-          <tr
-            ><th scope="row">Attribute</th><td
-              >Type its name and select a suggestion.<span
-                >Scope and type appear beside the name.</span
-              ></td
-            ></tr
-          >
+          {#if !definition}
+            <tr
+              ><th scope="row">Attribute</th><td
+                >Type its name and select a suggestion.<span
+                  >Scope and type appear beside the name. You can also write
+                  <code>attributes['key']</code> for any owner, or
+                  <code>resource.attributes['key']::VARCHAR</code> for an exact owner
+                  and received type.</span
+                ></td
+              ></tr
+            >
+          {/if}
           <tr
             ><th scope="row">Equal</th><td><code>=</code>, <code>!=</code></td
             ></tr
@@ -94,14 +105,17 @@
           >
           <tr
             ><th scope="row">Text</th><td
-              ><code>contains</code>, <code>not contains</code>,
-              <code>^</code>
-              (starts with), <code>$</code> (ends with)</td
+              ><code>CONTAINS</code>, <code>NOT CONTAINS</code>,
+              <code>LIKE</code>, <code>NOT LIKE</code><span
+                >For a selected field or attribute, contains still matches
+                substrings. LIKE uses <code>%</code> for any text and
+                <code>_</code> for one character.</span
+              ></td
             ></tr
           >
           <tr
             ><th scope="row">Pattern</th><td
-              ><code>=~</code>, <code>!~</code>, <code>regexp</code><span
+              ><code>REGEXP</code>, <code>NOT REGEXP</code><span
                 >Matches the full value. Use <code>.*checkout.*</code> for a substring.</span
               ></td
             ></tr
@@ -109,23 +123,23 @@
           <tr
             ><th scope="row">List</th><td
               ><code>in</code>, <code>not in</code><span
-                >Use square brackets: <code>["checkout", "payments"]</code
-                >.</span
+                >Use parentheses: <code>('checkout', 'payments')</code>.</span
               ></td
             ></tr
           >
           <tr
             ><th scope="row">Missing</th><td
-              ><code>= null</code>, <code>!= null</code><span
-                ><code>null</code> or <code>nil</code> checks absence. Quoted
-                <code>"null"</code> matches literal text.</span
+              ><code>IS NULL</code>, <code>IS NOT NULL</code><span
+                >Checks absence. Quoted <code>'null'</code> matches literal text.</span
               ></td
             ></tr
           >
           <tr
             ><th scope="row">Combine</th><td
-              ><code>and</code>, <code>or</code><span
-                ><code>and</code> is evaluated first.</span
+              ><code>AND</code>, <code>OR</code><span
+                ><code>AND</code> is evaluated first. An initial
+                <code>WHERE</code>
+                is optional.</span
               ></td
             ></tr
           >
@@ -139,7 +153,8 @@
           <tr
             ><th scope="row">Quotes</th><td
               ><code>"checkout service"</code><span
-                >Quote values containing spaces.</span
+                >Quote values containing spaces. Free-text quotes match all
+                words, not an exact phrase.</span
               ></td
             ></tr
           >
@@ -147,13 +162,14 @@
             ><th scope="row">Text with filters</th><td
               ><code>search("checkout")</code><span
                 >Combine text search with a condition using <code>and</code> or
-                <code>or</code>.</span
+                <code>or</code>. Text terms must match one record and its parent
+                context, not different events, datapoints or results.</span
               ></td
             ></tr
           >
           <tr
             ><th scope="row">Limit</th><td
-              ><code>| limit 100</code><span>Add at the end of the query.</span
+              ><code>LIMIT 100</code><span>Add at the end of the query.</span
               ></td
             ></tr
           >

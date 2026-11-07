@@ -64,7 +64,7 @@ func ingestReport(t *testing.T, s *store.Store, tr ptrace.Traces) (ingest.Reject
 	var rep ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
 		var iErr error
-		rep, iErr = spans.IngestReport(t.Context(), conn, tr, s.FlushedIDs())
+		rep, iErr = spans.IngestReport(t.Context(), conn, tr)
 		return iErr
 	})
 	return rep, err
@@ -179,9 +179,8 @@ func TestIngest_RejectionsLeaveNoChildrenAndNoOpenTransaction(t *testing.T) {
 	require.NoError(t, err, "a later batch must still ingest")
 }
 
-// Dictionary rows written for spans that were then rejected are harmless
-// orphans, but a span that *was* written must never reference a missing one.
-func TestIngest_NoDanglingAttributeReferences(t *testing.T) {
+// Rejected spans must not remove payloads owned by accepted spans.
+func TestIngest_AcceptedSpansRetainOwnedPayloads(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -192,9 +191,8 @@ func TestIngest_NoDanglingAttributeReferences(t *testing.T) {
 
 	assert.Zero(t, countRows(t, s, ctx, `
 		select count(*)
-		from (select unnest(attribute_ids) as id from spans) x
-		where not exists (select 1 from attributes a where a.id = x.id)
-	`), "spans reference dictionary rows that do not exist")
+		from spans where attributes is null or resource is null or scope is null
+	`), "accepted spans must retain complete owned payloads")
 }
 
 // When a batch repeats an id, the first occurrence is the one that lands.

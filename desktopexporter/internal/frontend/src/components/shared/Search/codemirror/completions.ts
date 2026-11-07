@@ -7,6 +7,7 @@ import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
 import {
   OPERATORS,
+  usesFieldToken,
   type FieldDefinition,
   type SearchSignal,
 } from '@/search/model'
@@ -42,9 +43,9 @@ const LOGICAL_COMPLETIONS: Completion[] = [
 ]
 
 const RESULT_LIMIT_COMPLETION: Completion = {
-  label: '| LIMIT',
+  label: 'LIMIT',
   type: 'keyword',
-  apply: '| LIMIT ',
+  apply: 'LIMIT ',
 }
 
 function unclosedGroupDepth(text: string): number {
@@ -164,14 +165,12 @@ export function createQueryCompletionSource(
         : null
     if (selectedAttribute) {
       const choices = getFields().filter(
-        field =>
-          field.searchScope === 'attribute' &&
-          field.name === selectedAttribute.name
+        field => usesFieldToken(field) && field.name === selectedAttribute.name
       )
       if (
         !choices.some(
           field =>
-            field.searchScope === 'attribute' &&
+            usesFieldToken(field) &&
             attributeFieldIdentity(field) ===
               attributeFieldIdentity(selectedAttribute)
         )
@@ -207,6 +206,18 @@ export function createQueryCompletionSource(
       const opNode = getOperatorNode(comparison)
       const valueNode = getValueNode(comparison)
       const pos = context.pos
+
+      if (comparison.getChild('Between') && valueNode && pos > valueNode.to) {
+        const tail = context.state.sliceDoc(valueNode.to, pos)
+        if (/^\s+[a-z]*$/i.test(tail)) {
+          const partial = context.matchBefore(/[a-z]*/i)
+          return {
+            from: partial?.from ?? pos,
+            options: [{ label: 'AND', type: 'keyword' }],
+            validFor: /^[a-z]*$/i,
+          }
+        }
+      }
 
       // Still in or at end of field name → complete field names, not operators.
       if (field && pos <= field.to) {
@@ -316,13 +327,13 @@ export function createQueryCompletionSource(
             unclosedGroups > 0
               ? LOGICAL_COMPLETIONS
               : [...LOGICAL_COMPLETIONS, RESULT_LIMIT_COMPLETION],
-          validFor: /^(?:(?:AND|OR)|(?:\|\s*(?:LIMIT)?))?$/i,
+          validFor: /^(?:AND|OR|LIMIT)?$/i,
         }
       }
     }
 
     // After logical op: fields.
-    if (node.name === 'And' || node.name === 'Or') {
+    if (node.name === 'And' || node.name === 'Or' || node.name === 'Where') {
       return fieldCompletions(context, getFields(), signal)
     }
 
@@ -382,7 +393,7 @@ export function createQueryCompletionSource(
       if (
         before === '' ||
         before.endsWith('(') ||
-        /(?:^|[\s(])(?:AND|OR)$/i.test(before)
+        /(?:^|[\s(])(?:AND|OR|WHERE)$/i.test(before)
       ) {
         return fieldCompletions(context, getFields(), signal, word.from)
       }
@@ -394,7 +405,7 @@ export function createQueryCompletionSource(
       const before = context.state
         .sliceDoc(0, context.pos)
         .replace(/[(\s]+$/, '')
-      if (/(?:^|[\s(])(?:AND|OR)$/i.test(before)) {
+      if (/(?:^|[\s(])(?:AND|OR|WHERE)$/i.test(before)) {
         return fieldCompletions(context, getFields(), signal)
       }
     }
@@ -465,7 +476,8 @@ function compareText(left: string, right: string): number {
 function compareAttributeFields(left: AttributeField, right: AttributeField) {
   return (
     compareText(left.name, right.name) ||
-    compareText(left.attributeScope, right.attributeScope) ||
+    compareText(left.owner, right.owner) ||
+    compareText(JSON.stringify(left.path), JSON.stringify(right.path)) ||
     compareText(storedKindForField(left), storedKindForField(right))
   )
 }
@@ -479,13 +491,10 @@ function fieldCompletions(
   appendSpace = true
 ): CompletionResult | null {
   const options: Completion[] = []
-  const nativeFields = fields.filter(
-    (field): field is Extract<FieldDefinition, { searchScope: 'field' }> =>
-      field.searchScope === 'field'
-  )
+  const nativeFields = fields.filter(field => !usesFieldToken(field))
   const attributes = new Map<string, AttributeField>()
   for (const field of fields) {
-    if (field.searchScope === 'attribute') {
+    if (usesFieldToken(field)) {
       attributes.set(attributeFieldIdentity(field), field)
     }
   }
@@ -494,13 +503,15 @@ function fieldCompletions(
     ...nativeFields,
     ...[...attributes.values()].sort(compareAttributeFields),
   ]) {
-    const attribute = field.searchScope === 'attribute' ? field : null
+    const attribute = usesFieldToken(field) ? field : null
     options.push({
-      label: field.name,
+      label: field.name === '' ? '""' : field.name,
       type: 'property',
-      detail: attribute ? attributeMetadata(attribute) : field.type,
+      detail: attribute
+        ? attributeMetadata(attribute)
+        : `${field.owner} field · ${field.type}`,
       info: 'description' in field ? field.description : undefined,
-      boost: field.searchScope === 'field' ? 1 : 0,
+      boost: attribute ? 0 : 1,
       section: attribute ? 'Attributes' : 'Fields',
       // New fields open operator completion; token edits retain existing spacing.
       apply: `${attribute ? formatAttributeFieldReference(attribute) : field.name}${appendSpace ? ' ' : ''}`,
@@ -527,26 +538,30 @@ function operatorCompletions(
 ): CompletionResult | null {
   const field = resolveField(fieldName, fields, signal)
 
-  // The derived operators are wire spellings, not query syntax: the null
-  // check is typed `= NULL` and negated regex is typed `!~`, so offering
-  // "IS NULL" or "NOT REGEXP" here would complete into text the grammar
-  // cannot parse.
-  const derived = new Set(['IS NULL', 'IS NOT NULL', 'NOT REGEXP'])
-  const ops = (field ? field.operators : Object.values(OPERATORS)).filter(
-    op => !derived.has(op.symbol)
-  )
+  const ops = [...(field ? field.operators : Object.values(OPERATORS))]
+  if (field) {
+    if (ops.some(op => op.symbol === '=')) ops.push(OPERATORS.IS_NULL)
+    if (ops.some(op => op.symbol === '!=')) ops.push(OPERATORS.IS_NOT_NULL)
+    if (ops.some(op => op.symbol === 'REGEXP')) ops.push(OPERATORS.NOT_REGEX)
+  }
 
   const options: Completion[] = ops.map(op => ({
     label: op.symbol,
     type: 'operator',
     detail: op.label,
   }))
+  if (ops.some(op => op.symbol === '>=') && ops.some(op => op.symbol === '<='))
+    options.push({
+      label: 'BETWEEN',
+      type: 'operator',
+      detail: 'inclusive range',
+    })
 
   return {
     from: from ?? context.pos,
     options,
     // Keep filtering while an operator is typed.
-    validFor: /^[\w=!<>~^$]*$/,
+    validFor: /^[\w\s=!<>]*$/,
   }
 }
 

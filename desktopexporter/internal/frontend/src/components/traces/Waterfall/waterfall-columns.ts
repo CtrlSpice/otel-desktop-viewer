@@ -1,10 +1,10 @@
 import type {
-  AttributeValue,
   Attributes,
-  SpanData,
-  SpanNode,
+  WaterfallSpan as SpanData,
+  WaterfallSpanNode as SpanNode,
+  TraceColumnOption,
 } from '@/types/api-types'
-import { attributeValueTokens } from '@/components/shared/detail-value'
+import { tableValuePreview } from '@/components/shared/table-value-preview'
 import { formatDuration } from '@/utils/time'
 
 export const COLUMN_SOURCES = ['span', 'resource', 'scope'] as const
@@ -114,13 +114,15 @@ const FIELD_CELLS: Record<
 }
 
 function attributesFor(span: SpanData, source: ColumnSource): Attributes {
+  if (!('attributes' in span)) return []
   return source === 'span' ? span.attributes : span[source].attributes
 }
 
 /** Count spans carrying the key, not occurrences or distinct values. */
 export function columnOptions(
   spans: readonly SpanNode[],
-  selected: readonly WaterfallColumn[]
+  selected: readonly WaterfallColumn[],
+  catalogue?: readonly TraceColumnOption[]
 ): WaterfallColumnOption[] {
   const options = new Map<string, WaterfallColumnOption>()
   for (const column of selected) {
@@ -134,7 +136,11 @@ export function columnOptions(
       options.set(id, { ...column, id })
     }
   }
-  for (const { spanData } of spans) {
+  for (const column of catalogue ?? []) {
+    const id = columnID(column)
+    options.set(id, { ...column, id })
+  }
+  for (const { spanData } of catalogue ? [] : spans) {
     for (const source of COLUMN_SOURCES) {
       const seen = new Set<string>()
       for (const { key } of attributesFor(spanData, source)) {
@@ -154,41 +160,55 @@ export function columnOptions(
   )
 }
 
-function compactValue(value: AttributeValue): string {
-  if (value.kind === 'string' && value.value !== '') return value.value
-  return attributeValueTokens(value)
-    .map(token =>
-      token.kind === 'punctuation'
-        ? token.text.replace(/\s+/g, ' ')
-        : token.text
-    )
-    .join('')
-}
-
 /** Missing is not null, false, zero or an empty string; every received occurrence remains visible. */
 export function columnCell(
   span: SpanData,
   column: WaterfallColumn
 ): ColumnCell {
   if (column.field) return FIELD_CELLS[column.source][column.key](span)
-  const values = attributesFor(span, column.source).filter(
-    attr => attr.key === column.key
-  )
+  if ('columnValues' in span) {
+    const cell = span.columnValues.find(
+      value => value.source === column.source && value.key === column.key
+    )
+    if (!cell)
+      return {
+        text: '…',
+        title: 'Loading column preview',
+        missing: false,
+        numeric: false,
+      }
+    return {
+      text: cell.values.length
+        ? cell.values.map(value => value.preview).join(' | ')
+        : '—',
+      title: cell.values.length
+        ? cell.values
+            .map(value => `${value.valueType}: ${value.preview}`)
+            .join('\n')
+        : 'Not present on this span',
+      missing: cell.values.length === 0,
+      numeric:
+        cell.values.length > 0 &&
+        cell.values.every(
+          value => value.valueType === 'int64' || value.valueType === 'double'
+        ),
+    }
+  }
+  const values = attributesFor(span, column.source)
+    .filter(attr => attr.key === column.key)
+    .map(attr => {
+      const value = attr.value
+      return { kind: value.kind, preview: tableValuePreview(value) }
+    })
   return {
-    text: values.length
-      ? values.map(attr => compactValue(attr.value)).join(' | ')
-      : '—',
+    text: values.length ? values.map(value => value.preview).join(' | ') : '—',
     title: values.length
-      ? values
-          .map(attr => `${attr.value.kind}: ${compactValue(attr.value)}`)
-          .join('\n')
+      ? values.map(value => `${value.kind}: ${value.preview}`).join('\n')
       : 'Not present on this span',
     missing: values.length === 0,
     numeric:
       values.length > 0 &&
-      values.every(
-        ({ value }) => value.kind === 'int64' || value.kind === 'double'
-      ),
+      values.every(value => value.kind === 'int64' || value.kind === 'double'),
   }
 }
 

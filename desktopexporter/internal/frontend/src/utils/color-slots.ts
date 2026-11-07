@@ -3,6 +3,10 @@ import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { colorSlotChanges } from '@/state/color-slot-changes.svelte'
 import { GRAPH_INKS } from '@/themes/graph-inks'
 import {
+  serviceColorIdentity,
+  serviceColorStorageVersion,
+} from './service-color-identity'
+import {
   AUTOMATIC_COLOR_VERSION,
   AUTOMATIC_COLOR_SLOTS,
 } from '@/themes/service-ink-slots'
@@ -116,7 +120,11 @@ function allocationScope(scope: string, size: number): string {
 }
 
 function storageKey(scope: string, size: number): string {
-  return `graph-colour-slots:${SERIES_PALETTE_VERSION}:${size}:${scope}`
+  const version =
+    scope === 'services' || scope.startsWith('services:')
+      ? serviceColorStorageVersion
+      : ''
+  return `graph-colour-slots:${SERIES_PALETTE_VERSION}:${size}:${scope}${version}`
 }
 
 function isSavedSlot(value: unknown): value is [string, number] {
@@ -130,7 +138,12 @@ function isSavedSlot(value: unknown): value is [string, number] {
 
 function loadSlots(key: string, size: number): [string, number][] {
   try {
-    const raw = localStorage.getItem(key)
+    let raw = localStorage.getItem(key)
+    const legacy = raw === null && key.endsWith(serviceColorStorageVersion)
+    if (legacy)
+      raw = localStorage.getItem(
+        key.slice(0, -serviceColorStorageVersion.length)
+      )
     if (!raw) return []
     const saved: unknown = JSON.parse(raw)
     if (!Array.isArray(saved)) return []
@@ -138,7 +151,10 @@ function loadSlots(key: string, size: number): [string, number][] {
     for (const entry of saved.filter(isSavedSlot)) {
       // localStorage is an external boundary; reject malformed keys and slots.
       if (Number.isInteger(entry[1]) && entry[1] >= 0 && entry[1] < size) {
-        slots.push([entry[0], entry[1]])
+        slots.push([
+          legacy ? serviceColorIdentity(entry[0]) : entry[0],
+          entry[1],
+        ])
       }
     }
     return slots

@@ -110,7 +110,7 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 }
 
 func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
-	for _, version := range []int{21, 22, 23} {
+	for _, version := range []int{21, 22, 23, 24, 25, 26} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
 			s := newFileStore(t, path)
@@ -127,7 +127,7 @@ func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, before, after)
-			assert.Equal(t, 24, schema.Version)
+			assert.Greater(t, schema.Version, version)
 		})
 	}
 }
@@ -207,26 +207,11 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 	// Build a database the way a pre-versioning build would leave it: real
 	// tables with a row in spans, and no schema_meta at all.
 	s := newFileStore(t, path)
+	seedOwners(t, s)
 	err := s.WithDBWrite(func(db *sql.DB) error {
-		// spans.resource_id / scope_id are NOT NULL FKs, so the owner rows
-		// have to exist first.
-		if _, err := db.Exec(`
-			insert into resources (id, payload_id, attribute_ids)
-			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-				'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`); err != nil {
-			return err
-		}
-		if _, err := db.Exec(`
-			insert into scopes (id, name, version, attribute_ids)
-			values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`); err != nil {
-			return err
-		}
 		_, err := db.Exec(`
-			insert into spans (trace_id, span_id, resource_id, scope_id, attribute_ids)
-			values (?::uuid, 1::ubigint,
-				'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-				'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid,
-				[]::uuid[])`,
+			insert into spans (trace_id, span_id, resource, scope, attributes)
+			values (?::uuid, 1::ubigint, seed_resource(), seed_scope(), '{}'::json::variant)`,
 			"11111111-1111-1111-1111-111111111111")
 		return err
 	})

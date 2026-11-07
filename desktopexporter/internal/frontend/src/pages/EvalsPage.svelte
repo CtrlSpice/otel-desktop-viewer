@@ -1,5 +1,6 @@
 <script lang="ts">
   import PageLayout from '@/components/shared/PageLayout.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import EvalDetailPlaceholder from '@/components/evals/EvalDetailPlaceholder.svelte'
   import { evalsEnabled } from '@/state/features'
   import type { ImportFailure } from '@/types/import-types'
@@ -27,9 +28,11 @@
       mainSurface="base"
       loading
     >
-      {#snippet main()}<p class="p-6 text-sm" role="status">
-          Opening Evals…
-        </p>{/snippet}
+      {#snippet main()}<LoadingStatus
+          pending
+          label="Opening Evals…"
+          class="p-6 text-sm"
+        />{/snippet}
       {#snippet detail()}<EvalDetailPlaceholder />{/snippet}
     </PageLayout>
   {:then module}

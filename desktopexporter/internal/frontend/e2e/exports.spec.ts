@@ -1,9 +1,10 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import type { JsonLogData } from '../src/types/wire-types'
+import type { LogFixture } from '../src/test/telemetry-fixture-types'
 
 const logRef = '00000000-0000-0000-0000-000000000001'
-const log: JsonLogData = {
+const log: LogFixture = {
   logRef,
   timestamp: '1700000000000000000',
   observedTimestamp: '1700000000000000000',
@@ -11,7 +12,7 @@ const log: JsonLogData = {
   spanID: null,
   severityText: 'INFO',
   severityNumber: 9,
-  body: { kind: 'double', value: '0x8000000000000000' },
+  body: { kind: 'double', value: -0 },
   resource: {
     attributes: [
       { key: 'service.name', value: { kind: 'string', value: 'checkout-api' } },
@@ -26,6 +27,7 @@ const log: JsonLogData = {
 }
 
 function rpcFixture(method: string) {
+  if (method === 'discoverTelemetry') return { rows: [], truncated: false }
   if (method === 'getLog') return log
   if (method === 'getLogErrorNavigation')
     return { count: 0, index: null, previous: null, next: null }
@@ -61,18 +63,18 @@ function rpcFixture(method: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
       method: string
     }
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({
+      json: {
         jsonrpc: '2.0',
         id: request.id,
         result: rpcFixture(request.method),
-      }),
+      },
     })
   })
   await page.goto(`/logs/${logRef}`)

@@ -4,8 +4,87 @@ import type { Attribute } from '@/types/api-types'
 import {
   minimalSeriesLabels,
   minimalSeriesTable,
-  compareSeriesCells,
+  compactSeriesTable,
 } from './minimal-series-labels'
+
+it('renders server previews without opening structured comparison values', () => {
+  let opened = 0
+  const series = [1, 2].map(index => ({
+    seriesRef: String(index),
+    labelPreviews: [
+      {
+        key: 'context',
+        text: `{nested: array (1 items)} (value ${index})`,
+        kind: 'map',
+      },
+    ],
+    attributes: [
+      {
+        key: 'context',
+        value: {
+          kind: 'map' as const,
+          get value() {
+            opened++
+            return [
+              {
+                key: 'nested',
+                value: { kind: 'int64' as const, value: BigInt(index) },
+              },
+            ]
+          },
+        },
+      },
+    ],
+  }))
+  const table = compactSeriesTable(series)
+  expect(table.labels.get('1')!.text).toContain('array (1 items)')
+  expect(table.columns[0]!.cells.get('2')!.preview).toContain('(value 2)')
+  expect(opened).toBe(0)
+  expect(table.columns[0]!.cells.get('1')!.kind).toBe('map')
+})
+
+it('reads no exact attributes for previews', () => {
+  let arraysRead = 0
+  let keysRead = 0
+  let unrelatedOpened = 0
+  const series = Array.from({ length: 32 }, (_, index) => ({
+    seriesRef: String(index),
+    labelPreviews: [
+      { key: 'route', text: `/route/${index}` },
+      { key: 'context', text: '{nested: array (1 items)}' },
+    ],
+    get attributes(): Attribute[] {
+      arraysRead++
+      return [
+        {
+          get key() {
+            keysRead++
+            return 'route'
+          },
+          value: { kind: 'string', value: `/route/${index}` },
+        },
+        {
+          get key() {
+            keysRead++
+            return 'context'
+          },
+          value: {
+            kind: 'array',
+            get value(): Attribute['value'][] {
+              unrelatedOpened++
+              return [{ kind: 'int64', value: BigInt(index) }]
+            },
+          },
+        },
+      ]
+    },
+  }))
+  const table = compactSeriesTable(series)
+  expect(table.columns).toHaveLength(2)
+  expect(arraysRead).toBe(0)
+  expect(keysRead).toBe(0)
+  expect(unrelatedOpened).toBe(0)
+})
 
 function row(key: string, values: Record<string, string>): LegendTimeseries {
   return {
@@ -43,7 +122,7 @@ it('bounds high-dimensional parity search while preserving every series distinct
   ).toEqual(table.columns.map(column => column.key))
 })
 
-it('sorts numeric attributes without losing int64 precision and keeps typed filter identities', () => {
+it('keeps exact numeric labels and typed filter identities', () => {
   const rows: LegendTimeseries[] = [
     {
       key: 'big',
@@ -67,15 +146,8 @@ it('sorts numeric attributes without losing int64 precision and keeps typed filt
     },
   ]
   const column = minimalSeriesTable(rows).columns[0]!
-  expect(
-    compareSeriesCells(column.cells.get('big')!, column.cells.get('small')!)
-  ).toBeGreaterThan(0)
-  expect(
-    compareSeriesCells(
-      column.cells.get('negative')!,
-      column.cells.get('small')!
-    )
-  ).toBeLessThan(0)
+  expect(column.cells.get('big')!.label).toBe('9007199254740993')
+  expect(column.cells.get('small')!.label).toBe('9007199254740992')
   expect(column.cells.get('negative')!.signature).not.toBe(
     column.cells.get('string')!.signature
   )

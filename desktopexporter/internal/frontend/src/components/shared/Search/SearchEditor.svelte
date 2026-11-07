@@ -7,6 +7,7 @@
   } from '@codemirror/view'
   import { EditorState, Compartment } from '@codemirror/state'
   import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
+  import { forceLinting } from '@codemirror/lint'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
@@ -18,9 +19,9 @@
   } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { attributeSampleText } from '@/services/arrow-search'
   import {
     getTimeContext,
-    selectionToQueryRangeMs,
     selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
@@ -34,7 +35,7 @@
   import { createQueryCompletionSource } from './codemirror/completions'
   import { createFieldValueCache } from '@/components/shared/Search/codemirror/field-value-cache'
   import { createFieldValueSource } from '@/components/shared/Search/codemirror/field-value-completions'
-  import { createValueDiscoverySource } from './codemirror/value-completions'
+  import { storedKindForField } from './attribute-field-reference'
   import { createQueryLinter } from './codemirror/linter'
   import { queryTheme } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
@@ -47,11 +48,10 @@
   import { multilineQueryPaste } from './codemirror/paste'
   import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
-  import type { SearchEditorAPI } from './search-editor-api'
+  import type { SearchDefinition, SearchEditorAPI } from './search-editor-api'
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
 
   type SearchEditorProps = {
-    signal: SearchSignal
     sortValue: TSortColumn
     sortDirection: SortDirection
     onSearchResults?: (event: SearchResultEvent) => void
@@ -69,10 +69,18 @@
     onSearchRequest?: (request: ParsedSearchRequest | null) => void
     /** Actions pinned top-right inside the editor container (drawer variant only). */
     headerActions?: Snippet
-  }
+  } & (
+    | { signal: SearchSignal; definition?: never }
+    | {
+        signal?: never
+        definition: SearchDefinition
+        onSearchRequest: (request: ParsedSearchRequest | null) => void
+      }
+  )
 
   let {
     signal,
+    definition,
     sortValue,
     sortDirection,
     onSearchResults,
@@ -116,12 +124,15 @@
   let availableFields = $state<FieldDefinition[]>([])
   let queryText = $state('')
   let definitionsLoaded = false
+  let definitionsWanted = $state(false)
   let pendingRestoration: string | undefined
 
   $effect(() => onQueryChange?.(queryText, availableFields))
 
-  let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
-  let placeholderText = $derived(`search ${signal}...`)
+  let staticFieldsList = $derived(
+    definition?.fields ?? (signal ? [...getStaticFieldsForSearch(signal)] : [])
+  )
+  let placeholderText = $derived(`search ${definition?.label ?? signal}...`)
 
   $effect(() => {
     editorView?.dispatch({
@@ -131,20 +142,27 @@
     })
   })
 
-  /** Fetch dynamic attributes from the shared dictionary. */
+  /** Discover fields only for an active search, not while opening telemetry. */
   $effect(() => {
     const base = [...staticFieldsList]
     const requestedSignal = signal
+    const wanted = definitionsWanted
     definitionsLoaded = false
     availableFields = base
 
+    if (!requestedSignal) {
+      definitionsLoaded = true
+      return
+    }
+    if (!wanted) return
+
     let cancelled = false
-    const t = window.setTimeout(async () => {
+    void (async () => {
       try {
-        void selectionToQueryRangeMs(timeContext.selection, Date.now())
         const dynamicAttrs = await getDynamicAttributes(requestedSignal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
+        if (editorView) forceLinting(editorView)
       } catch (error) {
         console.warn('Failed to load dynamic attributes:', error)
       } finally {
@@ -157,11 +175,10 @@
             onSubmit()
         }
       }
-    }, 250)
+    })()
 
     return () => {
       cancelled = true
-      window.clearTimeout(t)
     }
   })
 
@@ -216,7 +233,7 @@
   })
 
   /** Build a SearchContext from the current component state. */
-  function currentSearchContext(): SearchContext {
+  function currentSearchContext(signal: SearchSignal): SearchContext {
     const { startTime, endTime } = selectionToQueryRangeNs(
       timeContext.selection,
       Date.now()
@@ -227,7 +244,8 @@
 
   /** Fetch without any search filter and deliver via onSearchResults. */
   function fetchClean(updateSeq: number) {
-    const ctx = currentSearchContext()
+    if (!signal) return
+    const ctx = currentSearchContext(signal)
     executeSearch(runSearch(ctx, updateSeq))
   }
 
@@ -253,8 +271,13 @@
   }
 
   function onSubmit() {
-    pendingRestoration = undefined
     const text = editorView?.state.doc.toString() ?? ''
+    if (signal && !definitionsLoaded && text.trim()) {
+      pendingRestoration = text
+      definitionsWanted = true
+      return
+    }
+    pendingRestoration = undefined
     // Initial URL submission can precede the reactive change notification.
     onQueryChange?.(text, availableFields)
 
@@ -266,7 +289,7 @@
         onSearchRequest(null)
         return
       }
-      fetchClean(beginListUpdate(signal))
+      if (signal) fetchClean(beginListUpdate(signal))
       return
     }
 
@@ -279,6 +302,7 @@
         onSearchRequest(request)
         return
       }
+      if (!signal) return
       if (!request) {
         fetchClean(beginListUpdate(signal))
         return
@@ -290,7 +314,7 @@
         return
       }
 
-      const searchCtx = currentSearchContext()
+      const searchCtx = currentSearchContext(signal)
       const sort = { field: sortValue, direction: sortDirection }
       const updateSeq = beginListUpdate(signal)
       executeSearch(
@@ -305,19 +329,6 @@
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }
-  }
-
-  function restoreQuery() {
-    const text = editorView?.state.doc.toString() ?? ''
-    if (!definitionsLoaded && text.trim()) {
-      try {
-        parseSearchRequest(text, [...staticFieldsList], signal)
-      } catch {
-        pendingRestoration = text
-        return
-      }
-    }
-    onSubmit()
   }
 
   function openHelp() {
@@ -371,10 +382,9 @@
     if (!mountEl) return
 
     // One cache for the whole editor session, shared by both value sources.
-    const fieldValueCache = createFieldValueCache(
-      telemetryAPI.getFieldValueCompletions,
-      signal
-    )
+    const fieldValueCache = signal
+      ? createFieldValueCache(telemetryAPI.getFieldValueCompletions, signal)
+      : null
 
     const initialQuery = readRoute().query.q ?? ''
     routeQuery = initialQuery
@@ -383,22 +393,54 @@
       doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
-        attributeTokens(signal),
+        EditorView.domEventHandlers({
+          focus: () => {
+            definitionsWanted = true
+          },
+        }),
+        EditorView.contentAttributes.of({
+          'aria-label': `Search ${definition?.label ?? signal}`,
+        }),
+        ...(signal ? [attributeTokens(signal)] : []),
         multilineQueryPaste,
         autocompletion({
-          // Key-first runs first and wins where it applies; value-first only
-          // fires on bare text at the top level, where the other has nothing to
-          // offer. Async, so it cannot block typing.
+          // Fetch values only after the user selects an exact field.
           override: [
-            createQueryCompletionSource(() => availableFields, signal),
-            createValueDiscoverySource(
-              telemetryAPI.searchAttributeMatches,
-              () => availableFields,
-              fieldValueCache
-            ),
-            // Column values for discoverable fields (`name = `, `unit = `),
-            // from the same per-session cache bare-text discovery reads.
-            createFieldValueSource(fieldValueCache, () => availableFields),
+            async context => {
+              let fields = availableFields
+              if (signal && !definitionsLoaded) {
+                definitionsWanted = true
+                fields = [
+                  ...staticFieldsList,
+                  ...(await getDynamicAttributes(signal)),
+                ]
+              }
+              if (context.aborted) return null
+              return createQueryCompletionSource(() => fields, signal)(context)
+            },
+            ...(fieldValueCache
+              ? [
+                  // Column values and exact selected attribute paths.
+                  createFieldValueSource(
+                    fieldValueCache,
+                    () => availableFields,
+                    async (field, term) => {
+                      const matches = await telemetryAPI.searchAttributeMatches(
+                        term,
+                        {
+                          signal,
+                          owner: field.owner,
+                          path: field.path,
+                          type: storedKindForField(field),
+                        }
+                      )
+                      return matches.flatMap(match =>
+                        match.sampleValues.flatMap(attributeSampleText)
+                      )
+                    }
+                  ),
+                ]
+              : []),
           ],
           activateOnTyping: true,
           icons: false,
@@ -443,24 +485,24 @@
         onSubmit()
       },
     })
-    if (initialQuery) restoreQuery()
+    if (initialQuery || definition) onSubmit()
     return subscribeToRoute(() => {
       const route = readRoute()
-      if (route.path !== `/${signal}` && !route.path.startsWith(`/${signal}/`))
-        return
+      const path = definition?.path ?? `/${signal}`
+      if (route.path !== path && !route.path.startsWith(`${path}/`)) return
       const next = route.query.q ?? ''
       if (next === routeQuery || !editorView) return
       routeQuery = next
       editorView.dispatch({
         changes: { from: 0, to: editorView.state.doc.length, insert: next },
       })
-      restoreQuery()
+      onSubmit()
     })
   })
 
   onDestroy(() => {
     alive = false
-    cancelPendingListUpdates(signal)
+    if (signal) cancelPendingListUpdates(signal)
     editorView?.destroy()
   })
 </script>
@@ -589,7 +631,7 @@
   </div>
 {/if}
 
-<SearchHelpDialog bind:element={helpDialogElement} {signal} />
+<SearchHelpDialog bind:element={helpDialogElement} {signal} {definition} />
 
 <style lang="postcss">
   @reference "../../../app.css";

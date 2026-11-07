@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 test('Home service nodes retain card controls and keep incoming imports out of the current reading', async ({
@@ -6,6 +7,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   let serviceReads = 0
+  let serviceCountReads = 0
   const services = Array.from({ length: 8 }, (_, index) => ({
     serviceName: index === 0 ? 'checkout' : `worker-${index}`,
     serviceNamespace: 'storefront',
@@ -31,9 +33,13 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {
+      if (method === 'getServiceCount') {
+        serviceCountReads++
+        return services.length
+      }
       if (method === 'searchLogPage') return { total: 0, logs: [] }
       if (method === 'getImportConfig') return { otlpHttpPort: 54318 }
       if (method === 'getStats')
@@ -82,6 +88,8 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   await expect(serviceCards).toHaveCount(8)
   const homeTab = page.getByRole('link', { name: /^Home(?: \[|$)/ })
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
+  await expect.poll(() => serviceCountReads).toBe(1)
+  expect(serviceReads).toBe(1)
   const card = page
     .locator('.service-map__node')
     .getByRole('button', { name: /^checkout/ })
@@ -300,18 +308,20 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   })
   await imported
   await expect(page).toHaveURL(/\/\?time=all$/)
-  expect(serviceReads).toBe(4) // Home and tab totals, including the persistence reload.
+  expect(serviceReads).toBe(2) // Home pages only, including the persistence reload.
+  expect(serviceCountReads).toBe(2)
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   await expect(serviceCards).toHaveCount(8)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expect.poll(() => serviceReads).toBe(6)
+  await expect.poll(() => serviceReads).toBe(3)
+  await expect.poll(() => serviceCountReads).toBe(3)
   await expect(homeTab).toHaveAccessibleDescription('Stored services: [9]')
   await expect(serviceCards).toHaveCount(9)
   // Workspace navigation carries the submitted Home query. Service cards
   // select Details; individual telemetry cards navigate to exact records.
   const search = page.getByRole('searchbox', { name: 'Search telemetry' })
   await search.fill(
-    'attr(resource, "service.namespace", string) = "storefront"'
+    'resource.attributes["service.namespace"]::VARCHAR = "storefront"'
   )
   await search.press('Enter')
   const logs = page
@@ -321,14 +331,14 @@ test('Home service nodes retain card controls and keep incoming imports out of t
   const destination = new URL((await logs.getAttribute('href'))!, page.url())
   expect(destination.pathname).toBe('/logs')
   expect(destination.searchParams.get('q')).toContain(
-    '"service.namespace", string) = "storefront"'
+    `resource.attributes["service.namespace"]::VARCHAR = 'storefront'`
   )
   await logs.click()
   await expect
     .poll(() => new URL(page.url()).searchParams.get('q'))
     .toBe(destination.searchParams.get('q'))
   await expect(page.locator('.cm-content[contenteditable="true"]')).toHaveText(
-    'service.namespace · Resource · String = "storefront"'
+    "service.namespace · Resource · String = 'storefront'"
   )
   await page.getByRole('button', { name: 'Clear search', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()

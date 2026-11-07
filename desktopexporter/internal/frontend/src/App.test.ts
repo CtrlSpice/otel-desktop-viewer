@@ -12,10 +12,13 @@ import { navigate } from '@/route'
 import { setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
 import type { ImportFailure } from '@/types/import-types'
+import { telemetryAPI } from '@/services/telemetry-service'
 
 const {
   getStats,
   searchTraceSummaries,
+  getTraceView,
+  getTraceLogSummaries,
   searchLogPage,
   getLogErrorNavigation,
   getLog,
@@ -28,6 +31,8 @@ const {
 } = vi.hoisted(() => ({
   getStats: vi.fn(),
   searchTraceSummaries: vi.fn(),
+  getTraceView: vi.fn(),
+  getTraceLogSummaries: vi.fn(),
   searchLogPage: vi.fn(),
   getLogErrorNavigation: vi.fn(),
   getLog: vi.fn(),
@@ -46,12 +51,15 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
+      getServiceCount: vi.fn().mockResolvedValue(0),
       discoverServices: vi
         .fn()
         .mockResolvedValue({ items: [], truncated: false }),
       getImportConfig: vi.fn().mockResolvedValue({ otlpHttpPort: 4318 }),
       getStats,
       searchTraceSummaries,
+      getTraceView,
+      getTraceLogSummaries,
       searchLogPage,
       getLogErrorNavigation,
       getLog,
@@ -84,6 +92,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
   searchTraceSummaries.mockResolvedValue([])
+  getTraceView.mockImplementation(async (traceID: string) => ({
+    traceID,
+    spans: [],
+    unplacedSpanCount: 0,
+  }))
+  getTraceLogSummaries.mockResolvedValue([])
   searchLogPage.mockResolvedValue({ total: 0, logs: [] })
   getLogErrorNavigation.mockResolvedValue({
     count: 0,
@@ -101,6 +115,33 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('publishes available navigation counts without waiting for service counts', async () => {
+    setTestUrl('/traces')
+    vi.mocked(telemetryAPI.getServiceCount).mockImplementationOnce(
+      () => new Promise(() => {})
+    )
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 7 },
+      logs: { ...EMPTY_STATS.logs, logCount: 8 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 9 },
+    })
+    const { unmount } = render(App)
+    const navigation = within(
+      screen.getByRole('navigation', { name: 'Primary' })
+    )
+    await navigation.findByRole('link', { name: 'Traces [7]' })
+    expect(
+      navigation.getByRole('link', { name: 'Logs [8]' })
+    ).toBeInTheDocument()
+    expect(
+      navigation.getByRole('link', { name: 'Metrics [9]' })
+    ).toBeInTheDocument()
+    const signal = vi.mocked(telemetryAPI.getServiceCount).mock.calls[0]![0]!
+    await unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
   it('keeps failed-file counts separate from rejected telemetry in Home Overview', async () => {
     setTestUrl('/')
     const timestamp = BigInt(Date.now()) * 1_000_000n
@@ -271,13 +312,23 @@ describe('App real-page composition', () => {
     setTestUrl('/traces/trace-1')
     render(App)
 
-    await screen.findByText('No traces in this time range')
+    await waitFor(() =>
+      expect(getTraceView).toHaveBeenCalledWith(
+        'trace-1',
+        undefined,
+        expect.any(AbortSignal),
+        expect.any(Array)
+      )
+    )
+    expect(window.location.pathname).toBe('/traces/trace-1')
     expect(searchTraceSummaries).toHaveBeenCalled()
+    navigate('/traces')
+    await screen.findByText('No traces in this time range')
 
     navigate('/metrics/metric-1')
     await screen.findByText('The selected metric was not found.')
     expect(searchMetricSummaries).toHaveBeenCalled()
-    expect(getMetric).toHaveBeenCalledWith('metric-1')
+    expect(getMetric).toHaveBeenCalledWith('metric-1', expect.any(AbortSignal))
 
     navigate('/logs/log-1')
     await screen.findByText('No logs match this search and time range.')

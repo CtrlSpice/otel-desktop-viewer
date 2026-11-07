@@ -50,6 +50,7 @@ export type SignalListPageOptions<TItem, TSortColumn extends string> = {
 export type SignalListPage<TItem, TSortColumn extends string> = {
   readonly items: TItem[]
   readonly loading: boolean
+  readonly requestKey: number
   readonly error: string | null
   readonly mounted: boolean
   readonly sortColumn: TSortColumn
@@ -69,6 +70,8 @@ export type SignalListPage<TItem, TSortColumn extends string> = {
   handleRefresh(): void
   handleSearchResults(event: SearchResultEvent): void
   runListFetch(): Promise<void>
+  /** Publish a page of the displayed reading without superseding its replacement. */
+  publishItems(next: TItem[]): void
 }
 
 const POLL_INTERVAL_MS = 3000
@@ -110,6 +113,7 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
 
   let items = $state<TItem[]>([])
   let loading = $state(true)
+  let requestKey = $state(0)
   let error = $state<string | null>(null)
   let mounted = $state(false)
 
@@ -195,6 +199,7 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
 
   async function runListFetch() {
     const updateSeq = beginListUpdate(opts.signal)
+    requestKey = updateSeq
     try {
       loading = true
       error = null
@@ -265,6 +270,9 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
     get loading() {
       return loading
     },
+    get requestKey() {
+      return requestKey
+    },
     get error() {
       return error
     },
@@ -309,5 +317,8 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
     handleRefresh,
     handleSearchResults,
     runListFetch,
+    publishItems(next) {
+      items = next
+    },
   }
 }

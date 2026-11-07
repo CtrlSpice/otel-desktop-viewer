@@ -18,9 +18,10 @@ import (
 	"text/template"
 )
 
-//go:embed ddl/tables/*.sql ddl/indexes/*.sql ddl/macros/*.sql
+//go:embed ddl/types/*.sql ddl/tables/*.sql ddl/indexes/*.sql ddl/macros/*.sql
 //go:embed ddl/types/_order ddl/tables/_order ddl/indexes/_order ddl/macros/_order
 //go:embed spans/*.sql metrics/*.sql logs/*.sql
+//go:embed shared/*.sql
 var files embed.FS
 
 // Statement is one DDL object: the SQL, plus the file it came from.
@@ -76,14 +77,13 @@ const (
 	GetMetric Name = "metrics/get_metric.sql"
 	// GetMetricSeries returns one exact series' retained received datapoints,
 	// grouped by their owning received Metric reports.
-	GetMetricSeries Name = "metrics/get_metric_series.sql"
+	GetMetricSeries      Name = "metrics/get_metric_series.sql"
+	GetMetricSeriesOrder Name = "metrics/get_metric_series_order.sql"
 	// GetMetricView returns the chart/UI projection for one Metric.
 	GetMetricView Name = "metrics/get_metric_view.sql"
 	// GetMetricOTLP reconstructs one stored Metric as standard OTLP JSON,
 	// without applying UI aggregation or time-window rules.
 	GetMetricOTLP Name = "metrics/get_metric_otlp.sql"
-	// GetMetricAttributeDefinitions lists the attribute keys metrics carry.
-	GetMetricAttributeDefinitions Name = "metrics/get_metric_attribute_definitions.sql"
 
 	// GetLog returns one log record with its attributes resolved.
 	GetLog Name = "logs/get_log.sql"
@@ -93,8 +93,6 @@ const (
 	GetTraceLogSummaries Name = "logs/get_trace_log_summaries.sql"
 	// GetSpanLogs returns full logs associated with one composite span identity.
 	GetSpanLogs Name = "logs/get_span_logs.sql"
-	// GetLogAttributeDefinitions lists the attribute keys logs carry.
-	GetLogAttributeDefinitions Name = "logs/get_log_attribute_definitions.sql"
 
 	// SearchMetricSummaries lists Metrics for the metrics list view.
 	SearchMetricSummaries Name = "metrics/search_summaries.sql"
@@ -109,8 +107,8 @@ const (
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
 	GetTraceView, SalvageSpans, SearchTraceSummaries, GetTraceOverview, GetSpanSummaries, GetSpan, GetTraceOTLP,
-	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributeDefinitions,
-	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs, GetLogAttributeDefinitions,
+	GetMetric, GetMetricSeries, GetMetricSeriesOrder, GetMetricView, GetMetricOTLP,
+	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs,
 	SearchMetricSummaries, SearchLogSummaries, SearchLogPage, GetLogErrorNavigation,
 }
 
@@ -123,9 +121,11 @@ var templates = parseAll()
 func parseAll() map[Name]*template.Template {
 	parsed := make(map[Name]*template.Template, len(queryNames))
 	for _, n := range queryNames {
-		parsed[n] = template.Must(
-			template.New(string(n)).Option("missingkey=error").Parse(mustRead(string(n))),
-		)
+		tmpl := template.New(string(n)).Funcs(template.FuncMap{"bind": func(name string) (string, error) {
+			return "", fmt.Errorf("parameter %q requires RenderBound", name)
+		}, "arrow": func() bool { return false }}).Option("missingkey=error")
+		template.Must(tmpl.Parse(mustRead("shared/native.sql")))
+		parsed[n] = template.Must(tmpl.Parse(mustRead(string(n))))
 	}
 	checkRegistered(parsed)
 	return parsed
@@ -136,6 +136,7 @@ func parseAll() map[Name]*template.Template {
 // run, and would rot unnoticed.
 func checkRegistered(parsed map[Name]*template.Template) {
 	known := make(map[string]bool, len(parsed)+64)
+	known["shared/native.sql"] = true
 	for n := range parsed {
 		known[string(n)] = true
 	}
@@ -180,15 +181,76 @@ func mustRead(p string) string {
 // query composes -- named, so that adding or reordering one cannot silently
 // change which fragment lands where.
 func Render(name Name, data any) (string, error) {
+	return render(name, data, false)
+}
+
+// RenderArrow selects a native column projection while sharing the query's
+// selection, reduction and ordering with the JSON-RPC projection.
+func RenderArrow(name Name, data any) (string, error) {
+	return render(name, data, true)
+}
+
+func render(name Name, data any, native bool) (string, error) {
 	tmpl, ok := templates[name]
 	if !ok {
 		// Unreachable through the Name constants; reachable if a caller
 		// converts a string.
 		return "", fmt.Errorf("queries: unknown query %q", name)
 	}
+	if native {
+		var err error
+		tmpl, err = tmpl.Clone()
+		if err != nil {
+			return "", err
+		}
+		tmpl.Funcs(template.FuncMap{"arrow": func() bool { return true }})
+	}
 	var sb strings.Builder
 	if err := tmpl.Execute(&sb, data); err != nil {
 		return "", fmt.Errorf("queries: rendering %s: %w", name, err)
 	}
 	return sb.String(), nil
+}
+
+// RenderBound assigns one positional binding per referenced input. Conditional
+// branches bind only their inputs; repeated uses share $N. Cloning keeps
+// concurrent renders independent, and values never become SQL text.
+func RenderBound(name Name, data any, values map[string]any) (string, []any, error) {
+	return renderBound(name, data, values, false)
+}
+
+func RenderBoundArrow(name Name, data any, values map[string]any) (string, []any, error) {
+	return renderBound(name, data, values, true)
+}
+
+func renderBound(name Name, data any, values map[string]any, native bool) (string, []any, error) {
+	tmpl, ok := templates[name]
+	if !ok {
+		return "", nil, fmt.Errorf("queries: unknown query %q", name)
+	}
+	bound, err := tmpl.Clone()
+	if err != nil {
+		return "", nil, err
+	}
+	bound.Funcs(template.FuncMap{"arrow": func() bool { return native }})
+	positions := make(map[string]string)
+	var args []any
+	bound.Funcs(template.FuncMap{"bind": func(key string) (string, error) {
+		if parameter, ok := positions[key]; ok {
+			return parameter, nil
+		}
+		value, ok := values[key]
+		if !ok {
+			return "", fmt.Errorf("missing parameter %q", key)
+		}
+		args = append(args, value)
+		parameter := fmt.Sprintf("$%d", len(args))
+		positions[key] = parameter
+		return parameter, nil
+	}})
+	var sql strings.Builder
+	if err := bound.Execute(&sql, data); err != nil {
+		return "", nil, fmt.Errorf("queries: rendering %s: %w", name, err)
+	}
+	return sql.String(), args, nil
 }

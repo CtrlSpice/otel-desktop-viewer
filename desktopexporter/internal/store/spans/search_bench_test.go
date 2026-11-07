@@ -21,7 +21,7 @@ func BenchmarkSearchTraceSummariesLimit(b *testing.B) {
 	}
 	defer s.Close()
 	if err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, benchTraces(10_000), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, benchTraces(10_000))
 	}); err != nil {
 		b.Fatal(err)
 	}

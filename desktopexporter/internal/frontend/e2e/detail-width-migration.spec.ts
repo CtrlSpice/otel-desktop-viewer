@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
 
 async function openSavedLayout(
@@ -16,7 +17,7 @@ async function openSavedLayout(
     }
   }, saved)
   await page.route('**/api/features', route => route.fulfill({ json: {} }))
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method } = route.request().postDataJSON()
     await route.fulfill({
       json: {
@@ -41,7 +42,9 @@ async function openSavedLayout(
                 },
                 rejections: [],
               }
-            : [],
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : [],
       },
     })
   })

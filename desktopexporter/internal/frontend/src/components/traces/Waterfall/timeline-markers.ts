@@ -1,4 +1,9 @@
-import type { EventData, SpanNode, TraceLogSummary } from '@/types/api-types'
+import type {
+  EventData,
+  WaterfallEventData,
+  WaterfallSpanNode as SpanNode,
+  TraceLogSummary,
+} from '@/types/api-types'
 
 export const WATERFALL_BAR_HEIGHT_REM = 0.875
 export const MARKER_GLYPH_REM = WATERFALL_BAR_HEIGHT_REM
@@ -15,7 +20,7 @@ export type TimelineRecord =
       id: string
       timestamp: bigint
       eventIndex: number
-      event: EventData
+      event: EventData | WaterfallEventData
     }
   | {
       kind: 'log'

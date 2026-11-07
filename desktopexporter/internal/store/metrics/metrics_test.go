@@ -264,7 +264,7 @@ func TestSearchMetricSummariesNullableTimeRangesExecute(t *testing.T) {
 		dp.SetIntValue(timestamp)
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	start, end := uint64(200), uint64(200)
@@ -300,7 +300,7 @@ func TestSearchMetricSummariesLimit(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -347,7 +347,7 @@ func TestSearchMetricSummariesSortBeforeLimit(t *testing.T) {
 		}
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	limit := int64(1)
@@ -449,14 +449,13 @@ func TestExactMetricSeriesPreservesMetricOwnership(t *testing.T) {
 		point.Attributes().PutStr("series", "one")
 		point.SetIntValue(int64(i + 1))
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, data)
 		}))
 	}
 
 	metricIDs, err := readStore(s, func(db *sql.DB) ([]string, error) {
 		rows, err := db.QueryContext(ctx, `select m.id::varchar from metrics m
-			join resources r on r.id = m.resource_id
-			where m.name = 'owned.gauge' order by r.schema_url`)
+			where m.name = 'owned.gauge' order by m.resource.schema_url`)
 		if err != nil {
 			return nil, err
 		}
@@ -530,7 +529,7 @@ func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
 	ingestBatch := func(t *testing.T, s *store.Store, batch pmetric.Metrics) {
 		t.Helper()
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, batch, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, batch)
 		}))
 	}
 
@@ -565,7 +564,7 @@ func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
 		if err := db.QueryRow(`select count(*) from metric_datapoints`).Scan(&datapointCount); err != nil {
 			return err
 		}
-		if err := db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resourceCount, &payloadCount); err != nil {
+		if err := db.QueryRow(`select count(distinct resource.id), count(distinct resource.payload_id) from metric_datapoints`).Scan(&resourceCount, &payloadCount); err != nil {
 			return err
 		}
 		require.Equal(t, 1, metricsCount)
@@ -589,8 +588,22 @@ func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
 		return metrics.GetMetricOTLP(ctx, db, metricID)
 	})
 	require.NoError(t, err)
-	assert.Contains(t, string(otlp), `"schemaUrl":"resource-d"`)
-	assert.NotContains(t, string(otlp), `"schemaUrl":"resource-a"`)
+	decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(otlp)
+	require.NoError(t, err)
+	require.Equal(t, 4, decoded.ResourceMetrics().Len())
+	seen := map[string]int64{}
+	for _, rm := range decoded.ResourceMetrics().All() {
+		require.Equal(t, uint32(2), rm.Resource().DroppedAttributesCount())
+		require.Equal(t, 1, rm.ScopeMetrics().Len())
+		sm := rm.ScopeMetrics().At(0)
+		require.Equal(t, "scope-a", sm.SchemaUrl())
+		require.Equal(t, uint32(3), sm.Scope().DroppedAttributesCount())
+		require.Equal(t, 1, sm.Metrics().Len())
+		points := sm.Metrics().At(0).Gauge().DataPoints()
+		require.Equal(t, 1, points.Len())
+		seen[rm.SchemaUrl()] = points.At(0).IntValue()
+	}
+	require.Equal(t, map[string]int64{"resource-a": 1, "resource-b": 2, "resource-c": 3, "resource-d": 4}, seen)
 
 	differentScope := pmetric.NewMetrics()
 	appendMetric(differentScope, "resource-e", "scope-b", "different scope", 5)
@@ -665,7 +678,7 @@ func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
 			}
 
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, md)
 			}))
 			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 				rows, err := db.QueryContext(ctx, `select timestamp::varchar, sum, min, max
@@ -789,7 +802,7 @@ func TestHistogramReductionRequiresEveryInputSum(t *testing.T) {
 			}
 
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, md)
 			}))
 			metricID := findMetricRef(t, s, ctx, "partial-"+tc.name)
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -863,7 +876,7 @@ func TestReceivedMetricIntegersUseExactDecimalWireValues(t *testing.T) {
 	exponentialPoint.Positive().BucketCounts().FromRaw([]uint64{maxUint64})
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	fixtureRange := store.BoundedTimeRange(0, 500)
@@ -947,7 +960,7 @@ func TestMetricSuite(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	})
 	assert.NoError(t, err, "ingest test metrics")
 
@@ -1327,7 +1340,7 @@ func TestExemplarSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 		}
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	got := getMetricFullByName(t, s, ctx, "exemplar_span_ids")
@@ -1391,7 +1404,7 @@ func TestExemplarValuesRoundTripByType(t *testing.T) {
 		tc.setValue(ex)
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	got := getMetricFullByName(t, s, ctx, "typed_exemplars")
@@ -1475,14 +1488,13 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 	}[aggTemporality]
 	const q = `
 		select m.id::varchar from metrics m
-		join scopes sc on sc.id = m.scope_id
 		where m.name = ?
 		  and m.unit = ?
 		  and m.metric_type = ?
 		  and m.aggregation_temporality = ?
 		  and m.is_monotonic = ?
-		  and sc.name = ?
-		  and sc.version = ?
+		  and m.scope.name = ?
+		  and m.scope.version = ?
 		  and m.service_name = ?
 		limit 1
 	`
@@ -1512,7 +1524,7 @@ func TestDeleteMetric(t *testing.T) {
 		s, ctx := storetest.New(t)
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 		})
 		assert.NoError(t, err)
 
@@ -1542,7 +1554,7 @@ func TestDeleteMetric(t *testing.T) {
 
 		for i := 0; i < 3; i++ {
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 			})
 			assert.NoError(t, err)
 		}
@@ -1588,7 +1600,7 @@ func TestDeleteMetric(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 2)
@@ -1624,7 +1636,7 @@ func TestDeleteMetric(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
@@ -1663,7 +1675,7 @@ func TestDeleteMetric(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
@@ -1685,7 +1697,7 @@ func TestDeleteMetric(t *testing.T) {
 		s, ctx := storetest.New(t)
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 5)
@@ -1702,7 +1714,7 @@ func TestDeleteMetric(t *testing.T) {
 		s, ctx := storetest.New(t)
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 		})
 		assert.NoError(t, err)
 
@@ -1714,22 +1726,18 @@ func TestDeleteMetric(t *testing.T) {
 			`select count(*) from exemplars where metric_datapoint_id in (select id from metric_datapoints where metric_id in (select id from metrics where name = ?))`,
 			"histogram_metric")
 		attrBefore := countRows(t, s, ctx,
-			`select count(distinct t.aid)
-			 from metrics m
-			 join resources r on r.id = m.resource_id
-			 join scopes sc on sc.id = m.scope_id,
-			 unnest(r.attribute_ids || sc.attribute_ids) as t(aid)
+			`select count(distinct t.key)
+			 from metrics m,
+			 unnest(variant_keys(m.resource.attributes) || variant_keys(m.scope.attributes)) as t(key)
 			 where m.name = ?`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
 		assert.Greater(t, attrBefore, 0)
 
-		// The dictionary rows those ids point at, before the delete. They must
-		// survive the cascade -- other Metrics may still reference them -- and
-		// only go when the sweep proves them unreferenced.
-		dictBefore := countRows(t, s, ctx, `select count(*) from attributes`)
-		assert.Greater(t, dictBefore, 0)
+		// Other Metrics must retain their independently owned Resource payloads.
+		otherResources := countRows(t, s, ctx, `select count(*) from metrics where name <> 'histogram_metric' and len(variant_keys(resource.attributes)) > 0`)
+		assert.Greater(t, otherResources, 0)
 
 		err = deleteByIdentity(t, ctx, s,
 			"histogram_metric", "seconds", "Histogram",
@@ -1749,31 +1757,15 @@ func TestDeleteMetric(t *testing.T) {
 				where d.id = e.metric_datapoint_id
 				  and d.metric_id in (select id from metrics where name = ?)
 			)`, "histogram_metric"))
-		// The cascade deliberately does NOT touch the dictionary: attribute,
-		// resource and scope rows are shared across every signal, so "is this
-		// one still in use" is not a question a Metric-scoped delete can
-		// answer. It stays whole here...
-		assert.Equal(t, dictBefore, countRows(t, s, ctx, `select count(*) from attributes`),
-			"a Metric delete must not remove shared dictionary rows")
+		assert.Equal(t, otherResources, countRows(t, s, ctx, `select count(*) from metrics where len(variant_keys(resource.attributes)) > 0`),
+			"a Metric delete must preserve other Metrics' owned payloads")
 
-		// ...and the sweep is what collects whatever the delete orphaned.
-		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-			return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-		}))
-		// The other four fixture metrics still reference the same resource and
-		// scope, so the sweep must NOT take those rows -- shared content
-		// survives as long as one owner remains. What it does take is anything
-		// only the deleted Metric reached.
+		// Sweep only collects histogram bounds abandoned by the delete.
+		// Resource and Scope remain embedded on the four surviving Metrics.
 		assert.Equal(t, 0, countRows(t, s, ctx,
-			`select count(*) from attributes a
-			 where not exists (select 1 from resources r, unnest(r.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from scopes sc, unnest(sc.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metric_datapoints d, unnest(d.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metric_series ms, unnest(ms.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metrics m, unnest(m.metadata_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
-			"the sweep must leave no unreferenced dictionary row behind")
-		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
+			`select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')`),
+			"owned payloads require no auxiliary attribute or context tables")
+		assert.Greater(t, countRows(t, s, ctx, `select count(distinct resource.id) from metrics`), 0,
 			"the resource is still referenced by the four surviving Metrics")
 	})
 }
@@ -1787,7 +1779,7 @@ func TestMetrics_FindOrInsertIdempotent(t *testing.T) {
 	const batches = 5
 	for i := 0; i < batches; i++ {
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 		})
 		require.NoError(t, err)
 	}
@@ -1870,12 +1862,12 @@ func TestMetrics_DistinctIdentitiesStayDistinct(t *testing.T) {
 			s, ctx := storetest.New(t)
 
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pmetric.ScopeMetrics, pmetric.ResourceMetrics) {}), s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pmetric.ScopeMetrics, pmetric.ResourceMetrics) {}))
 			})
 			require.NoError(t, err)
 
 			err = s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, tc.mutate), s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, mk(t, tc.mutate))
 			})
 			require.NoError(t, err)
 
@@ -1908,12 +1900,12 @@ func TestMetrics_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 	}
 	for _, variant := range []bool{false, true} {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, makeBatch(variant), s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, makeBatch(variant))
 		}))
 	}
 	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metrics`))
-	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
-	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(distinct resource.id) from metrics`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(distinct scope.id) from metrics`))
 	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_series`))
 	var metricID string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -1925,28 +1917,20 @@ func TestMetrics_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 	require.NoError(t, err)
 	text := string(raw)
 	assert.Contains(t, text, `"description":"second"`)
-	assert.NotContains(t, text, `"description":"first"`)
+	assert.Contains(t, text, `"description":"first"`, "exports retain earlier received descriptors")
 }
 
-func TestMetricIdentityUniqueIndexes(t *testing.T) {
+func TestMetricRecordIdentityIsUnique(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		_, err := db.Exec(`insert into metrics
-			select uuid(), resource_id, resource_payload_id, scope_id, name, description,
-				unit, metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name
-			from metrics where name = 'gauge_metric'`)
+		_, err := db.Exec(`insert into metric_records select * from metric_records where name = 'gauge_metric'`)
 		require.ErrorContains(t, err, "Duplicate key")
-		_, err = db.Exec(`insert into metric_series
-			select uuid(), metric_id, attribute_ids from metric_series limit 1`)
-		require.ErrorContains(t, err, "Duplicate key")
-		_, err = db.Exec(`insert into metric_series select uuid(), id,
-			['00000000-0000-0000-0000-000000000001'::uuid]
-			from metrics where name = 'gauge_metric'`)
-		require.NoError(t, err, "Datapoint attributes must split series within each metric")
+		_, err = db.Exec(`insert into metric_records select * replace(uuid() as record_id) from metric_records where name = 'gauge_metric'`)
+		require.NoError(t, err, "repeated logical identities retain separate received records")
 		return nil
 	}))
 }
@@ -1964,18 +1948,13 @@ func TestMetrics_ServiceNameDenormStaysConsistent(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	})
 	require.NoError(t, err)
 
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metrics s
-		join resources r on r.id = s.resource_id
-		where s.service_name <> coalesce((
-			select json_extract_string(a.value, '$.value')
-			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
-			where a.key = 'service.name'
-		), '')
+		where s.service_name <> coalesce(s.resource.attributes['service.name']::varchar, '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"metrics.service_name must equal the source resource attribute")
@@ -1987,7 +1966,7 @@ func TestEmptyMetrics(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, pmetric.NewMetrics(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, pmetric.NewMetrics())
 	})
 	assert.NoError(t, err)
 
@@ -2001,14 +1980,14 @@ func TestClearMetrics(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	})
 	assert.NoError(t, err)
 
 	metricList := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metricList, 5)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from metric_datapoints"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from metric_datapoints, unnest(variant_keys(attributes))"), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
@@ -2022,17 +2001,7 @@ func TestClearMetrics(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_datapoints"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
 
-	// Clear leaves the dictionary alone -- it cannot know whether a traces or
-	// logs row still references any of it. With no other signal ingested here
-	// everything it left behind is orphaned, and the sweep takes all of it.
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0,
-		"Clear must not delete shared dictionary rows itself")
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from metric_records"), "owned bounds disappear with records")
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
@@ -2081,7 +2050,7 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 	dp2.Negative().BucketCounts().FromRaw([]uint64{})
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 
 	byName := make(map[string]map[string]any)
@@ -2263,18 +2232,15 @@ func findMetricRef(t *testing.T, s *store.Store, ctx context.Context, name strin
 	return ""
 }
 
-// TestIngestMetrics_LargeBatchStaysConsistent ingests more metrics in one call
-// than the flush interval and asserts they all landed with their attributes.
-// Like the spans and logs versions it does not claim to test the flush itself,
-// which is unobservable by design. Sized from the constant so it cannot stop
-// being a large batch when the constant moves.
+// TestIngestMetrics_LargeBatchStaysConsistent verifies independently owned
+// records and their attributes within one received batch.
 func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
-	const batchSize = metrics.FlushInterval + 1
+	const batchSize = 101
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize))
 	})
 	assert.NoError(t, err)
 
@@ -2321,11 +2287,11 @@ func TestIngest_CanceledContext(t *testing.T) {
 	var rejected ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
 		var err error
-		rejected, err = metrics.IngestReport(ctx, conn, createTestMetricsPdataN(1), s.FlushedIDs())
+		rejected, err = metrics.IngestReport(ctx, conn, createTestMetricsPdataN(1))
 		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -2339,7 +2305,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
 			var err error
-			rejected, err = metrics.IngestReport(ctx, conn, createTestMetricsPdataN(100), s.FlushedIDs())
+			rejected, err = metrics.IngestReport(ctx, conn, createTestMetricsPdataN(100))
 			return err
 		})
 	}()
@@ -2347,7 +2313,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 	for _, table := range []string{"metrics", "metric_series", "metric_datapoints"} {
 		assert.Equal(t, 0, countRows(t, s, context.Background(), `select count(*) from `+table),
 			"canceled ingest must not leave provisional rows in %s", table)
@@ -2380,12 +2346,12 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		dp2.Attributes().PutStr("host", "a")
 
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		}))
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "gauge_card_test")
 		assert.NotEmpty(t, summary["metricRef"])
-		assert.Equal(t, "Memory used by the process", summary["description"])
+		assert.NotContains(t, summary, "description")
 		assert.EqualValues(t, 2, summary["seriesCount"])
 		assert.EqualValues(t, 2, summary["dataPointCount"])
 		assert.InDelta(t, 2.0, summary["lastValue"], 1e-9)
@@ -2403,7 +2369,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 				count: 6, sum: 7.0, min: 0.5, max: 2.5},
 		})
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		}))
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_card_test")
@@ -2414,13 +2380,13 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 	})
 }
 
-// Datapoint and exemplar labels are searchable through dictionary IDs.
+// Datapoint and exemplar labels are searchable through their owned maps.
 func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	}))
 
 	search := func(t *testing.T, scope, name, op, value string) []map[string]any {
@@ -2477,7 +2443,7 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 		assert.Empty(t, search(t, "exemplar", "no.such.key", "=", "gauge"))
 	})
 
-	// Scope is part of the dictionary id, so a datapoint search must not reach
+	// Owner scope is explicit, so a datapoint search must not reach
 	// an exemplar label and vice versa -- even though both live in the same
 	// attributes table.
 	t.Run("scopes do not leak into each other", func(t *testing.T) {
@@ -2583,7 +2549,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t))
 	}))
 
 	countRows := func(table string) int {
@@ -2593,7 +2559,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 		}))
 		return n
 	}
-	assert.Equal(t, 2, countRows("resources"),
+	assert.Equal(t, 2, countRows("(select distinct resource.id from metrics)"),
 		"distinct resource payloads must produce distinct resource rows")
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -2644,7 +2610,7 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 	}
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 
 	countRows := func(table string) int {
@@ -2654,7 +2620,7 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 		}))
 		return n
 	}
-	assert.Equal(t, 2, countRows("resources"),
+	assert.Equal(t, 2, countRows("(select distinct resource.id from metrics)"),
 		"distinct received resource payloads must remain distinct")
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -2691,14 +2657,14 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	}
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t))
 	}))
 	first := seriesIDs()
 	require.Len(t, first, 2, "two replicas are two series")
 
 	// The same content again: same ids, no new rows.
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t))
 	}))
 	assert.Equal(t, first, seriesIDs(),
 		"re-ingesting the same series must not mint new ids")
@@ -2725,7 +2691,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 
 	other, otherCtx := storetest.New(t)
 	require.NoError(t, other.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(otherCtx, conn, buildTwoReplicaMetrics(t), other.FlushedIDs())
+		return metrics.Ingest(otherCtx, conn, buildTwoReplicaMetrics(t))
 	}))
 	metricIDs := func(rows []map[string]any) []string {
 		ids := make([]string, 0, len(rows))
@@ -2735,8 +2701,8 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 		sort.Strings(ids)
 		return ids
 	}
-	assert.NotEqual(t, metricIDs(summaries), metricIDs(searchMetricsAll(t, other, otherCtx)),
-		"a fresh store generates its own Metric references")
+	assert.Equal(t, metricIDs(summaries), metricIDs(searchMetricsAll(t, other, otherCtx)),
+		"logical Metric identities are deterministic across stores")
 	var fresh []string
 	require.NoError(t, other.WithDBRead(func(db *sql.DB) error {
 		rows, err := db.Query(`select id::varchar from metric_series order by 1`)
@@ -2753,7 +2719,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 		}
 		return rows.Err()
 	}))
-	assert.NotEqual(t, first, fresh, "a fresh store generates its own series IDs")
+	assert.Equal(t, first, fresh, "series identities are deterministic across stores")
 }
 
 func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {
@@ -2786,7 +2752,7 @@ func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {
 
 	first := open()
 	require.NoError(t, first.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), first.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t))
 	}))
 	metricIDs := readIDs(first, "metrics")
 	seriesIDs := readIDs(first, "metric_series")
@@ -2798,7 +2764,7 @@ func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {
 	assert.Equal(t, metricIDs, readIDs(reopened, "metrics"))
 	assert.Equal(t, seriesIDs, readIDs(reopened, "metric_series"))
 	require.NoError(t, reopened.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), reopened.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t))
 	}))
 	assert.Equal(t, metricIDs, readIDs(reopened, "metrics"))
 	assert.Equal(t, seriesIDs, readIDs(reopened, "metric_series"))
@@ -2845,14 +2811,14 @@ func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 
 	base := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, nil, 0, base), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, nil, 0, base))
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, map[string]string{
 			"telemetry.sdk.name":     "opentelemetry",
 			"telemetry.sdk.language": "go",
 			"telemetry.sdk.version":  "1.28.0",
-		}, 0, base+10_000_000), s.FlushedIDs())
+		}, 0, base+10_000_000))
 	}))
 
 	countRows := func(table string) int {
@@ -2863,7 +2829,7 @@ func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 		return n
 	}
 
-	assert.Equal(t, 2, countRows("resources"),
+	assert.Equal(t, 2, countRows("(select distinct resource.id from metrics)"),
 		"distinct received resource payloads must remain distinguishable")
 	assert.Equal(t, 2, countRows("metric_series"),
 		"resource attributes participate in OTLP metric series identity")
@@ -2883,19 +2849,19 @@ func TestMetricSeries_DroppedResourceCountPreservesExactOwners(t *testing.T) {
 	for i, dropped := range []uint32{0, 3} {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn,
-				buildInstanceMetrics(t, nil, dropped, base+int64(i)*10_000_000), s.FlushedIDs())
+				buildInstanceMetrics(t, nil, dropped, base+int64(i)*10_000_000))
 		}))
 	}
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		var resources, metricsCount, series int
 		var minDropped, maxDropped uint32
-		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
+		require.NoError(t, db.QueryRow(`select count(distinct resource.id) from metrics`).Scan(&resources))
 		require.NoError(t, db.QueryRow(`select count(*) from metrics`).Scan(&metricsCount))
 		require.NoError(t, db.QueryRow(`select count(*) from metric_series`).Scan(&series))
 		require.NoError(t, db.QueryRow(`
-			select min(r.dropped_attributes_count), max(r.dropped_attributes_count)
-			from metrics m join resources r on r.id = m.resource_id`).Scan(&minDropped, &maxDropped))
+			select min(resource.dropped_attributes_count), max(resource.dropped_attributes_count)
+			from metrics`).Scan(&minDropped, &maxDropped))
 		assert.Equal(t, 2, resources, "dropped-count payloads need distinct resource rows")
 		assert.Equal(t, 2, metricsCount)
 		assert.Equal(t, 2, series)
@@ -2946,7 +2912,7 @@ func TestMetricViewRetainsIdentityResourceOutsideDatapointWindow(t *testing.T) {
 	metricPayload.SetDescription("received description")
 	metricPayload.Metadata().PutStr("metadata.key", "metadata value")
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -3021,7 +2987,7 @@ func TestMetricViewProjectsMonotonicityOnlyForSum(t *testing.T) {
 	var rejected ingest.Rejected
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		var err error
-		rejected, err = metrics.IngestReport(ctx, conn, md, s.FlushedIDs())
+		rejected, err = metrics.IngestReport(ctx, conn, md)
 		return err
 	}))
 	require.Equal(t, 1, rejected.Count())
@@ -3080,7 +3046,7 @@ func TestHistogramSelectionIsPartitionedByExactScopeIdentity(t *testing.T) {
 		dp.BucketCounts().FromRaw([]uint64{fixture.count, 0})
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -3146,7 +3112,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 		},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -3207,7 +3173,7 @@ func TestGetMetricView_MergedSeriesKeepTheirLabels(t *testing.T) {
 		dp(0, "VER"), dp(time.Second, "VER"),
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -3230,13 +3196,13 @@ func TestGetMetricView_MergedSeriesKeepTheirLabels(t *testing.T) {
 
 	drivers := map[string]bool{}
 	for _, entry := range series {
-		attrs, _ := entry.(map[string]any)["attributes"].([]any)
+		attrs, _ := entry.(map[string]any)["labelPreviews"].([]any)
 		require.NotEmpty(t, attrs,
-			"a merged series must carry the attributes that identify it")
+			"a merged series must carry the previews that identify it")
 		for _, a := range attrs {
 			m := a.(map[string]any)
 			if m["key"] == "driver" {
-				drivers[m["value"].(map[string]any)["value"].(string)] = true
+				drivers[m["text"].(string)] = true
 			}
 		}
 	}
@@ -3289,7 +3255,7 @@ func TestGetMetricView_ScalarViewBuckets(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("climb.total", pmetric.AggregationTemporalityCumulative, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -3313,9 +3279,9 @@ func TestGetMetricView_ScalarViewBuckets(t *testing.T) {
 	for _, entry := range series {
 		ts := entry.(map[string]any)
 		var pod string
-		for _, a := range ts["attributes"].([]any) {
+		for _, a := range ts["labelPreviews"].([]any) {
 			if a.(map[string]any)["key"] == "pod" {
-				pod = a.(map[string]any)["value"].(map[string]any)["value"].(string)
+				pod = a.(map[string]any)["text"].(string)
 			}
 		}
 		v, _ := ts["views"].([]any)
@@ -3394,7 +3360,7 @@ func TestGetMetricView_RateSlopeAndStats(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("slope.total", pmetric.AggregationTemporalityCumulative, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -3514,7 +3480,7 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("climb.hist", pmetric.AggregationTemporalityCumulative, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -3591,7 +3557,7 @@ func TestCumulativeHistogramMerge_UnchangedReadingsRetainRecordedCounts(t *testi
 	}
 	fixture := makeHistogramFixtureT("unchanged.hist", pmetric.AggregationTemporalityCumulative, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	metricID := searchMetricsAll(t, s, ctx)[0]["metricRef"].(string)
 	for _, targetBuckets := range []int64{0, 1, 100} {
@@ -3647,7 +3613,7 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("reset.hist", pmetric.AggregationTemporalityCumulative, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -3689,7 +3655,7 @@ func TestHistogramReductionPreservesUnsignedCountDomain(t *testing.T) {
 		t.Helper()
 		s, ctx := storetest.New(t)
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+			return metrics.Ingest(ctx, conn, fixture)
 		}))
 		summaries := searchMetricsAll(t, s, ctx)
 		require.Len(t, summaries, 1)
@@ -3780,7 +3746,7 @@ func TestGetMetricView_WindowSummaryIsOneBucket(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("window.hist", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -3848,7 +3814,7 @@ func TestGetMetricView_DatapointLimitMatchesResponseOrder(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("order.hist", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -3914,7 +3880,7 @@ func TestGetMetricView_BoundsMismatchIsReported(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("drift.hist", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -3989,7 +3955,7 @@ func TestGetMetricView_ViewGridRespectsCadence(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("sparse.total", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -4042,7 +4008,7 @@ func TestGetMetricView_ViewGridRespectsCadence(t *testing.T) {
 	}
 	denseFixture := makeSumFixtureT("dense.total", pmetric.AggregationTemporalityDelta, dense)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, denseFixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, denseFixture)
 	}))
 	all := searchMetricsAll(t, s, ctx)
 	var denseID string
@@ -4084,7 +4050,7 @@ func TestGetMetricView_CountsDescribeTheWindow(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("counts.total", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -4145,7 +4111,7 @@ func TestGetMetricView_CountsDescribeTheWindow(t *testing.T) {
 	}
 	hfixture := makeHistogramFixtureT("counts.hist", pmetric.AggregationTemporalityDelta, hdps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, hfixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, hfixture)
 	}))
 	var histID string
 	for _, sum := range searchMetricsAll(t, s, ctx) {
@@ -4204,7 +4170,7 @@ func TestGetMetricView_Deterministic(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("ties.total", pmetric.AggregationTemporalityCumulative, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4237,9 +4203,9 @@ func TestGetMetricView_Deterministic(t *testing.T) {
 		for _, entry := range m["timeseries"].([]any) {
 			ts := entry.(map[string]any)
 			var pod string
-			for _, a := range ts["attributes"].([]any) {
+			for _, a := range ts["labelPreviews"].([]any) {
 				if a.(map[string]any)["key"] == "pod" {
-					pod = a.(map[string]any)["value"].(map[string]any)["value"].(string)
+					pod = a.(map[string]any)["text"].(string)
 				}
 			}
 			for _, dp := range ts["datapoints"].([]any) {
@@ -4313,7 +4279,7 @@ func TestGetMetricView_DatapointNarrowing(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("narrow.total", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4357,7 +4323,7 @@ func TestGetMetricView_DatapointNarrowing(t *testing.T) {
 		assert.NotNil(t, ts["stats"], "stats describe the window, not the sample")
 		assert.NotEmpty(t, ts["views"], "view buckets feed the All aggregate")
 		assert.NotEmpty(t, ts["sparkline"], "the row still draws a shape")
-		assert.NotEmpty(t, ts["attributes"], "and still names itself")
+		assert.NotEmpty(t, ts["labelPreviews"], "and still names itself")
 	}
 	assert.Equal(t, 1, withPoints)
 	assert.Equal(t, 2, withoutPoints)
@@ -4432,7 +4398,7 @@ func TestGetMetricView_ScalarPoolAggregate(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("pool.total", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4456,10 +4422,10 @@ func TestGetMetricView_ScalarPoolAggregate(t *testing.T) {
 	idByPod := map[string]string{}
 	for _, entry := range all["timeseries"].([]any) {
 		ts := entry.(map[string]any)
-		for _, a := range ts["attributes"].([]any) {
+		for _, a := range ts["labelPreviews"].([]any) {
 			attr := a.(map[string]any)
 			if attr["key"] == "pod" {
-				idByPod[attr["value"].(map[string]any)["value"].(string)] = ts["seriesRef"].(string)
+				idByPod[attr["text"].(string)] = ts["seriesRef"].(string)
 			}
 		}
 	}
@@ -4554,7 +4520,7 @@ func TestGetMetricView_Sparkline(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("spiky.total", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4655,7 +4621,7 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 		},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4730,7 +4696,7 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 		},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4790,8 +4756,7 @@ func TestGetMetricView_SeriesFilter(t *testing.T) {
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn,
-			makeExpHistogramFixtureT("filter.me", pmetric.AggregationTemporalityDelta, dps),
-			s.FlushedIDs())
+			makeExpHistogramFixtureT("filter.me", pmetric.AggregationTemporalityDelta, dps))
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4849,7 +4814,7 @@ func TestGetMetricView_Quantiles(t *testing.T) {
 		count: 60, sum: 200,
 	}})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -4981,7 +4946,7 @@ func TestGetMetricView_QuantileHandWorked(t *testing.T) {
 				makeHistogramFixtureT(name, pmetric.AggregationTemporalityDelta, []histTestDP{{
 					timestamp: base, bounds: tc.bounds, counts: tc.counts,
 					count: total, sum: float64(total),
-				}}), s.FlushedIDs())
+				}}))
 		}))
 	}
 	for i, tc := range expCases {
@@ -4993,7 +4958,7 @@ func TestGetMetricView_QuantileHandWorked(t *testing.T) {
 					zeroCount: tc.zeroCount, zeroThreshold: 0,
 					posOffset: tc.posOffset, posCounts: tc.posCounts,
 					negOffset: tc.negOffset, negCounts: tc.negCounts,
-				}}), s.FlushedIDs())
+				}}))
 		}))
 	}
 
@@ -5079,7 +5044,7 @@ func TestGetMetricView_QuantileHandWorked(t *testing.T) {
 						bounds: []float64{1, 2, 5, 10}, counts: []uint64{0, 50, 50, 0, 0}, count: 100, sum: 100},
 					{timestamp: base, attrs: map[string]string{"route": "/b"},
 						bounds: []float64{1, 2, 5, 10}, counts: []uint64{0, 30, 50, 20, 0}, count: 100, sum: 100},
-				}), s.FlushedIDs())
+				}))
 		}))
 		id := findMetricRef(t, s, ctx, "hw.merge")
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -5134,7 +5099,7 @@ func TestGetMetricView_CrossSeriesAggregate(t *testing.T) {
 		},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -5206,7 +5171,7 @@ func TestGetMetricView_EmptyExplicitBoundsAggregate(t *testing.T) {
 		},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	metricID := findMetricRef(t, s, ctx, "agg.catch-all")
@@ -5214,15 +5179,8 @@ func TestGetMetricView_EmptyExplicitBoundsAggregate(t *testing.T) {
 	// Poison the inactive exponential columns. Presence of explicit_bounds,
 	// including an empty list, must keep aggregate classification explicit.
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		_, err := db.ExecContext(ctx, `update metric_datapoints set
-			scale = 0,
-			zero_count = 0,
-			zero_threshold = 0,
-			positive_bucket_offset = 0,
-			positive_bucket_counts = [count],
-			negative_bucket_offset = 0,
-			negative_bucket_counts = []
-			where metric_id = ?::uuid`, metricID)
+		_, err := db.ExecContext(ctx, `update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,
+ scale:=0,zero_count:=0,zero_threshold:=0,positive_bucket_offset:=0,positive_bucket_counts:=[d.count],negative_bucket_offset:=0,negative_bucket_counts:=[])) where id=?::uuid`, metricID)
 		return err
 	}))
 
@@ -5316,7 +5274,7 @@ func TestGetMetricView_TimezoneAlignedBuckets(t *testing.T) {
 		},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -5375,7 +5333,7 @@ func TestGetMetricView_NullBoundsSpanTheData(t *testing.T) {
 	}
 	fixture := makeExpHistogramFixtureT("fit.duration", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -5450,7 +5408,7 @@ func TestGetMetricView_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 		dp.SetIntValue(timestamp)
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	summariesRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -5583,7 +5541,7 @@ func TestGetMetricView_MergedRowsCarryTheirBucket(t *testing.T) {
 		at(25*time.Second, "VER"),
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -5677,8 +5635,7 @@ func TestGetMetricAggregateView(t *testing.T) {
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn,
-			makeExpHistogramFixtureT("agg.only", pmetric.AggregationTemporalityDelta, dps),
-			s.FlushedIDs())
+			makeExpHistogramFixtureT("agg.only", pmetric.AggregationTemporalityDelta, dps))
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -5751,8 +5708,7 @@ func TestGetMetricAggregateView(t *testing.T) {
 		}
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn,
-				makeSumFixtureT("agg.scalar", pmetric.AggregationTemporalityCumulative, sums),
-				s.FlushedIDs())
+				makeSumFixtureT("agg.scalar", pmetric.AggregationTemporalityCumulative, sums))
 		}))
 		scalarID := findMetricRef(t, s, ctx, "agg.scalar")
 
@@ -5819,7 +5775,7 @@ func TestGetMetricView_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 		{timestamp: monday, value: 3, attrs: attrs},
 	})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -5906,7 +5862,7 @@ func TestGetMetricView_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 	fixture := makeHistogramFixtureT("dst.hist", pmetric.AggregationTemporalityDelta,
 		[]histTestDP{dp(morning), dp(evening), dp(monday)})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -5984,7 +5940,7 @@ func TestGetMetricView_ExemplarsAreCappedPerBucket(t *testing.T) {
 		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -6051,7 +6007,7 @@ func TestGetMetricView_ExemplarListIsCappedAndCounted(t *testing.T) {
 		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -6104,7 +6060,7 @@ func TestGetMetricView_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -6164,12 +6120,12 @@ func TestGetMetricView_IntegerExemplarSelectionRemainsExactAbove2Pow53(t *testin
 		ex.SetIntValue(baseValue + int64(i))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		for i := range n {
 			id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
-			if _, err := db.Exec(`update exemplars set id = ?::uuid where int_value = ?`,
+			if _, err := db.Exec(`update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,exemplars:=list_transform(d.exemplars,lambda e:case when e.int_value=$2 then struct_update(e,id:=$1::uuid) else e end)))`,
 				id, baseValue+int64(i)); err != nil {
 				return err
 			}
@@ -6219,12 +6175,12 @@ func TestGetMetricView_MixedExemplarSelectionUsesExactIntegerTieBreak(t *testing
 		}
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		for i := range n {
 			id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
-			if _, err := db.Exec(`update exemplars set id = ?::uuid where timestamp = ?`, id, i+1); err != nil {
+			if _, err := db.Exec(`update metric_records set datapoints=list_transform(datapoints,lambda d:struct_update(d,exemplars:=list_transform(d.exemplars,lambda e:case when e.timestamp=$2 then struct_update(e,id:=$1::uuid) else e end)))`, id, i+1); err != nil {
 				return err
 			}
 		}
@@ -6293,7 +6249,7 @@ func TestGetMetricView_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -6366,7 +6322,7 @@ func TestGetMetricView_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("column.hist", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
@@ -6469,12 +6425,8 @@ func TestGetMetricView_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 			"the column", perColumn)
 }
 
-// TestHistogramBoundsAreStoredOnce pins the bounds dictionary: the vector is a
-// property of the instrument, so a series reporting all session writes it one
-// time, however many datapoints arrive -- and a Metric whose bounds genuinely
-// change mid-flight gets a second row, not a collision, because OTel only
-// makes fixed bounds a practice, never a promise.
-func TestHistogramBoundsAreStoredOnce(t *testing.T) {
+// Each point retains the bounds received with it, including reconfiguration.
+func TestHistogramPointsOwnTheirBounds(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -6500,19 +6452,14 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 	}
 	fixture := makeHistogramFixtureT("bounds.hist", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
-	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from histogram_bounds`),
-		"40 datapoints carry 2 distinct bounds vectors, so the dictionary holds 2 rows")
-	assert.Zero(t, countRows(t, s, ctx,
-		`select count(*) from metric_datapoints
-		 where bounds_id is not null
-		   and not exists (select 1 from histogram_bounds hb where hb.id = bounds_id)`),
-		"every reference resolves; nothing may point at a row that is not there")
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(distinct explicit_bounds) from metric_datapoints`))
+	assert.Equal(t, 40, countRows(t, s, ctx, `select count(*) from metric_datapoints where explicit_bounds is not null`))
 
 	// The wire is unchanged: each datapoint comes back with the exact vector
-	// it arrived with, resolved through the dictionary.
+	// it arrived with, read from the owning point.
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -6534,25 +6481,18 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 		"each datapoint resolves its own vector -- 30 with the original bounds, "+
 			"10 with the reconfigured ones")
 
-	// Sweep: clearing the metrics orphans both rows, and the sweep takes them.
+	// Clearing the owning records removes bounds immediately.
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
 	}))
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
-	assert.Zero(t, countRows(t, s, ctx, `select count(*) from histogram_bounds`),
-		"bounds nothing references are garbage, and retention measures garbage "+
-			"as if it were data")
+	assert.Zero(t, countRows(t, s, ctx, `select count(*) from metric_records`))
 
-	// And re-ingest after the sweep still works: the FlushedIDs entries for the
-	// swept rows must have been forgotten, or the dictionary skips the insert
-	// and the datapoints' foreign key has nothing to point at.
+	// Reingestion restores every point's original bounds without a cache.
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, makeHistogramFixtureT("bounds.hist",
-			pmetric.AggregationTemporalityDelta, dps), s.FlushedIDs())
+			pmetric.AggregationTemporalityDelta, dps))
 	}))
-	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from histogram_bounds`))
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(distinct explicit_bounds) from metric_datapoints`))
 }
 
 // TestSeriesCountsAreWindowAndLifetime verifies that seriesCount reports the
@@ -6578,7 +6518,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	}
 	fixture := makeSumFixtureT("cardinality.total", pmetric.AggregationTemporalityDelta, dps)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}))
 
 	summarise := func(from, to time.Time) map[string]any {
@@ -6623,7 +6563,7 @@ func TestIngest_SingleBucketHistogram(t *testing.T) {
 	}})
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, fixture)
 	}), "ingesting a single-bucket histogram must not fail")
 
 	summaries := searchMetricsAll(t, s, ctx)
@@ -6676,7 +6616,7 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 		require.Nil(t, dp.BucketCounts().AsRaw(), "precondition: bucket_counts is nil, not empty")
 
 		require.NoError(t, s.WithConn(func(c driver.Conn) error {
-			return metrics.Ingest(ctx, c, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, c, md)
 		}))
 	})
 
@@ -6698,7 +6638,7 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 		require.Nil(t, dp.Negative().BucketCounts().AsRaw(), "precondition: negative buckets are nil")
 
 		require.NoError(t, s.WithConn(func(c driver.Conn) error {
-			return metrics.Ingest(ctx, c, md, s.FlushedIDs())
+			return metrics.Ingest(ctx, c, md)
 		}))
 	})
 }
@@ -6723,7 +6663,7 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	dp.Attributes().PutStr("route", "/cart")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, md)
 	}))
 
 	got := getMetricFullByName(t, s, ctx, "requests.total")
@@ -6746,8 +6686,7 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(`
-			select count(*) from metrics m, unnest(m.metadata_ids) t(id)
-			join attributes a on a.id = t.id`).Scan(&n)
+			select count(*) from metrics m, unnest(variant_keys(m.metadata)) t(key)`).Scan(&n)
 	}))
 	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
 
@@ -6782,10 +6721,10 @@ func TestSearchSummariesByMetricMetadata(t *testing.T) {
 		timestamp: base, value: 1, attrs: map[string]string{"r": "/y"},
 	}})
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		if err := metrics.Ingest(ctx, conn, md, s.FlushedIDs()); err != nil {
+		if err := metrics.Ingest(ctx, conn, md); err != nil {
 			return err
 		}
-		return metrics.Ingest(ctx, conn, plain, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, plain)
 	}))
 	end := time.Now().UnixNano() + int64(time.Hour)
 

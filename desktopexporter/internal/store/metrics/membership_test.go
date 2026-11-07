@@ -19,7 +19,7 @@ func TestMetricTypeMembershipExecution(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	}))
 
 	count := func(operator, value string) int {

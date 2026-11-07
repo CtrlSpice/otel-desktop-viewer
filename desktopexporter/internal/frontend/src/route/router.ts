@@ -132,7 +132,16 @@ export function signalIdFromPath(
   const prefix = `${signalPath(signal)}/`
   if (!path.startsWith(prefix)) return null
   const segment = path.slice(prefix.length).split('/')[0]
-  return segment ? decodeURIComponent(segment) : null
+  if (!segment) return null
+  const id = decodeURIComponent(segment)
+  // Trace responses use lowercase, undashed OTLP IDs. Normalize accepted URL
+  // spellings before selection and exact Details identity checks.
+  if (
+    signal === 'traces' &&
+    /^(?:[\da-f]{32}|[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i.test(id)
+  )
+    return id.replaceAll('-', '').toLowerCase()
+  return id
 }
 
 /**
@@ -229,13 +238,15 @@ function itemDestinationQuery(signal: SignalName): RouteQuery {
  * @param signal - traces, metrics, or logs
  * @param id - item id
  * @param itemQuery - optional scoped params (e.g. span, event) applied after strip
+ * @param sourceQuery - query owned by the displayed reading; defaults to the current workspace
  */
 export function itemHref(
   signal: SignalName,
   id: string,
-  itemQuery?: ItemQueryPatch
+  itemQuery?: ItemQueryPatch,
+  sourceQuery: RouteQuery = itemDestinationQuery(signal)
 ): string {
-  const query = mergeItemQuery(itemDestinationQuery(signal), itemQuery)
+  const query = mergeItemQuery(sourceQuery, itemQuery)
   const path = `${signalPath(signal)}/${encodeURIComponent(id)}`
   return path + buildSearch(query)
 }

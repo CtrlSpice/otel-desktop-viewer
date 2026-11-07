@@ -1,4 +1,4 @@
-import type { AttributeValue } from '@/types/api-types'
+import type { AttributeValue, MetricSeriesViewData } from '@/types/api-types'
 import type { LegendTimeseries } from '@/types/metric-chart-types'
 import { attributeValueLabel } from '@/components/shared/attribute-label'
 
@@ -12,6 +12,8 @@ type Partition = number[][]
 export type SeriesLabel = { text: string; needsIdentity: boolean }
 export type SeriesCell = {
   label: string
+  preview?: string
+  kind?: string
   signature: string
   values: readonly AttributeValue[]
 }
@@ -135,7 +137,8 @@ function minimumColumns(columns: Column[], rowCount: number): Column[] {
 
 /** A compact distinguishing key set for all rows, including hidden series. */
 export function minimalSeriesTable(
-  rows: readonly LegendTimeseries[]
+  rows: readonly LegendTimeseries[],
+  preselected = false
 ): SeriesTable {
   if (rows.length === 0) return { columns: [], labels: new Map() }
   const attributes = rows.map(row => {
@@ -223,9 +226,9 @@ export function minimalSeriesTable(
     partitions.add(signature)
     return true
   })
-  const selected = minimumColumns(candidates, rows.length).sort((a, b) =>
-    a.key < b.key ? -1 : a.key > b.key ? 1 : 0
-  )
+  const selected = (
+    preselected ? columns : minimumColumns(candidates, rows.length)
+  ).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
   const texts = rows.map(
     (_, index) =>
       selected
@@ -267,23 +270,43 @@ export function minimalSeriesLabels(
   return minimalSeriesTable(rows).labels
 }
 
-/** Numeric telemetry sorts numerically; other values use deterministic natural text order. */
-export function compareSeriesCells(a: SeriesCell, b: SeriesCell): number {
-  const left = a.values[0]
-  const right = b.values[0]
-  if (
-    a.values.length === 1 &&
-    b.values.length === 1 &&
-    left &&
-    right &&
-    (left.kind === 'int64' || left.kind === 'double') &&
-    (right.kind === 'int64' || right.kind === 'double')
-  ) {
-    if (left.value < right.value) return -1
-    if (left.value > right.value) return 1
-  }
-  return (
-    a.label.localeCompare(b.label, 'en', { numeric: true }) ||
-    a.signature.localeCompare(b.signature, 'en')
+/** Render server-selected previews without opening exact sort values. */
+export function compactSeriesTable(
+  series: readonly Pick<MetricSeriesViewData, 'seriesRef' | 'labelPreviews'>[]
+): SeriesTable {
+  const previews = series.map(
+    row => new Map(row.labelPreviews?.map(cell => [cell.key, cell]))
   )
+  const keys = [...new Set(previews.flatMap(row => [...row.keys()]))].sort()
+  const texts = series.map(
+    (_, index) =>
+      keys
+        .map(key => `${key}: ${previews[index]!.get(key)?.text ?? '[absent]'}`)
+        .join(' · ') || 'default series'
+  )
+  const counts = new Map<string, number>()
+  for (const text of texts) counts.set(text, (counts.get(text) ?? 0) + 1)
+  return {
+    labels: new Map(
+      series.map((row, index) => [
+        row.seriesRef,
+        { text: texts[index]!, needsIdentity: counts.get(texts[index]!)! > 1 },
+      ])
+    ),
+    columns: keys.map(key => ({
+      key,
+      cells: new Map(
+        series.map((row, index) => [
+          row.seriesRef,
+          {
+            preview: previews[index]!.get(key)?.text ?? '[absent]',
+            kind: previews[index]!.get(key)?.kind,
+            values: [],
+            label: previews[index]!.get(key)?.text ?? '[absent]',
+            signature: '',
+          },
+        ])
+      ),
+    })),
+  }
 }

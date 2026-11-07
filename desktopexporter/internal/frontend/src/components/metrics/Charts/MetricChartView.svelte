@@ -27,8 +27,45 @@
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import type { MetricViewData } from '@/types/api-types'
+
+  let {
+    aggregateLoading = false,
+    aggregateSummaryLoading = false,
+    aggregateError = '',
+    aggregateSummaryError = '',
+    aggregateMetric,
+    aggregateSummaryMetric,
+    requestKey,
+  }: {
+    aggregateLoading?: boolean
+    aggregateSummaryLoading?: boolean
+    aggregateError?: string
+    aggregateSummaryError?: string
+    aggregateMetric?: MetricViewData
+    aggregateSummaryMetric?: MetricViewData
+    requestKey?: AbortSignal
+  } = $props()
 
   const ctx = getMetricViewContext()
+  const chartUnsafeTemporality = $derived(
+    ctx.isHistogramKind
+      ? ctx.isUnsafeTemporality
+      : ctx.chartMetric?.metricType === 'Sum' &&
+          ctx.chartMetric.aggregationTemporalityCode !== 1 &&
+          ctx.chartMetric.aggregationTemporalityCode !== 2
+  )
+  const pending = $derived(
+    ctx.isHistogramKind && ctx.activeHistogramTab === 'histogram'
+      ? aggregateSummaryLoading
+      : aggregateLoading
+  )
+  const error = $derived(
+    ctx.isHistogramKind && ctx.activeHistogramTab === 'histogram'
+      ? aggregateSummaryError
+      : aggregateError
+  )
 
   /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
   let plotHostHeight = $state(0)
@@ -81,6 +118,8 @@
       {#if ctx.activeHistogramTab === 'heatmap'}
         {#if ctx.bucketSeriesError}
           {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
+        {:else if (pending || error) && !ctx.heatmapBucketSeries?.length}
+          <div class="metric-chart-view__placeholder"></div>
         {:else if ctx.heatmapBucketSeries === null}
           <div class="metric-chart-view__placeholder">No histogram data</div>
         {:else if ctx.heatmapBucketSeries.length === 0 || ctx.heatmapBucketSeries.every(point => point.totals.count === 0)}
@@ -92,7 +131,7 @@
           <HistogramHeatmap
             points={ctx.heatmapBucketSeries}
             height={plotHeight}
-            unit={ctx.metric!.unit}
+            unit={(aggregateMetric ?? ctx.metric)!.unit}
             timeRange={ctx.chartDataTimeRange ?? null}
             plotPaddingBottom={chartPadding.bottom}
             onSelect={ctx.onHeatmapSelect}
@@ -103,6 +142,8 @@
       {:else if ctx.activeHistogramTab === 'histogram'}
         {#if ctx.histogramChartError}
           {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
+        {:else if (pending || error) && !ctx.histogramChartDatapoint}
+          <div class="metric-chart-view__placeholder"></div>
         {:else if !ctx.histogramChartDatapoint || ctx.histogramChartDatapoint.count === 0}
           <MetricChartEmpty
             height={plotHeight}
@@ -113,7 +154,7 @@
         {:else}
           <HistogramChart
             datapoint={ctx.histogramChartDatapoint}
-            unit={ctx.metric!.unit}
+            unit={(aggregateSummaryMetric ?? ctx.metric)!.unit}
             height={plotHeight}
             onClearSelection={ctx.clearChartSelection}
           />
@@ -143,7 +184,7 @@
         highlightedPointID={ctx.selectedDatapointID}
         selectedSeriesKey={ctx.selectedSeriesKey}
         previewSeriesKey={ctx.previewSeriesKey}
-        unit={ctx.metric!.unit}
+        unit={ctx.chartMetric!.unit}
         height={plotHeight}
         colorByKey={ctx.timeseriesColorByKey}
         aggregationView={ctx.aggregationView}
@@ -152,7 +193,7 @@
         onChartPointClick={ctx.onChartPointClick}
         onRateChartPointClick={ctx.onRateChartPointClick}
         onClearSelection={ctx.clearChartSelection}
-        seriesStats={ctx.seriesStatsByKey}
+        seriesStats={ctx.chartSeriesStatsByKey}
         emptyMessage={ctx.gaugeSumSeriesKeys.length === 0
           ? 'No datapoints to chart'
           : ctx.visibleSeries.size === 0
@@ -163,19 +204,30 @@
   </div>
 {/snippet}
 
+{#key ctx.isHistogramKind ? ctx.activeHistogramTab : 'scalar'}
+  <LoadingStatus
+    {pending}
+    {requestKey}
+    label="Loading chart aggregate…"
+    class="block p-3 text-subtle"
+  />
+{/key}
+{#if error}<p role="alert" class="p-3 text-papaya">{error}</p>{/if}
 {#if !ctx.metric}
   <div class="metric-chart-view metric-chart-view--empty">
     <p class="text-base-content/40 text-sm">Select a metric to view details</p>
   </div>
-{:else if ctx.isUnsafeTemporality}
+{:else if chartUnsafeTemporality}
   <!-- FunError takes the entire chart row. The detail pane (Fields /
        Series) still renders independently because it consumes
        different data; this branch only blanks the chart. -->
   <div class="metric-chart-view metric-chart-view--fill">
     <UnspecifiedTemporalityCallout
       size="full"
-      temporalityCode={ctx.temporalityCode!}
-      temporalityLabel={ctx.temporality}
+      temporalityCode={ctx.chartMetric?.aggregationTemporalityCode ??
+        ctx.temporalityCode!}
+      temporalityLabel={ctx.chartMetric?.aggregationTemporality ??
+        ctx.temporality}
     />
   </div>
 {:else if ctx.isHistogramKind}

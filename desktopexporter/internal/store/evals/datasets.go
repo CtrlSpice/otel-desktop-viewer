@@ -1,12 +1,14 @@
 package evals
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -63,16 +65,67 @@ func AppendParts(ctx context.Context, db *sql.DB, importID, name string, parts [
 	}
 	defer tx.Rollback()
 	for _, part := range parts {
+		payload := nativeJSON(part.Payload)
 		if part.Row >= 0 {
-			_, err = tx.ExecContext(ctx, `insert into eval_records values (?, ?, ?, ?, cast(? as json))`, importID, part.Envelope, part.Row, len(part.Payload), string(part.Payload))
+			_, err = tx.ExecContext(ctx, `insert into eval_records
+			 values ($1, $2, $3, greatest($4, octet_length(encode(to_json($5::json::variant)::varchar))), $5::json::variant)`, importID, part.Envelope, part.Row, len(part.Payload), payload)
 		} else {
-			_, err = tx.ExecContext(ctx, `insert into eval_datasets (id, import_id, envelope, source, format, name, byte_size, row_count, context) values (?, ?, ?, 'json-import', ?, ?, ?, ?, cast(? as json)) on conflict(id) do update set format=excluded.format, byte_size=excluded.byte_size, row_count=excluded.row_count, context=excluded.context`, DatasetID(importID, part.Envelope), importID, part.Envelope, part.Format, name, part.Bytes, part.Count, string(part.Payload))
+			_, err = tx.ExecContext(ctx, `insert into eval_datasets (id, import_id, envelope, source, format, name, byte_size, row_count, context) values (?, ?, ?, 'json-import', ?, ?, ?, ?, ?::json::variant) on conflict(id) do update set format=excluded.format, byte_size=excluded.byte_size, row_count=excluded.row_count, context=excluded.context`, DatasetID(importID, part.Envelope), importID, part.Envelope, part.Format, name, part.Bytes, part.Count, payload)
 		}
 		if err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+// Native JSON inference treats bare -0 as an integer. Give it a fractional
+// part so VARIANT stores a signed DOUBLE. Numbers outside native range remain
+// text instead of becoming rounded integers or infinities in the inspection UI.
+func nativeJSON(raw []byte) string {
+	var out bytes.Buffer
+	for i := 0; i < len(raw); {
+		start := i
+		if raw[i] == '"' {
+			i++
+			for i < len(raw) {
+				c := raw[i]
+				i++
+				if c == '\\' && i < len(raw) {
+					i++
+				} else if c == '"' {
+					break
+				}
+			}
+		} else if raw[i] == '-' || raw[i] >= '0' && raw[i] <= '9' {
+			for i < len(raw) && strings.ContainsRune("-+0123456789.eE", rune(raw[i])) {
+				i++
+			}
+			number := string(raw[start:i])
+			if number == "-0" {
+				out.WriteString("-0.0")
+				continue
+			}
+			var err error
+			if strings.ContainsAny(number, ".eE") {
+				_, err = strconv.ParseFloat(number, 64)
+			} else if strings.HasPrefix(number, "-") {
+				_, err = strconv.ParseInt(number, 10, 64)
+			} else {
+				_, err = strconv.ParseUint(number, 10, 64)
+			}
+			if err != nil {
+				out.WriteByte('"')
+				out.WriteString(number)
+				out.WriteByte('"')
+				continue
+			}
+		} else {
+			i++
+		}
+		out.Write(raw[start:i])
+	}
+	return out.String()
 }
 
 // Publish is the file's visibility boundary. Byte sizes describe serialized data.
@@ -103,7 +156,7 @@ func Records(ctx context.Context, db *sql.DB, id string, offset, limit int64) (R
 	}
 	var importID, raw string
 	var envelope int
-	err := db.QueryRowContext(ctx, `select d.import_id, d.envelope, d.format, cast(d.context as varchar), d.row_count from eval_datasets d join eval_imports i on i.id = d.import_id where d.id = ? and i.complete and not d.deleted`, id).Scan(&importID, &envelope, &out.Format, &raw, &out.Total)
+	err := db.QueryRowContext(ctx, `select d.import_id, d.envelope, d.format, to_json(d.context)::varchar, d.row_count from eval_datasets d join eval_imports i on i.id = d.import_id where d.id = ? and i.complete and not d.deleted`, id).Scan(&importID, &envelope, &out.Format, &raw, &out.Total)
 	if err == sql.ErrNoRows {
 		return out, ErrEvalNotFound
 	}
@@ -135,7 +188,7 @@ func Records(ctx context.Context, db *sql.DB, id string, offset, limit int64) (R
 	if err != nil {
 		return out, err
 	}
-	rows, err := db.QueryContext(ctx, `select cast(payload as varchar) from eval_records where import_id = ? and envelope = ? and ordinal >= ? and ordinal < ? order by ordinal`, importID, envelope, offset, end)
+	rows, err := db.QueryContext(ctx, `select to_json(payload)::varchar from eval_records where import_id = ? and envelope = ? and ordinal >= ? and ordinal < ? order by ordinal`, importID, envelope, offset, end)
 	if err != nil {
 		return out, err
 	}

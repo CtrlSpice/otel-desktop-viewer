@@ -5,20 +5,15 @@
 #
 # This is the only place the order is written down. Filenames say what an
 # object is; this file says when it is built.
-attributes.sql
-resource_seq.sql
-scope_seq.sql
-resources.sql
-scopes.sql
 spans.sql
 events.sql
 links.sql
 logs.sql
 metrics.sql
 metric_series.sql
-histogram_bounds.sql
 metric_datapoints.sql
 exemplars.sql
 ingest_rejections.sql
 eval_ingestion.sql
 eval_experiments.sql
+search_catalogue.sql

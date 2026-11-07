@@ -1,9 +1,11 @@
 <script lang="ts">
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { evalAPI } from '@/services/eval-service'
   import { onDestroy, onMount } from 'svelte'
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon } from '@hugeicons/core-free-icons'
-  import { QuestionMarkIcon } from '@/icons'
+  import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
+  import { evalSearchDefinition } from '@/components/evals/search-fields'
+  import type { ParsedSearchRequest } from '@/search/model'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import EvalDetailPlaceholder from '@/components/evals/EvalDetailPlaceholder.svelte'
   import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
@@ -49,6 +51,7 @@
   import { exampleExperiments } from '@/components/evals/examples'
   import { loadEvalExperimentSource } from '@/services/eval-experiment-source'
   import type {
+    EvalExperimentSearch,
     EvalExperimentSearchPage,
     EvalStoredExperimentSummary,
   } from '@/services/eval-experiment-types'
@@ -62,6 +65,7 @@
   import type { EvalExperiment, EvalView } from '@/components/evals/model'
   import { onEvalExperimentsChanged } from '@/services/import-service'
   import { evalQuery } from '@/components/evals/eval-query'
+  import type { EvalRequestStatus } from '@/components/evals/eval-request-state'
 
   let {
     importFailure = null,
@@ -73,21 +77,9 @@
   const route = getRouteContext()
   const query = $derived(evalQuery(route.route.query))
   const selectedExperimentID = $derived(query.experiment)
-  const searchQuery = $derived(query.q ?? '')
   const outcomeQuery = $derived(query.outcomes)
-  let searchText = $state('')
-  let searchTimer: ReturnType<typeof setTimeout> | undefined
-  $effect(() => {
-    searchText = searchQuery
-    clearTimeout(searchTimer)
-  })
-  onDestroy(() => clearTimeout(searchTimer))
-  function search(value: string, immediate = false) {
-    searchText = value
-    clearTimeout(searchTimer)
-    if (immediate) update({ q: value || null }, true)
-    else searchTimer = setTimeout(() => update({ q: value || null }, true), 250)
-  }
+  let searchRequest = $state<ParsedSearchRequest | null | undefined>()
+  const resultLimit = $derived(searchRequest?.limit ?? Infinity)
   $effect(() => {
     if (buildSearch(query) !== buildSearch(route.route.query))
       navigate(`/evals${buildSearch(query)}`, 'replace')
@@ -101,8 +93,20 @@
   let experimentListLoading = $state(false)
   let experimentListLoadingMore = $state(false)
   let experimentListError = $state('')
+  let moreExperimentsError = $state('')
   let experimentListRevision = $state(0)
   let experimentListRequestVersion = 0
+  let experimentListRequestKey = $state.raw<AbortSignal>()
+  let moreExperimentsRequestKey = $state.raw<AbortSignal>()
+  let moreExperimentsController: AbortController | undefined
+  let displayedListRequest:
+    { query: EvalExperimentSearch; limit: number } | undefined
+  function cancelPagination() {
+    moreExperimentsController?.abort()
+    moreExperimentsController = undefined
+    experimentListLoadingMore = false
+  }
+  onDestroy(cancelPagination)
   let experimentIndexing = $state<EvalExperimentSearchPage['indexing']>({
     remaining: 0,
     unsupported: 0,
@@ -181,17 +185,16 @@
   let storedExperimentSource = $state<EvalSourceDataset>()
   let storedExperimentProjection = $state<EvalSourceProjection>()
   let storedExperimentLoading = $state(false)
+  let storedExperimentRequestKey = $state.raw<AbortSignal>()
   let storedExperimentError = $state('')
-  let loadingNoticeReady = $state(false)
-  const loadingResults = $derived(
-    experimentListLoading || storedExperimentLoading
+  const loadingNotice = createLoadingNotice(
+    () => storedExperimentLoading,
+    () => storedExperimentRequestKey
   )
-  $effect(() => {
-    loadingNoticeReady = false
-    if (!loadingResults) return
-    const timer = setTimeout(() => (loadingNoticeReady = true), 200)
-    return () => clearTimeout(timer)
-  })
+  const loadingMoreNotice = createLoadingNotice(
+    () => experimentListLoadingMore,
+    () => moreExperimentsRequestKey
+  )
 
   const localExperiment = $derived(
     localExperiments.find(item => item.id === query.experiment) ??
@@ -240,10 +243,13 @@
   const result = $derived(
     experiment?.results.find(item => item.id === displayedSelection.result)
   )
-  let resolvedRow = $state<EvalOutlineRow>()
-  let traceViews = $state<TraceData[]>([])
-  let toolLogs = $state<LogData[]>([])
+  let resolvedRow = $state.raw<EvalOutlineRow>()
+  let traceViews = $state.raw<TraceData[]>([])
+  let toolLogs = $state.raw<LogData[]>([])
   let telemetryLoading = $state(false)
+  let telemetryStatus = $state.raw<ReadonlyMap<string, EvalRequestStatus>>(
+    new Map()
+  )
   const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
   const detailExperiment = $derived(
     experiment
@@ -297,44 +303,46 @@
   )
   $effect(() => {
     const enabled = databaseMode
-    const text = searchQuery
+    const request = searchRequest
+    const cap = resultLimit
     const outcomes = requestedOutcomes(outcomeQuery)
     const sort = experimentSort
     const direction = experimentSortDirection
     void experimentListRevision
-    if (!enabled) {
+    if (!enabled || request === undefined) {
+      cancelPagination()
       experimentListLoading = false
       return
     }
     const requestVersion = ++experimentListRequestVersion
     const controller = new AbortController()
+    experimentListRequestKey = controller.signal
     experimentListLoading = true
-    experimentListLoadingMore = false
     experimentListError = ''
-    experimentListHasMore = false
+    const search: EvalExperimentSearch = {
+      criteria: request?.predicate,
+      outcomes,
+      sort,
+      direction,
+      limit: Math.min(100, cap),
+      offset: 0,
+    }
     void (async () => {
       try {
         let page: EvalExperimentSearchPage
         do {
-          page = await evalAPI.searchEvalExperiments(
-            {
-              query: text,
-              outcomes,
-              sort,
-              direction,
-              limit: 100,
-              offset: 0,
-            },
-            controller.signal
-          )
+          page = await evalAPI.searchEvalExperiments(search, controller.signal)
           if (
             controller.signal.aborted ||
             requestVersion !== experimentListRequestVersion
           )
             return
+          cancelPagination()
+          moreExperimentsError = ''
+          displayedListRequest = { query: search, limit: cap }
           storedExperiments = page.experiments
           storedFacets = page.facets
-          experimentListHasMore = page.hasMore
+          experimentListHasMore = page.hasMore && page.experiments.length < cap
           experimentIndexing = page.indexing
         } while (page.indexing.remaining > 0)
       } catch (error) {
@@ -361,6 +369,7 @@
     storedExperimentLoading = Boolean(enabled && id)
     if (!enabled || !id) return
     const controller = new AbortController()
+    storedExperimentRequestKey = controller.signal
     void (async () => {
       try {
         const { summary, source } = await loadEvalExperimentSource(
@@ -410,6 +419,7 @@
     traceViews = []
     toolLogs = []
     telemetryLoading = false
+    telemetryStatus = new Map()
   })
 
   // Store the first available experiment identity so reload/share preserves selection.
@@ -432,12 +442,12 @@
     update({ experiment: id, result: null, row: null })
   }
   function showDetail(result: string | null) {
-    if (!experiment || selectionPending) return
+    if (!experiment) return
     detailPanel.reveal()
     update({ experiment: experiment.id, result: result, row: null })
   }
   function selectRow(row: EvalOutlineRow) {
-    if (!experiment || selectionPending) return
+    if (!experiment) return
     detailPanel.reveal()
     update({
       experiment: experiment.id,
@@ -454,48 +464,59 @@
     if (item) selectExperiment(item.id)
   }
   async function loadMoreExperiments() {
-    if (!databaseMode || !experimentListHasMore || experimentListLoadingMore)
+    const source = displayedListRequest
+    if (
+      !databaseMode ||
+      !source ||
+      !experimentListHasMore ||
+      experimentListLoadingMore
+    )
       return
-    const requestVersion = experimentListRequestVersion
+    const controller = new AbortController()
+    moreExperimentsRequestKey = controller.signal
+    moreExperimentsController = controller
     experimentListLoadingMore = true
-    experimentListError = ''
+    moreExperimentsError = ''
     try {
-      const page = await evalAPI.searchEvalExperiments({
-        query: query.q,
-        outcomes: requestedOutcomes(query.outcomes),
-        sort: experimentSort,
-        direction: experimentSortDirection,
-        limit: 100,
-        offset: storedExperiments.length,
-      })
-      if (requestVersion !== experimentListRequestVersion) return
+      const page = await evalAPI.searchEvalExperiments(
+        {
+          ...source.query,
+          limit: Math.min(100, source.limit - storedExperiments.length),
+          offset: storedExperiments.length,
+        },
+        controller.signal
+      )
+      if (controller.signal.aborted || source !== displayedListRequest) return
       const seen = new Set(storedExperiments.map(item => item.id))
       storedExperiments = [
         ...storedExperiments,
         ...page.experiments.filter(item => !seen.has(item.id)),
       ]
       storedFacets = page.facets
-      experimentListHasMore = page.hasMore
+      experimentListHasMore =
+        page.hasMore && storedExperiments.length < source.limit
       experimentIndexing = page.indexing
     } catch (error) {
       if (
-        requestVersion === experimentListRequestVersion &&
+        source === displayedListRequest &&
+        !controller.signal.aborted &&
         !isAbortError(error)
       )
-        experimentListError =
+        moreExperimentsError =
           error instanceof Error
             ? error.message
             : 'Could not load more experiments.'
     } finally {
-      if (requestVersion === experimentListRequestVersion)
+      if (moreExperimentsController === controller) {
+        moreExperimentsController = undefined
         experimentListLoadingMore = false
+      }
     }
   }
 </script>
 
 <PageLayout
   mainTitle="Evals"
-  mainHeaderInert={selectionPending}
   mainSurface="base"
   items={visibleExperiments}
   selectedID={selectedExperimentID ?? experiment?.id ?? null}
@@ -505,42 +526,15 @@
   itemKey={item => item.id}
 >
   {#snippet drawerSearch()}
-    <div class="flex w-full min-w-0 items-center gap-1">
-      <input
-        class="input typed-field typed-field--pill min-w-0 flex-1"
-        type="search"
-        aria-label="Search evals"
-        placeholder="Search evals…"
-        value={searchText}
-        oninput={event => search(event.currentTarget.value)}
-        onkeydown={event => {
-          if (event.key === 'Enter') search(event.currentTarget.value, true)
-        }}
-      />
-      <button
-        type="button"
-        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
-        aria-label="Clear search"
-        onclick={() => search('', true)}
-      >
-        <HugeiconsIcon
-          icon={Cancel01Icon}
-          size={17}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      </button>
-      <button
-        type="button"
-        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
-        aria-label="Search query help"
-      >
-        <QuestionMarkIcon
-          class="h-[17px] w-[17px] shrink-0"
-          aria-hidden="true"
-        />
-      </button>
-    </div>
+    <SearchEditor
+      definition={evalSearchDefinition}
+      sortValue={experimentSort}
+      sortDirection={experimentSortDirection}
+      variant="drawer"
+      onSearchRequest={request => {
+        searchRequest = request
+      }}
+    />
   {/snippet}
   {#snippet drawerControls()}
     <ListHeaderControls label="Experiment controls">
@@ -573,6 +567,14 @@
     />
   {/snippet}
   {#snippet drawerFooter()}
+    <LoadingStatus
+      pending={databaseMode &&
+        experimentListLoading &&
+        visibleExperiments.length > 0}
+      requestKey={experimentListRequestKey}
+      label="Loading experiments…"
+      class="block px-3 py-2 text-sm text-subtle"
+    />
     <div class="flex justify-center">
       <DetailNav
         index={selectedExperimentIndex}
@@ -584,14 +586,13 @@
         onLast={() => selectExperimentIndex(visibleExperiments.length - 1)}
       />
     </div>
-    {#if (databaseMode && (experimentIndexing.remaining || experimentIndexing.unsupported || experimentIndexing.empty || experimentListHasMore)) || experimentListError}
+    {#if (databaseMode && (experimentIndexing.remaining || experimentIndexing.unsupported || experimentIndexing.empty || experimentListHasMore)) || experimentListError || moreExperimentsError}
       <div class="flex min-w-0 flex-col px-2 py-1 text-sm">
-        {#if databaseMode && experimentIndexing.remaining > 0}<p
-            class="px-2 py-1 text-subtle"
-            role="status"
-          >
-            Indexing saved evaluations… [{experimentIndexing.remaining}]
-          </p>{/if}
+        <LoadingStatus
+          pending={databaseMode && experimentIndexing.remaining > 0}
+          label={`Indexing saved evaluations… [${experimentIndexing.remaining}]`}
+          class="block px-2 py-1 text-subtle"
+        />
         {#if databaseMode && (experimentIndexing.unsupported || experimentIndexing.empty)}<p
             class="px-2 py-1 text-subtle"
           >
@@ -601,12 +602,15 @@
         {#if experimentListError}<p class="px-2 py-1" role="alert">
             {experimentListError}
           </p>{/if}
+        {#if moreExperimentsError}<p class="px-2 py-1" role="alert">
+            {moreExperimentsError}
+          </p>{/if}
         {#if databaseMode && experimentListHasMore}<button
             type="button"
             class="btn btn-ghost btn-sm w-full font-normal"
             disabled={experimentListLoadingMore}
             onclick={loadMoreExperiments}
-            >{experimentListLoadingMore
+            >{loadingMoreNotice.visible
               ? 'Loading experiments…'
               : 'Load more experiments'}</button
           >{/if}
@@ -621,19 +625,9 @@
         >
       </div>{/if}
     {#if experiment}
-      {#if databaseMode && storedExperimentLoading && loadingNoticeReady}
-        <p class="px-3 py-1 text-sm text-subtle" role="status">
-          Loading experiment… Showing {experiment.name} until it is ready.
-        </p>
-      {:else if databaseMode && storedExperimentError}
-        <p class="px-3 py-1 text-sm" role="alert">
-          {storedExperimentError} Still showing {experiment.name}.
-        </p>
-      {/if}
       <div
         class="flex min-h-0 flex-1 flex-col"
         aria-busy={databaseMode && storedExperimentLoading}
-        inert={selectionPending}
       >
         <EvalResults
           bind:viewKey={evalView}
@@ -645,25 +639,41 @@
           selectedRowID={detailRowID}
           onSelect={selectRow}
           onResolveSelection={row => (resolvedRow = row)}
-          onTraceViews={(traces, loading, logs) => {
+          onTraceViews={(traces, loading, logs, status) => {
             traceViews = traces
             toolLogs = logs
             telemetryLoading = loading
+            telemetryStatus = status
           }}
-        />
+        >
+          {#snippet loadingStatus()}
+            {#if databaseMode && storedExperimentLoading && loadingNotice.visible}
+              <span class="truncate text-sm text-subtle" role="status">
+                Loading experiment… Showing {experiment.name} until it is ready.
+              </span>
+            {:else if databaseMode && storedExperimentError}
+              <span class="truncate text-sm" role="alert">
+                {storedExperimentError} Still showing {experiment.name}.
+              </span>
+            {/if}
+          {/snippet}
+        </EvalResults>
         {#if !results.length}<p class="p-6 text-sm text-subtle">
             No results recorded for this experiment.
           </p>{/if}
       </div>
     {:else if databaseMode && storedExperimentLoading}
-      {#if loadingNoticeReady}
-        <PaneHeader
-          pill
-          mode="title"
-          title={storedExperimentSummary?.name ?? 'Evals'}
-        />
-        <p class="p-3 text-sm text-subtle" role="status">Loading experiment…</p>
-      {/if}
+      <PaneHeader
+        pill
+        mode="title"
+        title={storedExperimentSummary?.name ?? 'Evals'}
+      />
+      <LoadingStatus
+        pending={storedExperimentLoading}
+        requestKey={storedExperimentRequestKey}
+        label="Loading experiment…"
+        class="p-3 text-sm text-subtle"
+      />
     {:else if databaseMode && storedExperimentError}
       <PaneHeader
         pill
@@ -672,11 +682,12 @@
       />
       <p class="p-3 text-sm" role="alert">{storedExperimentError}</p>
     {:else if experimentListLoading}
-      {#if loadingNoticeReady}
-        <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
-          Loading evals…
-        </div>
-      {/if}
+      <LoadingStatus
+        pending={experimentListLoading}
+        requestKey={experimentListRequestKey}
+        label="Loading evals…"
+        class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle"
+      />
     {:else if !experimentListError}
       <div class="m-[var(--layout-gap)] px-4 py-12 text-center text-subtle">
         <p>No evals found</p>
@@ -692,7 +703,6 @@
       <div
         class="flex min-h-0 flex-1 flex-col"
         aria-busy={databaseMode && storedExperimentLoading}
-        inert={selectionPending}
       >
         <div
           class="min-h-0 flex-1 flex-col"
@@ -706,6 +716,7 @@
               mode={evalView}
               {telemetryNodes}
               {telemetryLoading}
+              {telemetryStatus}
             />{/if}
         </div>
         <div
@@ -720,6 +731,7 @@
             {experimentCopy}
             {telemetryNodes}
             {telemetryLoading}
+            {telemetryStatus}
           />
         </div>
       </div>

@@ -27,9 +27,18 @@ func attributeTestViewer(t *testing.T) (*sql.DB, *httptest.Server) {
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	_, err = db.Exec(`CREATE TABLE attributes (id UUID PRIMARY KEY, key VARCHAR, value JSON);
-CREATE TABLE spans (trace_id UUID, span_id UBIGINT, start_time UBIGINT,
-    service_name VARCHAR, attribute_ids UUID[], resource_id UUID, PRIMARY KEY (trace_id, span_id))`)
+	_, err = db.Exec(`CREATE TABLE spans (trace_id UUID, span_id UBIGINT, start_time UBIGINT,
+    service_name VARCHAR, attributes VARIANT, resource STRUCT(attributes VARIANT), PRIMARY KEY (trace_id, span_id));
+-- This CLI-only fixture embeds tagged values; production integration tests
+-- exercise the native-value encoder registered by the store.
+CREATE MACRO otel_value_json(v) AS case when variant_exists(v, 'kind') then v::json else
+    json_object('kind', 'map', 'value', coalesce((select list(json_object('key', key, 'value', value) order by key)
+        from json_each(v::json)), []::json[])) end;
+CREATE MACRO otel_value_kind(v) AS case when variant_typeof(v) = 'VARCHAR' then 'string' else v.kind::varchar end;
+-- Mirror the native field accessor's contract for this tagged-value fixture.
+CREATE MACRO attribute_native_field(parts, key_) AS json_extract(
+    variant_bytes_to_variant(parts.metadata || parts.value)::JSON,
+    '/' || replace(replace(key_, '~', '~0'), '/', '~1'))::VARIANT`)
 	require.NoError(t, err)
 	viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -94,20 +103,16 @@ func attributeTestRun(t *testing.T, endpoint string, args ...string) string {
 
 func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 	db, viewer := attributeTestViewer(t)
-	_, err := db.Exec(`INSERT INTO attributes VALUES
- ('00000000-0000-0000-0000-000000000001', 'method', '{"kind":"string","value":"GET"}'),
- ('00000000-0000-0000-0000-000000000002', 'method', '{"kind":"string","value":"POST"}'),
- ('00000000-0000-0000-0000-000000000003', 'method', '{"kind":"int64","value":"9007199254740993"}'),
- ('00000000-0000-0000-0000-000000000004', 'method', '{"kind":"string","value":"9007199254740993"}'),
- ('00000000-0000-0000-0000-000000000005', 'unowned', '{"kind":"bool","value":true}');
-INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) VALUES
- ('00000000-0000-0000-0000-000000000001', 1, 6400000000000, 'checkout', ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001']),
- ('00000000-0000-0000-0000-000000000002', 1, 10000000000000, 'checkout', ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002']),
- ('00000000-0000-0000-0000-000000000002', 2, 7000000000000, 'checkout', ['00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000004']),
- ('00000000-0000-0000-0000-000000000002', 3, 7000000000000, 'checkout', []),
- ('00000000-0000-0000-0000-000000000002', 4, 6399999999999, 'checkout', ['00000000-0000-0000-0000-000000000002']),
- ('00000000-0000-0000-0000-000000000002', 5, 10000000000001, 'checkout', ['00000000-0000-0000-0000-000000000002']),
- ('00000000-0000-0000-0000-000000000002', 6, 7000000000000, 'other', ['00000000-0000-0000-0000-000000000002'])`)
+	_, err := db.Exec(`INSERT INTO spans (trace_id, span_id, start_time, service_name, attributes) VALUES
+ ('00000000-0000-0000-0000-000000000001', 1, 6400000000000, 'checkout', '{"method":{"kind":"string","value":"GET"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 1, 10000000000000, 'checkout', '{"method":{"kind":"string","value":"GET"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 2, 7000000000000, 'checkout', '{"method":{"kind":"int64","value":"9007199254740993"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 3, 7000000000000, 'checkout', '{}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 4, 6399999999999, 'checkout', '{"method":{"kind":"string","value":"POST"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 5, 10000000000001, 'checkout', '{"method":{"kind":"string","value":"POST"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 6, 7000000000000, 'other', '{"method":{"kind":"string","value":"POST"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 7, 7000000000000, 'checkout', '{"method":{"kind":"string","value":"POST"}}'::json::variant),
+ ('00000000-0000-0000-0000-000000000002', 8, 7000000000000, 'checkout', '{"method":{"kind":"string","value":"9007199254740993"}}'::json::variant)`)
 	require.NoError(t, err)
 	var keys attributeKeysResult
 	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "keys", "--json", "--service", "checkout")), &keys))
@@ -122,10 +127,10 @@ INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) V
 	require.Len(t, values.Values, 4)
 	assert.False(t, values.Truncated)
 	assert.JSONEq(t, `{"kind":"string","value":"GET"}`, string(values.Values[0].Value))
-	assert.Equal(t, uint64(2), values.Values[0].Count, "same span ID in different traces counts twice; repeated references count once")
-	assert.Equal(t, 2.0/3.0, values.Values[0].RelativeFrequency)
+	assert.Equal(t, uint64(2), values.Values[0].Count, "same span ID in different traces counts twice")
+	assert.Equal(t, 2.0/5.0, values.Values[0].RelativeFrequency)
 	for _, value := range values.Values {
-		assert.Equal(t, uint64(3), value.Denominator, "exclude spans without the key and apply the same service and time scope")
+		assert.Equal(t, uint64(5), value.Denominator, "exclude spans without the key and apply the same service and time scope")
 		assert.Equal(t, []attributeLocation{{Signal: "traces", OwnerType: "span"}}, value.FoundOn)
 	}
 	assert.JSONEq(t, `{"kind":"int64","value":"9007199254740993"}`, string(values.Values[1].Value))
@@ -140,10 +145,10 @@ INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) V
 		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--json", "--limit", test.limit)), &limited))
 		require.Len(t, limited.Values, test.count)
 		assert.Equal(t, test.truncated, limited.Truncated)
-		assert.Equal(t, uint64(3), limited.Values[0].Denominator, "limit must not change the denominator")
+		assert.Equal(t, uint64(5), limited.Values[0].Denominator, "limit must not change the denominator")
 	}
 	output := attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--limit", "1")
-	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "66.67%", "more rows available"} {
+	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "40.00%", "more rows available"} {
 		assert.Contains(t, output, text)
 	}
 	assert.NotContains(t, output, "█")
@@ -154,8 +159,8 @@ INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) V
 
 func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testing.T) {
 	db, viewer := attributeTestViewer(t)
-	key := "quote'\\; --\nkey"
-	service := "checkout' OR true --"
+	key := "quote'\\; --\nkey $1::VARCHAR $10::VARCHAR"
+	service := "checkout' OR true -- $2::VARCHAR"
 	values := []string{
 		`{"kind":"empty","value":null}`,
 		`{"kind":"int64","value":"9223372036854775807"}`,
@@ -167,9 +172,7 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 	}
 	for i, value := range values {
 		id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
-		_, err := db.Exec("INSERT INTO attributes VALUES (?::UUID, ?, ?::JSON)", id, key, value)
-		require.NoError(t, err)
-		_, err = db.Exec("INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) VALUES (?::UUID, ?, 8000000000000, ?, [?::UUID])", id, i+1, service, id)
+		_, err := db.Exec("INSERT INTO spans (trace_id, span_id, start_time, service_name, attributes) VALUES (?::UUID, ?, 8000000000000, ?, json_object(?, ?::JSON)::variant)", id, i+1, service, key, value)
 		require.NoError(t, err)
 	}
 	var result attributeValuesResult
@@ -239,17 +242,13 @@ func TestAttributeSkillRecordLookup(t *testing.T) {
 		require.NoError(t, err)
 	}
 	_, err := db.Exec(`ALTER TABLE spans ADD COLUMN name VARCHAR DEFAULT 'request';
-INSERT INTO attributes VALUES
- ('00000000-0000-0000-0000-000000000001', 'http.request.method', '{"kind":"string","value":"POST"}'),
- ('00000000-0000-0000-0000-000000000002', 'http.request.method', '{"kind":"string","value":"GET"}'),
- ('00000000-0000-0000-0000-000000000003', 'other.key', '{"kind":"string","value":"POST"}');
-INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) VALUES
- ('00000000-0000-0000-0000-000000000001', 42, 1790928000000000000, 'checkout', ['00000000-0000-0000-0000-000000000001']),
- ('00000000-0000-0000-0000-000000000002', 42, 1790931600000000000, 'checkout', ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001']),
- ('00000000-0000-0000-0000-000000000003', 42, 1790931600000000000, 'checkout', ['00000000-0000-0000-0000-000000000002']),
- ('00000000-0000-0000-0000-000000000004', 42, 1790931600000000001, 'checkout', ['00000000-0000-0000-0000-000000000001']),
- ('00000000-0000-0000-0000-000000000005', 42, 1790931600000000000, 'other', ['00000000-0000-0000-0000-000000000001']),
- ('00000000-0000-0000-0000-000000000006', 42, 1790931600000000000, 'checkout', ['00000000-0000-0000-0000-000000000003'])`)
+INSERT INTO spans (trace_id, span_id, start_time, service_name, attributes) VALUES
+ ('00000000-0000-0000-0000-000000000001', 42, 1790928000000000000, 'checkout', {'http.request.method':'POST'}::variant),
+ ('00000000-0000-0000-0000-000000000002', 42, 1790931600000000000, 'checkout', {'http.request.method':'POST'}::variant),
+ ('00000000-0000-0000-0000-000000000003', 42, 1790931600000000000, 'checkout', {'http.request.method':'GET'}::variant),
+ ('00000000-0000-0000-0000-000000000004', 42, 1790931600000000001, 'checkout', {'http.request.method':'POST'}::variant),
+ ('00000000-0000-0000-0000-000000000005', 42, 1790931600000000000, 'other', {'http.request.method':'POST'}::variant),
+ ('00000000-0000-0000-0000-000000000006', 42, 1790931600000000000, 'checkout', {'other.key':'POST'}::variant)`)
 	require.NoError(t, err)
 	guide, err := os.ReadFile("skills/otel-desktop-viewer/SKILL.md")
 	require.NoError(t, err)

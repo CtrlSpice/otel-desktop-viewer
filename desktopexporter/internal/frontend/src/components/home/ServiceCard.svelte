@@ -7,6 +7,7 @@
     type ServiceSummary,
   } from '@/services/discovery-types'
   import { traceServiceColor } from '@/utils/trace-service-color'
+  import { serviceColorIdentity } from '@/utils/service-color-identity'
   import { themeSignal } from '@/state/theme.svelte'
 
   let {
@@ -21,7 +22,11 @@
     onkeydown?: (event: KeyboardEvent) => void
   } = $props()
   const serviceColor = $derived(
-    traceServiceColor(service.serviceName, themeSignal.value)
+    traceServiceColor(
+      service.serviceName,
+      themeSignal.value,
+      service.serviceColorKey
+    )
   )
   const errorCount = $derived(service.errorSpanCount + service.errorLogCount)
   const errorLabel = $derived(
@@ -39,7 +44,8 @@
   {#snippet action()}
     <GraphColorPicker
       scope="services"
-      identity={service.serviceName}
+      identity={service.serviceColorKey ??
+        serviceColorIdentity(service.serviceName)}
       label={`Colour for ${service.serviceName || 'Unnamed service'}`}
       color={serviceColor}
       compact

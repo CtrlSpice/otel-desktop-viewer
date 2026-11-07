@@ -34,19 +34,22 @@ import (
 // named call to them is refused with a message saying so, which is the honest
 // answer.
 var methodParamNames = map[string][]string{
-	"discoverTelemetry":     {"options"},
-	"searchTraceSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
-	"getTraceView":          {"traceID", "query", "spanIDs"},
-	"getTraceOverview":      {"traceID"},
-	"getSpan":               {"spanID", "traceID", "limit"},
-	"searchLogSummaries":    {"startTime", "endTime", "query", "limit", "sort"},
-	"searchLogPage":         {"startTime", "endTime", "query", "limit", "sort", "pageSize", "offset", "columns"},
-	"getLogErrorNavigation": {"startTime", "endTime", "query", "limit", "sort", "selectedLogRef"},
-	"getTraceLogSummaries":  {"traceID"},
-	"getLog":                {"logRef"},
-	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
-	"getMetric":             {"metricRef"},
-	"getMetricSeries":       {"metricRef", "seriesRef", "startTime", "endTime"},
+	"getServiceLabels":       {"serviceRef"},
+	"discoverTelemetry":      {"options"},
+	"searchTraceSummaries":   {"startTime", "endTime", "query", "limit", "sort"},
+	"getTraceView":           {"traceID", "query", "spanIDs", "columns"},
+	"getTraceColumnPreviews": {"traceID", "columns"},
+	"getTraceOverview":       {"traceID"},
+	"getSpan":                {"spanID", "traceID", "limit"},
+	"searchLogSummaries":     {"startTime", "endTime", "query", "limit", "sort"},
+	"searchLogPage":          {"startTime", "endTime", "query", "limit", "sort", "pageSize", "offset", "columns"},
+	"getLogErrorNavigation":  {"startTime", "endTime", "query", "limit", "sort", "selectedLogRef"},
+	"getTraceLogSummaries":   {"traceID"},
+	"getLog":                 {"logRef"},
+	"searchMetricSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
+	"getMetric":              {"metricRef"},
+	"getMetricSeries":        {"metricRef", "seriesRef", "startTime", "endTime", "includeDatapoints"},
+	"getMetricSeriesOrder":   {"metricRef", "startTime", "endTime", "seriesRefs", "key", "direction"},
 	"getMetricView": {
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
@@ -58,7 +61,7 @@ var methodParamNames = map[string][]string{
 		"quantiles", "tzOffsetNs", "viewBuckets",
 		"selectedSeriesRefs", "tzName", "datapointRef",
 	},
-	"searchAttributeMatches":                {"term"},
+	"searchAttributeMatches":                {"term", "signal", "owner", "path", "type"},
 	"getFieldValueCompletions":              {"signal", "field", "term", "limit"},
 	"getTraceAttributeDefinitionsByTraceID": {"traceID"},
 	"getTraceSpanCount":                     {"traceID"},
@@ -441,13 +444,62 @@ func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetri
 }
 
 type getMetricSeriesParams struct {
-	metricRef string
-	seriesRef string
-	timeRange store.TimeRange
+	metricRef         string
+	seriesRef         string
+	timeRange         store.TimeRange
+	includeDatapoints bool
+}
+
+type metricSeriesOrderParams struct {
+	metricRef  string
+	seriesRefs []string
+	key        string
+	timeRange  store.TimeRange
+	descending bool
+}
+
+func parseMetricSeriesOrderParams(raw json.RawMessage) (metricSeriesOrderParams, error) {
+	var result metricSeriesOrderParams
+	params, err := decodePositionalParams(raw, 6, 6)
+	if err != nil {
+		return result, err
+	}
+	result.metricRef, err = parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
+	if err != nil {
+		return result, err
+	}
+	result.timeRange, err = parseTimeRange(params[1], params[2])
+	if err != nil {
+		return result, err
+	}
+	if params[3] == nil {
+		return result, jsonrpc2.ErrInvalidParams
+	}
+	result.seriesRefs, err = parseOptionalStringList(params, 3)
+	if err != nil {
+		return result, err
+	}
+	for i, ref := range result.seriesRefs {
+		result.seriesRefs[i], err = normalizeUUID(ref)
+		if err != nil {
+			return result, ErrInvalidMetricRef
+		}
+	}
+	key, ok := params[4].(string)
+	if !ok {
+		return result, jsonrpc2.ErrInvalidParams
+	}
+	result.key = key
+	direction, ok := params[5].(string)
+	if !ok || (direction != "asc" && direction != "desc") {
+		return result, jsonrpc2.ErrInvalidParams
+	}
+	result.descending = direction == "desc"
+	return result, nil
 }
 
 func parseGetMetricSeriesParams(raw json.RawMessage) (getMetricSeriesParams, error) {
-	params, err := decodePositionalParams(raw, 4, 4)
+	params, err := decodePositionalParams(raw, 4, 5)
 	if err != nil {
 		return getMetricSeriesParams{}, err
 	}
@@ -463,7 +515,15 @@ func parseGetMetricSeriesParams(raw json.RawMessage) (getMetricSeriesParams, err
 	if err != nil {
 		return getMetricSeriesParams{}, err
 	}
-	return getMetricSeriesParams{metricRef: metricRef, seriesRef: seriesRef, timeRange: timeRange}, nil
+	includeDatapoints := true
+	if len(params) > 4 && params[4] != nil {
+		var ok bool
+		includeDatapoints, ok = params[4].(bool)
+		if !ok {
+			return getMetricSeriesParams{}, jsonrpc2.ErrInvalidParams
+		}
+	}
+	return getMetricSeriesParams{metricRef: metricRef, seriesRef: seriesRef, timeRange: timeRange, includeDatapoints: includeDatapoints}, nil
 }
 
 // getFieldValueCompletions returns distinct values of one completable column, for

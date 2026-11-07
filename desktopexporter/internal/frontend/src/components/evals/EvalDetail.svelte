@@ -15,12 +15,14 @@
   import { experimentSummary } from './experiment-summary'
   import EvalStatus from './EvalStatus.svelte'
   import type { EvalStoredExperimentSummary } from '@/services/eval-experiment-types'
+  import type { EvalRequestStatus } from './eval-request-state'
 
   let {
     experiment,
     row,
     telemetryNodes,
     telemetryLoading = false,
+    telemetryStatus,
     experimentCopy,
     storedSummary,
   }: {
@@ -28,6 +30,7 @@
     row?: EvalOutlineRow
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
+    telemetryStatus?: ReadonlyMap<string, EvalRequestStatus>
     experimentCopy?: EvalSourceExperimentCopy
     storedSummary?: EvalStoredExperimentSummary
   } = $props()
@@ -106,12 +109,14 @@
           fieldType="string"
           fieldValue={experiment.name}
           loadText={experimentCopy?.(experiment.id, 'name')}
+          sourceKey={experimentCopy ?? experiment}
         />
         <DetailField
           fieldName="evaluation"
           fieldType="string"
           fieldValue={experiment.evaluation}
           loadText={experimentCopy?.(experiment.id, 'evaluation')}
+          sourceKey={experimentCopy ?? experiment}
         />
         {#if experiment.state !== 'Unknown'}<DetailField
             fieldName="state"
@@ -129,6 +134,7 @@
             fieldType="string"
             fieldValue={experiment.promptLabel}
             loadText={experimentCopy?.(experiment.id, 'prompt')}
+            sourceKey={experimentCopy ?? experiment}
             multiline
           />
         {/if}
@@ -137,6 +143,7 @@
           fieldType="string"
           fieldValue={experiment.source}
           loadText={experimentCopy?.(experiment.id, 'source')}
+          sourceKey={experimentCopy ?? experiment}
         />
         {#if experiment.startedAt}
           {@const startedAt = experiment.startedAt}
@@ -236,6 +243,7 @@
     entries={references}
     nodes={telemetryNodes}
     loading={telemetryLoading}
+    status={telemetryStatus}
     wholeTraces
     evidenceLogs={[]}
   />

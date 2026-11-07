@@ -4,8 +4,14 @@ import {
   graphSwatch,
   type GraphColorId,
 } from '@/themes/graph-inks'
+import {
+  serviceColorIdentity,
+  serviceColorStorageVersion,
+} from '@/utils/service-color-identity'
 
 const PREFIX = `graph-colour-overrides:${GRAPH_PALETTE_VERSION}:`
+const storageKey = (scope: string) =>
+  PREFIX + scope + (scope === 'services' ? serviceColorStorageVersion : '')
 type ColorOverrideId = GraphColorId | `#${string}`
 const scopes = new Map<string, Map<string, ColorOverrideId>>()
 // Allocate the reactive signal at module scope: a scope first read inside a
@@ -32,8 +38,10 @@ function resolveOverride(value: string | undefined) {
 
 function readSaved(scope: string): [string, ColorOverrideId][] {
   try {
+    const saved = localStorage.getItem(storageKey(scope))
+    const legacy = saved === null && scope === 'services'
     const raw: unknown = JSON.parse(
-      localStorage.getItem(PREFIX + scope) ?? '[]'
+      saved ?? (legacy ? localStorage.getItem(PREFIX + scope) : null) ?? '[]'
     )
     if (!Array.isArray(raw)) return []
     return raw
@@ -41,7 +49,9 @@ function readSaved(scope: string): [string, ColorOverrideId][] {
       .flatMap((entry): [string, ColorOverrideId][] => {
         // Accept picker hex values and existing saved ink/shade IDs.
         const swatch = resolveOverride(entry[1])
-        return swatch ? [[entry[0], swatch.id]] : []
+        return swatch
+          ? [[legacy ? serviceColorIdentity(entry[0]) : entry[0], swatch.id]]
+          : []
       })
   } catch {
     return []
@@ -77,7 +87,7 @@ export const graphColorOverrides = {
     else if (resolved) values.set(identity, resolved.id)
     revision++
     try {
-      localStorage.setItem(PREFIX + scope, JSON.stringify([...values]))
+      localStorage.setItem(storageKey(scope), JSON.stringify([...values]))
     } catch {
       // Retain the override for this page when storage is full or blocked.
     }
@@ -99,7 +109,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('storage', event => {
     if (event.key !== null && !event.key.startsWith(PREFIX)) return
     for (const [scope, values] of scopes) {
-      if (event.key !== null && event.key !== PREFIX + scope) continue
+      if (event.key !== null && event.key !== storageKey(scope)) continue
       const saved = readSaved(scope)
       values.clear()
       for (const [identity, id] of saved) values.set(identity, id)

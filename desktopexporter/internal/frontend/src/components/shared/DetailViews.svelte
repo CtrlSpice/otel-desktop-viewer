@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
   import RawJsonInspector, {
     type RawJsonScope,
@@ -17,6 +17,9 @@
     view = $bindable<DetailViewMode>('fields'),
     rawStatus = $bindable<RawJsonStatusData>(),
     showRawStatus = true,
+    refreshKey,
+    record,
+    displayedRecord = $bindable<T | undefined>(),
   }: {
     scopes: RawJsonScope[]
     wholeURL: string
@@ -27,6 +30,9 @@
     view?: DetailViewMode
     rawStatus?: RawJsonStatusData
     showRawStatus?: boolean
+    refreshKey?: unknown
+    record?: T
+    displayedRecord?: T
   } = $props()
   let mountedRaw = $state(false)
   $effect(() => {
@@ -55,6 +61,9 @@
   {#if mountedRaw}<RawJsonInspector
       {scopes}
       {wholeURL}
+      {refreshKey}
+      {record}
+      bind:displayedRecord
       bind:status={rawStatus}
       showStatus={showRawStatus}
       active={view === 'raw'}

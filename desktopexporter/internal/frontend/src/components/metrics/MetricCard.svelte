@@ -82,7 +82,7 @@
   {/snippet}
 
   {#snippet date()}
-    <SignalDate label="Last seen" timestamp={metric.lastSeen} />
+    <SignalDate label="Last seen" timestamp={metric.lastSeen ?? undefined} />
   {/snippet}
 </SignalCard>
 

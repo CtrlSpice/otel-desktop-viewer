@@ -19,6 +19,7 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import IngestionIssues, {
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
@@ -63,21 +64,25 @@
   const navigation = getNavigationCounts()
   const signals = SIGNAL_ORDER
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
-  let fieldsReady = $state(false)
+  let fieldsReady = false
+  let fieldRequest: Promise<void> | undefined
+  let submission = 0
   let queries = $state(homeQueries(null))
   let pendingQueries = homeQueries(null)
   let totalServices = $state<number>()
   let alive = true
   let initialized = false
   let services = $state<ServiceSummary[]>([])
-  let mapSelection = $state<MapSelection | null>(null)
+  let mapSelection = $state.raw<MapSelection | null>(null)
   const inspectedService = $derived(
     mapSelection?.kind === 'service' ? mapSelection.service : null
   )
   let stats = $state<Stats | null>(null)
   let statsError = $state('')
+  let statsLoading = $state(true)
+  let statsRequest = $state.raw<AbortController>()
   let error = $state('')
-  let loading = $state(false)
+  let pageError = $state('')
   let draft = $state(readRoute().query.q ?? '')
   let routeQuery = readRoute().query.q ?? ''
   let term = $state('')
@@ -94,17 +99,53 @@
     endTime: null,
   })
   const discoveryScope = $derived({ ...range, queries })
-  let request: AbortController | undefined
+  let displayedListRequest:
+    | { range: typeof range; queries: typeof queries; searchActive: boolean }
+    | undefined
+  let request = $state.raw<AbortController>()
+  let pageRequest = $state.raw<AbortController>()
+  const loading = $derived(!!request || !!pageRequest)
+  let requestKey = $state(0)
   const rejections = $derived(stats?.rejections ?? [])
   const issueCount = $derived(
-    importFailures.length +
-      rejections.reduce((sum, entry) => sum + entry.occurrences, 0)
+    stats
+      ? importFailures.length +
+          rejections.reduce((sum, entry) => sum + entry.occurrences, 0)
+      : undefined
   )
 
-  async function load(pageOffset = 0, refresh = false) {
-    request?.abort()
+  function refreshStats() {
+    statsRequest?.abort()
     const controller = new AbortController()
-    request = controller
+    statsRequest = controller
+    statsLoading = true
+    statsError = ''
+    void telemetryAPI
+      .getStats(controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) stats = value
+      })
+      .catch(reason => {
+        if (!controller.signal.aborted) statsError = String(reason)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) statsLoading = false
+      })
+  }
+
+  async function load(pageOffset = 0, refresh = false) {
+    if (!alive || (!refresh && (pageRequest || !more || !displayedListRequest)))
+      return
+    if (refresh) request?.abort()
+    const controller = new AbortController()
+    if (refresh) {
+      request = controller
+      error = ''
+    } else {
+      pageRequest = controller
+      pageError = ''
+    }
+    requestKey++
     let nextRange = range
     if (refresh) {
       const bounds = selectionToQueryRangeNs(time.selection, Date.now())
@@ -113,31 +154,46 @@
         endTime: bounds.endTime?.toString() ?? null,
       }
     }
+    // Pagination belongs to the received list, independently of its replacement.
+    const reading =
+      !refresh && displayedListRequest
+        ? displayedListRequest
+        : {
+            range: nextRange,
+            queries: pendingQueries,
+            searchActive: term.trim().length > 0,
+          }
     const options = {
-      ...nextRange,
-      queries: pendingQueries,
+      ...reading.range,
+      queries: reading.queries,
       offset: pageOffset,
       limit: 100,
     }
-    loading = true
-    error = ''
     if (refresh) {
-      statsError = ''
-      void telemetryAPI
-        .getStats()
-        .then(value => {
-          if (!controller.signal.aborted) stats = value
-        })
-        .catch(reason => {
-          if (!controller.signal.aborted) statsError = String(reason)
-        })
+      range = nextRange
+      queries = options.queries
+      revision++
+      refreshStats()
     }
     try {
       const page = await telemetryAPI.discoverServices(
         options,
         controller.signal
       )
-      if (controller.signal.aborted) return
+      if (
+        !alive ||
+        controller.signal.aborted ||
+        (refresh
+          ? request !== controller
+          : pageRequest !== controller || displayedListRequest !== reading)
+      )
+        return
+      if (refresh) {
+        // Only a successful replacement invalidates the retained list's page.
+        pageRequest?.abort()
+        pageRequest = undefined
+        pageError = ''
+      }
       services =
         pageOffset === 0
           ? page.items
@@ -149,38 +205,34 @@
                 ])
               ).values(),
             ]
-      if (refresh || !loaded) {
-        range = nextRange
-        queries = options.queries
-      }
+      displayedListRequest = reading
       totalServices = page.totals?.home
       navigation?.setHomeCounts(
         page.totals ?? {},
         {
           traces: discoverySignalHref(
             'traces',
-            range,
-            queryText(queries.traces)
+            reading.range,
+            queryText(reading.queries.traces)
           ),
           metrics: discoverySignalHref(
             'metrics',
-            range,
-            queryText(queries.metrics)
+            reading.range,
+            queryText(reading.queries.metrics)
           ),
-          logs: discoverySignalHref('logs', range, queryText(queries.logs)),
+          logs: discoverySignalHref(
+            'logs',
+            reading.range,
+            queryText(reading.queries.logs)
+          ),
         },
-        term.trim().length > 0
+        reading.searchActive
       )
       more = page.truncated
       offset = pageOffset
       loaded = true
-      // Connection totals belong to the old discovery scope. Invalidate that
-      // inspection on successful refresh, retaining its source-service context.
-      const previousService =
-        inspectedService ??
-        (mapSelection?.kind === 'connection'
-          ? mapSelection.connection.source
-          : null)
+      // Connection inspection follows its own received graph membership.
+      const previousService = inspectedService
       if (previousService && refresh) {
         const selected =
           services.find(
@@ -189,51 +241,73 @@
           ) ??
           services[0] ??
           null
-        mapSelection = selected ? { kind: 'service', service: selected } : null
+        if (
+          !selected ||
+          serviceIdentity(selected) !== serviceIdentity(previousService)
+        )
+          mapSelection = selected
+            ? { kind: 'service', service: selected }
+            : null
       } else if (!mapSelection && services[0]) {
         mapSelection = { kind: 'service', service: services[0] }
       }
-      if (refresh) {
-        revision++
-      }
     } catch (reason) {
-      if (!controller.signal.aborted) error = String(reason)
+      if (!alive || controller.signal.aborted) return
+      if (refresh && request === controller) error = String(reason)
+      else if (pageRequest === controller && displayedListRequest === reading)
+        pageError = String(reason)
     } finally {
-      if (!controller.signal.aborted) loading = false
+      if (alive && request === controller) {
+        request = undefined
+        requestKey++
+      } else if (alive && pageRequest === controller) {
+        pageRequest = undefined
+        requestKey++
+      }
     }
   }
-  function submit() {
+  function ensureFields(): Promise<void> {
+    if (fieldsReady) return Promise.resolve()
+    fieldRequest ??= Promise.all(signals.map(getDynamicAttributes)).then(
+      groups => {
+        if (!alive) return
+        fields = homeFields([fields, ...groups])
+        fieldsReady = true
+      }
+    )
+    return fieldRequest
+  }
+  async function submit() {
+    const text = draft
+    const current = ++submission
     try {
-      pendingQueries = homeQueries(parseQuery(draft, fields))
-      term = draft
-      routeQuery = draft
+      if (text.trim()) await ensureFields()
+      if (!alive || current !== submission || text !== draft) return
+      pendingQueries = homeQueries(parseQuery(text, fields))
+      initialized = true
+      term = text
+      routeQuery = text
       const route = readRoute()
-      if ((route.query.q ?? '') !== draft)
+      if ((route.query.q ?? '') !== text)
         navigateCurrentRoute(
-          { ...route.query, q: draft || undefined },
+          { ...route.query, q: text || undefined },
           'replace'
         )
       void load(0, true)
     } catch (reason) {
-      error = reason instanceof Error ? reason.message : String(reason)
+      if (alive && current === submission)
+        error = reason instanceof Error ? reason.message : String(reason)
     }
   }
   $effect(() => {
     void time.selection
-    if (!fieldsReady) return
     untrack(() => {
       if (!initialized) {
-        initialized = true
-        submit()
+        void submit()
       } else void load(0, true)
     })
   })
   onMount(() => {
-    void Promise.all(signals.map(getDynamicAttributes)).then(groups => {
-      if (!alive) return
-      fields = homeFields([fields, ...groups])
-      fieldsReady = true
-    })
     return subscribeToRoute(() => {
       const route = readRoute()
       if (route.path !== '/') return
@@ -241,12 +315,14 @@
       if (next === routeQuery) return
       routeQuery = next
       draft = next
-      if (fieldsReady) submit()
+      void submit()
     })
   })
   onDestroy(() => {
     alive = false
     request?.abort()
+    pageRequest?.abort()
+    statsRequest?.abort()
     navigation?.setHomeCounts(null)
   })
   function relative(timestamp: bigint | null | undefined) {
@@ -280,13 +356,19 @@
   {#if mapSelection?.kind === 'connection'}
     <ServiceConnectionDetails
       connection={mapSelection.connection}
-      options={discoveryScope}
-      {revision}
+      options={mapSelection.options}
+      revision={mapSelection.revision}
     />
   {/if}
 {/snippet}
 {#snippet storage()}
   <DetailBubble label="Storage" initialOpen={false}>
+    <LoadingStatus
+      pending={statsLoading}
+      requestKey={statsRequest?.signal}
+      label="Loading storage information…"
+      class="block px-3 text-subtle"
+    />
     {#if statsError}<p class="px-3 text-papaya" role="alert">
         {statsError}{stats ? ' · Showing the last successful reading.' : ''}
       </p>{/if}
@@ -326,7 +408,7 @@
               >{/snippet}
           </DetailProperty>
         </tbody>
-      </table>{:else}<p class="p-3 text-subtle">
+      </table>{:else if !statsLoading && !statsError}<p class="p-3 text-subtle">
         Storage information unavailable.
       </p>{/if}
   </DetailBubble>
@@ -337,6 +419,15 @@
     count={issueCount}
     initialOpen={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   >
+    <LoadingStatus
+      pending={statsLoading}
+      requestKey={statsRequest?.signal}
+      label="Loading ingestion issues…"
+      class="block px-3 text-subtle"
+    />
+    {#if statsError}<p class="px-3 text-papaya" role="alert">
+        {statsError}{stats ? ' · Showing the last successful reading.' : ''}
+      </p>{/if}
     <IngestionIssues
       {rejections}
       {importFailures}
@@ -362,7 +453,8 @@
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
   onRefresh={submit}
-  {loading}
+  loading={!!request}
+  loadingRequestKey={String(requestKey)}
 >
   {#snippet drawerSearch()}
     <form
@@ -378,6 +470,9 @@
         aria-label="Search telemetry"
         placeholder="Search telemetry…"
         bind:value={draft}
+        onfocus={() => {
+          void ensureFields()
+        }}
       />
       <button
         type="button"
@@ -409,15 +504,19 @@
     <ServiceMap
       service={inspectedService}
       {services}
+      servicesLoaded={loaded}
       {totalServices}
       loadingServices={loading}
-      servicesError={error}
+      loadingMoreServices={!!pageRequest}
+      servicesRequestKey={requestKey}
+      servicesError={[error, pageError].filter(Boolean).join(' · ')}
       moreServices={more}
       onMoreServices={() => load(offset + 100)}
       options={discoveryScope}
       {revision}
       selection={mapSelection}
       onSelect={inspect}
+      onUpdateSelection={selection => (mapSelection = selection)}
     />
   {/snippet}
   {#snippet detail()}

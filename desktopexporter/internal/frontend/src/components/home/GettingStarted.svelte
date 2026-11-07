@@ -7,13 +7,6 @@
   import Lulu from './Lulu.svelte'
 
   let { importContent }: { importContent?: Snippet } = $props()
-  const taglines = [
-    'We have OpenTelemetry at home',
-    "I'm not changing the name, buddy.",
-    'Now with “a lot more functionality”™',
-    "I have splintered the ecosystem. Pray I don't splinter it any further.",
-  ]
-  const tagline = taglines[Math.floor(Math.random() * taglines.length)]
   let protocol = $state('http')
   let httpPort = $state<number | null>(null)
   let grpcPort = $state<number | null>(null)
@@ -49,7 +42,7 @@
   <div class="guide-lulu"><Lulu /></div>
   <div class="guide-wordmark">
     <h1 class="guide-name">OTel Desktop Viewer</h1>
-    <p class="guide-subtitle">{tagline}</p>
+    <p class="guide-subtitle">We have OpenTelemetry at home</p>
   </div>
 </header>
 <div class="guide-scroll">

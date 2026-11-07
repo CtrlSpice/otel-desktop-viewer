@@ -109,12 +109,13 @@
   const totals = getNavigationCounts()
   const time = getTimeContext()
   function destination(signal: SignalName) {
-    return totals?.matching && totals.links[signal]
-      ? totals.links[signal]!
-      : signalHref(signal, {
-          ...routeContext.route.query,
-          q: routeContext.queryFor(signal),
-        })
+    return (
+      totals?.links[signal] ??
+      signalHref(signal, {
+        ...routeContext.route.query,
+        q: routeContext.queryFor(signal),
+      })
+    )
   }
   const items = $derived(
     __EVALS_BUILT__ && $evalsEnabled
@@ -130,15 +131,13 @@
     const item = items.find(item => item.id === id)
     if (!item) return
     event.preventDefault()
-    if (totals?.matching && item.id !== 'home' && item.id !== 'evals') {
-      if (counts[item.id] !== 0 && totals.links[item.id]) {
-        time.adoptUrlWindow(parseRoute(totals.links[item.id]!).query)
-        navigate(totals.links[item.id]!)
-      }
-      return
-    }
     if (item.id === 'home' || item.id === 'evals') navigate(item.path)
-    else navigate(destination(item.id))
+    else {
+      if (totals?.matching && counts[item.id] === 0) return
+      const href = destination(item.id)
+      if (totals?.links[item.id]) time.adoptUrlWindow(parseRoute(href).query)
+      navigate(href)
+    }
   }
 </script>
 

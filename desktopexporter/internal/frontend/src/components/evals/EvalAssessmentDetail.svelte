@@ -1,4 +1,17 @@
+<script module lang="ts">
+  import type { EvalSourceTextLoader } from './eval-source-copy'
+
+  export type EvalGraderInput = {
+    text: string
+    contextLabel: string
+    loadText?: EvalSourceTextLoader
+    available: boolean
+  }
+</script>
+
 <script lang="ts">
+  import { untrack } from 'svelte'
+  import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
@@ -6,16 +19,18 @@
   import { formatRawJSON } from '@/components/shared/utils/raw-json-format'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import type { Assessment, AssessmentDefinition } from './model'
-  import type { EvalSourceTextLoader } from './eval-source-copy'
   import { parseGradingInput } from './grading-input'
 
   let {
-    assessment,
-    definition,
+    assessment: requestedAssessment,
+    definition: requestedDefinition,
     showScore = true,
     showHeading = true,
-    loadRubric,
-    loadExplanation,
+    loadRubric: requestedRubric,
+    loadExplanation: requestedExplanation,
+    contextLabel = requestedAssessment.id,
+    externalCopy = false,
+    onGraderInput,
   }: {
     assessment: Assessment
     definition?: AssessmentDefinition
@@ -23,24 +38,61 @@
     showHeading?: boolean
     loadRubric?: EvalSourceTextLoader
     loadExplanation?: EvalSourceTextLoader
+    contextLabel?: string
+    externalCopy?: boolean
+    onGraderInput?: (input: EvalGraderInput) => void
   } = $props()
-  let rubric = $state('')
+  let displayed = $state.raw<{
+    loadRubric?: EvalSourceTextLoader
+    contextLabel: string
+    rubric: string
+    complete: boolean
+  }>()
+  const assessment = $derived(requestedAssessment)
+  const definition = $derived(requestedDefinition)
+  const loadRubric = $derived(
+    displayed ? displayed.loadRubric : requestedRubric
+  )
+  const loadExplanation = $derived(requestedExplanation)
+  const rubric = $derived(displayed?.rubric ?? requestedAssessment.rubric)
+  // A completed packet is already exact. Copy must not re-read a newer source.
+  const rubricCopy = $derived(displayed?.complete ? undefined : loadRubric)
+  $effect(() => {
+    onGraderInput?.({
+      text: rubric,
+      contextLabel: displayed?.contextLabel ?? contextLabel,
+      loadText: rubricCopy,
+      available: !!(rubric || loadRubric),
+    })
+  })
   let loading = $state(false)
+  let requestKey = $state.raw<AbortSignal>()
   let loadError = $state('')
   let instructionsOpen = $state(false)
-  const packet = $derived(loading ? undefined : parseGradingInput(rubric))
+  const packet = $derived(parseGradingInput(rubric))
   const name = $derived(definition?.name ?? assessment.id)
 
   $effect(() => {
-    rubric = assessment.rubric
+    const selected = {
+      loadRubric: requestedRubric,
+      contextLabel,
+      rubric: requestedAssessment.rubric,
+      complete: !requestedRubric,
+    }
     loadError = ''
-    const loader = loadRubric
+    const loader = requestedRubric
     loading = !!loader
-    if (!loader) return
+    if (!untrack(() => displayed)) displayed = selected
+    if (!loader) {
+      displayed = selected
+      return
+    }
     const controller = new AbortController()
+    requestKey = controller.signal
     void loader(controller.signal)
       .then(value => {
-        if (!controller.signal.aborted) rubric = value
+        if (!controller.signal.aborted)
+          displayed = { ...selected, rubric: value, complete: true }
       })
       .catch(() => {
         if (!controller.signal.aborted)
@@ -70,6 +122,7 @@
             fieldType="string"
             fieldValue={assessment.explanation}
             loadText={loadExplanation}
+            sourceKey={assessment}
             multiline
           >
             {#snippet value()}<MarkdownText
@@ -83,6 +136,29 @@
           fieldType="string"
           fieldValue={assessment.evaluator}
         />{/if}
+    </tbody>
+  </table>
+  <table
+    class="detail-fields w-full"
+    aria-label="Grader input"
+    hidden={!rubric && !loadRubric}
+  >
+    <caption
+      class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-subtle"
+    >
+      <span class="flex items-center justify-between gap-2">
+        <span>Grader input · {displayed?.contextLabel ?? contextLabel}</span>
+        {#if !showHeading && !externalCopy && (rubric || loadRubric)}
+          <ValueCopyButton
+            text={rubric}
+            loadText={rubricCopy}
+            sourceKey={displayed}
+            label="grader input"
+          />
+        {/if}
+      </span>
+    </caption>
+    <tbody>
       {#if packet}
         {#each packet.criteria as criterion}
           <DetailField
@@ -106,12 +182,13 @@
             </DetailField>
           {/each}
         {/each}
-      {:else if !loading && rubric}
+      {:else if rubric}
         <DetailField
           fieldName="criterion"
           fieldType="string"
           fieldValue={rubric}
-          loadText={loadRubric}
+          loadText={rubricCopy}
+          sourceKey={displayed}
           multiline
         >
           {#snippet value()}<MarkdownText text={rubric} />{/snippet}
@@ -119,9 +196,12 @@
       {/if}
     </tbody>
   </table>
-  {#if loading}<p class="px-3 py-2 text-sm text-subtle" role="status">
-      Loading grader input…
-    </p>{/if}
+  <LoadingStatus
+    pending={loading}
+    label="Loading grader input…"
+    {requestKey}
+    class="block px-3 py-2 text-sm text-subtle"
+  />
   {#if loadError}<p class="px-3 py-2 text-sm" role="alert">{loadError}</p>{/if}
   {#if packet}
     {#if packet.reference !== undefined || packet.evidence !== undefined || packet.artifact !== undefined}
@@ -191,7 +271,7 @@
 {#if showHeading}
   <div
     class="eval-assessment-detail"
-    class:eval-assessment-detail--copy={!!(assessment.rubric || loadRubric)}
+    class:eval-assessment-detail--copy={!!(rubric || loadRubric)}
   >
     <FieldGroup label={name} detail>
       {#snippet heading()}
@@ -203,11 +283,15 @@
       {/snippet}
       {@render content()}
     </FieldGroup>
-    {#if assessment.rubric || loadRubric}
-      <div class="eval-assessment-detail__copy">
+    {#if !externalCopy && (rubric || loadRubric)}
+      <div
+        class="eval-assessment-detail__copy"
+        title={`Grader input · ${displayed?.contextLabel ?? contextLabel}`}
+      >
         <ValueCopyButton
           text={rubric}
-          loadText={loadRubric}
+          loadText={rubricCopy}
+          sourceKey={displayed}
           label="grader input"
         />
       </div>

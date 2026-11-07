@@ -5,8 +5,39 @@ import { createFieldValueSource } from './field-value-completions'
 import { createFieldValueCache } from './field-value-cache'
 import { getFieldsBySignal } from '@/constants/fields'
 import { queryLanguage } from './query-language'
+import { createPathFieldReference } from '../attribute-field-reference'
 
 const NAMES = ['checkout/pay', 'checkout/verify', 'db select "users"']
+
+describe('selected attribute values', () => {
+  it('requests only the selected owner/path after the operator', async () => {
+    const field = createPathFieldReference(
+      'span',
+      ['attributes', 'http.route'],
+      'string'
+    )!
+    const values = vi.fn(async () => ['/checkout'])
+    const columns = vi.fn(async () => [])
+    const source = createFieldValueSource(
+      createFieldValueCache(columns, 'traces'),
+      () => [field],
+      values
+    )
+    for (const doc of ['checkout', 'span.attributes["http.route"]::VARCHAR']) {
+      const state = EditorState.create({ doc, extensions: [queryLanguage] })
+      expect(
+        await source(new CompletionContext(state, doc.length, false))
+      ).toBeNull()
+    }
+    expect(values).not.toHaveBeenCalled()
+    const doc = 'span.attributes["http.route"]::VARCHAR = "che'
+    const state = EditorState.create({ doc, extensions: [queryLanguage] })
+    const result = await source(new CompletionContext(state, doc.length, false))
+    expect(values).toHaveBeenCalledWith(field, 'che')
+    expect(columns).not.toHaveBeenCalled()
+    expect(result?.options.map(value => value.label)).toEqual(['/checkout'])
+  })
+})
 type Signal = Parameters<typeof getFieldsBySignal>[0]
 
 function makeSource(
@@ -165,34 +196,34 @@ describe('IN array values', () => {
   }
 
   it('offers values for the first item in an array', async () => {
-    const r = await units('unit IN [')
+    const r = await units('unit IN (')
     expect(r).not.toBeNull()
-    expect(r!.from).toBe('unit IN ['.length)
+    expect(r!.from).toBe('unit IN ('.length)
     expect(r!.options.map(o => o.label)).toEqual(UNITS)
   })
 
   it('anchors at the item being typed, not the bracket', async () => {
     // Anchoring at the bracket made accepting replace the whole array with
     // one bare value, destroying the items already listed.
-    const r = await units('unit IN ["ms", s')
+    const r = await units('unit IN ("ms", s')
     expect(r).not.toBeNull()
-    expect(r!.from).toBe('unit IN ["ms", '.length)
+    expect(r!.from).toBe('unit IN ("ms", '.length)
   })
 
   it('anchors after an opening quote on a later item', async () => {
-    const r = await units('unit IN ["ms", "B')
+    const r = await units('unit IN ("ms", "B')
     expect(r).not.toBeNull()
-    expect(r!.from).toBe('unit IN ["ms", "'.length)
+    expect(r!.from).toBe('unit IN ("ms", "'.length)
     expect(r!.options[0].apply).toBe('ms"')
   })
 
   it('declines once an item is closed but the array is not', async () => {
     // After `"ms"` only a comma or a bracket is valid, not another value.
-    expect(await units('unit IN ["ms"')).toBeNull()
+    expect(await units('unit IN ("ms"')).toBeNull()
   })
 
   it('declines once the array is closed', async () => {
-    expect(await units('unit IN ["ms"] ')).toBeNull()
+    expect(await units('unit IN ("ms") ')).toBeNull()
   })
 })
 
@@ -221,9 +252,9 @@ describe('operator gating', () => {
 
   it('offers membership completion for newly exposed static fields', async () => {
     const bracket = await traces('name IN ')
-    expect(bracket?.options.map(option => option.label)).toEqual(['['])
+    expect(bracket?.options.map(option => option.label)).toEqual(['('])
 
-    const values = await traces('name IN [')
+    const values = await traces('name IN (')
     expect(values?.options.map(option => option.label)).toEqual(NAMES)
   })
 
@@ -231,14 +262,14 @@ describe('operator gating', () => {
     // Bare values there complete into `unit IN ms`, which does not parse.
     const r = await metrics('unit IN ')
     expect(r).not.toBeNull()
-    expect(r!.options.map(o => o.label)).toEqual(['['])
+    expect(r!.options.map(o => o.label)).toEqual(['('])
     // A function rather than a string: it reopens completion on the values
     // inside, so the bracket is one step rather than a dead end.
     expect(r!.options[0].apply).toBeTypeOf('function')
   })
 
   it('offers values once the bracket is there', async () => {
-    const r = await metrics('unit IN [')
+    const r = await metrics('unit IN (')
     expect(r).not.toBeNull()
     expect(r!.options.map(o => o.label)).toEqual(['ms', 's'])
   })

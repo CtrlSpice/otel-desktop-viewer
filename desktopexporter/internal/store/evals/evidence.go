@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-const evidenceFrom = `logs l join scopes s on s.id=l.scope_id where l.event_name='viewer.eval.import.v1' and s.name='otel-desktop-viewer.evaldecode' and s.version='1' and l.service_name='otel-desktop-viewer'`
+const evidenceFrom = `logs l where l.event_name='viewer.eval.import.v1' and l.scope.name='otel-desktop-viewer.evaldecode' and l.scope.version='1' and l.service_name='otel-desktop-viewer'`
 
 var errUndiscoveredEvidence = errors.New("evaluation evidence arrived during reconstruction")
 
@@ -180,7 +180,7 @@ func clearEvidenceCache(ctx context.Context, db ExperimentDB, id string) error {
 		}
 	}
 	return db.WithDBWrite(func(conn *sql.DB) error {
-		_, err := conn.ExecContext(ctx, `update eval_datasets set context='{}', row_count=0, byte_size=0 where import_id=?`, id)
+		_, err := conn.ExecContext(ctx, `update eval_datasets set context='{}'::json::variant, row_count=0, byte_size=0 where import_id=?`, id)
 		return err
 	})
 }
@@ -300,7 +300,7 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 	}
 	if reason == "" {
 		if err := db.WithDBWrite(func(conn *sql.DB) error {
-			_, err := conn.ExecContext(ctx, `update eval_datasets set name=?, byte_size=octet_length(encode(context::varchar))+(select coalesce(sum(byte_size),0) from eval_records r where r.import_id=eval_datasets.import_id and r.envelope=eval_datasets.envelope)+greatest(row_count-1,0) where import_id=?`, name, id)
+			_, err := conn.ExecContext(ctx, `update eval_datasets set name=?, byte_size=octet_length(encode(to_json(context)::varchar))+(select coalesce(sum(byte_size),0) from eval_records r where r.import_id=eval_datasets.import_id and r.envelope=eval_datasets.envelope)+greatest(row_count-1,0) where import_id=?`, name, id)
 			return err
 		}); err != nil {
 			return err
@@ -395,10 +395,9 @@ func hasUndiscoveredEvidence(ctx context.Context, db *sql.DB, importID string) (
 		for _, id := range ids {
 			var matching bool
 			// Stored map entries have unique keys, matching ImportID's lookup.
-			err := db.QueryRowContext(ctx, `select exists(select 1 from logs l, json_each(l.body,'$.value') field
-			 where l.id=try_cast(? as uuid) and json_extract_string(field.value,'$.key')='importID'
-			 and json_extract_string(field.value,'$.value.kind')='string'
-			 and json_extract_string(field.value,'$.value.value')=?)`, id, importID).Scan(&matching)
+			err := db.QueryRowContext(ctx, `select exists(select 1 from logs l
+			 where l.id=try_cast(? as uuid) and otel_value_kind(l.body.importID)='string'
+			 and l.body.importID::varchar=?)`, id, importID).Scan(&matching)
 			if err != nil {
 				return false, err
 			}

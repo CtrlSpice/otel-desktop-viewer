@@ -5,17 +5,14 @@
 #
 # This is the only place the order is written down. Filenames say what an
 # object is; this file says when it is built.
+otel_value_json.sql
+attribute_entries.sql
 attr_frame.sql
 attr_id.sql
-attrs_json.sql
-attrs_mapped.sql
-attrs_key.sql
-has_attr.sql
-attribute_def_json.sql
+attribute_document.sql
 trace_id_wire.sql
 span_id_wire.sql
-resource_json.sql
-scope_json.sql
+hugeint_to_double.sql
 interp_linear.sql
 interp_loglin.sql
 hist_buckets.sql
@@ -35,12 +32,9 @@ body_preview.sql
 log_data_json.sql
 log_column_values.sql
 zero_fold.sql
-attribute_int64.sql
-attribute_double.sql
-attribute_text.sql
 double_wire_json.sql
 otlp_double_json.sql
-otlp_any_value.sql
+otlp_value.sql
 otlp_attributes.sql
 otlp_resource.sql
 otlp_scope.sql

@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/nested"
 )
 
 var ErrRetentionInternal = errors.New("retention internal error")
@@ -96,20 +97,6 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 		return nil
 	}
 
-	// Orphaned dictionary rows count toward the size the cap is compared
-	// against, so garbage left by a Clear or a delete-by-id must never be what
-	// tips the store over and triggers pruning of real telemetry. That requires
-	// sweeping before any prune -- but not before the measurement that decides
-	// whether to prune at all.
-	//
-	fits, err := s.sweepIfOverCap(ctx, maxBytes)
-	if err != nil {
-		return err
-	}
-	if fits {
-		return nil
-	}
-
 	for round := 0; round < maxPruneRounds; round++ {
 		fits, err := s.enforceRound(ctx, maxBytes)
 		if err != nil {
@@ -120,45 +107,6 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 		}
 	}
 	return nil
-}
-
-// sweepIfOverCap measures the store and, only if it exceeds maxBytes, collects
-// orphans and measures again. It reports whether the store fits, in which case
-// no pruning is needed.
-//
-// The re-measurement is what preserves the guarantee: if the excess was garbage
-// all along, the sweep alone brings the store back under and this returns true,
-// so no telemetry is pruned. Sweeping and re-measuring costs a checkpoint, but
-// only on the path where something is actually over the cap.
-func (s *Store) sweepIfOverCap(ctx context.Context, maxBytes int64) (bool, error) {
-	fits := false
-	err := s.WithDBWrite(func(db *sql.DB) error {
-		size, err := s.sizeBytes(ctx, db)
-		if err != nil {
-			return err
-		}
-		if size <= maxBytes {
-			fits = true
-			return nil
-		}
-
-		if err := ingest.SweepOrphans(ctx, db, s.flushed); err != nil {
-			return err
-		}
-		// Without a checkpoint the deletes do not move the measurement, so the
-		// re-measure below would report the pre-sweep size and prune anyway.
-		if _, err := db.ExecContext(ctx, `checkpoint`); err != nil {
-			return fmt.Errorf("EnforceRetention: %w: %w", ErrRetentionInternal, err)
-		}
-
-		size, err = s.sizeBytes(ctx, db)
-		if err != nil {
-			return err
-		}
-		fits = size <= maxBytes
-		return nil
-	})
-	return fits, err
 }
 
 // enforceRound runs one measure-prune-checkpoint round under the write lock.
@@ -186,13 +134,6 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 			return err
 		}
 
-		// The prunes are what create orphans, so sweep here rather than at the
-		// top of the next round: the next round's measurement then reflects
-		// live data instead of what this round just abandoned.
-		if err := ingest.SweepOrphans(ctx, db, s.flushed); err != nil {
-			return err
-		}
-
 		// Checkpoint flushes the WAL and lets DuckDB reuse the freed blocks;
 		// without it the file/memory measurement would not move.
 		if _, err := db.ExecContext(ctx, `checkpoint`); err != nil {
@@ -215,32 +156,15 @@ func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (uint
 }
 
 // pruneOldestSpans deletes the oldest fraction of spans along with their
-// events and links. Leaves first, spans last.
+// owned events and links in the same transaction.
 //
-// Attributes are not touched here: they are shared dictionary rows, and whether
-// a given one is still referenced is not a question a span predicate can answer.
-// enforceRound sweeps once after all three prunes.
+// Owned attributes and context are removed with their rows.
 func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
-	cutoff, ok, err := s.pruneCutoff(ctx, db,
-		`select quantile_disc(start_time, ?) from spans`)
+	cutoff, ok, err := s.pruneCutoff(ctx, db, `select quantile_disc(start_time, ?) from spans`)
 	if err != nil || !ok {
 		return err
 	}
-
-	// Children use the full span identity because span IDs are unique only
-	// within a trace.
-	for _, q := range []string{
-		`delete from links where (trace_id, span_id) in
-			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
-		`delete from events where (trace_id, span_id) in
-			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
-		`delete from spans where start_time <= (select unnest(?::ubigint[]))`,
-	} {
-		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
-			return fmt.Errorf("pruneOldestSpans: %w: %w", ErrRetentionInternal, err)
-		}
-	}
-	return nil
+	return nested.Mutate(ctx, db, `delete from spans where start_time <= ?::ubigint`, fmt.Sprint(cutoff))
 }
 
 // pruneOldestLogs deletes the oldest fraction of logs. Attributes are swept
@@ -266,20 +190,9 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 // exemplars. Generated Metric and series identity rows remain so reingestion
 // resolves the same database-local IDs.
 func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
-	cutoff, ok, err := s.pruneCutoff(ctx, db,
-		`select quantile_disc(timestamp, ?) from metric_datapoints`)
+	cutoff, ok, err := s.pruneCutoff(ctx, db, `select quantile_disc(timestamp, ?) from metric_datapoints`)
 	if err != nil || !ok {
 		return err
 	}
-
-	doomed := `(select id from metric_datapoints where timestamp <= (select unnest(?::ubigint[])))`
-	for _, q := range []string{
-		`delete from exemplars where metric_datapoint_id in ` + doomed,
-		`delete from metric_datapoints where timestamp <= (select unnest(?::ubigint[]))`,
-	} {
-		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
-			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
-		}
-	}
-	return nil
+	return nested.PrunePoints(ctx, db, cutoff)
 }

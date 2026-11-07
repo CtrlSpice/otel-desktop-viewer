@@ -138,6 +138,7 @@ func TestAttributesThroughProductionQueryHandler(t *testing.T) {
 			receivedBits = append(receivedBits, math.Float64bits(number))
 		}
 	}
+	bits[len(bits)-1] = 0x7ff8000000000000 // NaNs have one storage/identity representation.
 	assert.ElementsMatch(t, bits, receivedBits)
 
 	var limited attributeValuesResult

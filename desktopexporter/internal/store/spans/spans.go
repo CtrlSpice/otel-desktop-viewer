@@ -10,8 +10,10 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/nested"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/searchindex"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
@@ -30,16 +32,9 @@ var (
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
-// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
-type scopeKey struct{ ri, si int }
-
 type queryRower interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
-
-// flushIntervalSpans bounds how many spans accumulate in the appenders before
-// they are pushed to DuckDB, limiting memory used by large batches.
-const flushIntervalSpans = 500
 
 // resourceServiceName extracts the service.name resource attribute as a
 // plain string, returning "" when not present. This is the same logic
@@ -54,70 +49,38 @@ func resourceServiceName(attrs pcommon.Map) string {
 
 // Ingest is IngestReport for callers with nowhere to put the report. Refused
 // rows are still skipped rather than failing the batch.
-func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) error {
-	_, err := IngestReport(ctx, conn, traces, flushed)
+func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
+	_, err := IngestReport(ctx, conn, traces)
 	return err
 }
 
-// IngestReport ingests trace spans into the spans, events, links and attributes
+// IngestReport ingests trace spans into the spans, events and links
 // tables, reporting the spans it could not write. A non-empty Rejected is not a
 // failure: the batch landed without them. The caller must hold any required
 // lock on the connection.
 //
-// Two passes. The first hashes every attribute into a Dictionary, resolves each
-// resource and scope to a content-derived id, and writes the dictionary in
-// three inserts. The second appends the owner rows with the id arrays the first
-// produced. They are split because the dictionary needs conflict handling and
-// the appender has none.
-func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (_ ingest.Rejected, err error) {
+// Check span identities before appending self-contained payloads. Bisection
+// isolates bad rows without separating owners from their attributes.
+func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (_ ingest.Rejected, err error) {
 	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
 
 	if err := ctx.Err(); err != nil {
 		return ingest.Rejected{}, err
 	}
 
-	// Pass 1: hash everything and resolve resource/scope identities.
-	dict := ingest.NewDictionary(flushed)
-
-	resourceIDs := map[int]duckdb.UUID{}
-	scopeIDs := map[scopeKey]duckdb.UUID{}
-
-	// AddAttributes already returns the array its owner should store, so pass 1
-	// records it and pass 2 reads it back rather than hashing the same
-	// attributes a second time.
-	//
-	// Consumed by position: both passes walk the identical nested loops in the
-	// identical order, so the Nth span visited in pass 2 is the Nth entry here.
-	// The cursors are checked against the slice lengths when the walk finishes,
-	// so a future edit that desynchronises the two passes fails loudly instead
-	// of silently pairing a span with another span's attributes.
-	var spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID
 	// Span identities in walk order, so dedupe below can speak in the same
 	// ordinals the append pass and bisection do.
 	var spanKeys []spanKey
 
-	for ri, resourceSpan := range traces.ResourceSpans().All() {
-		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource(), resourceSpan.SchemaUrl()).ID
-		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
-			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope(), scopeSpan.SchemaUrl())
+	for _, resourceSpan := range traces.ResourceSpans().All() {
+		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			for _, span := range scopeSpan.Spans().All() {
 				spanKeys = append(spanKeys, spanKey{
 					trace: duckdb.UUID(span.TraceID()),
 					span:  util.SpanIDUint64(span.SpanID()),
 				})
-				spanAttrs = append(spanAttrs, dict.AddAttributes(span.Attributes(), ingest.ScopeSpan))
-				for _, event := range span.Events().All() {
-					eventAttrs = append(eventAttrs, dict.AddAttributes(event.Attributes(), ingest.ScopeEvent))
-				}
-				for _, link := range span.Links().All() {
-					linkAttrs = append(linkAttrs, dict.AddAttributes(link.Attributes(), ingest.ScopeLink))
-				}
 			}
 		}
-	}
-
-	if err := dict.Flush(ctx, conn); err != nil {
-		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 	}
 
 	// Skip ids the store already holds before writing rather than after
@@ -135,8 +98,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	// Pass 2: append, retrying in halves so a bad row costs only itself. The
 	// skipped ordinals go in as pre-rejected rather than being tallied on
 	// afterwards, so every rejection is built in one place and in walk order.
-	rejected, err := appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
-		spanAttrs, eventAttrs, linkAttrs, skip)
+	rejected, err := appendSpansBisecting(ctx, conn, traces, skip)
 	if err != nil {
 		return rejected, err
 	}
@@ -153,40 +115,44 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 }
 
 // appendPass writes the spans keep selects, by ordinal rather than id so two
-// occurrences of one id stay separable. Skipped spans still advance all three
-// cursors, which are consumed by position.
+// occurrences of one id stay separable.
 func appendPass(
 	ctx context.Context,
 	conn driver.Conn,
 	traces ptrace.Traces,
-	resourceIDs map[int]duckdb.UUID,
-	scopeIDs map[scopeKey]duckdb.UUID,
-	spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID,
 	keep func(ordinal int) bool,
 ) (err error) {
-	tables := []string{"events", "links", "spans"}
-	appenders, err := ingest.NewAppenders(conn, tables)
-	if err != nil {
-		return err
-	}
+	a := nested.NewSpanAppender(ctx, conn)
+	var catalogue searchindex.Batch
 	defer func() {
-		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+		if err != nil {
+			a.Discard()
+			return
+		}
+		err = errors.Join(err, a.Close())
+		if err == nil {
+			if indexErr := catalogue.Write(ctx, conn); indexErr != nil {
+				err = fmt.Errorf("%w: %w", ingest.ErrNotRowFault, indexErr)
+			}
+		}
 	}()
 
-	spanCount := 0
-	var spanCur, eventCur, linkCur int
-	for ri, resourceSpan := range traces.ResourceSpans().All() {
+	var spanCur int
+	for _, resourceSpan := range traces.ResourceSpans().All() {
 		resource := resourceSpan.Resource()
-		resourceID := resourceIDs[ri]
-		// Denormalize service.name onto every span row in this resource.
-		// Source of truth is the resource's attribute row, reached through
-		// resource_id; this column is the index target for "filter spans by
-		// service", which is the hottest filter in span search.
+		resourceInput, err := ingest.ResourceInput(resource, resourceSpan.SchemaUrl())
+		if err != nil {
+			return err
+		}
 		serviceName := resourceServiceName(resource.Attributes())
 
-		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
-			scopeID := scopeIDs[scopeKey{ri, si}]
+		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
+			scopeInput, err := ingest.ScopeInput(scopeSpan.Scope(), scopeSpan.SchemaUrl())
+			if err != nil {
+				return err
+			}
 
+			a.SetContext(resourceInput, scopeInput)
 			for _, span := range scopeSpan.Spans().All() {
 				if err := ctx.Err(); err != nil {
 					return err
@@ -194,68 +160,75 @@ func appendPass(
 
 				if !keep(spanCur) {
 					spanCur++
-					eventCur += span.Events().Len()
-					linkCur += span.Links().Len()
 					continue
 				}
 
 				traceUUID := duckdb.UUID(span.TraceID())
 
 				spanID := util.SpanIDUint64(span.SpanID())
+				rootKey := fmt.Sprintf("%s:%016x", span.TraceID().String(), spanID)
 
 				var parentSpanID driver.Value
 				if pid := span.ParentSpanID(); !pid.IsEmpty() {
 					parentSpanID = util.SpanIDUint64(pid)
 				}
 
-				// Hashed in pass 1. NonNil because AttributeSet returns nil for
-				// an empty map while the column is NOT NULL: an owner with no
-				// attributes stores an empty array.
-				spanAttrIDs := ingest.NonNil(spanAttrs[spanCur])
+				attributes, err := ingest.AttributeBytes(span.Attributes())
+				if err != nil {
+					return err
+				}
 				spanCur++
 
-				err := appenders["spans"].AppendRow(
-					traceUUID,                     // TraceID UUID
-					span.TraceState().AsRaw(),     // TraceState VARCHAR
-					spanID,                        // SpanID UBIGINT
-					parentSpanID,                  // ParentSpanID UBIGINT or NULL
-					uint32(span.Flags()),          // Flags UINTEGER
-					span.Name(),                   // Name VARCHAR
-					int32(span.Kind()),            // Kind INTEGER (received enum code)
-					uint64(span.StartTimestamp()), // StartTime UBIGINT
-					uint64(span.EndTimestamp()),   // EndTime UBIGINT
-					resourceID,                    // ResourceID UUID
-					scopeID,                       // ScopeID UUID
-					spanAttrIDs,                   // AttributeIDs UUID[]
-					span.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-					span.DroppedEventsCount(),     // DroppedEventsCount UINTEGER
-					span.DroppedLinksCount(),      // DroppedLinksCount UINTEGER
-					int32(span.Status().Code()),   // StatusCode INTEGER (received enum code)
-					span.Status().Message(),       // StatusMessage VARCHAR
-					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
-				)
+				err = a.AppendSpan(span, attributes, serviceName)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 				}
+				resourceRef, scopeRef, err := catalogue.Contexts(resourceInput, scopeInput)
+				if err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+				}
+				parent := searchindex.Object{Ref: "span:span:" + rootKey, Signal: "span", Owner: "span", RootKey: rootKey, RecordKey: rootKey, ResourceRef: resourceRef, ScopeRef: scopeRef}
+				if err := parent.AddNative("attributes", attributes); err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+				}
+				kind, status := span.Kind().String(), span.Status().Code().String()
+				if int32(span.Kind()) < 0 || int32(span.Kind()) > 5 {
+					kind = fmt.Sprintf("Unknown (%d)", span.Kind())
+				}
+				if int32(span.Status().Code()) < 0 || int32(span.Status().Code()) > 2 {
+					status = fmt.Sprintf("Unknown (%d)", span.Status().Code())
+				}
+				var parentWireID any
+				if parentSpanID != nil {
+					parentWireID = span.ParentSpanID().String()
+				}
+				if err := parent.AddStrings(map[string]any{"traceID": span.TraceID().String(), "spanID": span.SpanID().String(), "parentSpanID": parentWireID, "name": span.Name(), "statusMessage": span.Status().Message(), "traceState": span.TraceState().AsRaw(), "kind": kind, "status": status}); err != nil {
+					return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+				}
+				catalogue.Add(parent)
 
-				for _, event := range span.Events().All() {
-					eventAttrIDs := ingest.NonNil(eventAttrs[eventCur])
-					eventCur++
-					err = appenders["events"].AppendRow(
-						duckdb.UUID(uuid.New()),        // ID UUID
-						traceUUID,                      // TraceID UUID
-						spanID,                         // SpanID UBIGINT
-						event.Name(),                   // Name VARCHAR
-						uint64(event.Timestamp()),      // Timestamp UBIGINT
-						eventAttrIDs,                   // AttributeIDs UUID[]
-						event.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-					)
+				for ordinal, event := range span.Events().All() {
+					eventID := uuid.New()
+					attributes, err := ingest.AttributeBytes(event.Attributes())
+					if err != nil {
+						return err
+					}
+					err = a.AppendEvent(event, eventID, traceUUID, spanID, ordinal, attributes)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
+					child := searchindex.Object{Ref: "span:event:" + eventID.String(), Signal: "span", Owner: "event", RootKey: rootKey, RecordKey: eventID.String(), ParentRef: parent.Ref}
+					if err := child.AddNative("attributes", attributes); err != nil {
+						return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+					}
+					if err := child.AddStrings(map[string]any{"name": event.Name()}); err != nil {
+						return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+					}
+					catalogue.Add(child)
 				}
 
-				for _, link := range span.Links().All() {
+				for ordinal, link := range span.Links().All() {
+					linkID := uuid.New()
 					var linkTraceUUID driver.Value
 					if tid := link.TraceID(); !tid.IsEmpty() {
 						linkTraceUUID = duckdb.UUID(tid)
@@ -265,43 +238,32 @@ func appendPass(
 						linkSpanID = util.SpanIDUint64(sid)
 					}
 
-					linkAttrIDs := ingest.NonNil(linkAttrs[linkCur])
-					linkCur++
-					err = appenders["links"].AppendRow(
-						duckdb.UUID(uuid.New()),       // ID UUID
-						traceUUID,                     // TraceID UUID (owner)
-						spanID,                        // SpanID UBIGINT (owner)
-						linkTraceUUID,                 // LinkedTraceID UUID or NULL
-						linkSpanID,                    // LinkedSpanID UBIGINT or NULL
-						link.TraceState().AsRaw(),     // TraceState VARCHAR
-						linkAttrIDs,                   // AttributeIDs UUID[]
-						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-						uint32(link.Flags()),          // Flags UINTEGER
-					)
+					attributes, err := ingest.AttributeBytes(link.Attributes())
+					if err != nil {
+						return err
+					}
+					err = a.AppendLink(link, linkID, traceUUID, spanID, ordinal, attributes)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
-				}
-
-				spanCount++
-				if spanCount%flushIntervalSpans == 0 {
-					if err := ingest.FlushAppenders(appenders, tables); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
+					child := searchindex.Object{Ref: "span:link:" + linkID.String(), Signal: "span", Owner: "link", RootKey: rootKey, RecordKey: linkID.String(), ParentRef: parent.Ref}
+					if err := child.AddNative("attributes", attributes); err != nil {
+						return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
 					}
+					var traceWireID, spanWireID any
+					if linkTraceUUID != nil {
+						traceWireID = link.TraceID().String()
+					}
+					if linkSpanID != nil {
+						spanWireID = link.SpanID().String()
+					}
+					if err := child.AddStrings(map[string]any{"traceID": traceWireID, "spanID": spanWireID, "traceState": link.TraceState().AsRaw()}); err != nil {
+						return fmt.Errorf("%w: %w", ingest.ErrNotRowFault, err)
+					}
+					catalogue.Add(child)
 				}
 			}
 		}
-	}
-
-	// The two passes must have visited exactly the same owners. If they ever
-	// diverge, every span past the divergence point would silently receive some
-	// other span's attributes -- corruption with no error, which is why this is
-	// checked rather than assumed.
-	if spanCur != len(spanAttrs) || eventCur != len(eventAttrs) || linkCur != len(linkAttrs) {
-		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
-		return fmt.Errorf("Ingest: %w: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
-			ErrSpansStoreInternal, ingest.ErrNotRowFault, spanCur, len(spanAttrs),
-			eventCur, len(eventAttrs), linkCur, len(linkAttrs))
 	}
 
 	return nil
@@ -341,6 +303,10 @@ func searchTraceSummaries(ctx context.Context, db *sql.DB, timeRange timerange.T
 // Split out for the same reason as getTraceViewSQL: so a golden test can pin the
 // rendered text without standing up a store.
 func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
+	return traceSummariesSQL(timeRange, criteria, options, false)
+}
+
+func traceSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions, native bool) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -384,6 +350,13 @@ func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, option
 	matchJoin := ""
 	matchProjection := ""
 	if searchTree != nil {
+		identity := `json_object(
+				'traceID', replace(trace_id::varchar, '-', ''),
+				'spanID', span_id_wire(span_id)
+			)`
+		if native {
+			identity = `struct_pack(traceID := trace_id_wire(trace_id), spanID := span_id_wire(span_id))`
+		}
 		matchCTEs = fmt.Sprintf(`
 		query_matches as materialized (
 			select distinct s.trace_id, s.span_id, s.start_time
@@ -392,18 +365,19 @@ func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, option
 			where %s
 		),
 		matched_span_lists as (
-			select trace_id as matched_trace_id, list(json_object(
-				'traceID', replace(trace_id::varchar, '-', ''),
-				'spanID', span_id_wire(span_id)
-			) order by start_time, span_id) as matched_spans
+			select trace_id as matched_trace_id, list(%s order by start_time, span_id) as matched_spans
 			from query_matches
 			group by trace_id
-		),`, spanSearchFrom, queryWhere)
+		),`, spanSearchFrom, queryWhere, identity)
 		matchJoin = "\n\t\tjoin matched_span_lists matches on matches.matched_trace_id = sub.trace_id"
 		matchProjection = ",\n\t\t\t'matchedSpans', to_json(matches.matched_spans)"
 	}
 
-	finalQuery, err := queries.Render(queries.SearchTraceSummaries, searchTraceSummariesParams{
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	finalQuery, err := render(queries.SearchTraceSummaries, searchTraceSummariesParams{
 		CTEs:             cteSQL,
 		From:             spanSearchFrom,
 		EligibilityWhere: eligibilityWhere,
@@ -591,6 +565,18 @@ func getTraceViewSQL(traceID string, criteria any) (string, []any, error) {
 // parameters and differ only in whether they carry the salvage walk, so the
 // search-predicate plumbing is shared rather than duplicated.
 func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs ...uint64) (string, []any, error) {
+	return spansQuery(name, traceID, criteria, false, spanIDs...)
+}
+
+func spansQuery(name queries.Name, traceID string, criteria any, native bool, spanIDs ...uint64) (string, []any, error) {
+	return traceQuery(name, traceID, criteria, native, false, spanIDs...)
+}
+
+func traceQuery(name queries.Name, traceID string, criteria any, native, lightweight bool, spanIDs ...uint64) (string, []any, error) {
+	return traceQueryColumns(name, traceID, criteria, native, lightweight, nil, spanIDs...)
+}
+
+func traceQueryColumns(name queries.Name, traceID string, criteria any, native, lightweight bool, columns []WaterfallColumn, spanIDs ...uint64) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -613,28 +599,43 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs .
 	matchedJoin := ""
 	matchedExpr := "true"
 	if searchTree != nil {
+		if cteSQL != "" {
+			cteSQL += "\n\t\t\t"
+		}
 		matchedCTE = fmt.Sprintf(`,
 		matched_spans as (
-			select s.span_id
+			%sselect s.span_id
 			%s
 			where %s
-		)`, spanSearchFrom, whereClause)
+		)`, cteSQL, spanSearchFrom, whereClause)
 		matchedJoin = "left join matched_spans ms on ts.span_id = ms.span_id"
 		matchedExpr = "case when ms.span_id is not null then true else false end"
 	}
 
 	// The recursion carries only traversal columns. The tree CTE joins the
 	// payload once and defines one span set for every downstream projection.
+	selectedIDs := ""
 	if len(spanIDs) > 0 {
-		cteSQL += ", selected_ids as (select unnest(?::ubigint[]) as span_id)"
+		selectedIDs = fmt.Sprintf("$%d::ubigint[]", len(args)+1)
 		args = append(args, spanIDs)
 	}
-	query, err := queries.Render(name, getTraceViewParams{
-		CTEs:        cteSQL,
-		MatchedCTE:  matchedCTE,
-		MatchedExpr: matchedExpr,
-		MatchedJoin: matchedJoin,
-		Selected:    len(spanIDs) > 0,
+	render := queries.Render
+	if native {
+		render = queries.RenderArrow
+	}
+	previews, args, err := waterfallColumnExpressions(columns, args, "ts")
+	if err != nil {
+		return "", nil, err
+	}
+	query, err := render(name, getTraceViewParams{
+		SelectedIDs:    selectedIDs,
+		MatchedCTE:     matchedCTE,
+		MatchedExpr:    matchedExpr,
+		MatchedJoin:    matchedJoin,
+		Selected:       len(spanIDs) > 0,
+		Salvage:        name == queries.SalvageSpans,
+		Lightweight:    lightweight,
+		ColumnPreviews: previews,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)
@@ -648,26 +649,6 @@ func GetTraceAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMess
 	return traceAttributeKeys(ctx, db)
 }
 
-// fieldValueQueries names the span columns whose values the search box may
-// complete, keyed by the search grammar's field name. An allowlist of whole
-// baked queries rather than an identifier spliced into one: a field name from
-// the wire never becomes SQL.
-var fieldValueQueries = map[string]string{
-	"name": `
-		select cast(coalesce(
-			to_json(list(sub.v order by sub.cnt desc, sub.v)),
-			to_json([])) as varchar)
-		from (
-			select name as v, count(*) as cnt
-			from spans
-			where name <> '' and name ilike '%' || ? || '%' escape '\'
-			group by name
-			order by cnt desc, name
-			limit ?
-		) sub
-	`,
-}
-
 // GetFieldValueCompletions returns distinct values of one completable span column
 // matching term, most frequent first, as a JSON string array. Backs value
 // completion in the search box.
@@ -678,110 +659,49 @@ var fieldValueQueries = map[string]string{
 // clamped by the caller. A field not in the allowlist is an error rather than
 // an empty result, so a typo in a caller shows up as one.
 func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
-	query, ok := fieldValueQueries[field]
-	if !ok {
+	query, args, err := searchindex.FieldValuesSQL("traces", field, term, limit)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidTraceQuery, field)
 	}
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+	raw, err := searchindex.FieldValuesJSON(ctx, db, query, args)
+	if err != nil {
 		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrSpansStoreInternal, err)
 	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 func GetTraceAttributeDefinitionsByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	query := `
-		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
-			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
-		from (
-			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
-			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
-			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
-			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid where e.trace_id = ?::uuid
-			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid where l.trace_id = ?::uuid
-		) sub
-	`
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID, traceID, traceID, traceID, traceID).Scan(&raw); err != nil {
+	raw, err := searchindex.DefinitionsJSON(ctx, db, "span", traceID)
+	if err != nil {
 		return nil, fmt.Errorf("GetTraceAttributeDefinitionsByTraceID: %w: %w", ErrSpansStoreInternal, err)
 	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return raw, nil
 }
 
 func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
-	query := `
-		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
-			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
-		from (
-			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
-		) sub
-	`
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetTraceAttributeDefinitions: %w: %w", ErrSpansStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return searchindex.Definitions(ctx, db, "span")
 }
 
-// Clear truncates the spans table and all child tables (events, links, and their attributes).
+// Clear deletes owning span rows and their complete search catalogue.
 func Clear(ctx context.Context, db *sql.DB) error {
-	// Attribute, resource and scope rows are not deleted here: they are shared
-	// with logs and metrics, so "was it only ours?" is not a question this
-	// function can answer. ingest.SweepOrphans collects whatever these deletes
-	// orphaned, and the caller runs it once for all three signals.
-	childQueries := []string{
-		`truncate table links`,
-		`truncate table events`,
-		`truncate table spans`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("Clear: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
+	return nested.Mutate(ctx, db, `delete from spans`)
 }
 
 // DeleteSpansByTraceIDs deletes all spans for multiple traces.
 func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) error {
-	if len(traceIDs) == 0 {
-		return nil
-	}
-	ids := util.ToStringList(traceIDs)
-	childQueries := []string{
-		`delete from links where trace_id in (select id from uuid_list(?))`,
-		`delete from events where trace_id in (select id from uuid_list(?))`,
-		`delete from spans where trace_id in (select id from uuid_list(?))`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, ids); err != nil {
-			return fmt.Errorf("DeleteSpansByTraceIDs: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
+	return nested.Mutate(ctx, db, `delete from spans where trace_id in(select id from uuid_list(?))`, util.ToStringList(traceIDs))
 }
 
 func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, eligibilityWhere string, queryWhere string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("s.start_time", timeRange.Start, timeRange.End)
 	timeCondition = strings.ReplaceAll(timeCondition, " AND ", " and ")
-	cteSQL, eligibilityWhere, args, err = search.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams)
+	cteSQL, eligibilityWhere, args, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams, "span", spanDocumentScope)
 	if err != nil || queryNode == nil {
 		return cteSQL, eligibilityWhere, "", args, err
 	}
-	// Keep the time parameters in the discarded CTE so generated query
-	// parameter names retain the same indexes as eligibilityWhere.
-	_, queryWhere, _, err = search.BuildSearchSQL(queryNode, traceFieldMapper(), "", timeParams)
+	// Keep time bindings in the parameter list so query references retain
+	// the same positions as eligibilityWhere.
+	_, queryWhere, _, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), "", timeParams, "span", spanDocumentScope)
 	return cteSQL, eligibilityWhere, queryWhere, args, err
 }
 
@@ -815,44 +735,14 @@ func buildSpanSQL(queryNode *search.QueryNode, traceID string) (cteSQL string, w
 		{Name: "trace_id", Value: traceID},
 	}
 
-	var conditions []string
-	if queryNode != nil {
-		if err := search.BuildConditions(queryNode, &conditions, &params, traceFieldMapper()); err != nil {
-			return "", "", nil, err
-		}
-	}
-
-	if len(conditions) > 0 {
-		whereSQL = "s.trace_id = search_params.trace_id AND (" + strings.Join(conditions, " ") + ")"
-	} else {
-		whereSQL = "s.trace_id = search_params.trace_id"
-	}
-
-	args = make([]any, len(params))
-	cteParams := make([]string, len(params))
-	for i, p := range params {
-		args[i] = p.Value
-		if p.Name == "trace_id" {
-			// Typed in the CTE so every downstream reference is uuid-to-uuid.
-			// Left as a bare parameter, the CTE column is VARCHAR and each use
-			// re-derives the comparison's cast direction from context, which is
-			// exactly the kind of thing that is fine until it isn't.
-			cteParams[i] = "try_cast(? as uuid) as trace_id"
-			continue
-		}
-		cteParams[i] = fmt.Sprintf("? as %s", p.Name)
-	}
-	cteSQL = fmt.Sprintf("search_params as (select %s)", strings.Join(cteParams, ", "))
-	return cteSQL, whereSQL, args, nil
+	return searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), "s.trace_id = try_cast($1 as uuid)", params, "span", spanDocumentScope)
 }
 
+const spanDocumentScope = "try_cast(split_part(search_record.root_key,':',1) as uuid)=s.trace_id and try_cast('0x'||split_part(search_record.root_key,':',2) as ubigint)=s.span_id"
+
 // spanSearchFrom is the FROM clause every span search predicate is written
-// against. resources and scopes are joined in unconditionally because
-// resource.* and scope.* search fields resolve through them. Both are inner
-// joins because resource_id and scope_id are NOT NULL.
-const spanSearchFrom = `from search_params, spans s
-		join resources r on r.id = s.resource_id
-		join scopes sc on sc.id = s.scope_id`
+// against. Resource and scope fields live on each span.
+const spanSearchFrom = `from spans s`
 
 var spanColumns = map[string]struct{}{
 	"flags":                    {},
@@ -911,27 +801,18 @@ var linkColumns = map[string]struct{}{
 }
 
 func traceFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
-		switch field.SearchScope {
-		case "field":
-			expr, err := mapTraceFieldExpression(field)
-			if err != nil {
-				return nil, err
-			}
-			return []search.ResolvedExpression{expr}, nil
-		case "attribute":
-			return mapTraceAttributeExpressions(field, query, params)
-		case "global":
-			return mapTraceGlobalExpressions()
-		default:
-			return nil, fmt.Errorf("unknown search scope %s: %w", field.SearchScope, ErrInvalidTraceQuery)
-		}
-	}
+	return search.Resolver("span", map[string]search.ValueOwner{
+		"span":     {Documents: map[string]string{"attributes": "s.attributes"}},
+		"resource": {Documents: map[string]string{"attributes": "s.resource.attributes"}},
+		"scope":    {Documents: map[string]string{"attributes": "s.scope.attributes"}},
+		"event":    {Documents: map[string]string{"attributes": "e.attributes"}, Correlation: "events e where " + eventOwner},
+		"link":     {Documents: map[string]string{"attributes": "l.attributes"}, Correlation: "links l where " + linkOwner},
+	}, mapTraceFieldExpression, search.RejectUnindexedText)
 }
 
 func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
-	if field.Name == "serviceIdentity" {
-		return search.Text(discovery.ServiceIdentity("r")), nil
+	if field.Name == "serviceIdentity" || field.Name == "resource.serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("s.resource")), nil
 	}
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
 		col := util.CamelToSnake(resourceField)
@@ -939,9 +820,9 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 			return search.ResolvedExpression{}, fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		if resourceField == "droppedAttributesCount" {
-			return search.NativeInteger("r." + col), nil
+			return search.NativeInteger("s.resource." + col), nil
 		}
-		return search.Text("r." + col), nil
+		return search.Text("s.resource." + col), nil
 	}
 	if scopeField, found := strings.CutPrefix(field.Name, "scope."); found {
 		col := util.CamelToSnake(scopeField)
@@ -949,16 +830,16 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 			return search.ResolvedExpression{}, fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		if scopeField == "droppedAttributesCount" {
-			return search.NativeInteger("sc." + col), nil
+			return search.NativeInteger("s.scope." + col), nil
 		}
-		return search.Text("sc." + col), nil
+		return search.Text("s.scope." + col), nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "event."); found {
 		snake := util.CamelToSnake(col)
 		if err := util.ValidateColumnName(snake, eventColumns); err != nil {
 			return search.ResolvedExpression{}, fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		expr := fmt.Sprintf("exists(select 1 from events e where %s and e.%s {COND})", eventOwner, snake)
+		expr := "e." + snake
 		if col == "timestamp" {
 			return search.Timestamp(expr), nil
 		}
@@ -991,7 +872,7 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 		case "linked_trace_id":
 			colExpr = "replace(l.linked_trace_id::varchar, '-', '')"
 		}
-		expr := fmt.Sprintf("exists(select 1 from links l where %s and %s {COND})", linkOwner, colExpr)
+		expr := colExpr
 		if col == "flags" || col == "droppedAttributesCount" {
 			return search.NativeInteger(expr), nil
 		}
@@ -1045,146 +926,4 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 		}
 	}
 	return search.Text(field.Name), nil
-}
-
-// mapTraceAttributeExpressions resolves an attribute against the owner array
-// implied by its scope.
-//
-// Event and link attributes need an EXISTS, because the question is whether
-// *any* event or link on the span matches. A span's own attributes are on its
-// own row, so those stay a plain attr_value lookup.//
-// Resource and scope predicates run against their owner tables, then use the
-// resulting IDs to filter spans.
-func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
-	kind, mode, err := search.AttributeKind(field.Type)
-	if err != nil {
-		return nil, err
-	}
-
-	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
-	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	kindParam := ""
-	if kind != "" {
-		kindParam = fmt.Sprintf("attr_kind_%d", len(*params))
-		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
-	}
-	kindPredicate := search.AttributeKindPredicate(kindParam)
-	valueExpression := search.AttributeValueExpression(kind)
-	if mode != search.OTelArrayOperand {
-		if expression, ok := search.OwnerNullExpression(field, query, keyParam, kindPredicate, valueExpression); ok {
-			return []search.ResolvedExpression{expression}, nil
-		}
-	}
-	if mode == search.OTelArrayOperand {
-		var attributeIDs string
-		switch field.AttributeScope {
-		case "resource":
-			attributeIDs = "r.attribute_ids"
-		case "scope":
-			attributeIDs = "sc.attribute_ids"
-		case "span":
-			attributeIDs = "s.attribute_ids"
-		case "event":
-			attributeIDs = "e.attribute_ids"
-		case "link":
-			attributeIDs = "l.attribute_ids"
-		default:
-			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
-		}
-		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, kindParam, query, params)
-		if err != nil {
-			return nil, err
-		}
-		switch field.AttributeScope {
-		case "resource":
-			predicate = fmt.Sprintf("s.resource_id in (select r.id from resources r where %s)", predicate)
-		case "scope":
-			predicate = fmt.Sprintf("s.scope_id in (select sc.id from scopes sc where %s)", predicate)
-		case "event":
-			predicate = fmt.Sprintf("exists(select 1 from events e where e.trace_id = s.trace_id and e.span_id = s.span_id and %s)", predicate)
-		case "link":
-			predicate = fmt.Sprintf("exists(select 1 from links l where l.trace_id = s.trace_id and l.span_id = s.span_id and %s)", predicate)
-		}
-		return []search.ResolvedExpression{search.Complete(predicate)}, nil
-	}
-
-	switch field.AttributeScope {
-	case "resource":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
-			` s.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s%s and
-				%s {COND})`,
-			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	case "scope":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
-			` s.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s%s and
-				%s {COND})`,
-			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	case "span":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
-			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s%s and %s {COND}
-		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	case "event":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
-			select 1 from events e, unnest(e.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
-			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s%s and %s {COND}
-		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	case "link":
-		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
-			select 1 from links l, unnest(l.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
-			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s%s and %s {COND}
-		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
-	default:
-		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
-	}
-}
-
-func mapTraceGlobalExpressions() ([]search.ResolvedExpression, error) {
-	return search.TextExpressions([]string{
-		"replace(s.trace_id::varchar, '-', '') {COND}",
-		"span_id_wire(s.span_id) {COND}",
-		"span_id_wire(s.parent_span_id) {COND}",
-		"CAST(s.name AS VARCHAR) {COND}",
-		`CAST(case s.kind
-			when 0 then 'Unspecified' when 1 then 'Internal' when 2 then 'Server'
-			when 3 then 'Client' when 4 then 'Producer' when 5 then 'Consumer'
-			else 'Unknown (' || s.kind::varchar || ')' end AS VARCHAR) {COND}`,
-		`CAST(case s.status_code
-			when 0 then 'Unset' when 1 then 'Ok' when 2 then 'Error'
-			else 'Unknown (' || s.status_code::varchar || ')' end AS VARCHAR) {COND}`,
-		"CAST(s.status_message AS VARCHAR) {COND}",
-		"CAST(s.trace_state AS VARCHAR) {COND}",
-		"CAST(sc.name AS VARCHAR) {COND}",
-		"CAST(sc.version AS VARCHAR) {COND}",
-		"exists(select 1 from events e where " + eventOwner + " and CAST(e.name AS VARCHAR) {COND})",
-		"exists(select 1 from links l where " + linkOwner + " and (replace(l.linked_trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or span_id_wire(l.linked_span_id) {COND}))",
-		// Resource, scope and span attributes are on the span's own row, so
-		// concatenating those three arrays is one unnest. Events and links are
-		// separate rows and need their own EXISTS.
-		matchAnyAttribute("unnest(s.attribute_ids || r.attribute_ids || sc.attribute_ids) as t(aid)", ""),
-		matchAnyAttribute("events e, unnest(e.attribute_ids) as t(aid)", eventOwner+" and "),
-		matchAnyAttribute("links l, unnest(l.attribute_ids) as t(aid)", linkOwner+" and "),
-	}), nil
-}
-
-// matchAnyAttribute builds an EXISTS that resolves an owner's attribute id
-// array against the dictionary and tests every stored form against the free-text
-// term: key, value, and element-wise for the four array types.
-//
-// from is the source that produces t(aid); scope narrows that source to the
-// current span and is empty when the array is already on the span's own row.
-func matchAnyAttribute(from, scope string) string {
-	return fmt.Sprintf(`exists(
-		select 1
-		from %s
-		join attributes a on a.id = t.aid
-		where %s(
-			a.key {COND} or a.value::varchar {COND} or
-			exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
-		)
-	)`, from, scope)
 }

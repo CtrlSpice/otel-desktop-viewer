@@ -52,4 +52,18 @@ describe('itemHref', () => {
       '/traces/trace-1?start=50&end=60&span=span-a'
     )
   })
+
+  it.each(['traces', 'metrics', 'logs'] as const)(
+    'uses the displayed query and window for %s instead of current route state',
+    signal => {
+      const query = { start: '100', end: '200', q: 'search("displayed")' }
+      expect(parseRoute(itemHref(signal, 'owner', undefined, query))).toEqual({
+        path: `/${signal}/owner`,
+        query,
+      })
+      expect(
+        parseRoute(itemHref(signal, 'owner', undefined, { time: 'all' })).query
+      ).toEqual({ time: 'all' })
+    }
+  )
 })

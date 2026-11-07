@@ -5,7 +5,8 @@ go 1.26.0
 toolchain go1.26.5
 
 require (
-	github.com/duckdb/duckdb-go/v2 v2.10506.0
+	github.com/apache/arrow-go/v18 v18.8.1-0.20261006142254-5fb2a2008bd0
+	github.com/duckdb/duckdb-go/v2 v2.20000.0
 	github.com/google/uuid v1.6.0
 	github.com/open-feature/go-sdk v1.19.0
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.8.0
@@ -49,6 +50,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/exp/jsonrpc2 v0.0.0-20260718201538-764159d718ef
 	golang.org/x/sys v0.49.0
+	golang.org/x/text v0.43.0
 	google.golang.org/grpc v1.84.0
 )
 
@@ -65,7 +67,6 @@ require (
 	github.com/DataDog/go-sqllexer v0.1.12 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.35.0 // indirect
 	github.com/Microsoft/go-winio v0.6.3 // indirect
-	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.2 // indirect
 	github.com/brunoscheufler/aws-ecs-metadata-go v0.0.0-20221221133751-67e37ae746cd // indirect
@@ -75,12 +76,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/diegoholiveira/jsonlogic/v3 v3.9.1 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.10506.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10506.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10506.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10506.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10506.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10506.0 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.20000.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/elastic/lunes v0.2.2 // indirect
@@ -109,7 +105,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
-	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/knadh/koanf/maps v0.1.3 // indirect
 	github.com/knadh/koanf/providers/confmap v1.0.1 // indirect
 	github.com/knadh/koanf/v2 v2.3.8 // indirect
@@ -144,6 +140,11 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	go.duckdb.org/libduckdb/darwin-amd64 v0.20000.0 // indirect
+	go.duckdb.org/libduckdb/darwin-arm64 v0.20000.0 // indirect
+	go.duckdb.org/libduckdb/linux-amd64 v0.20000.0 // indirect
+	go.duckdb.org/libduckdb/linux-arm64 v0.20000.0 // indirect
+	go.duckdb.org/libduckdb/windows-amd64 v0.20000.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector v0.162.0 // indirect
 	go.opentelemetry.io/collector/client v1.69.0 // indirect
@@ -220,12 +221,8 @@ require (
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260924152758-ed294f943157 // indirect
 	golang.org/x/term v0.47.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect

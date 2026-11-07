@@ -177,7 +177,7 @@ describe('Waterfall attribute values', () => {
     ).toBe(true)
   })
 
-  it('distinguishes absent, empty, null, zero and negative zero without losing nested values', () => {
+  it('distinguishes missing and scalar kinds and retains repeated keys in bounded previews', () => {
     const span = spanNode('first', null, 0).spanData
     span.attributes = [
       { key: 'empty string', value: { kind: 'string', value: '' } },
@@ -201,8 +201,8 @@ describe('Waterfall attribute values', () => {
     expect(cell('null').text).toBe('null')
     expect(cell('zero').text).toBe('0')
     expect(cell('negative zero').text).toBe('-0')
-    expect(cell('map').text).toContain('"a": 9223372036854775807,')
-    expect(cell('map').text).toContain('"a": "two  spaces"')
+    expect(cell('map').text).toContain('a: 9223372036854775807,')
+    expect(cell('map').text).toContain('a: "two spaces"')
   })
 })
 

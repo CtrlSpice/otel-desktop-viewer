@@ -16,21 +16,6 @@ before:
     - cmd: go mod tidy
 
 builds:
-  - id: macos_amd64
-    binary: otel-desktop-viewer
-    goos: 
-      - darwin
-    goarch:
-      - amd64
-    # Reproducible binary timestamp.
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    # Remove local file paths from the binary.
-    flags:
-      - -trimpath
-    # Strip debug info and inject build metadata.
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
-
   - id: macos_arm64
     binary: otel-desktop-viewer
     goos: 
@@ -82,7 +67,6 @@ builds:
 archives:
   - id: otel-desktop-viewer-archive
     ids:
-      - macos_amd64
       - macos_arm64
       - linux_amd64
       - linux_arm64
@@ -97,7 +81,6 @@ archives:
   # Homebrew excludes Windows.
   - id: homebrew-archive
     ids:
-      - macos_amd64
       - macos_arm64
       - linux_amd64
       - linux_arm64
@@ -153,8 +136,8 @@ release:
     delete it, or pass a different `--db`. Nothing is migrated and nothing is
     silently reinterpreted.
 
-    **0.6.0 uses schema 24.** Databases from 0.5.x and earlier will not open.
-    To keep viewing an older database, use its original binary. Start 0.6.0
+    **This release uses schema 27.** Databases with any other schema version will not open.
+    To keep viewing an older database, use its original binary. Start this release
     with a new `--db` path, or delete the old file if you no longer need it.
     Running without `--db` is unaffected: it starts with an empty in-memory store.
 
@@ -169,7 +152,6 @@ notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       ids:
-        - macos_amd64
         - macos_arm64
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"

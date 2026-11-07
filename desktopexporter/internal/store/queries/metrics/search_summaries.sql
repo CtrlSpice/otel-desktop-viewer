@@ -1,4 +1,8 @@
-{{.CTEs}},
+-- Share the flattened point projection across native search hits, window counts,
+-- last values and all-time series cardinality. Re-expanding the owning lists for
+-- each consumer repeatedly decodes the same nested VARIANT payloads.
+with metric_datapoints as materialized (select * from main.metric_datapoints),
+{{if .CTEs}}{{.CTEs}},{{end}}
 		filtered_metrics as (
 			select s.*
 			{{.From}}
@@ -7,7 +11,7 @@
 		metric_latest_dp as (
 			select d.metric_id, max(d.timestamp) as last_dp_ts
 			from metric_datapoints d
-			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
+			inner join filtered_metrics fm on d.metric_id = fm.id
 			{{.DatapointWhere}}
 			group by d.metric_id
 		),
@@ -19,7 +23,7 @@
 		),
 		filtered_dps as (
 			select d.*, fm.metric_type from metric_datapoints d
-			inner join candidate_metrics fm on d.metric_id = fm.id, search_params
+			inner join candidate_metrics fm on d.metric_id = fm.id
 			{{.DatapointWhere}}
 		),
 		-- series_count is window-scoped; series_cardinality covers all retained
@@ -47,7 +51,6 @@
 			select
 				fm.id,
 				fm.name,
-				fm.description,
 				fm.unit,
 				fm.metric_type,
 				fm.aggregation_temporality,
@@ -69,10 +72,18 @@
 			from summary_rows
 			order by {{.SummaryOrder}}{{.SummaryLimit}}
 		)
+		{{if arrow}}select sub.id::varchar as metricRef,
+			sub.name, sub.unit, sub.metric_type as metricType,
+			case when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram')
+				then sub.aggregation_temporality end as aggregationTemporalityCode,
+			case when sub.metric_type = 'Sum' then sub.is_monotonic end as isMonotonic,
+			sub.service_name as serviceName, sub.series_count as seriesCount,
+			sub.series_cardinality as seriesCardinality, sub.datapoint_count as dataPointCount,
+			sub.last_value as lastValue, sub.last_dp_ts as lastSeen
+		from selected_summaries sub order by {{.SummaryOrder}}{{else}}
 		select cast(coalesce(to_json(list(json_object(
 			'metricRef', cast(sub.id as varchar),
 			'name', sub.name,
-			'description', sub.description,
 			'unit', sub.unit,
 			'metricType', sub.metric_type,
 			-- Code is received OTLP data; label is a display projection.
@@ -97,4 +108,4 @@
 			'lastValue', double_wire_json(sub.last_value),
 			'lastSeen', sub.last_dp_ts::varchar
 		) order by {{.SummaryOrder}})), '[]') as varchar) as summaries
-		from selected_summaries sub
+		from selected_summaries sub{{end}}

@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
 import {
+  serviceColorIdentity,
+  serviceColorStorageVersion,
+} from './service-color-identity'
+import {
   GRAPH_SWATCHES,
   GRAPH_PALETTE_VERSION,
   graphInkCurve,
@@ -123,7 +127,7 @@ it('exhausts only the bright pool, then reuses it without moving owners', async 
 it('merges cross-tab hidden owners before assigning a new service', async () => {
   const state = await setup()
   const existing = state.color('existing')
-  const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services:${AUTOMATIC_COLOR_VERSION}`
+  const key = `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services:${AUTOMATIC_COLOR_VERSION}${serviceColorStorageVersion}`
   const hiddenSlot = AUTOMATIC_COLOR_SLOTS[1]!
   const saved: [string, number][] = JSON.parse(localStorage.getItem(key)!)
   localStorage.setItem(
@@ -157,4 +161,33 @@ it('keeps in-memory ownership when browser storage is blocked', async () => {
   } finally {
     spy.mockRestore()
   }
+})
+
+it('keeps saved long-name ownership distinct from literal hash-looking names', async () => {
+  const long = '雪'.repeat(200)
+  const compact = serviceColorIdentity(long)
+  const literal = serviceColorIdentity(compact)
+  expect(compact).toMatch(/^sha256:[a-f0-9]{64}$/)
+  expect(literal).not.toBe(compact)
+  localStorage.setItem(
+    `graph-colour-slots:${GRAPH_PALETTE_VERSION}:224:services:${AUTOMATIC_COLOR_VERSION}`,
+    JSON.stringify([
+      [long, 19],
+      [compact, 21],
+    ])
+  )
+  localStorage.setItem(
+    `graph-colour-overrides:${GRAPH_PALETTE_VERSION}:services`,
+    JSON.stringify([[long, GRAPH_SWATCHES[23]!.id]])
+  )
+  const state = await setup()
+  expect(state.color(long)).toBe(GRAPH_SWATCHES[23]!.color)
+  expect(state.color(compact)).toBe(GRAPH_SWATCHES[21]!.color)
+  state.graphColorOverrides.set('services', compact, null)
+  expect(state.color(long)).toBe(GRAPH_SWATCHES[19]!.color)
+  state.color('another')
+  vi.resetModules()
+  const restored = await setup()
+  expect(restored.color(long)).toBe(GRAPH_SWATCHES[19]!.color)
+  expect(restored.color(compact)).toBe(GRAPH_SWATCHES[21]!.color)
 })

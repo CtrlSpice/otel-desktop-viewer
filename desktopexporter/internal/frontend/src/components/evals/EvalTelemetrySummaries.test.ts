@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts as render } from '@/test/render-helpers'
-import type { SpanNode } from '@/types/api-types'
+import type { SpanNode, TraceSummary } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
 import EvalTelemetrySection from './EvalTelemetrySection.svelte'
 import { evalTelemetrySummaries } from './eval-telemetry-summaries'
@@ -12,6 +13,7 @@ import { buildEvalOutline } from './eval-outline'
 import { groupResults } from './group-results'
 import { indexEvalTraces, referenceKey } from './eval-traces'
 import { traceHref } from './model'
+import type { EvalRequestStatus } from './eval-request-state'
 
 beforeEach(() => {
   vi.spyOn(telemetryAPI, 'getTraceSummary').mockRejectedValue(
@@ -21,6 +23,129 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 const reference = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
+
+it('publishes each trace lookup immediately and shows slow feedback only for the pending trace', async () => {
+  const a = 'a'.repeat(32),
+    b = 'b'.repeat(32)
+  let finish!: (value: null) => void
+  vi.mocked(telemetryAPI.getTraceSummary).mockImplementation(id =>
+    id === a
+      ? Promise.resolve(null)
+      : new Promise(resolve => {
+          finish = resolve
+        })
+  )
+  const ontracecount = vi.fn()
+  render(EvalTelemetrySummaries, {
+    entries: [
+      { reference: { traceID: a }, label: 'A' },
+      { reference: { traceID: b }, label: 'B' },
+    ],
+    ontracecount,
+  })
+  expect(screen.queryByText('Loading trace…')).toBeNull()
+  await screen.findByText('(unavailable)')
+  expect(screen.getAllByRole('link')[0]).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  )
+  expect(screen.getAllByRole('link')[0]).not.toHaveAttribute('href')
+  expect(screen.getAllByRole('link')[1]).toHaveAttribute('href')
+  expect(ontracecount).toHaveBeenLastCalledWith(undefined)
+  expect(await screen.findByText('Loading trace…')).toBeVisible()
+  finish(null)
+  await waitFor(() =>
+    expect(screen.getAllByText('(unavailable)')).toHaveLength(2)
+  )
+  expect(screen.queryByText('Loading trace…')).toBeNull()
+  expect(ontracecount).toHaveBeenLastCalledWith(0)
+})
+
+it('rejects superseded trace lookups including A → B → A', async () => {
+  const pending: Array<(value: null) => void> = []
+  const lookup = vi
+    .mocked(telemetryAPI.getTraceSummary)
+    .mockImplementation(() => new Promise(resolve => pending.push(resolve)))
+  const a = { reference: { traceID: 'a'.repeat(32) }, label: 'A' }
+  const b = { reference: { traceID: 'b'.repeat(32) }, label: 'B' }
+  const view = render(EvalTelemetrySummaries, { entries: [a] })
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await view.rerender({ componentProps: { entries: [b] } })
+  await view.rerender({ componentProps: { entries: [a] } })
+  expect(lookup.mock.calls[0][1]?.aborted).toBe(true)
+  expect(lookup.mock.calls[1][1]?.aborted).toBe(true)
+  pending[0](null)
+  pending[1](null)
+  await Promise.resolve()
+  expect(screen.queryByText('(unavailable)')).toBeNull()
+  pending[2](null)
+  await screen.findByText('(unavailable)')
+})
+
+it.each(['failure', 'success', 'missing'] as const)(
+  'forgets an earlier absence during a fresh lookup that ends in %s',
+  async outcome => {
+    const a = { reference: { traceID: 'a'.repeat(32) }, label: 'A' }
+    const b = { reference: { traceID: 'b'.repeat(32) }, label: 'B' }
+    const found: TraceSummary = {
+      traceID: b.reference.traceID,
+      hasRootSpan: true,
+      rootSpan: { name: 'Received root', serviceName: 'eval-agent' },
+      startTime: 0n,
+      durationNs: 100n,
+      spanCount: 2,
+      errorCount: 0,
+    }
+    let finish!: (value: TraceSummary | null) => void
+    let fail!: (error: Error) => void
+    const lookup = vi
+      .mocked(telemetryAPI.getTraceSummary)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(found)
+      .mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          finish = resolve
+          fail = reject
+        })
+      )
+    const ontracecount = vi.fn()
+    const view = render(EvalTelemetrySummaries, { entries: [a], ontracecount })
+    await screen.findByText('(unavailable)')
+    expect(ontracecount).toHaveBeenLastCalledWith(0)
+    await view.rerender({ componentProps: { entries: [b], ontracecount } })
+    await screen.findByText('Received root')
+    ontracecount.mockClear()
+    await view.rerender({ componentProps: { entries: [a], ontracecount } })
+    await waitFor(() => expect(lookup).toHaveBeenCalledTimes(3))
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', traceHref(a.reference))
+    expect(link).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByText('(unavailable)')).toBeNull()
+    expect(ontracecount).toHaveBeenLastCalledWith(undefined)
+    expect(ontracecount.mock.calls.every(([count]) => count !== 0)).toBe(true)
+    if (outcome === 'failure') fail(new Error('fresh lookup failed'))
+    else
+      finish(
+        outcome === 'missing'
+          ? null
+          : { ...found, traceID: a.reference.traceID }
+      )
+    await tick()
+    await tick()
+    if (outcome === 'missing') {
+      await waitFor(() => expect(link).toHaveAttribute('aria-disabled', 'true'))
+      expect(ontracecount).toHaveBeenLastCalledWith(0)
+    } else {
+      expect(link).toHaveAttribute('href', traceHref(a.reference))
+      expect(link).not.toHaveAttribute('aria-disabled', 'true')
+      expect(screen.queryByText('(unavailable)')).toBeNull()
+      expect(ontracecount).toHaveBeenLastCalledWith(
+        outcome === 'success' ? 1 : undefined
+      )
+    }
+  }
+)
+
 const node: SpanNode = {
   depth: 0,
   matched: true,
@@ -53,7 +178,217 @@ const node: SpanNode = {
   },
 }
 
-it('counts distinct connected traces and scoped logs, keeping failed counts unavailable', async () => {
+it('does not call a pending or failed referenced span absent when its trace exists', async () => {
+  const found: TraceSummary = {
+    traceID: reference.traceID,
+    hasRootSpan: true,
+    rootSpan: { name: 'Stored root', serviceName: 'runner' },
+    startTime: 1n,
+    durationNs: 100n,
+    spanCount: 1,
+    errorCount: 0,
+  }
+  vi.mocked(telemetryAPI.getTraceSummary).mockResolvedValue(found)
+  const props = {
+    entries: [{ reference, label: 'Execution' }],
+    status: new Map<string, EvalRequestStatus>([
+      [reference.traceID, 'pending'],
+    ]),
+    loading: true,
+  }
+  const view = render(EvalTelemetrySummaries, props)
+  await waitFor(() =>
+    expect(telemetryAPI.getTraceSummary).toHaveBeenCalledOnce()
+  )
+  expect(screen.queryByText('Span unavailable')).toBeNull()
+  await view.rerender({
+    componentProps: {
+      ...props,
+      loading: false,
+      status: new Map([[reference.traceID, 'failed']]),
+    },
+  })
+  expect(screen.queryByText('Span unavailable')).toBeNull()
+  expect(screen.getByText('Span lookup failed')).toBeVisible()
+  expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(reference))
+  await view.rerender({
+    componentProps: {
+      ...props,
+      loading: false,
+      status: new Map([[reference.traceID, 'ready']]),
+    },
+  })
+  expect(screen.getByText('Span not stored')).toBeVisible()
+  expect(screen.queryByText('Span lookup failed')).toBeNull()
+})
+
+it('keeps unfinished summary lookups when a sibling span arrives', async () => {
+  const references = ['a', 'b', 'c'].map(letter => ({
+    traceID: letter.repeat(32),
+    spanID: reference.spanID,
+  }))
+  const pending = references.map(() =>
+    Promise.withResolvers<TraceSummary | null>()
+  )
+  const lookup = vi
+    .mocked(telemetryAPI.getTraceSummary)
+    .mockImplementation(
+      id =>
+        pending[references.findIndex(reference => reference.traceID === id)]
+          .promise
+    )
+  const entries = references.map((reference, index) => ({
+    reference,
+    label: `Result ${index}`,
+  }))
+  const view = render(EvalTelemetrySummaries, { entries })
+  await waitFor(() => expect(lookup).toHaveBeenCalledTimes(3))
+  await view.rerender({
+    componentProps: {
+      entries,
+      nodes: new Map([[referenceKey(references[0]), node]]),
+    },
+  })
+  expect(lookup).toHaveBeenCalledTimes(3)
+  expect(lookup.mock.calls[0][1]?.aborted).toBe(true)
+  expect(lookup.mock.calls[1][1]?.aborted).toBe(false)
+  expect(lookup.mock.calls[2][1]?.aborted).toBe(false)
+  pending[1].resolve(null)
+  await screen.findByText('(unavailable)')
+  expect(screen.getAllByRole('link')[2]).toHaveAttribute(
+    'href',
+    traceHref(references[2])
+  )
+  view.unmount()
+  expect(lookup.mock.calls[2][1]?.aborted).toBe(true)
+  pending[0].resolve(null)
+  pending[2].resolve(null)
+})
+
+it('refreshes only the arriving trace log count and never publishes a partial count as complete', async () => {
+  type Logs = Awaited<ReturnType<typeof telemetryAPI.getTraceLogSummaries>>
+  const references = ['a', 'b', 'c'].map(letter => ({
+    traceID: letter.repeat(32),
+    spanID: reference.spanID,
+  }))
+  const pending: Array<ReturnType<typeof Promise.withResolvers<Logs>>> = []
+  const lookup = vi
+    .spyOn(telemetryAPI, 'getTraceLogSummaries')
+    .mockImplementation(() => {
+      const request = Promise.withResolvers<Logs>()
+      pending.push(request)
+      return request.promise
+    })
+  const entries = references.map((reference, index) => ({
+    reference,
+    label: `Result ${index}`,
+  }))
+  const props = { entries, evidenceLogs: [] }
+  const view = render(EvalTelemetrySection, props)
+  await waitFor(() => expect(lookup).toHaveBeenCalledTimes(3))
+  expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+  const nodes = new Map([[referenceKey(references[0]), node]])
+  await view.rerender({ componentProps: { ...props, nodes } })
+  expect(lookup).toHaveBeenCalledTimes(4)
+  expect(lookup.mock.calls[3][0]).toBe(references[0].traceID)
+  expect(lookup.mock.calls[0][1]?.aborted).toBe(true)
+  expect(lookup.mock.calls[1][1]?.aborted).toBe(false)
+  expect(lookup.mock.calls[2][1]?.aborted).toBe(false)
+  const log = (logRef: string): Logs => [
+    {
+      logRef,
+      timestamp: 1n,
+      spanID: reference.spanID,
+      eventName: '',
+      severityNumber: 0,
+      severityText: '',
+      serviceName: '',
+      bodyPreview: '',
+    },
+  ]
+  pending[0].resolve(log('stale'))
+  pending[1].resolve(log('b'))
+  pending[2].reject(new Error('unavailable'))
+  pending[3].resolve(log('a'))
+  await screen.findByText('Log count could not be loaded.')
+  expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+  await view.rerender({
+    componentProps: {
+      ...props,
+      nodes: new Map(nodes).set(referenceKey(references[2]), {
+        ...node,
+        spanData: { ...node.spanData, ...references[2] },
+      }),
+    },
+  })
+  expect(lookup).toHaveBeenCalledTimes(5)
+  expect(lookup.mock.calls[4][0]).toBe(references[2].traceID)
+  pending[4].resolve(log('c'))
+  await screen.findByText(/3 logs/)
+  view.unmount()
+  expect(lookup.mock.calls.every(([, signal]) => signal?.aborted)).toBe(true)
+})
+
+it.each(['success', 'failure'] as const)(
+  'does not attribute previous telemetry counts to a new selection ending in %s',
+  async outcome => {
+    type Logs = Awaited<ReturnType<typeof telemetryAPI.getTraceLogSummaries>>
+    const nextTrace = Promise.withResolvers<TraceSummary | null>()
+    const nextLogs = Promise.withResolvers<Logs>()
+    const a = { reference: { traceID: 'a'.repeat(32) }, label: 'A' }
+    const b = { reference: { traceID: 'b'.repeat(32) }, label: 'B' }
+    vi.mocked(telemetryAPI.getTraceSummary)
+      .mockResolvedValueOnce({
+        traceID: a.reference.traceID,
+        hasRootSpan: true,
+        rootSpan: { name: 'Trace A', serviceName: 'runner' },
+        startTime: 1n,
+        durationNs: 100n,
+        spanCount: 1,
+        errorCount: 0,
+      })
+      .mockReturnValueOnce(nextTrace.promise)
+    vi.spyOn(telemetryAPI, 'getTraceLogSummaries')
+      .mockResolvedValueOnce(
+        ['one', 'two', 'three'].map(logRef => ({
+          logRef,
+          timestamp: 1n,
+          spanID: reference.spanID,
+          eventName: '',
+          severityNumber: 0,
+          severityText: '',
+          serviceName: '',
+          bodyPreview: '',
+        }))
+      )
+      .mockReturnValueOnce(nextLogs.promise)
+    const props = { entries: [a], wholeTraces: true, evidenceLogs: [] }
+    const view = render(EvalTelemetrySection, props)
+    await screen.findByText('[1 trace | 3 logs]')
+    await view.rerender({ componentProps: { ...props, entries: [b] } })
+    expect(screen.getByRole('link')).toHaveAttribute(
+      'href',
+      traceHref(b.reference)
+    )
+    expect(screen.queryByText(/\d+ traces?/)).toBeNull()
+    expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+    if (outcome === 'failure') {
+      nextTrace.reject(new Error('trace lookup failed'))
+      nextLogs.reject(new Error('log lookup failed'))
+      await screen.findByText('Log count could not be loaded.')
+      expect(screen.queryByText(/\d+ traces?/)).toBeNull()
+      expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+    } else {
+      nextTrace.resolve(null)
+      await screen.findByText('[0 traces]')
+      expect(screen.queryByText(/\d+ logs?/)).toBeNull()
+      nextLogs.resolve([])
+      await screen.findByText('[0 traces | 0 logs]')
+    }
+  }
+)
+
+it('counts distinct connected traces and scoped logs, retaining same-selection counts on failure', async () => {
   const logs = vi
     .spyOn(telemetryAPI, 'getTraceLogSummaries')
     .mockResolvedValue([
@@ -102,8 +437,16 @@ it('counts distinct connected traces and scoped logs, keeping failed counts unav
     expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
   )
   logs.mockRejectedValueOnce(new Error('offline'))
-  await rerender({ componentProps: { ...props, wholeTraces: true } })
-  await waitFor(() => expect(screen.getByText('[1 trace]')).toBeVisible())
+  await rerender({
+    componentProps: {
+      ...props,
+      entries: props.entries.slice(0, 1),
+      wholeTraces: false,
+      nodes: new Map([[referenceKey(reference), { ...node }]]),
+    },
+  })
+  await waitFor(() => expect(logs).toHaveBeenCalledTimes(3))
+  expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
   expect(screen.queryByText(/0 logs/)).toBeNull()
 })
 
@@ -174,7 +517,7 @@ it('keeps unavailable references navigable and does not borrow a same-ID span fr
     entries: [{ reference: other, label: 'Execution' }],
     nodes: new Map([[referenceKey(reference), node]]),
   })
-  expect(screen.getByText('Span unavailable')).toBeVisible()
+  expect(screen.getByText('Span lookup unavailable')).toBeVisible()
   expect(screen.queryByText('recorded operation')).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(other))
 })

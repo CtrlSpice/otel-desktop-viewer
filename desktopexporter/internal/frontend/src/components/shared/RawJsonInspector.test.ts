@@ -82,6 +82,24 @@ function expectEmptyPreview() {
 }
 
 describe('RawJsonInspector selection changes', () => {
+  it('reloads the same export URL when the displayed record is refreshed', async () => {
+    const request = await mockExport()
+    const view = render(RawJsonInspector, {
+      active: true,
+      wholeURL: datapoint.url,
+      scopes: [datapoint],
+      refreshKey: 1,
+    })
+    await screen.findByLabelText('Raw OTLP JSON')
+    expect(request.fetch).toHaveBeenCalledTimes(2)
+    await view.rerender({ refreshKey: 2 })
+    await waitFor(() => expect(request.fetch).toHaveBeenCalledTimes(4))
+    expect(request.signals.slice(0, 2).every(signal => signal.aborted)).toBe(
+      true
+    )
+    await screen.findByLabelText('Raw OTLP JSON')
+  })
+
   it('retains the completed editor and folds across tab changes without fetching again', async () => {
     const request = await mockExport()
     const view = render(RawJsonInspector, {
@@ -129,7 +147,8 @@ describe('RawJsonInspector selection changes', () => {
         scopes: [datapoint],
       })
       await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
-      expect(screen.getByText('Loading JSON…')).toBeVisible()
+      expect(screen.queryByText('Loading JSON…')).toBeNull()
+      expect(await screen.findByText('Loading JSON…')).toBeVisible()
       await act(async () => request.resume())
       await screen.findByLabelText('Raw OTLP JSON')
     }
@@ -151,7 +170,7 @@ describe('RawJsonInspector selection changes', () => {
       await screen.findByRole('button', { name: 'Load 2 MiB preview' })
     )
     await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
-    expect(screen.getByText('Loading JSON…')).toBeVisible()
+    expect(await screen.findByText('Loading JSON…')).toBeVisible()
     expect(request.fetch.mock.calls[1]![1].headers).toEqual({
       Range: 'bytes=0-2097151',
     })
@@ -196,7 +215,7 @@ describe('RawJsonInspector selection changes', () => {
       await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
       // Flush HEAD's finally as well as the effect that starts GET.
       await act(async () => {})
-      expect(screen.getByText('Loading JSON…')).toBeVisible()
+      expect(await screen.findByText('Loading JSON…')).toBeVisible()
       expect(screen.queryByRole('button', { name: /^Load / })).toBeNull()
       expect(screen.queryByLabelText('Raw OTLP JSON')).toBeNull()
       await act(async () => request.resume())
@@ -223,7 +242,7 @@ describe('RawJsonInspector selection changes', () => {
       true
     )
     await act(async () => request.resume())
-    expect(screen.getByText('Loading JSON…')).toBeVisible()
+    expect(await screen.findByText('Loading JSON…')).toBeVisible()
     expect(screen.queryByLabelText('Raw OTLP JSON')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     await act(async () =>
@@ -268,6 +287,50 @@ describe('RawJsonInspector selection changes', () => {
     await view.rerender({ scopes: [datapoint] })
     await screen.findByLabelText('Raw OTLP JSON')
     expect(request.fetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('retains the editor, folds and its Download identity until the next JSON is ready', async () => {
+    const request = await mockExport()
+    const view = render(RawJsonInspector, {
+      active: true,
+      wholeURL: '/export/metrics/example',
+      scopes: [datapoint],
+    })
+    const editor = await screen.findByLabelText('Raw OTLP JSON')
+    await fireEvent.click(screen.getByRole('button', { name: 'Collapse JSON' }))
+    await waitFor(() =>
+      expect(editor.querySelector('.cm-foldPlaceholder')).not.toBeNull()
+    )
+    const fold = editor.querySelector('.cm-foldPlaceholder')
+    let release!: (response: Response) => void
+    request.fetch.mockImplementationOnce(
+      () => new Promise(resolve => (release = resolve))
+    )
+    const next = { ...datapoint, url: '/export/metrics/next?datapoint=2' }
+    await view.rerender({ scopes: [next], wholeURL: '/export/metrics/next' })
+    await waitFor(() => expect(release).toBeDefined())
+    expect(screen.getByLabelText('Raw OTLP JSON')).toBe(editor)
+    expect(editor.querySelector('.cm-foldPlaceholder')).toBe(fold)
+    expect(
+      screen.getByRole('link', { name: 'Download datapoint' })
+    ).toHaveAttribute('href', datapoint.url)
+    expect(screen.queryByText('Loading JSON…')).toBeNull()
+    expect(await screen.findByText('Loading JSON…')).toBeVisible()
+    expect(screen.getByLabelText('Raw OTLP JSON')).toBe(editor)
+    await act(async () =>
+      release(
+        new Response(null, {
+          headers: { 'Content-Length': String(payload.length) },
+        })
+      )
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('link', { name: 'Download datapoint' })
+      ).toHaveAttribute('href', next.url)
+    )
+    expect(screen.getByLabelText('Raw OTLP JSON')).toBe(editor)
+    expect(screen.queryByText('Loading JSON…')).toBeNull()
   })
 
   it.each(['HEAD', 'GET', 'decode', 'format'] as const)(

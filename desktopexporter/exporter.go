@@ -92,7 +92,7 @@ func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) 
 	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
 		var iErr error
-		rejected, iErr = spans.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		rejected, iErr = spans.IngestReport(ctx, conn, source)
 		return iErr
 	})
 	end(err)
@@ -109,7 +109,7 @@ func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metric
 	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
 		var iErr error
-		rejected, iErr = metrics.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		rejected, iErr = metrics.IngestReport(ctx, conn, source)
 		return iErr
 	})
 	end(err)
@@ -126,7 +126,7 @@ func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error 
 	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
 		var iErr error
-		rejected, iErr = logs.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		rejected, iErr = logs.IngestReport(ctx, conn, source)
 		return iErr
 	})
 	end(err)

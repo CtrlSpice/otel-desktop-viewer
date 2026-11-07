@@ -26,24 +26,18 @@ func BenchmarkGetFieldValueCompletions(b *testing.B) {
 			}
 			defer s.Close()
 			err = s.WithDBWrite(func(db *sql.DB) error {
-				if _, err := db.Exec(`insert into resources (id, payload_id, attribute_ids)
-					values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-						'dddddddd-dddd-dddd-dddd-dddddddddddd', [])`); err != nil {
-					return err
-				}
-				if _, err := db.Exec(`insert into scopes (id, name, version, attribute_ids)
-					values ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'sc', '', [])`); err != nil {
-					return err
-				}
 				// ~400 distinct names, zipf-ish frequency via modulo.
 				_, err := db.Exec(`insert into spans
 					(trace_id, span_id, name, start_time, end_time,
-					 resource_id, scope_id, attribute_ids)
+					 resource, scope, attributes)
 					select uuid(), range::ubigint,
 						'svc-' || (range % 20) || '/op-' || (range % 400),
 						range, range + 1,
-						'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-						'ffffffff-ffff-ffff-ffff-ffffffffffff', []
+						{'id': 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+						 'payload_id': 'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid,
+						 'schema_url': '', 'attributes': '{}'::json::variant, 'dropped_attributes_count': 0},
+						{'id': 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'name': 'sc', 'version': '',
+						 'schema_url': '', 'attributes': '{}'::json::variant, 'dropped_attributes_count': 0}, '{}'::json::variant
 					from range(?)`, spanCount)
 				return err
 			})

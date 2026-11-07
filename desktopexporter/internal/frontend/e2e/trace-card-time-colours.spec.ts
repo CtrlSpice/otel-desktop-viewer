@@ -1,5 +1,6 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import type { JsonTraceData } from '../src/types/wire-types'
+import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import { THEMES, themeRgb } from './theme-colours'
 
 const traceIDs = ['a'.repeat(32), 'b'.repeat(32)]
@@ -7,7 +8,7 @@ const spanIDs = ['1', '2', '3', '4', '5'].map(id => id.repeat(16))
 const timestamp =
   BigInt(Date.parse('2026-10-24T12:00:00Z')) * 1_000_000n + 123_456_789n
 
-function traceFixture(index: number): JsonTraceData {
+function traceFixture(index: number): TraceFixture {
   const services = ['checkout', 'database']
   return {
     traceID: traceIDs[index]!,
@@ -81,7 +82,7 @@ async function intercept(page: Page) {
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
-  await page.route('**/rpc', async route => {
+  await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =
       method === 'getTraceView'
@@ -125,7 +126,9 @@ async function intercept(page: Page) {
                 },
                 rejections: [],
               }
-            : []
+            : method === 'discoverTelemetry'
+              ? { rows: [], truncated: false }
+              : []
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
 }

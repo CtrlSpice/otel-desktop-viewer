@@ -18,7 +18,13 @@
     traceSummaryDurationNs,
   } from '@/utils/time'
 
-  let { traceID, spanID }: { traceID: string; spanID: string | null } = $props()
+  let {
+    traceID: requestedTraceID,
+    spanID: requestedSpanID,
+  }: { traceID: string; spanID: string | null } = $props()
+  let displayed = $state<{ traceID: string; spanID: string | null }>()
+  const traceID = $derived(displayed?.traceID ?? requestedTraceID)
+  const spanID = $derived(displayed ? displayed.spanID : requestedSpanID)
   let trace = $state<TraceSummary | null>(null)
   let span = $state<SpanTiming | null>(null)
   let loading = $state(true)
@@ -52,16 +58,16 @@
 
   $effect(() => {
     void retry
-    const id = traceID
-    const linkedSpanID = spanID
+    const id = requestedTraceID
+    const linkedSpanID = requestedSpanID
     const controller = new AbortController()
-    trace = null
-    span = null
     loading = true
     error = ''
-    spanMissing = false
-    traceMissing = false
     async function load() {
+      let nextSpan: SpanTiming | null = null
+      let nextTrace: TraceSummary | null = null
+      let nextSpanMissing = false
+      let nextTraceMissing = false
       try {
         if (linkedSpanID) {
           try {
@@ -70,22 +76,28 @@
               controller.signal
             )
             if (controller.signal.aborted) return
-            span = spans[0] ?? null
-            spanMissing = !span
+            nextSpan = spans[0] ?? null
+            nextSpanMissing = !nextSpan
           } catch {
             if (controller.signal.aborted) return
             error = 'Unable to load the associated span.'
           }
         }
-        if (!span) {
+        if (!nextSpan) {
           const result = await telemetryAPI.getTraceSummary(
             id,
             controller.signal
           )
           if (controller.signal.aborted) return
-          trace = result
-          traceMissing = result === null
+          nextTrace = result
+          nextTraceMissing = result === null
         }
+        if (controller.signal.aborted || error) return
+        span = nextSpan
+        trace = nextTrace
+        spanMissing = nextSpanMissing
+        traceMissing = nextTraceMissing
+        displayed = { traceID: id, spanID: linkedSpanID }
       } catch {
         if (!controller.signal.aborted) {
           error = 'Unable to load the associated trace.'
@@ -116,16 +128,18 @@
     <LoadingStatus
       pending={loading}
       label="Loading trace context…"
-      requestKey={`${traceID}:${spanID ?? ''}`}
+      requestKey={`${requestedTraceID}:${requestedSpanID ?? ''}:${retry}`}
     />
-  {:else if error}
+  {/if}
+  {#if error}
     <div class="flex items-center gap-2" role="alert">
       <span>{error}</span>
       <button type="button" class="btn btn-ghost btn-xs" onclick={() => retry++}
         >Retry</button
       >
     </div>
-  {:else if span || trace}
+  {/if}
+  {#if span || trace}
     <div aria-label={span ? 'Span summary' : 'Trace summary'}>
       {#if spanID && !span}<div class="text-subtle">Trace summary</div>{/if}
       <div class="flex min-w-0 flex-wrap items-baseline gap-x-2">

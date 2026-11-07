@@ -12,7 +12,6 @@ function makeMetric(overrides: Partial<MetricSummary> = {}): MetricSummary {
   return {
     metricRef: 'metric-1',
     name: 'http.server.duration',
-    description: 'Duration of HTTP server requests',
     unit: 'ms',
     metricType: 'Gauge',
     aggregationTemporality: null,
@@ -40,13 +39,10 @@ describe('MetricCard', () => {
     expect(screen.getByText('orders-service')).toBeInTheDocument()
   })
 
-  it('keeps descriptions out of summary cards without leaving an empty row', () => {
+  it('does not leave an empty description row in summary cards', () => {
     const { container } = renderCard({
-      metric: makeMetric({ description: 'Duration of HTTP server requests' }),
+      metric: makeMetric(),
     })
-    expect(
-      screen.queryByText('Duration of HTTP server requests')
-    ).not.toBeInTheDocument()
     expect(container.querySelector('.signal-row__lead')).toBeNull()
   })
 
@@ -134,14 +130,14 @@ describe('MetricCard', () => {
     const metric = makeMetric()
     renderCard({ metric })
     const lastSeenParts = formatTimestampParts(
-      metric.lastSeen,
+      metric.lastSeen!,
       'local',
       'nanoseconds'
     )
     expect(screen.getByText('Last seen:')).toBeInTheDocument()
     expect(
       screen.getByText(
-        formatRelativeTime(metric.lastSeen, BigInt(Date.now()) * 1_000_000n)
+        formatRelativeTime(metric.lastSeen!, BigInt(Date.now()) * 1_000_000n)
       )
     ).toBeInTheDocument()
     const date = document.querySelector('.signal-date')

@@ -7,6 +7,7 @@
   import ConflictMarker from './ConflictMarker.svelte'
   import ValueCopyButton from './ValueCopyButton.svelte'
   import JsonEditor from './JsonEditor.svelte'
+  import NativeValue from './NativeValue.svelte'
   import ShellValue from './ShellValue.svelte'
   import {
     valuePresentation,
@@ -14,11 +15,7 @@
   } from '@/state/value-presentation.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
-  import {
-    attributeValueCopy,
-    hasConflictingKeys,
-    structuredValueText,
-  } from './detail-value'
+  import { attributeValueCopy, structuredValueText } from './detail-value'
 
   let {
     fieldName,
@@ -29,6 +26,7 @@
     value,
     copyValue,
     loadText,
+    sourceKey,
     valueLabel,
     valueTone,
     valueColor,
@@ -54,6 +52,8 @@
     value?: Snippet
     copyValue?: string
     loadText?: (signal: AbortSignal) => Promise<string>
+    /** Identity owning the displayed field and its exact on-demand source. */
+    sourceKey?: unknown
     valueLabel?: string
     valueTone?: 'error'
     valueColor?: string
@@ -72,23 +72,35 @@
     fieldSource?: string
   } = $props()
 
-  let conflict = $derived(
-    defectLabel ??
-      (typedValue && hasConflictingKeys(typedValue)
-        ? `Conflicting typed values retained in ${fieldName}. Duplicate keys remain in the JSON output.`
-        : undefined)
-  )
-  let copyText = $derived(
-    copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
+  const copyLoader = $derived.by(() => {
+    const exact = copyValue
+    const native = typedValue
+    const text = fieldValue
+    return (
+      loadText ??
+      (async () => exact ?? (native ? attributeValueCopy(native) : text))
+    )
+  })
+  const nativeContainer = $derived(
+    !value &&
+      !valueLabel &&
+      timestampLabel === undefined &&
+      !identifier &&
+      !jsonText &&
+      (typedValue?.kind === 'map' || typedValue?.kind === 'array')
+      ? typedValue
+      : undefined
   )
   let structuredText = $derived(
     jsonText ??
       (!value && !valueLabel && timestampLabel === undefined && !identifier
-        ? typedValue
-          ? structuredValueText(typedValue)
-          : fieldType === 'string'
-            ? structuredValueText({ kind: 'string', value: fieldValue })
-            : undefined
+        ? nativeContainer
+          ? undefined
+          : typedValue
+            ? structuredValueText(typedValue)
+            : fieldType === 'string'
+              ? structuredValueText({ kind: 'string', value: fieldValue })
+              : undefined
         : undefined)
   )
   let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
@@ -115,7 +127,7 @@
 
 {#snippet header()}
   <div class="detail-property__header">
-    {#if conflict}<ConflictMarker label={conflict} />{/if}
+    {#if defectLabel}<ConflictMarker label={defectLabel} />{/if}
     <div class="detail-property__heading">
       <span class="detail-property__key"
         >{fieldName}{#if qualifier}<span class="text-subtle">{' · '}</span><span
@@ -128,7 +140,7 @@
           class="detail-property__origin">{origin}</span
         >{/if}
     </div>
-    {#if structuredText !== undefined && !showShell}
+    {#if (nativeContainer || structuredText !== undefined) && !showShell}
       <div
         class="detail-property__folding"
         role="group"
@@ -165,8 +177,8 @@
       </div>
     {/if}
     <ValueCopyButton
-      text={copyText}
-      {loadText}
+      loadText={copyLoader}
+      sourceKey={sourceKey ?? typedValue ?? copyValue ?? fieldValue}
       label={origin ? `${fieldName} (${origin})` : fieldName}
       contextual
     />
@@ -196,6 +208,12 @@
           {/if}
           {#if showShell && shellText !== undefined}
             <ShellValue text={shellText} label={fieldName} />
+          {:else if nativeContainer}
+            <NativeValue
+              value={nativeContainer}
+              label={fieldName}
+              bind:this={editor}
+            />
           {:else if structuredText !== undefined}
             <JsonEditor
               text={structuredText}
@@ -204,7 +222,10 @@
               bind:this={editor}
             />
           {:else}
-            <ExpandableValue value={copyText}>
+            <ExpandableValue
+              value={fieldValue}
+              identity={typedValue ?? copyValue ?? fieldValue}
+            >
               {#if timestampLabel !== undefined}
                 <div class="detail-property__value" title={fieldValue}>
                   {#if value}{@render value()}{:else}{timestampLabel}{/if}

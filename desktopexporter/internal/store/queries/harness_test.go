@@ -1,6 +1,7 @@
 package queries_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -34,6 +35,9 @@ func TestMain(m *testing.M) {
 // install puts the schema on a connection in the same dependency order as
 // NewStore: types, tables, then macros that may query those tables.
 func install(db *sql.DB) error {
+	if err := queries.RegisterFunctions(context.Background(), db); err != nil {
+		return err
+	}
 	// Types are created with plain CREATE TYPE and there is no IF NOT EXISTS
 	// for it, so a redundant one is an "already exists" error rather than a
 	// real failure. Every other statement here is checked.

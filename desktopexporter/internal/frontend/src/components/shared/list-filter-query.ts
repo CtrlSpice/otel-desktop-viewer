@@ -1,7 +1,13 @@
 import type { SyntaxNode } from '@lezer/common'
-import type { FieldDefinition, QueryNode, SearchSignal } from '@/search/model'
+import {
+  usesFieldToken,
+  type FieldDefinition,
+  type QueryNode,
+  type SearchSignal,
+} from '@/search/model'
 import { parser } from '@/components/shared/Search/codemirror/query.parser'
 import { parseSearchRequest } from '@/components/shared/Search/queryParser'
+import { quoteQueryString } from '@/components/shared/Search/query-literals'
 
 export const LOG_SEVERITIES = [
   { label: 'Unspecified', min: 0, max: 0 },
@@ -21,11 +27,12 @@ function isField(node: QueryNode, kind: ListFilter): boolean {
   if (node.type !== 'condition') return false
   const field = node.query.field
   return kind === 'service'
-    ? field.searchScope === 'attribute' &&
-        field.attributeScope === 'resource' &&
-        field.name === 'service.name' &&
+    ? field.owner === 'resource' &&
+        field.path.length === 2 &&
+        field.path[0] === 'attributes' &&
+        field.path[1] === 'service.name' &&
         field.type === 'string'
-    : field.searchScope === 'field' &&
+    : !usesFieldToken(field) &&
         field.name ===
           (kind === 'severity'
             ? 'severityNumber'
@@ -50,7 +57,7 @@ function isServiceList(value: unknown): value is string[] {
 }
 
 function facet(node: QueryNode | null): Facet | null {
-  if (!node) return null
+  if (!node || node.type === 'text') return null
   if (node.type === 'condition') {
     if (
       isField(node, 'errors') &&
@@ -141,11 +148,7 @@ export function readListFilters(
         errors: { values: [], custom: false },
       }
     const parsed = parseSearchRequest(text, fields, signal)
-    if (
-      parsed?.predicate?.type === 'condition' &&
-      parsed.predicate.query.field.searchScope === 'global'
-    )
-      editable = false
+    if (parsed?.predicate?.type === 'text') editable = false
     const tree = parser.parse(text)
     tree.iterate({
       enter: node => {
@@ -175,7 +178,10 @@ export function readListFilters(
           if (child.name !== 'And') walk(child)
       } else terms.push({ text: raw, node, facet: null })
     }
-    const predicate = request?.firstChild
+    let predicate = request?.firstChild
+    if (predicate?.name === 'Where') predicate = predicate.nextSibling
+    if (predicate)
+      predicateText = text.slice(predicate.from, limit?.from).trim()
     if (predicate && predicate.name !== 'LimitClause' && editable)
       walk(predicate)
   } catch {
@@ -219,12 +225,9 @@ export function setListFilter(
       : []
   if (values.length) {
     if (kind === 'service' || kind === 'metricType') {
-      const quoted = values.map(
-        value =>
-          `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')}"`
-      )
+      const quoted = values.map(quoteQueryString)
       kept.push(
-        `${kind === 'service' ? 'attr(resource, "service.name", string)' : 'type'} IN [${quoted.join(', ')}]`
+        `${kind === 'service' ? "resource.attributes['service.name']::VARCHAR" : 'type'} IN (${quoted.join(', ')})`
       )
     } else if (kind === 'errors') {
       kept.push('statusCodeValue = 2')

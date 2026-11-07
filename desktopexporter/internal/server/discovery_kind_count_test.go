@@ -10,13 +10,18 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
 	ctx := context.Background()
 	data := ptrace.NewTraces()
 	for index := range 103 {
@@ -71,7 +76,7 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 		}
 	}
 	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, h.store.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 	for index := range 3 {
 		ld := buildTestLogs()
@@ -85,7 +90,7 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 			scope.Scope().Attributes().PutInt("attempt", 1)
 		}
 		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-			return logs.Ingest(ctx, conn, ld, h.store.FlushedIDs())
+			return logs.Ingest(ctx, conn, ld)
 		}))
 		md := buildTestMetrics()
 		rm := md.ResourceMetrics().At(0)
@@ -98,7 +103,7 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 			sm.Scope().Attributes().PutInt("attempt", 1)
 		}
 		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md, h.store.FlushedIDs())
+			return metrics.Ingest(ctx, conn, md)
 		}))
 	}
 	for _, tc := range []struct {
@@ -115,13 +120,14 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 	} {
 		t.Run(tc.signal+"/"+tc.ownerType, func(t *testing.T) {
 			for offset := range tc.values {
-				result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{
+				params := map[string]any{"options": map[string]any{
 					"kind": "values", "signal": tc.signal, "ownerType": tc.ownerType, "key": "attempt",
 					"serviceName": "checkout", "startTime": "100", "endTime": "100", "limit": 1, "offset": offset,
 					"queries": map[string]any{"traces": map[string]any{"type": "condition", "query": map[string]any{
 						"field": map[string]any{"name": "name", "searchScope": "field", "type": "string"}, "fieldOperator": "=", "value": "needle",
 					}}},
-				}}))
+				}}
+				result, err := h.Handle(ctx, createRequest("discoverTelemetry", params))
 				require.NoError(t, err)
 				var page struct {
 					Rows [][]struct {
@@ -155,6 +161,54 @@ func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
 				require.Equal(t, float64(valueCount)/float64(tc.records), value.RelativeFrequency)
 				require.Equal(t, []discovery.Location{{Signal: tc.signal, OwnerType: tc.ownerType}}, value.FoundOn)
 				require.Equal(t, offset < tc.values-1, page.Truncated)
+				wire, err := json.Marshal(params)
+				require.NoError(t, err)
+				native := readArrowDataset(t, s, "discoverTelemetry", string(wire))
+				items := native.Column(0).(*array.List).ListValues().(*array.Struct)
+				require.Equal(t, 1, items.Len())
+				field := func(name string) arrow.Array {
+					index, ok := items.DataType().(*arrow.StructType).FieldIdx(name)
+					require.True(t, ok)
+					return items.Field(index)
+				}
+				require.Equal(t, int64(value.Count), field("count").(*array.Int64).Value(0))
+				require.Equal(t, int64(value.KindCount), field("kindCount").(*array.Int64).Value(0))
+				require.Equal(t, int64(value.Denominator), field("denominator").(*array.Int64).Value(0))
+				require.Equal(t, value.RelativeFrequency, field("relativeFrequency").(*array.Float64).Value(0))
+				var identity struct {
+					Kind string `json:"kind"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(field("identity").(*array.String).Value(0)), &identity))
+				require.Equal(t, value.Value.Kind, identity.Kind)
+				require.Equal(t, page.Truncated, native.Column(1).(*array.Boolean).Value(0))
+				// Home uses one cross-signal page. Restrict this case to the same
+				// selected signal and pin the existing parent/kind denominators.
+				homeOptions := map[string]any{}
+				for key, value := range params["options"].(map[string]any) {
+					homeOptions[key] = value
+				}
+				queries := map[string]any{"traces": false, "metrics": false, "logs": false}
+				queries[tc.signal] = nil
+				if tc.signal == "traces" {
+					queries[tc.signal] = params["options"].(map[string]any)["queries"].(map[string]any)["traces"]
+				}
+				homeOptions["queries"] = queries
+				home := homePage(t, h, homeOptions)
+				require.Len(t, home.Values, 1)
+				homeValue := home.Values[0]
+				homeKindCount := tc.strings
+				if homeValue.Kind == "int64" {
+					homeKindCount = tc.ints
+				}
+				homeCount := homeKindCount
+				if tc.ownerType == "event" && homeValue.Kind == "string" {
+					homeCount = 2
+				}
+				require.EqualValues(t, homeKindCount, homeValue.KindCount)
+				require.EqualValues(t, homeCount, homeValue.Count)
+				require.EqualValues(t, tc.records, home.Denominator)
+				require.EqualValues(t, tc.values, home.Total)
+				require.Equal(t, offset < tc.values-1, home.Truncated)
 			}
 		})
 	}

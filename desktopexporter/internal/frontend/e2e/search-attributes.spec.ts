@@ -1,3 +1,4 @@
+import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
 
 for (const [signal, scope, method] of [
@@ -14,7 +15,7 @@ for (const [signal, scope, method] of [
     await page.route('**/api/features', route =>
       route.fulfill({ json: { evals: { enabled: false } } })
     )
-    await page.route('**/rpc', async route => {
+    await routeTelemetry(page, async route => {
       const { id, method: rpcMethod, params } = route.request().postDataJSON()
       if (params?.query) requests.push(params.query)
       const result =
@@ -44,31 +45,30 @@ for (const [signal, scope, method] of [
               }
             : rpcMethod === 'searchLogPage'
               ? { logs: [], total: 0 }
-              : []
+              : rpcMethod === 'discoverTelemetry'
+                ? { rows: [], truncated: false }
+                : []
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
-    const query = `attr(${scope}, "attempts", int64) >= 9007199254740993`
-    const definitions = page.waitForResponse(
-      response =>
-        response.url().endsWith('/rpc') &&
-        response.request().postDataJSON().method === method
+    const query = `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993`
+    const definitions = page.waitForResponse(response =>
+      response.url().endsWith(`/api/data/${method}`)
     )
     await page.goto(`/${signal}?q=${encodeURIComponent(query)}`)
     await definitions
     const editor = page.locator('.cm-content[contenteditable="true"]')
     const token = editor.locator('.cm-attribute-token')
     await expect(token).toContainText('attempts')
-    await expect(editor).not.toContainText('attr(')
+    await expect(editor).not.toContainText('::BIGINT')
     await expect
       .poll(() => requests)
       .toContainEqual(
         expect.objectContaining({
           query: {
             field: {
-              name: 'attempts',
               type: 'int64',
-              searchScope: 'attribute',
-              attributeScope: scope,
+              owner: scope,
+              path: ['attributes', 'attempts'],
             },
             fieldOperator: '>=',
             value: '9007199254740993',
@@ -108,7 +108,8 @@ for (const [signal, scope, method] of [
     await expect(editor).toContainText('>= 9007199254740993')
     await page.keyboard.press('Escape')
     await editor.press('Enter')
-    const changed = 'attr(resource, "attempts", int64) >= 9007199254740993'
+    const changed =
+      'resource.attributes["attempts"]::BIGINT >= 9007199254740993'
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
       .toBe(changed)
@@ -158,10 +159,10 @@ for (const [signal, scope, method] of [
     await editor.press('Enter')
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
-      .toBe('attr(resource, "attempts", int64) >= 3')
+      .toBe('resource.attributes["attempts"]::BIGINT >= 3')
 
     const previousURL = page.url()
-    const multiline = `attr(${scope}, "attempts", int64) >= 9007199254740993\r\n  and attr(${scope}, "message", string) = "first\r\n  second"`
+    const multiline = `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993\r\n  and ${scope}.attributes["message"]::VARCHAR = "first\r\n  second"`
     await page.keyboard.press('ControlOrMeta+a')
     await editor.evaluate((element, text) => {
       const data = new DataTransfer()
@@ -195,7 +196,7 @@ for (const [signal, scope, method] of [
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
       .toBe(
-        `attr(${scope}, "attempts", int64) >= 9007199254740993 and attr(${scope}, "message", string) = "first\\r\\n  second"`
+        `${scope}.attributes["attempts"]::BIGINT >= 9007199254740993 and ${scope}.attributes["message"]::VARCHAR = "first\\r\\n  second"`
       )
     await expect
       .poll(() => requests)
@@ -226,10 +227,9 @@ for (const [signal, scope, method] of [
         expect.objectContaining({
           query: {
             field: {
-              name: 'custom.key',
               type: 'string',
-              searchScope: 'attribute',
-              attributeScope: scope,
+              owner: '',
+              path: ['attributes', 'custom.key'],
             },
             fieldOperator: '=',
             value: 'recorded',

@@ -10,19 +10,34 @@
   type Props = {
     /** 0-based index of current selection in the list, or -1 if nothing is selected */
     index: number
-    total: number
+    /** Undefined for byte-bounded pages whose total page count is not known. */
+    total: number | undefined
+    hasNext?: boolean
+    busy?: boolean
     /** Singular noun used for aria-labels and the counter (e.g. "trace", "log", "metric") */
     label: string
     onFirst: () => void
     onPrev: () => void
     onNext: () => void
-    onLast: () => void
+    onLast?: () => void
   }
 
-  let { index, total, label, onFirst, onPrev, onNext, onLast }: Props = $props()
+  let {
+    index,
+    total,
+    hasNext = false,
+    busy = false,
+    label,
+    onFirst,
+    onPrev,
+    onNext,
+    onLast,
+  }: Props = $props()
 
-  let canGoPrev = $derived(index > 0)
-  let canGoNext = $derived(index >= 0 && index < total - 1)
+  let canGoPrev = $derived(!busy && index > 0)
+  let canGoNext = $derived(
+    !busy && index >= 0 && (total === undefined ? hasNext : index < total - 1)
+  )
   let displayPosition = $derived(total === 0 ? 0 : index + 1)
   let plural = $derived(total === 1 ? label : `${label}s`)
 </script>
@@ -61,8 +76,8 @@
     />
   </button>
   <span class="detail-nav__counter tabular-nums" aria-live="polite">
-    {displayPosition} / {total}
-    {plural}
+    {#if total === undefined}{label} {displayPosition}
+    {:else}{displayPosition} / {total} {plural}{/if}
   </span>
   <button
     type="button"
@@ -85,7 +100,7 @@
     class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
     data-tip="Last {label}"
     onclick={onLast}
-    disabled={!canGoNext}
+    disabled={!canGoNext || !onLast}
     aria-label="Last {label}"
   >
     <HugeiconsIcon
