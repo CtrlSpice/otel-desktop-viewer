@@ -1,5 +1,5 @@
 // Pure types shared between the metric chart components and modules
-// that build chart data (the metric view context, the LTTB downsampler,
+// that build chart data (the metric view context, chart projections,
 // the legend). Kept here because .svelte files can't be imported by
 // plain .ts under svelte-check, so a typed-shared neutral location
 // matters.
@@ -9,6 +9,8 @@ import type { Attribute } from '@/types/api-types'
 export type ChartPoint = {
   date: Date
   value: number
+  /** A detected empty period precedes this point; do not connect to its predecessor. */
+  breakBefore?: true
   /** Exact source or bucket timestamp when the chart's millisecond Date is a
    * lossy rendering coordinate. Cursor reconciliation and column activation use
    * this identity so two sub-millisecond points never collapse together. */

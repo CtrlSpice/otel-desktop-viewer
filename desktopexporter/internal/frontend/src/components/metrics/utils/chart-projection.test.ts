@@ -102,6 +102,7 @@ describe('timeseriesToChartTimeseries', () => {
             doubleValue: 2,
             intValue: null,
             valueType: 'double',
+            breakBefore: true,
           },
           {
             id: 'earlier',
@@ -131,6 +132,8 @@ describe('timeseriesToChartTimeseries', () => {
     const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
 
     expect(readDatapoints).toHaveBeenCalledTimes(1)
+    expect(line!.points[0]).not.toHaveProperty('breakBefore')
+    expect(line!.points[1]!.breakBefore).toBe(true)
     expect(line!.points.map(point => point.date.getTime())).toEqual([
       1_700_000_000_000, 1_700_000_000_000,
     ])

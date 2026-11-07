@@ -836,11 +836,15 @@ export function createMetricViewContext(
   /** Projects store-reduced sparkline samples at their received timestamps. */
   function sparklinePoints(points: SparklinePoint[] | null): ChartPoint[] {
     if (!points) return []
-    return points.map(p => ({
-      date: new Date(Number(p.timestamp / 1_000_000n)),
-      value: p.value,
-      timestampNs: p.timestamp,
-    }))
+    return points.map(p => {
+      const point: ChartPoint = {
+        date: new Date(Number(p.timestamp / 1_000_000n)),
+        value: p.value,
+        timestampNs: p.timestamp,
+      }
+      if (p.breakBefore) point.breakBefore = true
+      return point
+    })
   }
 
   /** Per-series lines for a store-computed view, plus the buckets whose counter

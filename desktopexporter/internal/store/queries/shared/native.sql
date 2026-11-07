@@ -100,6 +100,7 @@ where exists (select 1 from trace_spans)
 {{define "scalarBucket"}}struct_pack(bucketStart := a.bucket_start, sampleCount := a.sample_count,
     sum := a.value_sum, avg := a.value_avg, rate := a.rate, slope := sl.slope, hasReset := a.has_reset){{end}}
 {{define "viewPoint"}}struct_pack(id := d.id::varchar, metricType := d.metric_type,
+	breakBefore := d.break_before,
     timestamp := d.timestamp, startTime := d.start_time, flags := d.flags,
     exemplars := coalesce(ea.exemplars, []),
     exemplarCount := case when ea.exemplar_count > len(coalesce(ea.exemplars, [])) then ea.exemplar_count end,

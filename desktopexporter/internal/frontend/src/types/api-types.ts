@@ -309,6 +309,8 @@ type BaseDataPoint = {
 
 export type GaugeDataPoint = BaseDataPoint & {
   metricType: 'Gauge'
+  /** Derived from empty M4 buckets before reduction; never a received OTLP flag. */
+  breakBefore?: true
   doubleValue: number | null
   /** Received NumberDataPoint.as_int, kept exact across JSON. */
   intValue: bigint | null
@@ -652,6 +654,8 @@ export type ExactMetricSeries = ExactMetricIdentity & {
 export type SparklinePoint = {
   timestamp: bigint
   value: number
+  /** Same detected break as the full chart, preserved through sparkline reduction. */
+  breakBefore?: true
 }
 
 // Metric summary for sidebar cards.

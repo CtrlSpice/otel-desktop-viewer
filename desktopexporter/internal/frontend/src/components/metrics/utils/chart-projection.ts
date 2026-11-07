@@ -85,7 +85,7 @@ export function timeseriesToChartTimeseries(
       // stay bigint on the datapoint; only this display projection approximates.
       const value =
         dp.doubleValue ?? (dp.intValue === null ? 0 : Number(dp.intValue))
-      points.push({
+      const point: ChartPoint = {
         date: new Date(dp.timestampMs),
         value,
         timestampNs: dp.timestamp,
@@ -95,7 +95,9 @@ export function timeseriesToChartTimeseries(
         delta:
           dp.metricType === 'Sum' && dp.delta != null ? Number(dp.delta) : null,
         isReset: dp.metricType === 'Sum' ? (dp.isReset ?? null) : null,
-      })
+      }
+      if (dp.metricType === 'Gauge' && dp.breakBefore) point.breakBefore = true
+      points.push(point)
     }
     chartTimeseries.push({
       key: ts.seriesRef,

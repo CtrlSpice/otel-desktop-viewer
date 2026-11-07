@@ -3965,6 +3965,111 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
     .toBe(selectedID)
 })
 
+for (const tiny of [false, true]) {
+  test(`gauge gaps retain endpoints and ${tiny ? 'a minimum visible opening' : 'no value inside the gap'}`, async ({
+    page,
+  }) => {
+    const milliseconds = tiny
+      ? [0, 10_000, 10_001, 100_000]
+      : [0, 10_000, 40_000, 50_000]
+    const values = [0, 42, 45, 0]
+    const datapoints: PointFixture[] = milliseconds.map((ms, i) => {
+      const point: PointFixture = {
+        id: `gap-${i}`,
+        metricType: 'Gauge',
+        timestamp: String(BigInt(startMs + ms) * 1_000_000n),
+        timestampMs: startMs + ms,
+        startTime: startNs,
+        flags: 0,
+        exemplars: [],
+        doubleValue: values[i]!,
+        intValue: null,
+        valueType: 'Double',
+      }
+      if (i === 2) point.breakBefore = true
+      return point
+    })
+    const fixture: MetricFixture = {
+      ...metric,
+      datapointCount: 4,
+      timeseries: [
+        {
+          ...timeseries[0]!,
+          datapointCount: 4,
+          datapoints: [...datapoints].reverse(),
+          sparkline: datapoints.map((point, i) => {
+            const sample: NonNullable<SeriesFixture['sparkline']>[number] = {
+              timestamp: point.timestamp,
+              value: values[i]!,
+            }
+            if (i === 2) sample.breakBefore = true
+            return sample
+          }),
+        },
+      ],
+    }
+    await routeTelemetry(page, async route => {
+      const { method, id } = route.request().postDataJSON()
+      if (method !== 'getMetricView' && method !== 'getMetric')
+        return route.fallback()
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result:
+            method === 'getMetricView' ? fixture : exactMetricFixture(fixture),
+        },
+      })
+    })
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+    await page.goto(`/metrics/${metric.metricRef}?time=all&agg=raw`)
+    const line = page.locator('.metric-series-line')
+    await expect(line).toHaveCount(1)
+    await expect(line).toHaveAttribute('d', /M.*L.*M.*L/)
+    const geometry = await line.evaluate(element => {
+      const path = element as SVGPathElement
+      const points = [
+        ...path.getAttribute('d')!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g),
+      ].map(m => ({ x: Number(m[1]), y: Number(m[2]) }))
+      const before = points[1]!
+      const after = points[2]!
+      const middle = new DOMPoint(
+        (before.x + after.x) / 2,
+        (before.y + after.y) / 2
+      ).matrixTransform(path.getScreenCTM()!)
+      const clipID = path.getAttribute('clip-path')!.slice(5, -1)
+      const clips = [
+        ...document.getElementById(clipID)!.querySelectorAll('rect'),
+      ]
+      return {
+        x: middle.x,
+        y: middle.y,
+        gapWidth: after.x - before.x,
+        opening:
+          Number(clips[1]!.getAttribute('x')) -
+          Number(clips[0]!.getAttribute('x')) -
+          Number(clips[0]!.getAttribute('width')),
+        strokeWidth: Number.parseFloat(getComputedStyle(path).strokeWidth),
+      }
+    })
+    expect(geometry.opening).toBeCloseTo(geometry.strokeWidth)
+    if (tiny) expect(geometry.gapWidth).toBeLessThan(1)
+    await expect(page.locator('.sparkline path').first()).toHaveAttribute(
+      'd',
+      /M.*L.*M.*L/
+    )
+    if (!tiny) {
+      await page.mouse.move(geometry.x, geometry.y)
+      await expect(page.locator('.series-hover-point')).toHaveCount(0)
+      await expect(
+        page.locator('.chart-hover-card .chart-series-label')
+      ).toHaveCount(0)
+      await page.mouse.click(geometry.x, geometry.y)
+      expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+    }
+  })
+}
+
 test('line clicks and series rows share selection without changing visibility or disclosure', async ({
   page,
 }) => {

@@ -461,7 +461,35 @@
 				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
 		),
 
-		-- Sparkline reduction keeps min/max shape without an empty-bucket spine.
+		-- Detect empty M4 buckets before reducing samples. Match the chart's
+		-- chronological order (the reverse of timestamp DESC, id ASC on the wire).
+		-- Advance one bucket in local time, then resolve it to UTC. Adjacent
+		-- calendar buckets can span 23/25 hours, and a skipped DST hour is not a gap.
+		gauge_neighbors as (
+			select series_id, id, timestamp, bucket_start,
+				lag(id) over w as previous_id,
+				lag(floor_div(timestamp::hugeint + tz_shift::hugeint,
+					(select width_ns from reduction))::hugeint
+					* (select width_ns from reduction)::hugeint) over w as previous_bucket_local
+			from bucketed_dps
+			where metric_type = 'Gauge'
+			window w as (partition by series_id order by timestamp, id desc)
+		),
+		gauge_gaps as (
+			select series_id, id, previous_id, timestamp
+			from gauge_neighbors
+			where bucket_start > bucket_start_utc(
+				previous_bucket_local + (select width_ns from reduction)::hugeint,
+				{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint)
+		),
+		gauge_gap_endpoints as (
+			select id from gauge_gaps
+			union
+			select previous_id as id from gauge_gaps
+		),
+
+		-- Sparkline reduction keeps min/max shape and the same gap boundaries
+		-- as the main chart, even when several M4 buckets share a sparkline bucket.
 		sparkline_grid as (
 			-- Do not bucket more finely than the Metric's cadence.
 			select bucket_width_ns(rs.span_ns,
@@ -505,16 +533,28 @@
 			union by name
 			select series_id, max_ts as timestamp, max_value as value
 			from sparkline_extrema
+			union by name
+			select series_id, timestamp, value
+			from scalar_dps
+			where id in (select id from gauge_gap_endpoints)
+			  and (select width_ns from sparkline_grid) is not null
 		),
 		-- Histogram series have NULL sparklines.
 		sparkline_agg as (
-			select series_id,
-				{{if arrow}}list(struct_pack(timestamp := timestamp, value := value) order by timestamp, value){{else}}to_json(list(json_object(
-					'timestamp', timestamp::varchar,
-					'value', double_wire_json(value)
-				) order by timestamp, value)){{end}} as sparkline
-			from sparkline_points
-			group by series_id
+			select sp.series_id,
+				{{if arrow}}list(struct_pack(timestamp := sp.timestamp, value := sp.value,
+					breakBefore := case when g.id is not null and sp.rn = 1 then true end)
+					order by sp.timestamp, sp.value){{else}}to_json(list(json_merge_patch(json_object(
+					'timestamp', sp.timestamp::varchar,
+					'value', double_wire_json(sp.value)
+				), json_object('breakBefore', case when g.id is not null and sp.rn = 1 then true end))
+					order by sp.timestamp, sp.value)){{end}} as sparkline
+			from (
+				select *, row_number() over (partition by series_id, timestamp order by value) as rn
+				from sparkline_points
+			) sp
+			left join gauge_gaps g on g.series_id = sp.series_id and g.timestamp = sp.timestamp
+			group by sp.series_id
 		),
 
 		-- Exclude non-finite values from scalar min/max election.
@@ -561,6 +601,8 @@
 			select unnest([first_id, last_id, min_id, max_id]) as id from bucket_elected
 			union
 			select id from exemplar_carriers
+			union
+			select id from gauge_gap_endpoints
 		),
 {{- end}}
 
@@ -930,10 +972,13 @@
 
 		-- Build wire JSON only for datapoints surviving reduction and narrowing.
 		shipped_dps as (
-			select d.* from projected_dps d
 {{- if .NoScalarPools}}
+			select d.*, null::boolean as break_before from projected_dps d
 			where d.series_id in (select series_id from datapoint_series_allowed)
 {{- else}}
+			select d.*, case when g.id is not null then true end as break_before
+			from projected_dps d
+			left join gauge_gaps g on g.id = d.id
 			left join retained_ids r on r.id = d.id
 			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
 			  and d.series_id in (select series_id from datapoint_series_allowed)
@@ -995,12 +1040,12 @@
 {{- end}}
 		ts_dps_json as (
 			select d.series_id,
-				{{if arrow}}list({{template "viewPoint" .}} order by d.timestamp desc, d.id){{else}}to_json(list(metric_datapoint_view_json(
+				{{if arrow}}list({{template "viewPoint" .}} order by d.timestamp desc, d.id){{else}}to_json(list(json_merge_patch(metric_datapoint_view_json(
 					d,
 					coalesce(ea.exemplars, json('[]')),
 					coalesce(ea.exemplar_count, 0),
 					{{if .NoHistogramMerge}}null::json{{else}}dq.quantiles{{end}}
-				) order by d.timestamp desc, d.id)){{end}} as datapoints
+				), json_object('breakBefore', d.break_before)) order by d.timestamp desc, d.id)){{end}} as datapoints
 			from shipped_dps d
 			left join exemplars_agg ea on ea.metric_datapoint_id = d.id
 {{- if not .NoHistogramMerge}}

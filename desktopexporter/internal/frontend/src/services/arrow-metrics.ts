@@ -10,6 +10,7 @@ import type {
   ReceivedHistogramDataPoint,
   ReceivedExponentialHistogramDataPoint,
   DataPoint,
+  GaugeDataPoint,
   ScalarViewBucket,
   MetricSeriesViewData,
   MetricViewData,
@@ -263,6 +264,17 @@ function quantiles(cell: ArrowCell): Record<string, number | null> | null {
     })
   return result
 }
+function chartBreak(
+  frame: ArrowFrame,
+  row: number
+): Pick<GaugeDataPoint, 'breakBefore'> {
+  if (!frame.has('breakBefore')) return {}
+  const cell = frame.cell('breakBefore', row)
+  if (cell.isNull) return {}
+  if (!cell.boolean()) throw new Error('breakBefore must be true or absent')
+  return { breakBefore: true }
+}
+
 function point(frame: ArrowFrame, row: number): DataPoint {
   const base = extendView(
     columnView(frame, row, {
@@ -286,7 +298,10 @@ function point(frame: ArrowFrame, row: number): DataPoint {
   if (metricType === 'Gauge')
     return extendView(
       base,
-      extendView(numberValue(frame, row), { metricType } as const)
+      extendView(numberValue(frame, row), {
+        metricType,
+        ...chartBreak(frame, row),
+      } as const)
     )
   const code = frame.cell('aggregationTemporalityCode', row).number()
   const temporal = extendView(base, {
@@ -417,7 +432,10 @@ function seriesView(
         cell.isNull
           ? null
           : rowViews(new ArrowFrame(cell.list()), (rows, i) =>
-              columnView(rows, i, { timestamp: integer, value: number })
+              extendView(
+                columnView(rows, i, { timestamp: integer, value: number }),
+                chartBreak(rows, i)
+              )
             ),
     }),
     {

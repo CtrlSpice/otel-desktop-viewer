@@ -60,6 +60,11 @@
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
   import { timeSeriesChartPointSelection } from '@/components/metrics/utils/time-series-point-selection'
+  import {
+    gappedLinePath,
+    gappedLineClips,
+    insideLineGap,
+  } from '@/components/metrics/utils/gapped-line'
   import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
 
   let yAxisInset = $state<number>(fallbackPadding.left)
@@ -85,17 +90,17 @@
   /** Nearest point at `x` — layerchart's default tooltip matches exact
    *  timestamps only, which breaks when raw and aggregate grids differ. */
   function nearestValueAt(
-    points: readonly { date: Date; value: number }[],
+    points: readonly ChartPoint[],
     x: Date
   ): number | undefined {
     return nearestPointAt(points, x)?.value
   }
 
-  function nearestPointAt<T extends { date: Date }>(
+  function nearestPointAt<T extends ChartPoint>(
     points: readonly T[],
     x: Date
   ): T | undefined {
-    if (points.length === 0) return undefined
+    if (points.length === 0 || insideLineGap(points, x)) return undefined
     const t = x.getTime()
     const i = bisector((p: { date: Date }) => p.date.getTime()).left(points, t)
     const lo = Math.max(0, i - 1)
@@ -190,6 +195,7 @@
   }: Props = $props()
 
   const timeContext = getTimeContext()
+  const chartID = $props.id()
 
   /* One scale template per chart; LineChart copies it before use. */
   const xScale = scaleTime()
@@ -424,6 +430,8 @@
       distance: number
     } | null = null
     for (const series of chartSeries) {
+      const pointerDate = context.xScale.invert?.(x)
+      if (pointerDate && insideLineGap(series.data, pointerDate)) continue
       const point = nearestPointAt(series.data, date)
       if (!point) continue
       const distance = Math.hypot(
@@ -605,6 +613,18 @@
       key = seriesKeyForChartPoint(data)
     }
     if (!key || isAggregateLineKey(key)) return
+    const context = lineChartContext
+    const root =
+      e.target instanceof Element
+        ? e.target.closest('.lc-root-container')
+        : null
+    const series = chartSeries.find(candidate => candidate.key === key)
+    if (context && root && series) {
+      const pointerDate = context.xScale.invert?.(
+        e.clientX - root.getBoundingClientRect().left - context.padding.left
+      )
+      if (pointerDate && insideLineGap(series.data, pointerDate)) return
+    }
     const point = sourcePointForChartPoint(key, data, date)
     if (point && activateChartPoint(key, point)) e.stopPropagation()
   }
@@ -678,6 +698,8 @@
     for (const series of chartSeries) {
       if (isAggregateLineKey(series.key)) continue
       if (lineKey && series.key !== lineKey) continue
+      const pointerDate = context.xScale.invert?.(x)
+      if (pointerDate && insideLineGap(series.data, pointerDate)) continue
       for (const point of series.data) {
         const selectable =
           aggregationView === 'rate'
@@ -1192,27 +1214,50 @@
               <Rule y={0} />
             {/if}
           {/snippet}
-          {#snippet marks()}
-            {#each chartSeries as series (series.key)}
+          {#snippet marks({ context })}
+            {#each chartSeries as series, seriesIndex (series.key)}
               {@const emphasized =
                 series.key === emphasizedSeriesKey ||
                 series.key === selectedSeriesKey ||
                 emphasis.has(series.key)}
               {@const aggregate = isAggregateLineKey(series.key)}
+              {@const strokeWidth = aggregate
+                ? emphasized
+                  ? 4
+                  : 2
+                : emphasized
+                  ? 2.5
+                  : 1.75}
+              {@const gapClipID = `${chartID}-gap-${seriesIndex}`}
+              <defs>
+                <clipPath id={gapClipID} clipPathUnits="userSpaceOnUse">
+                  {#each gappedLineClips(series.data, context.xScale, strokeWidth, Math.min(...context.xRange) - strokeWidth, Math.max(...context.xRange) + strokeWidth) as clip}
+                    <rect
+                      x={clip.x}
+                      width={clip.width}
+                      y={Math.min(...context.yRange) - strokeWidth}
+                      height={Math.abs(context.yRange[1] - context.yRange[0]) +
+                        2 * strokeWidth}
+                    />
+                  {/each}
+                </clipPath>
+              </defs>
               <Spline
                 seriesKey={series.key}
                 curve={series.props?.curve}
+                pathData={gappedLinePath(
+                  series.data,
+                  context.xScale,
+                  context.yScale,
+                  series.props?.curve
+                )}
+                clip-path={`url(#${gapClipID})`}
+                stroke-linecap="round"
                 class="metric-series-line"
                 data-series-key={series.key}
                 data-emphasized={emphasized}
                 onclick={handlePlotClick}
-                strokeWidth={aggregate
-                  ? emphasized
-                    ? 4
-                    : 2
-                  : emphasized
-                    ? 2.5
-                    : 1.75}
+                {strokeWidth}
                 stroke-dasharray={series.props?.['stroke-dasharray']}
                 style="--metric-series-line-opacity: {aggregate
                   ? emphasized
@@ -1228,8 +1273,12 @@
           {/snippet}
           {#snippet tooltip({ context }: { context: any })}
             {@const xDate = tooltipXDate(context)}
+            {@const pointerDate = context.xScale.invert(
+              context.tooltip.x - context.padding.left
+            )}
             {@const rawItems = chartSeries
               .filter(s => !isAggregateLineKey(s.key))
+              .filter(s => !insideLineGap(s.data, pointerDate))
               .slice()
               .sort((a, b) =>
                 String(a.label ?? a.key).localeCompare(String(b.label ?? b.key))

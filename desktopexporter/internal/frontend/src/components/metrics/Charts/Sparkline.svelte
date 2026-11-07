@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    gappedLineClips,
+    gappedLinePath,
+  } from '@/components/metrics/utils/gapped-line'
   /*
    * Sparkline: a single non-interactive SVG polyline scaled to a fixed
    * box. Built by hand rather than via LayerChart because we render one
@@ -20,7 +24,7 @@
    * deliberately ignorant of aggregation view, visibility, and theming.
    */
 
-  type Point = { date: Date; value: number }
+  type Point = { date: Date; value: number; breakBefore?: true }
 
   type Props = {
     points: readonly Point[]
@@ -39,6 +43,14 @@
     height = 18,
     strokeWidth = 1.5,
   }: Props = $props()
+  const clipID = $props.id()
+
+  const x = $derived.by(() => {
+    const times = points.map(p => p.date.getTime())
+    const min = Math.min(...times)
+    const range = Math.max(...times) - min || 1
+    return (date: Date) => ((date.getTime() - min) / range) * width
+  })
 
   // Inset the polyline by half the stroke width so the top/bottom
   // pixels don't get clipped at the SVG edge. Tiny but visible at
@@ -52,44 +64,23 @@
     const inset = strokeWidth / 2
     const innerH = Math.max(0, height - 2 * inset)
 
-    let tMin = points[0]!.date.getTime()
-    let tMax = tMin
     let vMin = Number.POSITIVE_INFINITY
     let vMax = Number.NEGATIVE_INFINITY
     for (const p of points) {
-      const t = p.date.getTime()
-      if (t < tMin) tMin = t
-      if (t > tMax) tMax = t
       if (Number.isFinite(p.value)) {
         if (p.value < vMin) vMin = p.value
         if (p.value > vMax) vMax = p.value
       }
     }
-    const tRange = tMax - tMin || 1
     // A truly flat line collapses to the box centre; otherwise scale
     // to fill the inset box with a 1px pad top/bottom for breathing
     // room. Negative values are fine -- vMin / vMax both flex.
     const vRange = vMax - vMin
     const flat = !Number.isFinite(vRange) || vRange === 0
 
-    // Skip non-finite values: NaN / Infinity in a path string breaks
-    // the whole line. A gap in the source data renders as a gap in
-    // the sparkline by lifting the pen ("M" instead of "L").
-    let d = ''
-    let pendingMove = true
-    for (const p of points) {
-      if (!Number.isFinite(p.value)) {
-        pendingMove = true
-        continue
-      }
-      const x = ((p.date.getTime() - tMin) / tRange) * width
-      const y = flat
-        ? height / 2
-        : inset + (1 - (p.value - vMin) / vRange) * innerH
-      d += (pendingMove ? 'M ' : ' L ') + x.toFixed(2) + ' ' + y.toFixed(2)
-      pendingMove = false
-    }
-    return d
+    return gappedLinePath(points, x, value =>
+      flat ? height / 2 : inset + (1 - (value - vMin) / vRange) * innerH
+    )
   })
 </script>
 
@@ -102,8 +93,16 @@
   focusable="false"
 >
   {#if pathData}
+    <defs>
+      <clipPath id={clipID} clipPathUnits="userSpaceOnUse">
+        {#each gappedLineClips(points, x, strokeWidth, 0, width) as clip}
+          <rect x={clip.x} width={clip.width} y="0" {height} />
+        {/each}
+      </clipPath>
+    </defs>
     <path
       d={pathData}
+      clip-path={`url(#${clipID})`}
       fill="none"
       stroke={color}
       stroke-width={strokeWidth}
