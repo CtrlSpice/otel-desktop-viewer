@@ -9,6 +9,22 @@
 @config "../tailwind.config.js";
 @plugin "./themes/plugin.ts";
 
+/* Tailwind 4.3.4+ drops daisyUI's relative selectors inside @scope.
+   Keep join focus/hover stacking until daisyUI#4851 is fixed upstream. */
+@layer utilities {
+  @scope (.join) {
+    :scope > :where(:focus, :has(:focus)) {
+      z-index: 2;
+    }
+
+    @media (hover: hover) {
+      :scope > :where(.btn:hover, :has(.btn:hover)) {
+        z-index: 1;
+      }
+    }
+  }
+}
+
 /* Component sizes control spacing, never smaller text. */
 .btn,
 .input,
