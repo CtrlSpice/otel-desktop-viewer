@@ -49,8 +49,11 @@ is carried to the next finite sample, retaining the finite samples on both sides
 
 The renderer starts a new path at the following point. Openings have a minimum
 width equal to the current line stroke, applied by clipping the drawing without
-changing sample timestamps or coordinates. Gap interiors do not supply hover
-values or click targets; boundary samples remain keyboard-selectable.
+changing sample timestamps or coordinates. Real points have circular 6px hover
+and click targets, including the gap-facing side of a boundary point. Farther
+inside a gap, that series supplies no hover value or click target. Pointer checks
+use drawing coordinates so fractional-millisecond positions are not rounded to
+an endpoint. Boundary samples also remain keyboard-selectable.
 
 Detection uses the requested M4 resolution, so changing the time window or
 bucket target can change which gaps qualify. Disabled main-chart reduction and a

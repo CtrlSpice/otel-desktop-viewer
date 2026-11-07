@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartPoint } from '@/types/metric-chart-types'
-import { gappedLineClips, gappedLinePath, insideLineGap } from './gapped-line'
+import {
+  gappedLineClips,
+  gappedLinePath,
+  insideLineGap,
+  insideLineGapAtX,
+  pointWithinHitRadius,
+} from './gapped-line'
 
 const x = (date: Date) => date.getTime()
 const y = (value: number) => value
@@ -63,5 +69,37 @@ describe('gap-preserving lines', () => {
         y
       )
     ).toBe('M0,0L1,0M3,0l0,0')
+  })
+
+  it('detects fractional-millisecond positions without rounding to an endpoint', () => {
+    const short = [0, 1, 3, 4].map((time, i): ChartPoint => {
+      const point: ChartPoint = { date: new Date(time), value: 0 }
+      if (i === 2) point.breakBefore = true
+      return point
+    })
+    const scale = (date: Date) => date.getTime() * 100
+    expect(insideLineGapAtX(short, 150, scale)).toBe(true)
+    expect(insideLineGapAtX(short, 100, scale)).toBe(false)
+    expect(insideLineGapAtX(short, 300, scale)).toBe(false)
+    expect(pointWithinHitRadius(short, 150, 0, scale, y)).toBeUndefined()
+    expect(pointWithinHitRadius(short, 105, 0, scale, y)).toBe(short[1])
+    expect(pointWithinHitRadius(short, 295, 0, scale, y)).toBe(short[2])
+  })
+
+  it('uses a six-pixel circle rather than a full-height endpoint strip', () => {
+    const endpoint = points[1]!
+    expect(pointWithinHitRadius(points, 16, 42, x, y)).toBe(endpoint)
+    expect(pointWithinHitRadius(points, 13, 46, x, y)).toBe(endpoint)
+    expect(pointWithinHitRadius(points, 15, 47, x, y)).toBeUndefined()
+    expect(pointWithinHitRadius(points, 16.01, 42, x, y)).toBeUndefined()
+  })
+
+  it('chooses by distance among coincident timestamps and ignores non-finite values', () => {
+    const coincident = [NaN, 10, 20].map(value => ({
+      date: new Date(10),
+      value,
+    }))
+    expect(pointWithinHitRadius(coincident, 12, 19, x, y)).toBe(coincident[2])
+    expect(pointWithinHitRadius(coincident, 12, 11, x, y)).toBe(coincident[1])
   })
 })

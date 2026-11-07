@@ -64,6 +64,9 @@
     gappedLinePath,
     gappedLineClips,
     insideLineGap,
+    insideLineGapAtX,
+    LINE_POINT_HIT_RADIUS,
+    pointWithinHitRadius,
   } from '@/components/metrics/utils/gapped-line'
   import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
 
@@ -414,6 +417,25 @@
 
   let lineChartContext = $state<ChartState<ChartPoint> | undefined>(undefined)
 
+  function tooltipPointAtPointer(
+    points: readonly ChartPoint[],
+    context: ChartState<ChartPoint>
+  ): ChartPoint | undefined {
+    const x = context.tooltip.x - context.padding.left
+    const y = context.tooltip.y - context.padding.top
+    const hit = pointWithinHitRadius(
+      points,
+      x,
+      y,
+      context.xScale,
+      context.yScale
+    )
+    if (hit) return hit
+    if (insideLineGapAtX(points, x, context.xScale)) return undefined
+    const date = tooltipXDate(context)
+    return date ? nearestPointAt(points, date) : undefined
+  }
+
   // Resolve one exact sample for emphasis without rebuilding series data or
   // moving a point onto another series' timestamp grid.
   let hoveredPoint = $derived.by(() => {
@@ -430,9 +452,7 @@
       distance: number
     } | null = null
     for (const series of chartSeries) {
-      const pointerDate = context.xScale.invert?.(x)
-      if (pointerDate && insideLineGap(series.data, pointerDate)) continue
-      const point = nearestPointAt(series.data, date)
+      const point = tooltipPointAtPointer(series.data, context)
       if (!point) continue
       const distance = Math.hypot(
         context.xScale(point.date) - x,
@@ -607,23 +627,41 @@
     data: LayerChartSeriesDatum<ChartPoint>
   ) {
     if (!onChartPointClick && !onRateChartPointClick) return
+    const context = lineChartContext
+    const target = e.target
+    const root =
+      target instanceof Element ? target.closest('.lc-root-container') : null
+    const bounds = root?.getBoundingClientRect()
+    const pointerX =
+      context && bounds
+        ? e.clientX - bounds.left - context.padding.left
+        : undefined
+    if (context && bounds && pointerX !== undefined) {
+      const pointerY = e.clientY - bounds.top - context.padding.top
+      const lineKey =
+        target instanceof Element
+          ? target.closest<SVGPathElement>('.metric-series-line')?.dataset
+              .seriesKey
+          : undefined
+      const hit = selectablePointAtPointer(context, pointerX, pointerY, lineKey)
+      if (
+        hit &&
+        hit.distance <= LINE_POINT_HIT_RADIUS &&
+        activateChartPoint(hit.seriesKey, hit.point)
+      ) {
+        e.stopPropagation()
+        return
+      }
+    }
     const date = data.date
     let key = seriesKeyAtPointerY(e, date)
     if (!key) {
       key = seriesKeyForChartPoint(data)
     }
     if (!key || isAggregateLineKey(key)) return
-    const context = lineChartContext
-    const root =
-      e.target instanceof Element
-        ? e.target.closest('.lc-root-container')
-        : null
     const series = chartSeries.find(candidate => candidate.key === key)
-    if (context && root && series) {
-      const pointerDate = context.xScale.invert?.(
-        e.clientX - root.getBoundingClientRect().left - context.padding.left
-      )
-      if (pointerDate && insideLineGap(series.data, pointerDate)) return
+    if (context && pointerX !== undefined && series) {
+      if (insideLineGapAtX(series.data, pointerX, context.xScale)) return
     }
     const point = sourcePointForChartPoint(key, data, date)
     if (point && activateChartPoint(key, point)) e.stopPropagation()
@@ -690,6 +728,17 @@
     const yMin = Math.min(...context.yRange)
     const yMax = Math.max(...context.yRange)
     if (x < xMin || x > xMax || y < yMin || y > yMax) return
+    const nearest = selectablePointAtPointer(context, x, y, lineKey)
+    if (nearest && activateChartPoint(nearest.seriesKey, nearest.point))
+      event.stopPropagation()
+  }
+
+  function selectablePointAtPointer(
+    context: ChartState<ChartPoint>,
+    x: number,
+    y: number,
+    lineKey?: string
+  ) {
     let nearest: {
       seriesKey: string
       point: ChartPoint
@@ -698,8 +747,7 @@
     for (const series of chartSeries) {
       if (isAggregateLineKey(series.key)) continue
       if (lineKey && series.key !== lineKey) continue
-      const pointerDate = context.xScale.invert?.(x)
-      if (pointerDate && insideLineGap(series.data, pointerDate)) continue
+      const inGap = insideLineGapAtX(series.data, x, context.xScale)
       for (const point of series.data) {
         const selectable =
           aggregationView === 'rate'
@@ -710,12 +758,13 @@
           context.xScale(point.date) - x,
           context.yScale(point.value) - y
         )
+        if (!Number.isFinite(distance)) continue
+        if (inGap && distance > LINE_POINT_HIT_RADIUS) continue
         if (!nearest || distance < nearest.distance)
           nearest = { seriesKey: series.key, point, distance }
       }
     }
-    if (nearest && activateChartPoint(nearest.seriesKey, nearest.point))
-      event.stopPropagation()
+    return nearest
   }
 
   /** Chart-area click under bisect-x tooltip — disambiguate series by
@@ -1273,12 +1322,8 @@
           {/snippet}
           {#snippet tooltip({ context }: { context: any })}
             {@const xDate = tooltipXDate(context)}
-            {@const pointerDate = context.xScale.invert(
-              context.tooltip.x - context.padding.left
-            )}
             {@const rawItems = chartSeries
               .filter(s => !isAggregateLineKey(s.key))
-              .filter(s => !insideLineGap(s.data, pointerDate))
               .slice()
               .sort((a, b) =>
                 String(a.label ?? a.key).localeCompare(String(b.label ?? b.key))
@@ -1299,8 +1344,10 @@
                 <Tooltip.Header value={headerLabel} />
                 <Tooltip.List>
                   {#each rawItems as s (s.key)}
-                    {@const value =
-                      xDate != null ? nearestValueAt(s.data, xDate) : undefined}
+                    {@const value = tooltipPointAtPointer(
+                      s.data,
+                      context
+                    )?.value}
                     {#if value !== undefined}
                       <Tooltip.Item
                         {value}

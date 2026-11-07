@@ -2449,9 +2449,7 @@ describe('MetricsPage raw series fetching', () => {
         '[data-detail-section="datapoints"]'
       )!
       const header = section.querySelector('summary')!
-      const identity = screen.getByLabelText('Displayed datapoint series')
       expect(header).toHaveTextContent('[4]')
-      expect(identity).toHaveTextContent('series-a')
 
       navigateCurrentRoute(
         withQueryPatch(readRoute().query, {
@@ -2467,7 +2465,6 @@ describe('MetricsPage raw series fetching', () => {
       expect(document.querySelector('[data-dp-id="a-point"]')).toBe(row)
       expect(document.querySelector('.dp-list__expansion')).toBe(expansion)
       expect(header).toHaveTextContent('[4]')
-      expect(identity).toHaveTextContent('series-a')
       expect(screen.getByText('/b', { exact: true })).toBeInTheDocument()
       expect(screen.queryByText('Loading datapoints…')).toBeNull()
       await screen.findByText('Loading datapoints…')
@@ -2498,7 +2495,6 @@ describe('MetricsPage raw series fetching', () => {
         await screen.findByText('Could not load datapoints.')
         expect(document.querySelector('[data-dp-id="a-point"]')).toBe(row)
         expect(header).toHaveTextContent('[4]')
-        expect(identity).toHaveTextContent('series-a')
         await fireEvent.keyDown(row, { key: ' ' })
         expect(row).toHaveAttribute('aria-expanded', 'false')
         await fireEvent.click(row)
@@ -2519,7 +2515,6 @@ describe('MetricsPage raw series fetching', () => {
         expect(document.querySelector('[data-dp-id="b-point"]')).not.toBeNull()
       )
       expect(header).toHaveTextContent('[9]')
-      expect(identity).toHaveTextContent('series-b')
       expect(document.querySelector('[data-dp-id="a-point"]')).toBeNull()
       await fireEvent.click(document.querySelector('[data-dp-id="b-point"]')!)
       expect(readRoute().query.dp).toBe('b-point')
@@ -2925,12 +2920,6 @@ describe('MetricsPage raw series fetching', () => {
       )
       expect(section).not.toHaveAttribute('data-detail-group', 'inactive')
       expect(section).toHaveTextContent('[1]')
-      expect(
-        screen.getByLabelText('Displayed datapoint series')
-      ).toHaveTextContent(metricRef)
-      expect(
-        screen.getByLabelText('Displayed datapoint series')
-      ).toHaveTextContent(seriesRef)
       expect(
         screen.getByRole('columnheader', { name: /^Value\s*\(s\)$/ })
       ).toBeInTheDocument()

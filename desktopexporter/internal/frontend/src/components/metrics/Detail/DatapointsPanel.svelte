@@ -5,7 +5,6 @@
     type DatapointSeries,
   } from './SeriesDatapointList.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
-  import Identifier from '@/components/shared/Identifier.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
 
   let {
@@ -86,14 +85,6 @@
         />
       {/if}
       {#if displayed}
-        <div
-          class="px-3 py-2 text-subtle"
-          aria-label="Displayed datapoint series"
-        >
-          Metric <Identifier value={displayed.metricRef} /> · Series <Identifier
-            value={displayed.seriesRef}
-          />
-        </div>
         {#key JSON.stringify([displayed.metricRef, displayed.seriesRef])}
           <SeriesDatapointList
             {selectionCurrent}

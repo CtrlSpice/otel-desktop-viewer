@@ -3965,13 +3965,17 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
     .toBe(selectedID)
 })
 
-for (const tiny of [false, true]) {
-  test(`gauge gaps retain endpoints and ${tiny ? 'a minimum visible opening' : 'no value inside the gap'}`, async ({
+for (const mode of ['normal', 'tiny', 'fractional'] as const) {
+  test(`gauge gaps retain endpoints and ${mode === 'tiny' ? 'a minimum visible opening' : `six-pixel hit targets (${mode})`}`, async ({
     page,
   }) => {
-    const milliseconds = tiny
-      ? [0, 10_000, 10_001, 100_000]
-      : [0, 10_000, 40_000, 50_000]
+    const tiny = mode === 'tiny'
+    const milliseconds =
+      mode === 'fractional'
+        ? [0, 1, 3, 4]
+        : tiny
+          ? [0, 10_000, 10_001, 100_000]
+          : [0, 10_000, 40_000, 50_000]
     const values = [0, 42, 45, 0]
     const datapoints: PointFixture[] = milliseconds.map((ms, i) => {
       const point: PointFixture = {
@@ -4026,7 +4030,7 @@ for (const tiny of [false, true]) {
     const line = page.locator('.metric-series-line')
     await expect(line).toHaveCount(1)
     await expect(line).toHaveAttribute('d', /M.*L.*M.*L/)
-    const geometry = await line.evaluate(element => {
+    const geometry = await line.evaluate((element, fractional) => {
       const path = element as SVGPathElement
       const points = [
         ...path.getAttribute('d')!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g),
@@ -4034,9 +4038,15 @@ for (const tiny of [false, true]) {
       const before = points[1]!
       const after = points[2]!
       const middle = new DOMPoint(
-        (before.x + after.x) / 2,
+        before.x + (after.x - before.x) * (fractional ? 0.25 : 0.5),
         (before.y + after.y) / 2
       ).matrixTransform(path.getScreenCTM()!)
+      const beforeScreen = new DOMPoint(before.x, before.y).matrixTransform(
+        path.getScreenCTM()!
+      )
+      const afterScreen = new DOMPoint(after.x, after.y).matrixTransform(
+        path.getScreenCTM()!
+      )
       const clipID = path.getAttribute('clip-path')!.slice(5, -1)
       const clips = [
         ...document.getElementById(clipID)!.querySelectorAll('rect'),
@@ -4044,6 +4054,8 @@ for (const tiny of [false, true]) {
       return {
         x: middle.x,
         y: middle.y,
+        before: { x: beforeScreen.x, y: beforeScreen.y },
+        after: { x: afterScreen.x, y: afterScreen.y },
         gapWidth: after.x - before.x,
         opening:
           Number(clips[1]!.getAttribute('x')) -
@@ -4051,7 +4063,7 @@ for (const tiny of [false, true]) {
           Number(clips[0]!.getAttribute('width')),
         strokeWidth: Number.parseFloat(getComputedStyle(path).strokeWidth),
       }
-    })
+    }, mode === 'fractional')
     expect(geometry.opening).toBeCloseTo(geometry.strokeWidth)
     if (tiny) expect(geometry.gapWidth).toBeLessThan(1)
     await expect(page.locator('.sparkline path').first()).toHaveAttribute(
@@ -4066,6 +4078,32 @@ for (const tiny of [false, true]) {
       ).toHaveCount(0)
       await page.mouse.click(geometry.x, geometry.y)
       expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+
+      // Five pixels on each axis is outside a six-pixel circular target.
+      await page.mouse.move(geometry.before.x + 5, geometry.before.y + 5)
+      await expect(page.locator('.series-hover-point')).toHaveCount(0)
+      await page.mouse.click(geometry.before.x + 5, geometry.before.y + 5)
+      expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+
+      // Each gap-facing half of the endpoint's six-pixel circle is reachable.
+      await page.mouse.move(geometry.before.x + 3, geometry.before.y)
+      await expect(page.locator('.series-hover-point')).toHaveCount(1)
+      await page.mouse.click(geometry.before.x + 3, geometry.before.y)
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('dp'))
+        .toBe('gap-1')
+      // Dismiss the pinned card so it cannot cover the other endpoint.
+      await page.locator('.chart-keyboard-surface').press('Escape')
+      await expect
+        .poll(() => new URL(page.url()).searchParams.has('dp'))
+        .toBe(false)
+      await page.mouse.move(0, 0)
+      await page.mouse.move(geometry.after.x - 3, geometry.after.y)
+      await expect(page.locator('.series-hover-point')).toHaveCount(1)
+      await page.mouse.click(geometry.after.x - 3, geometry.after.y)
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('dp'))
+        .toBe('gap-2')
     }
   })
 }
