@@ -274,6 +274,18 @@ Useful focused targets include:
 | Browser accessibility       | `make test-a11y`       |
 | Embedded frontend freshness | `make build-ts-check`  |
 
+To exercise a public executable with fresh storage and its embedded frontend:
+
+```bash
+go build -o otel-desktop-viewer
+node desktopexporter/internal/frontend/scripts/smoke-binary.mjs ./otel-desktop-viewer
+```
+
+This smoke test checks all-signal ingestion, schema 27, native VARIANT types,
+exact Arrow integers, service identity, OTLP trace export and public feature
+exclusion. It requires the frontend dependencies and Playwright Chromium from
+`make install-clean`.
+
 Run `git diff --check` before committing. CI regenerates the search parser and checks for a clean diff, enforces guarded store access, and builds plus tests the Go application on Ubuntu, macOS, and Windows.
 
 ## Opening a pull request

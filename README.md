@@ -127,7 +127,8 @@ sudo dnf install otel-desktop-viewer
 
 #### Via `go install`
 
-Building from source requires Go and CGO.
+Building the current source requires Go 1.26 and CGO. DuckDB 2 is statically
+linked into the executable; a separate DuckDB installation is not required.
 
 ```bash
 go version
@@ -135,43 +136,19 @@ go env CGO_ENABLED   # should print 1
 gcc --version        # or cc --version
 ```
 
-**On Windows**: You'll need MSYS2 for CGO compilation:
+**On Windows**: Use a MinGW64 GCC toolchain compatible with DuckDB's prebuilt
+static library. CI uses `C:\mingw64\bin`. Put the compatible toolchain first in
+`PATH` and verify which compiler CGO will find. For that installation, in PowerShell:
 
-1. **Install MSYS2**: Download and install from https://www.msys2.org/
-2. **Open MSYS2 UCRT64 terminal**:
-   - After installing MSYS2, you'll see multiple terminal options in the Start Menu
-   - Choose **"MSYS2 UCRT64"** (not "MSYS2 MinGW 64-bit" or "MSYS2 MSYS")
-   - Or run: `C:\msys64\ucrt64.exe`
-3. **Install required packages**:
-   ```bash
-   pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-toolchain
-   ```
-4. **Add MSYS2 to your PATH** (choose one):
+```powershell
+$env:PATH = "C:\mingw64\bin;$env:PATH"
+(Get-Command gcc).Source
+gcc --version
+g++ --version
+```
 
-   **Command Prompt (permanent)**:
-
-   ```cmd
-   setx PATH "%PATH%;C:\msys64\ucrt64\bin"
-   ```
-
-   **PowerShell (permanent)**:
-
-   ```powershell
-   [Environment]::SetEnvironmentVariable("PATH", [Environment]::GetEnvironmentVariable("PATH", "User") + ";C:\msys64\ucrt64\bin", "User")
-   ```
-
-   **PowerShell (current session only)**:
-
-   ```powershell
-   $env:PATH += ";C:\msys64\ucrt64\bin"
-   ```
-
-5. **Restart your terminal** for PATH changes to take effect
-6. **Test the setup**:
-   ```cmd
-   gcc --version
-   g++ --version
-   ```
+See [the build prerequisites](docs/CONTRIBUTING.md#prerequisites) for the supported
+toolchain. Prebuilt release binaries do not need a compiler.
 
 **On Linux/macOS**: the checks above are sufficient.
 
@@ -512,12 +489,29 @@ The [OTel Desktop Viewer skill](skills/otel-desktop-viewer/SKILL.md) gives codin
 
 ## Implementation
 
-The CLI is a custom OpenTelemetry Collector distribution. Its `desktop` exporter writes telemetry to the store owned by the `duckdb` extension. The extension:
+The CLI is a custom OpenTelemetry Collector distribution. Its `desktop` exporter
+ingests telemetry through Arrow batches into DuckDB 2.0.0. The `duckdb` extension
+owns the store, HTTP server and retention loop. It:
 
-- exposes data through a **JSON-RPC** API at `POST /rpc`
-- serves a **Svelte** web UI embedded in the binary via [`go:embed`](https://go.dev/embed/)
+- serves browser datasets as native **Arrow IPC** at `POST /api/data/{method}`;
+- exposes CLI queries and control operations through **JSON-RPC** at `POST /rpc`;
+- provides store-backed **OTLP JSON** downloads at `GET /export/{signal}/{id}`;
+- serves a **Svelte** web UI embedded in the binary via [`go:embed`](https://go.dev/embed/).
 
-DuckDB runs in memory by default. Use `--db` for file-backed storage.
+Attributes, log bodies and Metric metadata use native **VARIANT** values, retaining
+nested types and exact 64-bit integers. Resource and Scope belong to their received
+records; events, links, datapoints and exemplars are views of their stored owners.
+Browser datasets retain typed Arrow columns. JSON rendering and complete Copy
+values are produced when requested, independently of bounded display previews.
+
+DuckDB runs in memory by default. Use `--db` for file-backed storage. The current
+application schema is **27**. Incompatible databases are rejected without
+modification; choose a fresh database and reload source telemetry. See
+[schema compatibility](docs/schema-migration.md).
+
+Public builds use `EVALS=0`. `EVALS=1` includes Evals in both Go and the frontend at
+build time; shared viewer storage remains available in either build. See
+[experimental features](docs/experimental-features.md).
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a full system overview.
 
