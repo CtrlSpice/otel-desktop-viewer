@@ -38,6 +38,11 @@ Raw Gauge lines detect empty M4 buckets separately for each series, using the
 original samples before reduction. One or more empty buckets between samples
 creates a break. A received zero still occupies its bucket.
 
+Occupancy is checked across the series before assigning breaks to chronological
+neighbours. During a daylight-saving fall-back, an earlier sample in a repeated
+local bucket still counts as occupying it; moving back into that hour does not
+itself create a break.
+
 Both neighbouring real datapoints are retained alongside the usual M4 and
 exemplar selections. The following chart point carries `breakBefore?: true`;
 the property is omitted otherwise. JSON omits absent flags, and Arrow uses null.

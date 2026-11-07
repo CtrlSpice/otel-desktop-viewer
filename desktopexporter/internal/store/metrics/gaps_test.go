@@ -249,39 +249,96 @@ func TestSparklineGapsSurviveNumericFiltering(t *testing.T) {
 	}
 }
 
-func TestSparklineGapsUseBucketOccupancyDuringRepeatedHours(t *testing.T) {
-	for _, missing := range []bool{false, true} {
-		t.Run(strconv.FormatBool(missing), func(t *testing.T) {
-			s, ctx := storetest.New(t)
-			data := pmetric.NewMetrics()
-			m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-			m.SetName("sparkline-calendar")
-			points := m.SetEmptyGauge().DataPoints()
-			for _, clock := range []string{"04:15", "04:45", "05:15", "05:45", "06:15", "07:15", "07:45"} {
-				if missing && clock == "05:45" {
-					continue
+func TestGaugeGapsUseBucketOccupancyDuringRepeatedHours(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		clocks        []string
+		occupiedClock string
+		buckets       int64
+		boundaries    map[string]string // following sample -> preceding sample, in UTC
+	}{
+		{
+			name:          "half-hour buckets",
+			clocks:        []string{"04:15", "04:45", "05:15", "06:15", "07:15", "07:45"},
+			occupiedClock: "05:45", buckets: 8,
+			boundaries: map[string]string{"07:15": "06:15"},
+		},
+		{
+			name:          "both passes of the repeated hour",
+			clocks:        []string{"04:45", "05:00", "05:30", "05:45", "06:00", "06:30", "06:45", "07:00", "07:15", "07:30", "07:45"},
+			occupiedClock: "05:15", buckets: 16,
+			boundaries: map[string]string{"05:30": "05:00", "06:30": "06:00"},
+		},
+	} {
+		for _, missing := range []bool{false, true} {
+			t.Run(tc.name+"/missing="+strconv.FormatBool(missing), func(t *testing.T) {
+				s, ctx := storetest.New(t)
+				data := pmetric.NewMetrics()
+				m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				m.SetName("calendar-occupancy")
+				points := m.SetEmptyGauge().DataPoints()
+				stamp := func(clock string) int64 {
+					timestamp, err := time.Parse(time.RFC3339, "2026-11-01T"+clock+":00Z")
+					require.NoError(t, err)
+					return timestamp.UnixNano()
 				}
-				timestamp, err := time.Parse(time.RFC3339, "2026-11-01T"+clock+":00Z")
+				clocks := append([]string{}, tc.clocks...)
+				if !missing {
+					clocks = append(clocks, tc.occupiedClock)
+				}
+				for _, clock := range clocks {
+					p := points.AppendEmpty()
+					p.SetTimestamp(pcommon.Timestamp(stamp(clock)))
+					p.SetIntValue(0)
+				}
+				require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
+				id := findMetricRef(t, s, ctx, "calendar-occupancy")
+				start := time.Date(2026, 11, 1, 4, 0, 0, 0, time.UTC)
+				raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+					return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(start.UnixNano(), start.Add(4*time.Hour).UnixNano()-1),
+						tc.buckets, nil, nil, 0, 0, tc.buckets, nil, "America/New_York", nil, 0)
+				})
 				require.NoError(t, err)
-				p := points.AppendEmpty()
-				p.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-				p.SetIntValue(0)
-			}
-			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
-			id := findMetricRef(t, s, ctx, "sparkline-calendar")
-			start := time.Date(2026, 11, 1, 4, 0, 0, 0, time.UTC)
-			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(start.UnixNano(), start.Add(4*time.Hour).UnixNano()-1),
-					0, nil, nil, 0, 0, 8, nil, "America/New_York", nil, 0)
+				type point struct {
+					Timestamp   string `json:"timestamp"`
+					BreakBefore *bool  `json:"breakBefore"`
+				}
+				var view struct {
+					Timeseries []struct {
+						Datapoints []point `json:"datapoints"`
+						Sparkline  []point `json:"sparkline"`
+					} `json:"timeseries"`
+				}
+				require.NoError(t, json.Unmarshal(raw, &view))
+				require.Len(t, view.Timeseries, 1)
+				want := map[string]string{}
+				if missing {
+					for after, before := range tc.boundaries {
+						want[strconv.FormatInt(stamp(after), 10)] = strconv.FormatInt(stamp(before), 10)
+					}
+				}
+				for name, points := range map[string][]point{
+					"main":      view.Timeseries[0].Datapoints,
+					"sparkline": view.Timeseries[0].Sparkline,
+				} {
+					got := map[string]string{}
+					for i, p := range points {
+						if p.BreakBefore == nil {
+							continue
+						}
+						require.True(t, *p.BreakBefore)
+						previous := i - 1
+						if name == "main" {
+							previous = i + 1
+						}
+						require.GreaterOrEqual(t, previous, 0)
+						require.Less(t, previous, len(points))
+						got[p.Timestamp] = points[previous].Timestamp
+					}
+					require.Equal(t, want, got, name)
+				}
 			})
-			require.NoError(t, err)
-			want := 0
-			if missing {
-				want = 1
-			}
-			require.Equal(t, want, bytes.Count(raw, []byte(`"breakBefore":true`)),
-				"the repeated 01:30 bucket is occupied by 05:45Z unless that sample is omitted")
-		})
+		}
 	}
 }
 

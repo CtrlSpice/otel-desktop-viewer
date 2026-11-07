@@ -461,26 +461,48 @@
 				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
 		),
 
-		-- Detect empty M4 buckets before reducing samples. Match the chart's
-		-- chronological order (the reverse of timestamp DESC, id ASC on the wire).
-		-- Advance one bucket in local time, then resolve it to UTC. Adjacent
-		-- calendar buckets can span 23/25 hours, and a skipped DST hour is not a gap.
-		gauge_neighbors as (
+		-- Detect empty M4 buckets from original per-series occupancy. A repeated
+		-- local hour can send chronological samples back to an occupied bucket.
+		gauge_bucketed as (
 			select series_id, id, timestamp, bucket_start,
-				lag(id) over w as previous_id,
-				lag(floor_div(timestamp::hugeint + tz_shift::hugeint,
+				floor_div(timestamp::hugeint + tz_shift::hugeint,
 					(select width_ns from reduction))::hugeint
-					* (select width_ns from reduction)::hugeint) over w as previous_bucket_local
+					* (select width_ns from reduction)::hugeint as bucket_local
 			from bucketed_dps
 			where metric_type = 'Gauge'
-			window w as (partition by series_id order by timestamp, id desc)
+		),
+		gauge_occupied as (
+			select series_id, bucket_start, min(bucket_local) as bucket_local,
+				lag(min(bucket_local)) over (
+					partition by series_id order by bucket_start) as previous_local
+			from gauge_bucketed
+			group by series_id, bucket_start
+		),
+		-- Advance in local time, then resolve to UTC. Adjacent calendar buckets
+		-- can span 23/25 hours, and a skipped DST hour is not an empty bucket.
+		gauge_bucket_sections as (
+			select series_id, bucket_start,
+				count(*) filter (where bucket_start > bucket_start_utc(
+					previous_local + (select width_ns from reduction)::hugeint,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint)) over (
+					partition by series_id order by bucket_start) as bucket_section
+			from gauge_occupied
+		),
+		-- Attach a break only when real chronological neighbours cross forward
+		-- over empty buckets. Moving back during a repeated hour is not a gap.
+		-- Match chart order: the reverse of timestamp DESC, id ASC on the wire.
+		gauge_neighbors as (
+			select d.series_id, d.id, d.timestamp, s.bucket_section,
+				lag(d.id) over w as previous_id,
+				lag(s.bucket_section) over w as previous_section
+			from gauge_bucketed d
+			join gauge_bucket_sections s using (series_id, bucket_start)
+			window w as (partition by d.series_id order by d.timestamp, d.id desc)
 		),
 		gauge_gaps as (
 			select series_id, id, previous_id, timestamp
 			from gauge_neighbors
-			where bucket_start > bucket_start_utc(
-				previous_bucket_local + (select width_ns from reduction)::hugeint,
-				{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint)
+			where bucket_section > previous_section
 		),
 		gauge_gap_endpoints as (
 			select id from gauge_gaps
