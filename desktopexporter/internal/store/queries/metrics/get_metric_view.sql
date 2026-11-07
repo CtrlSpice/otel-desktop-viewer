@@ -488,8 +488,8 @@
 			select previous_id as id from gauge_gaps
 		),
 
-		-- Sparkline reduction keeps min/max shape and the same gap boundaries
-		-- as the main chart, even when several M4 buckets share a sparkline bucket.
+		-- Sparklines are resolution-limited overviews. Detect their gaps on their
+		-- own grid, from received samples before numeric filtering or reduction.
 		sparkline_grid as (
 			-- Do not bucket more finely than the Metric's cadence.
 			select bucket_width_ns(rs.span_ns,
@@ -500,19 +500,65 @@
 				end) as width_ns
 			from reduction_span rs, series_cadence c
 		),
+		sparkline_local as (
+			select d.series_id, d.id, d.timestamp, d.metric_type,
+				coalesce(d.double_value, d.int_value) as value,
+				floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
+					(select width_ns from sparkline_grid))::hugeint
+					* (select width_ns from sparkline_grid)::hugeint as bucket_local
+			from filtered_dps d
+			where d.metric_type in ('Gauge', 'Sum')
+			  and (select width_ns from sparkline_grid) is not null
+		),
 		sparkline_bucketed as (
-			select d.series_id,
-				bucket_start_utc(
-					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
-					          (select width_ns from sparkline_grid))
-						::hugeint * (select width_ns from sparkline_grid)::hugeint,
+			select *, bucket_start_utc(bucket_local,
 					{{bind "tz_name"}}::varchar,
-					{{bind "tz_offset_ns"}}::bigint) as bucket_start,
-				d.timestamp,
-				d.value
-			from scalar_dps d
-			-- NULL width disables sparklines rather than forming one NULL group.
-			where (select width_ns from sparkline_grid) is not null
+					{{bind "tz_offset_ns"}}::bigint) as bucket_start
+			from sparkline_local
+		),
+		-- Compare distinct occupied buckets, not successive sample assignments:
+		-- a repeated local hour can send chronological samples back to a bucket
+		-- that was already occupied. Non-finite and empty samples still occupy it.
+		sparkline_occupied as (
+			select series_id, bucket_start, min(bucket_local) as bucket_local,
+				lag(min(bucket_local)) over (
+					partition by series_id order by bucket_start) as previous_local
+			from sparkline_bucketed
+			where metric_type = 'Gauge'
+			group by series_id, bucket_start
+		),
+		sparkline_bucket_sections as (
+			select series_id, bucket_start,
+				count(*) filter (where bucket_start > bucket_start_utc(
+					previous_local + (select width_ns from sparkline_grid)::hugeint,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint)) over (
+					partition by series_id order by bucket_start) as bucket_section
+			from sparkline_occupied
+		),
+		sparkline_sequence as (
+			select d.*, s.bucket_section,
+				lag(s.bucket_section) over (
+					partition by d.series_id order by d.timestamp, d.id desc) as previous_section
+			from sparkline_bucketed d
+			left join sparkline_bucket_sections s using (series_id, bucket_start)
+		),
+		-- Carry breaks across numeric filtering. Going back during a repeated
+		-- hour is not itself an outage; only forward crossings of empty buckets
+		-- start a new chronological section. Sums retain their existing behavior.
+		sparkline_sections as (
+			select *, count(*) filter (where bucket_section > previous_section) over (
+				partition by series_id order by timestamp, id desc
+				rows between unbounded preceding and current row) as section_id
+			from sparkline_sequence
+		),
+		sparkline_numeric as (
+			select *,
+				row_number() over (partition by series_id, section_id order by timestamp, value, id) as first_in_section,
+				row_number() over (partition by series_id, section_id order by timestamp desc, value desc, id desc) as last_in_section,
+				min(section_id) over (partition by series_id) as first_section,
+				max(section_id) over (partition by series_id) as last_section
+			from sparkline_sections
+			where isfinite(value)
 		),
 		-- Keep each extremum's actual timestamp.
 		sparkline_extrema as (
@@ -520,40 +566,43 @@
 				bucket_start,
 				-- Timestamp tie-breaks keep flat buckets deterministic.
 				arg_min(timestamp, (value, timestamp)) as min_ts,
+				arg_min(section_id, (value, timestamp)) as min_section,
 				min(value) as min_value,
 				arg_max(timestamp, (value, timestamp)) as max_ts,
+				arg_max(section_id, (value, timestamp)) as max_section,
 				max(value) as max_value
-			from sparkline_bucketed
+			from sparkline_numeric
 			group by series_id, bucket_start
 		),
 		-- UNION removes duplicate min/max points from flat buckets.
 		sparkline_points as (
-			select series_id, min_ts as timestamp, min_value as value
+			select series_id, min_ts as timestamp, min_value as value, min_section as section_id
 			from sparkline_extrema
 			union by name
-			select series_id, max_ts as timestamp, max_value as value
+			select series_id, max_ts as timestamp, max_value as value, max_section as section_id
 			from sparkline_extrema
 			union by name
-			select series_id, timestamp, value
-			from scalar_dps
-			where id in (select id from gauge_gap_endpoints)
-			  and (select width_ns from sparkline_grid) is not null
+			select series_id, timestamp, value, section_id
+			from sparkline_numeric
+			where (first_in_section = 1 and section_id > first_section)
+			   or (last_in_section = 1 and section_id < last_section)
+		),
+		sparkline_marked as (
+			select *, case when section_id <> lag(section_id) over (
+				partition by series_id order by timestamp, value) then true end as break_before
+			from sparkline_points
 		),
 		-- Histogram series have NULL sparklines.
 		sparkline_agg as (
 			select sp.series_id,
 				{{if arrow}}list(struct_pack(timestamp := sp.timestamp, value := sp.value,
-					breakBefore := case when g.id is not null and sp.rn = 1 then true end)
+					breakBefore := sp.break_before)
 					order by sp.timestamp, sp.value){{else}}to_json(list(json_merge_patch(json_object(
 					'timestamp', sp.timestamp::varchar,
 					'value', double_wire_json(sp.value)
-				), json_object('breakBefore', case when g.id is not null and sp.rn = 1 then true end))
+				), json_object('breakBefore', sp.break_before))
 					order by sp.timestamp, sp.value)){{end}} as sparkline
-			from (
-				select *, row_number() over (partition by series_id, timestamp order by value) as rn
-				from sparkline_points
-			) sp
-			left join gauge_gaps g on g.series_id = sp.series_id and g.timestamp = sp.timestamp
+			from sparkline_marked sp
 			group by sp.series_id
 		),
 

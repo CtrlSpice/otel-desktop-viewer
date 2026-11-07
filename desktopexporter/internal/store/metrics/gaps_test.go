@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -54,9 +55,9 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 		Datapoints []point `json:"datapoints"`
 		Sparkline  []point `json:"sparkline"`
 	}
-	read := func(buckets int64) []series {
+	read := func(buckets, sparkBuckets int64) []series {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricView(ctx, db, id, window, buckets, nil, nil, 0, 0, 1, nil, "", nil, 0)
+			return metrics.GetMetricView(ctx, db, id, window, buckets, nil, nil, 0, 0, sparkBuckets, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var view struct {
@@ -66,7 +67,7 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 		return view.Timeseries
 	}
 	stamp := func(second int64) string { return strconv.FormatInt(base+second*int64(time.Second), 10) }
-	rows := read(6) // 10-second M4 buckets, but a single coarse sparkline bucket.
+	rows := read(6, 6) // Matching 10-second grids detect the same outage independently.
 	require.Len(t, rows, 3)
 	breaks, sparkBreaks := 0, 0
 	for _, row := range rows {
@@ -97,18 +98,26 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, breaks, "other series cannot fill a series' empty buckets")
-	require.Equal(t, 1, sparkBreaks, "coarser sparkline reduction must retain the break")
+	require.Equal(t, 1, sparkBreaks, "sparkline reduction must retain its own detected break")
 	for _, buckets := range []int64{0, 1} {
-		for _, row := range read(buckets) {
+		for _, row := range read(buckets, 1) {
 			for _, p := range append(row.Datapoints, row.Sparkline...) {
 				require.Nil(t, p.BreakBefore, "no empty M4 bucket means no inferred break")
 			}
 		}
 	}
+	for _, row := range read(6, 1) {
+		for _, p := range row.Sparkline {
+			require.Nil(t, p.BreakBefore, "a coarse sparkline need not show the main chart's gap")
+		}
+	}
+	for _, row := range read(6, 0) {
+		require.Nil(t, row.Sparkline, "disabled sparklines remain absent")
+	}
 	// The native Arrow path carries true/null, never false. Both transports
 	// retain the same break on main-chart and sparkline points.
 	_, err := readStore(s, func(db *sql.DB) (int, error) {
-		result, err := metrics.ViewArrow(ctx, db, id, window, 6, nil, nil, 0, 0, 1, nil, "", nil, 0, false, "")
+		result, err := metrics.ViewArrow(ctx, db, id, window, 6, nil, nil, 0, 0, 6, nil, "", nil, 0, false, "")
 		if err != nil {
 			return 0, err
 		}
@@ -146,6 +155,134 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 		return 0, reader.Err()
 	})
 	require.NoError(t, err)
+}
+
+func TestSparklineGapsSurviveNumericFiltering(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		value          float64
+		empty          bool
+		beforeInvalid  bool
+		fillBuckets    bool
+		invalidSection bool
+	}{
+		{name: "NaN", value: math.NaN()},
+		{name: "positive infinity", value: math.Inf(1)},
+		{name: "negative infinity", value: math.Inf(-1)},
+		{name: "empty", empty: true},
+		{name: "both boundaries invalid", value: math.NaN(), beforeInvalid: true},
+		{name: "invalid-only section", value: math.NaN(), invalidSection: true},
+		{name: "invalid readings occupy buckets", value: math.NaN(), fillBuckets: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, ctx := storetest.New(t)
+			base := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC).UnixNano()
+			data := pmetric.NewMetrics()
+			m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("sparkline-filtering")
+			points := m.SetEmptyGauge().DataPoints()
+			for _, sample := range []struct {
+				second int64
+				value  float64
+			}{
+				{0, 0}, {1, -10}, {2, 100}, {3, 42}, {40, 44}, {41, 43}, {41, 44}, {42, 99}, {49, 0},
+			} {
+				p := points.AppendEmpty()
+				p.SetTimestamp(pcommon.Timestamp(base + sample.second*int64(time.Second)))
+				if sample.second == 40 || (sample.second == 3 && tc.beforeInvalid) {
+					if !tc.empty {
+						p.SetDoubleValue(tc.value)
+					}
+				} else {
+					p.SetDoubleValue(sample.value)
+				}
+			}
+			for _, second := range []int64{10, 20, 30} {
+				if tc.fillBuckets || (tc.invalidSection && second == 20) {
+					p := points.AppendEmpty()
+					p.SetTimestamp(pcommon.Timestamp(base + second*int64(time.Second)))
+					if second != 10 {
+						p.SetDoubleValue(math.NaN())
+					}
+				}
+			}
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
+			id := findMetricRef(t, s, ctx, "sparkline-filtering")
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				// Disable main-chart reduction: sparkline gaps must be independent.
+				return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(base, base+int64(time.Minute)-1),
+					0, nil, nil, 0, 0, 6, nil, "", nil, 0)
+			})
+			require.NoError(t, err)
+			var view struct {
+				Timeseries []struct {
+					Sparkline []struct {
+						Timestamp   string  `json:"timestamp"`
+						Value       float64 `json:"value"`
+						BreakBefore *bool   `json:"breakBefore"`
+					} `json:"sparkline"`
+				} `json:"timeseries"`
+			}
+			require.NoError(t, json.Unmarshal(raw, &view))
+			require.Len(t, view.Timeseries, 1)
+			breaks := 0
+			for i, p := range view.Timeseries[0].Sparkline {
+				if p.BreakBefore == nil {
+					continue
+				}
+				breaks++
+				require.True(t, *p.BreakBefore)
+				require.Equal(t, strconv.FormatInt(base+41*int64(time.Second), 10), p.Timestamp)
+				require.Greater(t, i, 0)
+				before := int64(3)
+				if tc.beforeInvalid {
+					before = 2
+				}
+				require.Equal(t, strconv.FormatInt(base+before*int64(time.Second), 10), view.Timeseries[0].Sparkline[i-1].Timestamp)
+			}
+			if tc.fillBuckets {
+				require.Zero(t, breaks)
+			} else {
+				require.Equal(t, 1, breaks)
+			}
+		})
+	}
+}
+
+func TestSparklineGapsUseBucketOccupancyDuringRepeatedHours(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		t.Run(strconv.FormatBool(missing), func(t *testing.T) {
+			s, ctx := storetest.New(t)
+			data := pmetric.NewMetrics()
+			m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("sparkline-calendar")
+			points := m.SetEmptyGauge().DataPoints()
+			for _, clock := range []string{"04:15", "04:45", "05:15", "05:45", "06:15", "07:15", "07:45"} {
+				if missing && clock == "05:45" {
+					continue
+				}
+				timestamp, err := time.Parse(time.RFC3339, "2026-11-01T"+clock+":00Z")
+				require.NoError(t, err)
+				p := points.AppendEmpty()
+				p.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+				p.SetIntValue(0)
+			}
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
+			id := findMetricRef(t, s, ctx, "sparkline-calendar")
+			start := time.Date(2026, 11, 1, 4, 0, 0, 0, time.UTC)
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(start.UnixNano(), start.Add(4*time.Hour).UnixNano()-1),
+					0, nil, nil, 0, 0, 8, nil, "America/New_York", nil, 0)
+			})
+			require.NoError(t, err)
+			want := 0
+			if missing {
+				want = 1
+			}
+			require.Equal(t, want, bytes.Count(raw, []byte(`"breakBefore":true`)),
+				"the repeated 01:30 bucket is occupied by 05:45Z unless that sample is omitted")
+		})
+	}
 }
 
 func TestGaugeGapsFollowCalendarBuckets(t *testing.T) {

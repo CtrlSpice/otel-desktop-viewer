@@ -41,7 +41,11 @@ creates a break. A received zero still occupies its bucket.
 Both neighbouring real datapoints are retained alongside the usual M4 and
 exemplar selections. The following chart point carries `breakBefore?: true`;
 the property is omitted otherwise. JSON omits absent flags, and Arrow uses null.
-Sparklines retain the same boundaries through their coarser reduction.
+Sparklines detect gaps independently on their own coarser grid, using original
+samples before numeric filtering and min/max reduction. A short outage visible
+in the main chart can disappear in this resolution-limited overview. Empty or
+non-finite readings occupy their buckets but cannot be drawn; a detected break
+is carried to the next finite sample, retaining the finite samples on both sides.
 
 The renderer starts a new path at the following point. Openings have a minimum
 width equal to the current line stroke, applied by clipping the drawing without
@@ -49,8 +53,9 @@ changing sample timestamps or coordinates. Gap interiors do not supply hover
 values or click targets; boundary samples remain keyboard-selectable.
 
 Detection uses the requested M4 resolution, so changing the time window or
-bucket target can change which gaps qualify. Disabled reduction and a single
-whole-window bucket do not detect gaps. These breaks apply to raw Gauge lines
+bucket target can change which gaps qualify. Disabled main-chart reduction and a
+single whole-window M4 bucket do not detect main-chart gaps; sparkline detection
+still follows its own grid. These breaks apply to raw Gauge lines
 and their sparklines; aggregate views retain their bucket-based semantics.
 
 ## Histograms

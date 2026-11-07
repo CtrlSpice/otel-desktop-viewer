@@ -654,7 +654,7 @@ export type ExactMetricSeries = ExactMetricIdentity & {
 export type SparklinePoint = {
   timestamp: bigint
   value: number
-  /** Same detected break as the full chart, preserved through sparkline reduction. */
+  /** Empty sparkline buckets precede this point; preserved through numeric filtering and reduction. */
   breakBefore?: true
 }
 
