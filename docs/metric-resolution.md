@@ -41,7 +41,10 @@ creates a break. A received zero still occupies its bucket.
 Occupancy is checked across the series before assigning breaks to chronological
 neighbours. During a daylight-saving fall-back, an earlier sample in a repeated
 local bucket still counts as occupying it; moving back into that hour does not
-itself create a break.
+itself create a break. During forward clock changes, local intervals skipped
+entirely by the clock are excluded from the bucket sequence. Partially skipped
+intervals remain eligible, and local labels resolving to the same UTC bucket
+count as one bucket.
 
 Both neighbouring real datapoints are retained alongside the usual M4 and
 exemplar selections. The following chart point carries `breakBefore?: true`;

@@ -346,10 +346,13 @@ func TestGaugeGapsFollowCalendarBuckets(t *testing.T) {
 		times   []string
 		buckets int64
 		breaks  int
+		zone    string
 	}{
-		{"spring skipped hour", []string{"2026-03-08T06:30:00Z", "2026-03-08T07:30:00Z", "2026-03-08T08:30:00Z"}, 2, 0},
-		{"spring real empty hour", []string{"2026-03-08T06:30:00Z", "2026-03-08T07:30:00Z", "2026-03-08T09:30:00Z"}, 3, 1},
-		{"fall 25-hour day", []string{"2026-10-31T16:00:00Z", "2026-11-01T17:00:00Z", "2026-11-02T17:00:00Z"}, 3, 0},
+		{"spring skipped hour", []string{"2026-03-08T06:30:00Z", "2026-03-08T07:30:00Z", "2026-03-08T08:30:00Z"}, 2, 0, "America/New_York"},
+		{"spring real empty hour", []string{"2026-03-08T06:30:00Z", "2026-03-08T07:30:00Z", "2026-03-08T09:30:00Z"}, 3, 1, "America/New_York"},
+		{"fall 25-hour day", []string{"2026-10-31T16:00:00Z", "2026-11-01T17:00:00Z", "2026-11-02T17:00:00Z"}, 3, 0, "America/New_York"},
+		{"Apia skipped day", []string{"2011-12-29T22:00:00Z", "2011-12-30T22:00:00Z", "2011-12-31T22:00:00Z"}, 3, 0, "Pacific/Apia"},
+		{"Apia real empty day", []string{"2011-12-29T22:00:00Z", "2011-12-30T22:00:00Z", "2012-01-02T22:00:00Z"}, 4, 1, "Pacific/Apia"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, ctx := storetest.New(t)
@@ -367,10 +370,122 @@ func TestGaugeGapsFollowCalendarBuckets(t *testing.T) {
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
 			id := findMetricRef(t, s, ctx, "calendar")
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetricView(ctx, db, id, store.TimeRange{}, tc.buckets, nil, nil, 0, 0, 0, nil, "America/New_York", nil, 0)
+				return metrics.GetMetricView(ctx, db, id, store.TimeRange{}, tc.buckets, nil, nil, 0, 0, 0, nil, tc.zone, nil, 0)
 			})
 			require.NoError(t, err)
 			require.Equal(t, tc.breaks, bytes.Count(raw, []byte(`"breakBefore":true`)))
 		})
 	}
+}
+
+func TestGaugeGapsAcrossClockChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name, zone, start, outage string
+		windowHours               int
+		buckets                   int64
+		aliasOnly                 bool
+	}{
+		{"Chatham spring", "Pacific/Chatham", "2026-09-26T12:00:00Z", "2026-09-26T15:15:00Z", 4, 8, false},
+		{"Chatham spring UI resolution", "Pacific/Chatham", "2026-09-26T12:00:00Z", "2026-09-26T15:15:00Z", 172, 500, false},
+		{"Chatham skipped label only", "Pacific/Chatham", "2026-09-26T12:00:00Z", "2026-09-26T15:15:00Z", 4, 8, true},
+		{"Chatham fall", "Pacific/Chatham", "2026-04-04T12:00:00Z", "2026-04-04T15:15:00Z", 4, 8, false},
+		{"Lord Howe half-hour spring", "Australia/Lord_Howe", "2026-10-03T14:00:00Z", "2026-10-03T17:00:00Z", 4, 8, false},
+		{"Lord Howe half-hour fall", "Australia/Lord_Howe", "2026-04-04T14:00:00Z", "2026-04-04T17:00:00Z", 4, 8, false},
+		{"New York spring", "America/New_York", "2026-03-08T05:00:00Z", "2026-03-08T08:00:00Z", 4, 8, false},
+		{"Kathmandu quarter-hour change", "Asia/Kathmandu", "1985-12-31T17:00:00Z", "1985-12-31T20:15:00Z", 4, 8, false},
+		{"Kathmandu quarter-hour buckets", "Asia/Kathmandu", "1985-12-31T17:00:00Z", "1985-12-31T20:15:00Z", 4, 16, false},
+		{"Monrovia seconds offset change", "Africa/Monrovia", "1972-01-06T23:00:00Z", "1972-01-07T02:00:00Z", 4, 8, false},
+		{"Apia skipped date", "Pacific/Apia", "2011-12-30T08:00:00Z", "2011-12-30T11:00:00Z", 4, 8, false},
+	} {
+		for _, missing := range []bool{false, true} {
+			t.Run(tc.name+"/missing="+strconv.FormatBool(missing), func(t *testing.T) {
+				parse := func(text string) time.Time {
+					timestamp, err := time.Parse(time.RFC3339, text)
+					require.NoError(t, err)
+					return timestamp
+				}
+				start, outage := parse(tc.start), parse(tc.outage)
+				s, ctx := storetest.New(t)
+				data := pmetric.NewMetrics()
+				m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				m.SetName("clock-change")
+				points := m.SetEmptyGauge().DataPoints()
+				var before, after time.Time
+				for timestamp := start; timestamp.Before(start.Add(4 * time.Hour)); timestamp = timestamp.Add(5 * time.Minute) {
+					// Keep the skipped 03:30 label's samples, but omit all samples
+					// labelled 04:30 that resolve to the same UTC bucket. Choosing
+					// max(source label) must not substitute for resolving the bucket.
+					if tc.aliasOnly && !timestamp.Before(start.Add(165*time.Minute)) && timestamp.Before(start.Add(195*time.Minute)) {
+						continue
+					}
+					if missing && !timestamp.Before(outage) && timestamp.Before(outage.Add(30*time.Minute)) {
+						continue
+					}
+					if timestamp.Before(outage) {
+						before = timestamp
+					} else if after.IsZero() {
+						after = timestamp
+					}
+					p := points.AppendEmpty()
+					p.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+					p.SetIntValue(0)
+				}
+				require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
+				id := findMetricRef(t, s, ctx, "clock-change")
+				raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+					window := store.BoundedTimeRange(start.UnixNano(), start.Add(time.Duration(tc.windowHours)*time.Hour).UnixNano()-1)
+					return metrics.GetMetricView(ctx, db, id, window, tc.buckets, nil, nil, 0, 0, 0, nil, tc.zone, nil, 0)
+				})
+				require.NoError(t, err)
+				var view struct {
+					Timeseries []struct {
+						Datapoints []struct {
+							Timestamp   string `json:"timestamp"`
+							BreakBefore *bool  `json:"breakBefore"`
+						} `json:"datapoints"`
+					} `json:"timeseries"`
+				}
+				require.NoError(t, json.Unmarshal(raw, &view))
+				require.Len(t, view.Timeseries, 1)
+				got := map[string]string{}
+				for i, p := range view.Timeseries[0].Datapoints {
+					if p.BreakBefore == nil {
+						continue
+					}
+					require.True(t, *p.BreakBefore)
+					require.Less(t, i+1, len(view.Timeseries[0].Datapoints))
+					got[p.Timestamp] = view.Timeseries[0].Datapoints[i+1].Timestamp
+				}
+				want := map[string]string{}
+				if missing {
+					want[strconv.FormatInt(after.UnixNano(), 10)] = strconv.FormatInt(before.UnixNano(), 10)
+				}
+				require.Equal(t, want, got, "breaks must retain the actual samples surrounding only the empty bucket")
+			})
+		}
+	}
+}
+
+func TestGaugeGapsAcrossSkippedDateAtMillisecondResolution(t *testing.T) {
+	s, ctx := storetest.New(t)
+	transition := time.Date(2011, 12, 30, 10, 0, 0, 0, time.UTC)
+	start := transition.Add(-time.Second)
+	data := pmetric.NewMetrics()
+	m := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("skipped-date-fine-grid")
+	points := m.SetEmptyGauge().DataPoints()
+	for i := 0; i < 2000; i++ {
+		p := points.AppendEmpty()
+		p.SetTimestamp(pcommon.NewTimestampFromTime(start.Add(time.Duration(i) * time.Millisecond)))
+		p.SetIntValue(0)
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
+	id := findMetricRef(t, s, ctx, "skipped-date-fine-grid")
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(start.UnixNano(), start.Add(2*time.Second).UnixNano()-1),
+			500, nil, nil, 0, 0, 0, nil, "Pacific/Apia", nil, 0)
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"timestamp"`)
+	require.NotContains(t, string(raw), `"breakBefore":true`)
 }

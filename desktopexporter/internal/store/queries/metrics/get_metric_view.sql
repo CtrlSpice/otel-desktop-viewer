@@ -464,27 +464,68 @@
 		-- Detect empty M4 buckets from original per-series occupancy. A repeated
 		-- local hour can send chronological samples back to an occupied bucket.
 		gauge_bucketed as (
-			select series_id, id, timestamp, bucket_start,
-				floor_div(timestamp::hugeint + tz_shift::hugeint,
-					(select width_ns from reduction))::hugeint
-					* (select width_ns from reduction)::hugeint as bucket_local
+			select series_id, id, timestamp, bucket_start, tz_shift
 			from bucketed_dps
 			where metric_type = 'Gauge'
 		),
-		gauge_occupied as (
-			select series_id, bucket_start, min(bucket_local) as bucket_local,
-				lag(min(bucket_local)) over (
-					partition by series_id order by bucket_start) as previous_local
-			from gauge_bucketed
-			group by series_id, bucket_start
+		gauge_grid_extent as (
+			select distinct
+				floor_div(e.first_ts::hugeint + d.tz_shift::hugeint, g.width_ns)::hugeint * g.width_ns::hugeint as first_local,
+				floor_div(e.last_ts::hugeint + d.tz_shift::hugeint, g.width_ns)::hugeint * g.width_ns::hugeint as last_local
+			from (select min(timestamp) as first_ts, max(timestamp) as last_ts from gauge_bucketed) e,
+				(select distinct tz_shift from gauge_bucketed) d, reduction g
 		),
-		-- Advance in local time, then resolve to UTC. Adjacent calendar buckets
-		-- can span 23/25 hours, and a skipped DST hour is not an empty bucket.
+		-- Construct the possible bucket sequence once, shared by all series.
+		-- Separate offset ranges avoid enumerating a skipped day at millisecond
+		-- resolution when a short requested window straddles a date-line jump.
+		gauge_local_grid as (
+			select distinct e.first_local + r.i::hugeint * g.width_ns::hugeint as bucket_local,
+				g.width_ns::hugeint as width_ns
+			from gauge_grid_extent e, reduction g,
+				lateral range(0, ((e.last_local - e.first_local) // g.width_ns)::bigint + 1) r(i)
+			where {{bind "target_buckets"}}::bigint > 1
+		),
+		gauge_resolved_grid as (
+			select *,
+				bucket_start_utc(bucket_local,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint) as bucket_start,
+				bucket_start_utc(bucket_local + width_ns,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint) - 1000 as last_ns
+			from gauge_local_grid
+		),
+		gauge_roundtrip_grid as (
+			select *,
+				bucket_start + coalesce(tz_offset_ns_at(bucket_start, {{bind "tz_name"}}::varchar),
+					{{bind "tz_offset_ns"}}::bigint) as start_local,
+				last_ns + coalesce(tz_offset_ns_at(last_ns, {{bind "tz_name"}}::varchar),
+					{{bind "tz_offset_ns"}}::bigint) as last_local
+			from gauge_resolved_grid
+		),
+		-- A local interval can receive samples if either its resolved start or
+		-- the instant just before its resolved end maps back inside it. Entirely
+		-- skipped intervals cannot be empty buckets; partially skipped ones can.
+		gauge_possible_buckets as (
+			select distinct bucket_start
+			from gauge_roundtrip_grid
+			where (start_local >= bucket_local and start_local < bucket_local + width_ns)
+				or (last_local >= bucket_local and last_local < bucket_local + width_ns)
+		),
+		-- Multiple local labels can resolve to one UTC bucket at a clock jump.
+		gauge_grid as (
+			select bucket_start, row_number() over (order by bucket_start) as bucket_index
+			from gauge_possible_buckets
+		),
+		gauge_occupied as (
+			select series_id, bucket_start, bucket_index,
+				lag(bucket_index) over (
+					partition by series_id order by bucket_start) as previous_index
+			from gauge_bucketed
+			join gauge_grid using (bucket_start)
+			group by series_id, bucket_start, bucket_index
+		),
 		gauge_bucket_sections as (
 			select series_id, bucket_start,
-				count(*) filter (where bucket_start > bucket_start_utc(
-					previous_local + (select width_ns from reduction)::hugeint,
-					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint)) over (
+				count(*) filter (where bucket_index > previous_index + 1) over (
 					partition by series_id order by bucket_start) as bucket_section
 			from gauge_occupied
 		),
