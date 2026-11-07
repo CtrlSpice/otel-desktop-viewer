@@ -39,7 +39,7 @@ const root = scenario()
 const pinned = record(
   readJson(path.join(SUITE, 'node_modules/promptfoo/package.json'))
 )
-assert.equal(pinned.version, '0.124.1')
+assert.equal(pinned.version, '0.125.1')
 const command = [
   process.execPath,
   '--input-type=module',

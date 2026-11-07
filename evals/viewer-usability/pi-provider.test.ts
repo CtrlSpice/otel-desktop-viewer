@@ -76,6 +76,7 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
     for (const row of rows) {
       assert.equal(row.response.metadata.promptfoo, undefined)
       const identity = JSON.parse(fs.readFileSync(path.join(row.response.metadata.evidence, 'identity.json'), 'utf8'))
+      assert.equal(row.repeatIndex, identity.promptfoo.repeatIndex)
       const [, traceId, spanId] = identity.promptfoo.traceparent.split('-')
       const providerSpan = spans.find(span => span.traceId === traceId && span.spanId === spanId)
       assert.ok(providerSpan, 'Pi response must identify an exported native Promptfoo provider span')
@@ -97,7 +98,8 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
       const group = rows.filter((row: any) => row.provider.id === `pi:fixture/${model}`)
       assert.equal(group.length, 3)
       assert.deepEqual(group.map((row: any) => JSON.parse(fs.readFileSync(path.join(row.response.metadata.evidence, 'identity.json'), 'utf8')).promptfoo.repeatIndex).sort(), [0, 1, 2])
-      assert.ok(group.every((row: any) => row.repeatIndex === undefined && row.vars.task_id === 'case-one'))
+      assert.deepEqual(group.map((row: any) => row.repeatIndex).sort(), [0, 1, 2])
+      assert.ok(group.every((row: any) => row.vars.task_id === 'case-one'))
     }
     assert.equal(requests.length, 18)
     assert.equal(requests.filter(request => request.messages.every(message => message.role !== 'assistant')).length, 6)

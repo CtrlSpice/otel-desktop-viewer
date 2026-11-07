@@ -7,7 +7,7 @@ description: "Use when preparing or running evaluations with OTel Desktop Viewer
 
 This starter skill covers evaluation execution and telemetry setup.
 Use the viewer's inspection guide for telemetry queries: `otel-desktop-viewer skills`.
-The setup below was checked with Promptfoo 0.124.1, Pi 1.3.0, and Claude Code 2.1.307.
+The setup below was checked with Promptfoo 0.125.1, Pi 1.5.0, and Claude Code 2.1.307.
 Check capabilities again when runtime versions change.
 
 ## Establish the run
@@ -27,7 +27,7 @@ Keep grader sessions separate when the evaluation requires independent grading.
 
 ## Enable the evaluation runner's tracing
 
-For Promptfoo 0.124.1, use both the configuration and exporter settings below.
+For Promptfoo 0.125.1, use both the configuration and exporter settings below.
 
 ```yaml
 tracing:
@@ -70,7 +70,7 @@ Replace the example base URL with the actual receiver.
 Preserve runtime-native parent relationships and links.
 Record actual model IDs and session IDs when the runtime supplies them.
 
-Pi 1.3.0 in this harness retains streamed JSON events.
+Pi 1.5.0 in this harness retains streamed JSON events.
 The current harness does not convert Pi model/tool events into OTel spans.
 Report that limitation when a user requests internal execution detail.
 

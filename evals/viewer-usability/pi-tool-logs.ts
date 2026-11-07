@@ -10,7 +10,7 @@ const object = (value: unknown): RecordValue | undefined =>
 const text = (value: unknown) => typeof value === 'string' && value ? value : undefined
 
 /** Named log events correlated to the actual provider span, never synthetic tool spans.
- * Pi 1.3.0 tool start/end records have no source timestamp. A unique toolResult
+ * Pi 1.5.0 tool start/end records have no source timestamp. A unique toolResult
  * message records its creation time after execution; it is not an execution start.
  * Without that message, retain the collector's observed time and label it as such.
  * Original records remain in events.jsonl, including ambiguous and partial calls. */
@@ -75,7 +75,7 @@ export class PiToolLogs {
     const attributes: Attributes = {
       'pi.event.type': value.type as string,
       'pi.event.raw': JSON.stringify(value),
-      'pi.runtime.version': '1.3.0',
+      'pi.runtime.version': '1.5.0',
     }
     const id = text(value.toolCallId)
     const name = text(value.toolName)

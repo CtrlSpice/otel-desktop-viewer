@@ -1,9 +1,14 @@
 # Viewer usability evaluation
 
-Promptfoo schedules providers, questions and repetitions. Pi 1.3.0 executes OpenAI
+Promptfoo schedules providers, questions and repetitions. Pi 1.5.0 executes OpenAI
 investigations and each separate grading session. Official Claude Code 2.1.307
 executes Opus investigations using its own subscription login. Dependencies are pinned;
 credentials, evidence and datasets live outside the repository.
+
+The lockfile includes patched transitive dependencies. Overrides pin `basic-ftp`
+6.2.1, `glob` 14.0.2 and `minimatch` 11.0.1 because Promptfoo's dependency ranges
+still select affected versions. Run `npm audit`, the type checks and the local
+integration tests when updating these pins.
 
 ## Configuration
 
@@ -87,12 +92,12 @@ allow rule for the supplied viewer. These are different runtime boundaries;
 neither provides VM or network-service isolation.
 
 The stable question key is `vars.task_id`. Provider identity comes from the normal
-provider configuration. Promptfoo 0.124.1 sends `evaluationId`, `testIdx` and
+provider configuration. Promptfoo 0.125.1 sends `evaluationId`, `testIdx` and
 `repeatIndex` to the provider; these remain in local `identity.json` diagnostics.
 They are not copied into response metadata for the viewer.
-Native exports expand `testIdx` across repetitions and omit a top-level
-`repeatIndex`. The viewer groups the complete test definition and resolved
-variables and preserves each result ID. Rep numbers are unnecessary. Available
+Native exports expand `testIdx` across repetitions and include a top-level
+`repeatIndex` matching the provider context. The viewer groups the complete test
+definition and resolved variables and preserves each result ID. Rep numbers are unnecessary. Available
 start times determine default order; source order breaks ties and is the fallback.
 
 ## Live telemetry

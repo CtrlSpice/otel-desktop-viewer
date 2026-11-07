@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 import test from 'node:test'
 import { aggregate } from './aggregate.ts'
 import { render } from './render.ts'
@@ -9,6 +10,10 @@ import { pricingSnapshot } from '../pricing.ts'
 import goPrices from '../go-api-prices.json' with { type: 'json' }
 
 const secret = 'PRIVATE_SENTINEL_DO_NOT_EMBED'
+// Use the same DOM implementation as the viewer's component tests.
+const { JSDOM } = createRequire(path.resolve(
+  import.meta.dirname, '../../../desktopexporter/internal/frontend/package.json'
+))('jsdom')
 const metadata = (model: string, seconds = 2) => ({
   model,
   elapsedSeconds: seconds,
@@ -389,19 +394,47 @@ test('grading score columns follow the plan, extend beyond three, and leave miss
   const data = aggregate({ models: [investigator], tasks: 2, repetitions: 3 }, { results: { results: [] } }, undefined,
     { models: [{ model: grader, attempts: judgments.length }], judgments })
   const html = render(data)
+  const document: DocumentFragment = JSDOM.fragment(html)
   for (const run of [1, 2, 3, 4]) assert.ok(html.includes(`<th scope="col" class="grading-run">Score ${run}</th>`))
   assert.ok(!html.includes('class="grading-run">Score 5'))
-  assert.match(html, /<td class="grading-run"><span aria-label="Not recorded">—<\/span>\s*<\/td>/)
-  assert.ok(html.includes('<td class="grading-run"><span class="badge badge-soft result-badge result-partial">.5/1</span></td>'))
+  const missing = document.querySelector('td.grading-run > span[aria-label="Not recorded"]')
+  assert.ok(missing)
+  assert.equal(missing.parentElement?.textContent?.trim(), '—')
+  assert.equal(missing.parentElement?.children.length, 1)
+  const partial = document.querySelector('td.grading-run > span.badge.badge-soft.result-badge.result-partial')
+  assert.ok(partial)
+  assert.equal(partial.parentElement?.textContent?.trim(), '.5/1')
+  assert.equal(partial.parentElement?.children.length, 1)
 })
 
 test('model-header status replaces grading coverage lines while pending zeros stay display-only', () => {
   const data = aggregate({ models: ['other/cedar', 'other/pine'], tasks: 2, repetitions: 3 }, { results: { results: [] } }, undefined,
     { models: [{ model: 'openai/gpt-6.1-sol', attempts: 1 }], judgments: [{ taskID: 'inspect', score: 1, status: 'pass', investigator: { model: 'other/cedar' }, metadata: metadata('openai/gpt-6.1-sol') }] })
   const html = render(data)
+  const document: DocumentFragment = JSDOM.fragment(html)
   assert.ok(!html.includes('class="grading-status"'))
   assert.ok(!html.includes('class="grading-status-column"'))
-  assert.match(html, /<span class="grading-model-name">[^<]+<\/span>\s*<span class="badge badge-soft result-badge grading-status-badge grading-status-in-progress">In Progress<\/span><\/button><\/th><th scope="col" class="grading-run">Score 1<\/th>/)
+  const modelName = document.querySelector('span.grading-model-name')
+  assert.ok(modelName?.textContent)
+  const status = modelName.nextElementSibling
+  assert.ok(status)
+  assert.equal(status.tagName, 'SPAN')
+  assert.equal(status.className, 'badge badge-soft result-badge grading-status-badge grading-status-in-progress')
+  assert.equal(status.textContent, 'In Progress')
+  const toggle = modelName.parentElement
+  assert.ok(toggle)
+  assert.equal(toggle.tagName, 'BUTTON')
+  assert.equal(toggle.lastElementChild, status)
+  const heading = toggle.parentElement
+  assert.ok(heading)
+  assert.equal(heading.tagName, 'TH')
+  assert.equal(heading.lastElementChild, toggle)
+  const score = heading.nextElementSibling
+  assert.ok(score)
+  assert.equal(score.tagName, 'TH')
+  assert.equal(score.getAttribute('scope'), 'col')
+  assert.equal(score.className, 'grading-run')
+  assert.equal(score.textContent, 'Score 1')
   assert.ok(html.includes('grading-status-in-progress">In Progress</span>'))
   assert.ok(html.includes('grading-status-not-started">Not Started</span>'))
   assert.ok(html.includes('<span class="grading-score-total">0/2</span>'))

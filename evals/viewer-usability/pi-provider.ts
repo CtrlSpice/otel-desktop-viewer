@@ -150,7 +150,7 @@ export default class PiProvider {
     const output = content.filter(block => block.type === 'text').map(block => block.text).join('\n')
     const settled = events.findLast(event => event.type === 'agent_settled')
     const metadata = {
-      ...identity, runtime: 'pi', runtimeVersion: '1.3.0', model: `${provider}/${model}`,
+      ...identity, runtime: 'pi', runtimeVersion: '1.5.0', model: `${provider}/${model}`,
       evidence, workspace, sessionID: events.find(event => event.type === 'session')?.id,
       elapsedSeconds: (performance.now() - started) / 1000, exit,
       toolCalls: events.filter(event => event.type === 'tool_execution_start').length,

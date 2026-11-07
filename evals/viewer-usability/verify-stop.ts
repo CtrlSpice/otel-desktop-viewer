@@ -80,7 +80,7 @@ test('pinned Promptfoo stops scheduling and grading after a split viewer denial 
     assert.equal(
       record(readJson(path.join(SUITE, 'node_modules/promptfoo/package.json')))
         .version,
-      '0.124.1'
+      '0.125.1'
     )
     saveJson(path.join(root, 'pricing-snapshot.json'), pricing)
     const runner = path.join(directory, 'runner.ts')
