@@ -196,6 +196,78 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('retained datapoints identify their owner through a failed series switch and retry', async ({
+  page,
+}) => {
+  const received = timeseries.map((series, index) => ({
+    ...series,
+    datapointCount: 1,
+    datapoints: [{ ...series.datapoints[0]!, doubleValue: index ? 999 : 7 }],
+  }))
+  let replacement: FixtureRoute | undefined
+  let retry = false
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getMetricView') return route.fallback()
+    if (
+      params.targetBuckets === 0 &&
+      params.seriesRefs?.[0] === 'second' &&
+      !retry
+    ) {
+      replacement = route
+      return
+    }
+    const rows =
+      params.targetBuckets === 0
+        ? received.filter(series =>
+            params.seriesRefs.includes(series.seriesRef)
+          )
+        : received
+    await route.fulfill({
+      json: { jsonrpc: '2.0', id, result: { ...metric, timeseries: rows } },
+    })
+  })
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  await page.goto('/metrics/series-layout?time=all&series=first')
+  const section = page.locator('[data-detail-section="datapoints"]')
+  const owner = section.getByLabel('Displayed datapoint series')
+  const oldRow = section.locator('[data-dp-id="first-0"]')
+  await expect(oldRow).toBeVisible()
+  await expect(owner).toHaveCount(0)
+  await page
+    .getByRole('button', { name: 'Select route: /second', exact: true })
+    .click()
+  await expect.poll(() => Boolean(replacement)).toBe(true)
+  await expect(
+    page.locator('[data-series-key="second"][aria-selected="true"]')
+  ).toBeVisible()
+  await expect(oldRow).toBeVisible()
+  await expect(owner).toBeVisible()
+  await expect(owner).toContainText('request.duration')
+  await expect(owner).toContainText('route: /first')
+  await expect(owner).not.toContainText('series-layout')
+  await expect(owner).not.toContainText('second')
+  await replacement!.fulfill({
+    json: {
+      jsonrpc: '2.0',
+      id: replacement!.request().postDataJSON().id,
+      error: { code: -32603, message: 'replacement unavailable' },
+    },
+  })
+  await expect(section).toContainText('Could not load datapoints.')
+  await expect(oldRow).toBeVisible()
+  await expect(owner).toBeVisible()
+  await expect(owner).toContainText('route: /first')
+  retry = true
+  await section.getByRole('button', { name: 'Retry datapoints' }).click()
+  await expect(section.locator('[data-dp-id="second-0"]')).toBeVisible()
+  await expect(oldRow).toHaveCount(0)
+  await expect(owner).toHaveCount(0)
+})
+
 test('a fresh metric deep link opens while its list is pending and survives list failure', async ({
   page,
 }) => {

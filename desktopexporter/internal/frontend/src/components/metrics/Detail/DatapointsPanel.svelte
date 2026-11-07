@@ -85,6 +85,16 @@
         />
       {/if}
       {#if displayed}
+        {#if !selectionCurrent || displayed.metricRef !== ctx.metric?.metricRef || displayed.seriesRef !== series.seriesRef}
+          <p
+            class="px-3 py-2 text-sm text-subtle break-words"
+            aria-label="Displayed datapoint series"
+          >
+            Showing previous series: {#if displayed.metricName}{displayed.metricName}
+              ·
+            {/if}{displayed.seriesLabel}
+          </p>
+        {/if}
         {#key JSON.stringify([displayed.metricRef, displayed.seriesRef])}
           <SeriesDatapointList
             {selectionCurrent}

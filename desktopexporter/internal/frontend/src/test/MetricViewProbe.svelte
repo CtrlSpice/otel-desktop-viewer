@@ -55,6 +55,10 @@
     return {
       metricRef: metric.metricRef,
       seriesRef: series.seriesRef,
+      metricName: metric.name,
+      seriesLabel:
+        metricCtx.seriesTable.labels.get(series.seriesRef)?.text ??
+        'default series',
       unit: metric.unit,
       metricType: metric.metricType ?? 'Empty',
       count: series.datapointCount,

@@ -2450,6 +2450,7 @@ describe('MetricsPage raw series fetching', () => {
       )!
       const header = section.querySelector('summary')!
       expect(header).toHaveTextContent('[4]')
+      expect(screen.queryByLabelText('Displayed datapoint series')).toBeNull()
 
       navigateCurrentRoute(
         withQueryPatch(readRoute().query, {
@@ -2466,8 +2467,15 @@ describe('MetricsPage raw series fetching', () => {
       expect(document.querySelector('.dp-list__expansion')).toBe(expansion)
       expect(header).toHaveTextContent('[4]')
       expect(screen.getByText('/b', { exact: true })).toBeInTheDocument()
+      const owner = screen.getByLabelText('Displayed datapoint series')
+      expect(owner).toHaveTextContent('demo.metric')
+      expect(owner).toHaveTextContent('route: /a')
+      expect(owner).not.toHaveTextContent('metric-1')
+      expect(owner).not.toHaveTextContent('series-a')
+      expect(owner).not.toHaveTextContent('series-b')
       expect(screen.queryByText('Loading datapoints…')).toBeNull()
       await screen.findByText('Loading datapoints…')
+      expect(owner).toHaveTextContent('route: /a')
       expect(row).not.toHaveAttribute('aria-disabled', 'true')
       await fireEvent.click(
         within(expansion as HTMLElement).getByRole('button', {
@@ -2495,6 +2503,12 @@ describe('MetricsPage raw series fetching', () => {
         await screen.findByText('Could not load datapoints.')
         expect(document.querySelector('[data-dp-id="a-point"]')).toBe(row)
         expect(header).toHaveTextContent('[4]')
+        expect(owner).toBeInTheDocument()
+        expect(owner).toHaveTextContent('demo.metric')
+        expect(owner).toHaveTextContent('route: /a')
+        expect(owner).not.toHaveTextContent('metric-1')
+        expect(owner).not.toHaveTextContent('series-a')
+        expect(owner).not.toHaveTextContent('series-b')
         await fireEvent.keyDown(row, { key: ' ' })
         expect(row).toHaveAttribute('aria-expanded', 'false')
         await fireEvent.click(row)
@@ -2515,6 +2529,7 @@ describe('MetricsPage raw series fetching', () => {
         expect(document.querySelector('[data-dp-id="b-point"]')).not.toBeNull()
       )
       expect(header).toHaveTextContent('[9]')
+      expect(screen.queryByLabelText('Displayed datapoint series')).toBeNull()
       expect(document.querySelector('[data-dp-id="a-point"]')).toBeNull()
       await fireEvent.click(document.querySelector('[data-dp-id="b-point"]')!)
       expect(readRoute().query.dp).toBe('b-point')
