@@ -501,7 +501,7 @@ describe('telemetryAPI.getMetricView', () => {
     })
   })
 
-  it('revives typed exemplar values without losing int64 precision', async () => {
+  it('revives typed exemplar values and chart breaks without losing int64 precision', async () => {
     stubRpcResult(
       metricResult({
         name: 'test.gauge',
@@ -516,6 +516,7 @@ describe('telemetryAPI.getMetricView', () => {
               {
                 id: 'dp-1',
                 timestamp: '100',
+                breakBefore: true,
                 timestampMs: 0,
                 startTime: '0',
                 flags: 0,
@@ -595,7 +596,10 @@ describe('telemetryAPI.getMetricView', () => {
             lastSeenNs: '100',
             views: null,
             rateStats: null,
-            sparkline: null,
+            sparkline: [
+              { timestamp: '0', value: 0 },
+              { timestamp: '100', value: 1, breakBefore: true },
+            ],
           },
         ],
         window: {
@@ -612,6 +616,11 @@ describe('telemetryAPI.getMetricView', () => {
     const datapoint = metric!.timeseries[0]!.datapoints[0]!
     expect(datapoint.metricType).toBe('Gauge')
     if (datapoint.metricType !== 'Gauge') throw new Error('expected Gauge')
+    expect(datapoint.breakBefore).toBe(true)
+    expect(metric!.timeseries[0]!.sparkline![0]).not.toHaveProperty(
+      'breakBefore'
+    )
+    expect(metric!.timeseries[0]!.sparkline![1]!.breakBefore).toBe(true)
     expect(Object.is(datapoint.doubleValue, -0)).toBe(true)
     const exemplars = metric!.timeseries[0]!.datapoints[0]!.exemplars
     expect(exemplars).toEqual([

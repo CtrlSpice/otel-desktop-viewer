@@ -9,7 +9,7 @@ import MetricTimeSeriesChart from './MetricTimeSeriesChart.svelte'
 import MetricChartHarness from '@/test/MetricChartHarness.svelte'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import { histogramDatapointToChartDatapoint } from '@/components/metrics/utils/histogram-aggregation'
-import type { ChartTimeseries } from '@/types/metric-chart-types'
+import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 import type {
   ExponentialHistogramDataPoint,
   GaugeDataPoint,
@@ -197,6 +197,48 @@ afterEach(() => {
 })
 
 describe('MetricTimeSeriesChart keyboard model', () => {
+  it('draws separate paths across a gap and keeps both endpoints keyboard-selectable', async () => {
+    const datapoints = [0, 10, 40, 50].map((second, index) =>
+      gaugeDatapoint(
+        `point-${index}`,
+        BASE_NS + BigInt(second) * 1_000_000_000n,
+        index + 1
+      )
+    )
+    const points = datapoints.map((p, index) => {
+      const point: ChartPoint = {
+        date: new Date(p.timestampMs),
+        value: p.doubleValue,
+        timestampNs: p.timestamp,
+        sourceDatapointID: p.id,
+      }
+      if (index === 2) point.breakBefore = true
+      return point
+    })
+    const select = vi.fn()
+    renderChart(
+      MetricTimeSeriesChart,
+      {
+        timeseries: [{ key: 'series-a', label: 'Series A', points }],
+        colorByKey: new Map([['series-a', '#123456']]),
+        onChartPointClick: select,
+      },
+      metricWithDatapoints('Gauge', datapoints)
+    )
+    await tick()
+    const path = document.querySelector('path[data-series-key="series-a"]')!
+    expect(path.getAttribute('d')!.match(/M/g)).toHaveLength(2)
+    expect(path.getAttribute('clip-path')).toMatch(/^url\(#.+\)$/)
+    const surface = queryHTMLElement('.chart-keyboard-surface')
+    await fireEvent.focus(surface)
+    await fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    await fireEvent.keyDown(surface, { key: 'Enter' })
+    expect(select).toHaveBeenLastCalledWith('series-a', 'point-1')
+    await fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    await fireEvent.keyDown(surface, { key: 'Enter' })
+    expect(select).toHaveBeenLastCalledWith('series-a', 'point-2')
+  })
+
   it.each([
     { values: [2, 8], ruleCount: 0 },
     { values: [-2, 8], ruleCount: 1 },

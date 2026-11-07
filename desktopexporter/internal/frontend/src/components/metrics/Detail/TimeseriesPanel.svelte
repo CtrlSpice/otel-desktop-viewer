@@ -584,9 +584,6 @@
     padding-inline-start: 0;
   }
   .ts-row__sparkline {
-    @apply block w-24;
-  }
-  .ts-row__sparkline :global(.sparkline) {
-    @apply block h-[18px] w-full;
+    display: block;
   }
 </style>

@@ -461,60 +461,94 @@
 				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
 		),
 
-		-- Sparkline reduction keeps min/max shape without an empty-bucket spine.
-		sparkline_grid as (
-			-- Do not bucket more finely than the Metric's cadence.
-			select bucket_width_ns(rs.span_ns,
-				case when c.cadence_ns is null or c.cadence_ns <= 0
-					then {{bind "sparkline_buckets"}}::bigint
-					else least({{bind "sparkline_buckets"}}::bigint,
-					           greatest(1, (rs.span_ns // c.cadence_ns)::bigint))
-				end) as width_ns
-			from reduction_span rs, series_cadence c
+		-- Detect empty M4 buckets from original per-series occupancy. A repeated
+		-- local hour can send chronological samples back to an occupied bucket.
+		gauge_bucketed as (
+			select series_id, id, timestamp, bucket_start, tz_shift
+			from bucketed_dps
+			where metric_type = 'Gauge'
 		),
-		sparkline_bucketed as (
-			select d.series_id,
-				bucket_start_utc(
-					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
-					          (select width_ns from sparkline_grid))
-						::hugeint * (select width_ns from sparkline_grid)::hugeint,
-					{{bind "tz_name"}}::varchar,
-					{{bind "tz_offset_ns"}}::bigint) as bucket_start,
-				d.timestamp,
-				d.value
-			from scalar_dps d
-			-- NULL width disables sparklines rather than forming one NULL group.
-			where (select width_ns from sparkline_grid) is not null
+		gauge_grid_extent as (
+			select distinct
+				floor_div(e.first_ts::hugeint + d.tz_shift::hugeint, g.width_ns)::hugeint * g.width_ns::hugeint as first_local,
+				floor_div(e.last_ts::hugeint + d.tz_shift::hugeint, g.width_ns)::hugeint * g.width_ns::hugeint as last_local
+			from (select min(timestamp) as first_ts, max(timestamp) as last_ts from gauge_bucketed) e,
+				(select distinct tz_shift from gauge_bucketed) d, reduction g
 		),
-		-- Keep each extremum's actual timestamp.
-		sparkline_extrema as (
-			select series_id,
-				bucket_start,
-				-- Timestamp tie-breaks keep flat buckets deterministic.
-				arg_min(timestamp, (value, timestamp)) as min_ts,
-				min(value) as min_value,
-				arg_max(timestamp, (value, timestamp)) as max_ts,
-				max(value) as max_value
-			from sparkline_bucketed
-			group by series_id, bucket_start
+		-- Construct the possible bucket sequence once, shared by all series.
+		-- Separate offset ranges avoid enumerating a skipped day at millisecond
+		-- resolution when a short requested window straddles a date-line jump.
+		gauge_local_grid as (
+			select distinct e.first_local + r.i::hugeint * g.width_ns::hugeint as bucket_local,
+				g.width_ns::hugeint as width_ns
+			from gauge_grid_extent e, reduction g,
+				lateral range(0, ((e.last_local - e.first_local) // g.width_ns)::bigint + 1) r(i)
+			where {{bind "target_buckets"}}::bigint > 1
 		),
-		-- UNION removes duplicate min/max points from flat buckets.
-		sparkline_points as (
-			select series_id, min_ts as timestamp, min_value as value
-			from sparkline_extrema
-			union by name
-			select series_id, max_ts as timestamp, max_value as value
-			from sparkline_extrema
+		gauge_resolved_grid as (
+			select *,
+				bucket_start_utc(bucket_local,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint) as bucket_start,
+				bucket_start_utc(bucket_local + width_ns,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint) - 1000 as last_ns
+			from gauge_local_grid
 		),
-		-- Histogram series have NULL sparklines.
-		sparkline_agg as (
-			select series_id,
-				{{if arrow}}list(struct_pack(timestamp := timestamp, value := value) order by timestamp, value){{else}}to_json(list(json_object(
-					'timestamp', timestamp::varchar,
-					'value', double_wire_json(value)
-				) order by timestamp, value)){{end}} as sparkline
-			from sparkline_points
-			group by series_id
+		gauge_roundtrip_grid as (
+			select *,
+				bucket_start + coalesce(tz_offset_ns_at(bucket_start, {{bind "tz_name"}}::varchar),
+					{{bind "tz_offset_ns"}}::bigint) as start_local,
+				last_ns + coalesce(tz_offset_ns_at(last_ns, {{bind "tz_name"}}::varchar),
+					{{bind "tz_offset_ns"}}::bigint) as last_local
+			from gauge_resolved_grid
+		),
+		-- A local interval can receive samples if either its resolved start or
+		-- the instant just before its resolved end maps back inside it. Entirely
+		-- skipped intervals cannot be empty buckets; partially skipped ones can.
+		gauge_possible_buckets as (
+			select distinct bucket_start
+			from gauge_roundtrip_grid
+			where (start_local >= bucket_local and start_local < bucket_local + width_ns)
+				or (last_local >= bucket_local and last_local < bucket_local + width_ns)
+		),
+		-- Multiple local labels can resolve to one UTC bucket at a clock jump.
+		gauge_grid as (
+			select bucket_start, row_number() over (order by bucket_start) as bucket_index
+			from gauge_possible_buckets
+		),
+		gauge_occupied as (
+			select series_id, bucket_start, bucket_index,
+				lag(bucket_index) over (
+					partition by series_id order by bucket_start) as previous_index
+			from gauge_bucketed
+			join gauge_grid using (bucket_start)
+			group by series_id, bucket_start, bucket_index
+		),
+		gauge_bucket_sections as (
+			select series_id, bucket_start,
+				count(*) filter (where bucket_index > previous_index + 1) over (
+					partition by series_id order by bucket_start) as bucket_section
+			from gauge_occupied
+		),
+		-- Attach a break only when real chronological neighbours cross forward
+		-- over empty buckets. Moving back during a repeated hour is not a gap.
+		-- Match chart order: the reverse of timestamp DESC, id ASC on the wire.
+		gauge_neighbors as (
+			select d.series_id, d.id, d.timestamp, s.bucket_section,
+				lag(d.id) over w as previous_id,
+				lag(s.bucket_section) over w as previous_section
+			from gauge_bucketed d
+			join gauge_bucket_sections s using (series_id, bucket_start)
+			window w as (partition by d.series_id order by d.timestamp, d.id desc)
+		),
+		gauge_gaps as (
+			select series_id, id, previous_id, timestamp
+			from gauge_neighbors
+			where bucket_section > previous_section
+		),
+		gauge_gap_endpoints as (
+			select id from gauge_gaps
+			union
+			select previous_id as id from gauge_gaps
 		),
 
 		-- Exclude non-finite values from scalar min/max election.
@@ -561,6 +595,65 @@
 			select unnest([first_id, last_id, min_id, max_id]) as id from bucket_elected
 			union
 			select id from exemplar_carriers
+			union
+			select id from gauge_gap_endpoints
+		),
+
+		-- Cheap row previews reuse the main chart's elected samples and breaks.
+		-- No second original-sample occupancy scan or calendar grid is needed.
+		sparkline_samples as (
+			select d.series_id, d.id, d.timestamp,
+				coalesce(d.double_value, d.int_value) as value,
+				((d.timestamp::hugeint - (select start_ns from effective_window)::hugeint)
+					* {{bind "sparkline_buckets"}}::bigint
+					// (select end_ns::hugeint - start_ns::hugeint + 1 from effective_window)) as bucket,
+				count(g.id) over (partition by d.series_id order by d.timestamp, d.id desc
+					rows between unbounded preceding and current row) as section_id
+			from filtered_dps d
+			left join retained_ids r on r.id = d.id
+			left join gauge_gaps g on g.id = d.id
+			where d.metric_type in ('Gauge', 'Sum')
+			  and ((select kind from reduction_kind) <> 'elect' or r.id is not null)
+			  and {{bind "sparkline_buckets"}}::bigint > 0
+		),
+		-- At most two points per preview bucket. Carry inherited sections through
+		-- numeric filtering, but do not add extra points to preserve every boundary.
+		sparkline_extrema as (
+			select series_id, bucket,
+				arg_min(timestamp, (value, timestamp, id)) as min_ts,
+				arg_min(section_id, (value, timestamp, id)) as min_section,
+				min(value) as min_value,
+				arg_max(timestamp, (value, timestamp, id)) as max_ts,
+				arg_max(section_id, (value, timestamp, id)) as max_section,
+				max(value) as max_value
+			from sparkline_samples
+			where isfinite(value)
+			group by series_id, bucket
+		),
+		sparkline_points as (
+			select series_id, min_ts as timestamp, min_value as value, min_section as section_id
+			from sparkline_extrema
+			union by name
+			select series_id, max_ts as timestamp, max_value as value, max_section as section_id
+			from sparkline_extrema
+		),
+		sparkline_marked as (
+			select *, case when section_id <> lag(section_id) over (
+				partition by series_id order by timestamp, section_id, value) then true end as break_before
+			from sparkline_points
+		),
+		-- Histogram series have NULL sparklines.
+		sparkline_agg as (
+			select sp.series_id,
+				{{if arrow}}list(struct_pack(timestamp := sp.timestamp, value := sp.value,
+					breakBefore := sp.break_before)
+					order by sp.timestamp, sp.section_id, sp.value){{else}}to_json(list(json_merge_patch(json_object(
+					'timestamp', sp.timestamp::varchar,
+					'value', double_wire_json(sp.value)
+				), json_object('breakBefore', sp.break_before))
+					order by sp.timestamp, sp.section_id, sp.value)){{end}} as sparkline
+			from sparkline_marked sp
+			group by sp.series_id
 		),
 {{- end}}
 
@@ -930,10 +1023,13 @@
 
 		-- Build wire JSON only for datapoints surviving reduction and narrowing.
 		shipped_dps as (
-			select d.* from projected_dps d
 {{- if .NoScalarPools}}
+			select d.*, null::boolean as break_before from projected_dps d
 			where d.series_id in (select series_id from datapoint_series_allowed)
 {{- else}}
+			select d.*, case when g.id is not null then true end as break_before
+			from projected_dps d
+			left join gauge_gaps g on g.id = d.id
 			left join retained_ids r on r.id = d.id
 			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
 			  and d.series_id in (select series_id from datapoint_series_allowed)
@@ -995,12 +1091,12 @@
 {{- end}}
 		ts_dps_json as (
 			select d.series_id,
-				{{if arrow}}list({{template "viewPoint" .}} order by d.timestamp desc, d.id){{else}}to_json(list(metric_datapoint_view_json(
+				{{if arrow}}list({{template "viewPoint" .}} order by d.timestamp desc, d.id){{else}}to_json(list(json_merge_patch(metric_datapoint_view_json(
 					d,
 					coalesce(ea.exemplars, json('[]')),
 					coalesce(ea.exemplar_count, 0),
 					{{if .NoHistogramMerge}}null::json{{else}}dq.quantiles{{end}}
-				) order by d.timestamp desc, d.id)){{end}} as datapoints
+				), json_object('breakBefore', d.break_before)) order by d.timestamp desc, d.id)){{end}} as datapoints
 			from shipped_dps d
 			left join exemplars_agg ea on ea.metric_datapoint_id = d.id
 {{- if not .NoHistogramMerge}}

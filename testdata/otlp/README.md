@@ -10,6 +10,7 @@ defined in the data rather than regenerated at runtime.
 | `demo/` | Captured synthetic dev data: multi-service traces, errors, deep/orphan traces, scalar and histogram Metric series, logs | 101 spans, 23 logs, 9,901 datapoints |
 | `heatmap-playground/` | Six paired histogram/exponential-histogram distributions, with three series per metric | 3,858 datapoints |
 | `heatmap-density/` | Paired histogram/exponential-histogram colour patterns at four densities | 768 datapoints |
+| `gauge-gaps/` | Three Gauge series with independent outages, a continuous comparison and real zeros | 653 datapoints |
 | `checkout/` | Small checkout failure with correlated logs and a Metric exemplar | 6 spans, 3 logs, 7 datapoints |
 | `usability-pilot/` | Original six-task evaluation fixture, with typed values, a 31-value inventory and child-time boundaries | 33 spans, 7 logs, 2 datapoints |
 

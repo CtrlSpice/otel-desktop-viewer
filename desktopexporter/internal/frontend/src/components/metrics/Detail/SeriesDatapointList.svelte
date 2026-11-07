@@ -9,6 +9,8 @@
   }
 
   export type DatapointSeries = DatapointOwner & {
+    metricName: string
+    seriesLabel: string
     datapoints: DataPoint[]
     count: number
   }

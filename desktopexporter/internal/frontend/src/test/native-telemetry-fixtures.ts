@@ -376,6 +376,7 @@ export function telemetryDataset(method: string, result: any): Table {
               s.sparkline?.map((p: RecordFixture) => ({
                 timestamp: BigInt(p.timestamp),
                 value: double(p.value),
+                breakBefore: p.breakBefore ?? null,
               })) ?? null,
           })),
         },
@@ -696,6 +697,7 @@ function metricPoint(r: RecordFixture) {
         : null,
     deltaDouble: typeof r.delta === 'number' ? double(r.delta) : null,
     isReset: r.isReset ?? null,
+    breakBefore: r.breakBefore ?? null,
   }
 }
 function scalarBucket(r: RecordFixture) {

@@ -32,6 +32,46 @@ result fit the supported domain. Values that require floating-point arithmetic
 use `DOUBLE`. Chart coordinates are display values and do not replace received
 measurements.
 
+### Gauge gaps
+
+Raw Gauge lines detect empty M4 buckets separately for each series, using the
+original samples before reduction. One or more empty buckets between samples
+creates a break. A received zero still occupies its bucket.
+
+Occupancy is checked across the series before assigning breaks to chronological
+neighbours. During a daylight-saving fall-back, an earlier sample in a repeated
+local bucket still counts as occupying it; moving back into that hour does not
+itself create a break. During forward clock changes, local intervals skipped
+entirely by the clock are excluded from the bucket sequence. Partially skipped
+intervals remain eligible, and local labels resolving to the same UTC bucket
+count as one bucket.
+
+Both neighbouring real datapoints are retained alongside the usual M4 and
+exemplar selections. The following chart point carries `breakBefore?: true`;
+the property is omitted otherwise. JSON omits absent flags, and Arrow uses null.
+Sparklines are lightweight shape previews for choosing a series. They reuse the
+main chart's reduced samples and gap flags rather than detecting gaps again from
+original samples. Each preview bucket selects at most two finite extrema, with
+their real timestamps, from those samples. The 96px row preview requests 48
+equal-duration buckets across the effective window, for at most 96 points.
+Inherited breaks survive numeric filtering, but no extra boundary points are
+added. Small outages and other details can disappear; use the main chart to
+inspect them. When main-chart reduction is disabled, previews simplify the
+unreduced samples without detecting gaps.
+
+The renderer starts a new path at the following point. Openings have a minimum
+width equal to the current line stroke, applied by clipping the drawing without
+changing sample timestamps or coordinates. Real points have circular 6px hover
+and click targets, including the gap-facing side of a boundary point. Farther
+inside a gap, that series supplies no hover value or click target. Pointer checks
+use drawing coordinates so fractional-millisecond positions are not rounded to
+an endpoint. Boundary samples also remain keyboard-selectable.
+
+Detection uses the requested M4 resolution, so changing the time window or
+bucket target can change which gaps qualify. Disabled main-chart reduction and a
+single whole-window M4 bucket do not detect gaps. These breaks apply to raw Gauge
+lines and their sparklines; aggregate views retain their bucket-based semantics.
+
 ## Histograms
 
 Histogram and ExponentialHistogram datapoints are merged within each time

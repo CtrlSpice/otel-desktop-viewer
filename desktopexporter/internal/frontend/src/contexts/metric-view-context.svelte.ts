@@ -16,10 +16,10 @@ import type {
   Attributes,
   ScalarViewBucket,
   ScalarAggregate,
-  SparklinePoint,
 } from '@/types/api-types'
 import {
   rateBucketStartForSourceDatapoint,
+  sparklineToChartPoints,
   timeseriesToChartTimeseries,
 } from '@/components/metrics/utils/chart-projection'
 import {
@@ -130,9 +130,9 @@ export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
 export const SCALAR_VIEW_BUCKETS = 120
 
 /** Row sparkline width in pixels. */
-export const SPARKLINE_WIDTH_PX = 128
+export const SPARKLINE_WIDTH_PX = 96
 
-/** Sparkline buckets, each contributing minimum and maximum points. */
+/** Rough previews simplify the main chart's samples to at most one point per pixel. */
 export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
@@ -833,16 +833,6 @@ export function createMetricViewContext(
     return out
   }
 
-  /** Projects store-reduced sparkline samples at their received timestamps. */
-  function sparklinePoints(points: SparklinePoint[] | null): ChartPoint[] {
-    if (!points) return []
-    return points.map(p => ({
-      date: new Date(Number(p.timestamp / 1_000_000n)),
-      value: p.value,
-      timestampNs: p.timestamp,
-    }))
-  }
-
   /** Per-series lines for a store-computed view, plus the buckets whose counter
    *  restarted -- which the rate chart marks. */
   function seriesFromViews(
@@ -898,7 +888,9 @@ export function createMetricViewContext(
       for (const ts of getMetric()?.timeseries ?? []) {
         out.set(
           ts.seriesRef,
-          rate ? viewPoints(ts.views, 'rate') : sparklinePoints(ts.sparkline)
+          rate
+            ? viewPoints(ts.views, 'rate')
+            : sparklineToChartPoints(ts.sparkline)
         )
       }
       return out

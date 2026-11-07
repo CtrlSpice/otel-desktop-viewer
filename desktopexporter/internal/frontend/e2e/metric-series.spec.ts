@@ -196,6 +196,78 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('retained datapoints identify their owner through a failed series switch and retry', async ({
+  page,
+}) => {
+  const received = timeseries.map((series, index) => ({
+    ...series,
+    datapointCount: 1,
+    datapoints: [{ ...series.datapoints[0]!, doubleValue: index ? 999 : 7 }],
+  }))
+  let replacement: FixtureRoute | undefined
+  let retry = false
+  await routeTelemetry(page, async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method !== 'getMetricView') return route.fallback()
+    if (
+      params.targetBuckets === 0 &&
+      params.seriesRefs?.[0] === 'second' &&
+      !retry
+    ) {
+      replacement = route
+      return
+    }
+    const rows =
+      params.targetBuckets === 0
+        ? received.filter(series =>
+            params.seriesRefs.includes(series.seriesRef)
+          )
+        : received
+    await route.fulfill({
+      json: { jsonrpc: '2.0', id, result: { ...metric, timeseries: rows } },
+    })
+  })
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  await page.goto('/metrics/series-layout?time=all&series=first')
+  const section = page.locator('[data-detail-section="datapoints"]')
+  const owner = section.getByLabel('Displayed datapoint series')
+  const oldRow = section.locator('[data-dp-id="first-0"]')
+  await expect(oldRow).toBeVisible()
+  await expect(owner).toHaveCount(0)
+  await page
+    .getByRole('button', { name: 'Select route: /second', exact: true })
+    .click()
+  await expect.poll(() => Boolean(replacement)).toBe(true)
+  await expect(
+    page.locator('[data-series-key="second"][aria-selected="true"]')
+  ).toBeVisible()
+  await expect(oldRow).toBeVisible()
+  await expect(owner).toBeVisible()
+  await expect(owner).toContainText('request.duration')
+  await expect(owner).toContainText('route: /first')
+  await expect(owner).not.toContainText('series-layout')
+  await expect(owner).not.toContainText('second')
+  await replacement!.fulfill({
+    json: {
+      jsonrpc: '2.0',
+      id: replacement!.request().postDataJSON().id,
+      error: { code: -32603, message: 'replacement unavailable' },
+    },
+  })
+  await expect(section).toContainText('Could not load datapoints.')
+  await expect(oldRow).toBeVisible()
+  await expect(owner).toBeVisible()
+  await expect(owner).toContainText('route: /first')
+  retry = true
+  await section.getByRole('button', { name: 'Retry datapoints' }).click()
+  await expect(section.locator('[data-dp-id="second-0"]')).toBeVisible()
+  await expect(oldRow).toHaveCount(0)
+  await expect(owner).toHaveCount(0)
+})
+
 test('a fresh metric deep link opens while its list is pending and survives list failure', async ({
   page,
 }) => {
@@ -3964,6 +4036,169 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
     .poll(() => new URL(page.url()).searchParams.get('dp'))
     .toBe(selectedID)
 })
+
+for (const mode of ['normal', 'tiny', 'fractional'] as const) {
+  test(`gauge gaps retain endpoints and ${mode === 'tiny' ? 'a minimum visible opening' : `six-pixel hit targets (${mode})`}`, async ({
+    page,
+  }) => {
+    const tiny = mode === 'tiny'
+    const milliseconds =
+      mode === 'fractional'
+        ? [0, 1, 3, 4]
+        : tiny
+          ? [0, 10_000, 10_001, 100_000]
+          : [0, 10_000, 40_000, 50_000]
+    const values = [0, 42, 45, 0]
+    const datapoints: PointFixture[] = milliseconds.map((ms, i) => {
+      const point: PointFixture = {
+        id: `gap-${i}`,
+        metricType: 'Gauge',
+        timestamp: String(BigInt(startMs + ms) * 1_000_000n),
+        timestampMs: startMs + ms,
+        startTime: startNs,
+        flags: 0,
+        exemplars: [],
+        doubleValue: values[i]!,
+        intValue: null,
+        valueType: 'Double',
+      }
+      if (i === 2) point.breakBefore = true
+      return point
+    })
+    const fixture: MetricFixture = {
+      ...metric,
+      datapointCount: 4,
+      timeseries: [
+        {
+          ...timeseries[0]!,
+          datapointCount: 4,
+          datapoints: [...datapoints].reverse(),
+          sparkline: datapoints.map((point, i) => {
+            const sample: NonNullable<SeriesFixture['sparkline']>[number] = {
+              timestamp: point.timestamp,
+              value: values[i]!,
+            }
+            if (i === 2) sample.breakBefore = true
+            return sample
+          }),
+        },
+      ],
+    }
+    await routeTelemetry(page, async route => {
+      const { method, id } = route.request().postDataJSON()
+      if (method !== 'getMetricView' && method !== 'getMetric')
+        return route.fallback()
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result:
+            method === 'getMetricView' ? fixture : exactMetricFixture(fixture),
+        },
+      })
+    })
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+    await page.goto(`/metrics/${metric.metricRef}?time=all&agg=raw`)
+    const line = page.locator('.metric-series-line')
+    await expect(line).toHaveCount(1)
+    await expect(line).toHaveAttribute('d', /M.*L.*M.*L/)
+    const geometry = await line.evaluate((element, fractional) => {
+      const path = element as SVGPathElement
+      const points = [
+        ...path.getAttribute('d')!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g),
+      ].map(m => ({ x: Number(m[1]), y: Number(m[2]) }))
+      const before = points[1]!
+      const after = points[2]!
+      const middle = new DOMPoint(
+        before.x + (after.x - before.x) * (fractional ? 0.25 : 0.5),
+        (before.y + after.y) / 2
+      ).matrixTransform(path.getScreenCTM()!)
+      const beforeScreen = new DOMPoint(before.x, before.y).matrixTransform(
+        path.getScreenCTM()!
+      )
+      const afterScreen = new DOMPoint(after.x, after.y).matrixTransform(
+        path.getScreenCTM()!
+      )
+      const clipID = path.getAttribute('clip-path')!.slice(5, -1)
+      const clips = [
+        ...document.getElementById(clipID)!.querySelectorAll('rect'),
+      ]
+      return {
+        x: middle.x,
+        y: middle.y,
+        before: { x: beforeScreen.x, y: beforeScreen.y },
+        after: { x: afterScreen.x, y: afterScreen.y },
+        gapWidth: after.x - before.x,
+        opening:
+          Number(clips[1]!.getAttribute('x')) -
+          Number(clips[0]!.getAttribute('x')) -
+          Number(clips[0]!.getAttribute('width')),
+        strokeWidth: Number.parseFloat(getComputedStyle(path).strokeWidth),
+      }
+    }, mode === 'fractional')
+    expect(geometry.opening).toBeCloseTo(geometry.strokeWidth)
+    if (tiny) expect(geometry.gapWidth).toBeLessThan(1)
+    await expect(page.locator('.sparkline path').first()).toHaveAttribute(
+      'd',
+      /M.*L.*M.*L/
+    )
+    const preview = await page
+      .locator('.ts-row__sparkline svg')
+      .first()
+      .evaluate(element => {
+        const svg = element as SVGSVGElement
+        const path = svg.querySelector('path')!
+        const clips = [...svg.querySelectorAll('clipPath rect')]
+        const scale = svg.getScreenCTM()!.a
+        return {
+          width: svg.getBoundingClientRect().width,
+          opening:
+            (Number(clips[1]!.getAttribute('x')) -
+              Number(clips[0]!.getAttribute('x')) -
+              Number(clips[0]!.getAttribute('width'))) *
+            scale,
+          stroke: Number.parseFloat(getComputedStyle(path).strokeWidth),
+        }
+      })
+    expect(preview.width).toBe(96)
+    expect(preview.opening).toBeCloseTo(preview.stroke)
+    if (!tiny) {
+      await page.mouse.move(geometry.x, geometry.y)
+      await expect(page.locator('.series-hover-point')).toHaveCount(0)
+      await expect(
+        page.locator('.chart-hover-card .chart-series-label')
+      ).toHaveCount(0)
+      await page.mouse.click(geometry.x, geometry.y)
+      expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+
+      // Five pixels on each axis is outside a six-pixel circular target.
+      await page.mouse.move(geometry.before.x + 5, geometry.before.y + 5)
+      await expect(page.locator('.series-hover-point')).toHaveCount(0)
+      await page.mouse.click(geometry.before.x + 5, geometry.before.y + 5)
+      expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+
+      // Each gap-facing half of the endpoint's six-pixel circle is reachable.
+      await page.mouse.move(geometry.before.x + 3, geometry.before.y)
+      await expect(page.locator('.series-hover-point')).toHaveCount(1)
+      await page.mouse.click(geometry.before.x + 3, geometry.before.y)
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('dp'))
+        .toBe('gap-1')
+      // Dismiss the pinned card so it cannot cover the other endpoint.
+      await page.locator('.chart-keyboard-surface').press('Escape')
+      await expect
+        .poll(() => new URL(page.url()).searchParams.has('dp'))
+        .toBe(false)
+      await page.mouse.move(0, 0)
+      await page.mouse.move(geometry.after.x - 3, geometry.after.y)
+      await expect(page.locator('.series-hover-point')).toHaveCount(1)
+      await page.mouse.click(geometry.after.x - 3, geometry.after.y)
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('dp'))
+        .toBe('gap-2')
+    }
+  })
+}
 
 test('line clicks and series rows share selection without changing visibility or disclosure', async ({
   page,

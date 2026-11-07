@@ -693,6 +693,11 @@
       {
         metricRef,
         seriesKey: selectedSeries,
+        seriesLabel: untrack(
+          () =>
+            metricCtx.seriesTable.labels.get(selectedSeries)?.text ??
+            'default series'
+        ),
         startTime,
         endTime,
         timezoneOffsetNs,
@@ -707,6 +712,7 @@
   type SeriesDatapointsRequest = {
     metricRef: string
     seriesKey: string
+    seriesLabel: string
     startTime: QueryTimeBound
     endTime: QueryTimeBound
     timezoneOffsetNs: number
@@ -721,6 +727,7 @@
     const {
       metricRef,
       seriesKey,
+      seriesLabel,
       startTime,
       endTime,
       timezoneOffsetNs,
@@ -752,6 +759,8 @@
       seriesDatapoints.set(seriesKey, {
         metricRef,
         seriesRef: seriesKey,
+        metricName: result?.name ?? '',
+        seriesLabel,
         metricType: result?.metricType ?? 'Empty',
         unit: result?.unit ?? '',
         count: series?.datapointCount ?? 0,
