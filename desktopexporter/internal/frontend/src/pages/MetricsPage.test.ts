@@ -1906,7 +1906,9 @@ describe('MetricsPage chart control keyboard navigation', () => {
     ]
     const metric = makeMetric('Sum', datapoints)
     const template = metric.timeseries[0]!
-    metric.timeseries = Array.from({ length: 11 }, (_, index) => ({
+    // Sum/Average are available for any multi-series metric. The explicit URL
+    // selects the combined view; this control test needs only two source series.
+    metric.timeseries = Array.from({ length: 2 }, (_, index) => ({
       ...template,
       seriesRef: `series-${index}`,
     }))
@@ -1928,8 +1930,7 @@ describe('MetricsPage chart control keyboard navigation', () => {
     })
     const header = sum.closest<HTMLElement>('.pane-header')
     expect(header).not.toBeNull()
-    // Query the persistent chart header, rather than repeatedly walking all
-    // eleven series and their plotted points during each control transition.
+    // Keep control queries within the persistent header across chart transitions.
     const controls = within(header!)
     const average = controls.getByRole('checkbox', {
       name: 'Show combined average',
