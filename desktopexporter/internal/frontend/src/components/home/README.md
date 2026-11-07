@@ -23,10 +23,9 @@ Home's left pane contains Getting started, the file-drop box, Storage and
 Ingestion issues. The dotted box matches the terminals' width and neutral border
 colour. It has a fixed 96px height, centred content and a 2px dotted outline.
 Pixel Lulu and the OTel Desktop Viewer wordmark form the sidebar header.
-One of four humorous subtitles is selected on each Home visit and
-shown beneath the wordmark, aligned with its left edge, in regular 12px Subtle text
-with a 16px line-height. It stays fixed during
-the visit and wraps naturally. The title and subtitle form one closely spaced
+The fixed subtitle “We have OpenTelemetry at home” appears beneath the wordmark,
+aligned with its left edge, in regular 12px Subtle text with a 16px line-height.
+It wraps naturally. The title and subtitle form one closely spaced
 block, with 56px-wide Lulu vertically centred beside both lines and a 12px gap.
 The import box sits 32px below the subtitle, followed by the exporter/test-trace
 instructions in the same scrollable guide. Major groups have 32px gaps; each
