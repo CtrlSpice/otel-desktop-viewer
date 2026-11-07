@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-    gappedLineClips,
-    gappedLinePath,
-  } from '@/components/metrics/utils/gapped-line'
+  import { sparklineGeometry } from '@/components/metrics/utils/sparkline-geometry'
   /*
    * Sparkline: a single non-interactive SVG polyline scaled to a fixed
    * box. Built by hand rather than via LayerChart because we render one
@@ -45,43 +42,9 @@
   }: Props = $props()
   const clipID = $props.id()
 
-  const x = $derived.by(() => {
-    const times = points.map(p => p.date.getTime())
-    const min = Math.min(...times)
-    const range = Math.max(...times) - min || 1
-    return (date: Date) => ((date.getTime() - min) / range) * width
-  })
-
-  // Inset the polyline by half the stroke width so the top/bottom
-  // pixels don't get clipped at the SVG edge. Tiny but visible at
-  // 18px tall.
-  const pathData = $derived.by((): string => {
-    if (points.length === 0) return ''
-    if (points.length === 1) {
-      const cy = height / 2
-      return `M 0 ${cy} L ${width} ${cy}`
-    }
-    const inset = strokeWidth / 2
-    const innerH = Math.max(0, height - 2 * inset)
-
-    let vMin = Number.POSITIVE_INFINITY
-    let vMax = Number.NEGATIVE_INFINITY
-    for (const p of points) {
-      if (Number.isFinite(p.value)) {
-        if (p.value < vMin) vMin = p.value
-        if (p.value > vMax) vMax = p.value
-      }
-    }
-    // A truly flat line collapses to the box centre; otherwise scale
-    // to fill the inset box with a 1px pad top/bottom for breathing
-    // room. Negative values are fine -- vMin / vMax both flex.
-    const vRange = vMax - vMin
-    const flat = !Number.isFinite(vRange) || vRange === 0
-
-    return gappedLinePath(points, x, value =>
-      flat ? height / 2 : inset + (1 - (value - vMin) / vRange) * innerH
-    )
-  })
+  const geometry = $derived(
+    sparklineGeometry(points, width, height, strokeWidth)
+  )
 </script>
 
 <svg
@@ -92,16 +55,16 @@
   aria-hidden="true"
   focusable="false"
 >
-  {#if pathData}
+  {#if geometry.path}
     <defs>
       <clipPath id={clipID} clipPathUnits="userSpaceOnUse">
-        {#each gappedLineClips(points, x, strokeWidth, 0, width) as clip}
+        {#each geometry.clips as clip}
           <rect x={clip.x} width={clip.width} y="0" {height} />
         {/each}
       </clipPath>
     </defs>
     <path
-      d={pathData}
+      d={geometry.path}
       clip-path={`url(#${clipID})`}
       fill="none"
       stroke={color}

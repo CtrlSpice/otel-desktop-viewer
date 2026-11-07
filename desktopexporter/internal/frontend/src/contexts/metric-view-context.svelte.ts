@@ -16,10 +16,10 @@ import type {
   Attributes,
   ScalarViewBucket,
   ScalarAggregate,
-  SparklinePoint,
 } from '@/types/api-types'
 import {
   rateBucketStartForSourceDatapoint,
+  sparklineToChartPoints,
   timeseriesToChartTimeseries,
 } from '@/components/metrics/utils/chart-projection'
 import {
@@ -833,20 +833,6 @@ export function createMetricViewContext(
     return out
   }
 
-  /** Projects store-reduced sparkline samples at their received timestamps. */
-  function sparklinePoints(points: SparklinePoint[] | null): ChartPoint[] {
-    if (!points) return []
-    return points.map(p => {
-      const point: ChartPoint = {
-        date: new Date(Number(p.timestamp / 1_000_000n)),
-        value: p.value,
-        timestampNs: p.timestamp,
-      }
-      if (p.breakBefore) point.breakBefore = true
-      return point
-    })
-  }
-
   /** Per-series lines for a store-computed view, plus the buckets whose counter
    *  restarted -- which the rate chart marks. */
   function seriesFromViews(
@@ -902,7 +888,9 @@ export function createMetricViewContext(
       for (const ts of getMetric()?.timeseries ?? []) {
         out.set(
           ts.seriesRef,
-          rate ? viewPoints(ts.views, 'rate') : sparklinePoints(ts.sparkline)
+          rate
+            ? viewPoints(ts.views, 'rate')
+            : sparklineToChartPoints(ts.sparkline)
         )
       }
       return out

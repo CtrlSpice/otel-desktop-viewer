@@ -1,5 +1,19 @@
-import type { MetricSeriesViewData } from '@/types/api-types'
+import type { MetricSeriesViewData, SparklinePoint } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
+
+/** Project store-reduced preview samples without changing their identities or flags. */
+export function sparklineToChartPoints(
+  points: readonly SparklinePoint[] | null
+): ChartPoint[] {
+  return (points ?? []).map((point): ChartPoint => {
+    const projected = {
+      date: new Date(Number(point.timestamp / 1_000_000n)),
+      value: point.value,
+      timestampNs: point.timestamp,
+    }
+    return point.breakBefore ? { ...projected, breakBefore: true } : projected
+  })
+}
 
 /**
  * Map one reduced raw Sum datapoint onto the store's synthetic Rate grid.
@@ -96,8 +110,11 @@ export function timeseriesToChartTimeseries(
           dp.metricType === 'Sum' && dp.delta != null ? Number(dp.delta) : null,
         isReset: dp.metricType === 'Sum' ? (dp.isReset ?? null) : null,
       }
-      if (dp.metricType === 'Gauge' && dp.breakBefore) point.breakBefore = true
-      points.push(point)
+      points.push(
+        dp.metricType === 'Gauge' && dp.breakBefore
+          ? { ...point, breakBefore: true }
+          : point
+      )
     }
     chartTimeseries.push({
       key: ts.seriesRef,

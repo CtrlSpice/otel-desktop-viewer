@@ -11,7 +11,6 @@
     Tooltip,
     type ChartState,
   } from 'layerchart'
-  import { bisector } from 'd3-array'
   import { scaleTime } from 'd3-scale'
   import { curveStepAfter } from 'd3-shape'
   import {
@@ -63,11 +62,20 @@
   import {
     gappedLinePath,
     gappedLineClips,
-    insideLineGap,
     insideLineGapAtX,
     LINE_POINT_HIT_RADIUS,
-    pointWithinHitRadius,
   } from '@/components/metrics/utils/gapped-line'
+  import {
+    hoveredPointAtPointer,
+    nearestPointAt,
+    pointAtPointer,
+    selectablePointAtPointer,
+    seriesKeyAtValue,
+    seriesKeyForChartPoint,
+    sourcePointForChartPoint,
+    type PlotPointer,
+    type PointSelectionMode,
+  } from '@/components/metrics/utils/line-hit-testing'
   import { measureChartAxisGutter } from '@/components/metrics/utils/chart-axis-gutter'
 
   let yAxisInset = $state<number>(fallbackPadding.left)
@@ -97,20 +105,6 @@
     x: Date
   ): number | undefined {
     return nearestPointAt(points, x)?.value
-  }
-
-  function nearestPointAt<T extends ChartPoint>(
-    points: readonly T[],
-    x: Date
-  ): T | undefined {
-    if (points.length === 0 || insideLineGap(points, x)) return undefined
-    const t = x.getTime()
-    const i = bisector((p: { date: Date }) => p.date.getTime()).left(points, t)
-    const lo = Math.max(0, i - 1)
-    const hi = Math.min(points.length - 1, i)
-    const dl = Math.abs(points[lo]!.date.getTime() - t)
-    const dh = Math.abs(points[hi]!.date.getTime() - t)
-    return dl <= dh ? points[lo] : points[hi]
   }
 
   function tooltipXDate(context: {
@@ -416,24 +410,29 @@
   )
 
   let lineChartContext = $state<ChartState<ChartPoint> | undefined>(undefined)
+  const pointSelectionMode: PointSelectionMode = $derived(
+    aggregationView === 'rate'
+      ? onRateChartPointClick
+        ? 'rate'
+        : null
+      : onChartPointClick
+        ? 'source'
+        : null
+  )
 
   function tooltipPointAtPointer(
     points: readonly ChartPoint[],
     context: ChartState<ChartPoint>
   ): ChartPoint | undefined {
-    const x = context.tooltip.x - context.padding.left
-    const y = context.tooltip.y - context.padding.top
-    const hit = pointWithinHitRadius(
+    return pointAtPointer(
       points,
-      x,
-      y,
-      context.xScale,
-      context.yScale
+      {
+        x: context.tooltip.x - context.padding.left,
+        y: context.tooltip.y - context.padding.top,
+      },
+      { x: context.xScale, y: context.yScale },
+      tooltipXDate(context)
     )
-    if (hit) return hit
-    if (insideLineGapAtX(points, x, context.xScale)) return undefined
-    const date = tooltipXDate(context)
-    return date ? nearestPointAt(points, date) : undefined
   }
 
   // Resolve one exact sample for emphasis without rebuilding series data or
@@ -443,26 +442,20 @@
     if (!context?.tooltip.isHoveringTooltipArea) return null
     const date = tooltipXDate(context)
     if (!date) return null
-    const x = context.tooltip.x - context.padding.left
-    const y = context.tooltip.y - context.padding.top
-    let closest: {
-      key: string
-      color: string
-      point: ChartPoint
-      distance: number
-    } | null = null
-    for (const series of chartSeries) {
-      const point = tooltipPointAtPointer(series.data, context)
-      if (!point) continue
-      const distance = Math.hypot(
-        context.xScale(point.date) - x,
-        context.yScale(point.value) - y
-      )
-      if (!closest || distance < closest.distance) {
-        closest = { key: series.key, color: series.color, point, distance }
-      }
-    }
-    return closest
+    const hit = hoveredPointAtPointer(
+      chartSeries,
+      {
+        x: context.tooltip.x - context.padding.left,
+        y: context.tooltip.y - context.padding.top,
+      },
+      { x: context.xScale, y: context.yScale },
+      date
+    )
+    const series =
+      hit && chartSeries.find(series => series.key === hit.seriesKey)
+    return hit && series
+      ? { key: series.key, color: series.color, point: hit.point }
+      : null
   })
 
   let emphasizedSeriesKey = $derived(
@@ -475,151 +468,27 @@
   /** The plot uses the full chart height; pinned cards do not reserve a row. */
   let plotAreaHeight = $state(0)
 
-  /** Plot y-value at the pointer, for disambiguating series at a shared x. */
-  function pointerYDataValue(e: MouseEvent): number | undefined {
-    const ctx = lineChartContext
-    if (!ctx?.yScale?.invert) return undefined
-    const target = e.target
-    if (!(target instanceof Element)) return undefined
+  /** DOM reads stay at the event boundary; hit testing receives plot coordinates. */
+  function plotPointerForEvent(
+    event: MouseEvent,
+    context: ChartState<ChartPoint>
+  ): PlotPointer | null {
+    const target = event.target
+    if (!(target instanceof Element)) return null
     const root = target.closest('.lc-root-container')
-    if (!root) return undefined
-    const rect = root.getBoundingClientRect()
-    const plotY = e.clientY - rect.top - ctx.padding.top
-    const value = ctx.yScale.invert(plotY)
-    return Number.isFinite(value) ? value : undefined
+    if (!root) return null
+    const bounds = root.getBoundingClientRect()
+    return {
+      x: event.clientX - bounds.left - context.padding.left,
+      y: event.clientY - bounds.top - context.padding.top,
+    }
   }
 
-  /** Pick the raw series whose value at `date` is closest to click y. */
-  function seriesKeyAtPointerY(e: MouseEvent, date: Date): string | null {
-    const lineKey =
-      e.target instanceof Element
-        ? e.target.closest<SVGPathElement>('.metric-series-line')?.dataset
-            .seriesKey
-        : undefined
-    if (lineKey) return lineKey
-    const clickY = pointerYDataValue(e)
-    if (clickY === undefined) return null
-
-    let bestKey: string | null = null
-    let bestDist = Infinity
-    for (const s of timeseries) {
-      if (isAggregateLineKey(s.key)) continue
-      const v = nearestValueAt(s.points, date)
-      if (v === undefined || !Number.isFinite(v)) continue
-      const dist = Math.abs(v - clickY)
-      if (dist < bestDist) {
-        bestDist = dist
-        bestKey = s.key
-      }
-    }
-    return bestKey
-  }
-
-  /** Map a chart row back to a raw series key. With multiple series at the
-   *  same x, match on y/value before falling back to per-series lookup. */
-  function seriesKeyForChartPoint(
-    data: LayerChartSeriesDatum<ChartPoint>,
-    explicitKey?: string | null
-  ): string | null {
-    if (explicitKey && !isAggregateLineKey(explicitKey)) {
-      return explicitKey
-    }
-
-    const date = data.date
-    const t = date.getTime()
-    const clickedValue = data.value
-
-    if (Number.isFinite(clickedValue)) {
-      for (const s of timeseries) {
-        if (isAggregateLineKey(s.key)) continue
-        for (const p of s.points) {
-          if (p.date.getTime() === t && p.value === clickedValue) {
-            return s.key
-          }
-        }
-      }
-
-      // Same timestamp, closest value (bucket centers / float drift).
-      let valueMatchKey: string | null = null
-      let bestValueDist = Infinity
-      for (const s of timeseries) {
-        if (isAggregateLineKey(s.key)) continue
-        for (const p of s.points) {
-          if (p.date.getTime() !== t) continue
-          const vd = Math.abs(p.value - clickedValue)
-          if (vd < bestValueDist) {
-            bestValueDist = vd
-            valueMatchKey = s.key
-          }
-        }
-      }
-      if (valueMatchKey !== null) return valueMatchKey
-
-      // Shared x: pick the series whose interpolated value is closest to
-      // the clicked y (bisect / tooltip-area clicks).
-      let nearestValueKey: string | null = null
-      let nearestValueDist = Infinity
-      for (const s of timeseries) {
-        if (isAggregateLineKey(s.key)) continue
-        const v = nearestValueAt(s.points, date)
-        if (v === undefined || !Number.isFinite(v)) continue
-        const dist = Math.abs(v - clickedValue)
-        if (dist < nearestValueDist) {
-          nearestValueDist = dist
-          nearestValueKey = s.key
-        }
-      }
-      if (nearestValueKey !== null) return nearestValueKey
-    }
-
-    // No y to disambiguate — nearest point within each series, then closest time.
-    let bestKey: string | null = null
-    let bestDist = Infinity
-    for (const s of timeseries) {
-      if (isAggregateLineKey(s.key)) continue
-      for (const p of s.points) {
-        const dist = Math.abs(p.date.getTime() - t)
-        if (dist < bestDist) {
-          bestDist = dist
-          bestKey = s.key
-        }
-      }
-    }
-    return bestKey
-  }
-
-  function sourcePointForChartPoint(
-    seriesKey: string,
-    data: LayerChartSeriesDatum<ChartPoint>,
-    date: Date
-  ): ChartPoint | null {
-    const series = chartSeries.find(candidate => candidate.key === seriesKey)
-    if (!series) return null
-
-    const sourceDatapointID = data.sourceDatapointID
-    if (sourceDatapointID) {
-      return (
-        series.data.find(
-          point => point.sourceDatapointID === sourceDatapointID
-        ) ?? null
-      )
-    }
-
-    const timestampNs = data.timestampNs
-    if (timestampNs !== undefined) {
-      return (
-        series.data.find(point => point.timestampNs === timestampNs) ?? null
-      )
-    }
-
-    const sameMillisecond = series.data.filter(
-      point => point.date.getTime() === date.getTime()
-    )
-    if (sameMillisecond.length === 1) return sameMillisecond[0]!
-    const sameValue = sameMillisecond.filter(
-      point => point.value === data.value
-    )
-    return sameValue.length === 1 ? sameValue[0]! : null
+  function lineKeyForEvent(event: MouseEvent): string | undefined {
+    return event.target instanceof Element
+      ? event.target.closest<SVGPathElement>('.metric-series-line')?.dataset
+          .seriesKey
+      : undefined
   }
 
   function dispatchTooltipClick(
@@ -628,22 +497,16 @@
   ) {
     if (!onChartPointClick && !onRateChartPointClick) return
     const context = lineChartContext
-    const target = e.target
-    const root =
-      target instanceof Element ? target.closest('.lc-root-container') : null
-    const bounds = root?.getBoundingClientRect()
-    const pointerX =
-      context && bounds
-        ? e.clientX - bounds.left - context.padding.left
-        : undefined
-    if (context && bounds && pointerX !== undefined) {
-      const pointerY = e.clientY - bounds.top - context.padding.top
-      const lineKey =
-        target instanceof Element
-          ? target.closest<SVGPathElement>('.metric-series-line')?.dataset
-              .seriesKey
-          : undefined
-      const hit = selectablePointAtPointer(context, pointerX, pointerY, lineKey)
+    const pointer = context ? plotPointerForEvent(e, context) : null
+    const lineKey = lineKeyForEvent(e)
+    if (context && pointer) {
+      const hit = selectablePointAtPointer(
+        chartSeries,
+        pointer,
+        { x: context.xScale, y: context.yScale },
+        pointSelectionMode,
+        lineKey
+      )
       if (
         hit &&
         hit.distance <= LINE_POINT_HIT_RADIUS &&
@@ -653,17 +516,22 @@
         return
       }
     }
-    const date = data.date
-    let key = seriesKeyAtPointerY(e, date)
-    if (!key) {
-      key = seriesKeyForChartPoint(data)
-    }
+    const clickValue = pointer && context?.yScale.invert?.(pointer.y)
+    const valueKey =
+      clickValue != null && Number.isFinite(clickValue)
+        ? seriesKeyAtValue(timeseries, data.date, clickValue)
+        : null
+    const key = lineKey ?? valueKey ?? seriesKeyForChartPoint(timeseries, data)
     if (!key || isAggregateLineKey(key)) return
     const series = chartSeries.find(candidate => candidate.key === key)
-    if (context && pointerX !== undefined && series) {
-      if (insideLineGapAtX(series.data, pointerX, context.xScale)) return
-    }
-    const point = sourcePointForChartPoint(key, data, date)
+    if (!series) return
+    if (
+      context &&
+      pointer &&
+      insideLineGapAtX(series.data, pointer.x, context.xScale)
+    )
+      return
+    const point = sourcePointForChartPoint(series.data, data)
     if (point && activateChartPoint(key, point)) e.stopPropagation()
   }
 
@@ -709,62 +577,30 @@
    * drawn points, then activate their real source id or exact Rate bucket. */
   function handlePlotClick(event: MouseEvent) {
     const context = lineChartContext
-    const target = event.target
-    if (!context || !(target instanceof Element)) return
-    const lineKey = target.closest<SVGPathElement>('.metric-series-line')
-      ?.dataset.seriesKey
+    if (!context) return
+    const lineKey = lineKeyForEvent(event)
     if (lineKey && isAggregateLineKey(lineKey)) {
       emphasis.toggle(lineKey)
       event.stopPropagation()
       return
     }
-    const root = target.closest('.lc-root-container')
-    if (!root) return
-    const bounds = root.getBoundingClientRect()
-    const x = event.clientX - bounds.left - context.padding.left
-    const y = event.clientY - bounds.top - context.padding.top
+    const pointer = plotPointerForEvent(event, context)
+    if (!pointer) return
+    const { x, y } = pointer
     const xMin = Math.min(...context.xRange)
     const xMax = Math.max(...context.xRange)
     const yMin = Math.min(...context.yRange)
     const yMax = Math.max(...context.yRange)
     if (x < xMin || x > xMax || y < yMin || y > yMax) return
-    const nearest = selectablePointAtPointer(context, x, y, lineKey)
+    const nearest = selectablePointAtPointer(
+      chartSeries,
+      pointer,
+      { x: context.xScale, y: context.yScale },
+      pointSelectionMode,
+      lineKey
+    )
     if (nearest && activateChartPoint(nearest.seriesKey, nearest.point))
       event.stopPropagation()
-  }
-
-  function selectablePointAtPointer(
-    context: ChartState<ChartPoint>,
-    x: number,
-    y: number,
-    lineKey?: string
-  ) {
-    let nearest: {
-      seriesKey: string
-      point: ChartPoint
-      distance: number
-    } | null = null
-    for (const series of chartSeries) {
-      if (isAggregateLineKey(series.key)) continue
-      if (lineKey && series.key !== lineKey) continue
-      const inGap = insideLineGapAtX(series.data, x, context.xScale)
-      for (const point of series.data) {
-        const selectable =
-          aggregationView === 'rate'
-            ? !!onRateChartPointClick && point.timestampNs !== undefined
-            : !!onChartPointClick && point.sourceDatapointID !== undefined
-        if (!selectable) continue
-        const distance = Math.hypot(
-          context.xScale(point.date) - x,
-          context.yScale(point.value) - y
-        )
-        if (!Number.isFinite(distance)) continue
-        if (inGap && distance > LINE_POINT_HIT_RADIUS) continue
-        if (!nearest || distance < nearest.distance)
-          nearest = { seriesKey: series.key, point, distance }
-      }
-    }
-    return nearest
   }
 
   /** Chart-area click under bisect-x tooltip — disambiguate series by

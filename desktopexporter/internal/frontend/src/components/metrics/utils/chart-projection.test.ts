@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   rateBucketStartForSourceDatapoint,
+  sparklineToChartPoints,
   timeseriesToChartTimeseries,
 } from './chart-projection'
 import type {
@@ -8,6 +9,28 @@ import type {
   MetricSeriesViewData,
   SumDataPoint,
 } from '@/types/api-types'
+
+describe('sparklineToChartPoints', () => {
+  it('keeps nanosecond identity and true-or-absent breaks without mutating source samples', () => {
+    const points = Object.freeze([
+      Object.freeze({ timestamp: 1_000_100n, value: 0 }),
+      Object.freeze({
+        timestamp: 1_000_900n,
+        value: 2,
+        breakBefore: true as const,
+      }),
+    ])
+    const projected = sparklineToChartPoints(points)
+    expect(projected.map(point => point.date.getTime())).toEqual([1, 1])
+    expect(projected.map(point => point.timestampNs)).toEqual([
+      1_000_100n,
+      1_000_900n,
+    ])
+    expect(projected[0]).not.toHaveProperty('breakBefore')
+    expect(projected[1]?.breakBefore).toBe(true)
+    expect(sparklineToChartPoints(null)).toEqual([])
+  })
+})
 
 describe('timeseriesToChartTimeseries', () => {
   it('approximates an exact integer only in the chart projection', () => {

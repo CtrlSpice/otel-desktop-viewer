@@ -4,6 +4,22 @@ type Point = { date: Date; value: number; breakBefore?: true }
 
 export const LINE_POINT_HIT_RADIUS = 6
 
+function lineSections(points: readonly Point[]): Point[][] {
+  const sections: Point[][] = []
+  let start = 0
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]!
+    const finite = Number.isFinite(point.value)
+    if (point.breakBefore || !finite) {
+      if (i > start) sections.push(points.slice(start, i))
+      start = i
+    }
+    if (!finite) start = i + 1
+  }
+  if (start < points.length) sections.push(points.slice(start))
+  return sections
+}
+
 /** Keep both real endpoints. A break starts a new path, not an undefined point. */
 export function gappedLinePath(
   points: readonly Point[],
@@ -15,23 +31,13 @@ export function gappedLinePath(
     .x(p => x(p.date))
     .y(p => y(p.value))
     .curve(curve)
-  let section: Point[] = []
-  const paths: string[] = []
-  function finish() {
-    if (section.length === 1) {
-      const p = section[0]!
-      paths.push(`M${x(p.date)},${y(p.value)}l0,0`)
-    } else if (section.length > 1) {
-      paths.push(draw(section) ?? '')
-    }
-    section = []
-  }
-  for (const point of points) {
-    if (point.breakBefore || !Number.isFinite(point.value)) finish()
-    if (Number.isFinite(point.value)) section.push(point)
-  }
-  finish()
-  return paths.join('')
+  return lineSections(points)
+    .map(section => {
+      if (section.length !== 1) return draw(section) ?? ''
+      const point = section[0]!
+      return `M${x(point.date)},${y(point.value)}l0,0`
+    })
+    .join('')
 }
 
 /** Clip ink, not coordinates, to leave a stroke-width opening at each break. */
