@@ -221,6 +221,14 @@ Match nearby components, contexts, route helpers, and test fixtures before intro
   [theme reference](../desktopexporter/internal/frontend/src/themes/README.md)
   for roles, defaults, picker behavior and generation.
 
+### Database schema changes
+
+Schema 27 (0.7.0) is the automatic-upgrade baseline. Every persisted schema change
+requires a version bump, an immutable SQL migration, and matching current DDL.
+Both build modes share the same chain. Include populated predecessor fixtures
+and tests for retained data, fresh-schema equivalence, and rollback. See
+[schema upgrades](schema-migration.md) for the runner contract and file layout.
+
 ### Dependencies and generated files
 
 The repository commits several generated outputs because release builds consume them directly:

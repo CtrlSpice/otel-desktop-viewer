@@ -132,9 +132,12 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 27. Store startup validates `schema_meta` before
-running DDL. A mismatched, malformed, or unversioned telemetry database is
-rejected without modification. The store does not migrate or reset databases.
+The current schema version and migration baseline are 27. Store startup validates
+`schema_meta` before running DDL. Supported older versions run the embedded SQL
+migration chain; all steps, current DDL, and the version stamp commit atomically.
+Fresh databases use current DDL in the same transaction boundary. Pre-baseline,
+newer, malformed, and unversioned telemetry databases are rejected. The store
+never resets databases. See [schema upgrades](schema-migration.md).
 
 ### Tables
 
@@ -348,8 +351,9 @@ value before field selection. Catalogue changes occur synchronously in the
 native mutation transaction, including descriptor updates, deletion and
 retention. Unreferenced context, paths, values and owner/path entries are removed
 transactionally.
-Current-schema databases retain the catalogue on reopen; there is no migration,
-upgrade backfill or telemetry reconstruction from catalogue rows.
+Current-schema databases retain the catalogue on reopen. Migrations that change
+the catalogue must rebuild the affected derived data from retained telemetry;
+catalogue rows cannot reconstruct telemetry.
 
 ## Metric views
 

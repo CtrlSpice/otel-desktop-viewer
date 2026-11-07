@@ -2,29 +2,15 @@ package schema
 
 // Version is the schema this build writes and expects.
 //
-// Bump it whenever a change makes an existing database file unreadable by this
-// build -- a dropped or renamed column, a changed constraint, a different
-// meaning for existing data -- or when a compatible cleanup must apply to
-// existing files rather than only new ones. Additive changes that
-// `create table if not exists` and `create index if not exists` apply cleanly
-// to an older file do not need a bump.
-//
-// There is no migration machinery. This exists so an incompatible file is
-// reported clearly instead of failing later with something opaque: without it,
-// `create table if not exists` silently leaves an old table in place and the
-// mismatch first surfaces as a duckdb appender column-count error during ingest,
-// or as an index creation failure against a column that does not exist.
-// Version 27 stores span children and metric points/exemplars/bounds inside
-// their owning rows, alongside the derived search/discovery catalogue.
-// Older databases are incompatible; select a new database or recreate the file.
+// Bump it for each persisted schema change, update current DDL, and add the
+// corresponding immutable SQL migration. See migrations/README.md.
 const Version = 27
 
 // VersionTableQuery creates the version table.
 //
-// Deliberately not part of TableCreationQueries: the version check has to run
-// *before* those, so that opening an incompatible file reports a version
-// mismatch rather than failing partway through creating tables and indexes
-// against a schema that does not match them.
+// The startup inspector reads existing metadata before application DDL. The
+// transaction executor creates and stamps this table only for a fresh database,
+// after its DDL succeeds.
 const VersionTableQuery = `create table if not exists schema_meta (version integer)`
 
 // ReadVersionQuery returns the stamped version, or NULL for an empty metadata

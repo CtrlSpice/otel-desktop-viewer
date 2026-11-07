@@ -64,7 +64,7 @@ func TestSchemaInitializationHonorsCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = initializeSchemaVersion(ctx, db, true)
+	_, err = initializeSchema(ctx, db, "", zap.NewNop(), schema.Version, nil)
 	require.ErrorIs(t, err, context.Canceled)
 
 	var schemaMetaTables int
@@ -97,11 +97,10 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 		reopened.Close()
 	}
 
-	// The error has to say which file and what to do, since there is no
-	// migration path -- the user's only move is to delete it or point --db
-	// elsewhere.
+	// A newer file requires a newer executable, not a destructive reset.
 	assert.Contains(t, err.Error(), "future.db", "name the file")
 	assert.Contains(t, err.Error(), "--db", "say what to do about it")
+	assert.Contains(t, err.Error(), "upgrade the viewer")
 
 	require.Equal(t, 1, logs.Len(), "and it must be logged, not only returned")
 	fields := logs.All()[0].ContextMap()

@@ -7,12 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowbridge"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
 )
@@ -109,53 +108,18 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	schemaInitializationMu.Lock()
 	defer schemaInitializationMu.Unlock()
 
-	// Inspect before any application DDL so refusing an incompatible store is
-	// read-only. Only a verified fresh store receives the metadata stamp below.
-	schemaCompat, shouldStamp, err := inspectSchemaVersion(ctx, db, dbPath, logger)
+	migrations, err := schema.Migrations()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w while loading migrations: %w", ErrStoreInitFailed, err)
 	}
 	// Viewer captures are often smaller than DuckDB's default 30,000-row
 	// shredding threshold. Make every row group eligible at checkpoint.
 	if _, err := db.ExecContext(ctx, "SET variant_minimum_shredding_size = 0"); err != nil {
 		return nil, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
 	}
-	// Create types; DuckDB has no IF NOT EXISTS for these statements.
-	for _, stmt := range queries.Types() {
-		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
-			if !strings.Contains(err.Error(), "already exists") {
-				return nil, fmt.Errorf("%w while creating type %s: %w", ErrStoreInitFailed, stmt.Name, err)
-			}
-		}
-	}
-
-	// Stamp version metadata only for a verified fresh store.
-	if err := initializeSchemaVersion(ctx, db, shouldStamp); err != nil {
+	schemaCompat, err := initializeSchema(ctx, db, dbPath, logger, schema.Version, migrations)
+	if err != nil {
 		return nil, err
-	}
-
-	// Create signal tables.
-	for _, stmt := range queries.Tables() {
-		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
-			return nil, fmt.Errorf("%w while creating table %s: %w", ErrStoreInitFailed, stmt.Name, err)
-		}
-	}
-
-	// Create indexes. Queries use IF NOT EXISTS so reopening is safe.
-	for _, stmt := range queries.Indexes() {
-		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
-			return nil, fmt.Errorf("%w while creating index %s: %w", ErrStoreInitFailed, stmt.Name, err)
-		}
-	}
-
-	// Create macros. Queries use CREATE OR REPLACE so reopening is safe.
-	if err := queries.RegisterFunctions(ctx, db); err != nil {
-		return nil, fmt.Errorf("%w while registering value functions: %w", ErrStoreInitFailed, err)
-	}
-	for _, stmt := range queries.Macros() {
-		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
-			return nil, fmt.Errorf("%w while creating macro %s: %w", ErrStoreInitFailed, stmt.Name, err)
-		}
 	}
 
 	initialized = true
