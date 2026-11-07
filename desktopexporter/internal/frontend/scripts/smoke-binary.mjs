@@ -4,6 +4,7 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { tableFromIPC } from 'apache-arrow'
 import { chromium, expect } from '@playwright/test'
 
 // Exercise the shipped public executable, with fresh in-memory storage and no
@@ -74,6 +75,29 @@ async function rpc(method, params = {}) {
   return response.result
 }
 
+async function arrow(method, params) {
+  const response = await fetch(`${baseURL}/api/data/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(2000),
+  })
+  assert.equal(response.status, 200)
+  assert.equal(
+    response.headers.get('Content-Type'),
+    'application/vnd.apache.arrow.stream'
+  )
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  assert.deepEqual(
+    bytes.subarray(-8),
+    Uint8Array.of(255, 255, 255, 255, 0, 0, 0, 0)
+  )
+  const table = tableFromIPC(bytes)
+  assert.equal(response.headers.get('X-Arrow-Rows'), String(table.numRows))
+  return table
+}
+
 try {
   await expect
     .poll(
@@ -100,6 +124,7 @@ try {
   const traceId = '0123456789abcdef0123456789abcdef'
   const spanId = '0123456789abcdef'
   const timestamp = String(BigInt(Date.now()) * 1000000n + 123n)
+  const exactInteger = '9007199254740993'
   const resource = {
     attributes: [{ key: 'service.name', value: { stringValue: 'ci-smoke' } }],
   }
@@ -120,6 +145,10 @@ try {
                   kind: 2,
                   startTimeUnixNano: timestamp,
                   endTimeUnixNano: String(BigInt(timestamp) + 1000000n),
+                  attributes: [
+                    { key: 'smoke.exact', value: { intValue: exactInteger } },
+                    { key: 'smoke.text', value: { stringValue: exactInteger } },
+                  ],
                 },
               ],
             },
@@ -162,7 +191,7 @@ try {
                     dataPoints: [
                       {
                         timeUnixNano: timestamp,
-                        asInt: '9007199254740993',
+                        asInt: exactInteger,
                       },
                     ],
                   },
@@ -206,6 +235,44 @@ try {
   assert.equal(span.traceId, traceId)
   assert.equal(span.spanId, spanId)
   assert.equal(span.startTimeUnixNano, timestamp)
+  assert.deepEqual(
+    span.attributes.find(attribute => attribute.key === 'smoke.exact').value,
+    { intValue: exactInteger }
+  )
+  assert.deepEqual(
+    span.attributes.find(attribute => attribute.key === 'smoke.text').value,
+    { stringValue: exactInteger }
+  )
+
+  const stored = await rpc('query', {
+    sql: `SELECT (SELECT version FROM schema_meta), typeof(attributes),
+      variant_typeof(attributes['smoke.exact']),
+      attributes['smoke.exact']::bigint::varchar,
+      variant_typeof(attributes['smoke.text']) FROM spans`,
+  })
+  assert.deepEqual(stored.rows, [
+    [27, 'VARIANT', 'INT64', exactInteger, 'VARCHAR'],
+  ])
+  assert.equal(stored.truncated, false)
+
+  // Exercise the shipped browser transport with an integer that JSON.parse
+  // would round. The numeric and string attributes must remain distinct.
+  for (const [key, type, expected] of [
+    ['smoke.exact', 'int64', BigInt(exactInteger)],
+    ['smoke.text', 'string', exactInteger],
+  ]) {
+    const matches = await arrow('searchAttributeMatches', {
+      term: '',
+      signal: 'traces',
+      owner: 'span',
+      path: ['attributes', key],
+      type,
+    })
+    assert.equal(matches.numRows, 1)
+    const samples = matches.getChild('sampleValues').get(0)
+    assert.equal(samples.length, 1)
+    assert.equal(samples.get(0), expected)
+  }
 
   browser = await chromium.launch()
   const page = await browser.newPage()
@@ -223,7 +290,7 @@ try {
   assert.deepEqual(errors, [])
   assertRunning()
   console.log(
-    'Embedded public smoke passed: UI, feature exclusion, all-signal ingestion, service identity and exact trace export'
+    'Embedded public smoke passed: UI, feature exclusion, all-signal ingestion, schema 27, native VARIANT, exact Arrow values, service identity and trace export'
   )
 } catch (error) {
   console.error(output)

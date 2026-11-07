@@ -1,7 +1,7 @@
 # otel-desktop-viewer architecture
 
 otel-desktop-viewer is a custom OpenTelemetry Collector distribution. A
-`desktop` exporter writes traces, metrics, and logs to DuckDB. A `duckdb`
+`desktop` exporter writes traces, metrics, and logs to DuckDB 2.0.0. A `duckdb`
 extension owns the database, HTTP server, retention loop, and embedded Svelte
 UI.
 
@@ -175,7 +175,10 @@ Attributes, log bodies, and Metric metadata use native VARIANT storage, retainin
 nested scalar types. SQL can query fields directly, for example
 `body.user.id::bigint`. Automatic VARIANT shredding is enabled.
 
-The UI wire projection uses recursive tagged JSON: every value is `{kind,value}`.
+Browser datasets use native Arrow IPC columns, including typed nested values and
+64-bit integers. The frontend retains those columns and reads individual values
+on demand. JSON-RPC compatibility projections use recursive tagged JSON: every
+OTel value is `{kind,value}`.
 
 - int64 values use decimal strings.
 - finite doubles use JSON numbers.
