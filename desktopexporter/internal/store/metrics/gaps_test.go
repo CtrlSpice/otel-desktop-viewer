@@ -67,7 +67,7 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 		return view.Timeseries
 	}
 	stamp := func(second int64) string { return strconv.FormatInt(base+second*int64(time.Second), 10) }
-	rows := read(6, 6) // Matching 10-second grids detect the same outage independently.
+	rows := read(6, 6)
 	require.Len(t, rows, 3)
 	breaks, sparkBreaks := 0, 0
 	for _, row := range rows {
@@ -90,15 +90,16 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 			}
 			sparkBreaks++
 			require.True(t, *p.BreakBefore)
-			require.Equal(t, stamp(40), p.Timestamp)
+			// The preview keeps extrema, not extra exact gap boundaries.
+			require.Equal(t, stamp(41), p.Timestamp)
 			require.Greater(t, i, 0)
-			require.Equal(t, stamp(3), row.Sparkline[i-1].Timestamp)
-			require.Equal(t, float64(42), row.Sparkline[i-1].Value)
-			require.Contains(t, []float64{43, 44}, p.Value)
+			require.Equal(t, stamp(2), row.Sparkline[i-1].Timestamp)
+			require.Equal(t, float64(100), row.Sparkline[i-1].Value)
+			require.Equal(t, float64(-5), p.Value)
 		}
 	}
 	require.Equal(t, 1, breaks, "other series cannot fill a series' empty buckets")
-	require.Equal(t, 1, sparkBreaks, "sparkline reduction must retain its own detected break")
+	require.Equal(t, 1, sparkBreaks, "sparkline extrema inherit the main chart's break")
 	for _, buckets := range []int64{0, 1} {
 		for _, row := range read(buckets, 1) {
 			for _, p := range append(row.Datapoints, row.Sparkline...) {
@@ -107,6 +108,7 @@ func TestGaugeGapsPreserveRealBoundaries(t *testing.T) {
 		}
 	}
 	for _, row := range read(6, 1) {
+		require.LessOrEqual(t, len(row.Sparkline), 2, "gaps must not add preview points beyond its budget")
 		for _, p := range row.Sparkline {
 			require.Nil(t, p.BreakBefore, "a coarse sparkline need not show the main chart's gap")
 		}
@@ -209,9 +211,9 @@ func TestSparklineGapsSurviveNumericFiltering(t *testing.T) {
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, data) }))
 			id := findMetricRef(t, s, ctx, "sparkline-filtering")
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				// Disable main-chart reduction: sparkline gaps must be independent.
+				// Preview breaks come from the main chart, before numeric filtering.
 				return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(base, base+int64(time.Minute)-1),
-					0, nil, nil, 0, 0, 6, nil, "", nil, 0)
+					6, nil, nil, 0, 0, 6, nil, "", nil, 0)
 			})
 			require.NoError(t, err)
 			var view struct {
@@ -232,13 +234,9 @@ func TestSparklineGapsSurviveNumericFiltering(t *testing.T) {
 				}
 				breaks++
 				require.True(t, *p.BreakBefore)
-				require.Equal(t, strconv.FormatInt(base+41*int64(time.Second), 10), p.Timestamp)
+				require.Equal(t, strconv.FormatInt(base+42*int64(time.Second), 10), p.Timestamp)
 				require.Greater(t, i, 0)
-				before := int64(3)
-				if tc.beforeInvalid {
-					before = 2
-				}
-				require.Equal(t, strconv.FormatInt(base+before*int64(time.Second), 10), view.Timeseries[0].Sparkline[i-1].Timestamp)
+				require.Equal(t, strconv.FormatInt(base+2*int64(time.Second), 10), view.Timeseries[0].Sparkline[i-1].Timestamp)
 			}
 			if tc.fillBuckets {
 				require.Zero(t, breaks)

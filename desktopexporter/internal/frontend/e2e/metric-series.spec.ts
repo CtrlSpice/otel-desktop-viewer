@@ -4070,6 +4070,26 @@ for (const mode of ['normal', 'tiny', 'fractional'] as const) {
       'd',
       /M.*L.*M.*L/
     )
+    const preview = await page
+      .locator('.ts-row__sparkline svg')
+      .first()
+      .evaluate(element => {
+        const svg = element as SVGSVGElement
+        const path = svg.querySelector('path')!
+        const clips = [...svg.querySelectorAll('clipPath rect')]
+        const scale = svg.getScreenCTM()!.a
+        return {
+          width: svg.getBoundingClientRect().width,
+          opening:
+            (Number(clips[1]!.getAttribute('x')) -
+              Number(clips[0]!.getAttribute('x')) -
+              Number(clips[0]!.getAttribute('width'))) *
+            scale,
+          stroke: Number.parseFloat(getComputedStyle(path).strokeWidth),
+        }
+      })
+    expect(preview.width).toBe(96)
+    expect(preview.opening).toBeCloseTo(preview.stroke)
     if (!tiny) {
       await page.mouse.move(geometry.x, geometry.y)
       await expect(page.locator('.series-hover-point')).toHaveCount(0)

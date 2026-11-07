@@ -4530,7 +4530,7 @@ func TestGetMetricView_Sparkline(t *testing.T) {
 	const buckets = 8
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricView(ctx, db, metricID, store.TimeRange{},
-			0, nil, nil, 0, 0, buckets, nil, "", nil, 0)
+			1, nil, nil, 0, 0, buckets, nil, "", nil, 0)
 
 	})
 	require.NoError(t, err)
@@ -4542,17 +4542,20 @@ func TestGetMetricView_Sparkline(t *testing.T) {
 	points, _ := series[0].(map[string]any)["sparkline"].([]any)
 	require.NotEmpty(t, points, "a scalar series carries a sparkline")
 
-	// Two points per bucket -- a min and a max -- so the ladder's rounding
-	// aside, the row never receives more than it has pixels for. Two hundred
-	// datapoints went in.
+	// The preview simplifies the main chart's M4 election, not all 200 inputs.
 	assert.LessOrEqual(t, len(points), 2*buckets,
 		"at most a min and a max per bucket")
-	assert.Less(t, len(points), 200, "and far fewer than the datapoints behind it")
+	assert.LessOrEqual(t, len(points), 4, "only main-chart elected samples feed the preview")
+	retained := map[string]bool{}
+	for _, p := range series[0].(map[string]any)["datapoints"].([]any) {
+		retained[p.(map[string]any)["timestamp"].(string)] = true
+	}
 
 	var maxValue float64
 	var prev int64
 	for i, p := range points {
 		b := p.(map[string]any)
+		assert.True(t, retained[b["timestamp"].(string)], "preview samples must come from the main chart")
 		v := b["value"].(float64)
 		if v > maxValue {
 			maxValue = v

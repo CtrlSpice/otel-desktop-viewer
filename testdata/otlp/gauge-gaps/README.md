@@ -14,9 +14,10 @@ make populate-metrics OTLP_DATASET=testdata/otlp/gauge-gaps
 ```
 
 In Metrics, open `demo.gauge.gaps`, select **All** time and **Raw**. The three
-lines and their sparklines show the outages independently. The zero interval
-remains connected. Hover over a gap to see that it has no reading; use keyboard
-navigation to inspect the real samples at either side.
+lines show each host's outages. Sparklines simplify those lines into rough shape
+previews for choosing a series; short outages may disappear. The zero interval
+remains connected. Hover over a main-chart gap to see that it has no reading;
+use keyboard navigation to inspect the real samples at either side.
 
 Gap detection follows the chart's M4 buckets, so changing the time window can
 change which short gaps qualify. Timestamps are fixed. Load once to avoid

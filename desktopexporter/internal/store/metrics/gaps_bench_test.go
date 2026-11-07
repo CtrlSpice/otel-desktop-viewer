@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Compare the full Arrow chart query, including the coarser sparklines, with
+// Compare the full Arrow chart query, including the simplified sparklines, with
 // identical M4 settings for continuous series and series with an interruption.
 func BenchmarkGaugeView(b *testing.B) {
 	for _, interrupted := range []bool{false, true} {

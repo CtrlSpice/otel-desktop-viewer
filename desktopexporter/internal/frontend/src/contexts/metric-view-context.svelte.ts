@@ -130,9 +130,9 @@ export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
 export const SCALAR_VIEW_BUCKETS = 120
 
 /** Row sparkline width in pixels. */
-export const SPARKLINE_WIDTH_PX = 128
+export const SPARKLINE_WIDTH_PX = 96
 
-/** Sparkline buckets, each contributing minimum and maximum points. */
+/** Rough previews simplify the main chart's samples to at most one point per pixel. */
 export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
