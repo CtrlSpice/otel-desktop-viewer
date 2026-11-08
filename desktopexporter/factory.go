@@ -62,6 +62,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 		e.pushMetrics,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithQueue(cfg.SendingQueue),
+		exporterhelper.WithTimeout(exporterhelper.TimeoutConfig{Timeout: 0}),
 		exporterhelper.WithStart(e.Start),
 	)
 }
@@ -76,6 +77,7 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 		e.pushLogs,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithQueue(cfg.SendingQueue),
+		exporterhelper.WithTimeout(exporterhelper.TimeoutConfig{Timeout: 0}),
 		exporterhelper.WithStart(e.Start),
 	)
 }
