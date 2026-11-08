@@ -230,9 +230,9 @@ dataset's index unsupported; the import remains incomplete and its processed
 evidence remains in retained logs. The upload reports this as HTTP 422. Unsupported indexes never
 expose partial experiment counts.
 
-Collector-backed Evals uses schema version 27. Other schema versions are rejected;
-there is no migration or parallel legacy table set. Use a new database and
-reimport retained source exports. Experiment IDs remain stable for the same
+Collector-backed Evals uses the shared schema and [migration chain](schema-migration.md),
+currently at version 27. Databases predating that baseline require a new database
+and reimporting retained source exports. Experiment IDs remain stable for the same
 imported data. The UI accepts old `run`/`rep` selection links and replaces their
 keys with `experiment`/`result`; new API responses use `experiments`,
 `adapterExperimentID`, and `resultCount`.
