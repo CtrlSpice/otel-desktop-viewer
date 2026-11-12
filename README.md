@@ -208,13 +208,10 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 ## 5. Learn more
 
 - [Command-line options](docs/command-line-options.md) — viewer flags, defaults, storage and ports.
-- [SDK configuration guide](docs/sdk-configuration.md) — send application telemetry and test your setup.
-- [Docker guide](docs/docker.md) — images, ports, persistent storage and Docker Compose.
 - [OTLP JSON export and import](docs/otlp-json-export.md) — file formats, downloads and browser imports.
 - [Schema upgrades](docs/schema-migration.md) — database compatibility and migrations.
 - [Collector secret redaction](docs/redaction.md) — data covered by ingestion redaction and its limits.
-- [Architecture](docs/ARCHITECTURE.md) — components, storage, APIs and frontend behaviour.
-- [Metric resolution](docs/metric-resolution.md) — how the viewer calculates metric chart data.
+- [All documentation](docs/README.md).
 
 ## What's with the axolotl?
 
