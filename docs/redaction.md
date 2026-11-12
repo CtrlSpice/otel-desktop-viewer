@@ -73,8 +73,8 @@ nested JSON safely. Masked JSON-encoded strings need not remain valid JSON.
 
 Promptfoo Evals JSON imports are decoded to structured historical log observations
 and submitted through the same receiver and processor before persistent storage.
-Their source/index caches are reconstructed only from retained processed logs;
-see [Evaluation data ingestion](eval-ingestion.md). Request-owned plaintext
+Their source/index caches are reconstructed only from retained processed logs.
+Request-owned plaintext
 temporary validation files are removed on return; a process crash can leave a
 temporary file. Existing database contents and original source files are not
 rewritten. The viewer's own optional service telemetry

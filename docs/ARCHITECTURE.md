@@ -601,8 +601,7 @@ service-map nodes retain their Panel surface.
 Labelled headings and input fields use Hyoshi; code toolbars use Chitsu.
 Inputs and floating menus have quiet Nijimi
 boundaries; composite search/date fields have one outer boundary and focus ring.
-Cards use flat hover/selection fills, without hover shadows. See the frontend's
-[theme mappings and upstream sources](../desktopexporter/internal/frontend/src/themes/README.md#surfaces-and-readable-text).
+Cards use flat hover/selection fills, without hover shadows.
 Issue links reveal the left pane and section.
 
 Each service appears once as a three-row card: identity and errors, signal counts
@@ -677,8 +676,7 @@ To-ro with Autumn and the system's initial Day/Night preference. Saved choices
 take priority. Accent and count inks restore independently; selecting a global
 ink also sets the count ink, which the chart picker can subsequently override.
 Service/series assignments use 224 fixed categorical shades from 32 inks and
-remain independent of interface themes. See [chart-palettes.md](chart-palettes.md)
-and the [theme reference](../desktopexporter/internal/frontend/src/themes/README.md).
+remain independent of interface themes.
 
 Shared typography uses regular-weight Atkinson Hyperlegible Next for interface
 text and formatted values, and Mono for JSON, search and code: 14px working text,
@@ -747,7 +745,7 @@ Browser:    http://localhost:3001
 Use `make build && ./otel-desktop-viewer` for an embedded production build.
 Public builds exclude Evals. `make build EVALS=1` selects its Go implementation
 and separate frontend assets; both variants retain the same database schema and
-shared telemetry functionality. See [Experimental features](experimental-features.md).
+shared telemetry functionality.
 
 ## Related files
 

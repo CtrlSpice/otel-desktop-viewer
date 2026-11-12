@@ -332,8 +332,8 @@
   data's scalar type.
   Search text and placeholders use the shared 21px line-height. Centre text with
   padding, not a control-height line box that stretches the blinking caret.
-  JSON, search and code views share the semantic editor syntax mapping
-  documented in `src/themes/README.md`, through `utils/editor-highlighting.ts`.
+  JSON, search and code views share the semantic editor syntax mapping in
+  `src/components/shared/utils/editor-highlighting.ts`.
   Use the shared theme palette and generated foreground adjustments;
   do not add separate light-mode code colours. Keep UI field names Subtle.
   Use Madoromi's native code guide for syntax accents, with neutral values for

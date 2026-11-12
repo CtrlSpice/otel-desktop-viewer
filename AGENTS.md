@@ -24,3 +24,12 @@
   private notes from public documentation.
 - When planned functionality lands on `main`, document its implemented behavior
   in `docs/`; do not publish the working notes as product documentation.
+- Keep installation and quick-start instructions in `README.md`. Keep detailed
+  reference and configuration guides in `docs/`, linked from `docs/README.md`.
+  Write standalone Markdown guides with explicit defaults and complete examples.
+- Use descriptive noun titles for standalone documents, such as "Docker guide".
+  Use action headings for procedural sections within documents.
+- Keep guides for features not yet in production, including experimental
+  features and Evals ingestion, in local-only `notes/`. Move them into `docs/`
+  when those features ship in production. This keeps public documentation focused
+  on production functionality.

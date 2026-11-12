@@ -3,7 +3,7 @@ import { tags } from '@lezer/highlight'
 import { editorColors as c } from './editor-colors'
 
 // Madoromi's code guide, with neutral string bodies and literal values.
-// Shared readable shades come from the theme generator. See src/themes/README.md.
+// Shared readable shades come from scripts/generate-madoromi.mjs.
 export const editorHighlightStyle = HighlightStyle.define([
   { tag: tags.name, color: c.text },
   { tag: tags.propertyName, color: c.property },

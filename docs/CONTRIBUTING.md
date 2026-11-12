@@ -1,4 +1,4 @@
-# Contributing
+# Contributor guide
 
 Bug reports, documentation, interface work, and backend changes are welcome.
 
@@ -109,8 +109,7 @@ make build
 Builds default to `EVALS=0`, which excludes the Evals UI and backend handlers.
 Use `make build EVALS=1` to include Evals; its frontend goes to `dist-evals` and
 its embedded assets to the ignored `internal/server/static-evals` directory.
-Both variants retain the same database schema. See
-[Experimental features](experimental-features.md) for activation within that build.
+Both variants retain the same database schema.
 
 The same `EVALS` selection applies to development and tests:
 `make dev-ts EVALS=1`, `make test EVALS=1`. Use matching frontend and backend
@@ -217,9 +216,7 @@ Match nearby components, contexts, route helpers, and test fixtures before intro
   Copy/Download values.
 - Use the eight Madoromi seasonal themes and shared colour tokens. Backgrounds
   retain 20% of source chroma. Preserve saved theme/ink preferences, service/series
-  colour ownership and independent count-ink overrides. See the
-  [theme reference](../desktopexporter/internal/frontend/src/themes/README.md)
-  for roles, defaults, picker behavior and generation.
+  colour ownership and independent count-ink overrides.
 
 ### Database schema changes
 
