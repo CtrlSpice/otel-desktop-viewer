@@ -168,11 +168,11 @@ otel-desktop-viewer --db ./telemetry.duckdb
 
 Choose your own adventure.
 
-### For humans
+### 🧑‍💻 For humans
 
 Open <http://localhost:8000> in your browser to view telemetry as it arrives from your application, or drag an OTLP JSON file onto the page to inspect saved telemetry.
 
-### For agents
+### 🤖 For agents
 
 1. Read CLI help for available commands and options:
 
