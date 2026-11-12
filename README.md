@@ -164,6 +164,10 @@ Telemetry stored in memory is lost when the viewer stops. Use `--db` to save it 
 otel-desktop-viewer --db ./telemetry.duckdb
 ```
 
+## 4. Use the viewer
+
+Choose your own adventure.
+
 ### For humans
 
 Open <http://localhost:8000> in your browser to view telemetry as it arrives from your application, or drag an OTLP JSON file onto the page to inspect saved telemetry.
@@ -209,13 +213,13 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 
 ## What's with the axolotl?
 
-<img src="docs/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu carries him to the telescope, lifts him to the eyepiece, then carries him back for head pats before he scuttles away with hearts." width="100%">
+<img src="docs/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu carries him to the telescope, lifts him to the eyepiece, then carries him back for head pats before he scuttles away with hearts." width="336">
 
-Her name is **Lulu Axol'Otel**. She is very pink, and I love her.
+Her name is **Lulu**. She is very pink, and I love her.
 
-I commissioned her original painting from [Chelsey Bateson](https://cbatesonart.artstation.com/). Her [repo](https://github.com/CtrlSpice/lulu) now has pixel-art sprites, a few animations, and the messy history of making them. Have a look at what I've made, and make some sprites of your own.
+I commissioned her original painting from [Chelsey Bateson](https://cbatesonart.artstation.com/) back when the project was nearly called AxolOtel. The terrible pun didn't survive, but Lulu stayed on as mascot on account of being cute af.
 
-Her pixel art is dedicated to the public domain under [CC0 1.0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE), because I have a sense of proportion and have never run a joke into the ground in my life.
+And because I would never run a joke into the ground, [Lulu belongs to the people](https://github.com/CtrlSpice/lulu): her pixel art is dedicated to the public domain under [CC0 1.0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE).
 
 Her crab friend is [fan art of Clawd](https://github.com/CtrlSpice/lulu/tree/main/fan-art), Anthropic's mascot.
 

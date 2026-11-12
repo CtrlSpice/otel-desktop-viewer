@@ -3,7 +3,8 @@
 ## Start here
 
 - [Install the viewer](../README.md#1-install-the-viewer) — download and installation options.
-- [Start the viewer](../README.md#3-start-the-viewer) — start the viewer and choose the human or agent workflow.
+- [Start the viewer](../README.md#3-start-the-viewer) — start the viewer and choose in-memory or file storage.
+- [Use the viewer](../README.md#4-use-the-viewer) — choose the human or agent workflow.
 - [Command-line options](command-line-options.md) — viewer flags, defaults, storage and ports.
 - [SDK configuration guide](sdk-configuration.md) — send application telemetry over HTTP or gRPC, using environment variables or YAML.
 
