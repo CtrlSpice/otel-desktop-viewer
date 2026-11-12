@@ -233,11 +233,7 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 
 <img src="docs/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu squats to pick him up, lifts him to the telescope, then sets him down for head pats before he scuttles away with hearts." width="336">
 
-Her name is **Lulu**. She is very pink, and I love her.
-
-She's been our [mascot](docs/lulu-artwork.md) since 2023, back when I really wanted to call the app AxolOtel.
-
-Now, [Lulu](https://github.com/CtrlSpice/lulu) belongs to the people. She's public domain under [CC0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE).
+Her name is **Lulu**. She is very pink, and I love her. She's been our [mascot](docs/lulu-artwork.md) since 2023, back when I really wanted to call the app AxolOtel. Now, [Lulu](https://github.com/CtrlSpice/lulu) belongs to the people. She's public domain under [CC0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE). The animation is just me playing with pixels. If you have so much as a modicum of artistic or design chops and want to take a crack at her artwork or animation, that would be awesome.
 
 ## Contribute
 
