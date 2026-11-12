@@ -160,7 +160,7 @@ processes you started; the Makefile does not terminate processes by port number.
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing component ownership, storage, ingestion, JSON-RPC contracts, routing, or persisted state.
 
 ```
-main.go, components.go                # Collector entry and OCB-generated registry
+main.go, components.go                # Maintained Collector entry point and registry
 desktopexporter/
   exporter.go                         # Signal exporters; writes through the shared store
   duckdbextension/                    # Store, HTTP server, and retention ownership
@@ -181,7 +181,9 @@ The root Go module builds the collector binary. The `desktop` exporter writes te
 - Use the modern `any` alias for empty interface types.
 - Format with `gofmt` and verify with `make format-go-check`.
 - Access DuckDB through `Store.WithConn`, `Store.WithDBRead`, or `Store.WithDBWrite`. Production code must preserve the store's locking and connection ownership.
-- Treat `main.go` and `components.go` as OCB-generated collector wiring. Coordinate component-registry changes with a maintainer and keep recorded module versions synchronized.
+- `main.go` and `components.go` are maintained by hand. Coordinate component-registry
+  changes with a maintainer. Keep recorded module versions synchronized with
+  `go.mod`. Run `TestComponentModuleVersionsMatchGoMod`.
 - Run `make test-go` or `go test ./...` from the repository root.
 
 Discuss DuckDB schema, retention, ingestion, and store-lifecycle changes before implementation. Schema objects live under `desktopexporter/internal/store/queries/ddl/`; update the applicable `_order` manifest and schema-version expectations with every schema change.
@@ -215,8 +217,9 @@ Match nearby components, contexts, route helpers, and test fixtures before intro
   formatting must preserve received types, exact numbers and complete explicit
   Copy/Download values.
 - Use the eight Madoromi seasonal themes and shared colour tokens. Backgrounds
-  retain 20% of source chroma. Preserve saved theme/ink preferences, service/series
-  colour ownership and independent count-ink overrides.
+  retain 20% of source chroma. Preserve saved Season and Day/Night choices and
+  independent service/series colour assignments. Histogram and heatmap counts
+  use the shared fixed spectrum. Day reverses Night's shades.
 
 ### Database schema changes
 

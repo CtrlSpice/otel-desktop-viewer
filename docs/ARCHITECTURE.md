@@ -670,19 +670,18 @@ result changes reset paging and scroll without toggling other Home sections.
 
 ### Themes and data presentation
 
-The appearance group selects Ink, Season and Day/Night. Madoromi supplies eight
+The appearance group selects Season and Day/Night. Madoromi supplies eight
 seasonal variants with backgrounds at 20% of source OKLCH chroma. The default is
-To-ro with Autumn and the system's initial Day/Night preference. Saved choices
-take priority. Accent and count inks restore independently; selecting a global
-ink also sets the count ink, which the chart picker can subsequently override.
+Autumn and the system's initial Day/Night preference. Saved choices take priority.
+Histogram and heatmap counts use a fixed spectrum. Day reverses Night's shades.
 Service/series assignments use 224 fixed categorical shades from 32 inks and
 remain independent of interface themes.
 
 Shared typography uses regular-weight Atkinson Hyperlegible Next for interface
 text and formatted values, and Mono for JSON, search and code: 14px working text,
-16px page/pane headings and 1.5 line-height at the default root size. Home's 22px
-welcome title is a display exception. Keys and helper text use Subtle; data uses
-Text; type/provenance metadata uses Secondary. Display formatting, folding,
+16px page/pane headings and 1.5 line-height at the default root size. Home's 24px
+welcome title and 12px subtitle are display exceptions. Keys and helper text use
+Subtle. Data uses Text. Type/provenance metadata uses Secondary. Display formatting, folding,
 wrapping and identifier truncation preserve received types and exact values.
 Copy is explicit and complete; raw JSON and Download retain source values rather
 than formatted previews. Shared formatting lives in

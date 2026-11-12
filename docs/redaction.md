@@ -1,6 +1,6 @@
 # Collector secret redaction
 
-The viewer enables OpenTelemetry Contrib's `redactionprocessor` v0.162.0 in
+The viewer enables OpenTelemetry Contrib's `redactionprocessor` v0.164.1 in
 every OTLP pipeline, before `batch` and the `desktop` exporter. Both HTTP and
 gRPC traffic use it. Browser OTLP JSON/JSONL telemetry imports use the HTTP
 receiver and receive the same processing. Stored queries and OTLP downloads

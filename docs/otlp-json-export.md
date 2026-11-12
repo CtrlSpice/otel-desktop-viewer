@@ -72,12 +72,37 @@ GET /export/logs/{logRef}
 GET /export/metrics/{metricRef}
 ```
 
+By default, a trace export contains every retained span in the trace.
+A log export contains one complete record. A metric export contains every
+retained datapoint in the metric.
+
+These optional query parameters select a smaller export:
+
+| Parameter | Route | Selection |
+| --- | --- | --- |
+| `spanId` | `/export/traces/{traceID}` | One span in that trace, identified by its 16-character hexadecimal span ID. |
+| `seriesRef` | `/export/metrics/{metricRef}` | All retained datapoints in one series of that metric, identified by its viewer-generated UUID. |
+| `datapointRef` | `/export/metrics/{metricRef}` | One retained datapoint in that metric, identified by its viewer-generated UUID. |
+
+If both metric selectors are supplied, the datapoint must belong to the selected
+series. A valid identifier that does not belong to the requested trace, metric
+or series returns 404. Unknown parameters, parameters for another signal,
+invalid identifiers, and empty or repeated selection values return 400.
+
+For example, when the trace and span are stored in the viewer:
+
+```sh
+curl -fS 'http://localhost:8000/export/traces/4bf92f3577b34da6a3ce929d0e0e4736?spanId=00f067aa0ba902b7' -o span.json
+```
+
 JSON is the sole file export format, for straightforward sharing and re-consumption.
 Responses return `application/json`. Existing `?format=json` requests are accepted;
 unsupported or duplicate format parameters return 400. Responses use
 `Cache-Control: no-store` and attachment filenames `trace-{traceID}.json`,
-`log-{logRef}.json`, or `metric-{metricRef}.json`, with canonical identifiers. Errors return plain text
-without an attachment: 400 for invalid IDs/formats, 404 for missing records,
+`log-{logRef}.json`, or `metric-{metricRef}.json`, with canonical identifiers.
+Selected exports append the selection parameter names and normalized identifiers
+before `.json`. Errors return plain text without an attachment:
+400 for invalid IDs or query parameters, 404 for missing records or selections,
 422 for unsupported stored Metric types, and 500 for reconstruction/encoding
 failures.
 
@@ -103,7 +128,8 @@ otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 > trace.json
 Use `export log <log-ref>` and `export metric <metric-ref>` for the other signals.
 `--endpoint` follows the existing viewer convention; there is no format selector.
 The selected signal header downloads JSON with one click.
-Search/time filters and collapsed rows do not limit exported members.
+Search/time filters and collapsed rows do not implicitly limit exported members.
+Only explicit selection parameters narrow the export.
 
 ## Browser file import
 
@@ -148,7 +174,7 @@ and query interfaces.
 
 ## File Receiver
 
-The binary registers Contrib's `otlpjsonfilereceiver` at `v0.162.0` alongside the
+The binary registers Contrib's `otlpjsonfilereceiver` at `v0.164.1` alongside the
 network OTLP receiver. Network protobuf transport remains supported. The JSON
 document identifies its signal through `resourceSpans`, `resourceLogs`, or
 `resourceMetrics`; the file name is not needed for signal selection.
