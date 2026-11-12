@@ -175,6 +175,27 @@ otel-desktop-viewer --db ./telemetry.duckdb
 
 Open <http://localhost:8000> in your browser to view telemetry as it arrives from your application, or drag an OTLP JSON file onto the page to inspect saved telemetry.
 
+**Traces**
+
+https://github.com/user-attachments/assets/accf86a7-bb4a-4667-a124-5f1a4c21450e
+
+**Metrics**
+
+https://github.com/user-attachments/assets/0fe9b819-5977-4057-b718-5b5cadb1a8a2
+
+**Logs**
+
+https://github.com/user-attachments/assets/2f3324da-aa76-4b36-89da-ba41c3d88d6c
+
+<details>
+<summary>Video descriptions</summary>
+
+- **Traces:** In the 14-span `Investigate checkout` trace, fold one tool call to focus on a recorded result reporting three retries and a 1,500 ms timeout. Expand the recorded answer, `Payment retries`.
+- **Metrics:** Select a 10-second checkout datapoint containing 623 observations, then switch from Heatmap to Histogram. The histogram combines all three visible routes over the full time window. Hover a bucket to see its 8,242 observations and the selected datapoint's contribution of 13.
+- **Logs:** Expand and scroll through the structured `Payment retries found` log body to read its reported payment operation: `POST /payments`, `ERROR`, and `duration_ms: 4680`. The log's linked trace context is the agent's `Inspect retries` operation.
+
+</details>
+
 ### 🤖 For agents
 
 1. Read CLI help for available commands and options:
