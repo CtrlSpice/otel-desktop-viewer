@@ -8,6 +8,8 @@
 - Include verification when it adds new, change-specific evidence.
 - Apply these rules automatically whenever creating or updating a PR.
 
+- Do not use em dashes in chat or documentation. Use a colon, comma or separate sentence.
+
 - Features require build-time selection; runtime-only feature flags are not
   supported. Public builds use `EVALS=0`; `EVALS=1` selects Evals in Go and the
   frontend. Preserve shared viewer/database functionality in both builds.
