@@ -205,7 +205,7 @@ Open <http://localhost:8000> in your browser to view telemetry as it arrives fro
 
 The guide is also available at <http://localhost:8000/llms.txt> while the viewer is running.
 
-## 5. Read more
+## 5. Learn more
 
 - [Command-line options](docs/command-line-options.md) — viewer flags, defaults, storage and ports.
 - [SDK configuration guide](docs/sdk-configuration.md) — send application telemetry and test your setup.
