@@ -218,7 +218,7 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 
 ## What's with the axolotl?
 
-<img src="docs/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu carries him to the telescope, lifts him to the eyepiece, then carries him back for head pats before he scuttles away with hearts." width="336">
+<img src="docs/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu squats to pick him up, lifts him to the telescope, then sets him down for head pats before he scuttles away with hearts." width="336">
 
 Her name is **Lulu**. She is very pink, and I love her.
 
