@@ -217,7 +217,7 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 
 Her name is **Lulu**. She is very pink, and I love her.
 
-I commissioned [Lulu's original painting](docs/lulu.png) from the super talented [Chelsey Bateson](https://cbatesonart.artstation.com/) when the project was almost called AxolOtel. The terrible pun didn't survive review, but Lulu stayed because she's adorable. I've been playing with her design as the app evolves, including the pixel art above.
+I commissioned [Lulu's original painting](docs/lulu.png) from the super talented [Chelsey Bateson](https://cbatesonart.artstation.com/) when the project was almost called AxolOtel. The terrible pun didn't survive review, but Lulu stayed because she's adorable. I've been playing with the design as the app evolves, including the pixel art above.
 
 And because I would never run a joke into the ground, [Lulu belongs to the people](https://github.com/CtrlSpice/lulu): her pixel art is dedicated to the public domain under [CC0 1.0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE).
 
