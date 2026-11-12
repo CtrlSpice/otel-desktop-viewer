@@ -30,6 +30,11 @@ Download the latest release for your platform:
 
 See [Releases](https://github.com/CtrlSpice/otel-desktop-viewer/releases) for release notes and older versions. Linux binaries require glibc 2.39 or newer.
 
+Extract the downloaded archive, then open a terminal in the extracted directory.
+On macOS/Linux, run `./otel-desktop-viewer`; in Windows PowerShell, run
+`.\otel-desktop-viewer.exe`. Use that local path in place of
+`otel-desktop-viewer` in the examples below.
+
 </details>
 
 <details>
@@ -200,7 +205,7 @@ Open <http://localhost:8000> in your browser to view telemetry as it arrives fro
 
 The guide is also available at <http://localhost:8000/llms.txt> while the viewer is running.
 
-## Documentation
+## 5. Read more
 
 - [Command-line options](docs/command-line-options.md) — viewer flags, defaults, storage and ports.
 - [SDK configuration guide](docs/sdk-configuration.md) — send application telemetry and test your setup.
