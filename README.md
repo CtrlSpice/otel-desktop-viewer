@@ -217,7 +217,9 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 
 Her name is **Lulu**. She is very pink, and I love her.
 
-She's been `otel-desktop-viewer`'s [mascot](docs/lulu-artwork.md) since 2023, when I still really wanted to call the app AxolOtel. Her [pixel art](https://github.com/CtrlSpice/lulu) is public domain under [CC0 1.0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE).
+She's been `otel-desktop-viewer`'s [mascot](docs/lulu-artwork.md) since 2023, when I still really wanted to call the app AxolOtel.
+
+And because I would never run a joke into the ground, [Lulu belongs to the people](https://github.com/CtrlSpice/lulu): her pixel art is dedicated to the public domain under [CC0 1.0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE).
 
 ## Contribute
 
