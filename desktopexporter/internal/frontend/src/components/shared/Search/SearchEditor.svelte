@@ -44,6 +44,7 @@
   import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
   import SearchHelpDialog from './SearchHelpDialog.svelte'
+  import IconButton from '../IconButton.svelte'
   import { attributeTokens } from './codemirror/attribute-tokens'
   import { multilineQueryPaste } from './codemirror/paste'
   import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
@@ -529,13 +530,7 @@
           </div>
         {/if}
         <div class="header-icon-controls shrink-0">
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
-            onclick={clearSearch}
-            aria-label="Clear search"
-            data-tip="Clear search"
-          >
+          <IconButton onclick={clearSearch} label="Clear search">
             <HugeiconsIcon
               icon={Cancel01Icon}
               size={17}
@@ -543,19 +538,17 @@
               class="shrink-0"
               aria-hidden="true"
             />
-          </button>
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+          </IconButton>
+          <IconButton
             onclick={openHelp}
-            aria-label="Search query help"
-            data-tip="Query help"
+            label="Search query help"
+            tooltip="Query help"
           >
             <QuestionMarkIcon
               class="h-[17px] w-[17px] shrink-0"
               aria-hidden="true"
             />
-          </button>
+          </IconButton>
         </div>
       </div>
     </div>

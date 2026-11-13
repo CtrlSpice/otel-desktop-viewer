@@ -116,7 +116,7 @@
   let baselineStats = $state<TraceStats | null>(null)
   let polledStats = $state<TraceStats | null>(null)
   let listRequest: AbortController | undefined
-  let statsRequest: AbortController | undefined
+  let statsRequest = $state.raw<AbortController>()
   let actionError = $state<string | null>(null)
   let query = $state('')
   let submittedText = $state('')
@@ -180,7 +180,8 @@
         throw error
       }
     },
-    pollStats: async () => {
+    statsPending: () => statsRequest !== undefined,
+    refreshStats: async () => {
       if (statsRequest) return
       const controller = new AbortController()
       statsRequest = controller

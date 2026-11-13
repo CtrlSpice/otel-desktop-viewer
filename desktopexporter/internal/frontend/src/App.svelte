@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { createFileImporter } from '@/services/import-service'
   import HomePage from '@/pages/HomePage.svelte'
   import MetricsPage from '@/pages/MetricsPage.svelte'
@@ -10,7 +10,7 @@
   import ImportFiles from '@/components/shared/ImportFiles.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import { isPlainLeftClick, navigate } from '@/route'
+  import { isPlainLeftClick, navigate, subscribeToRoute } from '@/route'
   import {
     createRouteContext,
     getRouteContext,
@@ -19,6 +19,12 @@
   import { createWorkspaceContext } from '@/contexts/workspace-context.svelte'
   import WorkspaceShell from '@/components/shared/WorkspaceShell.svelte'
   import { createNavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import { createDataChanges } from '@/contexts/data-changes.svelte'
+  import {
+    createImportNavigation,
+    lookupImportTarget,
+  } from '@/services/import-navigation'
+  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
 
   let {
     importFiles,
@@ -27,6 +33,44 @@
     importFiles?: (files: File[]) => void
     importFailures?: readonly ImportFailure[]
   } = $props()
+
+  createRouteContext()
+  createTimeContext()
+  const changes = createDataChanges()
+  createNavigationCounts()
+  const workspace = createWorkspaceContext()
+
+  let importMessage = $state('')
+  let importPending = $state(false)
+  let importRequestKey = $state(0)
+  const importNotice = createLoadingNotice(
+    () => importPending,
+    () => importRequestKey
+  )
+  const importNavigation = createImportNavigation({
+    subscribe: changes.subscribe,
+    lookup: lookupImportTarget,
+    navigate(record, destination) {
+      const query = new URLSearchParams({ time: 'all' })
+      if (destination.spanID) query.set('span', destination.spanID)
+      navigate(
+        `/${record.signal}/${encodeURIComponent(destination.id)}?${query}`
+      )
+      void tick().then(() => changes.refreshViews())
+    },
+    status(message, pending) {
+      importMessage = message
+      importPending = pending
+    },
+  })
+  onMount(() => {
+    let previous = window.location.href
+    return subscribeToRoute(() => {
+      if (window.location.href === previous) return
+      previous = window.location.href
+      importNavigation.cancel()
+    })
+  })
 
   let localImportFailures = $state<ImportFailure[]>([])
   const importer = createFileImporter(window.location.href, failure => {
@@ -38,14 +82,15 @@
   ])
   function handleImportFiles(files: File[]) {
     if (importFiles) importFiles(files)
-    else void importer.enqueue(files)
+    else if (files.length) {
+      importRequestKey++
+      void importer.enqueue(files, importNavigation.select(files[0].name))
+    }
   }
-  onDestroy(() => importer.cancel())
-
-  createRouteContext()
-  createTimeContext()
-  createNavigationCounts()
-  const workspace = createWorkspaceContext()
+  onDestroy(() => {
+    importNavigation.cancel()
+    importer.cancel()
+  })
 
   const routeContext = getRouteContext()
   let mainElement = $state<HTMLElement | null>(null)
@@ -143,6 +188,18 @@
       detail: emptyPane,
     }}
   />
+  {#if importNotice.visible || (importMessage && !importPending)}
+    <div class="flex shrink-0 items-center gap-2 px-3 py-1 text-sm text-subtle">
+      <span role="status">{importMessage}</span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        onclick={() => importNavigation.cancel()}
+      >
+        {importPending ? 'Cancel opening' : 'Dismiss'}
+      </button>
+    </div>
+  {/if}
 </main>
 
 <FileDropOverlay onFiles={handleImportFiles} />

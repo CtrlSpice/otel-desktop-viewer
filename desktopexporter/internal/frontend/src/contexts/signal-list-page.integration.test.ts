@@ -80,7 +80,7 @@ describe('createSignalListPage integration', () => {
     expect(screen.getByTestId('selected-index').textContent).toBe('1')
   })
 
-  it('refreshes through the current search without clearing it or fetching the unfiltered list', async () => {
+  it('refreshes the submitted list without submitting or clearing the editor draft', async () => {
     let page:
       | import('@/contexts/signal-list-page.svelte').SignalListPage<
           Item,
@@ -102,9 +102,9 @@ describe('createSignalListPage integration', () => {
 
     page!.handleRefresh()
 
-    expect(submit).toHaveBeenCalledTimes(1)
+    expect(submit).not.toHaveBeenCalled()
     expect(clear).not.toHaveBeenCalled()
-    expect(fetchList).toHaveBeenCalledTimes(1)
+    expect(fetchList).toHaveBeenCalledTimes(2)
   })
 
   it('refreshes the list when no search editor is attached', async () => {

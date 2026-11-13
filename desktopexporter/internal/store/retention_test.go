@@ -173,7 +173,15 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 
 	// A cap of 1 byte is unreachable: enforcement should prune its bounded
 	// number of rounds and stop, not loop forever.
+	before, changed, _ := s.CommitSnapshot()
 	require.NoError(t, s.EnforceRetention(ctx, 1))
+	after, _, _ := s.CommitSnapshot()
+	require.Greater(t, after, before, "retention must notify committed-data subscribers")
+	select {
+	case <-changed:
+	default:
+		t.Fatal("retention did not wake subscribers")
+	}
 
 	for _, table := range []string{"spans", "logs", "metric_datapoints"} {
 		remaining := count(t, s, table)

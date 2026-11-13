@@ -246,6 +246,56 @@ export async function scanOTLPFile(
 
 export type ImportBatch = { body: Blob } | { issue: ScanIssue }
 
+export type FirstOTLPRecord = { signal: ImportSignal; body: Blob }
+
+/** Keep the first record's exact bytes and enclosing resource/scope metadata. */
+export function firstOTLPRecord(
+  file: Blob,
+  plan: ImportPlan
+): FirstOTLPRecord | undefined {
+  let first:
+    { signal: ImportSignal; path: ResourceRange[]; start: number } | undefined
+  for (const signal of ['traces', 'logs', 'metrics'] as const) {
+    for (const resource of plan[signal]) {
+      for (const scopes of resource.collections) {
+        for (const scope of scopes.items) {
+          for (const records of scope.collections) {
+            const record = records.items[0]
+            if (record && (!first || record.start < first.start))
+              first = {
+                signal,
+                path: [resource, scope, record],
+                start: record.start,
+              }
+          }
+        }
+      }
+    }
+  }
+  if (!first) return
+  const record = first.path.at(-1)!
+  // Metric identity excludes points. Retain only its first point so a large
+  // metric does not require materialising its complete payload for navigation.
+  const point = record.collections[0]?.items[0]
+  if (point) first.path.push(point)
+  let body = file.slice(first.path.at(-1)!.start, first.path.at(-1)!.end)
+  for (let index = first.path.length - 2; index >= 0; index--) {
+    const parent = first.path[index]
+    if (parent.collections.length !== 1) return
+    const collection = parent.collections[0]
+    body = new Blob([
+      file.slice(parent.start, collection.start + 1),
+      body,
+      file.slice(collection.end - 1, parent.end),
+    ])
+  }
+  body = new Blob([`{"${resourceKeys[first.signal]}":[`, body, ']}'], {
+    type: 'application/json',
+  })
+  if (body.size > OTLP_REQUEST_BYTES) return
+  return { signal: first.signal, body }
+}
+
 /** Split only known collection boundaries, copying all surrounding metadata bytes. */
 function* splitResource(
   file: Blob,

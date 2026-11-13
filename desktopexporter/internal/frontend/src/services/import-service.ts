@@ -1,4 +1,10 @@
-import { batchOTLPFile, scanOTLPFile, type ImportSignal } from './otlp-file'
+import {
+  batchOTLPFile,
+  scanOTLPFile,
+  firstOTLPRecord,
+  type FirstOTLPRecord,
+  type ImportSignal,
+} from './otlp-file'
 import { telemetryAPI } from './telemetry-service'
 import type { ImportFailure } from '@/types/import-types'
 import { detectImportFile } from './import-file'
@@ -77,9 +83,11 @@ async function responseIssue(response: Response): Promise<string | undefined> {
 export async function importOTLPFile(
   file: File,
   pageURL: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onFirstRecord?: (record: FirstOTLPRecord | undefined) => void
 ): Promise<string[]> {
   const plan = await scanOTLPFile(file, signal)
+  onFirstRecord?.(firstOTLPRecord(file, plan))
   const issues = [...plan.profiles, ...plan.invalid].map(
     issue => `${issue.reason} (byte ${issue.offset + 1})`
   )
@@ -142,8 +150,15 @@ export function createFileImporter(
   const controller = new AbortController()
   let pending = Promise.resolve()
   return {
-    enqueue(files: readonly File[]): Promise<void> {
+    enqueue(
+      files: readonly File[],
+      first?: {
+        record: (record: FirstOTLPRecord | undefined) => void
+        submitted: () => void
+      }
+    ): Promise<void> {
       for (const file of files) {
+        const navigation = file === files[0] ? first : undefined
         pending = pending.then(async () => {
           if (controller.signal.aborted) return
           let issues: string[]
@@ -152,16 +167,23 @@ export function createFileImporter(
               __EVALS_BUILT__ &&
               (await detectImportFile(file, controller.signal)) === 'eval'
             ) {
+              navigation?.record(undefined)
               issues = await evalAPI.ingestEvalFile(file, controller.signal)
               notifyEvalExperimentsChanged()
             } else
-              issues = await importOTLPFile(file, pageURL, controller.signal)
+              issues = await importOTLPFile(
+                file,
+                pageURL,
+                controller.signal,
+                navigation?.record
+              )
           } catch (error) {
             if (controller.signal.aborted) return
             issues = [
               error instanceof Error ? error.message : 'Unable to read file',
             ]
           }
+          navigation?.submitted()
           if (!controller.signal.aborted && issues.length) {
             onFailure({
               fileName: file.name,

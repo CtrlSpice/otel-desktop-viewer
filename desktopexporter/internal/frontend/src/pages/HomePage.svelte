@@ -452,7 +452,7 @@
   drawerLabel="Home"
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
-  onRefresh={submit}
+  onRefresh={() => void load(0, true)}
   loading={!!request}
   loadingRequestKey={String(requestKey)}
 >

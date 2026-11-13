@@ -1,5 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test } from '@playwright/test'
+import { mockDataChanges, notifyDataChanged } from './data-changes'
 import type {
   LogFixture,
   TraceFixture,
@@ -40,6 +41,7 @@ const logs: LogFixture[] = [firstID, secondID].map((logRef, index) => ({
 }))
 
 test.beforeEach(async ({ page }) => {
+  await mockDataChanges(page)
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.addInitScript(() =>
@@ -104,6 +106,75 @@ test.beforeEach(async ({ page }) => {
   await expect(
     page.getByRole('grid', { name: 'Logs', exact: true })
   ).toBeVisible()
+})
+
+test('Live and reconnect refresh a selected log without replacing its inspector or scroll position', async ({
+  page,
+}) => {
+  const detail = page.getByRole('table', { name: 'Log fields' })
+  await expect(detail).toContainText('Full body 0: exact retained text')
+  const nodes = await page.evaluateHandle(() => [
+    document.querySelector('.log-detail-panel > .pane-header'),
+    document.querySelector('.log-detail-panel__scroll'),
+    document.querySelector('[aria-label="Log fields"]'),
+  ])
+  let version = 0
+  let queries = 0
+  await routeTelemetry(page, async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method !== 'getLog') return route.fallback()
+    queries++
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          ...logs[0],
+          body: { kind: 'string', value: `Reading ${version}` },
+        },
+      },
+    })
+  })
+  const live = page.getByRole('button', { name: 'Live', exact: true })
+  await expect(live).toHaveText('Live')
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  const liveWidth = (await live.boundingBox())!.width
+  await live.click()
+  await expect(live).toHaveAttribute('aria-pressed', 'true')
+  expect((await live.boundingBox())!.width).toBe(liveWidth)
+  await expect(detail).toContainText('Reading 0')
+  const scrollTop = await page
+    .locator('.log-detail-panel__scroll')
+    .evaluate(element => {
+      element.scrollTop = 120
+      return element.scrollTop
+    })
+  expect(scrollTop).toBeGreaterThan(0)
+  version++
+  await notifyDataChanged(page)
+  await expect(detail).toContainText('Reading 1')
+  await page.evaluate(() => window.dispatchEvent(new Event('test-disconnect')))
+  await expect(live).toHaveAttribute('data-tip', 'Live · reconnecting')
+  version++
+  // The reconnection snapshot can have the same process-local revision.
+  await notifyDataChanged(page)
+  await expect(detail).toContainText('Reading 2')
+  await expect(page).toHaveURL(`/logs/${firstID}?time=all`)
+  expect(
+    await nodes.evaluate(original => original.every(node => node?.isConnected))
+  ).toBe(true)
+  expect(
+    await page
+      .locator('.log-detail-panel__scroll')
+      .evaluate(element => element.scrollTop)
+  ).toBe(scrollTop)
+  await live.click()
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  expect((await live.boundingBox())!.width).toBe(liveWidth)
+  const before = queries
+  await notifyDataChanged(page)
+  await page.getByRole('button', { name: /Refresh/ }).click()
+  await expect.poll(() => queries).toBe(before + 1)
 })
 
 test('log selection retains the inspector, delays loading feedback and rejects superseded same-ID responses', async ({

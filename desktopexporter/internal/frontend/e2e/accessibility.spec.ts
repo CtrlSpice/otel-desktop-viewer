@@ -1800,6 +1800,12 @@ test.describe('home page accessibility', () => {
     await page.goto('/traces')
     const trigger = page.getByRole('button', { name: /^Change time range/ })
     await expect(trigger).toHaveText('')
+    await expect(trigger).toHaveAttribute(
+      'data-tip',
+      'Change time range, All time'
+    )
+    await expect(trigger).toHaveCSS('width', '32px')
+    await expect(trigger).toHaveCSS('height', '32px')
     await expect(trigger).toHaveCSS('font-size', '14px')
 
     await expect(
@@ -1966,7 +1972,7 @@ test.describe('home page accessibility', () => {
         ).toHaveCount(0)
         await expect(
           page.getByRole('button', { name: /^Change time range/ })
-        ).toHaveText('')
+        ).toHaveAccessibleName('Change time range, All time')
         await expect(
           page.getByRole('button', { name: 'Refresh', exact: true })
         ).toBeVisible()
@@ -1975,7 +1981,7 @@ test.describe('home page accessibility', () => {
           'background-color',
           'rgba(0, 0, 0, 0)'
         )
-        for (const name of ['Refresh', 'Clear search', 'Search query help']) {
+        for (const name of ['Clear search', 'Search query help']) {
           const button = searchBar.getByRole('button', { name, exact: true })
           await expect(button).toBeVisible()
           await expect(button).toHaveCSS('width', '32px')
@@ -1984,11 +1990,24 @@ test.describe('home page accessibility', () => {
         await expect(
           searchBar.getByRole('combobox', { name: 'Result limit' })
         ).toHaveCount(0)
-        const timeButton = searchBar.getByRole('button', {
+        const dataControls = page.getByRole('group', { name: 'Data controls' })
+        for (const name of ['Refresh', 'Live']) {
+          const button = dataControls.getByRole('button', { name, exact: true })
+          await expect(button).toBeVisible()
+          if (name === 'Refresh')
+            await expect(button).toHaveCSS('width', '32px')
+          await expect(button).toHaveCSS('height', '32px')
+          await expect(
+            searchBar.getByRole('button', { name, exact: true })
+          ).toHaveCount(0)
+        }
+        const timeButton = page.getByRole('button', {
           name: /^Change time range/,
         })
+        await expect(
+          searchBar.getByRole('button', { name: /^Change time range/ })
+        ).toHaveCount(0)
         await expect(timeButton).toBeVisible()
-        await expect(timeButton).toHaveCSS('width', '32px')
         await expect(timeButton).toHaveCSS('height', '32px')
         const help = searchBar.getByRole('button', {
           name: 'Search query help',
@@ -2044,9 +2063,10 @@ test.describe('home page accessibility', () => {
                 refresh.compareDocumentPosition(element) &
                 Node.DOCUMENT_POSITION_FOLLOWING
               ) &&
-              refreshBox.right <= searchBox.left &&
-              refreshBox.top < searchBox.bottom &&
-              refreshBox.bottom > searchBox.top,
+              (refreshBox.bottom <= searchBox.top ||
+                (refreshBox.right <= searchBox.left &&
+                  refreshBox.top < searchBox.bottom &&
+                  refreshBox.bottom > searchBox.top)),
           }
         })
         expect(geometry).toEqual({
@@ -2075,20 +2095,20 @@ test.describe('home page accessibility', () => {
       await editor.fill(draft)
       await expect(editor).toHaveText(draft)
       const controls = [
-        { name: /^(Open|Collapse) sidebar$/, direction: 'right' },
-        { name: /^(Open|Collapse) details$/, direction: 'left' },
+        { name: /^(Open|Collapse) sidebar$/ },
+        { name: /^(Open|Collapse) details$/ },
         {
           name: /^Season:/,
-          direction: width < 768 ? 'bottom' : 'left',
           themeInk: true,
         },
-        { name: /theme active$/, direction: 'left' },
-        { name: /^Refresh$/, direction: 'bottom' },
-        { name: /^Clear search$/, direction: 'bottom' },
-        { name: /^Search query help$/, direction: 'bottom' },
-        { name: /^Change time range/, direction: 'bottom' },
+        { name: /theme active$/ },
+        { name: /^Refresh$/ },
+        { name: /^Live$/ },
+        { name: /^Clear search$/ },
+        { name: /^Search query help$/ },
+        { name: /^Change time range/ },
       ]
-      for (const { name, direction, themeInk } of controls) {
+      for (const { name, themeInk } of controls) {
         const button = header.getByRole('button', { name })
         await expect(button).toHaveAttribute('data-tip', /\S/)
         await button.hover()
@@ -2176,11 +2196,10 @@ test.describe('home page accessibility', () => {
         if (themeInk) {
           await expect(button).toHaveAttribute('data-tip', 'Autumn')
         }
-        if (direction === 'right')
-          expect(bounds.bubble.left).toBeGreaterThan(bounds.trigger.right)
-        else if (direction === 'left')
-          expect(bounds.bubble.right).toBeLessThan(bounds.trigger.left)
-        else expect(bounds.bubble.top).toBeGreaterThan(bounds.trigger.bottom)
+        expect(bounds.bubble.top).toBeGreaterThan(bounds.trigger.bottom)
+        if ((bounds.trigger.left + bounds.trigger.right) / 2 < width / 2)
+          expect(bounds.bubble.left).toBeCloseTo(bounds.trigger.left, 0)
+        else expect(bounds.bubble.right).toBeCloseTo(bounds.trigger.right, 0)
       }
       const help = header.getByRole('button', { name: 'Search query help' })
       await page.mouse.move(0, 899)
@@ -2534,13 +2553,26 @@ test.describe('home page accessibility', () => {
       .locator('xpath=ancestor::div[contains(@class, "range-editor-row")]')
       .evaluate(element => {
         const styles = getComputedStyle(element)
+        const field = element.getBoundingClientRect()
+        const viewport = element
+          .closest('.anchor-popover__body')!
+          .getBoundingClientRect()
+        const ring =
+          Number.parseFloat(styles.outlineWidth) +
+          Number.parseFloat(styles.outlineOffset)
         return {
           boxShadow: styles.boxShadow,
           outlineStyle: styles.outlineStyle,
+          ringFitsScrollArea:
+            field.left - ring >= viewport.left &&
+            field.right + ring <= viewport.right &&
+            field.top - ring >= viewport.top &&
+            field.bottom + ring <= viewport.bottom,
         }
       })
     expect(focusTreatment.boxShadow).toBe('none')
     expect(focusTreatment.outlineStyle).toBe('solid')
+    expect(focusTreatment.ringFitsScrollArea).toBe(true)
     await expect(startDate).toHaveCSS('outline-style', 'none')
 
     await startCalendar.hover()
@@ -2564,10 +2596,10 @@ test.describe('home page accessibility', () => {
       iconColor: getComputedStyle(element.querySelector('svg')!).color,
       rowBoxShadow: getComputedStyle(element.parentElement!).boxShadow,
     }))
-    const primary = await page
-      .locator('.primary-navigation .tab-active svg')
-      .evaluate(element => getComputedStyle(element).color)
-    expect(activeTreatment.iconColor).toBe(primary)
+    const textColor = await startDate.evaluate(
+      element => getComputedStyle(element).color
+    )
+    expect(activeTreatment.iconColor).toBe(textColor)
     expect(activeTreatment.rowBoxShadow).toBe('none')
 
     for (const name of ['Previous', 'Next'] as const) {

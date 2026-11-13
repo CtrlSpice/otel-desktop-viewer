@@ -1,5 +1,6 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
+  import IconButton from './IconButton.svelte'
   import {
     PanelLeftCloseIcon,
     PanelLeftOpenIcon,
@@ -22,19 +23,7 @@
   )
 </script>
 
-<button
-  type="button"
-  class="panel-toggle item-state btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip"
-  class:tooltip-right={side === 'left'}
-  class:tooltip-left={side === 'right'}
-  class:text-base-content={open}
-  class:text-subtle={!open}
-  aria-label={label}
-  data-tip={label}
-  aria-expanded={open}
-  aria-controls={controls}
-  {onclick}
->
+<IconButton {label} aria-expanded={open} aria-controls={controls} {onclick}>
   <span class="inline-flex" class:panel-toggle__mirror={side === 'right'}>
     <HugeiconsIcon
       icon={PanelLeftOpenIcon}
@@ -45,15 +34,9 @@
       aria-hidden="true"
     />
   </span>
-</button>
+</IconButton>
 
-<style lang="postcss">
-  @reference "../../app.css";
-
-  .panel-toggle {
-    @apply rounded-full;
-  }
-
+<style>
   .panel-toggle__mirror {
     transform: scaleX(-1);
   }

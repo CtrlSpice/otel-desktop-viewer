@@ -135,7 +135,7 @@
   let baselineStats = $state<MetricStats | null>(null)
   let polledStats = $state<MetricStats | null>(null)
   let listRequest: AbortController | undefined
-  let statsRequest: AbortController | undefined
+  let statsRequest = $state.raw<AbortController>()
   onDestroy(() => {
     listRequest?.abort()
     statsRequest?.abort()
@@ -197,7 +197,8 @@
         throw error
       }
     },
-    pollStats: async () => {
+    statsPending: () => statsRequest !== undefined,
+    refreshStats: async () => {
       if (statsRequest) return
       const controller = new AbortController()
       statsRequest = controller

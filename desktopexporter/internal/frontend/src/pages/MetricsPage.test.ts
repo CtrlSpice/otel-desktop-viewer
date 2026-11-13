@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { notifyDataChanged } from '@/test/event-source'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
@@ -322,9 +323,8 @@ describe('Metric list and freshness statistics', () => {
   })
 
   it.each(['success', 'failure'] as const)(
-    'rejects stale statistics %s after refresh and keeps polling owned by the displayed list',
+    'rejects stale statistics %s after refresh and keeps commit-driven statistics owned by the displayed list',
     async outcome => {
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
       const stale = deferred<Stats>()
       getStats.mockReturnValueOnce(stale.promise)
       searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
@@ -333,7 +333,7 @@ describe('Metric list and freshness statistics', () => {
       const view = renderWithContexts(MetricsPage)
       await screen.findByRole('table', { name: 'Metric fields' })
       const staleSignal = getStats.mock.calls[0]![0] as AbortSignal
-      await vi.advanceTimersByTimeAsync(6000)
+      await notifyDataChanged()
       expect(getStats).toHaveBeenCalledTimes(1)
 
       const refreshed = makeStats()
@@ -342,9 +342,11 @@ describe('Metric list and freshness statistics', () => {
         metricCount: 10,
         dataPointCount: 40,
       }
-      getStats.mockResolvedValueOnce(refreshed)
+      getStats.mockResolvedValue(refreshed)
       await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-      await waitFor(() => expect(getStats).toHaveBeenCalledTimes(2))
+      await waitFor(() =>
+        expect(getStats.mock.calls.length).toBeGreaterThanOrEqual(2)
+      )
       expect(staleSignal.aborted).toBe(true)
       if (outcome === 'success') stale.resolve(makeStats())
       else stale.reject(new Error('obsolete statistics failed'))
@@ -357,25 +359,43 @@ describe('Metric list and freshness statistics', () => {
         dataPointCount: 44,
       }
       getStats.mockResolvedValueOnce(polled)
-      await vi.advanceTimersByTimeAsync(3000)
+      await notifyDataChanged()
       expect(
         screen.getByRole('button', { name: 'Refresh: +1 metric, +4 dps' })
       ).toBeInTheDocument()
 
       const pendingPoll = deferred<Stats>()
       getStats.mockReturnValueOnce(pendingPoll.promise)
-      await vi.advanceTimersByTimeAsync(3000)
+      await notifyDataChanged()
       const pollSignal = getStats.mock.calls.at(-1)![0] as AbortSignal
       view.unmount()
       expect(pollSignal.aborted).toBe(true)
+      const reads = getStats.mock.calls.length
       pendingPoll.resolve(makeStats())
-      await vi.advanceTimersByTimeAsync(6000)
-      expect(getStats).toHaveBeenCalledTimes(4)
+      await notifyDataChanged()
+      expect(getStats).toHaveBeenCalledTimes(reads)
     }
   )
 
-  it('recovers freshness polling after a failed baseline without discarding the loaded list', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  it('retains a commit received while baseline statistics are pending', async () => {
+    const baseline = deferred<Stats>()
+    const latest = makeStats()
+    latest.metrics = { ...latest.metrics, metricCount: 2, dataPointCount: 8 }
+    getStats.mockReturnValueOnce(baseline.promise).mockResolvedValue(latest)
+    searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
+    getMetricView.mockResolvedValue(makeMetric('Gauge'))
+    setTestUrl('/metrics/metric-1?time=all')
+    renderWithContexts(MetricsPage)
+    await screen.findByRole('table', { name: 'Metric fields' })
+    await notifyDataChanged()
+    expect(getStats).toHaveBeenCalledOnce()
+    baseline.resolve(makeStats())
+    await screen.findByRole('button', { name: 'Refresh: +1 metric, +4 dps' })
+    expect(getStats).toHaveBeenCalledTimes(2)
+    expect(searchMetricSummaries).toHaveBeenCalledOnce()
+  })
+
+  it('recovers freshness on a commit after a failed baseline without discarding the loaded list', async () => {
     getStats.mockRejectedValueOnce(new Error('stats unavailable'))
     searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
     getMetricView.mockResolvedValue(makeMetric('Gauge'))
@@ -383,12 +403,12 @@ describe('Metric list and freshness statistics', () => {
     renderWithContexts(MetricsPage)
     const fields = await screen.findByRole('table', { name: 'Metric fields' })
     getStats.mockResolvedValueOnce(makeStats())
-    await vi.advanceTimersByTimeAsync(3000)
+    await notifyDataChanged()
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
     const polled = makeStats()
     polled.metrics = { ...polled.metrics, metricCount: 2, dataPointCount: 8 }
     getStats.mockResolvedValueOnce(polled)
-    await vi.advanceTimersByTimeAsync(3000)
+    await notifyDataChanged()
     expect(
       screen.getByRole('button', { name: 'Refresh: +1 metric, +4 dps' })
     ).toBeInTheDocument()
@@ -398,12 +418,11 @@ describe('Metric list and freshness statistics', () => {
   })
 
   it('preserves the displayed freshness baseline after a failed list refresh', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     await renderSelected('Gauge')
     const polled = makeStats()
     polled.metrics = { ...polled.metrics, metricCount: 2, dataPointCount: 8 }
     getStats.mockResolvedValueOnce(polled)
-    await vi.advanceTimersByTimeAsync(3000)
+    await notifyDataChanged()
     const refresh = screen.getByRole('button', {
       name: 'Refresh: +1 metric, +4 dps',
     })

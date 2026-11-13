@@ -42,8 +42,10 @@ type Server struct {
 	tel            *telemetry.Telemetry
 	features       *features.Flags
 
-	serveDone chan struct{}
-	startMu   sync.Mutex
+	serveDone   chan struct{}
+	startMu     sync.Mutex
+	streamDone  chan struct{}
+	stopStreams sync.Once
 }
 
 // WithOTLPGRPCPort supplies the receiver port advertised by the setup guide.
@@ -80,6 +82,7 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 		store:          store,
 		logger:         logger,
 		tel:            tel,
+		streamDone:     make(chan struct{}),
 	}
 	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil {
@@ -134,6 +137,7 @@ func (s *Server) Start() error {
 // Shutdown drains in-flight requests and waits for the serve goroutine to exit.
 func (s *Server) Shutdown(ctx context.Context) error {
 	defer s.closeEvals()
+	s.stopStreams.Do(func() { close(s.streamDone) })
 	s.startMu.Lock()
 	done := s.serveDone
 	s.startMu.Unlock()
@@ -153,6 +157,8 @@ func (s *Server) initHandler() error {
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
 	mux.HandleFunc("POST /api/data/{method}", s.arrowHandler)
 	mux.HandleFunc("GET /api/features", s.featureConfig)
+	mux.HandleFunc("GET /api/changes", s.changesHandler)
+	mux.HandleFunc("POST /api/import-target/{signal}", s.importTargetHandler)
 	discovery, err := openRPCHandler()
 	if err != nil {
 		return err

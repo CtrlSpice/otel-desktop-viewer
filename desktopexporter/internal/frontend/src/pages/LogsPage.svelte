@@ -107,6 +107,7 @@
   let requestedPage = 1
   let fetchVersion = 0
   let listRequest: AbortController | undefined
+  let statsRequest = $state.raw<AbortController>()
   let pageRequest: AbortController | undefined
   let pageLoading = $state(false)
   let pageRequestKey = $state(0)
@@ -115,6 +116,7 @@
   onDestroy(() => {
     disposed = true
     listRequest?.abort()
+    statsRequest?.abort()
     pageRequest?.abort()
   })
   let lastTimeSelection = untrack(() => timeContext.selection)
@@ -142,6 +144,8 @@
     fetchList: async (): Promise<LogTableRow[]> => {
       const version = ++fetchVersion
       listRequest?.abort()
+      statsRequest?.abort()
+      statsRequest = undefined
       const controller = new AbortController()
       listRequest = controller
       const request = untrack(() => {
@@ -200,20 +204,32 @@
       pageSize = request.size
       requestedPage = request.number
       listVersion++
-      // Stats are only a freshness indicator; a failed poll must not hide a page.
+      // Stats are only a freshness indicator; a failed read must not hide a page.
+      const statsController = new AbortController()
+      statsRequest = statsController
       void telemetryAPI
-        .getStats()
+        .getStats(statsController.signal)
         .then(stats => {
-          if (disposed || version !== fetchVersion) return
+          if (statsController.signal.aborted || version !== fetchVersion) return
           baselineLogCount = stats.logs.logCount
           polledLogCount = stats.logs.logCount
         })
         .catch(() => {})
+        .finally(() => {
+          if (statsRequest === statsController) statsRequest = undefined
+        })
       return result.logs
     },
-    pollStats: async () => {
-      const s = await telemetryAPI.getStats()
-      polledLogCount = s.logs.logCount
+    statsPending: () => statsRequest !== undefined,
+    refreshStats: async () => {
+      const controller = new AbortController()
+      statsRequest = controller
+      try {
+        const stats = await telemetryAPI.getStats(controller.signal)
+        if (!controller.signal.aborted) polledLogCount = stats.logs.logCount
+      } finally {
+        if (statsRequest === controller) statsRequest = undefined
+      }
     },
     refreshFromStats: () => {
       const delta = polledLogCount - baselineLogCount

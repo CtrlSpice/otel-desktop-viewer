@@ -3,6 +3,8 @@ import { get } from 'svelte/store'
 import { evalsEnabled } from '@/state/features'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { evalAPI } from '@/services/eval-service'
+import { getDataChanges } from '@/contexts/data-changes.svelte'
+import { createRefreshCoordinator } from '@/services/refresh-coordinator'
 
 export type NavigationCounts = Partial<
   Record<'home' | 'traces' | 'metrics' | 'logs' | 'evals', number>
@@ -17,7 +19,7 @@ export function createNavigationCounts() {
   let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
   let generation = 0
   let request: AbortController | undefined
-  async function refresh() {
+  async function fetchCounts() {
     request?.abort()
     const controller = new AbortController()
     request = controller
@@ -44,6 +46,10 @@ export function createNavigationCounts() {
         : publish({ evals: undefined }),
     ])
   }
+  const coordinator = createRefreshCoordinator(fetchCounts)
+  const refresh = coordinator.request
+  const changes = getDataChanges()
+  if (changes) onDestroy(changes.subscribe(() => void refresh()))
   const state = {
     get counts() {
       return homeCounts ? { ...counts, ...homeCounts } : counts
@@ -74,7 +80,10 @@ export function createNavigationCounts() {
       enabledBefore = enabled
     })
   })
-  onDestroy(() => request?.abort())
+  onDestroy(() => {
+    coordinator.dispose()
+    request?.abort()
+  })
   return state
 }
 

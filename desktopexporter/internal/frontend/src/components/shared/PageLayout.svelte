@@ -1,9 +1,12 @@
 <script lang="ts" generics="T">
-  import { getAllContexts, onDestroy } from 'svelte'
+  import { getAllContexts, onDestroy, tick } from 'svelte'
   import WorkspaceShell, { type LayoutOptions } from './WorkspaceShell.svelte'
   import WorkspaceContent from './WorkspaceContent.svelte'
   import { getWorkspaceContext } from '@/contexts/workspace-context.svelte'
   import { createWorkspaceHeader } from '@/contexts/workspace-header.svelte'
+  import { getDataChanges } from '@/contexts/data-changes.svelte'
+  import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import { createRefreshCoordinator } from '@/services/refresh-coordinator'
 
   const props: LayoutOptions<T> = $props()
   const workspace = getWorkspaceContext()
@@ -13,6 +16,35 @@
     title: props.mainTitle ?? props.drawerLabel,
   }))
   const contexts = getAllContexts<Map<unknown, unknown>>()
+  const changes = getDataChanges()
+  const totals = getNavigationCounts()
+  let settle: (() => void) | undefined
+  const refresh = createRefreshCoordinator(async () => {
+    props.onRefresh?.()
+    const counts = totals?.refresh()
+    await tick()
+    // Keep a slow displayed-record replacement alive while newer commit
+    // notifications accumulate. Its existing loading state includes Details.
+    if (props.loading || props.loadingMessage)
+      await new Promise<void>(resolve => (settle = resolve))
+    await counts
+  })
+  $effect(() => {
+    if (!props.loading && !props.loadingMessage) {
+      settle?.()
+      settle = undefined
+    }
+  })
+  onDestroy(() => {
+    refresh.dispose()
+    settle?.()
+  })
+  if (changes)
+    onDestroy(
+      changes.subscribeLive(() => {
+        if (props.onRefresh) void refresh.request()
+      })
+    )
 
   // Routes own their content and data requests. App owns the persistent shell.
   // Register synchronously so destination slots resolve before the next paint.
@@ -20,6 +52,7 @@
     onDestroy(
       workspace.register(() => ({
         ...props,
+        onRefresh: props.onRefresh ? () => void refresh.request() : undefined,
         header,
         main: mainSlot,
         pageBanner: props.pageBanner ? bannerSlot : undefined,
@@ -69,5 +102,9 @@
   >{/snippet}
 
 {#if !workspace}
-  <WorkspaceShell {...props} {header} />
+  <WorkspaceShell
+    {...props}
+    {header}
+    onRefresh={props.onRefresh ? () => void refresh.request() : undefined}
+  />
 {/if}

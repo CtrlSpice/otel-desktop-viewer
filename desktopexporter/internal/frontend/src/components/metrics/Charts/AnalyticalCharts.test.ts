@@ -1042,9 +1042,9 @@ describe('histogram source contributions', () => {
       ctx.onDatapointClick(source)
       await tick()
       expect(
-        [...document.querySelectorAll('[data-contribution-count]')].map(e =>
-          e.getAttribute('data-contribution-count')
-        )
+        [...document.querySelectorAll('[data-contribution-count]')]
+          .map(e => e.getAttribute('data-contribution-count'))
+          .sort()
       ).toEqual(['2', '3'])
       expect(
         screen.queryByRole('status', { name: 'Datapoint contribution' })

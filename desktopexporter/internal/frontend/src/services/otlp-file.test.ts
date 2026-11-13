@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { batchOTLPFile, OTLP_REQUEST_BYTES, scanOTLPFile } from './otlp-file'
+import {
+  batchOTLPFile,
+  firstOTLPRecord,
+  OTLP_REQUEST_BYTES,
+  scanOTLPFile,
+} from './otlp-file'
 
 function chunkedFile(text: string, chunkSize: number): Blob {
   const file = new Blob([text])
@@ -21,6 +26,34 @@ function chunkedFile(text: string, chunkSize: number): Blob {
 }
 
 describe('OTLP file scanning and batching', () => {
+  it('chooses the first record in file order, preserving exact bytes and context', async () => {
+    const first =
+      '{"timeUnixNano":"1700000000000000123","body":{"intValue":9007199254740993}}'
+    const resource = `{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"中文"}}]},"scopeLogs":[{"scope":{"name":"first"},"logRecords":[${first},{"body":{"stringValue":"second"}}],"schemaUrl":"scope"}],"schemaUrl":"resource"}`
+    const file = chunkedFile(
+      `{"resourceSpans":[],"resourceLogs":[${resource}]}\n{"resourceSpans":[{"scopeSpans":[{"spans":[{"name":"later"}]}]}]}`,
+      7
+    )
+    const target = firstOTLPRecord(file, await scanOTLPFile(file))
+    expect(target?.signal).toBe('logs')
+    expect(await target?.body.text()).toBe(
+      `{"resourceLogs":[${resource.replace(',{"body":{"stringValue":"second"}}', '')}]}`
+    )
+  })
+
+  it('keeps a metric descriptor with only its first point for lookup', async () => {
+    const file = new Blob([
+      '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"m","sum":{"dataPoints":[{"asInt":"9223372036854775807"},{"asInt":"2"}],"aggregationTemporality":2,"isMonotonic":true},"unit":"ns"}]}]}]}',
+    ])
+    const target = firstOTLPRecord(file, await scanOTLPFile(file))
+    expect(target?.signal).toBe('metrics')
+    const text = await target!.body.text()
+    expect(text).toContain('9223372036854775807')
+    expect(text).not.toContain('"asInt":"2"')
+    expect(text).toContain('"aggregationTemporality":2,"isMonotonic":true')
+    expect(text).toContain('"unit":"ns"')
+    expect(() => JSON.parse(text)).not.toThrow()
+  })
   it.each([1, 7, 65536])(
     'preserves byte ranges at chunk size %i, including BOM and Unicode',
     async chunkSize => {

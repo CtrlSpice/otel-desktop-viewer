@@ -1,15 +1,14 @@
 package main
 
 import (
-	_ "embed"
 	"net"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/redaction"
 	"go.opentelemetry.io/collector/otelcol"
 )
 
-//go:embed collector_redaction.yaml
-var collectorRedaction string
+var collectorRedaction = redaction.Policy
 
 type configOptions struct {
 	host             string

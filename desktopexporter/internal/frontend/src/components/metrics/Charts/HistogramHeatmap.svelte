@@ -10,14 +10,12 @@
   import {
     Chart,
     Axis,
-    Highlight,
     Layer,
     Rect,
     Tooltip,
     type ChartState,
   } from 'layerchart'
   import { scaleBand, scaleThreshold, type ScaleBand } from 'd3-scale'
-  import { bisectRight } from 'd3-array'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import { chartScrollDiscovery } from '@/components/metrics/utils/chart-scroll-discovery'
   import {
@@ -42,10 +40,8 @@
     histogramQuantileColor,
   } from '@/components/metrics/utils/heatmap-quantiles'
   import {
-    buildHeatmapBlobs,
-    heatmapBlobDetail,
-    heatmapBlobPath,
-    heatmapColourContours,
+    buildHeatmapContours,
+    heatmapContourPath,
   } from '@/components/metrics/utils/heatmap-blobs'
   import {
     computeHeatmapLayout,
@@ -83,6 +79,8 @@
   const blobClipPrefix = $props.id()
   const quantileChannelID = `${blobClipPrefix}-quantile-channels`
   const contributionPatternID = `${blobClipPrefix}-contribution-hatch`
+  const occupiedClipID = `${blobClipPrefix}-occupied`
+  const contributionClipID = `${blobClipPrefix}-contribution`
 
   // The context owns fetching and state; this component only renders points.
   type Props = {
@@ -91,7 +89,7 @@
     timeRange?: { startMs: number; endMs: number } | null
     /** Click handler. Receives the exact bucket-start timestamp. */
     onSelect?: (timestampNs: bigint) => void
-    /** Exact bucket-start timestamp for the highlighted column. */
+    /** Exact bucket-start timestamp for the pinned time slice. */
     selectedTimestamp?: bigint | null
     /** Bottom inset inside the LayerChart plot (room for x-axis labels). */
     plotPaddingBottom?: number
@@ -215,13 +213,7 @@
   )
 
   let cellColorThresholds = $derived(colorScale.thresholds)
-  // Resting cells retain the original palette; interactions lift their own colour.
-  let cellColorRange = $derived(
-    colorScale.range.map(
-      colour =>
-        `color-mix(in oklab, ${colour} var(--heatmap-cell-colour-weight, 100%), var(--color-base-content))`
-    )
-  )
+  let cellColorRange = $derived(colorScale.range)
 
   let heatmapCountByCell = $derived(heatmapModel.countByColumn)
 
@@ -508,57 +500,32 @@
     columnSelectionRowColumns.some(column => column.length > 0)
   )
 
-  let blobDetail = $derived(heatmapBlobDetail(columnPitch, keyboardRowHeight))
-  let blobs = $derived(
-    buildHeatmapBlobs(heatmapModel, cellColorThresholds, blobDetail.joinColours)
-  )
-  let colourContours = $derived(
-    heatmapColourContours(
-      heatmapModel,
-      cellColorThresholds,
-      columnPitch,
-      keyboardRowHeight
-    )
-  )
-  let contributionRegions = $derived(
-    buildHeatmapBlobs(
-      {
-        ...heatmapModel,
-        cells: heatmapData.filter(cell => contributionCount(cell) > 0),
-      },
-      cellColorThresholds
-    ).map((blob, index) => ({
-      key: blob.key,
-      patternID: `${contributionPatternID}-${index}`,
-      color: cellColorRange[blob.band],
-      path: heatmapBlobPath(blob, columnPitch, keyboardRowHeight, {
-        columns: timeDomain.length,
-        rows: bucketDomain.length,
-      }),
-    }))
+  const contours = $derived(
+    buildHeatmapContours(heatmapModel, cellColorThresholds)
   )
   // Geometry depends on the grid and viewport, not pointer/selection state.
-  let renderedBlobs = $derived.by(() => {
-    const columns = new Map(timeDomain.map((key, index) => [key, index]))
-    const rows = new Map(bucketDomain.map((key, index) => [key, index]))
-    return blobs.map((blob, index) => ({
-      key: blob.key,
-      band: blob.band,
-      clipID: `${blobClipPrefix}-blob-${index}`,
-      path: heatmapBlobPath(blob, columnPitch, keyboardRowHeight, {
-        columns: timeDomain.length,
-        rows: bucketDomain.length,
-      }),
-      cells: blob.cells.map(cell => ({
-        datum: cell,
-        x: columns.get(cell.columnKey)! * columnPitch,
-        y: rows.get(cell.bucketKey)! * keyboardRowHeight,
+  const renderedContours = $derived(
+    contours.map(contour => ({
+      band: contour.band,
+      clipID: `${blobClipPrefix}-band-${contour.band}`,
+      patternID: `${contributionPatternID}-${contour.band}`,
+      color: cellColorRange[contour.band],
+      path: heatmapContourPath(contour, columnPitch, keyboardRowHeight),
+      cells: contour.cells.map(cell => ({
+        datum: cell.datum,
+        x: cell.x * columnPitch,
+        y: cell.y * keyboardRowHeight,
       })),
     }))
-  })
+  )
+  const contributionFootprint = $derived(
+    renderedContours.flatMap(contour =>
+      contour.cells.filter(cell => contributionCount(cell.datum) > 0)
+    )
+  )
   let cardObstacles = $derived(
-    renderedBlobs.flatMap(blob =>
-      blob.cells.map(cell => ({
+    renderedContours.flatMap(contour =>
+      contour.cells.map(cell => ({
         left: heatmapPlotPadding.left + cell.x - scrollLeft,
         top: heatmapPlotPadding.top + cell.y,
         width: columnPitch,
@@ -566,7 +533,6 @@
       }))
     )
   )
-  let occupiedBlobPath = $derived(renderedBlobs.map(blob => blob.path).join(''))
 
   function positionSelectionCard(size: ChartStickySize) {
     return heatmapCardPosition({
@@ -598,7 +564,7 @@
     'Escape',
   ])
   let keyboardInstructions = $derived(
-    `Use Left and Right to inspect time columns and Up and Down to inspect bucket rows. Home and End move to row boundaries; Control or Command plus Home or End move to grid boundaries.${onSelect ? ' Enter or Space selects the current time column.' : ''} Escape clears chart selection.`
+    `Use Left and Right to inspect time columns and Up and Down to inspect bucket rows. Home and End move to row boundaries; Control or Command plus Home or End move to grid boundaries.${onSelect ? ' Enter or Space selects the current bucket.' : ''} Escape clears chart selection.`
   )
 
   function formatTimeTick(key: string): string {
@@ -709,178 +675,104 @@
                   {/each}
                 </mask>
               </defs>
+              <defs>
+                <clipPath id={occupiedClipID} clipPathUnits="userSpaceOnUse">
+                  <path
+                    d={renderedContours[0]?.path ?? ''}
+                    clip-rule="evenodd"
+                  />
+                </clipPath>
+                <clipPath
+                  id={contributionClipID}
+                  clipPathUnits="userSpaceOnUse"
+                >
+                  {#each contributionFootprint as cell (`${cell.datum.columnKey}:${cell.datum.bucketKey}`)}
+                    <rect
+                      x={cell.x}
+                      y={cell.y}
+                      width={columnPitch}
+                      height={keyboardRowHeight}
+                    />
+                  {/each}
+                </clipPath>
+              </defs>
               <g
                 class="heatmap-blobs"
-                class:heatmap-blobs--joined={blobDetail.joinColours}
                 mask={`url(#${quantileChannelID})`}
+                clip-path={`url(#${occupiedClipID})`}
               >
-                {#each renderedBlobs as blob (blob.key)}
+                {#each renderedContours as contour (contour.band)}
                   <defs>
-                    <clipPath id={blob.clipID} clipPathUnits="userSpaceOnUse">
-                      <path d={blob.path} clip-rule="evenodd" />
+                    <clipPath
+                      id={contour.clipID}
+                      clipPathUnits="userSpaceOnUse"
+                    >
+                      <path d={contour.path} clip-rule="evenodd" />
                     </clipPath>
-                    {#if blobDetail.joinColours}
-                      <mask
-                        id={`${blob.clipID}-outline`}
-                        maskUnits="userSpaceOnUse"
-                        x="0"
-                        y="0"
-                        width={timeDomain.length * columnPitch}
-                        height={bucketDomain.length * keyboardRowHeight}
-                        style="mask-type: alpha"
-                      >
-                        <path
-                          d={blob.path}
-                          fill="none"
-                          stroke="white"
-                          stroke-width={blobDetail.liner * 2}
-                          stroke-linejoin="round"
-                        />
-                      </mask>
-                    {/if}
                   </defs>
-                  <g class="heatmap-blob" clip-path={`url(#${blob.clipID})`}>
-                    {#if !blobDetail.joinColours}<path
-                        class="heatmap-blob-fill"
-                        d={blob.path}
-                        fill={cellColorRange[blob.band]}
-                        fill-rule="evenodd"
-                      />{/if}
-                    {#each blob.cells as cell (`${cell.datum.columnKey}:${cell.datum.bucketKey}`)}
+                  <g
+                    class="heatmap-count-layer"
+                    clip-path={`url(#${contour.clipID})`}
+                  >
+                    <path
+                      class="heatmap-contour"
+                      d={contour.path}
+                      fill={contour.color}
+                      fill-rule="evenodd"
+                    />
+                    {#each contour.cells as cell (`${cell.datum.columnKey}:${cell.datum.bucketKey}`)}
                       <rect
                         x={cell.x}
                         y={cell.y}
                         width={columnPitch}
                         height={keyboardRowHeight}
-                        fill={cellColorRange[
-                          bisectRight(cellColorThresholds, cell.datum.count)
-                        ]}
-                        class="heatmap-cell"
-                        class:heatmap-cell--hovered={cell.datum.columnKey ===
+                        fill="var(--item-state-bg)"
+                        style:--item-idle-bg={contour.color}
+                        class="item-state heatmap-cell"
+                        data-hovered={(cell.datum.columnKey ===
                           hoveredColumnKey &&
-                          cell.datum.bucketKey === hoveredBucketKey}
-                        class:heatmap-cell--selected={cell.datum.columnKey ===
-                          selectedColumnKey &&
-                          (!selectedCell ||
-                            cell.datum.bucketKey === selectedCell.bucketKey)}
+                          cell.datum.bucketKey === hoveredBucketKey) ||
+                          undefined}
+                        data-selected={(cell.datum.columnKey ===
+                          selectedCell?.columnKey &&
+                          cell.datum.bucketKey === selectedCell.bucketKey) ||
+                          undefined}
                         data-contribution-count={contributionCount(
                           cell.datum
                         ) || undefined}
                       />
                     {/each}
-                    {#if blobDetail.joinColours}
-                      <g
-                        class="heatmap-joined-outline"
-                        mask={`url(#${blob.clipID}-outline)`}
-                        aria-hidden="true"
-                      >
-                        {#each blob.cells as cell (`${cell.datum.columnKey}:${cell.datum.bucketKey}`)}
-                          <rect
-                            x={cell.x}
-                            y={cell.y}
-                            width={columnPitch}
-                            height={keyboardRowHeight}
-                            fill={cellColorRange[
-                              bisectRight(cellColorThresholds, cell.datum.count)
-                            ]}
-                          />
-                        {/each}
-                      </g>
-                    {:else}<path
-                        class="heatmap-blob-outline"
-                        d={blob.path}
-                        style:--blob-color={cellColorRange[blob.band]}
-                        style:--blob-outline-width={blobDetail.liner * 2}
-                        aria-hidden="true"
-                      />{/if}
                   </g>
                 {/each}
-                <g class="heatmap-colour-corners" aria-hidden="true">
-                  {#each colourContours.corners as corner (corner.key)}
-                    <path
-                      d={corner.path}
-                      fill={cellColorRange[corner.band]}
-                      class:heatmap-colour-corner--hovered={corner.datum
-                        .columnKey === hoveredColumnKey &&
-                        corner.datum.bucketKey === hoveredBucketKey}
-                      class:heatmap-colour-corner--selected={corner.datum
-                        .columnKey === selectedColumnKey &&
-                        (!selectedCell ||
-                          corner.datum.bucketKey === selectedCell.bucketKey)}
-                    />
-                  {/each}
-                </g>
-                {#if blobDetail.joinColours}
-                  <!-- Keep each liner inside its colour region and the existing
-                       occupied silhouette, including its empty holes. -->
-                  <defs>
-                    <clipPath
-                      id={`${blobClipPrefix}-occupied`}
-                      clipPathUnits="userSpaceOnUse"
-                    >
-                      <path d={occupiedBlobPath} clip-rule="evenodd" />
-                    </clipPath>
-                    {#each colourContours.regions as region (region.band)}
-                      <clipPath
-                        id={`${blobClipPrefix}-colour-${region.band}`}
-                        clipPathUnits="userSpaceOnUse"
-                      >
-                        <path d={region.path} clip-rule="evenodd" />
-                      </clipPath>
-                    {/each}
-                  </defs>
-                  <g
-                    class="heatmap-colour-outlines"
-                    clip-path={`url(#${blobClipPrefix}-occupied)`}
-                    aria-hidden="true"
-                  >
-                    {#each colourContours.regions as region (region.band)}
-                      <path
-                        class="heatmap-blob-outline"
-                        d={region.path}
-                        clip-path={`url(#${blobClipPrefix}-colour-${region.band})`}
-                        style:--blob-color={cellColorRange[region.band]}
-                        style:--blob-outline-width={blobDetail.liner * 2}
+              </g>
+              <g
+                class="heatmap-contributions"
+                aria-hidden="true"
+                clip-path={`url(#${occupiedClipID})`}
+              >
+                {#if contributionFootprint.length > 0}
+                  <g clip-path={`url(#${contributionClipID})`}>
+                    {#each renderedContours as contour (contour.band)}
+                      <HistogramContributionPattern
+                        id={contour.patternID}
+                        color={contour.color}
                       />
+                      <g clip-path={`url(#${contour.clipID})`}>
+                        <path
+                          d={contour.path}
+                          fill={contour.color}
+                          fill-rule="evenodd"
+                        />
+                        <path
+                          class="heatmap-contribution-texture"
+                          d={contour.path}
+                          fill={`url(#${contour.patternID})`}
+                          fill-rule="evenodd"
+                        />
+                      </g>
                     {/each}
                   </g>
                 {/if}
-              </g>
-              <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
-              {#if selectedColumnX !== null}
-                <Rect
-                  x={selectedColumnX}
-                  y={0}
-                  width={columnPitch}
-                  height={maxPlotHeight}
-                  class="heatmap-selection"
-                />
-              {/if}
-              <g class="heatmap-contributions" aria-hidden="true">
-                {#each contributionRegions as region (region.key)}
-                  <HistogramContributionPattern
-                    id={region.patternID}
-                    color={region.color}
-                  />
-                  <defs>
-                    <clipPath
-                      id={`${region.patternID}-clip`}
-                      clipPathUnits="userSpaceOnUse"
-                    >
-                      <path d={region.path} />
-                    </clipPath>
-                  </defs>
-                  <g clip-path={`url(#${region.patternID}-clip)`}>
-                    <path d={region.path} fill={region.color} />
-                    <path
-                      class="heatmap-contribution-texture"
-                      d={region.path}
-                      fill={`url(#${region.patternID})`}
-                      style:--contribution-color={region.color}
-                      style:--contribution-outline-width={blobDetail.liner * 2}
-                    />
-                  </g>
-                {/each}
               </g>
               <g class="heatmap-quantile-overlays" aria-hidden="true">
                 {#each quantilePaths as quantile (quantile.key)}
@@ -1025,18 +917,14 @@
     @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
+  .heatmap-blobs,
   .heatmap-contributions {
-    pointer-events: none;
+    stroke: none;
   }
 
-  .heatmap-contribution-texture {
-    stroke: color-mix(
-      in oklab,
-      var(--contribution-color) 85%,
-      var(--color-base-content)
-    );
-    stroke-width: var(--contribution-outline-width);
-    stroke-linejoin: round;
+  .heatmap-contributions,
+  .heatmap-contour {
+    pointer-events: none;
   }
 
   .heatmap-quantile-label {
@@ -1156,52 +1044,8 @@
     position: relative;
   }
 
-  .heatmap-wrapper :global(.heatmap-cell) {
-    stroke: none;
-    fill-opacity: 0;
+  .heatmap-cell {
     shape-rendering: crispEdges;
-  }
-
-  .heatmap-wrapper :global(.heatmap-blobs--joined .heatmap-cell) {
-    fill-opacity: 1;
-  }
-
-  .heatmap-wrapper :global(.heatmap-blob-fill),
-  .heatmap-wrapper :global(.heatmap-colour-corners) {
-    stroke: none;
-    pointer-events: none;
-  }
-
-  .heatmap-wrapper :global(.heatmap-blob-outline) {
-    fill: none;
-    stroke: color-mix(
-      in oklab,
-      var(--blob-color) 85%,
-      var(--color-base-content)
-    );
-    /* Each region's clip retains only the inner half of its outline. */
-    stroke-width: var(--blob-outline-width);
-    stroke-linejoin: round;
-    pointer-events: none;
-  }
-
-  .heatmap-wrapper :global(.heatmap-joined-outline) {
-    --heatmap-cell-colour-weight: 85%;
-    stroke: none;
-    pointer-events: none;
-    shape-rendering: crispEdges;
-  }
-
-  .heatmap-wrapper :global(.heatmap-cell--hovered),
-  .heatmap-wrapper :global(.heatmap-colour-corner--hovered) {
-    --heatmap-cell-colour-weight: 88%;
-    fill-opacity: 1;
-  }
-
-  .heatmap-wrapper :global(.heatmap-cell--selected),
-  .heatmap-wrapper :global(.heatmap-colour-corner--selected) {
-    --heatmap-cell-colour-weight: 84%;
-    fill-opacity: 1;
   }
 
   /* Pointer affordance applies only when column selection is wired. */

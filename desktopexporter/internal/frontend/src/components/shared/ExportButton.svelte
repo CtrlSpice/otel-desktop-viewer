@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import { Download01Icon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
+  import IconButton from './IconButton.svelte'
   import { downloadOTLP, type ExportSignal } from '@/services/export-service'
 
   let { signal, id }: { signal: ExportSignal; id: string } = $props()
@@ -40,12 +41,9 @@
   }
 </script>
 
-<button
-  type="button"
-  class="header-icon-button tooltip tooltip-left"
+<IconButton
   onclick={download}
-  aria-label="Download {signal}"
-  data-tip="Download {signal}"
+  label="Download {signal}"
   aria-busy={pending}
   aria-disabled={pending}
   disabled={!id}
@@ -56,7 +54,7 @@
     strokeWidth={1.5}
     aria-hidden="true"
   />
-</button>
+</IconButton>
 
 {#if error}
   <span role="alert" class="text-error text-xs">{error}</span>
