@@ -1962,7 +1962,13 @@ test.describe('independent histogram aggregate loading', () => {
       const body = request.postDataJSON()
       requests.push(body)
     })
-    await holdAggregates(page, false, 1)
+    const pending = await holdAggregates(page, false, 1)
+    for (const { route } of pending) await respond(route)
+    await routeTelemetry(page, route =>
+      route.request().postDataJSON().method === 'getMetricAggregateView'
+        ? respond(route)
+        : route.fallback()
+    )
     const checkbox = page.getByRole('checkbox', {
       name: 'Show route: /second in chart',
       exact: true,
@@ -2167,6 +2173,86 @@ test.describe('independent histogram aggregate loading', () => {
         )
         .toBe(true)
       await expectRoundedAxes(page, colour)
+    })
+  }
+
+  for (const theme of ['madoromi-aki-hiru', 'madoromi-aki-yoru']) {
+    test(`zero-count heatmap selection stays visible after focus leaves in ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1920, height: 1000 })
+      await page.addInitScript(
+        theme => localStorage.setItem('theme', theme),
+        theme
+      )
+      const pending = await holdAggregates(page)
+      for (const { route } of pending)
+        await respond(route, { ...bucket, bucketCounts: [4, 0, 2], count: 6 })
+      const graph = page.getByRole('application', {
+        name: 'Histogram heatmap',
+        exact: true,
+      })
+      await graph.focus()
+      await graph.press('ArrowDown')
+      await expect(page.locator('.chart-keyboard-readout')).toContainText(
+        'Count 0.'
+      )
+      const cursor = page.locator('.chart-keyboard-cursor-cell')
+      const bounds = (await cursor.boundingBox())!
+      await graph.press('Enter')
+      await expect(page.locator('.heatmap-selected-cell')).toContainText(
+        /count\s*0/
+      )
+      await page.getByRole('button', { name: 'Refresh', exact: true }).focus()
+      await page.mouse.move(0, 0)
+      await expect(cursor).toHaveCount(0)
+      const selected = page.locator('.heatmap-cell[data-selected]')
+      await expect(selected).toHaveCount(1)
+      await expect(selected).toBeVisible()
+      expect(await selected.boundingBox()).toEqual(bounds)
+      const state = () =>
+        selected.evaluate(cell => {
+          const styles = getComputedStyle(cell)
+          const probe = document.createElement('span')
+          document.body.append(probe)
+          probe.style.color = 'var(--item-selected-bg)'
+          const selected = getComputedStyle(probe).color
+          probe.style.color = 'var(--item-hover-bg)'
+          const hover = getComputedStyle(probe).color
+          probe.remove()
+          return {
+            fill: styles.fill,
+            selected,
+            hover,
+          }
+        })
+      await expect
+        .poll(async () => {
+          const s = await state()
+          return s.fill === s.selected
+        })
+        .toBe(true)
+      await page.mouse.move(bounds.x + bounds.width - 4, bounds.y + 4)
+      await expect(page.locator('.heatmap-hover-cell')).toContainText(
+        /count\s*0/
+      )
+      await expect
+        .poll(async () => {
+          const s = await state()
+          return s.fill === s.hover
+        })
+        .toBe(true)
+      await page.mouse.move(0, 0)
+      await expect
+        .poll(async () => {
+          const s = await state()
+          return s.fill === s.selected
+        })
+        .toBe(true)
+      await page
+        .getByRole('button', { name: 'Dismiss pinned bucket description' })
+        .click()
+      await expect(selected).toHaveCount(0)
     })
   }
 

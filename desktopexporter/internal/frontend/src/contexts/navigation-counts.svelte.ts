@@ -5,6 +5,7 @@ import { telemetryAPI } from '@/services/telemetry-service'
 import { evalAPI } from '@/services/eval-service'
 import { getDataChanges } from '@/contexts/data-changes.svelte'
 import { createRefreshCoordinator } from '@/services/refresh-coordinator'
+import { createResource } from '@/services/resources'
 
 export type NavigationCounts = Partial<
   Record<'home' | 'traces' | 'metrics' | 'logs' | 'evals', number>
@@ -17,32 +18,36 @@ export function createNavigationCounts() {
   let homeCounts = $state<NavigationCounts | null>(null)
   let homeSearchActive = $state(false)
   let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
-  let generation = 0
-  let request: AbortController | undefined
+  const statsRead = createResource<
+    Awaited<ReturnType<typeof telemetryAPI.getStats>>
+  >({ scope: null })
+  const homeRead = createResource<number>({ scope: null })
+  const evalsRead = createResource<
+    Awaited<ReturnType<typeof evalAPI.searchEvalExperiments>>
+  >({ scope: null })
   async function fetchCounts() {
-    request?.abort()
-    const controller = new AbortController()
-    request = controller
-    const current = ++generation
     function publish(value: NavigationCounts) {
-      if (current === generation && !controller.signal.aborted)
-        counts = { ...counts, ...value }
+      counts = { ...counts, ...value }
     }
     await Promise.allSettled([
-      telemetryAPI.getStats(controller.signal).then(stats =>
-        publish({
-          traces: stats.traces.traceCount,
-          metrics: stats.metrics.metricCount,
-          logs: stats.logs.logCount,
-        })
+      statsRead.load(
+        signal => telemetryAPI.getStats(signal),
+        stats =>
+          publish({
+            traces: stats.traces.traceCount,
+            metrics: stats.metrics.metricCount,
+            logs: stats.logs.logCount,
+          })
       ),
-      telemetryAPI
-        .getServiceCount(controller.signal)
-        .then(home => publish({ home })),
+      homeRead.load(
+        signal => telemetryAPI.getServiceCount(signal),
+        home => publish({ home })
+      ),
       __EVALS_BUILT__ && get(evalsEnabled)
-        ? evalAPI
-            .searchEvalExperiments({ limit: 1 }, controller.signal)
-            .then(evals => publish({ evals: evals.total }))
+        ? evalsRead.load(
+            signal => evalAPI.searchEvalExperiments({ limit: 1 }, signal),
+            evals => publish({ evals: evals.total })
+          )
         : publish({ evals: undefined }),
     ])
   }
@@ -82,7 +87,6 @@ export function createNavigationCounts() {
   })
   onDestroy(() => {
     coordinator.dispose()
-    request?.abort()
   })
   return state
 }

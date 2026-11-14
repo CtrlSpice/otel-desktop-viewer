@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { createResourceMap } from '@/services/resources'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
@@ -53,8 +54,11 @@
   let keys = $state<DiscoveredAttribute[]>([])
   const received = new Map<string, DiscoveredAttribute[]>()
   let counts = $state<Record<string, number>>({})
-  let loading = $state(false)
-  let error = $state('')
+  const reads = createResourceMap<string, void>({ formatError: String })
+  const loading = $derived(reads.pending)
+  const error = $derived(
+    [...reads.values()].find(read => read.error)?.error ?? ''
+  )
   type SortColumn = 'name' | 'count' | 'frequency'
   let sortBy = $state<SortColumn>('name')
   let sortDirection = $state<'asc' | 'desc'>('asc')
@@ -133,17 +137,14 @@
   const identity = $derived(service ? attributeScope(options) : '')
   let displayedOptions = $state.raw<Omit<DiscoveryOptions, 'kind'>>({})
   let disclosureScope = ''
-  let requestKey = $state(0)
+  const requestKey = $derived(reads.requestKey)
   $effect(() => {
     const active = service
     const scope = identity
     const selectedOptions = options
     const request = { ...options, term: filter, limit: 100 }
     void revision
-    const controller = new AbortController()
-    requestKey = untrack(() => requestKey) + 1
-    error = ''
-    loading = Boolean(active)
+    reads.clear()
     if (!active) {
       keys = []
       received.clear()
@@ -183,50 +184,46 @@
       )
       for (const owner of received.keys())
         if (!enabled.has(owner)) received.delete(owner)
-      let pending = owners.length
       let published = false
-      loading = pending > 0
       for (const { signal, ownerType } of owners) {
-        void (async () => {
-          try {
+        void reads
+          .for(`${signal}/${ownerType}`)
+          .load(async (abort, publish) => {
             const items: DiscoveredAttribute[] = []
             let more = true
             while (more) {
-              controller.signal.throwIfAborted()
+              abort.throwIfAborted()
               const page = await telemetryAPI.discoverAttributeKeys(
                 { ...request, signal, ownerType, offset: items.length },
-                controller.signal
+                abort
               )
-              if (controller.signal.aborted) return
-              items.push(...page.items.map(entry => ({ ...entry, ownerType })))
-              more = page.truncated
-              const owner = `${signal}/${ownerType}`
-              const previous = received.get(owner) ?? []
-              received.set(
-                owner,
-                more ? mergeAttributeKeys([...previous, ...items]) : items
-              )
-              keys = mergeAttributeKeys([...received.values()].flat())
-              if (!published && (previous.length || items.length)) {
-                pageIndex = 0
-                published = true
-              }
-              pageIndex = Math.min(
-                pageIndex,
-                Math.max(0, Math.ceil(keys.length / pageSize) - 1)
-              )
+              publish(() => {
+                items.push(
+                  ...page.items.map(entry => ({ ...entry, ownerType }))
+                )
+                more = page.truncated
+                const owner = `${signal}/${ownerType}`
+                const previous = received.get(owner) ?? []
+                received.set(
+                  owner,
+                  more ? mergeAttributeKeys([...previous, ...items]) : items
+                )
+                keys = mergeAttributeKeys([...received.values()].flat())
+                if (!published && (previous.length || items.length)) {
+                  pageIndex = 0
+                  published = true
+                }
+                pageIndex = Math.min(
+                  pageIndex,
+                  Math.max(0, Math.ceil(keys.length / pageSize) - 1)
+                )
+              })
             }
-            if (controller.signal.aborted) return
-          } catch (reason) {
-            if (!controller.signal.aborted) error = String(reason)
-          } finally {
-            if (!controller.signal.aborted) loading = --pending > 0
-          }
-        })()
+          })
       }
       if (!owners.length) keys = []
     }
-    return () => controller.abort()
+    return () => reads.clear()
   })
 </script>
 

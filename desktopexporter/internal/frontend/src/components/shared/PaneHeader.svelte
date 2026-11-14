@@ -165,11 +165,20 @@
   // Keep tooltips outside the header at normal widths. If the controls cannot
   // fit on one row, expose native scrolling instead of overlapping another pane.
   function headerOverflow(element: HTMLDivElement) {
-    const measure = () =>
+    const measure = () => {
+      const right =
+        element.getBoundingClientRect().right -
+        parseFloat(getComputedStyle(element).paddingRight)
+      // scrollWidth includes invisible tooltip pseudo-elements. Only the
+      // header's layout boxes determine whether its controls need scrolling.
       element.classList.toggle(
         'pane-header--overflow',
-        element.scrollWidth > element.clientWidth + 1
+        [...element.children].some(
+          child =>
+            child.getBoundingClientRect().right + element.scrollLeft > right + 1
+        )
       )
+    }
     const resize = new ResizeObserver(measure)
     const observe = () => {
       resize.disconnect()
@@ -557,6 +566,10 @@
 
   .pane-header__right {
     @apply ml-auto shrink-0;
+  }
+
+  .pane-header__right:empty {
+    display: none;
   }
 
   .pane-header__separator {

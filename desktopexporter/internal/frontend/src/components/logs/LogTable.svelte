@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
+  import {
+    createLoadingNotice,
+    type LoadingRequestKey,
+  } from '@/components/shared/utils/loading-notice.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckListIcon } from '@hugeicons/core-free-icons'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
@@ -95,7 +98,7 @@
     sortColumn: LogSortColumn
     sortDirection: LogSortDirection
     loading?: boolean
-    loadingRequestKey: number
+    loadingRequestKey: LoadingRequestKey
     onSelect: (id: string, keyboard?: boolean) => void
     onInspect: (id: string, target: DetailFieldTarget) => void
     onSort: (column: LogSortColumn, direction: LogSortDirection) => void

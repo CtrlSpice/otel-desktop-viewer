@@ -54,6 +54,43 @@ describe('OTLP file scanning and batching', () => {
     expect(text).toContain('"unit":"ns"')
     expect(() => JSON.parse(text)).not.toThrow()
   })
+
+  it.each(['null', '0', 'false', '"bad"', '[]'])(
+    'ends first-record navigation for a leading %s instead of selecting a later record',
+    async invalid => {
+      const text = `{"resourceLogs":[{"scopeLogs":[{"logRecords":[${invalid},{"body":{"stringValue":"later"}}]}]}]}\n{"resourceSpans":[{"scopeSpans":[{"spans":[{"name":"later trace"}]}]}]}`
+      const file = chunkedFile(text, 1)
+      const plan = await scanOTLPFile(file)
+      expect(firstOTLPRecord(file, plan)).toBeUndefined()
+      const batch = [...batchOTLPFile(file, 'logs', plan.logs)][0]!
+      if (!('body' in batch)) throw new Error(batch.issue.reason)
+      expect(await batch.body.text()).toBe(text.split('\n')[0])
+    }
+  )
+
+  it('keeps the first record when a later collection member is malformed', async () => {
+    const first = '{"body":{"intValue":9007199254740993}}'
+    const file = new Blob([
+      `{"resourceLogs":[{"scopeLogs":[{"logRecords":[${first},null]}]}]}`,
+    ])
+    const target = firstOTLPRecord(file, await scanOTLPFile(file))
+    expect(await target?.body.text()).toBe(
+      `{"resourceLogs":[{"scopeLogs":[{"logRecords":[${first}]}]}]}`
+    )
+  })
+
+  it.each([
+    '{"resourceSpans":[{"scopeSpans":[{"spans":[null,{"name":"later"}]}]}]}',
+    '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[null,{"name":"later","gauge":{"dataPoints":[{"asInt":"1"}]}}]}]}]}',
+    '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"first","gauge":{"dataPoints":[null,{"asInt":"1"}]}}]}]}]}',
+  ])(
+    'does not skip a malformed leading span, metric or datapoint: %s',
+    async text => {
+      const file = chunkedFile(text, 7)
+      expect(firstOTLPRecord(file, await scanOTLPFile(file))).toBeUndefined()
+    }
+  )
+
   it.each([1, 7, 65536])(
     'preserves byte ranges at chunk size %i, including BOM and Unicode',
     async chunkSize => {

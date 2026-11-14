@@ -13,6 +13,7 @@ import { setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
 import type { ImportFailure } from '@/types/import-types'
 import { telemetryAPI } from '@/services/telemetry-service'
+import { notifyDataChanged } from '@/test/event-source'
 
 const {
   getStats,
@@ -115,6 +116,25 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('keeps Live and manual refresh progressing while navigation counts are pending', async () => {
+    setTestUrl('/logs?time=all')
+    render(App)
+    await screen.findByText('No logs match this search and time range.')
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(1))
+    vi.mocked(telemetryAPI.getServiceCount).mockImplementationOnce(
+      () => new Promise<number>(() => {})
+    )
+    await fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(2))
+    for (let calls = 3; calls <= 5; calls++) {
+      notifyDataChanged()
+      await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(calls))
+    }
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(6))
+    expect(telemetryAPI.getServiceCount).toHaveBeenCalledTimes(2)
+  })
+
   it('publishes available navigation counts without waiting for service counts', async () => {
     setTestUrl('/traces')
     vi.mocked(telemetryAPI.getServiceCount).mockImplementationOnce(

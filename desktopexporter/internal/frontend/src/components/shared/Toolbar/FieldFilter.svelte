@@ -7,6 +7,7 @@
     type ColumnVisibility,
   } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
+  import { createResource } from '@/services/resources'
   import {
     fieldIdentity,
     usesFieldToken,
@@ -44,26 +45,20 @@
   let popoverEl = $state<HTMLDivElement | null>(null)
 
   let availableFields = $state<FieldDefinition[]>([])
+  const fieldRead = createResource<FieldDefinition[]>()
 
   $effect(() => {
     const base = [...getStaticFieldsForSearch(signal)]
     const requestedSignal = signal
     availableFields = base
     if (!popoverOpen) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const dynamicAttrs = await getDynamicAttributes(requestedSignal)
-        if (cancelled) return
+    void fieldRead.load(
+      abort => getDynamicAttributes(requestedSignal, abort),
+      dynamicAttrs => {
         availableFields = [...base, ...dynamicAttrs]
-      } catch {
-        /* keep static fields */
       }
-    })()
-
-    return () => {
-      cancelled = true
-    }
+    )
+    return () => fieldRead.cancel()
   })
 
   let filterableFields = $derived(availableFields)

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { createResource } from '@/services/resources'
 
   let {
     label,
@@ -18,31 +19,17 @@
     loadText?: (signal: AbortSignal) => Promise<string>
     children?: Snippet
   } = $props()
-  let hoverText = $state<string>()
-  let pending = false
-  let controller: AbortController | undefined
+  const read = createResource<string>({ formatError: String })
+  const hoverText = $derived(read.data ?? read.error ?? undefined)
   $effect(() => {
     void text
     void loadText
-    hoverText = undefined
-    pending = false
-    return () => controller?.abort()
+    read.clear()
+    return () => read.cancel()
   })
   function loadHover() {
-    if (!loadText || pending || hoverText !== undefined) return
-    controller = new AbortController()
-    const request = controller
-    pending = true
-    void loadText(request.signal)
-      .then(full => {
-        if (!request.signal.aborted) hoverText = full
-      })
-      .catch(error => {
-        if (!request.signal.aborted) hoverText = String(error)
-      })
-      .finally(() => {
-        if (!request.signal.aborted) pending = false
-      })
+    if (!loadText || read.pending || hoverText !== undefined) return
+    void read.load(loadText)
   }
 </script>
 

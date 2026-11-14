@@ -938,10 +938,8 @@ describe('TracesPage independent list loading', () => {
   )
 
   it.each(['success', 'failure'] as const)(
-    'supersedes tree/log %s promptly for a missing selection during a pending list refresh',
+    'supersedes refreshed tree/log %s promptly for a missing selection while the list is pending',
     async outcome => {
-      const oldTree = deferred<TraceData>()
-      const oldLogs = deferred<TraceLogSummary[]>()
       const nextTree = deferred<TraceData>()
       const nextLogs = deferred<TraceLogSummary[]>()
       const list = deferred<TraceSummary[]>()
@@ -949,12 +947,8 @@ describe('TracesPage independent list loading', () => {
         .mockResolvedValueOnce([makeTraceSummary()])
         .mockReturnValueOnce(list.promise)
       getStats.mockResolvedValue(makeStats())
-      getTraceView
-        .mockReturnValueOnce(oldTree.promise)
-        .mockReturnValueOnce(nextTree.promise)
-      getTraceLogSummaries
-        .mockReturnValueOnce(oldLogs.promise)
-        .mockReturnValueOnce(nextLogs.promise)
+      getTraceView.mockResolvedValueOnce(makeTraceData(0))
+      getTraceLogSummaries.mockResolvedValueOnce([])
       getSpan.mockImplementation(
         async (traceID: string, spanID: string) =>
           makeSpanNode(spanID, traceID).spanData
@@ -963,8 +957,8 @@ describe('TracesPage independent list loading', () => {
       renderWithContexts(TracesPage)
       await screen.findByText('GET /orders')
       await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
-      // Both the list refresh and the missing selection must supersede the old
-      // activation, without waiting for the refreshed list to settle.
+      // A new selection must supersede the pending refresh without waiting
+      // for either its list or its selected trace to settle.
       const refreshTree = deferred<TraceData>()
       const refreshLogs = deferred<TraceLogSummary[]>()
       getTraceView
@@ -989,16 +983,12 @@ describe('TracesPage independent list loading', () => {
       expect((getTraceView.mock.calls[0]![2] as AbortSignal).aborted).toBe(true)
       expect(
         (getTraceLogSummaries.mock.calls[0]![1] as AbortSignal).aborted
-      ).toBe(true)
+      ).toBe(false)
       if (outcome === 'success') {
-        oldTree.resolve(makeTraceData(0, 'trace-1', 'stale'))
         refreshTree.resolve(makeTraceData(0, 'trace-1', 'stale-refresh'))
-        oldLogs.resolve([])
         refreshLogs.resolve([])
       } else {
-        oldTree.reject(new Error('stale tree failure'))
         refreshTree.reject(new Error('stale refresh failure'))
-        oldLogs.reject(new Error('stale logs failure'))
         refreshLogs.reject(new Error('stale refresh logs failure'))
       }
       await screen.findByText('Loading selected trace…')
@@ -1019,6 +1009,9 @@ describe('TracesPage independent list loading', () => {
       await within(
         screen.getByRole('region', { name: 'Span details' })
       ).findByText('current activity')
+      expect(
+        (getTraceLogSummaries.mock.calls[0]![1] as AbortSignal).aborted
+      ).toBe(true)
       expect(window.location.search).toBe('?span=next&log=next-log')
     }
   )
@@ -2132,7 +2125,8 @@ describe('TracesPage trace detail lifecycle', () => {
       )
     )
     expect(spansSignal).not.toBe(logsSignal)
-    expect(spansSignal?.aborted).toBe(true)
+    // Failure settles the read; a different selection ends its ownership.
+    expect(spansSignal?.aborted).toBe(false)
     expect(logsSignal?.aborted).toBe(false)
     expect(window.location.search).toBe('?span=old-span')
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -2147,6 +2141,7 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(screen.getByText('Loading selected trace…')).toBeVisible()
     )
     expect(logsSignal?.aborted).toBe(true)
+    expect(spansSignal?.aborted).toBe(true)
 
     pendingLogs.reject(new Error('late sibling failure'))
     await new Promise(resolve => setTimeout(resolve))

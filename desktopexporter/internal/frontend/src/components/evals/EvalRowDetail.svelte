@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { untrack } from 'svelte'
+  import { createResourceMap } from '@/services/resources'
   import type { EvalRequestPart, EvalRequestStatus } from './eval-request-state'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
@@ -108,10 +109,27 @@
     logs: LogData[]
   }
   let retainedLogs = $state.raw<LogPacket[]>([])
-  let logRequest = $state.raw<{
-    request: typeof spanRequest
-    parts: Map<string, EvalRequestPart<LogData[]>>
-  }>()
+  const logReads = createResourceMap<string, LogData[]>()
+  let logContext = $state.raw<typeof spanRequest>()
+  const logRequest = $derived(
+    logContext
+      ? {
+          request: logContext,
+          parts: new Map<string, EvalRequestPart<LogData[]>>(
+            [...logReads].map(([key, read]) => [
+              key,
+              read.pending
+                ? { status: 'pending' }
+                : read.error
+                  ? { status: 'failed' }
+                  : read.data
+                    ? { status: 'ready', value: read.data }
+                    : { status: 'pending' },
+            ])
+          ),
+        }
+      : undefined
+  )
   const evidenceLoading = $derived(
     logRequest?.request.context === requested &&
       [...logRequest.parts.values()].some(part => part.status === 'pending')
@@ -120,7 +138,7 @@
     logRequest?.request.context === requested &&
       [...logRequest.parts.values()].some(part => part.status === 'failed')
   )
-  let requestKey = $state.raw<AbortSignal>()
+  const requestKey = $derived(logReads.requestKey)
   const visibleLogPackets = $derived.by(() => {
     const current = logRequest
     if (!current) return retainedLogs
@@ -169,16 +187,12 @@
   })
 
   // Logs retain only their own packet. Span attributes/events publish separately.
-  let logController: AbortController | undefined
-  onDestroy(() => logController?.abort())
   $effect(() => {
     const selected = spanRequest
     const waiting =
       selected.applicable && !selected.selectedSpan && spanStatus !== 'ready'
     const previous = untrack(() => logRequest?.request)
     if (
-      logController &&
-      !logController.signal.aborted &&
       previous &&
       previous.context === selected.context &&
       previous.callID === selected.callID &&
@@ -188,29 +202,18 @@
       previous.owners.every((span, index) => span === selected.owners[index])
     )
       return
-    logController?.abort()
-    if (waiting) return
     const { owners } = selected
-    retainedLogs = owners.length ? untrack(() => visibleLogPackets) : []
-    const parts = new Map<string, EvalRequestPart<LogData[]>>(
-      owners.map(owner => [referenceKey(owner), { status: 'pending' }])
-    )
-    logRequest = { request: selected, parts: new Map(parts) }
-    const controller = new AbortController()
-    logController = controller
-    requestKey = controller.signal
+    retainedLogs =
+      waiting || owners.length ? untrack(() => visibleLogPackets) : []
+    logReads.clear()
+    logContext = waiting ? undefined : selected
+    if (waiting) return
     for (const owner of owners) {
-      void telemetryAPI
-        .getSpanLogs(owner.traceID, owner.spanID, controller.signal)
-        .then(
-          logs => publish(owner, { status: 'ready', value: logs }),
-          () => publish(owner, { status: 'failed' })
+      void logReads
+        .for(referenceKey(owner))
+        .load(signal =>
+          telemetryAPI.getSpanLogs(owner.traceID, owner.spanID, signal)
         )
-    }
-    function publish(owner: SpanData, part: EvalRequestPart<LogData[]>) {
-      if (controller.signal.aborted) return
-      parts.set(referenceKey(owner), part)
-      logRequest = { request: selected, parts: new Map(parts) }
     }
   })
   const result = $derived(row.result)

@@ -124,11 +124,25 @@
     return formatDateTime(ms, timeContext.tz, 'milliseconds')
   }
 
-  // Rendering and count lookup retain nonzero cells only. The separate column
-  // and row arrays describe missing intersections as logical zero cells.
+  // Sparse count data excludes zeros. Add the selected zero intersection to
+  // the chart's hit targets so it retains hover feedback after keyboard selection.
   let heatmapModel = $derived(buildHistogramHeatmapData(points))
   let heatmapColumns = $derived(heatmapModel.columns)
-  let heatmapData = $derived(heatmapModel.cells)
+  let heatmapData = $derived.by(() => {
+    if (selectedCell?.count !== 0) return heatmapModel.cells
+    const column = columnByKey.get(selectedCell.columnKey)!
+    return [
+      ...heatmapModel.cells,
+      {
+        columnKey: column.key,
+        timestampNs: column.timestampNs,
+        timestampMs: column.timestampMs,
+        bucketKey: selectedCell.bucketKey,
+        bucketLabel: selectedCell.bucketLabel,
+        count: 0,
+      },
+    ]
+  })
 
   let contributionCells = $derived(
     buildHistogramHeatmapData(
@@ -523,16 +537,28 @@
       contour.cells.filter(cell => contributionCount(cell.datum) > 0)
     )
   )
-  let cardObstacles = $derived(
-    renderedContours.flatMap(contour =>
+  let cardObstacles = $derived([
+    ...renderedContours.flatMap(contour =>
       contour.cells.map(cell => ({
         left: heatmapPlotPadding.left + cell.x - scrollLeft,
         top: heatmapPlotPadding.top + cell.y,
         width: columnPitch,
         height: keyboardRowHeight,
       }))
-    )
-  )
+    ),
+    ...(selectedCell?.count === 0 && selectedColumnX !== null
+      ? [
+          {
+            left: heatmapPlotPadding.left + selectedColumnX - scrollLeft,
+            top:
+              heatmapPlotPadding.top +
+              selectedCell.rowIndex * keyboardRowHeight,
+            width: columnPitch,
+            height: keyboardRowHeight,
+          },
+        ]
+      : []),
+  ])
 
   function positionSelectionCard(size: ChartStickySize) {
     return heatmapCardPosition({
@@ -745,6 +771,20 @@
                   </g>
                 {/each}
               </g>
+              {#if selectedCell?.count === 0 && selectedColumnX !== null}
+                <rect
+                  x={selectedColumnX}
+                  y={selectedCell.rowIndex * keyboardRowHeight}
+                  width={columnPitch}
+                  height={keyboardRowHeight}
+                  fill="var(--item-state-bg)"
+                  class="item-state heatmap-cell"
+                  data-selected
+                  data-hovered={(selectedCell.columnKey === hoveredColumnKey &&
+                    selectedCell.bucketKey === hoveredBucketKey) ||
+                    undefined}
+                />
+              {/if}
               <g
                 class="heatmap-contributions"
                 aria-hidden="true"

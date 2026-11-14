@@ -28,6 +28,7 @@ export type FileRange = { start: number; end: number }
 export type ResourceRange = FileRange & { collections: CollectionRange[] }
 type CollectionRange = FileRange & {
   items: ResourceRange[]
+  firstItemStart?: number
   splittable: boolean
 }
 
@@ -175,6 +176,7 @@ export async function scanOTLPFile(
           })
         }
       } else if (parent.type === 'array' && parent.collection) {
+        parent.collection.firstItemStart ??= position
         if (object) {
           role =
             parent.role === 'scopes'
@@ -254,18 +256,27 @@ export function firstOTLPRecord(
   plan: ImportPlan
 ): FirstOTLPRecord | undefined {
   let first:
-    { signal: ImportSignal; path: ResourceRange[]; start: number } | undefined
+    | {
+        signal: ImportSignal
+        resource: ResourceRange
+        scope: ResourceRange
+        records: CollectionRange
+        start: number
+      }
+    | undefined
   for (const signal of ['traces', 'logs', 'metrics'] as const) {
     for (const resource of plan[signal]) {
       for (const scopes of resource.collections) {
         for (const scope of scopes.items) {
           for (const records of scope.collections) {
-            const record = records.items[0]
-            if (record && (!first || record.start < first.start))
+            const start = records.firstItemStart
+            if (start !== undefined && (!first || start < first.start))
               first = {
                 signal,
-                path: [resource, scope, record],
-                start: record.start,
+                resource,
+                scope,
+                records,
+                start,
               }
           }
         }
@@ -273,14 +284,22 @@ export function firstOTLPRecord(
     }
   }
   if (!first) return
-  const record = first.path.at(-1)!
+  const record = first.records.items[0]
+  if (!record || record.start !== first.start) return
+  const path = [first.resource, first.scope, record]
   // Metric identity excludes points. Retain only its first point so a large
   // metric does not require materialising its complete payload for navigation.
-  const point = record.collections[0]?.items[0]
-  if (point) first.path.push(point)
-  let body = file.slice(first.path.at(-1)!.start, first.path.at(-1)!.end)
-  for (let index = first.path.length - 2; index >= 0; index--) {
-    const parent = first.path[index]
+  const points = record.collections[0]
+  const point = points?.items[0]
+  if (
+    points?.firstItemStart !== undefined &&
+    point?.start !== points.firstItemStart
+  )
+    return
+  if (point) path.push(point)
+  let body = file.slice(path.at(-1)!.start, path.at(-1)!.end)
+  for (let index = path.length - 2; index >= 0; index--) {
+    const parent = path[index]
     if (parent.collections.length !== 1) return
     const collection = parent.collections[0]
     body = new Blob([

@@ -1,7 +1,7 @@
-import { onDestroy } from 'svelte'
+import { createResource } from '@/services/resources'
 
 // Keep the displayed record until its replacement is ready. Only keyboard
-// traversal is debounced; request generations also guard A → B → A races.
+// traversal is debounced; the resource rejects obsolete A → B → A responses.
 
 export type DebouncedDetailFetcher<K, D> = {
   select(key: K | null, debounce?: boolean): void
@@ -25,71 +25,22 @@ export function createDebouncedDetailFetcher<K, D>(
   opts: CreateDebouncedDetailFetcherOptions<K, D>
 ): DebouncedDetailFetcher<K, D> {
   const delayMs = opts.delayMs ?? 150
-  const fallback = opts.fallbackErrorMessage ?? 'Failed to load details'
-
   let key: K | null = null
-  let data = $state<D | null>(null)
-  let loading = $state(false)
-  let requestKey = $state(0)
-  let error = $state<string | null>(null)
-
-  let pendingTimer: ReturnType<typeof setTimeout> | null = null
-  let generation = 0
-  let activeRequest: AbortController | null = null
-
-  onDestroy(() => {
-    ++generation
-    activeRequest?.abort()
-    if (pendingTimer !== null) clearTimeout(pendingTimer)
+  const resource = createResource<D>({
+    errorMessage: opts.fallbackErrorMessage ?? 'Failed to load details',
   })
 
-  function clear() {
-    ++generation
-    activeRequest?.abort()
-    activeRequest = null
-    if (pendingTimer !== null) {
-      clearTimeout(pendingTimer)
-      pendingTimer = null
-    }
-    data = null
-    loading = false
-    error = null
-  }
-
   function schedule(forKey: K, debounce = false) {
-    const request = ++generation
-    requestKey = request
-    activeRequest?.abort()
-    activeRequest = null
-    if (pendingTimer !== null) clearTimeout(pendingTimer)
-    loading = true
-    error = null
-    const run = () => {
-      pendingTimer = null
-      if (request !== generation) return
-      activeRequest = new AbortController()
-      opts.fetch(forKey, activeRequest.signal).then(
-        result => {
-          if (request !== generation) return
-          data = result
-          loading = false
-        },
-        err => {
-          if (request !== generation) return
-          error = err instanceof Error ? err.message : fallback
-          loading = false
-        }
-      )
-    }
-    if (debounce) pendingTimer = setTimeout(run, delayMs)
-    else run()
+    void resource.load(signal => opts.fetch(forKey, signal), undefined, {
+      delayMs: debounce ? delayMs : 0,
+    })
   }
 
   return {
     select(next: K | null, debounce = false) {
       if (next === null) {
         key = null
-        clear()
+        resource.clear()
         return
       }
       if (key !== null && opts.keysEqual(key, next)) return
@@ -97,16 +48,16 @@ export function createDebouncedDetailFetcher<K, D>(
       schedule(next, debounce)
     },
     get data() {
-      return data
+      return resource.data ?? null
     },
     get loading() {
-      return loading
+      return resource.pending
     },
     get requestKey() {
-      return requestKey
+      return resource.requestKey
     },
     get error() {
-      return error
+      return resource.error
     },
     refresh() {
       const current = key

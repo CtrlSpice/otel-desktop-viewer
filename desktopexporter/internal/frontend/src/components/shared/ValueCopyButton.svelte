@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
+  import { createResource } from '@/services/resources'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckmarkCircle02Icon, Copy01Icon } from '@hugeicons/core-free-icons'
   import { copyText } from '@/utils/clipboard'
@@ -27,8 +28,8 @@
   let status = $state('')
   let copied = $state(false)
   let failed = $state(false)
-  let pending = $state(false)
-  let activeRequest: AbortController | undefined
+  const copyRead = createResource<boolean>({ scope: null })
+  const pending = $derived(copyRead.pending)
   let timer: ReturnType<typeof setTimeout> | undefined
 
   function reset() {
@@ -42,14 +43,11 @@
     void loadText
     void sourceKey
     void label
-    activeRequest?.abort()
-    activeRequest = undefined
-    pending = false
+    copyRead.clear()
     reset()
   })
   onDestroy(() => {
     clearTimeout(timer)
-    activeRequest?.abort()
   })
 
   async function copy(event: MouseEvent) {
@@ -59,51 +57,46 @@
     const currentLoader = loadText
     const currentSource = sourceKey
     const currentLabel = label
-    const controller = new AbortController()
-    activeRequest = controller
-    pending = true
     reset()
-    try {
-      const value = currentLoader
-        ? await currentLoader(controller.signal)
-        : current
-      controller.signal.throwIfAborted()
-      if (
-        text !== current ||
-        loadText !== currentLoader ||
-        sourceKey !== currentSource ||
-        label !== currentLabel
-      )
-        return
-      await copyText(value)
-      if (
-        controller.signal.aborted ||
-        text !== current ||
-        loadText !== currentLoader ||
-        sourceKey !== currentSource ||
-        label !== currentLabel
-      )
-        return
-      copied = true
-      status = `Copied ${label}.`
-      timer = setTimeout(reset, 1000)
-    } catch {
-      if (
-        !controller.signal.aborted &&
-        text === current &&
-        loadText === currentLoader &&
-        sourceKey === currentSource &&
-        label === currentLabel
-      ) {
-        failed = true
-        status = `Could not copy ${label}.`
+    await copyRead.load(
+      async signal => {
+        const value = currentLoader ? await currentLoader(signal) : current
+        signal.throwIfAborted()
+        if (
+          text !== current ||
+          loadText !== currentLoader ||
+          sourceKey !== currentSource ||
+          label !== currentLabel
+        )
+          return false
+        await copyText(value)
+        return !(
+          text !== current ||
+          loadText !== currentLoader ||
+          sourceKey !== currentSource ||
+          label !== currentLabel
+        )
+      },
+      current => {
+        if (!current) return
+        copied = true
+        status = `Copied ${label}.`
+        timer = setTimeout(reset, 1000)
+      },
+      {
+        onError: () => {
+          if (
+            text === current &&
+            loadText === currentLoader &&
+            sourceKey === currentSource &&
+            label === currentLabel
+          ) {
+            failed = true
+            status = `Could not copy ${label}.`
+          }
+        },
       }
-    } finally {
-      if (activeRequest === controller) {
-        activeRequest = undefined
-        pending = false
-      }
-    }
+    )
   }
 </script>
 

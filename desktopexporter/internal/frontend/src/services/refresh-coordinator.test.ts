@@ -34,3 +34,21 @@ it('drops queued work when its page is disposed', async () => {
   await coordinator.request()
   expect(refresh).toHaveBeenCalledOnce()
 })
+
+it.each([false, true])(
+  'combines requests while an existing read finishes (dispose: %s)',
+  async dispose => {
+    let finish!: () => void
+    const pendingRead = new Promise<void>(resolve => (finish = resolve))
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const coordinator = createRefreshCoordinator(refresh, () => pendingRead)
+    const pending = coordinator.request()
+    await Promise.resolve()
+    for (let i = 0; i < 20; i++) void coordinator.request()
+    expect(refresh).not.toHaveBeenCalled()
+    if (dispose) coordinator.dispose()
+    finish()
+    await pending
+    expect(refresh).toHaveBeenCalledTimes(dispose ? 0 : 1)
+  }
+)

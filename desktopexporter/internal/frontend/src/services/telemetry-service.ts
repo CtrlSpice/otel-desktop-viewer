@@ -412,11 +412,13 @@ export let telemetryAPI = {
     signal: string,
     field: string,
     term: string,
-    limit: number
+    limit: number,
+    abort?: AbortSignal
   ): Promise<string[]> => {
     const rawData = await callArrow(
       'getFieldValueCompletions',
-      named({ signal, field, term, limit })
+      named({ signal, field, term, limit }),
+      abort
     )
     return rowViews(rawData, (frame, row) => frame.cell('value', row).text())
   },
@@ -428,25 +430,31 @@ export let telemetryAPI = {
       owner?: string
       path?: readonly (string | number)[]
       type?: string
-    } = {}
+    } = {},
+    signal?: AbortSignal
   ): Promise<AttributeMatch[]> => {
     if (!term.trim() && !options.path) return []
     const rawData = await callArrow(
       'searchAttributeMatches',
-      named({ term, ...options })
+      named({ term, ...options }),
+      signal
     )
     return rowViews(rawData, attributeMatch)
   },
 
-  getTraceAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+  getTraceAttributeDefinitions: async (
+    signal?: AbortSignal
+  ): Promise<FieldDefinition[]> => {
     return attributeDefinitions(
-      await callArrow('getTraceAttributeDefinitions', named({}))
+      await callArrow('getTraceAttributeDefinitions', named({}), signal)
     )
   },
 
-  getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+  getLogAttributeDefinitions: async (
+    signal?: AbortSignal
+  ): Promise<FieldDefinition[]> => {
     return attributeDefinitions(
-      await callArrow('getLogAttributeDefinitions', named({}))
+      await callArrow('getLogAttributeDefinitions', named({}), signal)
     )
   },
 
@@ -1037,9 +1045,11 @@ LIMIT ${batch.length}`,
     }
   },
 
-  getMetricAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+  getMetricAttributeDefinitions: async (
+    signal?: AbortSignal
+  ): Promise<FieldDefinition[]> => {
     return attributeDefinitions(
-      await callArrow('getMetricAttributeDefinitions', named({}))
+      await callArrow('getMetricAttributeDefinitions', named({}), signal)
     )
   },
 

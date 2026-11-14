@@ -192,9 +192,11 @@ for (const failed of [false, true]) {
         screen.getByRole('button', { name: 'Next page' })
       ).not.toBeDisabled()
     )
-    expect(
-      document.querySelector(`[data-log-ref="${failed ? 'A' : 'B'}"]`)
-    ).not.toBeNull()
+    await waitFor(() =>
+      expect(
+        document.querySelector(`[data-log-ref="${failed ? 'A' : 'B'}"]`)
+      ).not.toBeNull()
+    )
     await fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
     await waitFor(() => expect(api.searchLogPage).toHaveBeenCalledTimes(4))
     expect(api.searchLogPage.mock.calls[3][4]).toEqual(
@@ -256,6 +258,7 @@ it.each(['manual', 'live'] as const)(
       await Promise.resolve()
       await tick()
       await tick()
+      await vi.advanceTimersByTimeAsync(0)
     })
     expect(api.searchLogPage).toHaveBeenCalledTimes(3)
     expect(api.getLog).toHaveBeenCalledTimes(3)

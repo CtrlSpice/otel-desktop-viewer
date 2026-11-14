@@ -1,6 +1,7 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
+  import { createResource, createResourceMap } from '@/services/resources'
   import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -30,9 +31,23 @@
   const id = $props.id()
   const expandedAttributes = new SvelteSet<string>()
   const receivedAttributes = new SvelteMap<string, Attribute[]>()
-  const attributeErrors = new SvelteMap<string, string>()
-  const loadingAttributes = new SvelteSet<string>()
-  const attributeRequests = new SvelteMap<string, AbortController>()
+  const attributeRequests = createResourceMap<string, Attribute[]>({
+    errorMessage: 'Failed to load series attributes',
+  })
+  const attributeErrors = $derived(
+    new Map(
+      [...attributeRequests].flatMap(([key, read]) =>
+        read.error ? [[key, read.error] as const] : []
+      )
+    )
+  )
+  const loadingAttributes = $derived(
+    new Set(
+      [...attributeRequests].flatMap(([key, read]) =>
+        read.pending ? [key] : []
+      )
+    )
+  )
   const attributeRevisions = new Map<string, typeof ctx.metric>()
   let hoveredSeriesKey = $state<string | null>(null)
   let focusedSeriesKey = $state<string | null>(null)
@@ -42,8 +57,11 @@
     asc?: string[]
     desc?: string[]
   }>()
-  let sortLoading = $state(false)
-  let sortError = $state('')
+  const sortRead = createResource<string[]>({
+    errorMessage: 'Could not sort series.',
+  })
+  const sortLoading = $derived(sortRead.pending)
+  const sortError = $derived(sortRead.error ?? '')
   let sortRetry = $state(0)
 
   $effect.pre(() => {
@@ -54,8 +72,7 @@
     expandedAttributes.clear()
     receivedAttributes.clear()
     attributeRevisions.clear()
-    attributeErrors.clear()
-    loadingAttributes.clear()
+    attributeRequests.clear()
   })
   // A refreshed response can have the same metric/series IDs and new context.
   // Keep disclosures, but replace exact values and reject every older request.
@@ -68,10 +85,7 @@
       if (series.attributesComplete !== false)
         receivedAttributes.delete(series.seriesRef)
     }
-    attributeErrors.clear()
-    loadingAttributes.clear()
     return () => {
-      for (const controller of attributeRequests.values()) controller.abort()
       attributeRequests.clear()
     }
   })
@@ -102,8 +116,7 @@
     const key = sort?.key
     const direction = sort?.direction
     void sortRetry
-    sortLoading = false
-    sortError = ''
+    sortRead.clearError()
     if (
       !metric ||
       key === undefined ||
@@ -114,35 +127,28 @@
     if (untrack(() => seriesOrder?.key === key && seriesOrder[direction]))
       return
     const refs = metric.timeseries.map(series => series.seriesRef)
-    const controller = new AbortController()
-    sortLoading = true
-    void telemetryAPI
-      .getMetricSeriesOrder(
-        metric.metricRef,
-        metric.window.requested.startNs,
-        metric.window.requested.endNs,
-        refs,
-        key,
-        direction,
-        controller.signal
-      )
-      .then(order => {
-        if (controller.signal.aborted) return
+    void sortRead.load(
+      async signal => {
+        const order = await telemetryAPI.getMetricSeriesOrder(
+          metric.metricRef,
+          metric.window.requested.startNs,
+          metric.window.requested.endNs,
+          refs,
+          key,
+          direction,
+          signal
+        )
         validateSeriesOrder(order, refs)
+        return order
+      },
+      order => {
         seriesOrder = {
           ...(seriesOrder?.key === key ? seriesOrder : { key }),
           [direction]: order,
         }
-      })
-      .catch(error => {
-        if (!controller.signal.aborted)
-          sortError =
-            error instanceof Error ? error.message : 'Could not sort series.'
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) sortLoading = false
-      })
-    return () => controller.abort()
+      }
+    )
+    return () => sortRead.cancel()
   })
   const appliedOrder = $derived(
     sort && seriesOrder?.key === sort.key
@@ -163,9 +169,7 @@
   function toggleAttributes(key: string) {
     if (expandedAttributes.has(key)) {
       expandedAttributes.delete(key)
-      attributeRequests.get(key)?.abort()
       attributeRequests.delete(key)
-      loadingAttributes.delete(key)
     } else {
       expandedAttributes.add(key)
     }
@@ -182,38 +186,25 @@
       loadingAttributes.has(key)
     )
       return
-    loadingAttributes.add(key)
     const revision = ctx.metric
-    const controller = new AbortController()
-    attributeRequests.set(key, controller)
-    attributeErrors.delete(key)
-    try {
-      const received = await telemetryAPI.getMetricSeries(
-        owner,
-        key,
-        null,
-        null,
-        false,
-        controller.signal
-      )
-      if (controller.signal.aborted) return
-      if (!received) throw new Error('Series is no longer available')
-      receivedAttributes.set(key, received.attributes)
-      attributeRevisions.set(key, revision)
-    } catch (error) {
-      if (!controller.signal.aborted)
-        attributeErrors.set(
+    await attributeRequests.for(key).load(
+      async signal => {
+        const received = await telemetryAPI.getMetricSeries(
+          owner,
           key,
-          error instanceof Error
-            ? error.message
-            : 'Failed to load series attributes'
+          null,
+          null,
+          false,
+          signal
         )
-    } finally {
-      if (attributeRequests.get(key) === controller) {
-        attributeRequests.delete(key)
-        loadingAttributes.delete(key)
+        if (!received) throw new Error('Series is no longer available')
+        return received.attributes
+      },
+      attributes => {
+        receivedAttributes.set(key, attributes)
+        attributeRevisions.set(key, revision)
       }
-    }
+    )
   }
   const identityColumn = $derived(
     table.columns.length === 0 ||
@@ -521,7 +512,7 @@
                 <LoadingStatus
                   pending
                   label="Loading series attributes…"
-                  requestKey={attributeRequests.get(ts.key)?.signal}
+                  requestKey={attributeRequests.get(ts.key)?.requestKey}
                   class="block px-3 py-2 text-subtle"
                 />
               {/if}

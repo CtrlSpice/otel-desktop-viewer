@@ -24,7 +24,6 @@
     createImportNavigation,
     lookupImportTarget,
   } from '@/services/import-navigation'
-  import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
 
   let {
     importFiles,
@@ -41,12 +40,11 @@
   const workspace = createWorkspaceContext()
 
   let importMessage = $state('')
-  let importPending = $state(false)
   let importRequestKey = $state(0)
-  const importNotice = createLoadingNotice(
-    () => importPending,
-    () => importRequestKey
-  )
+  let localImportFailures = $state<ImportFailure[]>([])
+  function reportImportFailure(failure: ImportFailure) {
+    localImportFailures.push(failure)
+  }
   const importNavigation = createImportNavigation({
     subscribe: changes.subscribe,
     lookup: lookupImportTarget,
@@ -58,10 +56,10 @@
       )
       void tick().then(() => changes.refreshViews())
     },
-    status(message, pending) {
+    status(message) {
       importMessage = message
-      importPending = pending
     },
+    onFailure: reportImportFailure,
   })
   onMount(() => {
     let previous = window.location.href
@@ -72,10 +70,7 @@
     })
   })
 
-  let localImportFailures = $state<ImportFailure[]>([])
-  const importer = createFileImporter(window.location.href, failure => {
-    localImportFailures.push(failure)
-  })
+  const importer = createFileImporter(window.location.href, reportImportFailure)
   const allImportFailures = $derived([
     ...importFailures,
     ...localImportFailures,
@@ -187,19 +182,13 @@
       main: emptyPane,
       detail: emptyPane,
     }}
+    loadingMessage={workspace.props?.loadingMessage || importMessage}
+    loadingRequestKey={workspace.props?.loadingMessage
+      ? workspace.props.loadingRequestKey
+      : importMessage
+        ? `import:${importRequestKey}`
+        : undefined}
   />
-  {#if importNotice.visible || (importMessage && !importPending)}
-    <div class="flex shrink-0 items-center gap-2 px-3 py-1 text-sm text-subtle">
-      <span role="status">{importMessage}</span>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm"
-        onclick={() => importNavigation.cancel()}
-      >
-        {importPending ? 'Cancel opening' : 'Dismiss'}
-      </button>
-    </div>
-  {/if}
 </main>
 
 <FileDropOverlay onFiles={handleImportFiles} />

@@ -918,7 +918,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   [aria-selected='true'],
   [aria-pressed='true'],
   [aria-checked='true'],
-  [aria-expanded='true'],
+  [aria-expanded='true']:not([aria-selected]),
   [aria-current='page'],
   [data-selected],
   .table-row--selected

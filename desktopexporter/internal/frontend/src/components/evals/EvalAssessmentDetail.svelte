@@ -10,6 +10,7 @@
 </script>
 
 <script lang="ts">
+  import { createResource } from '@/services/resources'
   import { untrack } from 'svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
@@ -65,9 +66,12 @@
       available: !!(rubric || loadRubric),
     })
   })
-  let loading = $state(false)
-  let requestKey = $state.raw<AbortSignal>()
-  let loadError = $state('')
+  const rubricRead = createResource<string>({
+    formatError: () => 'Could not load the full grader input.',
+  })
+  const loading = $derived(rubricRead.pending)
+  const requestKey = $derived(rubricRead.requestKey)
+  const loadError = $derived(rubricRead.error ?? '')
   let instructionsOpen = $state(false)
   const packet = $derived(parseGradingInput(rubric))
   const name = $derived(definition?.name ?? assessment.id)
@@ -79,29 +83,17 @@
       rubric: requestedAssessment.rubric,
       complete: !requestedRubric,
     }
-    loadError = ''
+    rubricRead.clearError()
     const loader = requestedRubric
-    loading = !!loader
     if (!untrack(() => displayed)) displayed = selected
     if (!loader) {
       displayed = selected
       return
     }
-    const controller = new AbortController()
-    requestKey = controller.signal
-    void loader(controller.signal)
-      .then(value => {
-        if (!controller.signal.aborted)
-          displayed = { ...selected, rubric: value, complete: true }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted)
-          loadError = 'Could not load the full grader input.'
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) loading = false
-      })
-    return () => controller.abort()
+    void rubricRead.load(loader, value => {
+      displayed = { ...selected, rubric: value, complete: true }
+    })
+    return () => rubricRead.cancel()
   })
 </script>
 

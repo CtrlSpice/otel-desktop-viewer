@@ -46,9 +46,10 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
-  import { SvelteMap } from 'svelte/reactivity'
-  import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
+  import { untrack } from 'svelte'
+  import { createResource, createResourceMap } from '@/services/resources'
+  import { createPageResources } from '@/contexts/page-resources.svelte'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
     getTimeContext,
@@ -112,11 +113,23 @@
 
   let timeContext = getTimeContext()
   const routeContext = getRouteContext()
+  const resources = createPageResources(() => page.handleRefresh())
+  const statsRead = createResource<
+    Awaited<ReturnType<typeof telemetryAPI.getStats>>
+  >({ scope: null })
+  const traceRead = createResource<TraceWaterfallData>({
+    formatError: error => {
+      console.error('Failed to fetch trace detail:', error)
+      return 'Could not load the selected trace.'
+    },
+  })
+  const previews = createResource<TraceColumnPreview[]>({
+    formatError: () => 'Could not load waterfall column previews.',
+  })
 
   let baselineStats = $state<TraceStats | null>(null)
   let polledStats = $state<TraceStats | null>(null)
-  let listRequest: AbortController | undefined
-  let statsRequest = $state.raw<AbortController>()
+  let listStarted = false
   let actionError = $state<string | null>(null)
   let query = $state('')
   let submittedText = $state('')
@@ -130,22 +143,16 @@
     getItemID: trace => trace.traceID,
     initialSort: { column: 'startTime', direction: 'desc' },
     compare: compareTraceSummaries,
-    fetchList: async () => {
+    fetchList: async signal => {
       const request = submittedRequest
       // A known route does not depend on the list. Search/refresh starts a new
       // activation immediately; list completion must not start it a second time.
-      if (listRequest || request?.predicate)
+      if (listStarted || request?.predicate)
         traceRefreshKey = untrack(() => traceRefreshKey) + 1
       requestedQueryTree = request?.predicate ?? undefined
-      listRequest?.abort()
-      statsRequest?.abort()
-      const controller = new AbortController()
-      const statsController = new AbortController()
-      listRequest = controller
-      statsRequest = statsController
-      const stats = telemetryAPI
-        .getStats(statsController.signal)
-        .catch(() => null)
+      listStarted = true
+      statsRead.clear()
+      const stats = statsRead.load(signal => telemetryAPI.getStats(signal))
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
@@ -160,40 +167,34 @@
             field: page.sortColumn,
             direction: page.sortDirection,
           })),
-          controller.signal
+          signal
         )
-        if (!controller.signal.aborted) {
+        if (!signal.aborted) {
           baselineStats = null
-          void stats.then(result => {
-            if (statsController.signal.aborted) return
+          void stats.then(() => {
+            if (signal.aborted) return
+            const result = statsRead.data
             if (result) {
               baselineStats = result.traces
               polledStats = result.traces
             }
-            if (statsRequest === statsController) statsRequest = undefined
           })
         }
         return results
       } catch (error) {
-        statsController.abort()
-        if (statsRequest === statsController) statsRequest = undefined
+        if (!signal.aborted) statsRead.cancel()
         throw error
       }
     },
-    statsPending: () => statsRequest !== undefined,
-    refreshStats: async () => {
-      if (statsRequest) return
-      const controller = new AbortController()
-      statsRequest = controller
-      try {
-        const stats = await telemetryAPI.getStats(controller.signal)
-        if (controller.signal.aborted) return
-        baselineStats ??= stats.traces
-        polledStats = stats.traces
-      } finally {
-        if (statsRequest === controller) statsRequest = undefined
-      }
-    },
+    statsPending: () => statsRead.pending,
+    refreshStats: () =>
+      statsRead.load(
+        signal => telemetryAPI.getStats(signal),
+        stats => {
+          baselineStats ??= stats.traces
+          polledStats = stats.traces
+        }
+      ),
   })
   const freshness = $derived.by(() => {
     if (!baselineStats || !polledStats) return { pulse: false, tip: '' }
@@ -228,26 +229,20 @@
   let traceData = $state<TraceWaterfallData | null>(null)
   // Only requested/displayed traces own log readings. This also lets a retained
   // Details retry settle without cancelling another trace's independent work.
-  const logReadings = new SvelteMap<
-    string,
-    {
-      logs?: TraceLogSummary[]
-      pending: boolean
-      error: string
-      controller: AbortController
-    }
-  >()
+  const logReadings = createResourceMap<string, TraceLogSummary[]>({
+    formatError: () => 'Could not load correlated logs.',
+  })
   const requestedLogs = $derived(
     page.selectedID ? logReadings.get(page.selectedID) : undefined
   )
-  const traceLogs = $derived(requestedLogs?.logs ?? [])
+  const traceLogs = $derived(requestedLogs?.data ?? [])
   const traceLogsTraceID = $derived(
-    requestedLogs?.logs ? page.selectedID : null
+    requestedLogs?.data ? page.selectedID : null
   )
   const traceLogsPending = $derived(requestedLogs?.pending ?? false)
   const traceLogsError = $derived(requestedLogs?.error ?? '')
-  let detailLoading = $state(false)
-  let detailError = $state('')
+  const detailLoading = $derived(traceRead.pending)
+  const detailError = $derived(traceRead.error ?? '')
   let activeQueryTree = $state<QueryNode | undefined>(undefined)
 
   let hasTraceRows = $derived(page.items.length > 0)
@@ -256,7 +251,7 @@
   let currentTraceData = $derived(page.selectedID ? traceData : null)
   const waterfallLogs = $derived(
     currentTraceData
-      ? logReadings.get(currentTraceData.traceID)?.logs
+      ? logReadings.get(currentTraceData.traceID)?.data
       : undefined
   )
   // Requested and displayed identities stay separate during a handoff.
@@ -329,7 +324,7 @@
 
   let selectedColumns = $state<WaterfallColumn[]>(loadColumns())
   let previewValues = $state<TraceColumnPreview[]>([])
-  let previewError = $state('')
+  const previewError = $derived(previews.error ?? '')
   let previewTraceID = $state('')
   let loadedPreviewKey = $state('')
   const previewColumns = $derived(
@@ -343,23 +338,16 @@
     if (!trace) return
     const key = JSON.stringify([trace.traceID, columns])
     if (key === loadedPreviewKey) return
-    const controller = new AbortController()
-    previewError = ''
-    void telemetryAPI
-      .getTraceColumnPreviews(trace.traceID, columns, controller.signal)
-      .then(
-        values => {
-          if (controller.signal.aborted) return
-          previewTraceID = trace.traceID
-          previewValues = values
-          loadedPreviewKey = key
-        },
-        err => {
-          if (!controller.signal.aborted && !isAbortError(err))
-            previewError = 'Could not load waterfall column previews.'
-        }
-      )
-    return () => controller.abort()
+    void previews.load(
+      signal =>
+        telemetryAPI.getTraceColumnPreviews(trace.traceID, columns, signal),
+      values => {
+        previewTraceID = trace.traceID
+        previewValues = values
+        loadedPreviewKey = key
+      }
+    )
+    return () => previews.cancel()
   })
   let waterfallSpans = $derived.by(() => {
     const bySpan = new Map<string, TraceColumnPreview[]>()
@@ -510,7 +498,7 @@
     logsKnown: boolean
     logsPending: boolean
     logsError: string
-    logsRequestKey?: AbortSignal
+    logsRequestKey?: number
     rootSpanID?: string
     fieldTarget?: DetailFieldTarget
     salvaged: boolean
@@ -532,15 +520,16 @@
         ? previous
         : undefined
     const logsReading = logReadings.get(span.traceID)
-    const logs = logsReading?.logs
+    const logs = logsReading?.data
     const activity = {
       logs:
         logs?.filter(log => log.spanID === span.spanID) ?? retained?.logs ?? [],
       logsKnown: logs !== undefined || (retained?.logsKnown ?? false),
       logsPending: logsReading?.pending ?? false,
-      logsError: logsReading?.error ?? retained?.logsError ?? '',
-      logsRequestKey:
-        logsReading?.controller.signal ?? retained?.logsRequestKey,
+      logsError: logsReading
+        ? (logsReading.error ?? '')
+        : (retained?.logsError ?? ''),
+      logsRequestKey: logsReading?.requestKey ?? retained?.logsRequestKey,
     }
     // A trace-wide request also belongs to the retained span in that trace.
     // Publish its settlement even when another exact span is pending/failed;
@@ -584,32 +573,18 @@
       displayedDetail?.span.traceID,
     ])
     untrack(() => {
-      for (const [traceID, reading] of logReadings) {
+      for (const traceID of logReadings.keys()) {
         if (owners.has(traceID)) continue
-        reading.controller.abort()
         logReadings.delete(traceID)
       }
     })
   })
 
   // Abort superseded detail queries so they release the store read lock.
-  let detailFetch: AbortController | null = null
   let requestedTraceID: string | null = null
 
-  onDestroy(() => {
-    listRequest?.abort()
-    statsRequest?.abort()
-    detailFetch?.abort()
-    detailFetch = null
-    for (const reading of logReadings.values()) reading.controller.abort()
-    logReadings.clear()
-    requestedTraceID = null
-  })
-
   function clearTraceDetail() {
-    detailFetch?.abort()
-    detailFetch = null
-    for (const reading of logReadings.values()) reading.controller.abort()
+    traceRead.clear()
     logReadings.clear()
     requestedTraceID = null
     spanCache.clear()
@@ -619,57 +594,18 @@
     previewValues = []
     previewTraceID = ''
     loadedPreviewKey = ''
-    previewError = ''
-    detailLoading = false
-    detailError = ''
+    previews.clear()
   }
 
   async function fetchTraceLogs(traceID: string) {
-    const previous = logReadings.get(traceID)
-    previous?.controller.abort()
-    const controller = new AbortController()
-    const reading = {
-      logs: previous?.logs,
-      pending: true,
-      error: '',
-      controller,
-    }
-    logReadings.set(traceID, reading)
-    try {
-      const logs = await telemetryAPI.getTraceLogSummaries(
-        traceID,
-        controller.signal
-      )
-      if (
-        logReadings.get(traceID)?.controller !== controller ||
-        controller.signal.aborted
-      )
-        return
-      logReadings.set(traceID, { ...reading, logs, pending: false })
-    } catch (err) {
-      if (
-        logReadings.get(traceID)?.controller === controller &&
-        !controller.signal.aborted &&
-        !isAbortError(err)
-      )
-        logReadings.set(traceID, {
-          ...reading,
-          pending: false,
-          error: 'Could not load correlated logs.',
-        })
-    } finally {
-      const current = logReadings.get(traceID)
-      if (current?.controller === controller && current.pending)
-        logReadings.set(traceID, { ...current, pending: false })
-    }
+    await logReadings
+      .for(traceID)
+      .load(signal => telemetryAPI.getTraceLogSummaries(traceID, signal))
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
     const retainedSpanID = untrack(() => getSpanFromQuery())
     const requestedColumns = untrack(() => previewColumns)
-    detailFetch?.abort()
-    const fetchCtl = new AbortController()
-    detailFetch = fetchCtl
     if (requestedTraceID !== null) {
       spanCache.clear()
       detailEpoch = untrack(() => detailEpoch) + 1
@@ -677,68 +613,38 @@
     requestedTraceID = traceID
     void fetchTraceLogs(traceID)
 
-    try {
-      detailLoading = true
-      detailError = ''
-      previewError = ''
-      const result = await telemetryAPI.getTraceView(
-        traceID,
-        queryTree,
-        fetchCtl.signal,
-        requestedColumns
-      )
-      if (
-        detailFetch !== fetchCtl ||
-        fetchCtl.signal.aborted ||
-        page.selectedID !== traceID
-      )
-        return
-      traceData = result
-      activeQueryTree = queryTree
-      previewTraceID = traceID
-      previewValues = result.spans.flatMap(node =>
-        'columnValues' in node.spanData ? node.spanData.columnValues : []
-      )
-      loadedPreviewKey = JSON.stringify([traceID, requestedColumns])
-      const spanIDs = result.spans.map(n => n.spanData.spanID)
-      const urlSpan = getSpanFromQuery()
-      let desired: string | null
-      if (
-        retainedSpanID &&
-        retainedSpanID === urlSpan &&
-        spanIDs.includes(retainedSpanID)
-      ) {
-        desired = retainedSpanID
-      } else if (queryTree) {
-        const firstMatch = result.spans.find(n => n.matched)
-        desired = firstMatch?.spanData.spanID ?? spanIDs[0] ?? null
-      } else if (urlSpan && spanIDs.includes(urlSpan)) {
-        desired = urlSpan
-      } else {
-        desired = spanIDs[0] ?? null
+    previews.clearError()
+    await traceRead.load(
+      signal =>
+        telemetryAPI.getTraceView(traceID, queryTree, signal, requestedColumns),
+      result => {
+        traceData = result
+        activeQueryTree = queryTree
+        previewTraceID = traceID
+        previewValues = result.spans.flatMap(node =>
+          'columnValues' in node.spanData ? node.spanData.columnValues : []
+        )
+        loadedPreviewKey = JSON.stringify([traceID, requestedColumns])
+        const spanIDs = result.spans.map(n => n.spanData.spanID)
+        const urlSpan = getSpanFromQuery()
+        let desired: string | null
+        if (
+          retainedSpanID &&
+          retainedSpanID === urlSpan &&
+          spanIDs.includes(retainedSpanID)
+        ) {
+          desired = retainedSpanID
+        } else if (queryTree) {
+          const firstMatch = result.spans.find(n => n.matched)
+          desired = firstMatch?.spanData.spanID ?? spanIDs[0] ?? null
+        } else if (urlSpan && spanIDs.includes(urlSpan)) {
+          desired = urlSpan
+        } else {
+          desired = spanIDs[0] ?? null
+        }
+        if (desired !== urlSpan) setSpanInQuery(desired)
       }
-      if (desired !== urlSpan) setSpanInQuery(desired)
-    } catch (err) {
-      if (
-        detailFetch !== fetchCtl ||
-        fetchCtl.signal.aborted ||
-        page.selectedID !== traceID
-      )
-        return
-      fetchCtl.abort()
-      // A superseded fetch is not a failure: a newer one is already in flight
-      // and owns the view state.
-      if (isAbortError(err)) return
-      console.error('Failed to fetch trace detail:', err)
-      detailError = 'Could not load the selected trace.'
-    } finally {
-      // Only the newest fetch owns the loading flag; an aborted older one
-      // must not clear it out from under its replacement.
-      if (detailFetch === fetchCtl) {
-        detailLoading = false
-        detailFetch = null
-      }
-    }
+    )
   }
 
   async function handleDeleteAllTraces() {
@@ -796,7 +702,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Traces"
-  onRefresh={page.handleRefresh}
+  onRefresh={() => void resources.refresh()}
   refreshPulse={freshness.pulse}
   refreshAsideTip={freshness.tip}
   loading={page.loading}

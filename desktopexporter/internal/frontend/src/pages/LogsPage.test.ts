@@ -5,6 +5,7 @@ import { tick } from 'svelte'
 import LogsPage from './LogsPage.svelte'
 import type { LogSummary, LogData, Stats } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import { navigateToItem } from '@/route'
 
 const {
   searchLogPage,
@@ -191,7 +192,7 @@ describe('LogsPage refresh', () => {
     setTestUrl('/logs/log-1')
     const view = renderWithContexts(LogsPage)
     await waitFor(() => expect(signals).toHaveLength(1))
-    screen.getByRole('button', { name: /refresh/i }).click()
+    navigateToItem('logs', 'log-2')
     await waitFor(() => expect(signals).toHaveLength(2))
     expect(signals[0].aborted).toBe(true)
     expect(signals[1].aborted).toBe(false)

@@ -361,7 +361,9 @@ describe('Metric list and freshness statistics', () => {
       getStats.mockResolvedValueOnce(polled)
       await notifyDataChanged()
       expect(
-        screen.getByRole('button', { name: 'Refresh: +1 metric, +4 dps' })
+        await screen.findByRole('button', {
+          name: 'Refresh: +1 metric, +4 dps',
+        })
       ).toBeInTheDocument()
 
       const pendingPoll = deferred<Stats>()
@@ -1120,7 +1122,8 @@ describe('MetricsPage aggregate fetching', () => {
     getMetricView.mockResolvedValue(
       metricView(new ArrowFrame(telemetryDataset('getMetricView', fresh)))
     )
-    getMetricAggregateView.mockReturnValue(deferred<typeof scalar>().promise)
+    const pendingAggregate = deferred<typeof scalar>()
+    getMetricAggregateView.mockReturnValue(pendingAggregate.promise)
     now.mockReturnValue(1_700_003_901_000)
     time.mock.results[0]!.value.setSelection({
       type: 'custom',
@@ -1189,6 +1192,7 @@ describe('MetricsPage aggregate fetching', () => {
         effective: { startNs: null, endNs: null },
       },
     })
+    pendingAggregate.resolve(scalar)
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     await screen.findByText('confirmed current empty')
     expect(ctx.metric?.timeseries).toHaveLength(0)
@@ -1358,12 +1362,6 @@ describe('MetricsPage aggregate fetching', () => {
         if (outcome === 'unmount' || outcome === 'unmount-failure')
           mounted.unmount()
         else {
-          if (outcome === 'aba') {
-            navigateToItem('metrics', 'other')
-            await tick()
-            navigateToItem('metrics', 'metric-1')
-            await tick()
-          }
           getMetricAggregateView.mockResolvedValue({
             aggregate: null,
             scalarAggregate: null,
@@ -1372,7 +1370,19 @@ describe('MetricsPage aggregate fetching', () => {
             ...next,
             description: 'newest metadata',
           })
-          await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+          if (outcome === 'aba') {
+            navigateToItem('metrics', 'other')
+            await tick()
+            navigateToItem('metrics', 'metric-1')
+          } else {
+            navigateCurrentRoute(
+              withQueryPatch(readRoute().query, {
+                time: undefined,
+                start: '1700003600000',
+                end: '1700003601000',
+              })
+            )
+          }
           await screen.findByText('newest metadata')
         }
         await tick()
@@ -1457,6 +1467,74 @@ describe('MetricsPage aggregate fetching', () => {
       context.mockRestore()
     }
   )
+
+  it('coalesces Live and manual refresh until both metric aggregates finish', async () => {
+    const metric = prepareHistogram()
+    renderWithContexts(MetricsPage)
+    const scale = await screen.findByRole('list', {
+      name: 'Heatmap count scale',
+    })
+    const heatmap = deferred<ReturnType<typeof aggregate>>()
+    const histogram = deferred<ReturnType<typeof aggregate>>()
+    getMetricView.mockImplementation(async () => ({ ...metric }))
+    getMetricAggregateView.mockImplementation((...args: unknown[]) =>
+      args[3] === 1 ? histogram.promise : heatmap.promise
+    )
+    const initial = getMetricAggregateView.mock.calls.length
+    await fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    await waitFor(() =>
+      expect(getMetricAggregateView).toHaveBeenCalledTimes(initial + 2)
+    )
+    const signals = getMetricAggregateView.mock.calls
+      .slice(initial)
+      .map(call => call.at(-1) as AbortSignal)
+    const reads = getMetricView.mock.calls.length
+    for (let i = 0; i < 5; i++) {
+      notifyDataChanged()
+      await tick()
+    }
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(getMetricView).toHaveBeenCalledTimes(reads)
+    expect(signals.every(signal => !signal.aborted)).toBe(true)
+    heatmap.resolve(aggregate(13n))
+    await waitFor(() => expect(scale).toHaveTextContent('13'))
+    expect(getMetricView).toHaveBeenCalledTimes(reads)
+    expect(signals[1]!.aborted).toBe(false)
+    getMetricAggregateView.mockResolvedValue(aggregate(17n))
+    histogram.resolve(aggregate(11n))
+    await waitFor(() => expect(scale).toHaveTextContent('17'))
+    expect(getMetricView).toHaveBeenCalledTimes(reads + 1)
+    expect(getMetricAggregateView).toHaveBeenCalledTimes(initial + 4)
+  })
+
+  it('lets initial metric aggregates finish before refreshing the same view', async () => {
+    const metric = prepareHistogram()
+    const pending = deferred<ReturnType<typeof aggregate>>()
+    getMetricAggregateView.mockReturnValue(pending.promise)
+    renderWithContexts(MetricsPage)
+    await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalledTimes(2))
+    const signals = getMetricAggregateView.mock.calls.map(
+      call => call.at(-1) as AbortSignal
+    )
+    await fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    for (let i = 0; i < 5; i++) {
+      notifyDataChanged()
+      await tick()
+    }
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(getMetricView).toHaveBeenCalledTimes(1)
+    expect(signals.every(signal => !signal.aborted)).toBe(true)
+    getMetricView.mockImplementation(async () => ({ ...metric }))
+    getMetricAggregateView.mockResolvedValue(aggregate(17n))
+    pending.resolve(aggregate(13n))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('list', { name: 'Heatmap count scale' })
+      ).toHaveTextContent('17')
+    )
+    expect(getMetricView).toHaveBeenCalledTimes(2)
+    expect(getMetricAggregateView).toHaveBeenCalledTimes(4)
+  })
 
   it('retains heatmap selection while refreshed detail leaves its chart pending or failed', async () => {
     const context = vi.spyOn(metricContexts, 'createMetricViewContext')
@@ -2119,6 +2197,40 @@ describe('Metric Details request lifecycle', () => {
       })
     ).toHaveAttribute('aria-expanded', 'true')
   })
+
+  it.each(['complete', 'collapse'] as const)(
+    'waits for expanded-series reads before refreshing, until they %s',
+    async outcome => {
+      prepare()
+      const attributes = deferred<unknown>()
+      getMetricSeries
+        .mockReturnValueOnce(attributes.promise)
+        .mockResolvedValue({ attributes: [] })
+      renderWithContexts(MetricsPage)
+      await expand()
+      await waitFor(() => expect(getMetricSeries).toHaveBeenCalledTimes(1))
+      const signal = getMetricSeries.mock.calls[0]!.at(-1) as AbortSignal
+      await fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+      for (let i = 0; i < 5; i++) await notifyDataChanged()
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      expect(getMetricView).toHaveBeenCalledTimes(1)
+      expect(signal.aborted).toBe(false)
+      if (outcome === 'complete') attributes.resolve({ attributes: [] })
+      else
+        await fireEvent.click(
+          screen.getByRole('button', {
+            name: 'Collapse attributes for default series',
+          })
+        )
+      await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(2))
+      await tick()
+      expect(getMetricSeries).toHaveBeenCalledTimes(
+        outcome === 'complete' ? 2 : 1
+      )
+      // Publishing the refreshed metric ends the previous reading's lifetime.
+      expect(signal.aborted).toBe(true)
+    }
+  )
 })
 
 describe('Database metric series sorting', () => {
@@ -2184,7 +2296,7 @@ describe('Database metric series sorting', () => {
     await waitFor(() => expect(order()).toEqual(values))
   })
 
-  it('rejects a pending comparison from before a same-ID refresh', async () => {
+  it('finishes a pending series sort before a same-ID refresh', async () => {
     const stale = deferred<typeof values>()
     getMetricSeriesOrder
       .mockReturnValueOnce(stale.promise)
@@ -2196,12 +2308,12 @@ describe('Database metric series sorting', () => {
     await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(1))
     const signal = getMetricSeriesOrder.mock.calls[0]!.at(-1) as AbortSignal
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(getMetricSeriesOrder).toHaveBeenCalledTimes(1)
+    expect(signal.aborted).toBe(false)
+    stale.resolve(['a', 'b', 'c'])
     await waitFor(() => expect(getMetricSeriesOrder).toHaveBeenCalledTimes(2))
     expect(signal.aborted).toBe(true)
     await waitFor(() => expect(order()).toEqual(['b', 'a', 'c']))
-    stale.resolve(['a', 'b', 'c'])
-    await tick()
-    expect(order()).toEqual(['b', 'a', 'c'])
   })
 
   it('does not retain an invisible sort when refresh removes its discriminator', async () => {
@@ -2777,7 +2889,7 @@ describe('MetricsPage raw series fetching', () => {
     expect(document.querySelector('tr[data-dp-id="dp-stale"]')).toBeNull()
   })
 
-  it('invalidates an in-flight raw response on a same-window refresh', async () => {
+  it('finishes an in-flight raw response before a same-window refresh', async () => {
     prepareRawSeriesTest()
     const old = deferred<MetricViewData | null>()
     const current = deferred<MetricViewData | null>()
@@ -2793,19 +2905,20 @@ describe('MetricsPage raw series fetching', () => {
     const view = renderWithContexts(MetricsPage)
     await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(rawSeriesCalls()).toHaveLength(1)
+    expect((rawSeriesCalls()[0]!.at(-1) as AbortSignal).aborted).toBe(false)
+    old.resolve(
+      makeMetric('Sum', [makeSumDatapoint('displayed', 1_700_000_000_000, 2)])
+    )
     await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
-    expect((rawSeriesCalls()[0]!.at(-1) as AbortSignal).aborted).toBe(true)
+    expect(document.querySelector('[data-dp-id="displayed"]')).not.toBeNull()
     current.resolve(
       makeMetric('Sum', [makeSumDatapoint('fresh', 1_700_000_000_000, 7)])
     )
     await waitFor(() =>
       expect(document.querySelector('[data-dp-id="fresh"]')).not.toBeNull()
     )
-    old.resolve(
-      makeMetric('Sum', [makeSumDatapoint('stale', 1_700_000_000_000, 2)])
-    )
-    await tick()
-    expect(document.querySelector('[data-dp-id="stale"]')).toBeNull()
+    expect(document.querySelector('[data-dp-id="displayed"]')).toBeNull()
     view.unmount()
     expect((rawSeriesCalls()[1]!.at(-1) as AbortSignal).aborted).toBe(true)
   })

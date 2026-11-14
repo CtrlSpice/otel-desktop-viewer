@@ -134,6 +134,16 @@
 
 {#snippet noopFallback(_item: unknown, _selected: boolean)}{/snippet}
 
+{#snippet headerControls()}
+  <LoadingStatus
+    compact
+    pending={!!loadingMessage}
+    label={loadingMessage}
+    requestKey={loadingRequestKey ??
+      `${routeContext.route.path}:${selectedID ?? ''}`}
+  />{@render header?.props.right?.()}
+{/snippet}
+
 {#snippet detailToggle()}
   <PanelToggle
     side="right"
@@ -176,15 +186,7 @@
     banner={pageBanner}
   >
     <div class="page-layout__content">
-      <div class="page-layout__loading">
-        <LoadingStatus
-          pending={!!loadingMessage}
-          label={loadingMessage}
-          requestKey={loadingRequestKey ??
-            `${routeContext.route.path}:${selectedID ?? ''}`}
-        />
-      </div>
-      <div class="page-layout__region" aria-busy={!!loadingMessage}>
+      <div class="page-layout__region">
         <ResizablePanels
           layoutKey={`${routeContext.route.path}:${!!hideDrawer}:${!!detail}`}
           rightCollapsed={!detail || !detailPanel.open}
@@ -203,6 +205,7 @@
             <div class="page-layout__main-chrome">
               <PaneHeader
                 {...header?.props ?? { mode: 'title', title: '', pill: true }}
+                right={headerControls}
                 inert={mainHeaderInert}
               />
               {@render main()}
@@ -246,10 +249,6 @@
      -- main + detail + the resizer between them. */
   .page-layout__content {
     @apply relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
-  }
-
-  .page-layout__loading {
-    @apply pointer-events-none absolute bottom-2 right-4 z-10 rounded bg-base-100;
   }
 
   /* The region that hosts main (solo) or main+detail (split). Same

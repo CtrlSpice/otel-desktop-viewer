@@ -6,7 +6,8 @@
 
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
-  import { onDestroy, untrack, type Snippet } from 'svelte'
+  import { untrack, type Snippet } from 'svelte'
+  import { createResource } from '@/services/resources'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
@@ -84,22 +85,21 @@
     sortDirection: 'asc' | 'desc'
     navigation: Navigation
   }
-  type Work = { controller: AbortController; pending: boolean; error: string }
   let displayed = $state.raw<Reading>()
   const displayedNavigation = $derived(
     displayed?.navigation ?? { offset: 0, previous: [] }
   )
-  let replacement = $state.raw<Work>()
-  let interaction = $state.raw<Work>()
+  const replacement = createResource<AttributeCoverage>({ formatError: String })
+  const interaction = createResource<AttributeCoverage>({ formatError: String })
   const values = $derived(coverage?.values ?? [])
   const page = $derived(values)
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
-  const loading = $derived(
-    Boolean(replacement?.pending || interaction?.pending)
+  const loading = $derived(replacement.pending || interaction.pending)
+  const requestKey = $derived(
+    `${replacement.requestKey}:${interaction.requestKey}`
   )
-  let requestKey = $state(0)
   let error = $state('')
   const failures = $derived(
     [replacement?.error, interaction?.error, error].filter(Boolean)
@@ -117,62 +117,48 @@
   const headingID = $props.id()
   const canExpand = $derived(coverage?.total !== 0)
   function cancelInteraction() {
-    interaction?.controller.abort()
-    interaction = undefined
+    interaction.clear()
   }
   async function load(reading: Reading, replacing: boolean, size: number) {
-    if (replacing) replacement?.controller.abort()
-    else cancelInteraction()
-    const controller = new AbortController()
-    const work: Work = { controller, pending: true, error: '' }
-    if (replacing) replacement = work
-    else interaction = work
-    requestKey++
-    try {
-      const result = await loadAttributeCoverage(
-        {
-          ...reading.options,
-          key: reading.name,
-          valueKind: reading.kind,
-          offset: reading.navigation.offset,
-          limit: size,
-          sortBy: reading.sortBy,
-          sortDirection: reading.sortDirection,
-          locale: navigator.language,
-        },
-        controller.signal
-      )
-      if (controller.signal.aborted) return
-      if (replacing) cancelInteraction()
-      coverage = result
-      displayed = reading
-      error = ''
-      onCount(result.kinds.get(reading.kind)?.count ?? 0, reading.options)
-      // A bulk disclosure or sort can change while the first page is pending.
-      if (
-        size !== limit ||
-        reading.sortBy !== sortBy ||
-        reading.sortDirection !== sortDirection
-      )
-        void load(
+    await (replacing ? replacement : interaction).load(
+      signal =>
+        loadAttributeCoverage(
           {
-            ...reading,
-            sortBy,
-            sortDirection,
-            navigation: { offset: 0, previous: [] },
+            ...reading.options,
+            key: reading.name,
+            valueKind: reading.kind,
+            offset: reading.navigation.offset,
+            limit: size,
+            sortBy: reading.sortBy,
+            sortDirection: reading.sortDirection,
+            locale: navigator.language,
           },
-          false,
-          limit
+          signal
+        ),
+      result => {
+        if (replacing) cancelInteraction()
+        coverage = result
+        displayed = reading
+        error = ''
+        onCount(result.kinds.get(reading.kind)?.count ?? 0, reading.options)
+        // A bulk disclosure or sort can change while the first page is pending.
+        if (
+          size !== limit ||
+          reading.sortBy !== sortBy ||
+          reading.sortDirection !== sortDirection
         )
-    } catch (reason) {
-      work.error = String(reason)
-    } finally {
-      if (!controller.signal.aborted) {
-        const completed = { ...work, pending: false }
-        if (replacing) replacement = completed
-        else interaction = completed
+          void load(
+            {
+              ...reading,
+              sortBy,
+              sortDirection,
+              navigation: { offset: 0, previous: [] },
+            },
+            false,
+            limit
+          )
       }
-    }
+    )
   }
   function navigate(navigation: Navigation) {
     if (displayed) void load({ ...displayed, navigation }, false, PAGE_SIZE)
@@ -228,10 +214,6 @@
           size
         )
     })
-  })
-  onDestroy(() => {
-    replacement?.controller.abort()
-    interaction?.controller.abort()
   })
 </script>
 

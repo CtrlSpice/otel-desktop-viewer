@@ -1,43 +1,27 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { createResource } from '@/services/resources'
   import { Download01Icon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import IconButton from './IconButton.svelte'
   import { downloadOTLP, type ExportSignal } from '@/services/export-service'
 
   let { signal, id }: { signal: ExportSignal; id: string } = $props()
-  let pending = $state(false)
-  let error = $state('')
-  let activeRequest: AbortController | undefined
+  const downloadRead = createResource<void>({
+    scope: null,
+    errorMessage: 'Download failed',
+  })
+  const pending = $derived(downloadRead.pending)
+  const error = $derived(downloadRead.error ?? '')
 
   $effect(() => {
     void signal
     void id
-    activeRequest?.abort()
-    activeRequest = undefined
-    pending = false
-    error = ''
+    downloadRead.clear()
   })
-  onDestroy(() => activeRequest?.abort())
 
   async function download() {
     if (pending) return
-    error = ''
-    pending = true
-    const controller = new AbortController()
-    activeRequest = controller
-    try {
-      await downloadOTLP(signal, id, controller.signal)
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        error = err instanceof Error ? err.message : 'Download failed'
-      }
-    } finally {
-      if (activeRequest === controller) {
-        pending = false
-        activeRequest = undefined
-      }
-    }
+    await downloadRead.load(abort => downloadOTLP(signal, id, abort))
   }
 </script>
 

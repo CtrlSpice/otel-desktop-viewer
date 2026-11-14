@@ -16,6 +16,7 @@ function setup(
   const listeners = new Set<() => void>()
   const navigate = vi.fn()
   const status = vi.fn()
+  const onFailure = vi.fn()
   const navigation = createImportNavigation({
     subscribe(listener) {
       listeners.add(listener)
@@ -26,12 +27,14 @@ function setup(
     lookup,
     navigate,
     status,
+    onFailure,
   })
   return {
     navigation,
     lookup,
     navigate,
     status,
+    onFailure,
     commit: () => {
       for (const listener of listeners) listener()
     },
@@ -69,19 +72,44 @@ it('ignores an old lookup after a new file selection', async () => {
   expect(test.navigate).toHaveBeenCalledWith(record, { id: 'new-log' })
 })
 
-it('bounds an unavailable target wait without claiming upload completion', async () => {
+it('waits for a commit through queueing, upload and delayed storage', async () => {
   vi.useFakeTimers()
   const test = setup()
   const selection = test.navigation.select('first.json')
+  await vi.advanceTimersByTimeAsync(120_000)
   selection.record(record)
+  await vi.advanceTimersByTimeAsync(120_000)
   selection.submitted()
-  await vi.advanceTimersByTimeAsync(60_000)
+  await vi.advanceTimersByTimeAsync(120_000)
   expect(test.navigate).not.toHaveBeenCalled()
   expect(test.status).toHaveBeenLastCalledWith(
-    'The first record is not available yet.',
-    false
+    'Opening the first record in first.json…'
   )
+  test.lookup.mockResolvedValue({ id: 'stored-log' })
+  test.commit()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(test.navigate).toHaveBeenCalledExactlyOnceWith(record, {
+    id: 'stored-log',
+  })
+  expect(test.status).toHaveBeenLastCalledWith('')
+})
+
+it('cancels a pending lookup and ignores later commits', async () => {
+  let finish!: (destination: ImportDestination) => void
+  const test = setup(
+    vi.fn(() => new Promise<ImportDestination>(resolve => (finish = resolve)))
+  )
+  const selection = test.navigation.select('first.json')
+  selection.record(record)
+  await Promise.resolve()
+  test.navigation.cancel()
+  finish({ id: 'stored-log' })
+  await Promise.resolve()
+  selection.submitted()
   const calls = test.lookup.mock.calls.length
   test.commit()
+  await Promise.resolve()
   expect(test.lookup).toHaveBeenCalledTimes(calls)
+  expect(test.navigate).not.toHaveBeenCalled()
+  expect(test.status).toHaveBeenLastCalledWith('')
 })

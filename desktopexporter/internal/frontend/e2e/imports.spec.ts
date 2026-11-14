@@ -193,6 +193,9 @@ test('opens the first file record on a commit with Live off, retaining it while 
     })
   })
   await page.goto('/')
+  await page.evaluate(() => document.fonts.ready)
+  const layout = page.locator('.page-layout')
+  const layoutBeforeImport = await layout.boundingBox()
   await expect(
     page.getByRole('button', { name: 'Live', exact: true })
   ).toHaveAttribute('aria-pressed', 'false')
@@ -215,9 +218,29 @@ test('opens the first file record on a commit with Live off, retaining it while 
   await expect.poll(() => requests).toBe(3)
   await expect.poll(() => targets.length).toBeGreaterThan(0)
   await expect(page).toHaveURL(/\/$/)
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Opening the first record' })
-  ).toBeVisible()
+  const header = page.locator('.page-layout__main-chrome > .pane-header')
+  const notice = header
+    .getByRole('status')
+    .filter({ hasText: 'Opening the first record' })
+  await expect(notice).toBeVisible()
+  await expect(notice).toHaveAttribute(
+    'data-tip',
+    'Opening the first record in mixed.json…'
+  )
+  const headerBox = (await header.boundingBox())!
+  const noticeBox = (await notice.boundingBox())!
+  expect(noticeBox.x).toBeGreaterThanOrEqual(headerBox.x)
+  expect(noticeBox.x + noticeBox.width).toBeLessThanOrEqual(
+    headerBox.x + headerBox.width
+  )
+  expect(noticeBox.y).toBeGreaterThanOrEqual(headerBox.y)
+  expect(noticeBox.y + noticeBox.height).toBeLessThanOrEqual(
+    headerBox.y + headerBox.height
+  )
+  expect(
+    await notice.evaluate(element => !!element.closest('[aria-busy="true"]'))
+  ).toBe(false)
+  expect(await layout.boundingBox()).toEqual(layoutBeforeImport)
   stored = true
   await notifyDataChanged(page)
   await expect(page).toHaveURL(`/logs/${id}?time=all`)
@@ -238,54 +261,48 @@ test('opens the first file record on a commit with Live off, retaining it while 
   ).toBe(true)
 })
 
-for (const cancel of ['button', 'route'] as const) {
-  test(`cancels pending import navigation through the ${cancel}`, async ({
-    page,
-  }) => {
-    let lookups = 0
-    let stored = false
-    await page.route('**/api/import-target/logs', async route => {
-      lookups++
-      await route.fulfill({
-        json: stored ? { id: '00000000-0000-0000-0000-000000000001' } : null,
-      })
+test('cancels pending import navigation when the route changes', async ({
+  page,
+}) => {
+  let lookups = 0
+  let stored = false
+  await page.route('**/api/import-target/logs', async route => {
+    lookups++
+    await route.fulfill({
+      json: stored ? { id: '00000000-0000-0000-0000-000000000001' } : null,
     })
-    await page.route('http://127.0.0.1:54318/v1/logs', route =>
-      route.fulfill({
-        json: {},
-        headers: { 'Access-Control-Allow-Origin': '*' },
-      })
-    )
-    await page.goto('/')
-    await page.getByLabel('Choose telemetry JSON files').setInputFiles({
-      name: 'pending.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(
-        '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"Pending log"}}]}]}]}'
-      ),
-    })
-    const status = page
-      .getByRole('status')
-      .filter({ hasText: 'Opening the first record' })
-    await expect(status).toBeVisible()
-    await expect.poll(() => lookups).toBeGreaterThan(0)
-    if (cancel === 'button')
-      await page
-        .getByRole('button', { name: 'Cancel opening', exact: true })
-        .click()
-    else await page.getByRole('link', { name: /^Metrics/ }).click()
-    await expect(status).toHaveCount(0)
-    const destination = page.url()
-    const before = lookups
-    stored = true
-    const refreshed = page.waitForResponse(
-      response =>
-        response.url().endsWith('/rpc') &&
-        response.request().postDataJSON()?.method === 'getStats'
-    )
-    await notifyDataChanged(page)
-    await refreshed
-    expect(page.url()).toBe(destination)
-    expect(lookups).toBe(before)
   })
-}
+  await page.route('http://127.0.0.1:54318/v1/logs', route =>
+    route.fulfill({
+      json: {},
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    })
+  )
+  await page.goto('/')
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles({
+    name: 'pending.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"Pending log"}}]}]}]}'
+    ),
+  })
+  const status = page
+    .getByRole('status')
+    .filter({ hasText: 'Opening the first record' })
+  await expect(status).toBeVisible()
+  await expect.poll(() => lookups).toBeGreaterThan(0)
+  await page.getByRole('link', { name: /^Metrics/ }).click()
+  await expect(status).toHaveCount(0)
+  const destination = page.url()
+  const before = lookups
+  stored = true
+  const refreshed = page.waitForResponse(
+    response =>
+      response.url().endsWith('/rpc') &&
+      response.request().postDataJSON()?.method === 'getStats'
+  )
+  await notifyDataChanged(page)
+  await refreshed
+  expect(page.url()).toBe(destination)
+  expect(lookups).toBe(before)
+})

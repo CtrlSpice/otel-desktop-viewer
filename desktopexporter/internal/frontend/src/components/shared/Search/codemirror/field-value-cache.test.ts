@@ -1,26 +1,33 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createFieldValueCache } from './field-value-cache'
+import { ResourceMap } from '@/services/resources/map.svelte'
 
 describe('field value cache', () => {
   it('fetches a field once and shares the result', async () => {
     const fetch = vi.fn(async () => ['a', 'b'])
-    const cache = createFieldValueCache(fetch, 'traces')
+    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
     expect(await cache.values('name')).toEqual(['a', 'b'])
     expect(await cache.values('name')).toEqual(['a', 'b'])
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(fetch).toHaveBeenCalledWith('traces', 'name', '', 500)
+    expect(fetch).toHaveBeenCalledWith(
+      'traces',
+      'name',
+      '',
+      500,
+      expect.any(AbortSignal)
+    )
   })
 
   it('shares one flight between concurrent callers', async () => {
     const fetch = vi.fn(async () => ['a'])
-    const cache = createFieldValueCache(fetch, 'traces')
+    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
     await Promise.all([cache.values('name'), cache.values('name')])
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('keeps fields separate', async () => {
     const fetch = vi.fn(async (_s: string, field: string) => [field])
-    const cache = createFieldValueCache(fetch, 'metrics')
+    const cache = createFieldValueCache(fetch, 'metrics', new ResourceMap())
     expect(await cache.values('name')).toEqual(['name'])
     expect(await cache.values('unit')).toEqual(['unit'])
     expect(fetch).toHaveBeenCalledTimes(2)
@@ -35,8 +42,8 @@ describe('field value cache', () => {
       if (attempt === 1) throw failure
       return ['recovered']
     })
-    const cache = createFieldValueCache(fetch, 'traces')
-    await expect(cache.values('name')).rejects.toBe(failure)
+    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
+    await expect(cache.values('name')).rejects.toThrow(failure.message)
     expect(await cache.values('name')).toEqual(['recovered'])
   })
 
@@ -56,7 +63,7 @@ describe('field value cache', () => {
       )
       .mockImplementationOnce(async () => ['second'])
 
-    const cache = createFieldValueCache(fetch, 'traces')
+    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
     const first = cache.values('name')
     const firstCaught = first.catch(() => 'failed')
     rejectSlow(new Error('slow failure'))

@@ -1,6 +1,7 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { readFile } from 'node:fs/promises'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Route } from '@playwright/test'
+import { mockDataChanges, notifyDataChanged } from './data-changes'
 import type { LogFixture } from '../src/test/telemetry-fixture-types'
 
 const logRef = '00000000-0000-0000-0000-000000000001'
@@ -63,6 +64,7 @@ function rpcFixture(method: string) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await mockDataChanges(page)
   await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
@@ -128,6 +130,58 @@ test.beforeEach(async ({ page }) => {
     'border-width',
     '0px'
   )
+})
+
+test('coalesces Live and Refresh through raw JSON size, body and formatting reads', async ({
+  page,
+}) => {
+  let listRefreshes = 0
+  await routeTelemetry(page, route => {
+    if (route.request().postDataJSON().method === 'searchLogPage')
+      listRefreshes++
+    return route.fallback()
+  })
+  const body = '{"body":{"stringValue":"committed body"}}'
+  const headers = {
+    'Content-Type': 'application/json',
+    'Content-Length': String(Buffer.byteLength(body)),
+  }
+  let head: Route | undefined
+  let preview: Route | undefined
+  let completed = false
+  const failed: string[] = []
+  page.on('requestfailed', request => {
+    if (request.method() === 'GET' && request.url().includes('/export/logs/'))
+      failed.push(request.url())
+  })
+  await page.route('**/export/logs/**', route => {
+    if (completed)
+      return route.fulfill({
+        headers,
+        body: route.request().method() === 'HEAD' ? '' : body,
+      })
+    if (route.request().method() === 'HEAD') head = route
+    else preview = route
+  })
+  await page.getByRole('tab', { name: 'JSON', exact: true }).click()
+  await expect.poll(() => !!head).toBe(true)
+  await page.getByRole('button', { name: 'Live', exact: true }).click()
+  for (let i = 0; i < 5; i++) await notifyDataChanged(page)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  expect(listRefreshes).toBe(0)
+  expect(failed).toEqual([])
+  await head!.fulfill({ headers })
+  await expect.poll(() => !!preview).toBe(true)
+  await notifyDataChanged(page)
+  expect(listRefreshes).toBe(0)
+  expect(failed).toEqual([])
+  completed = true
+  await preview!.fulfill({ headers, body })
+  await expect(page.locator('.raw-inspector .cm-content')).toContainText(
+    'committed body'
+  )
+  await expect.poll(() => listRefreshes).toBe(1)
+  expect(failed).toEqual([])
 })
 
 test('downloads exact JSON bytes with one activation from the signal header', async ({
