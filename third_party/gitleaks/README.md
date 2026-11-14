@@ -1,6 +1,6 @@
 # Gitleaks pattern attribution
 
-`collector_redaction.yaml` adapts selected token regexes from
+`internal/collector/collector_redaction.yaml` adapts selected token regexes from
 [Gitleaks v8.30.1, config/gitleaks.toml](https://github.com/gitleaks/gitleaks/blob/83d9cd684c87d95d656c1458ef04895a7f1cbd8e/config/gitleaks.toml).
 The pinned release commit is `83d9cd684c87d95d656c1458ef04895a7f1cbd8e`.
 The upstream MIT license is included in this directory.

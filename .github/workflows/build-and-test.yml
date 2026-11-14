@@ -87,7 +87,7 @@ jobs:
       run: go build -o otel-desktop-viewer
       if: matrix.os != 'windows-latest'
 
-    # Include the root CLI package and desktopexporter packages.
+    # Include the internal CLI/Collector and desktopexporter packages.
     - name: Go Tests
       run: go test ./...
 

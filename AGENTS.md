@@ -1,5 +1,12 @@
 # Repository documentation
 
+- Keep command handlers, CLI helpers and their tests in `internal/cli/`.
+- Keep Collector setup, embedded redaction policy and their tests in
+  `internal/collector/`. Keep the executable entry point and release version
+  stamping in root `main.go`; preserve `go run .`, `go build .` and Go installation.
+- Run `make test-go EVALS=0` and `make test-go EVALS=1` from the repository root
+  after Go package changes. Tests stay beside the code they exercise.
+
 - Use plain bullet points as the entire PR description.
 - Use concise, standalone bullet points explaining what changed and why.
 - Write in plain language that makes sense six months later without the conversation.

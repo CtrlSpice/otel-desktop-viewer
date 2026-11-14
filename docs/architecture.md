@@ -24,8 +24,9 @@ Start here when following data through the code.
 
 | Responsibility | Entry points |
 | --- | --- |
-| Startup and CLI commands | [`main.go`](../main.go), [`root_command.go`](../root_command.go) |
-| Collector pipelines and components | [`collector_config.go`](../collector_config.go), [`components.go`](../components.go) |
+| Executable entry and release version | [`main.go`](../main.go) |
+| CLI commands and helpers | [`internal/cli/`](../internal/cli/), [`root_command.go`](../internal/cli/root_command.go) |
+| Collector pipelines and components | [`internal/collector/`](../internal/collector/), [`collector_config.go`](../internal/collector/collector_config.go), [`components.go`](../internal/collector/components.go) |
 | Database, server and retention lifecycle | [`desktopexporter/duckdbextension/extension.go`](../desktopexporter/duckdbextension/extension.go) |
 | Telemetry ingestion | [`desktopexporter/exporter.go`](../desktopexporter/exporter.go) |
 | Database access and query packages | [`desktopexporter/internal/store/`](../desktopexporter/internal/store/) |
