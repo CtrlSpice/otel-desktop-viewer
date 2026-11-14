@@ -9,15 +9,16 @@ exporter; environment variables alone do not provide instrumentation.
 They assume both processes run on the same machine with default ports.
 For containers, see [Docker guide](docker-guide.md#use-docker-compose).
 
-## Choose an endpoint
+## Choose an OTLP receiver
 
-| Export protocol | Default endpoint | Protocol setting |
+| Export protocol | Default receiver address | Protocol setting |
 | --- | --- | --- |
 | OTLP HTTP with protobuf | `http://localhost:4318` | `http/protobuf` |
 | OTLP gRPC | `http://localhost:4317` | `grpc` |
 
-Port `8000` serves the UI and APIs, not OTLP. Substitute your configured addresses
-if you changed the defaults in [Command-line options](command-line-options.md).
+The web UI and viewer API use `http://localhost:8000`; exporters use the OTLP
+receivers above. If you [change addresses or ports](command-line-options.md#set-addresses-and-browser-behaviour),
+update the exporter settings to match.
 
 ## Configure with environment variables
 
@@ -25,6 +26,11 @@ Check which signals, protocols and configuration methods your SDK supports.
 For [environment-variable configuration](https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporter-configuration/),
 choose one protocol and set its variables before starting the application.
 These commands use POSIX shell syntax.
+
+Signal-specific endpoint and protocol variables override `OTEL_EXPORTER_OTLP_ENDPOINT`
+and `OTEL_EXPORTER_OTLP_PROTOCOL`. Check for existing overrides when changing
+protocols. The [OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
+defines their precedence.
 
 ### Send over HTTP
 
@@ -39,19 +45,13 @@ export OTEL_LOGS_EXPORTER=otlp
 The shared endpoint is a base URL. The SDK appends `/v1/traces`, `/v1/metrics`
 or `/v1/logs` for each signal.
 
-Signal-specific endpoint variables override the shared endpoint. They require
-the complete HTTP path:
+Signal-specific HTTP endpoints require the complete signal URL:
 
-| Variable | Default viewer URL |
+| Variable | Default OTLP HTTP endpoint |
 | --- | --- |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | `http://localhost:4318/v1/traces` |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `http://localhost:4318/v1/metrics` |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | `http://localhost:4318/v1/logs` |
-
-Signal-specific protocol variables override `OTEL_EXPORTER_OTLP_PROTOCOL` too.
-Check for existing overrides when changing protocols. The
-[OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
-defines their precedence.
 
 ### Send over gRPC
 
@@ -63,7 +63,7 @@ export OTEL_METRICS_EXPORTER=otlp
 export OTEL_LOGS_EXPORTER=otlp
 ```
 
-For gRPC, use the receiver address without HTTP signal paths such as `/v1/traces`.
+OTLP gRPC uses the receiver address without HTTP signal paths such as `/v1/traces`.
 
 ## Use declarative configuration
 
@@ -114,7 +114,7 @@ Set endpoints in the file; `OTEL_EXPORTER_OTLP_ENDPOINT` does not override them.
 ## Check the result
 
 Start your application, generate telemetry and open the matching Traces, Metrics
-or Logs workspace at `http://localhost:8000` (or your configured UI address).
+or Logs workspace at `http://localhost:8000` (or your configured web UI address).
 
 If telemetry does not appear, check the application's exporter errors, endpoint,
 protocol and signal-specific overrides.

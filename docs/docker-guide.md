@@ -20,17 +20,17 @@ docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest
 
 | Purpose | Container port | Host address |
 | --- | --- | --- |
-| Web UI and viewer APIs | `8000` | `http://localhost:8000` |
-| OTLP gRPC | `4317` | `http://localhost:4317` |
-| OTLP HTTP | `4318` | `http://localhost:4318` |
+| Web UI and viewer API | `8000` | `http://localhost:8000` |
+| OTLP gRPC receiver | `4317` | `http://localhost:4317` |
+| OTLP HTTP receiver | `4318` | `http://localhost:4318` |
 
-Port mappings use `HOST_PORT:CONTAINER_PORT`. For example, `-p 8001:8000` puts the
-UI at `http://localhost:8001`.
+Port mappings use `HOST_PORT:CONTAINER_PORT`. For example, `-p 8001:8000` serves
+the web UI and viewer API at `http://localhost:8001`.
 
-Host applications use the published OTLP ports. Applications in the same Compose
-network use the service name and container ports. Inside a container, `localhost`
-refers to that container. See [SDK configuration](sdk-configuration.md) for
-exporter settings.
+Applications on the host use the published OTLP receiver addresses. Applications
+in the same Compose network use the service name and OTLP receiver ports.
+Inside a container, `localhost` refers to that container. See
+[SDK configuration](sdk-configuration.md#choose-an-otlp-receiver) for exporter settings.
 
 ## Save telemetry between runs
 
@@ -50,8 +50,9 @@ on later runs, stopping the previous container before its replacement starts.
 
 Arguments after the published image name replace its defaults. Include
 `--host 0.0.0.0` when supplying flags so published ports remain reachable.
-File storage has a `2GB` default limit and deletes old telemetry above it.
-[Command-line options](command-line-options.md) explains how to change the limit.
+With file storage, periodic checks delete the oldest telemetry above a `2GB`
+default threshold. See [Command-line options](command-line-options.md#choose-storage-and-retention)
+for size syntax and retention behaviour.
 
 ## Use Docker Compose
 
@@ -80,8 +81,8 @@ docker compose up otel-desktop-viewer
 ```
 
 Applications in the same Compose network use `http://otel-desktop-viewer:4318`
-for OTLP HTTP or `http://otel-desktop-viewer:4317` for gRPC. Your host browser
-still uses `http://localhost:8000`.
+for OTLP HTTP or `http://otel-desktop-viewer:4317` for OTLP gRPC.
+Open the web UI at `http://localhost:8000` in the host browser.
 
 ## Choose an image version
 
@@ -89,7 +90,7 @@ Use a [release tag](https://github.com/CtrlSpice/otel-desktop-viewer/releases)
 instead of `latest` in the run command or Compose file:
 
 ```sh
-docker pull ghcr.io/ctrlspice/otel-desktop-viewer:v0.7.0
+docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:v0.7.0
 ```
 
 Explicit architecture tags are available as `latest-amd64` and `latest-arm64`.
