@@ -1,10 +1,8 @@
-<script lang="ts" generics="TSortColumn extends string">
+<script lang="ts">
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import type { FieldDefinition, ParsedSearchRequest } from '@/search/model'
-
-  import type { SortDirection } from '@/contexts/signal-list-page.svelte'
 
   type DrawerSearchPanelSegment = 'full' | 'toolbar' | 'search'
 
@@ -12,8 +10,6 @@
     /** `toolbar` = time range · `search` = editor · `full` = both */
     segment?: DrawerSearchPanelSegment
     signal: 'traces' | 'metrics' | 'logs'
-    sortValue: TSortColumn
-    sortDirection: SortDirection
     onSearchError?: (error: string | null) => void
     onSearchReady?: (api: SearchEditorAPI) => void
     onQueryChange?: (text: string, fields: FieldDefinition[]) => void
@@ -24,8 +20,6 @@
   let {
     segment = 'full',
     signal,
-    sortValue,
-    sortDirection,
     onSearchError,
     onSearchReady,
     onQueryChange,
@@ -48,8 +42,6 @@
   {#if segment === 'full' || segment === 'search'}
     <SearchEditor
       {signal}
-      {sortValue}
-      {sortDirection}
       variant="drawer"
       {onSearchError}
       {onQueryChange}

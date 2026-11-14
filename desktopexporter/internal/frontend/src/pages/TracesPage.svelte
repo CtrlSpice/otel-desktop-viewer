@@ -724,8 +724,6 @@
     <DrawerSearchPanel
       segment="search"
       signal="traces"
-      sortValue={page.sortColumn}
-      sortDirection={page.sortDirection}
       onSearchReady={api => (page.searchEditorApi = api)}
       onQueryChange={(text, availableFields) => {
         query = text

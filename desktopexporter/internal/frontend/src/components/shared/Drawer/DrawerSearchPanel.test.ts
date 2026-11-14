@@ -8,8 +8,6 @@ function renderPanel(props: Record<string, unknown> = {}) {
   setTestUrl('/traces')
   return renderWithContexts(DrawerSearchPanel, {
     signal: 'traces',
-    sortValue: 'duration',
-    sortDirection: 'desc',
     ...props,
   })
 }

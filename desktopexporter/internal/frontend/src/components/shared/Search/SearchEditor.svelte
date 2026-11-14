@@ -1,4 +1,4 @@
-<script lang="ts" generics="TSortColumn extends string">
+<script lang="ts">
   import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte'
   import { createRead, createReadMap } from '@/services/reads'
   import {
@@ -45,11 +45,8 @@
   import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchDefinition, SearchEditorAPI } from './search-editor-api'
-  import type { SortDirection } from '@/contexts/signal-list-page.svelte'
 
   type SearchEditorProps = {
-    sortValue: TSortColumn
-    sortDirection: SortDirection
     /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
     inToolbar?: boolean
     /** 'drawer' moves action buttons to a footer row below the editor. */

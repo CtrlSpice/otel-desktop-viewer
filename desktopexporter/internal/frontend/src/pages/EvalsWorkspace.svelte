@@ -487,8 +487,6 @@
   {#snippet drawerSearch()}
     <SearchEditor
       definition={evalSearchDefinition}
-      sortValue={experimentSort}
-      sortDirection={experimentSortDirection}
       variant="drawer"
       onSearchRequest={request => {
         searchRequest = request
