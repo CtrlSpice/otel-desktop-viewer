@@ -127,18 +127,18 @@ changelog:
 
 release:
   name_template: "v{{ .Version }}"
-  # Update the second paragraph when release schema compatibility changes.
+  # Update the schema number and available migration steps for each release.
   header: |
     ## Before you upgrade
 
-    The store keeps a schema version and will not open a database written by a
-    different one. It says so and stops, naming the file and what to do:
-    delete it, or pass a different `--db`. Nothing is migrated and nothing is
-    silently reinterpreted.
+    At startup, the viewer checks the database schema. Supported forward upgrades
+    run in one transaction. Unsupported versions or invalid schema metadata stop
+    startup without resetting the database.
 
-    **This release uses schema 27.** Databases with any other schema version will not open.
-    To keep viewing an older database, use its original binary. Start this release
-    with a new `--db` path, or delete the old file if you no longer need it.
+    **This release uses schema 27, the automatic-upgrade baseline.** It includes no
+    production migration steps. Pre-27 databases and databases newer than schema 27
+    cannot open. To keep viewing an older database, use its original binary.
+    Start this release with a new `--db` path to keep the older file intact.
     Running without `--db` is unaffected: it starts with an empty in-memory store.
 
     Public releases exclude Evals. Source builds can include it with

@@ -1,321 +1,86 @@
-# Contributing
+# Contributor guide
 
-Bug reports, documentation, interface work, and backend changes are welcome.
+Bug reports, docs fixes, design work and code are welcome. Please follow our
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
-Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
+## Choose a change
 
-## Contribution principles
+[Open an issue](https://github.com/CtrlSpice/otel-desktop-viewer/issues/new/choose)
+to report a bug, suggest a feature or ask for help choosing a first contribution.
 
-- Coordinate substantial product and architecture decisions with a maintainer before implementation.
-- Understand and take responsibility for every submitted change.
-- Include focused automated tests with every behavioral change.
-- Preserve the repository's architecture, interaction patterns, accessibility, and generated-file conventions.
-- Keep pull requests small enough to review and verify with confidence.
+Before substantial product or architectural work, discuss the approach in an
+issue and wait for maintainer agreement.
 
-### Documentation and private notes
+You can use AI tools, but reviewers should not be able to tell. Review and
+understand their output, keep it within the agreed scope, and take responsibility
+for the contribution and review follow-up.
 
-`docs/` is live documentation for functionality on `main`, not proposals or
-roadmaps. Keep plans, research, drafts, and handoffs in `notes/`, which is private
-local material excluded from Git. Do not commit or publish those notes, or link
-to them from public documentation. When functionality lands on `main`, document
-its implemented behavior in `docs/`.
+## Run locally
 
-### AI tools and coding agents
-
-AI tools and coding agents are allowed. Contributors must review and understand their output, keep it within the agreed scope, and test every behavioral change.
-
-The contributor remains responsible for the pull request and review follow-up.
-
-## Choosing work
-
-- **Report bugs** using the [bug report template](../.github/ISSUE_TEMPLATE/bug_report.yml). Reproduction steps, logs, and screenshots are especially helpful.
-- **Suggest features** using the [feature request template](../.github/ISSUE_TEMPLATE/feature_request.yml).
-- **Improve documentation** in the README, [ARCHITECTURE.md](ARCHITECTURE.md), and comments around non-obvious behavior.
-- **Send a pull request** after following the coordination guidance below.
-
-If you are looking for a first contribution, open an issue and say hello. Small bug fixes, documentation improvements, and narrowly scoped polish are good places to start.
-
-### Before substantial work
-
-Before starting a substantial user-facing, architectural, data-model, persistence, or cross-cutting change:
-
-- Comment on the issue with the approach you intend to take.
-- Wait for maintainer agreement on the direction.
-- Surface important product and architectural trade-offs in the discussion.
-- Use `Fixes #...` or `Closes #...` after the implementation matches the agreed scope.
-
-Ask when the boundary is unclear. Maintainers may defer or close substantial pull requests that began without agreement, even if implementation is complete.
-
-## Prerequisites
-
-| Tool                                 | Version / notes                                                                        |
-| ------------------------------------ | -------------------------------------------------------------------------------------- |
-| [Go](https://go.dev/)                | 1.26 (see `go.mod`)                                                                    |
-| [Node.js](https://nodejs.org/) + npm | Node 26 (see `.nvmrc`)                                                                 |
-| CGO                                  | Required; DuckDB bindings need a compatible C toolchain                                |
-| Windows                              | MinGW64 GCC compatible with DuckDB's prebuilt static library; CI pins `C:\mingw64\bin` |
-
-DuckDB's prebuilt native libraries are Go modules hosted at `go.duckdb.org`.
-Restricted module proxies must allow that module path.
-
-Clone the repo:
+You need Git, Make, [Go 1.26](../go.mod), [Node 26](../.nvmrc) with npm,
+and a C compiler for DuckDB. Windows requires
+[MinGW64](../README.md#1-install-the-viewer).
 
 ```bash
 git clone https://github.com/CtrlSpice/otel-desktop-viewer.git
 cd otel-desktop-viewer
-make install
+make install-clean
 ```
 
-This installs frontend packages and the Chromium build used by Playwright accessibility tests.
-
-## Development workflow
-
-The app is a custom OpenTelemetry Collector binary with a Svelte 5 UI. See [ARCHITECTURE.md](ARCHITECTURE.md).
-
-### Quick start with sample data
+Start the backend:
 
 ```bash
 make run-go
 ```
 
-This runs the Go server on `:8000` in the foreground. In another terminal,
-use the seed commands below to load sample telemetry.
-
-### Frontend development (recommended for UI work)
-
-Use two terminals:
+In another terminal, start the frontend with hot reload:
 
 ```bash
-# Terminal 1 — backend, if one is not already running
-make run-go
-
-# Terminal 2 — Vite with hot reload
 make dev-ts
 ```
 
-Open **http://localhost:3001**. Vite proxies `/rpc` to the Go server on `:8000`.
-For an existing backend on another address, use
-`VIEWER_PROXY_TARGET=http://localhost:8001 make dev-ts`.
-
-### Production-like run
+Open <http://localhost:3001>. The backend runs on port 8000 and keeps data in
+memory. To load sample telemetry:
 
 ```bash
-make build
-./otel-desktop-viewer
+make populate-traces populate-logs populate-metrics
 ```
 
-`make build-ts` copies the frontend into `desktopexporter/internal/server/static/` for embedding. Run it before testing frontend changes through the standalone binary.
+Select **All** in the viewer's time range to see it. See the
+[dataset guide](../testdata/otlp/README.md) for other samples.
 
-Builds default to `EVALS=0`, which excludes the Evals UI and backend handlers.
-Use `make build EVALS=1` to include Evals; its frontend goes to `dist-evals` and
-its embedded assets to the ignored `internal/server/static-evals` directory.
-Both variants retain the same database schema. See
-[Experimental features](experimental-features.md) for activation within that build.
+## Check your change
 
-The same `EVALS` selection applies to development and tests:
-`make dev-ts EVALS=1`, `make test EVALS=1`. Use matching frontend and backend
-builds. `make build-go` prepares the selected frontend before compiling Go;
-plain `go build` uses the committed public assets without requiring Node.
-`make build-ts-check` checks public asset freshness; with `EVALS=1` it checks
-frontend compilation because enabled assets are generated rather than committed.
-Playwright starts its own server on `:3002` (`EVALS=0`) or `:3003` (`EVALS=1`),
-using a separate Vite cache from the development preview.
+Keep changes focused and follow nearby code. Behaviour and dependency changes
+need focused automated tests. For bug fixes, show that the test fails before
+the fix where practical. Check UI changes in the running app for accessibility
+and visual regressions.
 
-### Seed scripts
+Read [Architecture](architecture.md) for code and UI conventions, and follow
+[Database upgrades](database-upgrades.md) for schema changes.
 
-With the server running:
+After frontend source, dependency or build-configuration changes, regenerate
+the public assets from the repository root and commit the updated
+`desktopexporter/internal/server/static/` files:
 
 ```bash
-make populate-traces
-make populate-logs
-make populate-metrics
+make build-ts EVALS=0
 ```
 
-Seeding posts fixed OTLP JSON from `testdata/otlp/small/` using curl. Trace/log
-correlations are stored in the files; no generator or temporary handoff is needed.
-Choose **All** or the dataset's recorded time window in the viewer. Replaying
-logs or datapoints appends more records, so use a fresh store for repeatable counts.
-
-Override the endpoint with `OTLP_ENDPOINT=http://host:4318`, or select the smaller
-checkout-failure scenario:
-
-```bash
-make populate-traces populate-logs populate-metrics OTLP_DATASET=testdata/otlp/checkout
-```
-
-For the busy histogram and exponential-histogram heatmap playground:
-
-```bash
-make populate-metrics OTLP_DATASET=testdata/otlp/heatmap-playground
-```
-
-Dataset contents and counts are documented in [`testdata/otlp/README.md`](../testdata/otlp/README.md).
-
-### Stop dev servers
-
-Press Ctrl-C in the terminal that owns each foreground server. Stop only the
-processes you started; the Makefile does not terminate processes by port number.
-
-## Architecture and project layout
-
-Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing component ownership, storage, ingestion, JSON-RPC contracts, routing, or persisted state.
-
-```
-main.go, components.go                # Collector entry and OCB-generated registry
-desktopexporter/
-  exporter.go                         # Signal exporters; writes through the shared store
-  duckdbextension/                    # Store, HTTP server, and retention ownership
-  internal/server/                    # HTTP and JSON-RPC
-  internal/store/                     # DuckDB schema, ingestion, and queries
-  internal/frontend/                  # Svelte 5 application
-scripts/                              # OTLP seed data for local development
-docs/                                 # Current behavior, usage and documentation assets
-```
-
-The root Go module builds the collector binary. The `desktop` exporter writes telemetry through the store owned by the `duckdb` extension. The frontend reads native telemetry through Arrow HTTP datasets and uses JSON-RPC for control/count requests and remaining tabular reads. The CLI uses JSON-RPC with table/JSON output. The frontend builds into committed embedded assets.
-
-## Change conventions
-
-### Go
-
-- Run Go commands from the repository root so root-package tests remain included.
-- Use the modern `any` alias for empty interface types.
-- Format with `gofmt` and verify with `make format-go-check`.
-- Access DuckDB through `Store.WithConn`, `Store.WithDBRead`, or `Store.WithDBWrite`. Production code must preserve the store's locking and connection ownership.
-- Treat `main.go` and `components.go` as OCB-generated collector wiring. Coordinate component-registry changes with a maintainer and keep recorded module versions synchronized.
-- Run `make test-go` or `go test ./...` from the repository root.
-
-Discuss DuckDB schema, retention, ingestion, and store-lifecycle changes before implementation. Schema objects live under `desktopexporter/internal/store/queries/ddl/`; update the applicable `_order` manifest and schema-version expectations with every schema change.
-
-JSON-RPC changes should preserve deliberate wire contracts, validate input at the server boundary, map expected store errors explicitly, and include handler plus store-level tests.
-
-Signal search builders are shared by JSON and Arrow projections. When changing
-summary fields, update CLI consumers, OpenRPC and the agent guide as well as the
-frontend. Keep full received fields in detail/export paths. Verify a CLI command
-against the production server so mocked responses cannot hide contract drift.
-
-### Frontend
-
-- Svelte 5 + TypeScript + Vite + Tailwind/DaisyUI under `desktopexporter/internal/frontend/`.
-- Format: `make format-ts`
-- Typecheck: `make validate-ts`
-- Unit tests: `make test-ts`
-- Accessibility tests: `make test-a11y`
-
-Match nearby components, contexts, route helpers, and test fixtures before introducing new abstractions. Discuss changes to routing, persisted state, navigation behavior, or shared interaction patterns as product decisions before implementation.
-
-- Keep route content inside the persistent List/Main/Details workspace slots.
-  Reuse the app-wide pane preferences and shared `DetailStack`/`DetailBubble`
-  disclosure and header-resize behavior.
-- Preserve Home's typed service/attribute identities, record-based frequencies,
-  counted signal tabs, independent 25-card pages and scroll positions.
-- Use regular-weight Atkinson Hyperlegible Next for interface text and formatted
-  values, and Mono for JSON, search and code. Shared tokens provide 14px working
-  text and 16px headings at the default root size; adjust layout rather than
-  shrinking text. Keep field names exact, keys Subtle and data Text. Display
-  formatting must preserve received types, exact numbers and complete explicit
-  Copy/Download values.
-- Use the eight Madoromi seasonal themes and shared colour tokens. Backgrounds
-  retain 20% of source chroma. Preserve saved theme/ink preferences, service/series
-  colour ownership and independent count-ink overrides. See the
-  [theme reference](../desktopexporter/internal/frontend/src/themes/README.md)
-  for roles, defaults, picker behavior and generation.
-
-### Database schema changes
-
-Schema 27 (0.7.0) is the automatic-upgrade baseline. Every persisted schema change
-requires a version bump, an immutable SQL migration, and matching current DDL.
-Both build modes share the same chain. Include populated predecessor fixtures
-and tests for retained data, fresh-schema equivalence, and rollback. See
-[schema upgrades](schema-migration.md) for the runner contract and file layout.
-
-### Dependencies and generated files
-
-The repository commits several generated outputs because release builds consume them directly:
-
-- Search parser files under `src/components/shared/Search/codemirror/` are generated from `query.grammar`. Run `npm run generate:grammar` from `desktopexporter/internal/frontend/` and commit the result.
-- Madoromi theme and graph JSON under `src/themes/` is generated from the pinned
-  source. Run `node scripts/generate-madoromi.mjs` from the frontend directory
-  rather than editing generated colours.
-- Production frontend assets live under `desktopexporter/internal/server/static/`. Frontend source, dependency, lockfile, and build-configuration changes require `make build-ts` and the resulting committed assets.
-- Resolve source and dependency conflicts first, then regenerate hashed frontend assets from the combined tree. Hand-merging generated bundles produces unreliable output.
-- Dependency updates should include the manifest, lockfile, generated bundle where applicable, focused regression coverage, and manual checks for affected product surfaces.
-
-From `desktopexporter/internal/frontend/`, use `npm ci` to verify the committed lockfile and `npm install` when intentionally changing dependency resolution.
-
-## Tests and product quality
-
-Every behavioral change requires focused automated tests at the nearest useful boundary. Tests should:
-
-- Exercise the changed code and intended contract directly.
-- Demonstrate the regression by failing against the previous behavior when practical.
-- Cover pure parsing, comparison, and transformation logic directly.
-- Add integration coverage for behavior involving state, routing, persistence, SQL, JSON-RPC, or subsystem boundaries.
-- Cover meaningful edge cases and state transitions alongside the main path.
-- Follow the structure and conventions of nearby tests.
-
-Run the broad suite after focused tests. If the current harness lacks a useful test seam, add one and discuss it with a maintainer before opening the pull request.
-
-For interface work, verify both visual presentation and assistive access in the running application. Preserve the established visual language. Keep screenshot and recording evidence local. Check the relevant responsive layouts, themes, zoom behavior, keyboard operation, focus management, screen-reader names, visible alternatives for audio feedback, reduced-motion behavior, and loading, empty, and error states.
-
-Automated component and Playwright/axe tests should target the affected interaction. Maintainers also review usability, visual quality, and accessibility as product behavior.
-
-## Verification
-
-Run focused tests while developing. Before marking a pull request ready for review, run:
+Before marking the PR ready, run from the repository root:
 
 ```bash
 make test
+git diff --check
 ```
 
-`make test` verifies Go and frontend formatting, Svelte and Playwright types, the embedded frontend build, Go tests, Vitest tests, and browser accessibility tests.
+The [Makefile](../Makefile) lists individual build and test commands.
 
-Useful focused targets include:
+## Open a pull request
 
-| Area                        | Command                |
-| --------------------------- | ---------------------- |
-| Go tests                    | `make test-go`         |
-| Go formatting               | `make format-go-check` |
-| Frontend formatting         | `make format-ts-check` |
-| Frontend types              | `make validate-ts`     |
-| Frontend unit tests         | `make test-ts`         |
-| Browser accessibility       | `make test-a11y`       |
-| Embedded frontend freshness | `make build-ts-check`  |
+Use a draft while work or checks are incomplete. Describe what changed and why
+in short bullet points, with relevant test results. Add `Fixes #…` or `Closes #…`
+when the change resolves an issue and matches the agreed scope.
 
-To exercise a public executable with fresh storage and its embedded frontend:
-
-```bash
-go build -o otel-desktop-viewer
-node desktopexporter/internal/frontend/scripts/smoke-binary.mjs ./otel-desktop-viewer
-```
-
-This smoke test checks all-signal ingestion, schema 27, native VARIANT types,
-exact Arrow integers, service identity, OTLP trace export and public feature
-exclusion. It requires the frontend dependencies and Playwright Chromium from
-`make install-clean`.
-
-Run `git diff --check` before committing. CI regenerates the search parser and checks for a clean diff, enforces guarded store access, and builds plus tests the Go application on Ubuntu, macOS, and Windows.
-
-## Opening a pull request
-
-Use a draft pull request while implementation or verification is still in progress.
-
-- Use plain bullet points as the entire PR description.
-- Use concise, standalone bullet points explaining what changed and why.
-- Write in plain language that makes sense six months later without the conversation.
-- Keep each bullet focused on concrete behaviour.
-- Preserve wording the user supplies or corrects.
-- Include verification when it adds new, change-specific evidence.
-- Apply these rules automatically whenever creating or updating a PR.
-
-Keep each pull request focused and independently reviewable. Respond to review with the same care used for the implementation, and regenerate derived files after resolving source conflicts.
-
-## Review and merge
-
-Maintainers evaluate architectural fit, product behavior, focused tests, visual and assistive quality, maintainability, and repository consistency. Review may ask for a different design, additional tests, a smaller scope, or a fresh implementation based on an agreed approach.
-
-Maintainers decide what enters the project and may defer or close work that falls outside the current direction or review capacity. Stale pull requests may close after a reasonable period without activity.
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the project's [Apache 2.0 license](../LICENSE).
+By contributing, you agree to license your work under the project's
+[Apache 2.0 license](../LICENSE).

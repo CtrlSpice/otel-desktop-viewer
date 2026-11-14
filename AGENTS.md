@@ -8,6 +8,8 @@
 - Include verification when it adds new, change-specific evidence.
 - Apply these rules automatically whenever creating or updating a PR.
 
+- Do not use em dashes in chat or documentation. Use a colon, comma or separate sentence.
+
 - Features require build-time selection; runtime-only feature flags are not
   supported. Public builds use `EVALS=0`; `EVALS=1` selects Evals in Go and the
   frontend. Preserve shared viewer/database functionality in both builds.
@@ -24,3 +26,19 @@
   private notes from public documentation.
 - When planned functionality lands on `main`, document its implemented behavior
   in `docs/`; do not publish the working notes as product documentation.
+- Keep installation and quick-start instructions in `README.md`. Keep detailed
+  reference and configuration guides in `docs/`, linked from `docs/README.md`.
+  Write standalone Markdown guides with explicit defaults and complete examples.
+- Use descriptive noun titles for standalone documents, such as "Docker guide".
+  Use action headings for procedural sections within documents.
+- Reference guides use descriptive lowercase, hyphen-separated filenames. Match
+  each guide's page title and link label in docs/README.md and the root README.
+  Keep README.md, CONTRIBUTING.md and CODE_OF_CONDUCT.md under their standard
+  GitHub-recognised filenames.
+- Keep Lulu artwork and its credit page in assets/lulu/. Keep only images used
+  by the README in docs/screenshots/. Review screenshots belong in local-only
+  notes/, not docs/evidence/ or the published screenshot directory.
+- Keep guides for features not yet in production, including experimental
+  features and Evals ingestion, in local-only `notes/`. Move them into `docs/`
+  when those features ship in production. This keeps public documentation focused
+  on production functionality.

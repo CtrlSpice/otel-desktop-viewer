@@ -4,10 +4,6 @@ Evals is experimental and unsupported. It requires an `EVALS=1` build and an
 enabled local `evals.enabled` flag. Public `EVALS=0` builds omit the workspace and
 its HTTP handlers; a runtime flag cannot add omitted code.
 
-The build and capability contract is documented in `docs/experimental-features.md`.
-Supported input, exact source preservation, database indexing and search are
-documented in `docs/eval-ingestion.md`.
-
 ## Data and navigation
 
 The global file picker/drop queue imports complete Promptfoo v3 envelopes through

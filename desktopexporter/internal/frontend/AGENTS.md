@@ -38,148 +38,66 @@
   their original source shades without contrast adjustments. Text uses Sumi,
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
-  Group appearance controls as the theme picker and Day/Night, with
-  pill-rounded exterior corners and flat internal joins. The theme picker opens
-  below its button, end-aligned and viewport-clamped, with compact ink controls
-  below the full-width app-style sample preview. The preview remains
-  the main visual element.
-  Use one shared section-header row: the original ink name at the left and the four
-  icon-only season choices at the right. Put the sample summary card and its
-  JSON below it, then the ink strip, then attribution. Omit redundant headings.
-  Omit the extra Trace preview header and separate attributes.
-  The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
-  Each ink choice has three vertically stacked 8px colour dots in a 24px-wide,
-  48px-high target, brightest at the top (official shades 7, 4, 1). Use one
-  horizontal row below the JSON preview, scrolling when
-  necessary, with the selected original ink name shown once.
-  Keep adjacent ink targets without extra gaps and the chooser 28rem wide at most. Use native side-to-side scrolling for
-  overflow, with optional left/right caret buttons that scroll without changing
-  the selected ink. Disable each caret at its end. Do not snap or auto-advance.
-  Keep every ink's name in its tooltip and accessible label. Use radio-group
-  semantics, arrow/Home/End selection and one Tab stop for the swatch group.
-  Keep section names accessible but visually hidden.
-  Omit its filter field and checkmark column.
-  Use the original names for ink and season labels, including tooltips and
-  accessible names. Ink controls interface and syntax accents;
-  season controls the background. Preserve selected-ink focus and scrolling.
-  Ink and season changes keep the picker open for live comparison. Season changes
-  update its inherited seasonal paper,
-  hover and selection surfaces without changing the selected ink or its swatches.
+  Group the Season picker and Day/Night control at the right of the top bar.
+  Keep pill-rounded exterior corners and flat internal joins.
+  The Season trigger shows the selected season's icon and name.
+  Open its viewport-clamped dropdown below the trigger, aligned to its end.
+  Show four named season choices with radio-group semantics.
+  Preserve arrow/Home/End navigation, one Tab stop and selected-season focus.
+  Keep the picker open when the season changes.
   Preserve Escape, light dismissal, trigger-toggle dismissal and trigger-focus restoration.
-  Omit a separate close button in this anchored dropdown.
-  The sample preview uses shared trace-summary and JSON components.
-  Keep its surfaces flat, with shared rounded corners and no extra enclosing borders.
-  It must not allocate sample service colours or modify saved service/series assignments.
-  Accent ink selects one of the 32 named seed
-  inks, with an analogous family from the pinned upstream
-  mixer; default to To-ro (warm lantern) with Autumn and the system's Day/Night
-  preference. Saved user choices take precedence. Persist ink as `theme-accent-ink`. Use that family for
-  Primary/Secondary/Accent and syntax accent slots. Season owns paper, neutral
-  text and Nijimi highlights; retain semantic status colours and the Sakura
-  attribution heart. Generate readable strengths against all five UI surfaces.
-  Changing the global ink also selects that ink for histogram/heatmap counts
-  and their legends. The chart picker can subsequently choose a different count
-  ink. Retain saved choices on load and keep service/series colours independent.
-  Keep the selected ink-family name visible in the theme picker; chart pickers
-  retain ink-family names beside their swatches.
-  Accent-ink previews show the named seed's exact official shades 1, 4 and 7,
-  from the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
-  The top-bar theme control shows only three 8px dots using official shades 1, 4
-  and 7. Use original ink names in the theme
-  picker's visible text, tooltips and accessible labels; omit English translations.
-  Use the standard tooltip style.
+  Use the standard tooltip style and shared popover surfaces.
+  Default to Autumn and the system's initial Day/Night preference.
+  Saved Season and Day/Night choices take precedence.
+  Interface and syntax colours come from the shared generated theme roles.
+  Keep service/series colour assignments independent of appearance changes.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
   Use additional rows on narrow screens so search and appearance do not overlap.
-  Expanded Home attribute values use one row: value, bar, count, %, Copy.
-  Keep Copy in its own far-right column, with its tooltip opening left.
-  Bars are 8px high with round ends and a minimum 8px dot, using stable
-  typed-value hashes into official shades 3–5 across the 32 graph inks. Keep
-  parent attribute rows plain and preserve Name, Count, %, exact Copy and disclosures.
-  Value columns use one third of the available row width, capped at 12rem;
-  truncate long values with an ellipsis and retain the full value on hover.
-  Aligned bar tracks fill the remaining width and keep their percentage scale.
-  Home calls the distinct matching-record count Records, not Count. Keep four
-  columns: Name, Records, %, and Copy, with received types beside names and
-  provenance on hover. Numeric columns stay right-aligned; Name fills remaining
-  space and Copy stays far right. Keep sorting global. Reuse the shared table's
-  responsive pinned-prefix layout for Name and remember resized widths.
-  Fall back to native horizontal scrolling when the pinned prefix cannot fit
-  usefully. The Attributes header has trace-style Collapse all / Expand all
-  controls that apply across pages and pending value loads. Preserve individual
-  disclosures until the next bulk action; reset them when discovery scope changes.
-  Whole attribute/value rows select matching Telemetry. Preserve native name/value
-  buttons, focused-row keyboard selection/navigation, text selection, independent
-  Copy and disclosure controls. Expose selectable rows through grid semantics.
-  Home's left pane contains Lulu, the file-drop control, Services, Storage and
-  Ingestion issues, in that order. Services is the primary open section of the
-  shared section stack, with full-width cards and independent scrolling. Keep
-  the file-drop control visible above it. Do not put exporter instructions or
-  test-trace commands in this pane.
-  Home attribute, telemetry and storage loading failures use Papaya text for
+  Home's left pane contains Getting started, Storage and Ingestion issues.
+  Getting started stays open as the primary section of the shared section stack.
+  Its header contains Lulu, the app name and the fixed subtitle.
+  Its scrollable guide contains the file-drop control, exporter setup and test-trace instructions.
+  Use the running viewer's receiver ports in setup examples.
+  Label fallback ports explicitly when configuration is unavailable.
+  Keep example Copy values complete and executable.
+  Home discovery, telemetry and storage loading failures use Papaya text for
   viewer/infrastructure faults; received telemetry errors retain their own roles.
   Storage and Ingestion issues are sibling sections using the standard disclosure,
   grouping and header-resize rules. Closed and inactive sections dock at the
   bottom; open sections share the available height. Use the shared sidebar toggle
   and saved width. Ingestion issue links reveal the left pane and their section.
-  Home's main header shows the selected service and namespace. Put Collapse all,
-  Expand all and the attribute filter at the right of its second row. Omit the
-  repeated service summary and visible Attributes title. The attribute table
-  fills the space below the header. Preserve
-  attribute scope, exact-value inspection, Copy, sorting and filtering.
-  Matching Telemetry remains alone in the right-hand Details pane with its
-  signal tabs, independent pages and scroll positions.
-  The welcome app name and prompt use 16px regular Atkinson Mono in Primary,
-  with a 1.25 line-height. Keep the complete name and prompt on one line.
-  Lulu uses at most 40% of the welcome width, capped at 160px; let her column
-  shrink to make room for the unwrapped name rather than clipping it.
-  Prefix the name with a decorative `>` in the Madoromi Sora operator role.
-  Hide the prompt from assistive technology and text selection.
+  Home's main pane contains the Service map.
+  Show each service once and use recorded cross-service parent/child spans for connections.
+  Keep the map layout stable when selecting a service or connection.
+  Show matching records or connection details in the right-hand Details pane.
+  Preserve typed identities, exact values and native record navigation.
+  The welcome app name uses regular 24px interface text.
+  The fixed subtitle is “We have OpenTelemetry at home”.
+  Use regular 12px Subtle text with a 16px line-height for this subtitle.
+  Keep the title unwrapped and allow the subtitle to wrap with `text-wrap: balance`.
+  Place 56px-wide Lulu beside the title and subtitle, with a 12px gap.
   Home's search label and placeholder say Search telemetry, without “all”.
-  Welcome axolotl facts use concise, qualified claims from peer-reviewed research,
-  with IEEE-style numbered citations in first-appearance order. Put the reference
-  number and DOI beside each fact in the source. Keep full IEEE references and
-  claim context in `src/components/home/README.md`; update both when changing a
-  fact. Omit the "Axolotl fact:" prefix.
-  Keep welcome taglines and facts left-aligned with balanced wrapping
-  (`text-wrap: balance`) for more even line lengths.
-  Home Telemetry uses shared Traces, Metrics and Logs tabs in its second header
-  row, with known square-bracketed counts, such as `Traces [66]`.
+  Home Telemetry uses shared Traces, Metrics and Logs tabs across its single header row.
+  Show known square-bracketed counts, such as `Traces [66]`.
   Retain independent pages and scroll positions.
   Only the active card list scrolls; keep the tabs at the top and shared page
   controls in a stable bottom footer. Changes are immediate and support
   arrow/Home/End navigation and one Tab stop for the signal tabs.
-  Attributes and Telemetry each offer 25, 50 or 100 per page in their footer,
-  remembering separate preferences and defaulting to 25. Keep each attribute's
-  expanded values together; apply filtering and sorting globally. Page changes
-  preserve attribute selection and expansion state.
+  Telemetry offers 25, 50 or 100 records per page in its footer.
+  Remember the page-size preference and default to 25.
   Disable confirmed-empty or inapplicable signals, retaining loading/error
-  access. Reset pages when service, attribute/value, search, time range or
+  access. Reset pages when service, search, time range or
   refreshed results change. Keep other Home section disclosures independent.
   Categorical graph colours use the official first seven swatches of the same
   32 Madoromi inks: 224 fixed shades across Day/Night and seasons. UI shades are
   allowed. The palest, eighth swatch is omitted from automatic assignments and
   the seven-dot override picker. Use current Madoromi theme IDs and graph
   palettes directly; do not add compatibility migrations for prior UI experiments.
-  Histogram and heatmap count ramps use 32 colourful Madoromi inks, default To-ro, with one
-  app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
-  curve; Day reverses Night's exact shades, and seasons do not change the ink.
-  The count-palette picker omits its redundant visible heading; retain its
-  accessible name and selected-option focus. Centre the Madoromi attribution
-  link in the footer, with a decorative 16px Hugeicons heart in theme Sakura pink.
-  Preview each histogram ink with seven aligned 8px dots, evenly sampled across its full
-  ramp, with 8px gaps and no outlines. Retain exact Day/Night reversal.
-  The shared picker is searchable, ordered by Madoromi's pinned full-ramp colour
-  sequence and scrollable; retain that order in search results. Focus
-  and reveal the saved choice on opening without moving the page. Exclude the
-  four seasonal neutral inks (Kiri-same, Fukagawa-nezu, Yama-guri, Fuyu-syogun),
-  plus Take-sumi, Hoteison, Syun-gyo and Tsukushi. Preserve existing saved choices.
-  Keep the original ink name first, followed by the pinned Madoromi English name
-  in Subtle parentheses. Search matches both names; allow the label to wrap at
-  the regular text size while keeping the seven preview dots aligned.
-  Size both pickers from the widest full ink label plus their dots and controls,
-  capped by the viewport. Keep that width stable when search filters the list.
-  Both ink pickers share InkPicker. Graph overrides show all 224 official shades
+  Histogram and heatmap counts use the fixed spectrum in `src/themes/heatmap-palette.json`.
+  `countSwatches` selects the generated ramp for 1–12 count bands.
+  Day reverses Night's exact shades. Seasons do not change the count spectrum.
+  Graph overrides show all 224 official shades
   as a compact rectangle: two stacked groups of 16 inks, each ink a vertical
   light-to-dark column of seven 8px dots in 24px targets. Show the hovered/focused
   ink name and shade once above the grid; retain full names in tooltips and
@@ -292,8 +210,8 @@
 - Only the first header in each pane uses the shared two-row height (88px at
   the default root size). Main, List and primary Details headers align. Lower
   section headers, including Storage and Ingestion issues, stay single-row
-  (48px). Home's Services header is single-row too: Lulu's welcome is already
-  the first heading in that pane. Keep embedded picker toolbars single-row too.
+  (48px). Home's Getting started section uses its own welcome header.
+  Keep embedded picker toolbars single-row too.
 - Header spacing uses 0.75rem horizontal padding, 0.5rem vertical padding and
   0.5rem gaps, with 1.5 line-height. Header controls share a 2rem height; avoid per-component compact
   height or line-height overrides.
@@ -332,8 +250,8 @@
   data's scalar type.
   Search text and placeholders use the shared 21px line-height. Centre text with
   padding, not a control-height line box that stretches the blinking caret.
-  JSON, search and code views share the semantic editor syntax mapping
-  documented in `src/themes/README.md`, through `utils/editor-highlighting.ts`.
+  JSON, search and code views share the semantic editor syntax mapping in
+  `src/components/shared/utils/editor-highlighting.ts`.
   Use the shared theme palette and generated foreground adjustments;
   do not add separate light-mode code colours. Keep UI field names Subtle.
   Use Madoromi's native code guide for syntax accents, with neutral values for

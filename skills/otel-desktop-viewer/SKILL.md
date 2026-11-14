@@ -109,8 +109,10 @@ All accept `--endpoint`, `--service`, `--since`, `--start`, `--end`, `--limit`,
 and `--json`. `--start` and `--end` are inclusive RFC3339 timestamps accepting
 nanoseconds. An explicit `--since` is incompatible with `--start` or `--end`.
 
-`traces` returns compact summaries. With `--service`, the count covers matching
-spans, although the trace can contain other services.
+`traces` returns compact summaries. Service and time filters select traces through
+matching spans. `spanCount`, `errorCount`, `startTime` and `durationNs` describe all
+retained spans in each selected trace. With `--service`, `matchedSpans` lists the
+service-matching spans, including matches outside the requested time window.
 
 `logs` returns compact summaries; its JSON output includes `logRef`.
 `metrics --json` includes `metricRef`, the UUID text from `metrics.id`.
@@ -251,9 +253,14 @@ otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE fu
 The examples use schema 27 tables `spans`, `logs`, and `metric_records`, with
 `metrics`, `metric_series`, and `metric_datapoints` read views, plus registered
 `trace_id_wire` and `span_id_wire` macros. Attributes are native VARIANT maps on
-their owners; there is no separate `attributes` table. Inspect the installed schema before
-adapting SQL. This build rejects earlier database versions without modifying
-them. Use a new `--db` path to retain an older file; there is no migration.
+their owners. There is no separate `attributes` table. Inspect the installed
+schema before adapting SQL.
+
+Schema 27 is both the current version and the automatic-upgrade baseline.
+The migration runner applies supported forward upgrades in one transaction.
+This build includes no production migration steps. It rejects pre-27 schemas,
+newer schemas and malformed schema metadata. Use the original binary to view an
+unsupported older database, or choose a new `--db` path.
 
 ## Query recent spans
 
