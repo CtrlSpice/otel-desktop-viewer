@@ -5,7 +5,7 @@ import { telemetryAPI } from '@/services/telemetry-service'
 import { evalAPI } from '@/services/eval-service'
 import { getDataChanges } from '@/contexts/data-changes.svelte'
 import { createRefreshCoordinator } from '@/services/refresh-coordinator'
-import { createResource } from '@/services/resources'
+import { createRead } from '@/services/reads'
 
 export type NavigationCounts = Partial<
   Record<'home' | 'traces' | 'metrics' | 'logs' | 'evals', number>
@@ -18,13 +18,13 @@ export function createNavigationCounts() {
   let homeCounts = $state<NavigationCounts | null>(null)
   let homeSearchActive = $state(false)
   let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
-  const statsRead = createResource<
+  const statsRead = createRead<
     Awaited<ReturnType<typeof telemetryAPI.getStats>>
-  >({ scope: null })
-  const homeRead = createResource<number>({ scope: null })
-  const evalsRead = createResource<
+  >({ group: null })
+  const homeRead = createRead<number>({ group: null })
+  const evalsRead = createRead<
     Awaited<ReturnType<typeof evalAPI.searchEvalExperiments>>
-  >({ scope: null })
+  >({ group: null })
   async function fetchCounts() {
     function publish(value: NavigationCounts) {
       counts = { ...counts, ...value }

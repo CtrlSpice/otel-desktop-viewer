@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResourceMap } from '@/services/resources'
+  import { createReadMap } from '@/services/reads'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
@@ -31,7 +31,7 @@
   } = $props()
 
   let traces = $state<Map<string, TraceSummary | null>>(new Map())
-  const requests = createResourceMap<string, TraceSummary | null>()
+  const requests = createReadMap<string, TraceSummary | null>()
   $effect(() => {
     const ids = [
       ...new Set(entries.map(entry => entry.reference.traceID.toLowerCase())),

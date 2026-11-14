@@ -2,7 +2,7 @@
   import Identifier from '@/components/shared/Identifier.svelte'
   import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import {
     isPlainLeftClick,
     itemHref,
@@ -14,7 +14,7 @@
 
   let { exemplar }: { exemplar: Exemplar } = $props()
   let unavailable = $state(false)
-  const reference = createResource<boolean>()
+  const reference = createRead<boolean>()
   const patch = $derived(
     exemplar.spanID ? { [SPAN_PARAM]: exemplar.spanID } : undefined
   )

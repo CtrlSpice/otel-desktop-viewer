@@ -73,8 +73,8 @@
   } from '@/components/metrics/utils/histogram-aggregation'
   import type { AggregateBucket, DataPoint } from '@/types/api-types'
   import { untrack } from 'svelte'
-  import { createResource, createResourceMap } from '@/services/resources'
-  import { createPageResources } from '@/contexts/page-resources.svelte'
+  import { createRead, createReadMap } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import {
     telemetryAPI,
@@ -133,34 +133,34 @@
   const METRIC_CHART_PANEL_ID = 'metric-chart-tabpanel'
 
   let timeContext = getTimeContext()
-  const resources = createPageResources(refreshMetrics)
-  const statsRead = createResource<
+  const readGroup = createPageReadGroup(refreshMetrics)
+  const statsRead = createRead<
     Awaited<ReturnType<typeof telemetryAPI.getStats>>
-  >({ scope: null })
+  >({ group: null })
   const metricError = (error: Error) =>
     error.message === 'The selected metric was not found.'
       ? error.message
       : 'Could not load the selected metric.'
-  const summaryRead = createResource<MetricSelection>({
+  const summaryRead = createRead<MetricSelection>({
     formatError: metricError,
   })
-  const detailRead = createResource<Parameters<typeof publishMetricDetail>[0]>({
+  const detailRead = createRead<Parameters<typeof publishMetricDetail>[0]>({
     formatError: metricError,
   })
   type AggregateResult = Awaited<
     ReturnType<typeof telemetryAPI.getMetricAggregateView>
   >
-  const aggregateRead = createResource<AggregateResult>({
+  const aggregateRead = createRead<AggregateResult>({
     formatError: () => 'Could not load the chart aggregate.',
   })
-  const aggregateSummaryRead = createResource<AggregateResult>({
+  const aggregateSummaryRead = createRead<AggregateResult>({
     formatError: () => 'Could not load the histogram aggregate.',
   })
-  const chartSeriesRead = createResource<MetricViewData | null>({
+  const chartSeriesRead = createRead<MetricViewData | null>({
     formatError: () => 'Could not load the selected chart series.',
   })
-  const contributionRead = createResource<AggregateResult>()
-  const columnRead = createResource<MetricViewData | null>()
+  const contributionRead = createRead<AggregateResult>()
+  const columnRead = createRead<MetricViewData | null>()
 
   let baselineStats = $state<MetricStats | null>(null)
   let polledStats = $state<MetricStats | null>(null)
@@ -364,7 +364,7 @@
   const aggregateRequestKey = $derived(aggregateRead.requestKey)
 
   // Unreduced inspected-series datapoints belong to the displayed response.
-  const seriesReads = createResourceMap<string, DatapointSeries>({
+  const seriesReads = createReadMap<string, DatapointSeries>({
     formatError: () => 'Could not load datapoints.',
   })
   const seriesDatapoints = $derived(
@@ -1081,7 +1081,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Metrics"
-  onRefresh={() => void resources.refresh()}
+  onRefresh={() => void readGroup.refresh()}
   refreshPulse={freshness.pulse}
   refreshAsideTip={freshness.tip}
   loading={page.loading}

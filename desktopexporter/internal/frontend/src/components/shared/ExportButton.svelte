@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import { Download01Icon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import IconButton from './IconButton.svelte'
   import { downloadOTLP, type ExportSignal } from '@/services/export-service'
 
   let { signal, id }: { signal: ExportSignal; id: string } = $props()
-  const downloadRead = createResource<void>({
-    scope: null,
+  const downloadRead = createRead<void>({
+    group: null,
     errorMessage: 'Download failed',
   })
   const pending = $derived(downloadRead.pending)

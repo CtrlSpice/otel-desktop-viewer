@@ -1,4 +1,4 @@
-import type { ResourceMap } from '@/services/resources/map.svelte'
+import type { ReadMap } from '@/services/reads/map.svelte'
 
 /** How many values to fetch per field. One request, then local filtering. */
 export const FETCH_LIMIT = 500
@@ -21,7 +21,7 @@ export function createFieldValueCache(
     abort: AbortSignal
   ) => Promise<string[]>,
   signal: string,
-  reads: ResourceMap<string, string[]>
+  reads: ReadMap<string, string[]>
 ): FieldValueCache {
   return {
     async values(field) {

@@ -10,7 +10,7 @@
 </script>
 
 <script lang="ts">
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import { untrack } from 'svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
@@ -66,7 +66,7 @@
       available: !!(rubric || loadRubric),
     })
   })
-  const rubricRead = createResource<string>({
+  const rubricRead = createRead<string>({
     formatError: () => 'Could not load the full grader input.',
   })
   const loading = $derived(rubricRead.pending)

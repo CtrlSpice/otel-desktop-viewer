@@ -3,7 +3,7 @@
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { evalAPI } from '@/services/eval-service'
   import { onMount } from 'svelte'
-  import { createReadScope, createResource } from '@/services/resources'
+  import { createReadGroup, createRead } from '@/services/reads'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import { evalSearchDefinition } from '@/components/evals/search-fields'
   import type { ParsedSearchRequest } from '@/search/model'
@@ -76,14 +76,14 @@
     onViewIssue?: (event: MouseEvent) => void
   } = $props()
   const route = getRouteContext()
-  createReadScope()
-  const listRead = createResource<void>({
+  createReadGroup()
+  const listRead = createRead<void>({
     errorMessage: 'Could not load experiments.',
   })
-  const pagination = createResource<EvalExperimentSearchPage>({
+  const pagination = createRead<EvalExperimentSearchPage>({
     errorMessage: 'Could not load more experiments.',
   })
-  const experimentRead = createResource<{
+  const experimentRead = createRead<{
     summary: EvalStoredExperimentSummary
     source: EvalSourceDataset
     projected: EvalSourceProjection

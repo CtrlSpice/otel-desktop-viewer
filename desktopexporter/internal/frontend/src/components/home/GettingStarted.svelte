@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
@@ -12,7 +12,7 @@
   let httpPort = $state<number | null>(null)
   let grpcPort = $state<number | null>(null)
   const configRead =
-    createResource<Awaited<ReturnType<typeof telemetryAPI.getImportConfig>>>()
+    createRead<Awaited<ReturnType<typeof telemetryAPI.getImportConfig>>>()
   const panelID = $props.id()
   const tabs = [
     { id: 'http', label: 'HTTP' },

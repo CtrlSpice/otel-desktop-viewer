@@ -1,10 +1,10 @@
 import { readable } from 'svelte/store'
-import { Resource } from '@/services/resources/resource.svelte'
+import { Read } from '@/services/reads/read.svelte'
 
 // The server is the authority; failures and missing flags close the feature.
 export const evalsEnabled = readable(false, set => {
   if (!__EVALS_BUILT__) return
-  const read = new Resource<boolean>()
+  const read = new Read<boolean>()
   async function refresh() {
     await read.load(
       async signal => {

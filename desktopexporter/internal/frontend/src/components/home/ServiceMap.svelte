@@ -2,7 +2,7 @@
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import type { LoadingRequestKey } from '@/components/shared/utils/loading-notice.svelte'
   import { untrack } from 'svelte'
-  import { createResourceMap } from '@/services/resources'
+  import { createReadMap } from '@/services/reads'
   import { Chart, Svg, type ChartState } from 'layerchart'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -85,7 +85,7 @@
     kind: 'replacement' | 'page'
   }
   let pages = $state<Record<string, ConnectionPage>>({})
-  const requests = createResourceMap<
+  const requests = createReadMap<
     string,
     Awaited<ReturnType<typeof telemetryAPI.discoverServiceConnections>>
   >({ formatError: String })

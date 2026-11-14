@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResourceMap } from '@/services/resources'
+  import { createReadMap } from '@/services/reads'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
@@ -54,7 +54,7 @@
   let keys = $state<DiscoveredAttribute[]>([])
   const received = new Map<string, DiscoveredAttribute[]>()
   let counts = $state<Record<string, number>>({})
-  const reads = createResourceMap<string, void>({ formatError: String })
+  const reads = createReadMap<string, void>({ formatError: String })
   const loading = $derived(reads.pending)
   const error = $derived(
     [...reads.values()].find(read => read.error)?.error ?? ''

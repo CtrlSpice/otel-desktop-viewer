@@ -1,11 +1,11 @@
 import { tick, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import { createRefreshCoordinator } from '../refresh-coordinator'
-import type { ResourceMember } from './resource.svelte'
+import type { ReadMember } from './read.svelte'
 
 /** A refresh waits for actual reads and the dependent work their publication starts. */
-export class ReadScope {
-  #members = new SvelteSet<ResourceMember>()
+export class ReadGroup {
+  #members = new SvelteSet<ReadMember>()
   #disposed = false
   #refresh
 
@@ -20,18 +20,18 @@ export class ReadScope {
   }
 
   get pending() {
-    return [...this.#members].some(resource => resource.pending)
+    return [...this.#members].some(read => read.pending)
   }
 
-  register(resource: ResourceMember) {
+  register(read: ReadMember) {
     return untrack(() => {
       if (this.#disposed) {
-        resource.dispose()
+        read.dispose()
         return () => {}
       }
-      this.#members.add(resource)
+      this.#members.add(read)
       return () => {
-        this.#members.delete(resource)
+        this.#members.delete(read)
       }
     })
   }
@@ -39,7 +39,7 @@ export class ReadScope {
   async settled() {
     await tick()
     while (!this.#disposed && this.pending) {
-      await Promise.all([...this.#members].map(resource => resource.completion))
+      await Promise.all([...this.#members].map(read => read.completion))
       await tick()
     }
   }
@@ -49,6 +49,6 @@ export class ReadScope {
   dispose() {
     this.#disposed = true
     this.#refresh.dispose()
-    for (const resource of this.#members) resource.dispose()
+    for (const read of this.#members) read.dispose()
   }
 }

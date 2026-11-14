@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
   import {
     createPopoverID,
@@ -12,7 +12,7 @@
     type ServiceSummary,
   } from '@/services/discovery-types'
   let { service }: { service: ServiceSummary } = $props()
-  const read = createResource<{
+  const read = createRead<{
     serviceName: string
     serviceNamespace: string
   }>({ formatError: String })

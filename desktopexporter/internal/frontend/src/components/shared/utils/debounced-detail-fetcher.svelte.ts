@@ -1,7 +1,7 @@
-import { createResource } from '@/services/resources'
+import { createRead } from '@/services/reads'
 
 // Keep the displayed record until its replacement is ready. Only keyboard
-// traversal is debounced; the resource rejects obsolete A → B → A responses.
+// traversal is debounced; the read rejects obsolete A → B → A responses.
 
 export type DebouncedDetailFetcher<K, D> = {
   select(key: K | null, debounce?: boolean): void
@@ -26,12 +26,12 @@ export function createDebouncedDetailFetcher<K, D>(
 ): DebouncedDetailFetcher<K, D> {
   const delayMs = opts.delayMs ?? 150
   let key: K | null = null
-  const resource = createResource<D>({
+  const read = createRead<D>({
     errorMessage: opts.fallbackErrorMessage ?? 'Failed to load details',
   })
 
   function schedule(forKey: K, debounce = false) {
-    void resource.load(signal => opts.fetch(forKey, signal), undefined, {
+    void read.load(signal => opts.fetch(forKey, signal), undefined, {
       delayMs: debounce ? delayMs : 0,
     })
   }
@@ -40,7 +40,7 @@ export function createDebouncedDetailFetcher<K, D>(
     select(next: K | null, debounce = false) {
       if (next === null) {
         key = null
-        resource.clear()
+        read.clear()
         return
       }
       if (key !== null && opts.keysEqual(key, next)) return
@@ -48,16 +48,16 @@ export function createDebouncedDetailFetcher<K, D>(
       schedule(next, debounce)
     },
     get data() {
-      return resource.data ?? null
+      return read.data ?? null
     },
     get loading() {
-      return resource.pending
+      return read.pending
     },
     get requestKey() {
-      return resource.requestKey
+      return read.requestKey
     },
     get error() {
-      return resource.error
+      return read.error
     },
     refresh() {
       const current = key

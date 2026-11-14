@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResourceMap } from '@/services/resources'
+  import { createReadMap } from '@/services/reads'
   import type { EvalRequestPart, EvalRequestStatus } from './eval-request-state'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
@@ -109,7 +109,7 @@
     logs: LogData[]
   }
   let retainedLogs = $state.raw<LogPacket[]>([])
-  const logReads = createResourceMap<string, LogData[]>()
+  const logReads = createReadMap<string, LogData[]>()
   let logContext = $state.raw<typeof spanRequest>()
   const logRequest = $derived(
     logContext

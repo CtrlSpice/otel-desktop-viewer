@@ -1,6 +1,6 @@
 <script lang="ts" generics="TSortColumn extends string">
   import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte'
-  import { createResource, createResourceMap } from '@/services/resources'
+  import { createRead, createReadMap } from '@/services/reads'
   import {
     EditorView,
     placeholder as cmPlaceholder,
@@ -114,7 +114,7 @@
     definition?.fields ?? (signal ? [...getStaticFieldsForSearch(signal)] : [])
   )
   let queryText = $state('')
-  const fieldRead = createResource<{
+  const fieldRead = createRead<{
     signal: SearchSignal
     fields: FieldDefinition[]
   }>()
@@ -127,8 +127,8 @@
       ? fieldRead.data.fields
       : []),
   ])
-  const fieldValues = createResourceMap<string, string[]>()
-  const attributeValues = createResourceMap<CompletionContext, string[]>()
+  const fieldValues = createReadMap<string, string[]>()
+  const attributeValues = createReadMap<CompletionContext, string[]>()
   let definitionsWanted = $state(false)
   let pendingRestoration: string | undefined
 

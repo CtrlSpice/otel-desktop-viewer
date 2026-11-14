@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import type { EventData, TraceLogSummary } from '@/types/api-types'
   import LogCard from '@/components/logs/LogCard.svelte'
   import EventsPanel from './EventsPanel.svelte'
@@ -31,7 +31,7 @@
     new Map<string, NonNullable<ReturnType<typeof toolLogProvenance>>>()
   )
   const provenanceRead =
-    createResource<Awaited<ReturnType<typeof telemetryAPI.getSpanLogs>>>()
+    createRead<Awaited<ReturnType<typeof telemetryAPI.getSpanLogs>>>()
 
   $effect(() => {
     logProvenance = new Map()

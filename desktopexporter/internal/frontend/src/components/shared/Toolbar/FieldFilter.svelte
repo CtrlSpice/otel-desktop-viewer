@@ -7,7 +7,7 @@
     type ColumnVisibility,
   } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import {
     fieldIdentity,
     usesFieldToken,
@@ -45,7 +45,7 @@
   let popoverEl = $state<HTMLDivElement | null>(null)
 
   let availableFields = $state<FieldDefinition[]>([])
-  const fieldRead = createResource<FieldDefinition[]>()
+  const fieldRead = createRead<FieldDefinition[]>()
 
   $effect(() => {
     const base = [...getStaticFieldsForSearch(signal)]

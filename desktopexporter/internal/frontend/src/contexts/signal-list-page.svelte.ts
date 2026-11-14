@@ -12,7 +12,7 @@ import { getTimeContext } from '@/contexts/time-context.svelte'
 import { getRouteContext } from '@/contexts/route-context.svelte'
 import { getDataChanges } from '@/contexts/data-changes.svelte'
 import { createRefreshCoordinator } from '@/services/refresh-coordinator'
-import { createResource } from '@/services/resources'
+import { createRead } from '@/services/reads'
 import {
   navigateToItem,
   signalIdFromPath,
@@ -109,7 +109,7 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   const changes = getDataChanges()
 
   let items = $state<TItem[]>([])
-  const list = createResource<TItem[]>({ errorMessage: 'Failed to load list' })
+  const list = createRead<TItem[]>({ errorMessage: 'Failed to load list' })
   let mounted = $state(false)
   const loading = $derived(!mounted || list.requestKey === 0 || list.pending)
 

@@ -7,7 +7,7 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack, type Snippet } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
@@ -89,8 +89,8 @@
   const displayedNavigation = $derived(
     displayed?.navigation ?? { offset: 0, previous: [] }
   )
-  const replacement = createResource<AttributeCoverage>({ formatError: String })
-  const interaction = createResource<AttributeCoverage>({ formatError: String })
+  const replacement = createRead<AttributeCoverage>({ formatError: String })
+  const interaction = createRead<AttributeCoverage>({ formatError: String })
   const values = $derived(coverage?.values ?? [])
   const page = $derived(values)
   const presentationKey = $derived(

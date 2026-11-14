@@ -1,6 +1,6 @@
 import type { FirstOTLPRecord } from './otlp-file'
 import { createRefreshCoordinator } from './refresh-coordinator'
-import { Resource } from './resources/resource.svelte'
+import { Read } from './reads/read.svelte'
 import type { ImportFailure } from '@/types/import-types'
 
 export type ImportDestination = { id: string; spanID?: string }
@@ -34,7 +34,7 @@ export function createImportNavigation(options: {
   return {
     select(fileName: string) {
       cancel()
-      const read = new Resource<ImportDestination | null>()
+      const read = new Read<ImportDestination | null>()
       let active = true
       let record: FirstOTLPRecord | undefined
       const refresh = createRefreshCoordinator(async () => {

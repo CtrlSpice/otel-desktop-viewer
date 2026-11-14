@@ -42,8 +42,8 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResource } from '@/services/resources'
-  import { createPageResources } from '@/contexts/page-resources.svelte'
+  import { createRead } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
@@ -86,14 +86,14 @@
   } = $props()
 
   let timeContext = getTimeContext()
-  const resources = createPageResources(handleRefresh)
-  const statsRead = createResource<
+  const readGroup = createPageReadGroup(handleRefresh)
+  const statsRead = createRead<
     Awaited<ReturnType<typeof telemetryAPI.getStats>>
-  >({ scope: null })
-  const pagination = createResource<
+  >({ group: null })
+  const pagination = createRead<
     Awaited<ReturnType<typeof telemetryAPI.searchLogPage>>
   >({ errorMessage: 'Failed to load logs' })
-  const navigationRead = createResource<LogErrorNavigation>({
+  const navigationRead = createRead<LogErrorNavigation>({
     errorMessage: 'Could not load error navigation',
   })
 
@@ -432,7 +432,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Filters"
-  onRefresh={() => void resources.refresh()}
+  onRefresh={() => void readGroup.refresh()}
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={listLoading}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
-  import { createResourceMap, type Resource } from '@/services/resources'
+  import { createReadMap, type Read } from '@/services/reads'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import LogCard from '@/components/logs/LogCard.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
@@ -47,7 +47,7 @@
   type Group = {
     signal: DiscoverySignal
     cards: AttributeTelemetryCard[]
-    read: Resource<AttributeTelemetryCard[]>
+    read: Read<AttributeTelemetryCard[]>
     pageIndex: number
     scrollTop: number
     loaded: boolean
@@ -57,7 +57,7 @@
   const PAGE_SIZE_KEY = 'home-telemetry-page-size'
   let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
   let groups = $state<Group[]>([])
-  const reads = createResourceMap<DiscoverySignal, AttributeTelemetryCard[]>({
+  const reads = createReadMap<DiscoverySignal, AttributeTelemetryCard[]>({
     formatError: String,
     retainError: true,
   })

@@ -10,7 +10,7 @@
 
 <script lang="ts" generics="T">
   import { untrack } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import JsonEditor from './JsonEditor.svelte'
   import LoadingStatus from './LoadingStatus.svelte'
   import RawJsonStatus, { type RawJsonStatusData } from './RawJsonStatus.svelte'
@@ -59,10 +59,10 @@
       : formatDescription
   )
   let bytes = $state<number | null>(null)
-  const sizeRead = createResource<number | null>({
+  const sizeRead = createRead<number | null>({
     errorMessage: 'Could not inspect export size',
   })
-  const previewRead = createResource<{ text: string; partial: boolean }>({
+  const previewRead = createRead<{ text: string; partial: boolean }>({
     errorMessage: 'Could not load JSON',
   })
   const error = $derived(sizeRead.error ?? previewRead.error ?? '')

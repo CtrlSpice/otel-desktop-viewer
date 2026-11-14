@@ -1,7 +1,7 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
-  import { createResource, createResourceMap } from '@/services/resources'
+  import { createRead, createReadMap } from '@/services/reads'
   import { SvelteMap, SvelteSet } from 'svelte/reactivity'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -31,7 +31,7 @@
   const id = $props.id()
   const expandedAttributes = new SvelteSet<string>()
   const receivedAttributes = new SvelteMap<string, Attribute[]>()
-  const attributeRequests = createResourceMap<string, Attribute[]>({
+  const attributeRequests = createReadMap<string, Attribute[]>({
     errorMessage: 'Failed to load series attributes',
   })
   const attributeErrors = $derived(
@@ -57,7 +57,7 @@
     asc?: string[]
     desc?: string[]
   }>()
-  const sortRead = createResource<string[]>({
+  const sortRead = createRead<string[]>({
     errorMessage: 'Could not sort series.',
   })
   const sortLoading = $derived(sortRead.pending)

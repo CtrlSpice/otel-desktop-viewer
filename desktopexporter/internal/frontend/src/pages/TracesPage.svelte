@@ -47,8 +47,8 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResource, createResourceMap } from '@/services/resources'
-  import { createPageResources } from '@/contexts/page-resources.svelte'
+  import { createRead, createReadMap } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
@@ -113,17 +113,17 @@
 
   let timeContext = getTimeContext()
   const routeContext = getRouteContext()
-  const resources = createPageResources(() => page.handleRefresh())
-  const statsRead = createResource<
+  const readGroup = createPageReadGroup(() => page.handleRefresh())
+  const statsRead = createRead<
     Awaited<ReturnType<typeof telemetryAPI.getStats>>
-  >({ scope: null })
-  const traceRead = createResource<TraceWaterfallData>({
+  >({ group: null })
+  const traceRead = createRead<TraceWaterfallData>({
     formatError: error => {
       console.error('Failed to fetch trace detail:', error)
       return 'Could not load the selected trace.'
     },
   })
-  const previews = createResource<TraceColumnPreview[]>({
+  const previews = createRead<TraceColumnPreview[]>({
     formatError: () => 'Could not load waterfall column previews.',
   })
 
@@ -229,7 +229,7 @@
   let traceData = $state<TraceWaterfallData | null>(null)
   // Only requested/displayed traces own log readings. This also lets a retained
   // Details retry settle without cancelling another trace's independent work.
-  const logReadings = createResourceMap<string, TraceLogSummary[]>({
+  const logReadings = createReadMap<string, TraceLogSummary[]>({
     formatError: () => 'Could not load correlated logs.',
   })
   const requestedLogs = $derived(
@@ -702,7 +702,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Traces"
-  onRefresh={() => void resources.refresh()}
+  onRefresh={() => void readGroup.refresh()}
   refreshPulse={freshness.pulse}
   refreshAsideTip={freshness.tip}
   loading={page.loading}

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
-import { Resource } from './resource.svelte'
-import { ReadScope } from './scope.svelte'
-import { ResourceMap } from './map.svelte'
+import { Read } from './read.svelte'
+import { ReadGroup } from './group.svelte'
+import { ReadMap } from './map.svelte'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -14,102 +14,102 @@ function deferred<T>() {
 }
 
 it('retains the accepted reading through replacement failures and rejects late completions', async () => {
-  const resource = new Resource<{ id: string }>()
-  await resource.load(async () => ({ id: 'A' }))
+  const read = new Read<{ id: string }>()
+  await read.load(async () => ({ id: 'A' }))
   const failed = deferred<{ id: string }>()
-  const pending = resource.load(() => failed.promise)
-  expect(resource.pending).toBe(true)
-  expect(resource.data).toEqual({ id: 'A' })
+  const pending = read.load(() => failed.promise)
+  expect(read.pending).toBe(true)
+  expect(read.data).toEqual({ id: 'A' })
   failed.reject(new Error('B failed'))
   await pending
-  expect(resource.error).toBe('B failed')
-  expect(resource.data).toEqual({ id: 'A' })
+  expect(read.error).toBe('B failed')
+  expect(read.data).toEqual({ id: 'A' })
   const late = deferred<{ id: string }>()
   let signal!: AbortSignal
   const publish = vi.fn()
-  const obsolete = resource.load(s => {
+  const obsolete = read.load(s => {
     signal = s
     return late.promise
   }, publish)
-  await resource.load(async () => ({ id: 'C' }))
+  await read.load(async () => ({ id: 'C' }))
   await obsolete
   expect(signal.aborted).toBe(true)
   late.resolve({ id: 'B' })
   await Promise.resolve()
   expect(publish).not.toHaveBeenCalled()
-  expect(resource.data).toEqual({ id: 'C' })
-  expect(resource.pending).toBe(false)
+  expect(read.data).toEqual({ id: 'C' })
+  expect(read.pending).toBe(false)
 })
 
 it('tracks dependent reads automatically and coalesces refresh requests', async () => {
   const initial = deferred<string>()
   const child = deferred<string>()
-  let root!: Resource<string>
-  let nested!: Resource<string>
+  let root!: Read<string>
+  let nested!: Read<string>
   const refresh = vi.fn(() => {
     void root.load(async () => 'refreshed')
   })
-  const scope = new ReadScope(refresh)
-  root = new Resource({ scope })
-  nested = new Resource({ scope })
+  const group = new ReadGroup(refresh)
+  root = new Read({ group })
+  nested = new Read({ group })
   void root.load(
     () => initial.promise,
     () => {
       void nested.load(() => child.promise)
     }
   )
-  const refreshing = scope.refresh()
-  for (let i = 0; i < 10; i++) void scope.refresh()
+  const refreshing = group.refresh()
+  for (let i = 0; i < 10; i++) void group.refresh()
   await Promise.resolve()
   expect(refresh).not.toHaveBeenCalled()
   initial.resolve('initial')
   await Promise.resolve()
-  expect(scope.pending).toBe(true)
+  expect(group.pending).toBe(true)
   expect(refresh).not.toHaveBeenCalled()
   child.resolve('child')
   await refreshing
   expect(refresh).toHaveBeenCalledTimes(1)
-  expect(scope.pending).toBe(false)
-  scope.dispose()
+  expect(group.pending).toBe(false)
+  group.dispose()
 })
 
-it('releases scope completion on teardown even when a transport ignores abort', async () => {
+it('releases group completion on teardown even when a transport ignores abort', async () => {
   const refresh = vi.fn()
-  const scope = new ReadScope(refresh)
-  const resource = new Resource<string>({ scope })
+  const group = new ReadGroup(refresh)
+  const read = new Read<string>({ group })
   const work = deferred<string>()
   let signal!: AbortSignal
-  void resource.load(s => {
+  void read.load(s => {
     signal = s
     return work.promise
   })
-  const refreshing = scope.refresh()
-  scope.dispose()
+  const refreshing = group.refresh()
+  group.dispose()
   await refreshing
   expect(signal.aborted).toBe(true)
-  expect(resource.pending).toBe(false)
+  expect(read.pending).toBe(false)
   expect(refresh).not.toHaveBeenCalled()
 })
 
 it('cancels keyboard delay without starting the obsolete read', async () => {
   vi.useFakeTimers()
   try {
-    const resource = new Resource<string>()
+    const read = new Read<string>()
     const obsolete = vi.fn(async () => 'obsolete')
-    const delayed = resource.load(obsolete, undefined, { delayMs: 150 })
-    expect(resource.pending).toBe(true)
-    await resource.load(async () => 'current')
+    const delayed = read.load(obsolete, undefined, { delayMs: 150 })
+    expect(read.pending).toBe(true)
+    await read.load(async () => 'current')
     await delayed
     await vi.advanceTimersByTimeAsync(150)
     expect(obsolete).not.toHaveBeenCalled()
-    expect(resource.data).toBe('current')
+    expect(read.data).toBe('current')
   } finally {
     vi.useRealTimers()
   }
 })
 
 it('gives different keyed owners distinct loading identities, including recreated entries', async () => {
-  const reads = new ResourceMap<string, string>()
+  const reads = new ReadMap<string, string>()
   const a = reads.for('A')
   const b = reads.for('B')
   void a.load(() => new Promise(() => {}))
@@ -125,9 +125,9 @@ it('gives different keyed owners distinct loading identities, including recreate
   await Promise.all([a.completion, b.completion, replacement.completion])
 })
 
-it('ends completed and active ownership on scope disposal and prevents later keyed reads', async () => {
-  const scope = new ReadScope()
-  const reads = new ResourceMap<string, string>({ scope })
+it('ends completed and active ownership on group disposal and prevents later keyed reads', async () => {
+  const group = new ReadGroup()
+  const reads = new ReadMap<string, string>({ group })
   let completed!: AbortSignal
   await reads.for('done').load(async signal => {
     completed = signal
@@ -139,7 +139,7 @@ it('ends completed and active ownership on scope disposal and prevents later key
     active = signal
     return pending.promise
   })
-  scope.dispose()
+  group.dispose()
   await waiting
   expect(completed.aborted).toBe(true)
   expect(active.aborted).toBe(true)
@@ -153,7 +153,7 @@ it('ends completed and active ownership on scope disposal and prevents later key
 })
 
 it('rejects late progressive publication and keeps a replacement started during acceptance', async () => {
-  const read = new Resource<string>()
+  const read = new Read<string>()
   const obsolete = deferred<string>()
   let progress!: (update: () => void) => void
   const first = read.load((_signal, publish) => {

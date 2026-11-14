@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckmarkCircle02Icon, Copy01Icon } from '@hugeicons/core-free-icons'
   import { copyText } from '@/utils/clipboard'
@@ -28,7 +28,7 @@
   let status = $state('')
   let copied = $state(false)
   let failed = $state(false)
-  const copyRead = createResource<boolean>({ scope: null })
+  const copyRead = createRead<boolean>({ group: null })
   const pending = $derived(copyRead.pending)
   let timer: ReturnType<typeof setTimeout> | undefined
 

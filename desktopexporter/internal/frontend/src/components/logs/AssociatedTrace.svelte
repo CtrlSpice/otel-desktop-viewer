@@ -4,7 +4,7 @@
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import {
     isPlainLeftClick,
     itemHref,
@@ -28,7 +28,7 @@
   const spanID = $derived(displayed ? displayed.spanID : requestedSpanID)
   let trace = $state<TraceSummary | null>(null)
   let span = $state<SpanTiming | null>(null)
-  const reference = createResource<{
+  const reference = createRead<{
     span: SpanTiming | null
     trace: TraceSummary | null
     spanMissing: boolean

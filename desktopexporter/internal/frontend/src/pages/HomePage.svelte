@@ -17,8 +17,8 @@
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import { createRefreshCoordinator } from '@/services/refresh-coordinator'
-  import { createResource } from '@/services/resources'
-  import { createPageResources } from '@/contexts/page-resources.svelte'
+  import { createRead } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -65,19 +65,19 @@
   }: { importContent?: Snippet; importFailures?: readonly ImportFailure[] } =
     $props()
   const time = getTimeContext()
-  const resources = createPageResources(() => void load(0, true))
-  const listRead = createResource<
+  const readGroup = createPageReadGroup(() => void load(0, true))
+  const listRead = createRead<
     Awaited<ReturnType<typeof telemetryAPI.discoverServices>>
   >({ formatError: String })
-  const pageRead = createResource<
+  const pageRead = createRead<
     Awaited<ReturnType<typeof telemetryAPI.discoverServices>>
   >({ formatError: String })
-  const statsRead = createResource<Stats>({ scope: null, formatError: String })
+  const statsRead = createRead<Stats>({ group: null, formatError: String })
   const navigation = getNavigationCounts()
   const signals = SIGNAL_ORDER
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
-  const fieldRead = createResource<FieldDefinition[]>()
-  const submissionRead = createResource<void>()
+  const fieldRead = createRead<FieldDefinition[]>()
+  const submissionRead = createRead<void>()
   let queries = $state(homeQueries(null))
   let pendingQueries = homeQueries(null)
   let totalServices = $state<number>()
@@ -414,7 +414,7 @@
   drawerLabel="Home"
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
-  onRefresh={() => void resources.refresh()}
+  onRefresh={() => void readGroup.refresh()}
   loading={listRead.pending}
   loadingRequestKey={String(requestKey)}
 >

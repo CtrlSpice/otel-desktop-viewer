@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResourceMap } from '@/services/resources'
+  import { createReadMap } from '@/services/reads'
   import type { LogData, SpanNode } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
@@ -32,7 +32,7 @@
   const logCount = $derived(
     lastLogCount?.selection === selection ? lastLogCount.count : undefined
   )
-  const reads = createResourceMap<string, string[]>()
+  const reads = createReadMap<string, string[]>()
   let logPartsSelection = $state('')
   let logRequestKey = $state(0)
   const logsPending = $derived(reads.pending)

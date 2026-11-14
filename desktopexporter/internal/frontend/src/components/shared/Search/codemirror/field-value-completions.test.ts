@@ -3,7 +3,7 @@ import { EditorState } from '@codemirror/state'
 import { CompletionContext } from '@codemirror/autocomplete'
 import { createFieldValueSource } from './field-value-completions'
 import { createFieldValueCache } from './field-value-cache'
-import { ResourceMap } from '@/services/resources/map.svelte'
+import { ReadMap } from '@/services/reads/map.svelte'
 import { getFieldsBySignal } from '@/constants/fields'
 import { queryLanguage } from './query-language'
 import { createPathFieldReference } from '../attribute-field-reference'
@@ -20,7 +20,7 @@ describe('selected attribute values', () => {
     const values = vi.fn(async () => ['/checkout'])
     const columns = vi.fn(async () => [])
     const source = createFieldValueSource(
-      createFieldValueCache(columns, 'traces', new ResourceMap()),
+      createFieldValueCache(columns, 'traces', new ReadMap()),
       () => [field],
       values
     )
@@ -56,7 +56,7 @@ function makeSource(
 ) {
   return {
     source: createFieldValueSource(
-      createFieldValueCache(fetch, signal, new ResourceMap()),
+      createFieldValueCache(fetch, signal, new ReadMap()),
       () => getFieldsBySignal(signal)
     ),
     fetch,
@@ -212,7 +212,7 @@ describe('IN array values', () => {
 
   async function units(doc: string, pos = doc.length) {
     const source = createFieldValueSource(
-      createFieldValueCache(async () => UNITS, 'metrics', new ResourceMap()),
+      createFieldValueCache(async () => UNITS, 'metrics', new ReadMap()),
       () => getFieldsBySignal('metrics')
     )
     const state = EditorState.create({ doc, extensions: [queryLanguage] })
@@ -254,7 +254,7 @@ describe('IN array values', () => {
 describe('operator gating', () => {
   async function traces(doc: string) {
     const source = createFieldValueSource(
-      createFieldValueCache(async () => NAMES, 'traces', new ResourceMap()),
+      createFieldValueCache(async () => NAMES, 'traces', new ReadMap()),
       () => getFieldsBySignal('traces')
     )
     const state = EditorState.create({ doc, extensions: [queryLanguage] })
@@ -263,11 +263,7 @@ describe('operator gating', () => {
 
   async function metrics(doc: string) {
     const source = createFieldValueSource(
-      createFieldValueCache(
-        async () => ['ms', 's'],
-        'metrics',
-        new ResourceMap()
-      ),
+      createFieldValueCache(async () => ['ms', 's'], 'metrics', new ReadMap()),
       () => getFieldsBySignal('metrics')
     )
     const state = EditorState.create({ doc, extensions: [queryLanguage] })

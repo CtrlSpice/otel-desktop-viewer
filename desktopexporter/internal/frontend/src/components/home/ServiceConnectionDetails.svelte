@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -38,8 +38,8 @@
   type EvidencePage = Awaited<
     ReturnType<typeof telemetryAPI.discoverServiceConnectionSpans>
   >
-  const replacementRead = createResource<EvidencePage>({ formatError: String })
-  const paginationRead = createResource<EvidencePage>({ formatError: String })
+  const replacementRead = createRead<EvidencePage>({ formatError: String })
+  const paginationRead = createRead<EvidencePage>({ formatError: String })
   let spans = $state<ServiceConnectionSpan[]>([])
   let more = $state(false)
   let replacement = $state.raw<EvidenceWork>()

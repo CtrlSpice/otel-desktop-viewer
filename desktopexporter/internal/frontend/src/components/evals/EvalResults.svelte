@@ -2,7 +2,7 @@
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
-  import { createResource, createResourceMap } from '@/services/resources'
+  import { createRead, createReadMap } from '@/services/reads'
   import type { EvalRequestStatus } from './eval-request-state'
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -227,7 +227,7 @@
       ])
     )
   )
-  const traceRead = createResource<void>()
+  const traceRead = createRead<void>()
   type TraceAnswer =
     | { status: 'ready'; trace: TraceData }
     | { status: 'failed'; traceID: string }
@@ -246,8 +246,8 @@
       ])
     )
   )
-  const summaryReads = createResourceMap<string, TraceLogSummary[]>()
-  const ownerReads = createResourceMap<string, LogData[]>()
+  const summaryReads = createReadMap<string, TraceLogSummary[]>()
+  const ownerReads = createReadMap<string, LogData[]>()
   const timingsLoading = $derived(
     [...traceStatus.values()].some(status => status === 'pending')
   )

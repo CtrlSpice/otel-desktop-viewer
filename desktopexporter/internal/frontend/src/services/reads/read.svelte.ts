@@ -2,18 +2,18 @@ import { untrack } from 'svelte'
 
 let nextRequestKey = 0
 
-export type ResourceScope = {
-  register(resource: ResourceMember): () => void
+export type ReadRegistry = {
+  register(read: ReadMember): () => void
 }
 
-export type ResourceMember = {
+export type ReadMember = {
   readonly pending: boolean
   readonly completion: Promise<void>
   dispose(): void
 }
 
-export type ResourceOptions = {
-  scope?: ResourceScope | null
+export type ReadOptions = {
+  group?: ReadRegistry | null
   errorMessage?: string
   formatError?: (error: Error) => string
   /** Keep the last failure visible until a replacement succeeds or fails. */
@@ -27,7 +27,7 @@ type Attempt = {
 }
 
 /** One replaceable read, retaining the last accepted value on loading or failure. */
-export class Resource<T> {
+export class Read<T> {
   #data = $state.raw<T>()
   #error = $state<string | null>(null)
   #active = $state.raw<Attempt>()
@@ -37,8 +37,8 @@ export class Resource<T> {
   #completion = Promise.resolve()
   #release: (() => void) | undefined
 
-  constructor(private readonly options: ResourceOptions = {}) {
-    this.#release = options.scope?.register(this)
+  constructor(private readonly options: ReadOptions = {}) {
+    this.#release = options.group?.register(this)
   }
 
   get data() {

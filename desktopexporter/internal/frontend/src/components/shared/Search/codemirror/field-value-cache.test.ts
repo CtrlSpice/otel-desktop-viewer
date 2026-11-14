@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createFieldValueCache } from './field-value-cache'
-import { ResourceMap } from '@/services/resources/map.svelte'
+import { ReadMap } from '@/services/reads/map.svelte'
 
 describe('field value cache', () => {
   it('fetches a field once and shares the result', async () => {
     const fetch = vi.fn(async () => ['a', 'b'])
-    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
+    const cache = createFieldValueCache(fetch, 'traces', new ReadMap())
     expect(await cache.values('name')).toEqual(['a', 'b'])
     expect(await cache.values('name')).toEqual(['a', 'b'])
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -20,14 +20,14 @@ describe('field value cache', () => {
 
   it('shares one flight between concurrent callers', async () => {
     const fetch = vi.fn(async () => ['a'])
-    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
+    const cache = createFieldValueCache(fetch, 'traces', new ReadMap())
     await Promise.all([cache.values('name'), cache.values('name')])
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('keeps fields separate', async () => {
     const fetch = vi.fn(async (_s: string, field: string) => [field])
-    const cache = createFieldValueCache(fetch, 'metrics', new ResourceMap())
+    const cache = createFieldValueCache(fetch, 'metrics', new ReadMap())
     expect(await cache.values('name')).toEqual(['name'])
     expect(await cache.values('unit')).toEqual(['unit'])
     expect(fetch).toHaveBeenCalledTimes(2)
@@ -42,7 +42,7 @@ describe('field value cache', () => {
       if (attempt === 1) throw failure
       return ['recovered']
     })
-    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
+    const cache = createFieldValueCache(fetch, 'traces', new ReadMap())
     await expect(cache.values('name')).rejects.toThrow(failure.message)
     expect(await cache.values('name')).toEqual(['recovered'])
   })
@@ -63,7 +63,7 @@ describe('field value cache', () => {
       )
       .mockImplementationOnce(async () => ['second'])
 
-    const cache = createFieldValueCache(fetch, 'traces', new ResourceMap())
+    const cache = createFieldValueCache(fetch, 'traces', new ReadMap())
     const first = cache.values('name')
     const firstCaught = first.catch(() => 'failed')
     rejectSlow(new Error('slow failure'))

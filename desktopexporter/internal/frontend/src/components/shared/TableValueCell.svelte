@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { createResource } from '@/services/resources'
+  import { createRead } from '@/services/reads'
 
   let {
     label,
@@ -19,7 +19,7 @@
     loadText?: (signal: AbortSignal) => Promise<string>
     children?: Snippet
   } = $props()
-  const read = createResource<string>({ formatError: String })
+  const read = createRead<string>({ formatError: String })
   const hoverText = $derived(read.data ?? read.error ?? undefined)
   $effect(() => {
     void text
