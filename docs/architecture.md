@@ -1,5 +1,7 @@
 # Architecture
 
+## Data flow
+
 The viewer is one Go executable containing an OpenTelemetry Collector, DuckDB
 and a Svelte frontend. The HTTP server serves the frontend to the browser and
 handles its data requests.
@@ -16,30 +18,85 @@ flowchart LR
   HTTP <-->|SQL queries and results| DB
 ```
 
-## Collector lifecycle
+## Code map
 
-[`collector_config.go`](../collector_config.go) builds the default configuration.
-All signals use the same receiver, processor and exporter chain shown above.
-The frontend sends file imports to the OTLP HTTP receiver. They pass through
-the same policy described in [Secret redaction](secret-redaction.md).
-[`components.go`](../components.go) registers the available Collector components,
-including a file receiver that the default configuration does not activate.
+Start here when following data through the code.
 
-The [`duckdb` extension](../desktopexporter/duckdbextension/extension.go) owns
-the store, HTTP server and retention loop. It starts before the pipelines and
-stops after their queues drain. Each [`desktop` exporter](../desktopexporter/exporter.go)
-gets the shared store from the extension during startup.
+| Responsibility | Entry points |
+| --- | --- |
+| Startup and CLI commands | [`main.go`](../main.go), [`root_command.go`](../root_command.go) |
+| Collector pipelines and components | [`collector_config.go`](../collector_config.go), [`components.go`](../components.go) |
+| Database, server and retention lifecycle | [`desktopexporter/duckdbextension/extension.go`](../desktopexporter/duckdbextension/extension.go) |
+| Telemetry ingestion | [`desktopexporter/exporter.go`](../desktopexporter/exporter.go) |
+| Database access and query packages | [`desktopexporter/internal/store/`](../desktopexporter/internal/store/) |
+| HTTP routes | [`desktopexporter/internal/server/server.go`](../desktopexporter/internal/server/server.go) |
+| Frontend pages and layout | [`desktopexporter/internal/frontend/src/App.svelte`](../desktopexporter/internal/frontend/src/App.svelte) |
+| Frontend data requests | [`desktopexporter/internal/frontend/src/services/telemetry-service.ts`](../desktopexporter/internal/frontend/src/services/telemetry-service.ts) |
 
-Ingestion converts the Collector's `pdata` records into typed Arrow column
-batches. The
-[`arrowbridge`](../desktopexporter/internal/store/arrowbridge/) package passes
-them to DuckDB through a statically linked C extension. Each accepted record
-and its nested data stay together within a batch transaction.
+## Ingestion
+
+All signals use the pipeline shown above. Frontend file imports use OTLP HTTP
+and the same [Secret redaction](secret-redaction.md) policy.
+
+- The `duckdb` extension starts the shared store and HTTP server before the
+  pipelines. Both stay available until exporter queues drain.
+- Exporters convert Collector `pdata` into typed Arrow batches.
+  [`arrowbridge`](../desktopexporter/internal/store/arrowbridge/) passes them to
+  DuckDB through a statically linked C extension.
+- Batch transactions keep each accepted record and its nested data together.
 
 ## Storage
 
-[`store.Store`](../desktopexporter/internal/store/store.go) controls database
-access through three methods:
+Each record keeps its received Resource (telemetry source) and Scope
+(instrumentation library), along with its nested data.
+
+| Table | Contents |
+| --- | --- |
+| `spans` | Span fields, attributes, events and links. |
+| `logs` | Log fields, attributes and body. |
+| `metric_records` | Received Metric descriptors, metadata, datapoints and exemplars. |
+
+Views expose children as `events`, `links`, `metric_datapoints` and `exemplars`.
+Definitions are in [`queries/ddl`](../desktopexporter/internal/store/queries/ddl/).
+
+Span lookup needs received `traceID` and `spanID`. References can point to spans
+that have not arrived or are no longer stored. Logs, metrics, series and
+datapoints have opaque, viewer-generated identifiers.
+
+### Metric identity and series
+
+A metric's identity includes Resource and Scope, name, unit, type, and applicable
+temporality and monotonicity. Description and metadata stay with received records
+but do not affect identity. The `metrics` view selects the latest received
+descriptor for each identity.
+
+Within one metric identity, `metric_series` groups datapoints by their attributes.
+For example:
+
+| Datapoint attributes | Series |
+| --- | --- |
+| `{"method": "GET"}` | GET series |
+| `{"method": "POST"}` | POST series |
+
+Later datapoints with the same attributes join the same series.
+
+### Values
+
+Storage preserves the types and precision of received values.
+
+- Attributes, log bodies and Metric metadata use `VARIANT` to keep types with
+  nested values. JSON-looking strings remain strings.
+- Timestamps and histogram counts use unsigned 64-bit integers; integer
+  measurements use signed 64-bit integers.
+- Optional fields retain absence, including histogram `sum`, `min` and `max`.
+- Each attribute collection or nested map keeps the last received value per key,
+  then sorts entries before encoding and hashing. A span's attributes and its
+  Resource attributes remain separate.
+- Arrays keep their order and repeated values.
+
+### Database access
+
+Queries can run alongside ingestion. `store.Store` controls access:
 
 | Method | Use |
 | --- | --- |
@@ -47,163 +104,98 @@ access through three methods:
 | `WithDBRead` | Concurrent queries through the connection pool. |
 | `WithDBWrite` | Deletion, retention and checkpointing, excluding queries and ingestion. |
 
-Each method runs a callback while holding the required lock. Database work must
-finish before that callback returns. Queries can run alongside ingestion.
+Each method runs a callback under its lock. Database work must finish before
+the callback returns.
 
-### Records and identities
+[`retention.go`](../desktopexporter/internal/store/retention.go) enforces the
+size cap by pruning old spans, logs and datapoints with their children.
+Defaults and limits: [Command-line options](command-line-options.md).
 
-The main [tables](../desktopexporter/internal/store/queries/ddl/tables/) are:
+## Queries
 
-| Table | Contents |
-| --- | --- |
-| `spans` | Spans with their Resource, Scope, attributes, events and links. |
-| `logs` | Log records with their Resource, Scope, attributes and body. |
-| `metric_records` | Received Metric records with their descriptors, context, datapoints and exemplars. |
+DuckDB filters and reduces data before sending it to the frontend.
 
-Resource describes the telemetry source; Scope identifies its instrumentation
-library. Each record owns its received Resource and Scope. SQL views expose
-nested children as `events`, `links`, `metric_datapoints` and `exemplars`.
+- Query builders use templates in [`store/queries`](../desktopexporter/internal/store/queries/)
+  and bound parameters. They apply time bounds, sorting and limits; lists use
+  summaries, while selected records load complete values.
+- [`store/search`](../desktopexporter/internal/store/search/) compiles search
+  trees into SQL. Conditions keep the attribute owner, exact key and type.
+  Two event conditions joined by AND must match one event; conditions on its
+  span's Resource can match alongside them.
+- [`store/searchindex`](../desktopexporter/internal/store/searchindex/) records
+  values by owner, nested path and type for search and autocomplete. It updates
+  in ingestion, deletion and retention transactions.
+- DuckDB computes metric reductions, histogram merges, rates and quantiles.
+  [Metric charts](metric-charts.md) defines the calculations and precision.
 
-The `metrics` view selects the latest received descriptor for each logical
-Metric. Identity includes Resource and Scope context, name, unit, type, and
-applicable temporality and monotonicity. Description and metadata stay with each
-received record but do not determine identity. In `metric_series`, each distinct
-datapoint attribute set defines a series within one logical Metric.
+### Service discovery
 
-Exact span lookup uses both received `traceID` and `spanID`. Logs, metrics,
-series and datapoints have opaque viewer-generated references: `logRef`,
-`metricRef`, `seriesRef` and `datapointRef`. Received `traceID` and `spanID` values
-can refer to spans that have not arrived or are no longer stored.
+Home and the CLI use [`internal/discovery`](../internal/discovery/) to group
+services by the type and value of Resource `service.name` and `service.namespace`.
 
-### Values
+The service map draws parent-to-child service connections from recorded spans
+in the same trace. Both spans must match the search and time range. Selecting a
+connection shows its child spans.
 
-Attributes, log bodies and Metric metadata use DuckDB's native `VARIANT` type,
-which keeps types with nested values. Received timestamps and histogram counts
-use unsigned 64-bit integers; integer measurements use signed 64-bit integers.
-Optional fields preserve absence, including histogram `sum`, `min` and `max`.
+## Transport
 
-Within each attribute collection or nested map, ingestion keeps the last
-received value for each key, then sorts the surviving entries before encoding
-and hashing. This never combines attributes from different owners. Arrays keep
-their order and repeated values. Strings remain strings, including text that
-looks like JSON.
-
-OTLP downloads reconstruct the retained records with their owning context.
-They preserve received values after ingestion processing, subject to the
-[reconstruction limits](telemetry-files.md#reconstruction-limits).
-
-### Schema and retention
-
-The current schema and migration baseline are version 27. Schema definitions
-live in [`queries/ddl`](../desktopexporter/internal/store/queries/ddl/), with
-`_order` files specifying creation order. Startup checks database compatibility
-before accepting telemetry. See [Database upgrades](database-upgrades.md) for
-migration requirements and failure handling.
-
-The extension periodically enforces the store's size cap through
-[`retention.go`](../desktopexporter/internal/store/retention.go). Pruning removes
-old spans, logs and datapoints with their owned child data.
-Storage defaults and limits are in [Command-line options](command-line-options.md).
-
-## Queries and APIs
-
-Signal queries live in [`store/queries`](../desktopexporter/internal/store/queries/).
-Go templates select SQL fragments; user values use bound parameters. Shared
-query builders apply filtering, time bounds, sorting and limits before choosing
-JSON or Arrow output.
-
-The [HTTP server](../desktopexporter/internal/server/server.go) exposes:
+The frontend and CLI query the store through the HTTP server.
 
 | Route | Purpose |
 | --- | --- |
-| `POST /rpc` | JSON-RPC for the CLI and frontend. |
 | `POST /api/data/{method}` | JSON parameters in, Arrow IPC datasets out. |
+| `POST /rpc` | JSON-RPC for the CLI and frontend. |
 | `GET /export/{signal}/{id}` | OTLP JSON downloads. |
-| `GET /openrpc.json` | RPC methods, parameters and result schemas. |
-| `GET /openapi.json` | HTTP routes, media types and status codes. |
-| `GET /llms.txt` | The bundled agent guide. |
-| `GET /api/features` | Features available in this build. |
 | `GET /` | Frontend files, with fallback for client-side routes. |
 
-Arrow requests contain method parameters directly; RPC requests use a JSON-RPC
-envelope. Both share parameter validation and query builders. The separate
-`query` RPC accepts read-only SQL.
+Arrow requests contain parameters directly; RPC requests use a JSON-RPC envelope.
+Both share parameter validation and query builders.
 
-Arrow carries frontend lists, details, charts and most discovery results. Native
-DuckDB query batches pass through `arrowbridge` to
-[`arrowread`](../desktopexporter/internal/store/arrowread/), which converts
-`VARIANT` values to standard Arrow types and writes the IPC response without
-converting it to JSON. The frontend validates the complete response before
-using it.
+- **Arrow** carries frontend lists, details, charts and most discovery.
+  `arrowbridge` reads native DuckDB batches;
+  [`arrowread`](../desktopexporter/internal/store/arrowread/) converts `VARIANT`
+  to standard Arrow types and writes binary IPC without converting data to JSON.
+  The frontend validates the complete response, keeps its buffers and reads
+  nested values on demand. It keeps 64-bit integers as `bigint`.
+- **JSON-RPC** serves CLI queries and frontend statistics, deletion, some
+  discovery and SQL lookups. SQL templates can construct JSON, which Go forwards
+  without re-encoding. The `query` RPC accepts read-only SQL.
+- **OTLP JSON** reconstructs records with their Resource and Scope, subject to
+  [reconstruction limits](telemetry-files.md#reconstruction-limits).
 
-JSON-RPC serves CLI queries and frontend operations including statistics,
-deletion, some discovery and SQL lookups. Signal SQL templates can construct
-JSON directly; Go forwards those bytes without re-encoding. OpenRPC documents
-each method's numeric representation.
-
-Lists and charts use summaries or reduced data. Selected-record methods fetch
-complete stored values, and Copy/Download use those values rather than previews.
-DuckDB computes metric reductions, histogram merges, rates and quantiles;
-[Metric charts](metric-charts.md) defines those calculations and their
-precision. [Telemetry files](telemetry-files.md) covers file formats
-and selection rules.
-
-## Search and service discovery
-
-Search text is parsed into a query tree, then compiled into parameterized SQL by
-[`store/search`](../desktopexporter/internal/store/search/) and the signal query
-builders. Attribute references retain the owner, exact key and stored type.
-A match on a nested record uses that event or datapoint and its parent context;
-values from sibling records cannot be combined.
-
-[`store/searchindex`](../desktopexporter/internal/store/searchindex/) records
-which Resource, Scope or record owns each searchable value, along with its
-nested path and type. Text search and autocomplete use this catalogue.
-Ingestion, deletion and retention update it transactionally with the telemetry.
-Complete payloads remain in the native record tables.
-
-Home and the CLI share service query builders in
-[`internal/discovery`](../internal/discovery/). Services are grouped by typed
-Resource `service.name` and `service.namespace` values. The service map draws
-directed connections from recorded parent/child spans in the same trace, with
-both spans present in the selected search and time range. Selecting a connection
-shows the child spans behind it.
+API contracts are served at `/openrpc.json` and `/openapi.json`, including
+numeric representations and the remaining HTTP routes.
 
 ## Frontend
 
-The Svelte 5/TypeScript app lives in
-[`desktopexporter/internal/frontend/src`](../desktopexporter/internal/frontend/src/).
-`App.svelte` selects the page and owns one shared `WorkspaceShell`. Pages fill
-the List, Main and Details panes through
-[`PageLayout`](../desktopexporter/internal/frontend/src/components/shared/PageLayout.svelte)
-and the [workspace context](../desktopexporter/internal/frontend/src/contexts/workspace-context.svelte.ts).
-Pane containers stay mounted across routes; saved side-pane widths and
-open/closed states apply across signals. Route and time contexts own navigation and
-the selected time range. Pages own their requests and record selections.
+Each Svelte 5/TypeScript page loads its data and tracks the selected records.
 
-Home places Getting started, Storage and Ingestion issues in List, the service
-map in Main, and selected service telemetry or connection details in Details.
-The `/traces`, `/logs` and `/metrics` routes provide signal-specific workspaces.
+- One `WorkspaceShell` keeps pane containers mounted across routes.
+  [`PageLayout`](../desktopexporter/internal/frontend/src/components/shared/PageLayout.svelte)
+  and the [workspace context](../desktopexporter/internal/frontend/src/contexts/workspace-context.svelte.ts)
+  fill three panes: List for lists and supporting controls, Main for charts,
+  tables, timelines or service maps, and Details for selected records or connections.
+  Side-pane widths and open/closed states are shared across signals.
+- Route context handles navigation; time context tracks the selected range.
+- The waterfall loads its tree and previews separately from full span Details.
+  Charts lay out server-computed data and handle series visibility and selection.
+- Shared components handle disclosure, resizing and record inspection; generated
+  themes supply colours. Formatting and collapsed sections do not change stored
+  or copied values.
+- Copy and Download controls use complete stored values, including redactions
+  applied during ingestion.
 
-[`telemetry-service.ts`](../desktopexporter/internal/frontend/src/services/telemetry-service.ts)
-handles server requests. Its Arrow adapters retain response buffers and read
-nested values on demand, preserving 64-bit integers as `bigint`. The trace
-waterfall loads its tree and column previews separately from complete selected
-span Details. Metric charts use the server's computed data; the frontend handles
-coordinates, visible series and selection.
+## Development
 
-Shared components own section disclosure, resizing, value inspection and
-Copy/Download controls. Theme generation supplies interface, syntax and graph
-colours.
-Display formatting and collapsed sections do not alter stored or copied values.
+The [Makefile](../Makefile) builds frontend assets for Go to embed. Feature
+inclusion is a build-time choice.
 
-## Builds and development
+| Build | Frontend assets |
+| --- | --- |
+| `EVALS=0` (default) | Public app in `desktopexporter/internal/server/static/`; assets are committed. |
+| `EVALS=1` | Public functionality plus experimental Evals, using separate assets. |
 
-The [Makefile](../Makefile) builds the frontend into
-`desktopexporter/internal/server/static/`, which Go embeds in the executable.
-Those public assets are committed. Feature inclusion is selected at build time:
-`EVALS=0` is the public default; `EVALS=1` includes experimental Evals code and
-separate frontend assets. Both builds share the database schema and migration chain.
+Both builds share the [database schema and migration chain](database-upgrades.md).
+Startup checks compatibility before ingestion.
 
-See the [Contributor guide](CONTRIBUTING.md) for local setup, generated assets
-and checks.
+The [Contributor guide](CONTRIBUTING.md) covers setup, generated assets and checks.

@@ -14,7 +14,7 @@ The [README](../README.md) covers installation and quick start.
 
 ## Develop the viewer
 
-- [Architecture](architecture.md): data flow, storage, APIs and frontend ownership.
+- [Architecture](architecture.md): data flow, code map, storage and transport.
 - [Metric charts](metric-charts.md): calculations, sampling and numeric precision.
 - [Contributor guide](CONTRIBUTING.md): local setup, checks and pull requests.
 - [Code of Conduct](CODE_OF_CONDUCT.md).
