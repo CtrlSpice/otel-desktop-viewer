@@ -1,5 +1,7 @@
 # Contributor guide
 
+Hi, welcome. I'm happy to have you.
+
 Bug reports, docs fixes, design work and code are welcome. Please follow our
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
