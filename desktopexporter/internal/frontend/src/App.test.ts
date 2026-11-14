@@ -116,6 +116,36 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('updates navigation counts on commits with Live off while page reads are pending', async () => {
+    setTestUrl('/logs?time=all')
+    searchLogPage.mockImplementationOnce(() => new Promise(() => {}))
+    render(App)
+    const navigation = within(
+      screen.getByRole('navigation', { name: 'Primary' })
+    )
+    await navigation.findByRole('link', { name: 'Logs [0]' })
+    expect(screen.getByRole('button', { name: 'Live' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 7 },
+      logs: { ...EMPTY_STATS.logs, logCount: 8 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 9 },
+    })
+    await notifyDataChanged()
+    await navigation.findByRole('link', { name: 'Logs [8]' })
+    expect(
+      navigation.getByRole('link', { name: 'Traces [7]' })
+    ).toBeInTheDocument()
+    expect(
+      navigation.getByRole('link', { name: 'Metrics [9]' })
+    ).toBeInTheDocument()
+    expect(searchLogPage).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps Live and manual refresh progressing while navigation counts are pending', async () => {
     setTestUrl('/logs?time=all')
     render(App)

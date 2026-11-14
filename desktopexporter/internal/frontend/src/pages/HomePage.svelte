@@ -19,6 +19,7 @@
   import { createRefreshCoordinator } from '@/services/refresh-coordinator'
   import { createRead } from '@/services/reads'
   import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
+  import { getDataChanges } from '@/contexts/data-changes.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -129,6 +130,13 @@
       }
     )
   )
+  const changes = getDataChanges()
+  if (changes) onDestroy(changes.subscribe(() => void statsRefresh.request()))
+
+  function refresh() {
+    void statsRefresh.request()
+    void readGroup.refresh()
+  }
 
   async function load(pageOffset = 0, refresh = false) {
     if (!refresh && (pageRead.pending || !more || !displayedListRequest)) return
@@ -159,7 +167,6 @@
       range = nextRange
       queries = options.queries
       revision++
-      void statsRefresh.request()
     }
     await (refresh ? listRead : pageRead).load(
       signal => telemetryAPI.discoverServices(options, signal),
@@ -273,6 +280,7 @@
     })
   })
   onMount(() => {
+    void statsRefresh.request()
     return subscribeToRoute(() => {
       const route = readRoute()
       if (route.path !== '/') return
@@ -414,7 +422,7 @@
   drawerLabel="Home"
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
-  onRefresh={() => void readGroup.refresh()}
+  onRefresh={refresh}
   loading={listRead.pending}
   loadingRequestKey={String(requestKey)}
 >
