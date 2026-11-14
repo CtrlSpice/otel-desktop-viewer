@@ -6,7 +6,7 @@ gRPC traffic use it. Browser OTLP JSON/JSONL telemetry imports use the HTTP
 receiver and receive the same processing. Stored queries and OTLP downloads
 therefore see the processed values.
 
-The embedded policy is [`collector_redaction.yaml`](../collector_redaction.yaml).
+The embedded policy is [`internal/collector/collector_redaction.yaml`](../internal/collector/collector_redaction.yaml).
 It uses `allow_all_keys: true`, `redact_all_types: true`, and `summary: silent`:
 ordinary attributes stay present, matching values are masked with `****`, and
 no redaction-summary attributes are added. Records are not dropped because

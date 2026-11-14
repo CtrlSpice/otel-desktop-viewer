@@ -161,7 +161,9 @@ processes you started; the Makefile does not terminate processes by port number.
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing component ownership, storage, ingestion, JSON-RPC contracts, routing, or persisted state.
 
 ```
-main.go, components.go                # Collector entry and OCB-generated registry
+main.go                              # Executable entry and release version
+internal/cli/                        # Commands, CLI helpers and their tests
+internal/collector/                  # Collector setup, redaction policy and tests
 desktopexporter/
   exporter.go                         # Signal exporters; writes through the shared store
   duckdbextension/                    # Store, HTTP server, and retention ownership
@@ -178,11 +180,11 @@ The root Go module builds the collector binary. The `desktop` exporter writes te
 
 ### Go
 
-- Run Go commands from the repository root so root-package tests remain included.
+- Run Go commands from the repository root to include every package.
 - Use the modern `any` alias for empty interface types.
 - Format with `gofmt` and verify with `make format-go-check`.
 - Access DuckDB through `Store.WithConn`, `Store.WithDBRead`, or `Store.WithDBWrite`. Production code must preserve the store's locking and connection ownership.
-- Treat `main.go` and `components.go` as OCB-generated collector wiring. Coordinate component-registry changes with a maintainer and keep recorded module versions synchronized.
+- Coordinate changes to `internal/collector/components.go` with a maintainer and keep recorded module versions synchronized.
 - Run `make test-go` or `go test ./...` from the repository root.
 
 Discuss DuckDB schema, retention, ingestion, and store-lifecycle changes before implementation. Schema objects live under `desktopexporter/internal/store/queries/ddl/`; update the applicable `_order` manifest and schema-version expectations with every schema change.
