@@ -1,28 +1,20 @@
 # Documentation
 
-## Start here
-
-- [Install the viewer](../README.md#1-install-the-viewer): download and installation options.
-- [Start the viewer](../README.md#3-start-the-viewer): start the viewer and choose in-memory or file storage.
-- [Use the viewer](../README.md#4-use-the-viewer): choose the human or agent workflow.
-- [Command-line options](command-line-options.md): viewer flags, defaults, storage and ports.
-- [SDK configuration guide](sdk-configuration.md): send application telemetry over HTTP or gRPC, using environment variables or YAML.
+The [README](../README.md) covers installation and quick start.
 
 ## Use the viewer
 
+- [Command-line options](command-line-options.md): server flags, defaults, storage and ports.
+- [SDK configuration](sdk-configuration.md): send application telemetry over HTTP or gRPC.
+- [Docker guide](docker-guide.md): containers, persistent storage and Compose.
+- [Telemetry files](telemetry-files.md): OTLP JSON imports and downloads.
+- [Database upgrades](database-upgrades.md): compatibility and migrations.
+- [Secret redaction](secret-redaction.md): masking rules, coverage and limits.
 - [Agent guide](../skills/otel-desktop-viewer/SKILL.md): inspect telemetry through the CLI.
-- [Docker guide](docker.md): images, ports, persistent storage and Docker Compose.
-- [OTLP JSON export and import](otlp-json-export.md): file formats, downloads and browser imports.
-- [Schema upgrades](schema-migration.md): database compatibility and migrations.
-- [Collector secret redaction](redaction.md): data covered by ingestion redaction and its limits.
 
-## Understand and develop the viewer
+## Develop the viewer
 
-- [Architecture](ARCHITECTURE.md): components, storage, APIs and frontend behaviour.
-- [Metric resolution](metric-resolution.md): how the viewer calculates metric chart data.
-- [Contributor guide](CONTRIBUTING.md): build, test and contribution instructions.
+- [Architecture](architecture.md): data flow, storage, APIs and frontend ownership.
+- [Metric charts](metric-charts.md): calculations, sampling and numeric precision.
+- [Contributor guide](CONTRIBUTING.md): local setup, checks and pull requests.
 - [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Artwork
-
-- [Lulu's original painting](lulu-artwork.md).

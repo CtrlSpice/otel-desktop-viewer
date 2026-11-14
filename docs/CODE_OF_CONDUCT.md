@@ -1,12 +1,6 @@
 # Code of Conduct
 
-Hello there. Thank you for being here.
-
-We want this project to feel as approachable as the app tries to be. If something's wrong, confusing, or uncomfortable, please reach out to us. We will help.
-
-Below is the [Contributor Covenant](https://www.contributor-covenant.org) (v3.0). It outlines what's expected, what's not, and how reports are handled.
-
----
+Our community rules are adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 3.0. If something is wrong, confusing or uncomfortable, please reach out. We will help.
 
 ## Our Pledge
 
@@ -59,10 +53,10 @@ Reports will be reviewed and investigated promptly and fairly, with reporter pri
 
 If an investigation finds that this Code of Conduct has been violated, the following enforcement ladder may be used to determine how best to repair harm, based on the incident's impact on the individuals involved and the community as a whole. Depending on the severity of a violation, lower rungs on the ladder may be skipped.
 
-- **Warning** — A private, written warning. Repair may include a private apology, acknowledgement of responsibility, and seeking clarification on expectations.
-- **Temporarily Limited Activities** — A time-limited cooldown period, which may be limited to particular channels or interactions. Repair includes using the cooldown period to reflect on actions and impact.
-- **Temporary Suspension** — Suspension with conditions for return. Repair includes respecting the spirit of the suspension and being thoughtful about reintegration.
-- **Permanent Ban** — Permanent removal from all community spaces, tools, and communication channels. Reserved for patterns of repeated violation that other steps have failed to resolve, or a single violation serious enough that no safe path forward exists.
+- **Warning**: A private, written warning. Repair may include a private apology, acknowledgement of responsibility, and seeking clarification on expectations.
+- **Temporarily Limited Activities**: A time-limited cooldown period, which may be limited to particular channels or interactions. Repair includes using the cooldown period to reflect on actions and impact.
+- **Temporary Suspension**: Suspension with conditions for return. Repair includes respecting the spirit of the suspension and being thoughtful about reintegration.
+- **Permanent Ban**: Permanent removal from all community spaces, tools, and communication channels. Reserved for patterns of repeated violation that other steps have failed to resolve, or a single violation serious enough that no safe path forward exists.
 
 This enforcement ladder is a guideline. It does not limit our ability to use discretion and judgment in the best interests of the community.
 

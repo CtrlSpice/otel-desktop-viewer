@@ -18,7 +18,8 @@ agreed scope, and take responsibility for the contribution and review follow-up.
 ## Run locally
 
 You need Git, Make, [Go 1.26](../go.mod), [Node 26](../.nvmrc) with npm,
-and a C compiler for DuckDB.
+and a C compiler for DuckDB. Windows requires
+[MinGW64](../README.md#1-install-the-viewer).
 
 ```bash
 git clone https://github.com/CtrlSpice/otel-desktop-viewer.git
@@ -55,8 +56,8 @@ need focused automated tests. For bug fixes, show that the test fails before
 the fix where practical. Check UI changes in the running app for accessibility
 and visual regressions.
 
-Read the [architecture guide](ARCHITECTURE.md) for code and UI conventions, and
-follow the [migration guide](schema-migration.md) for database schema changes.
+Read [Architecture](architecture.md) for code and UI conventions, and follow
+[Database upgrades](database-upgrades.md) for schema changes.
 
 After frontend source, dependency or build-configuration changes, regenerate
 the public assets from the repository root and commit the updated

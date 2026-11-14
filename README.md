@@ -1,5 +1,5 @@
 <h1 style="display: flex; align-items: center; gap: 12px;">
-  <img src="docs/lulu.svg" alt="Lulu, a pink pixel-art axolotl" width="48" style="display: inline-block; flex-shrink: 0; margin: 0; vertical-align: middle;">
+  <img src="assets/lulu/lulu.svg" alt="Lulu, a pink pixel-art axolotl" width="48" style="display: inline-block; flex-shrink: 0; margin: 0; vertical-align: middle;">
   otel-desktop-viewer
 </h1>
 
@@ -54,7 +54,7 @@ brew install --cask otel-desktop-viewer
 docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
 ```
 
-See the [Docker guide](docs/docker.md) for ports, persistent storage, Docker Compose and image options.
+See the [Docker guide](docs/docker-guide.md) for ports, persistent storage, Docker Compose and image options.
 
 </details>
 
@@ -81,8 +81,8 @@ gcc --version
 g++ --version
 ```
 
-See [the build prerequisites](docs/CONTRIBUTING.md#prerequisites) for the supported
-toolchain. Prebuilt release binaries do not need a compiler.
+See the [Contributor guide](docs/CONTRIBUTING.md#run-locally) to run from a
+checkout. Prebuilt release binaries do not need a compiler.
 
 **On Linux/macOS**: the checks above are sufficient.
 
@@ -153,7 +153,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 ```
 
-See the [SDK configuration guide](docs/sdk-configuration.md) for more options and examples.
+See [SDK configuration](docs/sdk-configuration.md) for more options and examples.
 
 ## 3. Start the viewer
 
@@ -224,16 +224,16 @@ The guide is also available at <http://localhost:8000/llms.txt> while the viewer
 ## 5. Learn more
 
 - [Command-line options](docs/command-line-options.md): viewer flags, defaults, storage and ports.
-- [OTLP JSON export and import](docs/otlp-json-export.md): file formats, downloads and browser imports.
-- [Schema upgrades](docs/schema-migration.md): database compatibility and migrations.
-- [Collector secret redaction](docs/redaction.md): data covered by ingestion redaction and its limits.
+- [Telemetry files](docs/telemetry-files.md): OTLP JSON imports and downloads.
+- [Database upgrades](docs/database-upgrades.md): compatibility and migrations.
+- [Secret redaction](docs/secret-redaction.md): masking rules, coverage and limits.
 - [All documentation](docs/README.md).
 
 ## What's with the axolotl?
 
-<img src="docs/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu squats to pick him up, lifts him to the telescope, then sets him down for head pats before he scuttles away with hearts." width="336">
+<img src="assets/lulu/lulu-and-crab.gif" alt="An orange crab raises his claws for uppies. Lulu squats to pick him up, lifts him to the telescope, then sets him down for head pats before he scuttles away with hearts." width="336">
 
-Her name is **Lulu**. She is very pink, and I love her. She's been our [mascot](docs/lulu-artwork.md) since 2023, back when I really wanted to call the app AxolOtel. Now, [Lulu](https://github.com/CtrlSpice/lulu) belongs to the people. She's public domain under [CC0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE). The animation is just me playing with pixels. If you have so much as a modicum of artistic or design chops and want to take a crack at her artwork or animation, that would be awesome.
+Her name is **Lulu**. She is very pink, and I love her. She's been our [mascot](assets/lulu/README.md) since 2023, back when I really wanted to call the app AxolOtel. Now, [Lulu](https://github.com/CtrlSpice/lulu) belongs to the people. She's public domain under [CC0](https://github.com/CtrlSpice/lulu/blob/main/LICENSE). The animation is just me playing with pixels. If you have so much as a modicum of artistic or design chops and want to take a crack at her artwork or animation, that would be awesome.
 
 ## Contribute
 

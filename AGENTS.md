@@ -31,6 +31,13 @@
   Write standalone Markdown guides with explicit defaults and complete examples.
 - Use descriptive noun titles for standalone documents, such as "Docker guide".
   Use action headings for procedural sections within documents.
+- Reference guides use descriptive lowercase, hyphen-separated filenames. Match
+  each guide's page title and link label in docs/README.md and the root README.
+  Keep README.md, CONTRIBUTING.md and CODE_OF_CONDUCT.md under their standard
+  GitHub-recognised filenames.
+- Keep Lulu artwork and its credit page in assets/lulu/. Keep only images used
+  by the README in docs/screenshots/. Review screenshots belong in local-only
+  notes/, not docs/evidence/ or the published screenshot directory.
 - Keep guides for features not yet in production, including experimental
   features and Evals ingestion, in local-only `notes/`. Move them into `docs/`
   when those features ship in production. This keeps public documentation focused

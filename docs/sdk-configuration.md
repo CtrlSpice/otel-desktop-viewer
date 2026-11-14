@@ -1,20 +1,13 @@
-# SDK configuration guide
+# SDK configuration
 
-Configure your application's OpenTelemetry exporter to send traces, metrics and
-logs to `otel-desktop-viewer` using OTLP, the OpenTelemetry Protocol.
+Send application traces, metrics and logs to the viewer using OTLP, the
+OpenTelemetry Protocol. Configure these settings in your application.
+You need an instrumented application with an OpenTelemetry SDK and its OTLP
+exporter; environment variables alone do not provide instrumentation.
 
-These settings belong to your application, not the viewer process.
-
-## Prerequisites
-
-- Install and start the viewer. See [Start the viewer](../README.md#3-start-the-viewer).
-- Instrument your application with an OpenTelemetry SDK and install its OTLP exporter.
-- Check which signals, protocols and configuration methods your SDK supports.
-  Environment variables alone do not instrument an application.
-
-The examples assume the application and viewer run on the same machine with the
-viewer's default ports. In a container, `localhost` refers to that container.
-For applications in Docker Compose, see [Use Docker Compose](docker.md#use-docker-compose).
+[Start the viewer](../README.md#3-start-the-viewer) before using these examples.
+They assume both processes run on the same machine with default ports.
+For containers, see [Docker guide](docker-guide.md#use-docker-compose).
 
 ## Choose an endpoint
 
@@ -23,16 +16,15 @@ For applications in Docker Compose, see [Use Docker Compose](docker.md#use-docke
 | OTLP HTTP with protobuf | `http://localhost:4318` | `http/protobuf` |
 | OTLP gRPC | `http://localhost:4317` | `grpc` |
 
-Port `8000` serves the web UI and viewer APIs. It does not receive OTLP.
-If you changed the viewer's host or receiver ports, use those addresses instead.
-See [Command-line options](command-line-options.md).
+Port `8000` serves the UI and APIs, not OTLP. Substitute your configured addresses
+if you changed the defaults in [Command-line options](command-line-options.md).
 
 ## Configure with environment variables
 
-Use these examples if your SDK supports
-[environment-variable configuration](https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporter-configuration/).
-Choose one protocol. Set its variables in the application's environment before
-starting the application. The commands below use POSIX shell syntax.
+Check which signals, protocols and configuration methods your SDK supports.
+For [environment-variable configuration](https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporter-configuration/),
+choose one protocol and set its variables before starting the application.
+These commands use POSIX shell syntax.
 
 ### Send over HTTP
 
@@ -56,9 +48,10 @@ the complete HTTP path:
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `http://localhost:4318/v1/metrics` |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | `http://localhost:4318/v1/logs` |
 
-Signal-specific protocol variables also override `OTEL_EXPORTER_OTLP_PROTOCOL`.
-Check for existing overrides when changing protocols.
-See the [OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/).
+Signal-specific protocol variables override `OTEL_EXPORTER_OTLP_PROTOCOL` too.
+Check for existing overrides when changing protocols. The
+[OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
+defines their precedence.
 
 ### Send over gRPC
 
@@ -74,12 +67,8 @@ For gRPC, use the receiver address without HTTP signal paths such as `/v1/traces
 
 ## Use declarative configuration
 
-SDKs that support
-[declarative configuration](https://opentelemetry.io/docs/languages/sdk-configuration/declarative-configuration/)
-can read a YAML file instead. Check that your SDK supports the file format used
-below (`1.1`).
-
-Save this as `otel-config.yaml`:
+If your SDK supports [declarative configuration](https://opentelemetry.io/docs/languages/sdk-configuration/declarative-configuration/)
+format `1.1`, save this as `otel-config.yaml`:
 
 ```yaml
 file_format: "1.1"
@@ -111,33 +100,29 @@ logger_provider:
             endpoint: http://localhost:4318/v1/logs
 ```
 
-Replace `my-service` with your application's service name.
-The `otlp_http` exporters require complete signal URLs, as shown above.
-
-Set `OTEL_CONFIG_FILE` to the file's path before starting your application:
+Replace `my-service` with your service name. The `otlp_http` exporters require
+complete signal URLs. Set the file path before starting your application:
 
 ```sh
-export OTEL_CONFIG_FILE=/path/to/otel-config.yaml
+export OTEL_CONFIG_FILE="$PWD/otel-config.yaml"
 ```
 
-With declarative configuration, SDKs ignore other SDK environment variables
-unless the file explicitly references them through substitution, such as `${OTEL_SERVICE_NAME}`.
-Set endpoints in the file, rather than expecting `OTEL_EXPORTER_OTLP_ENDPOINT`
-to override them.
+Declarative configuration ignores other SDK environment variables unless the
+file references them through substitution, such as `${OTEL_SERVICE_NAME}`.
+Set endpoints in the file; `OTEL_EXPORTER_OTLP_ENDPOINT` does not override them.
 
 ## Check the result
 
-Start your application with the chosen configuration and generate telemetry.
-Open the viewer at `http://localhost:8000`, or use your configured viewer HTTP address.
-Inspect the corresponding Traces, Metrics or Logs workspace.
+Start your application, generate telemetry and open the matching Traces, Metrics
+or Logs workspace at `http://localhost:8000` (or your configured UI address).
 
 If telemetry does not appear, check the application's exporter errors, endpoint,
 protocol and signal-specific overrides.
 
 ### Send a test trace
 
-**Optional:** Use Amy Tobey's [otel-cli](https://github.com/tobert/otel-cli) for a
-quick test. Amy is awesome, and we love this project.
+Amy Tobey's [otel-cli](https://github.com/tobert/otel-cli) can test trace ingestion
+without instrumenting an application. Amy is awesome, and we love this project.
 
 With `otel-cli` installed and the viewer running, send a trace over OTLP HTTP:
 
@@ -147,8 +132,3 @@ otel-cli exec --endpoint http://localhost:4318 --protocol http/protobuf \
 ```
 
 Open `http://localhost:8000/traces` and look for `test trace` from `viewer-test`.
-This checks trace ingestion without instrumenting an application.
-
-## Related documentation
-
-- [Documentation index](README.md).
