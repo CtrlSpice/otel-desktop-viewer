@@ -86,7 +86,9 @@ uses the shutdown context rather than waiting indefinitely for readers.
 ```text
 otel-desktop-viewer/
 |-- main.go
-|-- components.go
+|-- internal/
+|   |-- cli/
+|   `-- collector/
 |-- desktopexporter/
 |   |-- exporter.go
 |   |-- duckdbextension/
@@ -751,7 +753,7 @@ shared telemetry functionality. See [Experimental features](experimental-feature
 
 ## Related files
 
-- Collector wiring: `main.go`, `components.go`, `desktopexporter/exporter.go`
+- Collector wiring: `main.go`, `internal/collector/`, `desktopexporter/exporter.go`
 - Store owner: `desktopexporter/duckdbextension/`
 - Server: `desktopexporter/internal/server/`
 - Storage: `desktopexporter/internal/store/`

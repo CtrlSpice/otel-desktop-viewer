@@ -44,7 +44,7 @@ func startEvalReceiver(t *testing.T, s *Server) {
 		return s.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) })
 	})
 	require.NoError(t, err)
-	policy, err := os.ReadFile("../../../collector_redaction.yaml")
+	policy, err := os.ReadFile("../../../internal/collector/collector_redaction.yaml")
 	require.NoError(t, err)
 	var raw map[string]any
 	require.NoError(t, yaml.Unmarshal(policy, &raw))
