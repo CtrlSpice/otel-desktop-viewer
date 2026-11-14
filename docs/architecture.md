@@ -1,8 +1,8 @@
 # Architecture
 
 The viewer is one Go executable containing an OpenTelemetry Collector, DuckDB
-and an embedded Svelte app. The Collector receives telemetry; the HTTP server
-serves the app and query APIs.
+and a Svelte frontend. The HTTP server serves the frontend to the browser and
+handles its data requests.
 
 ```mermaid
 flowchart LR
@@ -10,18 +10,17 @@ flowchart LR
   Receiver --> Redaction[redaction processor]
   Redaction --> Batch[batch processor]
   Batch --> Exporter[desktop exporter]
-  Exporter --> DB[(DuckDB)]
-  Browser[Browser] --> HTTP[HTTP server]
-  CLI[CLI] --> HTTP
-  HTTP -->|queries| DB
-  HTTP --> Assets[Embedded frontend]
+  Exporter -->|Arrow batches| DB[(DuckDB)]
+  Frontend[Frontend] <-->|Arrow and JSON-RPC over HTTP| HTTP[HTTP server]
+  CLI[CLI] <-->|JSON-RPC over HTTP| HTTP
+  HTTP <-->|SQL queries and results| DB
 ```
 
 ## Collector lifecycle
 
 [`collector_config.go`](../collector_config.go) builds the default configuration.
-Traces, metrics and logs use the same receiver, processor and exporter chain
-shown above. Browser file imports send OTLP to the HTTP receiver and pass through
+All signals use the same receiver, processor and exporter chain shown above.
+The frontend sends file imports to the OTLP HTTP receiver. They pass through
 the same policy described in [Secret redaction](secret-redaction.md).
 [`components.go`](../components.go) registers the available Collector components,
 including a file receiver that the default configuration does not activate.
@@ -35,7 +34,7 @@ Ingestion converts the Collector's `pdata` records into typed Arrow column
 batches. The
 [`arrowbridge`](../desktopexporter/internal/store/arrowbridge/) package passes
 them to DuckDB through a statically linked C extension. Each accepted record
-and its nested data commit together.
+and its nested data stay together within a batch transaction.
 
 ## Storage
 
@@ -48,8 +47,8 @@ access through three methods:
 | `WithDBRead` | Concurrent queries through the connection pool. |
 | `WithDBWrite` | Deletion, retention and checkpointing, excluding queries and ingestion. |
 
-Queries can run while telemetry is being ingested. Database work stays inside
-these callbacks so the store lock covers the operation.
+Each method runs a callback while holding the required lock. Database work must
+finish before that callback returns. Queries can run alongside ingestion.
 
 ### Records and identities
 
@@ -68,13 +67,13 @@ nested children as `events`, `links`, `metric_datapoints` and `exemplars`.
 The `metrics` view selects the latest received descriptor for each logical
 Metric. Identity includes Resource and Scope context, name, unit, type, and
 applicable temporality and monotonicity. Description and metadata stay with each
-received record but do not determine identity. `metric_series` groups one Metric
-by datapoint attributes.
+received record but do not determine identity. In `metric_series`, each distinct
+datapoint attribute set defines a series within one logical Metric.
 
 Exact span lookup uses both received `traceID` and `spanID`. Logs, metrics,
 series and datapoints have opaque viewer-generated references: `logRef`,
-`metricRef`, `seriesRef` and `datapointRef`. Correlation IDs can refer to spans
-that have not arrived or are no longer stored.
+`metricRef`, `seriesRef` and `datapointRef`. Received `traceID` and `spanID` values
+can refer to spans that have not arrived or are no longer stored.
 
 ### Values
 
@@ -117,20 +116,30 @@ The [HTTP server](../desktopexporter/internal/server/server.go) exposes:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /rpc` | JSON-RPC for the CLI and browser control requests. |
-| `POST /api/data/{method}` | Arrow datasets for browser telemetry reads. |
+| `POST /rpc` | JSON-RPC for the CLI and frontend. |
+| `POST /api/data/{method}` | JSON parameters in, Arrow IPC datasets out. |
 | `GET /export/{signal}/{id}` | OTLP JSON downloads. |
 | `GET /openrpc.json` | RPC methods, parameters and result schemas. |
 | `GET /openapi.json` | HTTP routes, media types and status codes. |
 | `GET /llms.txt` | The bundled agent guide. |
 | `GET /api/features` | Features available in this build. |
-| `GET /` | Embedded app, with fallback for client-side routes. |
+| `GET /` | Frontend files, with fallback for client-side routes. |
 
 Arrow requests contain method parameters directly; RPC requests use a JSON-RPC
-envelope. Both share parameter validation and query builders. Arrow carries
-typed columns and nested values. Signal SQL templates can construct JSON
-directly; Go forwards those bytes without re-encoding. OpenRPC documents each method's
-numeric representation. The separate `query` RPC runs read-only SQL.
+envelope. Both share parameter validation and query builders. The separate
+`query` RPC accepts read-only SQL.
+
+Arrow carries frontend lists, details, charts and most discovery results. Native
+DuckDB query batches pass through `arrowbridge` to
+[`arrowread`](../desktopexporter/internal/store/arrowread/), which converts
+`VARIANT` values to standard Arrow types and writes the IPC response without
+converting it to JSON. The frontend validates the complete response before
+using it.
+
+JSON-RPC serves CLI queries and frontend operations including statistics,
+deletion, some discovery and SQL lookups. Signal SQL templates can construct
+JSON directly; Go forwards those bytes without re-encoding. OpenRPC documents
+each method's numeric representation.
 
 Lists and charts use summaries or reduced data. Selected-record methods fetch
 complete stored values, and Copy/Download use those values rather than previews.
@@ -147,10 +156,11 @@ builders. Attribute references retain the owner, exact key and stored type.
 A match on a nested record uses that event or datapoint and its parent context;
 values from sibling records cannot be combined.
 
-[`store/searchindex`](../desktopexporter/internal/store/searchindex/) maintains
-a derived catalogue of owners, typed paths and values for text search and
-autocomplete. Ingestion, deletion and retention update it transactionally with
-the telemetry. Complete payloads remain in the native record tables.
+[`store/searchindex`](../desktopexporter/internal/store/searchindex/) records
+which Resource, Scope or record owns each searchable value, along with its
+nested path and type. Text search and autocomplete use this catalogue.
+Ingestion, deletion and retention update it transactionally with the telemetry.
+Complete payloads remain in the native record tables.
 
 Home and the CLI share service query builders in
 [`internal/discovery`](../internal/discovery/). Services are grouped by typed
@@ -163,10 +173,12 @@ shows the child spans behind it.
 
 The Svelte 5/TypeScript app lives in
 [`desktopexporter/internal/frontend/src`](../desktopexporter/internal/frontend/src/).
-`App.svelte` selects the page and owns one shared `WorkspaceShell`. Pages provide
-List, Main and Details content through `PageLayout` and the workspace context.
-Pane containers stay mounted across routes; saved side-pane widths and open
-preferences apply across signals. Route and time contexts own navigation and
+`App.svelte` selects the page and owns one shared `WorkspaceShell`. Pages fill
+the List, Main and Details panes through
+[`PageLayout`](../desktopexporter/internal/frontend/src/components/shared/PageLayout.svelte)
+and the [workspace context](../desktopexporter/internal/frontend/src/contexts/workspace-context.svelte.ts).
+Pane containers stay mounted across routes; saved side-pane widths and
+open/closed states apply across signals. Route and time contexts own navigation and
 the selected time range. Pages own their requests and record selections.
 
 Home places Getting started, Storage and Ingestion issues in List, the service
@@ -182,7 +194,7 @@ coordinates, visible series and selection.
 
 Shared components own section disclosure, resizing, value inspection and
 Copy/Download controls. Theme generation supplies interface, syntax and graph
-colours. New UI work should reuse these components and shared typography tokens.
+colours.
 Display formatting and collapsed sections do not alter stored or copied values.
 
 ## Builds and development
