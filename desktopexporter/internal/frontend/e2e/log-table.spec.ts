@@ -136,7 +136,7 @@ test('Live and reconnect refresh a selected log without replacing its inspector 
     })
   })
   const live = page.getByRole('button', { name: 'Live', exact: true })
-  await expect(live).toHaveText('Live')
+  await expect(live).toHaveText('')
   await expect(live).toHaveAttribute('aria-pressed', 'false')
   const liveWidth = (await live.boundingBox())!.width
   await live.click()

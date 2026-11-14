@@ -77,9 +77,6 @@
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
-              {#snippet text()}
-                <span>Live</span>
-              {/snippet}
             </IconButton>
           {/if}
           {#if onRefresh || search}

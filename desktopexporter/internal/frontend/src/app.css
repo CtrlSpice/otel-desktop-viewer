@@ -651,20 +651,15 @@ html[data-theme] .cm-completionDetail::before {
   @apply before:h-px before:border-t;
 }
 
-/* Shared header controls; icon-only buttons keep a circular target. */
-.header-button,
+/* Shared circular header controls. */
 .header-icon-button {
   @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
   height: var(--control-target-size);
   color: var(--color-base-content);
-}
-
-.header-icon-button {
   flex-shrink: 0;
   width: var(--control-target-size);
 }
 
-.header-button:hover,
 .header-icon-button:hover {
   background-color: var(--item-hover-bg);
 }
@@ -878,9 +873,7 @@ button:focus-visible:not(.btn) {
     var(--motion-settle-easing);
 }
 
-:is(.item-state, .table-row):where(
-  :not(.btn-circle, .header-button, .header-icon-button)
-) {
+:is(.item-state, .table-row):where(:not(.btn-circle, .header-icon-button)) {
   border-radius: 0.75rem;
 }
 

@@ -2009,8 +2009,7 @@ test.describe('home page accessibility', () => {
         for (const name of ['Refresh', 'Live']) {
           const button = dataControls.getByRole('button', { name, exact: true })
           await expect(button).toBeVisible()
-          if (name === 'Refresh')
-            await expect(button).toHaveCSS('width', '32px')
+          await expect(button).toHaveCSS('width', '32px')
           await expect(button).toHaveCSS('height', '32px')
           await expect(
             searchBar.getByRole('button', { name, exact: true })
