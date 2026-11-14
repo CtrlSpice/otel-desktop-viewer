@@ -43,29 +43,29 @@ import {
   attributeDefinitions,
   attributeMatch,
   type AttributeMatch,
-} from './arrow-search'
-import { fetchArrow } from './arrow-fetch'
-import { attributeValue, rowViews } from './arrow-values'
-import { ArrowFrame } from './arrow-data'
+} from './arrow/arrow-search'
+import { fetchArrow } from './arrow/arrow-fetch'
+import { attributeValue, rowViews } from './arrow/arrow-values'
+import { ArrowFrame } from './arrow/arrow-data'
 import {
   traceData,
   traceWaterfallData,
   traceColumnPreviews,
-} from './arrow-traces'
+} from './arrow/arrow-traces'
 import {
   discoveryPage,
   serviceSummary,
   serviceConnection,
   serviceConnectionSpan,
   attributeKey,
-} from './arrow-discovery'
+} from './arrow/arrow-discovery'
 import {
   exactMetric,
   exactMetricSeries,
   metricSeriesOrder,
   metricView,
   metricAggregateView,
-} from './arrow-metrics'
+} from './arrow/arrow-metrics'
 import {
   logData,
   logSummary,
@@ -73,7 +73,7 @@ import {
   traceLogSummary,
   traceSummary,
   metricSummary,
-} from './arrow-summaries'
+} from './arrow/arrow-summaries'
 import { JsonRpcError } from './service-error'
 export { JsonRpcError } from './service-error'
 

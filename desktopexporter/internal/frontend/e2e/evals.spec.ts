@@ -1,7 +1,7 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { exampleExperiments } from '../src/components/evals/examples'
+import { exampleExperiments } from '../src/features/evals/examples'
 import { getTheme, themeRgb } from './theme-colours'
 
 async function openExamples(page: Page, selection = '') {

@@ -202,10 +202,13 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       const moduleGate = new Promise<void>(resolve => {
         releaseModule = resolve
       })
-      await page.route('**/src/pages/EvalsWorkspace.svelte*', async route => {
-        await moduleGate
-        await route.continue()
-      })
+      await page.route(
+        '**/src/features/evals/EvalsWorkspace.svelte*',
+        async route => {
+          await moduleGate
+          await route.continue()
+        }
+      )
       await nav.getByRole('link', { name: /^Evals \[experimental\]/ }).click()
       await expect(page.getByText('Opening Evals…')).toBeVisible()
       await assertShell()

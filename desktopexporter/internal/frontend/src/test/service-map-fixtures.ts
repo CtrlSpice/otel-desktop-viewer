@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { fireEvent } from '@testing-library/svelte'
-import HomePage from '@/pages/HomePage.svelte'
+import HomePage from '@/features/home/HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from './render-helpers'
 import type {

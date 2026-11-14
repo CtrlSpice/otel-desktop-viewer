@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { renderWithContexts } from '@/test/render-helpers'
 import ThemePicker from './ThemePicker.svelte'
 import { THEMES } from '@/themes'
-import { identityColorSlot, savedColorSlots } from '@/utils/color-slots'
+import { identityColorSlot, savedColorSlots } from '@/utils/colours/color-slots'
 
 it('offers four seasons without changing graph assignments', async () => {
   identityColorSlot('real service', 'services')

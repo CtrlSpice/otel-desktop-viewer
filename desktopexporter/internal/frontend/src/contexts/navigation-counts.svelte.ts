@@ -2,7 +2,7 @@ import { getContext, onDestroy, onMount, setContext } from 'svelte'
 import { get } from 'svelte/store'
 import { evalsEnabled } from '@/state/features'
 import { telemetryAPI } from '@/services/telemetry-service'
-import { evalAPI } from '@/services/eval-service'
+import { evalAPI } from '@/features/evals/services/eval-service'
 
 export type NavigationCounts = Partial<
   Record<'home' | 'traces' | 'metrics' | 'logs' | 'evals', number>

@@ -1,5 +1,5 @@
 import { getContext, setContext } from 'svelte'
-import type { PaneHeaderProps } from '@/components/shared/PaneHeader.svelte'
+import type { PaneHeaderProps } from '@/components/shared/Layout/PaneHeader.svelte'
 
 const key = Symbol('workspace-main-header')
 

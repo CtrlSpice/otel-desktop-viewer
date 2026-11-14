@@ -1,6 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
+import { projectPromptfooDataset } from '../src/features/evals/promptfoo-adapter'
 
 const datasetID = 'c'.repeat(64)
 
@@ -266,8 +266,8 @@ test('explicit Overall keeps one exact header Copy when outer Assessments is col
   // Configure the supported normalized examples fixture before selecting it.
   // This fixture can express an Overall rubric; Promptfoo's combined outcome has none.
   await page.evaluate(async input => {
-    const modulePath = '/src/components/evals/examples.ts'
-    const examples: typeof import('../src/components/evals/examples') =
+    const modulePath = '/src/features/evals/examples.ts'
+    const examples: typeof import('../src/features/evals/examples') =
       await import(modulePath)
     const experiment = examples.exampleExperiments[0]
     const result = experiment.results.find(

@@ -172,7 +172,7 @@ numeric representations and the remaining HTTP routes.
 Each Svelte 5/TypeScript page loads its data and tracks the selected records.
 
 - One `WorkspaceShell` keeps pane containers mounted across routes.
-  [`PageLayout`](../desktopexporter/internal/frontend/src/components/shared/PageLayout.svelte)
+  [`PageLayout`](../desktopexporter/internal/frontend/src/components/shared/Layout/PageLayout.svelte)
   and the [workspace context](../desktopexporter/internal/frontend/src/contexts/workspace-context.svelte.ts)
   fill three panes: List for lists and supporting controls, Main for charts,
   tables, timelines or service maps, and Details for selected records or connections.

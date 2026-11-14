@@ -1,0 +1,207 @@
+<script lang="ts">
+  import type { SvelteSet } from 'svelte/reactivity'
+  import { MAX_VISIBLE_TIMESERIES } from '@/features/metrics/Series/metric-timeseries-visible'
+  import { getMetricViewContext } from '@/features/metrics/metric-view-context.svelte'
+  import {
+    chartNeutral,
+    readableTextColor,
+  } from '@/utils/colours/chart-palette'
+  import { themeSignal } from '@/state/theme.svelte'
+  import type { LegendTimeseries as Timeseries } from '@/features/metrics/metric-chart-types'
+  import { dedupeAttributes } from '@/features/metrics/Series/dedupe-attributes'
+  import { attributeValueLabel } from '@/components/shared/Detail/attribute-label'
+
+  const ctx = getMetricViewContext()
+
+  type Props = {
+    timeseries: Timeseries[]
+    /** SvelteSet of timeseries keys currently visible on the chart.
+     * The legend mutates the set in place via .add() / .delete();
+     * SvelteSet's reactivity propagates writes to every reader
+     * (chart, datapoints filter, etc.) without us having to copy. */
+    visibleKeys: SvelteSet<string>
+  }
+
+  let { timeseries, visibleKeys }: Props = $props()
+
+  // Visible-set cap (max). Hitting MAX_VISIBLE_TIMESERIES disables
+  // every *unchecked* row so the palette never needs to wrap; checked
+  // rows stay enabled so the user can always uncheck and free a slot.
+  let capReached = $derived(visibleKeys.size >= MAX_VISIBLE_TIMESERIES)
+
+  function toggle(key: string, checked: boolean) {
+    if (checked) {
+      visibleKeys.add(key)
+    } else {
+      visibleKeys.delete(key)
+    }
+  }
+</script>
+
+<div class="timeseries-legend" role="group" aria-label="Timeseries visibility">
+  <div class="timeseries-legend__header">
+    <span class="timeseries-legend__title">Timeseries</span>
+    <span
+      class="timeseries-legend__count"
+      class:timeseries-legend__count--cap={capReached}
+    >
+      {visibleKeys.size} / {MAX_VISIBLE_TIMESERIES}
+    </span>
+  </div>
+
+  <ul class="timeseries-legend__list">
+    {#each timeseries as ts, i (ts.key)}
+      {@const checked = visibleKeys.has(ts.key)}
+      {@const disabled = !checked && capReached}
+      {@const seriesColor = ctx.timeseriesColorByKey.get(ts.key)}
+      {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
+      {@const fg =
+        checked && seriesColor
+          ? readableTextColor(seriesColor, themeSignal.value)
+          : chartNeutral()}
+      {@const rowAttrs = dedupeAttributes(ts.attributes)}
+      {@const tooltip =
+        rowAttrs.length === 0
+          ? 'default'
+          : rowAttrs
+              .map(a => `${a.key}=${attributeValueLabel(a.value)}`)
+              .join(', ')}
+      <li
+        class="timeseries-legend__row"
+        class:timeseries-legend__row--disabled={disabled}
+      >
+        <label
+          class="timeseries-legend__label item-state"
+          title={tooltip}
+          data-disabled={disabled ? '' : undefined}
+        >
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs timeseries-legend__checkbox"
+            style:--input-color={color}
+            style:color={fg}
+            {checked}
+            {disabled}
+            onchange={e =>
+              toggle(ts.key, (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span class="timeseries-legend__attrs">
+            {#if rowAttrs.length === 0}
+              <span class="timeseries-legend__attrs-empty">default</span>
+            {:else}
+              {#each rowAttrs as attr, index (`legend:${attr.id ?? 'unidentified'}:${index}`)}
+                <span class="timeseries-legend__attr">
+                  <span class="timeseries-legend__attr-key">{attr.key}</span>
+                  <span class="timeseries-legend__attr-eq">=</span>
+                  <span class="timeseries-legend__attr-value"
+                    >{attributeValueLabel(attr.value)}</span
+                  >
+                </span>
+              {/each}
+            {/if}
+          </span>
+          {#if ts.badge}
+            <span class="timeseries-legend__badge">{ts.badge}</span>
+          {/if}
+        </label>
+      </li>
+    {/each}
+  </ul>
+
+  {#if capReached}
+    <p class="timeseries-legend__cap-note">
+      Cap of {MAX_VISIBLE_TIMESERIES} timeseries reached. Uncheck one to enable another.
+    </p>
+  {/if}
+</div>
+
+<style lang="postcss">
+  @reference "../../../app.css";
+
+  .timeseries-legend {
+    @apply flex flex-col gap-2;
+  }
+
+  .timeseries-legend__header {
+    @apply flex items-baseline justify-between;
+  }
+
+  .timeseries-legend__title {
+    @apply text-sm font-normal uppercase tracking-wide text-subtle;
+  }
+
+  .timeseries-legend__count {
+    @apply text-xs tabular-nums text-base-content;
+  }
+
+  .timeseries-legend__count--cap {
+    @apply text-base-content font-normal;
+  }
+
+  .timeseries-legend__list {
+    @apply flex flex-col gap-1 m-0 p-0 list-none;
+  }
+
+  .timeseries-legend__row--disabled {
+    @apply opacity-50;
+  }
+
+  .timeseries-legend__label {
+    @apply flex items-center gap-2 px-2 py-1 cursor-pointer;
+    min-height: 1.75rem;
+  }
+
+  .timeseries-legend__row--disabled .timeseries-legend__label {
+    @apply cursor-not-allowed;
+  }
+
+  /* daisyUI .checkbox handles the box, the size (.checkbox-xs), and
+     the checked-state colour (via the inline `--input-color` per row).
+     We just keep the row-flex contract: shrink-0 so a long attrs list
+     never crushes the box, and pointer cursor parity with the label. */
+  .timeseries-legend__checkbox {
+    @apply shrink-0 cursor-pointer;
+  }
+
+  .timeseries-legend__row--disabled .timeseries-legend__checkbox {
+    @apply cursor-not-allowed;
+  }
+
+  /* Sits in a narrow column alongside the chart, so attribute pairs
+     get one line each and overflow truncates with an ellipsis. The
+     <label> wrapper carries `title` to surface the full text on
+     hover -- without that an attribute like
+     `service.namespace=production-us-east-1` becomes
+     `service.namespace=produ…` and there's no way to recover it. */
+  .timeseries-legend__attrs {
+    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-sans min-w-0 overflow-hidden;
+  }
+
+  .timeseries-legend__attrs-empty {
+    @apply italic text-base-content/50;
+  }
+
+  .timeseries-legend__attr {
+    @apply inline-flex items-baseline min-w-0 max-w-full;
+  }
+
+  .timeseries-legend__attr-key {
+    @apply text-(--color-subtle) shrink-0;
+  }
+
+  .timeseries-legend__attr-eq {
+    @apply text-(--color-subtle) mx-0.5 shrink-0;
+  }
+
+  .timeseries-legend__attr-value {
+    @apply text-base-content truncate;
+  }
+
+  .timeseries-legend__badge {
+    @apply ml-auto text-base tabular-nums text-base-content shrink-0;
+  }
+
+  .timeseries-legend__cap-note {
+    @apply text-xs text-base-content m-0;
+  }
+</style>

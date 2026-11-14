@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getStaticFieldsForSearch } from '@/constants/fields'
-import { queryText } from '@/components/home/home-search'
+import { queryText } from '@/features/home/home-search'
 import { parseSearchRequest, validateQuery } from './queryParser'
 import { quoteQueryString } from './query-literals'
 
