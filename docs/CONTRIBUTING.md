@@ -5,6 +5,11 @@ Hi, welcome. I'm happy to have you.
 Bug reports, docs fixes, design work and code are welcome. Please follow our
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
+If you're new to open source and want to help but aren't sure where to start,
+please [poke me](mailto:amelia.ardath@gmail.com), publicly or privately, however
+you're comfortable. I'm happy to help you find your way around the project and
+choose a first contribution.
+
 ## Choose a change
 
 [Open an issue](https://github.com/CtrlSpice/otel-desktop-viewer/issues/new/choose)
@@ -19,9 +24,13 @@ for the contribution and review follow-up.
 
 ## Run locally
 
-You need Git, Make, [Go 1.26](../go.mod), [Node 26](../.nvmrc) with npm,
-and a C compiler for DuckDB. Windows requires
-[MinGW64](../README.md#1-install-the-viewer).
+You need:
+
+- [<img src="https://cdn.simpleicons.org/git/F05032" width="16" height="16" alt="" style="display: inline-block; vertical-align: middle; margin: 0;"> Git](https://git-scm.com/downloads/)
+- [<img src="https://cdn.simpleicons.org/gnu/A42E2B" width="16" height="16" alt="" style="display: inline-block; vertical-align: middle; margin: 0;"> Make](https://www.gnu.org/software/make/)
+- [<img src="https://cdn.simpleicons.org/go/00ADD8" width="16" height="16" alt="" style="display: inline-block; vertical-align: middle; margin: 0;"> Go 1.26](https://go.dev/doc/install)
+- [<img src="https://cdn.simpleicons.org/nodedotjs/5FA04E" width="16" height="16" alt="" style="display: inline-block; vertical-align: middle; margin: 0;"> Node 26](https://nodejs.org/en/download) with npm
+- [<img src="https://cdn.simpleicons.org/c/A8B9CC" width="16" height="16" alt="" style="display: inline-block; vertical-align: middle; margin: 0;"> A C compiler](../README.md#1-install-the-viewer) for DuckDB. Windows requires MinGW64.
 
 ```bash
 git clone https://github.com/CtrlSpice/otel-desktop-viewer.git
