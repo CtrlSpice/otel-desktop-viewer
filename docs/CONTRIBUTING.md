@@ -9,8 +9,7 @@ Bug reports, docs fixes, design work and code are welcome. Please follow our
 to report a bug, suggest a feature or ask for help choosing a first contribution.
 
 Before substantial product or architectural work, discuss the approach in an
-issue and wait for maintainer agreement. Changes to
-[which Collector components the viewer includes](../components.go) also need agreement.
+issue and wait for maintainer agreement.
 
 AI tools are allowed. Review and understand their output, keep it within the
 agreed scope, and take responsibility for the contribution and review follow-up.

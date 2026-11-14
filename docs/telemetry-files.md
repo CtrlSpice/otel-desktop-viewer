@@ -6,32 +6,17 @@ request bytes. Imported data passes through [Secret redaction](secret-redaction.
 
 ## Import telemetry
 
-Select files on Home or drop them anywhere in the viewer. Files are processed
-in order, including selections added during an import. Each file is parsed in
-chunks before any requests from it are sent. The browser retains byte ranges
-rather than a complete decoded object tree.
+Choose OTLP JSON or JSONL files on Home, or drop them anywhere in the viewer.
+You can add more files while an import runs; the viewer processes them in order.
 
-`resourceSpans`, `resourceLogs` and `resourceMetrics` groups go to the OTLP HTTP
-receiver using their original resource and record bytes. This keeps exact
-numbers, negative zero, attributes and Resource/Scope associations through the
-browser handoff. Requests contain at most 20 MiB of JSON including wrappers,
-with one request in flight. Large groups split at record boundaries, including
-datapoints, while repeating their associated metadata. An individual record or
-required metadata that cannot fit is reported rather than truncated.
+Check **Ingestion issues** on Home for errors. Invalid JSON prevents the whole
+file from being imported. Other errors can leave a file partly imported.
 
-Browser imports connect directly to the viewer's hostname on its OTLP HTTP port
-(`--http`, default `4318`). The receiver must be reachable from the browser:
-a reverse proxy for the UI does not also proxy OTLP. The browser obtains the
-port from the viewer. Imports are unavailable if no receiver port is configured.
+Data can take a moment to appear. Refresh Traces, Metrics or Logs after importing.
 
-Malformed JSON prevents sending any of that file. Unknown wrappers, oversized
-records, network failures and OTLP rejections appear under **Ingestion issues**
-on Home. Profiles report **Profiles support coming soon**. Supported groups and
-later files continue after individual issues, so a file may be partly imported.
-Signal pages link to these issues; stored-record rejections are reported separately.
-
-An HTTP response acknowledges receiver handoff. Database writes complete later;
-use the viewer's refresh or query controls to inspect imported data.
+Your browser must be able to reach the viewer's OTLP HTTP port (`4318` by default,
+set with `--http`). If you use a reverse proxy, forwarding the web UI alone is
+not enough.
 
 ## Download telemetry
 
@@ -112,7 +97,16 @@ The metric Details JSON tab loads metadata only, while Copy and Download return
 the complete metric. Its preview is limited to 2 MiB. Formatting also has depth
 and output-size limits; exceeding them preserves the source whitespace in the preview.
 
+## Import limits
+
+Large files are split into requests of at most 20 MiB. Each record and the JSON
+needed to send it must fit in one request. Oversized records are reported rather
+than cut down. Profiles are not supported.
+
 ## Encoding
+
+Browser imports preserve exact numbers, including negative zero, and keep
+Resource and Scope data with each record.
 
 DuckDB selects, orders and groups records. A Go function converts native
 `VARIANT` values to OTLP `AnyValue` JSON. The store's `GetTraceOTLP`, `GetLogOTLP`
