@@ -11,8 +11,9 @@ to report a bug, suggest a feature or ask for help choosing a first contribution
 Before substantial product or architectural work, discuss the approach in an
 issue and wait for maintainer agreement.
 
-AI tools are allowed. Review and understand their output, keep it within the
-agreed scope, and take responsibility for the contribution and review follow-up.
+You can use AI tools, but reviewers should not be able to tell. Review and
+understand their output, keep it within the agreed scope, and take responsibility
+for the contribution and review follow-up.
 
 ## Run locally
 
