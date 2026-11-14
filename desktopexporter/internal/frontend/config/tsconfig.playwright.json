@@ -5,9 +5,9 @@
     "lib": ["ES2022", "DOM"],
     "noEmit": true,
     "strict": true,
-    "paths": { "@/*": ["./src/*"] },
+    "paths": { "@/*": ["../src/*"] },
     "target": "ES2022",
     "types": ["node", "@playwright/test"]
   },
-  "include": ["playwright.config.ts", "e2e/**/*.ts"]
+  "include": ["playwright.config.ts", "../e2e/**/*.ts"]
 }

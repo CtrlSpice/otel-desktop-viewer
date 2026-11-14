@@ -161,7 +161,7 @@ jobs:
       run: npm run check
 
     - name: Type check (Playwright)
-      run: npx tsc --project tsconfig.playwright.json
+      run: npx tsc --project config/tsconfig.playwright.json
 
     - name: Unit tests (Vitest)
       run: npm test
