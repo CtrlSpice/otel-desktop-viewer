@@ -177,19 +177,19 @@ Open <http://localhost:8000> in your browser to view telemetry as it arrives fro
 
 **Traces**
 
-https://github.com/user-attachments/assets/accf86a7-bb4a-4667-a124-5f1a4c21450e
+https://github.com/user-attachments/assets/f3a23ac0-d112-4560-b09d-ab284b0e9aaf
 
 <p align="center"><em>Inspect an AI agent's tool calls and recorded answer.</em></p>
 
 **Metrics**
 
-https://github.com/user-attachments/assets/0fe9b819-5977-4057-b718-5b5cadb1a8a2
+https://github.com/user-attachments/assets/9e18264d-58f6-47a7-a248-892a008cf8cd
 
 <p align="center"><em>See how one time interval contributes to the histogram.</em></p>
 
 **Logs**
 
-https://github.com/user-attachments/assets/2f3324da-aa76-4b36-89da-ba41c3d88d6c
+https://github.com/user-attachments/assets/f62da1fb-c926-434e-bbff-c5c3b8072df5
 
 <p align="center"><em>Explore retry details in a structured log.</em></p>
 
