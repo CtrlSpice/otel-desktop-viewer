@@ -13,7 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowread"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/sqlfunctions"
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/google/uuid"
 	"golang.org/x/exp/jsonrpc2"
@@ -212,7 +212,7 @@ func (c *homeValueReferences) resolve(db *sql.DB, ref string) (*homeReference, e
 }
 
 func homeColorHash(owner, key, identity string) uint32 {
-	s := "[" + queries.HomeCopyQuote(owner) + "," + queries.HomeCopyQuote(key) + "," + queries.HomeCopyQuote(identity) + "]"
+	s := "[" + sqlfunctions.HomeCopyQuote(owner) + "," + sqlfunctions.HomeCopyQuote(key) + "," + sqlfunctions.HomeCopyQuote(identity) + "]"
 	hash := uint32(2166136261)
 	for _, unit := range utf16.Encode([]rune(s)) {
 		hash = (hash ^ uint32(unit)) * 16777619

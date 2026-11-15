@@ -1,4 +1,4 @@
-package queries
+package sqlfunctions
 
 import (
 	"encoding/base64"

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/sqlfunctions"
 )
 
 // One DuckDB for the tests in this package that only read.
@@ -35,7 +36,7 @@ func TestMain(m *testing.M) {
 // install puts the schema on a connection in the same dependency order as
 // NewStore: types, tables, then macros that may query those tables.
 func install(db *sql.DB) error {
-	if err := queries.RegisterFunctions(context.Background(), db); err != nil {
+	if err := sqlfunctions.Register(context.Background(), db); err != nil {
 		return err
 	}
 	// Types are created with plain CREATE TYPE and there is no IF NOT EXISTS
