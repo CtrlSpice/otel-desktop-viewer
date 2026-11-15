@@ -315,7 +315,7 @@ func rpcExamples(method string) []map[string]any {
 	var result any
 	switch method {
 	case "query":
-		params = []map[string]any{{"name": "sql", "value": "SELECT 9007199254740993::BIGINT AS exact"}}
+		params = []map[string]any{{"name": "sql", "value": "select 9007199254740993::bigint as exact"}}
 		result = map[string]any{"columns": []map[string]any{{"name": "exact", "type": "BIGINT"}}, "rows": [][]any{{json.Number("9007199254740993")}}, "truncated": false}
 	case "searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries":
 		params = []map[string]any{{"name": "startTime", "value": "18446744073709551615"}, {"name": "endTime", "value": "0"}}

@@ -145,10 +145,10 @@ func newQueryCommand(client *http.Client) *cobra.Command {
 		Short: "🦆 Run SQL against a running viewer",
 		Long: "🦆 Run one read-only DuckDB query against the existing viewer process. " +
 			"Results use aligned columns by default; --json emits the JSON result.",
-		Example: "  otel-desktop-viewer query 'SHOW TABLES'\n" +
-			"  otel-desktop-viewer query 'DESCRIBE spans'\n" +
-			"  otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY service_name' --limit 50\n" +
-			"  otel-desktop-viewer query 'SELECT count(*) FROM logs' --json",
+		Example: "  otel-desktop-viewer query 'show tables'\n" +
+			"  otel-desktop-viewer query 'describe spans'\n" +
+			"  otel-desktop-viewer query 'select service_name, count(*) from spans group by service_name' --limit 50\n" +
+			"  otel-desktop-viewer query 'select count(*) from logs' --json",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true

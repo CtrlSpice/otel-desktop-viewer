@@ -279,28 +279,28 @@ func homeValuesPlan(options discoveryOptions) (*discoveryPlan, error) {
 			continue
 		}
 		builder = candidate
-		recordID := "struct_pack(trace_id := NULL::UUID, span_id := NULL::UBIGINT, id := s.record_id)"
+		recordID := "struct_pack(trace_id := null::uuid, span_id := null::ubigint, id := s.record_id)"
 		if signal == "traces" {
-			recordID = "struct_pack(trace_id := s.record_id.trace_id, span_id := s.record_id.span_id, id := NULL::UUID)"
+			recordID = "struct_pack(trace_id := s.record_id.trace_id, span_id := s.record_id.span_id, id := null::uuid)"
 		}
-		sources = append(sources, `SELECT `+builder.Bind(signal)+` AS signal, `+recordID+` AS record_id,
-            variant_to_parquet_variant(s.attributes[`+builder.Bind(*options.Key)+`])::struct(metadata blob, value blob) AS parts
-            FROM (`+records+`) s WHERE `+builder.Predicate(query)+` AND variant_exists(s.attributes, `+builder.Bind(*options.Key)+`)`)
+		sources = append(sources, `select `+builder.Bind(signal)+` as signal, `+recordID+` as record_id,
+            variant_to_parquet_variant(s.attributes[`+builder.Bind(*options.Key)+`])::struct(metadata blob, value blob) as parts
+            from (`+records+`) s where `+builder.Predicate(query)+` and variant_exists(s.attributes, `+builder.Bind(*options.Key)+`)`)
 	}
 	if len(sources) == 0 {
 		if !supported {
 			return nil, jsonrpc2.ErrInvalidParams
 		}
-		return &discoveryPlan{statement: `SELECT NULL::VARCHAR, NULL::VARCHAR, NULL::BIGINT, NULL::VARCHAR,
-            NULL::BLOB, NULL::BLOB, NULL::VARCHAR, 0::UBIGINT, 0::UBIGINT, 0::UBIGINT,
-            '{"traces":0,"metrics":0,"logs":0}'::VARCHAR, '[]'::VARCHAR`}, nil
+		return &discoveryPlan{statement: `select null::varchar, null::varchar, null::bigint, null::varchar,
+            null::blob, null::blob, null::varchar, 0::ubigint, 0::ubigint, 0::ubigint,
+            '{"traces":0,"metrics":0,"logs":0}'::varchar, '[]'::varchar`}, nil
 	}
-	counts := `json_object('traces', coalesce(sum(n) FILTER (WHERE signal='traces'),0)::UBIGINT,
-        'metrics', coalesce(sum(n) FILTER (WHERE signal='metrics'),0)::UBIGINT,
-        'logs', coalesce(sum(n) FILTER (WHERE signal='logs'),0)::UBIGINT)`
-	direction := "DESC"
+	counts := `json_object('traces', coalesce(sum(n) filter (where signal='traces'),0)::ubigint,
+        'metrics', coalesce(sum(n) filter (where signal='metrics'),0)::ubigint,
+        'logs', coalesce(sum(n) filter (where signal='logs'),0)::ubigint)`
+	direction := "desc"
 	if options.SortDirection == "asc" || (options.SortDirection == "" && options.SortBy == "name") {
-		direction = "ASC"
+		direction = "asc"
 	}
 	order := "count " + direction
 	locale := options.Locale
@@ -315,47 +315,47 @@ func homeValuesPlan(options discoveryOptions) (*discoveryPlan, error) {
 	}
 	// Preserve the old stable merge's final ties: its first containing signal,
 	// then that signal's descending frequency / binary identity insertion order.
-	order += ", icu_sort_key(identity, " + builder.Bind(locale) + "), first_signal, first_signal_count DESC, identity"
+	order += ", icu_sort_key(identity, " + builder.Bind(locale) + "), first_signal, first_signal_count desc, identity"
 	filter := "true"
 	if options.ValueKind != "" {
-		filter += " AND kind=" + builder.Bind(options.ValueKind)
+		filter += " and kind=" + builder.Bind(options.ValueKind)
 	}
 	if options.Term != "" {
-		filter += " AND contains(lower(identity), lower(" + builder.Bind(options.Term) + "))"
+		filter += " and contains(lower(identity), lower(" + builder.Bind(options.Term) + "))"
 	}
-	statement := prefix + `, received AS MATERIALIZED (` + strings.Join(sources, " UNION ALL ") + `),
-    native_values AS (SELECT DISTINCT parts FROM received),
-    identified AS MATERIALIZED (
-        SELECT parts, otel_value_json(variant_bytes_to_variant(parts.metadata || parts.value))::VARCHAR AS identity,
-            otel_value_kind(variant_bytes_to_variant(parts.metadata || parts.value)) AS kind FROM native_values
-    ), owned AS (
-        SELECT r.*, i.identity, i.kind FROM received r JOIN identified i ON r.parts IS NOT DISTINCT FROM i.parts
-    ), denominators AS (
-        SELECT signal, count(DISTINCT record_id) AS n FROM received GROUP BY signal
-    ), kind_records AS (
-        SELECT kind, signal, count(DISTINCT record_id) AS n FROM owned GROUP BY kind, signal
-    ), kinds AS (
-        SELECT kind, sum(n)::UBIGINT AS count, ` + counts + ` AS counts FROM kind_records GROUP BY kind
-    ), signal_values AS (
-        SELECT identity, kind, signal, count(DISTINCT record_id) AS n,
-            first(parts ORDER BY record_id, parts) AS parts FROM owned GROUP BY identity, kind, signal
-    ), value_counts AS (
-        SELECT identity, kind, sum(n)::UBIGINT AS count, ` + counts + ` AS counts,
-            first(parts ORDER BY CASE signal WHEN 'logs' THEN 0 WHEN 'metrics' THEN 1 ELSE 2 END) AS parts,
-            min(CASE signal WHEN 'traces' THEN 0 WHEN 'metrics' THEN 1 ELSE 2 END) AS first_signal,
-            first(n ORDER BY CASE signal WHEN 'traces' THEN 0 WHEN 'metrics' THEN 1 ELSE 2 END) AS first_signal_count
-        FROM signal_values GROUP BY identity, kind
-    ), filtered AS (SELECT * FROM value_counts WHERE ` + filter + `),
-    page AS (SELECT *, row_number() over(ORDER BY ` + order + `) AS ordinal FROM filtered
-        ORDER BY ` + order + ` OFFSET ` + strconv.FormatUint(options.Offset, 10) + ` LIMIT ` + strconv.FormatUint(limit, 10) + `),
-    summary AS (SELECT (SELECT count(*) FROM filtered) AS total,
-        coalesce((SELECT sum(n) FROM denominators),0)::UBIGINT AS denominator,
-        (SELECT ` + counts + ` FROM denominators) AS denominators,
-        coalesce((SELECT to_json(list(struct_pack(kind := kind, count := count, counts := counts) ORDER BY kind)) FROM kinds), '[]'::JSON) AS kinds)
-    SELECT p.identity, p.kind, p.count, p.counts::VARCHAR, p.parts.metadata, p.parts.value,
-        otel_native_column_preview(p.parts.metadata, p.parts.value) AS preview,
-        coalesce(k.count,0), s.total, s.denominator, s.denominators::VARCHAR, s.kinds::VARCHAR
-    FROM summary s LEFT JOIN page p ON true LEFT JOIN kinds k ON k.kind=p.kind ORDER BY p.ordinal`
+	statement := prefix + `, received as materialized (` + strings.Join(sources, " union all ") + `),
+    native_values as (select distinct parts from received),
+    identified as materialized (
+        select parts, otel_value_json(variant_bytes_to_variant(parts.metadata || parts.value))::varchar as identity,
+            otel_value_kind(variant_bytes_to_variant(parts.metadata || parts.value)) as kind from native_values
+    ), owned as (
+        select r.*, i.identity, i.kind from received r join identified i on r.parts is not distinct from i.parts
+    ), denominators as (
+        select signal, count(distinct record_id) as n from received group by signal
+    ), kind_records as (
+        select kind, signal, count(distinct record_id) as n from owned group by kind, signal
+    ), kinds as (
+        select kind, sum(n)::ubigint as count, ` + counts + ` as counts from kind_records group by kind
+    ), signal_values as (
+        select identity, kind, signal, count(distinct record_id) as n,
+            first(parts order by record_id, parts) as parts from owned group by identity, kind, signal
+    ), value_counts as (
+        select identity, kind, sum(n)::ubigint as count, ` + counts + ` as counts,
+            first(parts order by case signal when 'logs' then 0 when 'metrics' then 1 else 2 end) as parts,
+            min(case signal when 'traces' then 0 when 'metrics' then 1 else 2 end) as first_signal,
+            first(n order by case signal when 'traces' then 0 when 'metrics' then 1 else 2 end) as first_signal_count
+        from signal_values group by identity, kind
+    ), filtered as (select * from value_counts where ` + filter + `),
+    page as (select *, row_number() over(order by ` + order + `) as ordinal from filtered
+        order by ` + order + ` offset ` + strconv.FormatUint(options.Offset, 10) + ` limit ` + strconv.FormatUint(limit, 10) + `),
+    summary as (select (select count(*) from filtered) as total,
+        coalesce((select sum(n) from denominators),0)::ubigint as denominator,
+        (select ` + counts + ` from denominators) as denominators,
+        coalesce((select to_json(list(struct_pack(kind := kind, count := count, counts := counts) order by kind)) from kinds), '[]'::json) as kinds)
+    select p.identity, p.kind, p.count, p.counts::varchar, p.parts.metadata, p.parts.value,
+        otel_native_column_preview(p.parts.metadata, p.parts.value) as preview,
+        coalesce(k.count,0), s.total, s.denominator, s.denominators::varchar, s.kinds::varchar
+    from summary s left join page p on true left join kinds k on k.kind=p.kind order by p.ordinal`
 	return &discoveryPlan{statement: statement, args: append(args, builder.Args()...)}, nil
 }
 
@@ -458,6 +458,6 @@ func (h *JSONRPCHandler) homeValueArrow(ctx context.Context, options discoveryOp
 		if err != nil {
 			return nil, err
 		}
-		return arrowread.Read(ctx, db, `SELECT variant_bytes_to_variant($1::BLOB || $2::BLOB) AS value, $3::VARCHAR AS identity`, entry.metadata, entry.value, entry.key.identity)
+		return arrowread.Read(ctx, db, `select variant_bytes_to_variant($1::blob || $2::blob) as value, $3::varchar as identity`, entry.metadata, entry.value, entry.key.identity)
 	})
 }

@@ -371,7 +371,7 @@ test('Details pins enriched trace context above scrolling fields', async ({
     }
     if (
       method === 'query' &&
-      params.sql.includes('WITH requested(trace_id, span_id)')
+      params.sql.includes('with requested(trace_id, span_id)')
     ) {
       associatedFetches++
       expect(params.sql).toContain(spanID)

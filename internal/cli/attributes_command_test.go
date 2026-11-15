@@ -27,18 +27,18 @@ func attributeTestViewer(t *testing.T) (*sql.DB, *httptest.Server) {
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	_, err = db.Exec(`CREATE TABLE spans (trace_id UUID, span_id UBIGINT, start_time UBIGINT,
-    service_name VARCHAR, attributes VARIANT, resource STRUCT(attributes VARIANT), PRIMARY KEY (trace_id, span_id));
+	_, err = db.Exec(`create table spans (trace_id uuid, span_id ubigint, start_time ubigint,
+    service_name varchar, attributes variant, resource struct(attributes variant), primary key (trace_id, span_id));
 -- This CLI-only fixture embeds tagged values; production integration tests
 -- exercise the native-value encoder registered by the store.
-CREATE MACRO otel_value_json(v) AS case when variant_exists(v, 'kind') then v::json else
+create macro otel_value_json(v) as case when variant_exists(v, 'kind') then v::json else
     json_object('kind', 'map', 'value', coalesce((select list(json_object('key', key, 'value', value) order by key)
         from json_each(v::json)), []::json[])) end;
-CREATE MACRO otel_value_kind(v) AS case when variant_typeof(v) = 'VARCHAR' then 'string' else v.kind::varchar end;
+create macro otel_value_kind(v) as case when variant_typeof(v) = 'VARCHAR' then 'string' else v.kind::varchar end;
 -- Mirror the native field accessor's contract for this tagged-value fixture.
-CREATE MACRO attribute_native_field(parts, key_) AS json_extract(
-    variant_bytes_to_variant(parts.metadata || parts.value)::JSON,
-    '/' || replace(replace(key_, '~', '~0'), '/', '~1'))::VARIANT`)
+create macro attribute_native_field(parts, key_) as json_extract(
+    variant_bytes_to_variant(parts.metadata || parts.value)::json,
+    '/' || replace(replace(key_, '~', '~0'), '/', '~1'))::variant`)
 	require.NoError(t, err)
 	viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -54,7 +54,7 @@ CREATE MACRO attribute_native_field(parts, key_) AS json_extract(
 			return
 		}
 		assert.Equal(t, "query", request.Method)
-		rows, err := db.QueryContext(r.Context(), "SELECT entry::VARCHAR FROM ("+request.Params.SQL+fmt.Sprintf(") LIMIT %d", request.Params.Limit+1))
+		rows, err := db.QueryContext(r.Context(), "select entry::varchar from ("+request.Params.SQL+fmt.Sprintf(") limit %d", request.Params.Limit+1))
 		if err != nil {
 			t.Error(err)
 			http.Error(w, err.Error(), 500)
@@ -103,7 +103,7 @@ func attributeTestRun(t *testing.T, endpoint string, args ...string) string {
 
 func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 	db, viewer := attributeTestViewer(t)
-	_, err := db.Exec(`INSERT INTO spans (trace_id, span_id, start_time, service_name, attributes) VALUES
+	_, err := db.Exec(`insert into spans (trace_id, span_id, start_time, service_name, attributes) values
  ('00000000-0000-0000-0000-000000000001', 1, 6400000000000, 'checkout', '{"method":{"kind":"string","value":"GET"}}'::json::variant),
  ('00000000-0000-0000-0000-000000000002', 1, 10000000000000, 'checkout', '{"method":{"kind":"string","value":"GET"}}'::json::variant),
  ('00000000-0000-0000-0000-000000000002', 2, 7000000000000, 'checkout', '{"method":{"kind":"int64","value":"9007199254740993"}}'::json::variant),
@@ -172,7 +172,7 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 	}
 	for i, value := range values {
 		id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
-		_, err := db.Exec("INSERT INTO spans (trace_id, span_id, start_time, service_name, attributes) VALUES (?::UUID, ?, 8000000000000, ?, json_object(?, ?::JSON)::variant)", id, i+1, service, key, value)
+		_, err := db.Exec("insert into spans (trace_id, span_id, start_time, service_name, attributes) values (?::uuid, ?, 8000000000000, ?, json_object(?, ?::json)::variant)", id, i+1, service, key, value)
 		require.NoError(t, err)
 	}
 	var result attributeValuesResult
@@ -241,8 +241,8 @@ func TestAttributeSkillRecordLookup(t *testing.T) {
 		_, err = db.Exec(string(macro))
 		require.NoError(t, err)
 	}
-	_, err := db.Exec(`ALTER TABLE spans ADD COLUMN name VARCHAR DEFAULT 'request';
-INSERT INTO spans (trace_id, span_id, start_time, service_name, attributes) VALUES
+	_, err := db.Exec(`alter table spans add column name varchar default 'request';
+insert into spans (trace_id, span_id, start_time, service_name, attributes) values
  ('00000000-0000-0000-0000-000000000001', 42, 1790928000000000000, 'checkout', {'http.request.method':'POST'}::variant),
  ('00000000-0000-0000-0000-000000000002', 42, 1790931600000000000, 'checkout', {'http.request.method':'POST'}::variant),
  ('00000000-0000-0000-0000-000000000003', 42, 1790931600000000000, 'checkout', {'http.request.method':'GET'}::variant),

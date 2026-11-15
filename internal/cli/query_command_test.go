@@ -81,7 +81,7 @@ func TestQueryCommandDefaultLimitAndHelpAreOffline(t *testing.T) {
 	cmd.SetArgs([]string{"query", "--help", "--endpoint", "http://127.0.0.1:1"})
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, output.String(), "🦆 Run one read-only DuckDB query against the existing viewer process.")
-	assert.Contains(t, output.String(), "SHOW TABLES")
+	assert.Contains(t, output.String(), "show tables")
 	assert.Contains(t, output.String(), "--json")
 	assert.Contains(t, output.String(), "--limit")
 

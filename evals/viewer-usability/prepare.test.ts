@@ -18,7 +18,7 @@ const rpc = http.createServer(async (req,res) => {
   let body = ''; for await (const chunk of req) body += chunk;
   const request = JSON.parse(body);
   const result = request.method === 'getStats' ? {rejections:settings.rejections || []} :
-    {columns:[{name:'count'}],rows:request.params.sql === 'SELECT 1' ? [[1]] : [settings.delayed && ++polls < 4 ? [0,0,0] : settings.counts || [0,0,0]],truncated:false};
+    {columns:[{name:'count'}],rows:request.params.sql === 'select 1' ? [[1]] : [settings.delayed && ++polls < 4 ? [0,0,0] : settings.counts || [0,0,0]],truncated:false};
   fs.writeFileSync(path.join(process.cwd(),'polls.json'),JSON.stringify({polls,sends}));
   res.end(JSON.stringify({jsonrpc:'2.0',id:1,result}));
 });

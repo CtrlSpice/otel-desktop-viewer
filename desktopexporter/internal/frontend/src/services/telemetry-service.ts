@@ -503,7 +503,7 @@ export let telemetryAPI = {
       const values = batch
         .map(({ traceID, spanID }) => {
           const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
-          return `('${uuid}'::UUID, '0x${spanID}'::UBIGINT)`
+          return `('${uuid}'::uuid, '0x${spanID}'::ubigint)`
         })
         .join(', ')
       const result = await callRPC<{
@@ -512,11 +512,11 @@ export let telemetryAPI = {
       }>(
         'query',
         named({
-          sql: `WITH requested(trace_id, span_id) AS (VALUES ${values})
-SELECT trace_id_wire(s.trace_id), span_id_wire(s.span_id), s.name,
-s.service_name, s.start_time::VARCHAR, s.end_time::VARCHAR, s.status_code
-FROM spans s JOIN requested r ON s.trace_id = r.trace_id AND s.span_id = r.span_id
-LIMIT ${batch.length}`,
+          sql: `with requested(trace_id, span_id) as (values ${values})
+select trace_id_wire(s.trace_id), span_id_wire(s.span_id), s.name,
+s.service_name, s.start_time::varchar, s.end_time::varchar, s.status_code
+from spans s join requested r on s.trace_id = r.trace_id and s.span_id = r.span_id
+limit ${batch.length}`,
           limit: batch.length,
         }),
         signal
@@ -594,7 +594,7 @@ LIMIT ${batch.length}`,
             }>(
               'query',
               named({
-                sql: `SELECT span_id_wire(span_id) FROM spans WHERE trace_id = '${uuid}'::UUID ORDER BY start_time, span_id LIMIT 257`,
+                sql: `select span_id_wire(span_id) from spans where trace_id = '${uuid}'::uuid order by start_time, span_id limit 257`,
                 limit: 257,
               }),
               signal

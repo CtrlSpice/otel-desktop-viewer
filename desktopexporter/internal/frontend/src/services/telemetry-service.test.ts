@@ -1521,9 +1521,9 @@ describe('telemetryAPI.getSpanTimings', () => {
     const request = JSON.parse(String(call[1]!.body))
     expect(request.method).toBe('query')
     expect(request.params.limit).toBe(1)
-    expect(request.params.sql).toContain("'0xffffffffffffffff'::UBIGINT")
+    expect(request.params.sql).toContain("'0xffffffffffffffff'::ubigint")
     expect(request.params.sql).toContain(
-      's.trace_id = r.trace_id AND s.span_id = r.span_id'
+      's.trace_id = r.trace_id and s.span_id = r.span_id'
     )
     expect(call[1]!.signal).toBe(controller.signal)
   })

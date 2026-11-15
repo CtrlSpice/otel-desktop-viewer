@@ -108,7 +108,7 @@ func TestLastAttributeSelectionIsLocalToEveryOwner(t *testing.T) {
 		assert.ElementsMatch(t, want, actual, pair)
 		assert.Equal(t, 3, owner.attrs.Len(), "incoming collections remain untouched")
 	}
-	_, refs, err := requestQuery(context.Background(), http.DefaultClient, endpoint, "SELECT id::VARCHAR FROM logs", 1)
+	_, refs, err := requestQuery(context.Background(), http.DefaultClient, endpoint, "select id::varchar from logs", 1)
 	require.NoError(t, err)
 	require.Len(t, refs.Rows, 1)
 	ref, ok := refs.Rows[0][0].(string)

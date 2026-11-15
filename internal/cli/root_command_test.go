@@ -80,10 +80,10 @@ USAGE
   otel-desktop-viewer query <sql> [flags]
 
 EXAMPLES
-  otel-desktop-viewer query 'SHOW TABLES'
-  otel-desktop-viewer query 'DESCRIBE spans'
-  otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY service_name' --limit 50
-  otel-desktop-viewer query 'SELECT count(*) FROM logs' --json
+  otel-desktop-viewer query 'show tables'
+  otel-desktop-viewer query 'describe spans'
+  otel-desktop-viewer query 'select service_name, count(*) from spans group by service_name' --limit 50
+  otel-desktop-viewer query 'select count(*) from logs' --json
 
 FLAGS
       --endpoint string   Running viewer HTTP endpoint (default "http://localhost:8000")

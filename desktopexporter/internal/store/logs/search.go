@@ -207,7 +207,7 @@ func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (ct
 func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
 	cte, where, args, err := buildLogSQL(queryNode, timeRange)
 	where = strings.ReplaceAll(where, "l.log_time", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)")
-	return cte + " SELECT l.* " + logSearchFrom + " WHERE " + where, args, err
+	return cte + " select l.* " + logSearchFrom + " where " + where, args, err
 }
 
 // logSearchFrom is the FROM clause log search predicates are written against.

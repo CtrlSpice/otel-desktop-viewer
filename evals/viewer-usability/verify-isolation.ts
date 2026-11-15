@@ -548,7 +548,7 @@ function audit(evidence: string) {
     const db = new DatabaseSync(snapshot, { readOnly: true })
     try {
       sessions = db
-        .prepare('SELECT id FROM session')
+        .prepare('select id from session')
         .all()
         .map(row => row.id)
     } finally {

@@ -29,12 +29,12 @@ func TestNativeReadNormalizesSQLObjects(t *testing.T) {
 		want any
 	}{
 		{
-			`'{"z":1,"a":{"z":2,"a":3},"b":[{"z":4,"a":5}]}'::JSON::VARIANT`,
+			`'{"z":1,"a":{"z":2,"a":3},"b":[{"z":4,"a":5}]}'::json::variant`,
 			map[string]any{"z": int64(1), "a": map[string]any{"z": int64(2), "a": int64(3)}, "b": []any{map[string]any{"z": int64(4), "a": int64(5)}}},
 		},
 		{
-			`{'z': -0.0::DOUBLE, 'a': 9223372036854775807::BIGINT, 'bytes': '\x00\xFF'::BLOB,
-			  'nested': [{'z': 'NaN'::DOUBLE, 'a': '-Infinity'::DOUBLE}]}::VARIANT`,
+			`{'z': -0.0::double, 'a': 9223372036854775807::bigint, 'bytes': '\x00\xFF'::blob,
+			  'nested': [{'z': 'NaN'::double, 'a': '-Infinity'::double}]}::variant`,
 			map[string]any{"z": math.Copysign(0, -1), "a": int64(math.MaxInt64), "bytes": []byte{0, 255}, "nested": []any{map[string]any{"z": math.NaN(), "a": math.Inf(-1)}}},
 		},
 	} {

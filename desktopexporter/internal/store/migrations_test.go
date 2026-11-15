@@ -35,7 +35,7 @@ func populatedMigrationDatabase(t *testing.T) string {
 	// Include exact integers, bytes and null in native payloads.
 	_, err := s.db.Exec(`update spans set attributes = {
 		'large': 18446744073709551615::ubigint, 'bytes': '\x00\xFF'::blob,
-		'nested': [1, NULL, 3]}::variant`)
+		'nested': [1, null, 3]}::variant`)
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
 	return path
@@ -147,7 +147,7 @@ func TestMigrationFailuresRollBackWholeChain(t *testing.T) {
 }
 
 func TestAmbiguousSchemaMetadataCannotBeMigrated(t *testing.T) {
-	for _, values := range []string{"(27), (27)", "(27), (28)", "(NULL)"} {
+	for _, values := range []string{"(27), (27)", "(27), (28)", "(null)"} {
 		t.Run(values, func(t *testing.T) {
 			db := openMigrationDB(t, populatedMigrationDatabase(t))
 			_, err := db.Exec("delete from schema_meta; insert into schema_meta values " + values)

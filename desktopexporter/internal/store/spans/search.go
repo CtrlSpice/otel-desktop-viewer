@@ -209,7 +209,6 @@ func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error
 
 func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, eligibilityWhere string, queryWhere string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("s.start_time", timeRange.Start, timeRange.End)
-	timeCondition = strings.ReplaceAll(timeCondition, " AND ", " and ")
 	cteSQL, eligibilityWhere, args, err = searchindex.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams, "span", spanDocumentScope)
 	if err != nil || queryNode == nil {
 		return cteSQL, eligibilityWhere, "", args, err
@@ -224,7 +223,7 @@ func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (
 // It returns matching spans, rather than expanding them to their complete traces.
 func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
 	cte, where, _, args, err := buildTraceSQL(queryNode, timeRange)
-	return cte + " SELECT s.* " + spanSearchFrom + " WHERE " + where, args, err
+	return cte + " select s.* " + spanSearchFrom + " where " + where, args, err
 }
 
 // Two idioms compare a trace id in this file, and they are not

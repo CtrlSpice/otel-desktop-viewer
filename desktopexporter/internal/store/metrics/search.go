@@ -183,7 +183,7 @@ func buildMetricSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) 
 // MatchingRowsSQL uses the same metric identity and datapoint eligibility as search.
 func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
 	cte, where, args, err := buildMetricSQL(queryNode, timeRange)
-	return cte + " SELECT s.* " + metricSearchFrom + " WHERE " + where, args, err
+	return cte + " select s.* " + metricSearchFrom + " where " + where, args, err
 }
 
 // metricColumns lists field names the search expression syntax can
