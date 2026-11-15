@@ -1,5 +1,6 @@
 import { routeTelemetry, type FixtureRoute } from './telemetry-fixtures'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './test-fixtures'
+import type { Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { ThemeName } from '../src/themes'
 import heatmapPalette from '../src/themes/heatmap-palette.json' with { type: 'json' }

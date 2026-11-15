@@ -1,5 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './test-fixtures'
+import type { Page } from '@playwright/test'
 import { projectPromptfooDataset } from '../src/features/evals/promptfoo-adapter'
 
 const datasetID = 'c'.repeat(64)

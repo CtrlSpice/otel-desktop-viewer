@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 const stats = {
   storage: { sizeBytes: 0, maxSizeBytes: 0 },
@@ -16,9 +16,6 @@ const stats = {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
   await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number

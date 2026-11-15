@@ -1,6 +1,7 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test } from './test-fixtures'
+import type { Locator, Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import { SEASONS } from '../src/themes'
@@ -76,9 +77,6 @@ const NATIVE_NEUTRALS = {
 } as const
 
 async function interceptRpc(page: Page): Promise<void> {
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
   await routeTelemetry(page, async route => {
     // SAFETY: This page's /rpc requests come from callRPC, which supplies a
     // numeric request-correlation id and a string method.
