@@ -7,6 +7,7 @@ import { telemetryAPI } from '@/services/telemetry-service'
 import * as navigationCounts from '@/contexts/navigation-counts.svelte'
 import { navigate } from '@/route'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import { mockHomeEnvironment } from '@/test/service-map-fixtures'
 import {
   serviceIdentity,
   type ServiceSummary,
@@ -41,20 +42,7 @@ const service = (serviceName: string): ServiceSummary => ({
 })
 
 function mountDiscovery() {
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
-  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
-  vi.spyOn(telemetryAPI, 'getTraceAttributeDefinitions').mockResolvedValue([])
-  vi.spyOn(telemetryAPI, 'getMetricAttributeDefinitions').mockResolvedValue([])
-  vi.spyOn(telemetryAPI, 'getLogAttributeDefinitions').mockResolvedValue([])
-  vi.spyOn(telemetryAPI, 'searchTraceSummaries').mockResolvedValue([])
-  vi.spyOn(telemetryAPI, 'searchMetricSummaries').mockResolvedValue([])
-  vi.spyOn(telemetryAPI, 'searchLogSummaries').mockResolvedValue([])
-  vi.spyOn(telemetryAPI, 'getStats').mockImplementation(
-    () => new Promise(() => {})
-  )
-  vi.spyOn(telemetryAPI, 'getImportConfig').mockResolvedValue({
-    otlpHttpPort: 4318,
-  })
+  mockHomeEnvironment()
   vi.spyOn(telemetryAPI, 'discoverServiceConnections').mockResolvedValue({
     items: [],
     truncated: false,
