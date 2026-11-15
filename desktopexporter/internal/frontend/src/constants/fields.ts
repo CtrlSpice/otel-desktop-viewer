@@ -2,38 +2,10 @@
 import {
   OPERATORS,
   builtinFieldReference,
-  fieldIdentity,
   type FieldDefinition,
   type SearchSignal,
   type ValueOwner,
 } from '@/search/model'
-
-export type ColumnCategory = 'pinned' | 'flexible' | 'detail'
-
-export type ColumnVisibility = {
-  fieldID: string
-  label: string
-  category: ColumnCategory
-}
-
-export const LOG_COLUMN_DEFAULTS: ColumnVisibility[] = [
-  { fieldID: 'timestamp', label: 'Timestamp', category: 'pinned' },
-  { fieldID: 'service', label: 'Service', category: 'pinned' },
-  { fieldID: 'severity', label: 'Severity', category: 'flexible' },
-  { fieldID: 'traceID', label: 'Trace ID', category: 'detail' },
-  { fieldID: 'body', label: 'Body', category: 'flexible' },
-]
-
-export const TRACE_COLUMN_DEFAULTS: ColumnVisibility[] = [
-  { fieldID: 'traceID', label: 'Trace ID', category: 'pinned' },
-  { fieldID: 'rootName', label: 'Root Name', category: 'pinned' },
-  { fieldID: 'service', label: 'Service', category: 'flexible' },
-  { fieldID: 'startTime', label: 'Start Time', category: 'flexible' },
-  { fieldID: 'duration', label: 'Duration', category: 'flexible' },
-  { fieldID: 'spanCount', label: 'Spans', category: 'flexible' },
-  { fieldID: 'errorCount', label: 'Errors', category: 'flexible' },
-  { fieldID: 'exceptionCount', label: 'Exceptions', category: 'flexible' },
-]
 
 type StaticFieldDefinition = Omit<FieldDefinition, 'owner' | 'path'>
 
@@ -114,14 +86,6 @@ export function getStaticFieldsForSearch(
   signal: SearchSignal
 ): FieldDefinition[] {
   return getFieldsBySignal(signal)
-}
-
-/** Same searchable field identity (for column filter toggles and detail visibility). */
-export function sameFieldDefinition(
-  a: FieldDefinition,
-  b: FieldDefinition
-): boolean {
-  return fieldIdentity(a) === fieldIdentity(b)
 }
 
 // Span/Trace fields
