@@ -46,6 +46,11 @@ and the same [Secret redaction](secret-redaction.md) policy.
   DuckDB through a statically linked C extension.
 - Batch transactions keep each accepted record and its nested data together.
 
+Span and log ingestion live in [`spans/ingest.go`](../desktopexporter/internal/store/spans/ingest.go)
+and [`logs/ingest.go`](../desktopexporter/internal/store/logs/ingest.go).
+Metric ingestion starts in [`metrics/metrics.go`](../desktopexporter/internal/store/metrics/metrics.go)
+and delegates to [`store/nested`](../desktopexporter/internal/store/nested/).
+
 ## Storage
 
 Each record keeps its received Resource (telemetry source) and Scope
@@ -119,6 +124,14 @@ DuckDB filters and reduces data before sending it to the frontend.
 - Query builders use templates in [`store/queries`](../desktopexporter/internal/store/queries/)
   and bound parameters. They apply time bounds, sorting and limits; lists use
   summaries, while selected records load complete values.
+  Signal searches live in [`spans/search.go`](../desktopexporter/internal/store/spans/search.go),
+  [`logs/search.go`](../desktopexporter/internal/store/logs/search.go) and
+  [`metrics/search.go`](../desktopexporter/internal/store/metrics/search.go).
+  [`metrics/views.go`](../desktopexporter/internal/store/metrics/views.go) builds
+  metric chart and aggregate queries.
+- `store/queries` loads SQL templates and ordered schema definitions.
+  [`store/sqlfunctions`](../desktopexporter/internal/store/sqlfunctions/) registers
+  the Go functions that DuckDB calls for native values, metric labels and sorting.
 - [`store/search`](../desktopexporter/internal/store/search/) compiles search
   trees into SQL. Conditions keep the attribute owner, exact key and type.
   Two event conditions joined by AND must match one event; conditions on its
@@ -141,6 +154,23 @@ connection shows its child spans.
 ## Transport
 
 The frontend and CLI query the store through the HTTP server.
+
+[`server.go`](../desktopexporter/internal/server/server.go) handles construction,
+lifecycle and route registration.
+[`jsonrpc_http.go`](../desktopexporter/internal/server/jsonrpc_http.go) handles
+JSON-RPC HTTP messages; [`jsonrpc_handler.go`](../desktopexporter/internal/server/jsonrpc_handler.go)
+dispatches JSON-RPC requests. Trace, log, metric, attribute-search and SQL handlers use
+[`traces.go`](../desktopexporter/internal/server/traces.go),
+[`logs.go`](../desktopexporter/internal/server/logs.go),
+[`metrics.go`](../desktopexporter/internal/server/metrics.go),
+[`attribute_search.go`](../desktopexporter/internal/server/attribute_search.go) and
+[`query.go`](../desktopexporter/internal/server/query.go).
+[`arrow_handler.go`](../desktopexporter/internal/server/arrow_handler.go)
+handles Arrow HTTP requests and dispatches their reads.
+Both paths use shared parameter normalization and validation in
+[`jsonrpc_params.go`](../desktopexporter/internal/server/jsonrpc_params.go).
+[`static_handler.go`](../desktopexporter/internal/server/static_handler.go) serves frontend files
+and the client-side route fallback.
 
 | Route | Purpose |
 | --- | --- |
@@ -171,6 +201,16 @@ numeric representations and the remaining HTTP routes.
 
 Each Svelte 5/TypeScript page loads its data and tracks the selected records.
 
+[`services/telemetry-service.ts`](../desktopexporter/internal/frontend/src/services/telemetry-service.ts)
+exposes `telemetryAPI` and keeps statistics and import-configuration calls.
+Request groups live in [`trace-service.ts`](../desktopexporter/internal/frontend/src/services/trace-service.ts),
+[`log-service.ts`](../desktopexporter/internal/frontend/src/services/log-service.ts),
+[`metric-service.ts`](../desktopexporter/internal/frontend/src/services/metric-service.ts),
+[`discovery-service.ts`](../desktopexporter/internal/frontend/src/services/discovery-service.ts) and
+[`attribute-search-service.ts`](../desktopexporter/internal/frontend/src/services/attribute-search-service.ts).
+[`telemetry-request.ts`](../desktopexporter/internal/frontend/src/services/telemetry-request.ts)
+shares request encoding, RPC/Arrow wrappers and cancellation handling.
+
 - One `WorkspaceShell` keeps pane containers mounted across routes.
   [`PageLayout`](../desktopexporter/internal/frontend/src/components/shared/Layout/PageLayout.svelte)
   and the [workspace context](../desktopexporter/internal/frontend/src/contexts/workspace-context.svelte.ts)
@@ -179,6 +219,12 @@ Each Svelte 5/TypeScript page loads its data and tracks the selected records.
   Side-pane widths and open/closed states are shared across signals.
 - Route context handles navigation; time context tracks the selected range.
 - The waterfall loads its tree and previews separately from full span Details.
+  [`waterfall-layout.ts`](../desktopexporter/internal/frontend/src/features/traces/Waterfall/waterfall-layout.ts)
+  calculates trace bounds, bar geometry and rows, including colour lookups.
+  [`waterfall-tree.ts`](../desktopexporter/internal/frontend/src/features/traces/Waterfall/waterfall-tree.ts)
+  contains tree helpers and metadata calculations.
+  [`WaterfallView.svelte`](../desktopexporter/internal/frontend/src/features/traces/Waterfall/WaterfallView.svelte)
+  handles selection, collapse state, keyboard navigation and column resizing.
   Charts lay out server-computed data and handle series visibility and selection.
 - Shared components handle disclosure, resizing and record inspection; generated
   themes supply colours. Formatting and collapsed sections do not change stored
