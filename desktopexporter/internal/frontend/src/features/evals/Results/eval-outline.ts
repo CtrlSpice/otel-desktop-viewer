@@ -2,7 +2,7 @@ import type { SpanNode } from '@/types/api-types'
 import {
   computeTreeMeta,
   isErrorSpan,
-} from '@/features/traces/Waterfall/WaterfallView.svelte'
+} from '@/features/traces/Waterfall/waterfall-tree'
 import { completionState, type groupResults } from './group-results'
 import {
   estimatedCost,

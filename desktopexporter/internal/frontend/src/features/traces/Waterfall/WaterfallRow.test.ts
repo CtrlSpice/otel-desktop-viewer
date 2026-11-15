@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
-import type { WaterfallRowData } from './WaterfallView.svelte'
+import type { WaterfallRowData } from './waterfall-layout'
 import type { SpanData, SpanNode } from '@/types/api-types'
 import WaterfallRowHarness from '@/test/WaterfallRowHarness.svelte'
 import { waterfallTimeAxis } from './WaterfallTimeAxisHeader.svelte'

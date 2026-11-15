@@ -64,7 +64,7 @@
   import {
     buildWaterfallRows,
     getTraceBounds,
-  } from '@/features/traces/Waterfall/WaterfallView.svelte'
+  } from '@/features/traces/Waterfall/waterfall-layout'
   import { themeSignal } from '@/state/theme.svelte'
   import {
     completionLabel,

@@ -2,6 +2,67 @@ import type {
   WaterfallSpan as SpanData,
   WaterfallSpanNode as SpanNode,
 } from '@/types/api-types'
+import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
+
+type DepthList = readonly { depth: number }[]
+
+/** Fold a depth-ordered list into per-index direct-child counts via a stack accumulator. */
+function childrenCounts(spans: DepthList): number[] {
+  const { counts } = spans.reduce<{ stack: number[]; counts: number[] }>(
+    ({ stack, counts }, { depth }, i) => {
+      const trimmed = stack.slice(0, depth)
+      if (depth > 0 && trimmed.length > 0) {
+        counts[trimmed[trimmed.length - 1]]++
+      }
+      return { stack: [...trimmed, i], counts }
+    },
+    { stack: [], counts: Array<number>(spans.length).fill(0) }
+  )
+  return counts
+}
+
+/** True when no sibling at the same depth follows before the parent's subtree ends. */
+function isLastChild(spans: DepthList, i: number): boolean {
+  const depth = spans[i].depth
+  const tail = spans.slice(i + 1)
+  const nextAtOrAbove = tail.find(s => s.depth <= depth)
+  return nextAtOrAbove === undefined || nextAtOrAbove.depth < depth
+}
+
+/** For each ancestor depth 0..depth-1, is there another child of that ancestor after row i? */
+function ancestorContinuationFlags(spans: DepthList, i: number): boolean[] {
+  const depth = spans[i].depth
+  const tail = spans.slice(i + 1)
+  return Array.from({ length: depth }, (_, d) => {
+    // Find where this ancestor's subtree ends: the next span at depth ≤ d.
+    // Only spans within that window could be siblings at depth d+1.
+    const endIdx = tail.findIndex(s => s.depth <= d)
+    const segment = endIdx === -1 ? tail : tail.slice(0, endIdx)
+    return segment.some(s => s.depth === d + 1)
+  })
+}
+
+export function computeTreeMeta(
+  spans: readonly {
+    depth: number
+    spanData: Pick<SpanData, 'spanID' | 'parentSpanID'>
+  }[]
+): TreeConnectorMeta[] {
+  const counts = childrenCounts(spans)
+  const parents: string[] = []
+  return spans.map((span, i) => {
+    const parent = span.depth > 0 ? parents[span.depth - 1] : null
+    parents[span.depth] = span.spanData.spanID
+    parents.length = span.depth + 1
+    return {
+      childrenCount: counts[i],
+      brokenParent: (span.spanData.parentSpanID ?? null) !== (parent ?? null),
+      isLastChild: spans[i].depth === 0 ? false : isLastChild(spans, i),
+      ancestorHasNextSibling:
+        spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
+    }
+  })
+}
 
 export interface StructuralMaps {
   parentBySpanID: Map<string, string | null>
