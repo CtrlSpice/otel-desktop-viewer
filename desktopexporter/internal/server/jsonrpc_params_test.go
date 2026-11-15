@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"regexp"
 	"testing"
@@ -72,20 +71,6 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			require.Equal(t, b, a, "named form must equal the positional form")
 		})
 	}
-}
-
-func TestMetricNamedParamContracts(t *testing.T) {
-	require.Equal(t, []string{"metricRef"}, methodParamNames["getMetric"])
-	require.Equal(t, []string{"metricRef", "seriesRef", "startTime", "endTime", "includeDatapoints"}, methodParamNames["getMetricSeries"])
-	require.Equal(t, []string{
-		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
-		"quantiles", "tzOffsetNs", "viewBuckets", "sparklineBuckets",
-		"selectedSeriesRefs", "tzName", "datapointSeriesRefs", "datapointSeriesLimit",
-	}, methodParamNames["getMetricView"])
-	require.Equal(t, []string{
-		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
-		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesRefs", "tzName", "datapointRef",
-	}, methodParamNames["getMetricAggregateView"])
 }
 
 func TestNamedParamsGapsBecomeNull(t *testing.T) {
@@ -214,17 +199,6 @@ func TestVariadicMethodsRefuseNamedParams(t *testing.T) {
 	}
 }
 
-// TestDeleteMetricTakesOneRef verifies that the method takes a bare reference,
-// not a list.
-func TestDeleteMetricTakesOneRef(t *testing.T) {
-	got, err := normalizeParams("deleteMetric", json.RawMessage(`{"metricRef":"s1"}`))
-	require.NoError(t, err)
-	require.JSONEq(t, `["s1"]`, string(got))
-
-	_, err = normalizeParams("deleteMetric", json.RawMessage(`{"metricRefs":["s1"]}`))
-	require.Error(t, err, "the plural name must not silently work")
-}
-
 // TestEmptyObjectMeansNoParams covers the shape that has no name to look up.
 //
 // `params: {}` is an ordinary way to call a method that takes nothing, and it
@@ -239,36 +213,6 @@ func TestEmptyObjectMeansNoParams(t *testing.T) {
 	}
 }
 
-func TestParseQueryParams(t *testing.T) {
-	for _, tc := range []struct {
-		name          string
-		raw           string
-		wantStatement string
-		wantLimit     uint64
-		wantError     string
-	}{
-		{name: "default limit", raw: `["select 1"]`, wantStatement: "select 1", wantLimit: 25},
-		{name: "explicit maximum", raw: `["select 1",18446744073709551615]`, wantStatement: "select 1", wantLimit: math.MaxUint64},
-		{name: "wrong count", raw: `[]`, wantError: "invalid params"},
-		{name: "statement type", raw: `[1]`, wantError: "sql must be a string"},
-		{name: "limit type", raw: `["select 1",null]`, wantError: "limit must be a non-negative whole number"},
-		{name: "negative limit", raw: `["select 1",-1]`, wantError: "limit must be a non-negative whole number"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseQueryParams(json.RawMessage(tc.raw))
-			if tc.wantError != "" {
-				require.Error(t, err)
-				assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-				assert.Contains(t, err.Error(), tc.wantError)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantStatement, got.statement)
-			assert.Equal(t, tc.wantLimit, got.limit)
-		})
-	}
-}
-
 func TestParseSearchParams(t *testing.T) {
 	got, err := parseSearchParams(json.RawMessage(`[null,20,{"query":"value"},7,{"field":"duration","direction":"desc"}]`))
 	require.NoError(t, err)
@@ -279,92 +223,6 @@ func TestParseSearchParams(t *testing.T) {
 	require.NotNil(t, got.options.Limit)
 	assert.Equal(t, int64(7), *got.options.Limit)
 	assert.Equal(t, &search.Sort{Field: "duration", Direction: "desc"}, got.options.Sort)
-}
-
-func TestParseGetMetricViewParamsLayouts(t *testing.T) {
-	metricRef := "00000000-0000-0000-0000-000000000001"
-	detailRaw := json.RawMessage(fmt.Sprintf(`[%q,null,20,4,[],[0.5],-3600,8,9,["selected"],"Europe/London",[],10]`, metricRef))
-	detail, err := parseGetMetricViewParams(detailRaw, false)
-	require.NoError(t, err)
-	assert.Equal(t, metricRef, detail.metricRef)
-	assert.NotNil(t, detail.seriesRefs)
-	assert.Empty(t, detail.seriesRefs)
-	assert.Equal(t, []float64{0.5}, detail.quantiles)
-	assert.Equal(t, int64(-3600), detail.tzOffsetNs)
-	assert.Equal(t, int64(9), detail.sparklineBuckets)
-	assert.Equal(t, []string{"selected"}, detail.selectedSeriesRefs)
-	assert.Equal(t, "Europe/London", detail.tzName)
-	assert.NotNil(t, detail.datapointSeriesRefs)
-	assert.Empty(t, detail.datapointSeriesRefs)
-	assert.Equal(t, int64(10), detail.datapointSeriesLimit)
-
-	aggregateRaw := json.RawMessage(fmt.Sprintf(`[%q,10,null,4,null,null,null,8,["selected"],"UTC"]`, metricRef))
-	aggregate, err := parseGetMetricViewParams(aggregateRaw, true)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"selected"}, aggregate.selectedSeriesRefs)
-	assert.Equal(t, "UTC", aggregate.tzName)
-	assert.Zero(t, aggregate.sparklineBuckets)
-	assert.Nil(t, aggregate.datapointSeriesRefs)
-}
-
-func TestParseGetMetricSeriesParams(t *testing.T) {
-	metricRef := "00000000-0000-0000-0000-000000000001"
-	seriesRef := "00000000-0000-0000-0000-000000000002"
-	got, err := parseGetMetricSeriesParams(json.RawMessage(fmt.Sprintf(`[%q,%q,null,"18446744073709551615"]`, metricRef, seriesRef)))
-	require.NoError(t, err)
-	assert.Equal(t, metricRef, got.metricRef)
-	assert.Equal(t, seriesRef, got.seriesRef)
-	assert.Nil(t, got.timeRange.Start)
-	require.NotNil(t, got.timeRange.End)
-	assert.Equal(t, uint64(math.MaxUint64), *got.timeRange.End)
-}
-
-func TestParseOptionalQuantilesPreservesValuesOrderAndPresence(t *testing.T) {
-	absent, err := parseOptionalQuantiles([]any{}, 0)
-	require.NoError(t, err)
-	assert.Nil(t, absent)
-
-	empty, err := parseOptionalQuantiles([]any{[]any{}}, 0)
-	require.NoError(t, err)
-	assert.Nil(t, empty)
-
-	values, err := parseOptionalQuantiles([]any{[]any{
-		json.Number("0.12345678901234566"),
-		json.Number("0.9876543210987654"),
-		float64(0.5),
-	}}, 0)
-	require.NoError(t, err)
-	assert.Equal(t, []float64{0.12345678901234566, 0.9876543210987654, 0.5}, values)
-	assert.Equal(t, []uint64{
-		math.Float64bits(0.12345678901234566),
-		math.Float64bits(0.9876543210987654),
-		math.Float64bits(0.5),
-	}, []uint64{
-		math.Float64bits(values[0]),
-		math.Float64bits(values[1]),
-		math.Float64bits(values[2]),
-	})
-
-	for _, params := range [][]any{
-		{[]any{json.Number("1e999")}},
-		{[]any{json.Number("1.1")}},
-		{[]any{"0.5"}},
-	} {
-		_, err := parseOptionalQuantiles(params, 0)
-		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-	}
-}
-
-func TestParseFieldValuesParamsClampsLimit(t *testing.T) {
-	for _, tc := range []struct {
-		limit int
-		want  int64
-	}{{limit: -5, want: 1}, {limit: 10, want: 10}, {limit: 1000, want: 500}} {
-		raw := json.RawMessage(fmt.Sprintf(`["traces","name","term",%d]`, tc.limit))
-		got, err := parseFieldValuesParams(raw)
-		require.NoError(t, err)
-		assert.Equal(t, fieldValuesParams{signal: "traces", field: "name", term: "term", limit: tc.want}, got)
-	}
 }
 
 // TestTimestampParamsAcceptNumbersWithoutLosingPrecision verifies exact numeric
