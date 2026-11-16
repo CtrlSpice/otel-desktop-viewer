@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/sqlfunctions"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
@@ -91,7 +91,7 @@ func TestNativeAttributeEntries(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = sql.Open("duckdb", path)
 	require.NoError(t, err)
-	require.NoError(t, queries.RegisterFunctions(t.Context(), db))
+	require.NoError(t, sqlfunctions.Register(t.Context(), db))
 	_, err = db.Exec("set variant_minimum_shredding_size = 0")
 	require.NoError(t, err)
 	check("reopen")

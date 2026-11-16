@@ -127,7 +127,7 @@ validate-ts:
 
 .PHONY: validate-playwright
 validate-playwright:
-	cd desktopexporter/internal/frontend && npx tsc --project tsconfig.playwright.json
+	cd desktopexporter/internal/frontend && npx tsc --project config/tsconfig.playwright.json
 
 .PHONY: test-ts
 test-ts:

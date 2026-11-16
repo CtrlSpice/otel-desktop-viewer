@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 import type {
   LogFixture,
   TraceFixture,

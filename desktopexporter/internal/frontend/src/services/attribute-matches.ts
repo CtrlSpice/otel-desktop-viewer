@@ -37,7 +37,7 @@ export function attributeMatchesSQL(
   let attributes: string
   let item: string
   let record: string
-  let spans = "'[]'::JSON"
+  let spans = "'[]'::json"
   let resource: string
   let scope: string
   let time: string
@@ -49,25 +49,25 @@ export function attributeMatchesSQL(
       item = 'trace_id_wire(s.trace_id)'
       record = 's.span_id'
       spans =
-        'to_json(list(DISTINCT span_id_wire(s.span_id) ORDER BY span_id_wire(s.span_id)))'
+        'to_json(list(distinct span_id_wire(s.span_id) order by span_id_wire(s.span_id)))'
       resource = 's.resource.attributes'
       scope = 's.scope.attributes'
       time = ownerTime = 's.start_time'
       if (options.ownerType === 'event') {
         from +=
-          ' JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id'
+          ' join events e on e.trace_id = s.trace_id and e.span_id = s.span_id'
         attributes = 'e.attributes'
         ownerTime = 'e.timestamp'
       } else if (options.ownerType === 'link') {
         from +=
-          ' JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id'
+          ' join links l on l.trace_id = s.trace_id and l.span_id = s.span_id'
         attributes = 'l.attributes'
       }
       break
     case 'logs':
       from = 'logs l'
       attributes = 'l.attributes'
-      item = 'l.id::VARCHAR'
+      item = 'l.id::varchar'
       record = 'l.id'
       resource = 'l.resource.attributes'
       scope = 'l.scope.attributes'
@@ -75,15 +75,15 @@ export function attributeMatchesSQL(
         'coalesce(nullif(l.timestamp, 0), l.observed_timestamp)'
       break
     case 'metrics':
-      from = 'metric_datapoints d JOIN metrics m ON m.id = d.metric_id'
+      from = 'metric_datapoints d join metrics m on m.id = d.metric_id'
       attributes = 'd.attributes'
-      item = 'm.id::VARCHAR'
+      item = 'm.id::varchar'
       record = 'd.id'
       resource = 'd.resource.attributes'
       scope = 'd.scope.attributes'
       time = ownerTime = 'd.timestamp'
       if (options.ownerType === 'exemplar') {
-        from += ' JOIN exemplars e ON e.metric_datapoint_id = d.id'
+        from += ' join exemplars e on e.metric_datapoint_id = d.id'
         attributes = 'e.attributes'
         ownerTime = 'e.timestamp'
       } else if (options.ownerType === 'metadata') attributes = 'm.metadata'
@@ -102,18 +102,18 @@ export function attributeMatchesSQL(
   ]
   if (options.valueIdentity !== undefined)
     predicates.push(
-      `otel_value_json(${value}) = ${literal(storedIdentity(options.valueIdentity))}::JSON`
+      `otel_value_json(${value}) = ${literal(storedIdentity(options.valueIdentity))}::json`
     )
   for (const timestamp of new Set([time, ownerTime])) {
     if (options.startTime != null)
       predicates.push(
-        `${timestamp} >= ${literal(BigInt(options.startTime).toString())}::UBIGINT`
+        `${timestamp} >= ${literal(BigInt(options.startTime).toString())}::ubigint`
       )
     if (options.endTime != null)
       predicates.push(
-        `${timestamp} <= ${literal(BigInt(options.endTime).toString())}::UBIGINT`
+        `${timestamp} <= ${literal(BigInt(options.endTime).toString())}::ubigint`
       )
   }
-  return `SELECT ${item} AS item_ref, ${spans} AS span_ids, count(DISTINCT ${record}) AS record_count
-FROM ${from} WHERE ${predicates.join(' AND ')} GROUP BY ${item} ORDER BY item_ref OFFSET ${offset}`
+  return `select ${item} as item_ref, ${spans} as span_ids, count(distinct ${record}) as record_count
+from ${from} where ${predicates.join(' and ')} group by ${item} order by item_ref offset ${offset}`
 }

@@ -1,0 +1,152 @@
+import { describe, expect, it } from 'vitest'
+import {
+  AGG_KEY_ALL,
+  AGG_KEY_SELECTED,
+  AGG_KEY_TOTAL,
+  availableAggregationViews,
+  DEFAULT_AGGREGATION_VIEW,
+  isAggregateLineKey,
+  rateSlopeBucketSegment,
+} from '@/features/metrics/Charts/aggregation'
+import type { ChartPoint } from '@/features/metrics/metric-chart-types'
+
+describe('the default aggregation view agrees with the offered ones', () => {
+  const metricCases: {
+    name: string
+    metricType: string
+    temporality: string
+    isMonotonic: boolean | null
+    seriesCount: number
+  }[] = [
+    {
+      name: 'cumulative monotonic Sum',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: true,
+      seriesCount: 3,
+    },
+    {
+      name: 'cumulative non-monotonic Sum',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: false,
+      seriesCount: 3,
+    },
+    {
+      name: 'cumulative Sum of unknown monotonicity',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: null,
+      seriesCount: 3,
+    },
+    {
+      name: 'delta Sum',
+      metricType: 'Sum',
+      temporality: 'Delta',
+      isMonotonic: true,
+      seriesCount: 3,
+    },
+    {
+      name: 'single-series cumulative monotonic Sum',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: true,
+      seriesCount: 1,
+    },
+    {
+      name: 'Gauge',
+      metricType: 'Gauge',
+      temporality: 'Unspecified',
+      isMonotonic: null,
+      seriesCount: 3,
+    },
+    {
+      name: 'single-series Gauge',
+      metricType: 'Gauge',
+      temporality: 'Unspecified',
+      isMonotonic: null,
+      seriesCount: 1,
+    },
+    {
+      name: 'Histogram',
+      metricType: 'Histogram',
+      temporality: 'Delta',
+      isMonotonic: null,
+      seriesCount: 3,
+    },
+  ]
+
+  for (const s of metricCases) {
+    it(`offers the default it picks for a ${s.name}`, () => {
+      const available = availableAggregationViews(
+        s.metricType,
+        s.temporality,
+        s.isMonotonic,
+        s.seriesCount
+      )
+      expect(DEFAULT_AGGREGATION_VIEW).toBe('raw')
+      expect(available).toContain(DEFAULT_AGGREGATION_VIEW)
+    })
+  }
+
+  it('offers rate as an explicit choice only when the counter can be differenced', () => {
+    expect(
+      availableAggregationViews('Sum', 'Cumulative', false, 3)
+    ).not.toContain('rate')
+    expect(
+      availableAggregationViews('Sum', 'Cumulative', null, 3)
+    ).not.toContain('rate')
+    expect(availableAggregationViews('Sum', 'Cumulative', true, 3)).toContain(
+      'rate'
+    )
+  })
+})
+
+describe('isAggregateLineKey', () => {
+  it('recognizes only the synthetic aggregate keys', () => {
+    expect(isAggregateLineKey(AGG_KEY_SELECTED)).toBe(true)
+    expect(isAggregateLineKey(AGG_KEY_ALL)).toBe(true)
+    expect(isAggregateLineKey(AGG_KEY_TOTAL)).toBe(true)
+    expect(isAggregateLineKey('__agg:future__')).toBe(false)
+    expect(isAggregateLineKey('toString')).toBe(false)
+    expect(isAggregateLineKey('constructor')).toBe(false)
+  })
+})
+
+describe('rateSlopeBucketSegment', () => {
+  it('selects an exact nanosecond bucket instead of a same-ms neighbor', () => {
+    const timestampMs = 1_700_000_000_000
+    const points: ChartPoint[] = [
+      {
+        date: new Date(timestampMs),
+        timestampNs: 1_700_000_000_000_000_100n,
+        value: 1,
+      },
+      {
+        date: new Date(timestampMs),
+        timestampNs: 1_700_000_000_000_000_900n,
+        value: 2,
+        slope: 10,
+      },
+      {
+        date: new Date(timestampMs + 1),
+        timestampNs: 1_700_000_000_001_000_100n,
+        value: 4,
+        slope: 20,
+      },
+    ]
+
+    expect(rateSlopeBucketSegment(points, points[1]!)).toEqual({
+      from: points[0],
+      to: points[1],
+      slope: 10,
+    })
+    expect(
+      rateSlopeBucketSegment(points, {
+        date: new Date(timestampMs),
+        timestampNs: 1_700_000_000_000_000_500n,
+        value: 3,
+      })
+    ).toBeUndefined()
+  })
+})

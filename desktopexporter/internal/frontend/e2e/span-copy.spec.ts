@@ -1,6 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 import { THEMES, themeRgb } from './theme-colours'
 import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 

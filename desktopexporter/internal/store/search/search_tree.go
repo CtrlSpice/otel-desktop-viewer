@@ -255,9 +255,9 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 	// those places -- so they join with OR. For a named field they are
 	// requirements and join with AND.
 	if len(sqlConditions) > 1 {
-		joiner := " AND "
+		joiner := " and "
 		if field == nil || (field.Owner == "" && field.SearchScope == "global") || len(field.UnscopedPath()) > 0 {
-			joiner = " OR "
+			joiner = " or "
 		}
 		*conditions = append(*conditions, "("+strings.Join(sqlConditions, joiner)+")")
 	} else {
@@ -296,7 +296,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, m
 		return fmt.Errorf("invalid logical operator %s: %w", group.LogicalOperator, ErrInvalidQuery)
 	}
 
-	joinedConditions := strings.Join(childConditions, " "+operator+" ")
+	joinedConditions := strings.Join(childConditions, " "+strings.ToLower(operator)+" ")
 	*conditions = append(*conditions, "("+joinedConditions+")")
 
 	return nil
@@ -340,9 +340,9 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 	// searchable value.
 	if operator == "IS NULL" || operator == "IS NOT NULL" {
 		if hasPlaceholder {
-			return strings.ReplaceAll(expression, condToken, operator), nil
+			return strings.ReplaceAll(expression, condToken, strings.ToLower(operator)), nil
 		}
-		return expression + " " + operator, nil
+		return expression + " " + strings.ToLower(operator), nil
 	}
 
 	if resolved.OperandMode == WireIDOperand {
@@ -395,19 +395,19 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		operatorString = "!~ " + parameter
 	case "LIKE", "NOT LIKE":
 		*params = append(*params, NamedParam{paramName, bindValue})
-		operatorString = operator + " " + parameter
+		operatorString = strings.ToLower(operator) + " " + parameter
 	case "CONTAINS":
 		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
-		operatorString = "LIKE " + parameter
+		operatorString = "like " + parameter
 	case "NOT CONTAINS":
 		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
-		operatorString = "NOT LIKE " + parameter
+		operatorString = "not like " + parameter
 	case "^":
 		*params = append(*params, NamedParam{paramName, value + "%"})
-		operatorString = "LIKE " + parameter
+		operatorString = "like " + parameter
 	case "$":
 		*params = append(*params, NamedParam{paramName, "%" + value})
-		operatorString = "LIKE " + parameter
+		operatorString = "like " + parameter
 	case "IN", "NOT IN":
 		values, err := ParseArrayValue(value)
 		if err != nil {
@@ -433,7 +433,7 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 				return "", err
 			}
 			*params = append(*params, NamedParam{paramName, timestampValues})
-			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, parameter)
+			operatorString = fmt.Sprintf("%s cast(%s as ubigint[])", strings.ToLower(operator), parameter)
 			break
 		} else if resolved.OperandMode == DurationOperand {
 			values, err = NormalizeDurationList(values)
@@ -456,13 +456,13 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		}
 		*params = append(*params, NamedParam{paramName, values})
 		if resolved.OperandMode == TimestampOperand {
-			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, parameter)
+			operatorString = fmt.Sprintf("%s cast(%s as ubigint[])", strings.ToLower(operator), parameter)
 		} else if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == AttributeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
-			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, parameter)
+			operatorString = fmt.Sprintf("%s cast(%s as bigint[])", strings.ToLower(operator), parameter)
 		} else if resolved.OperandMode == AttributeDoubleOperand {
-			operatorString = fmt.Sprintf("%s CAST(%s AS DOUBLE[])", operator, parameter)
+			operatorString = fmt.Sprintf("%s cast(%s as double[])", strings.ToLower(operator), parameter)
 		} else {
-			operatorString = operator + " " + parameter
+			operatorString = strings.ToLower(operator) + " " + parameter
 		}
 	default:
 		return "", fmt.Errorf("unsupported operator %s: %w", operator, ErrInvalidQuery)
@@ -732,7 +732,7 @@ func TimePredicate(column string, startTime, endTime *uint64) (string, []NamedPa
 		conditions = append(conditions, column+" <= "+Parameter(len(params), unsignedScalar(*endTime)))
 		params = append(params, NamedParam{Name: "time_end", Value: unsignedScalar(*endTime)})
 	}
-	return strings.Join(conditions, " AND "), params
+	return strings.Join(conditions, " and "), params
 }
 
 // BuildSearchSQL builds the WHERE clause and directly bound args for any
@@ -754,9 +754,9 @@ func finishSearchSQL(conditions []string, params []NamedParam, timeCondition str
 	if len(conditions) > 0 && timeCondition != "" {
 		// buildCondition and buildGroup normally append one joined element.
 		// Joining defensively keeps a multi-element list valid.
-		whereSQL = "(" + strings.Join(conditions, " AND ") + ") AND " + timeCondition
+		whereSQL = "(" + strings.Join(conditions, " and ") + ") and " + timeCondition
 	} else if len(conditions) > 0 {
-		whereSQL = "(" + strings.Join(conditions, " AND ") + ")"
+		whereSQL = "(" + strings.Join(conditions, " and ") + ")"
 	} else if timeCondition != "" {
 		whereSQL = timeCondition
 	} else {

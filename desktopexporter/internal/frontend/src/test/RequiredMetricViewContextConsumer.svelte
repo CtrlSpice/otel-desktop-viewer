@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import { getMetricViewContext } from '@/features/metrics/metric-view-context.svelte'
 
   getMetricViewContext()
 </script>

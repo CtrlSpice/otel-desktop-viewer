@@ -42,12 +42,12 @@ func Load(ctx context.Context, conn driver.Conn) error {
 		return err
 	}
 	// The extension is database-wide; each writer needs its own session owner.
-	_, err = conn.(driver.ExecerContext).ExecContext(ctx, "SET SESSION otel_arrow_owner = 0", nil)
+	_, err = conn.(driver.ExecerContext).ExecContext(ctx, "set session otel_arrow_owner = 0", nil)
 	return err
 }
 
 func ownerID(ctx context.Context, conn driver.Conn) (owner uint64, err error) {
-	rows, err := conn.(driver.QueryerContext).QueryContext(ctx, "SELECT current_setting('otel_arrow_owner')", nil)
+	rows, err := conn.(driver.QueryerContext).QueryContext(ctx, "select current_setting('otel_arrow_owner')", nil)
 	if err != nil {
 		return 0, err
 	}
@@ -71,7 +71,7 @@ func publish(ctx context.Context, conn driver.Conn, record arrow.RecordBatch) (u
 	// Standalone appenders may use another connection in an already loaded
 	// database. Initialize only that publisher; never adopt a caller-supplied ID.
 	if owner == 0 {
-		if _, err := conn.(driver.ExecerContext).ExecContext(ctx, "SET SESSION otel_arrow_owner = 0", nil); err != nil {
+		if _, err := conn.(driver.ExecerContext).ExecContext(ctx, "set session otel_arrow_owner = 0", nil); err != nil {
 			return 0, nil, err
 		}
 		owner, err = ownerID(ctx, conn)

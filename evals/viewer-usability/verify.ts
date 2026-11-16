@@ -61,7 +61,7 @@ export async function verify(name = 'verification', root = runtimeRoot()) {
     END = manifest.end.toString()
   const roots = await sql(
     'roots',
-    `SELECT trace_id_wire(trace_id) AS traceID FROM spans WHERE parent_span_id IS NULL AND service_name='api-gateway' AND start_time BETWEEN ${START}::UBIGINT AND ${END}::UBIGINT ORDER BY start_time`
+    `select trace_id_wire(trace_id) as traceID from spans where parent_span_id is null and service_name='api-gateway' and start_time between ${START}::ubigint and ${END}::ubigint order by start_time`
   )
   assert.equal(roots.length, 32)
   const sourceRows = manifest.requests
@@ -182,7 +182,7 @@ export async function verify(name = 'verification', root = runtimeRoot()) {
   })
   const logs = await sql(
     'trace-logs',
-    "SELECT json_extract_string(l.body,'$.value') AS body, CASE WHEN l.span_id IS NULL THEN 'trace-only' WHEN s.span_id IS NULL THEN 'missing-span' ELSE 'matching-span' END AS association FROM logs l LEFT JOIN spans s ON l.trace_id=s.trace_id AND l.span_id=s.span_id WHERE l.trace_id='00000000-0000-0000-0000-000000000011'::UUID ORDER BY body"
+    "select json_extract_string(l.body,'$.value') as body, case when l.span_id is null then 'trace-only' when s.span_id is null then 'missing-span' else 'matching-span' end as association from logs l left join spans s on l.trace_id=s.trace_id and l.span_id=s.span_id where l.trace_id='00000000-0000-0000-0000-000000000011'::uuid order by body"
   )
   assert.deepEqual(logs, [
     {
@@ -205,7 +205,7 @@ export async function verify(name = 'verification', root = runtimeRoot()) {
   ])
   const metrics = await sql(
     'metrics',
-    'SELECT id::VARCHAR AS id,name,service_name FROM metrics ORDER BY name'
+    'select id::varchar as id,name,service_name from metrics order by name'
   )
   assert.equal(metrics.length, 4)
   assert.ok(metrics.every(metric => metric.service_name === 'api-gateway'))

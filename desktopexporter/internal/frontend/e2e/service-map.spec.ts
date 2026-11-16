@@ -1,5 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './test-fixtures'
+import type { Page } from '@playwright/test'
 import type {
   ServiceSummary,
   ServiceConnection,
@@ -52,9 +53,7 @@ async function holdDiscovery(
     options: DiscoveryOptions
     reply: { resolve: (value: DiscoveryReply) => void }
   }> = []
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'discoverTelemetry' && kinds.includes(params.options.kind)) {
@@ -884,9 +883,7 @@ test('service cards are unique graph nodes with standalone services, stable insp
   })
   const expansions: string[] = []
   const evidencePages: number[] = []
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {
@@ -1191,9 +1188,7 @@ test('force layout fits a fan-out, reflows on resize and bounds pan without drif
   }))
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, route => {
     const { id, method, params } = route.request().postDataJSON()
     const items =

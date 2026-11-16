@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { SummaryBreakdownPart } from '@/types/api-types'
-  import { traceServiceColor } from '@/utils/trace-service-color'
+  import { traceServiceColor } from '@/utils/colours/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import BubbleBreakdown from './BubbleBreakdown.svelte'
 

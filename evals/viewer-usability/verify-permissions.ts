@@ -188,7 +188,7 @@ test('native 1.18.10 allows scratch executable workdirs and preserves denials', 
     for (let attempt = 0; attempt < 100; attempt++) {
       assert.equal(owned.exitCode, null, viewerOutput)
       try {
-        await query(endpoint, 'SELECT 1')
+        await query(endpoint, 'select 1')
         ready = true
         break
       } catch {}
@@ -231,7 +231,7 @@ test('native 1.18.10 allows scratch executable workdirs and preserves denials', 
         'absolute-query',
         'bash',
         {
-          command: viewer + ' query "SELECT 1" --endpoint ' + endpoint,
+          command: viewer + ' query "select 1" --endpoint ' + endpoint,
           workdir: clean.workspace,
         },
         false,
@@ -241,7 +241,7 @@ test('native 1.18.10 allows scratch executable workdirs and preserves denials', 
         'bash',
         {
           command:
-            './otel-desktop-viewer query "SELECT 1" --endpoint ' + endpoint,
+            './otel-desktop-viewer query "select 1" --endpoint ' + endpoint,
           workdir: directory,
         },
         false,
@@ -269,7 +269,7 @@ test('native 1.18.10 allows scratch executable workdirs and preserves denials', 
         {
           command:
             viewer +
-            ' query "SELECT nonexistent_column" --endpoint ' +
+            ' query "select nonexistent_column" --endpoint ' +
             endpoint,
           workdir: clean.workspace,
         },

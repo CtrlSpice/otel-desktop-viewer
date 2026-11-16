@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 test('Home service nodes retain card controls and keep incoming imports out of the current reading', async ({
   page,
@@ -30,9 +30,7 @@ test('Home service nodes retain card controls and keep incoming imports out of t
     exemplarCount: 12,
     lastSeen: '1792692000000000000',
   }))
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {

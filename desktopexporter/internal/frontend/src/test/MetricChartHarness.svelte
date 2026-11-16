@@ -6,7 +6,7 @@
     createMetricViewContext,
     type MetricViewContext,
     type HistogramContributionSelection,
-  } from '@/contexts/metric-view-context.svelte'
+  } from '@/features/metrics/metric-view-context.svelte'
   import type { DataPoint, MetricViewData } from '@/types/api-types'
 
   type Props = {

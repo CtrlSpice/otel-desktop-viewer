@@ -30,7 +30,7 @@ func TestForeignConnectionsCannotConsumeInput(t *testing.T) {
 		if initialized {
 			require.NoError(t, reader.Raw(func(raw any) error { return Load(t.Context(), raw.(driver.Conn)) }))
 		}
-		for _, sql := range []string{statement, "EXPLAIN " + statement, statement + " LIMIT 0"} {
+		for _, sql := range []string{statement, "explain " + statement, statement + " limit 0"} {
 			_, err := reader.ExecContext(t.Context(), sql)
 			require.ErrorContains(t, err, "different connection")
 		}
@@ -45,11 +45,11 @@ func TestForeignConnectionsCannotConsumeInput(t *testing.T) {
 		_, err = query.Execute(t.Context(), reader, "select 1", 25)
 		require.NoError(t, err)
 	}
-	_, err = reader.ExecContext(t.Context(), fmt.Sprintf("SET SESSION otel_arrow_owner = %d", owner))
+	_, err = reader.ExecContext(t.Context(), fmt.Sprintf("set session otel_arrow_owner = %d", owner))
 	require.ErrorContains(t, err, "assigned by the bridge")
-	_, err = reader.ExecContext(t.Context(), "SET GLOBAL otel_arrow_owner = 0")
+	_, err = reader.ExecContext(t.Context(), "set global otel_arrow_owner = 0")
 	require.Error(t, err)
-	for _, sql := range []string{"SET SESSION otel_arrow_owner = 0", "RESET otel_arrow_owner"} {
+	for _, sql := range []string{"set session otel_arrow_owner = 0", "reset otel_arrow_owner"} {
 		_, err = reader.ExecContext(t.Context(), sql)
 		require.NoError(t, err)
 		_, err = reader.ExecContext(t.Context(), statement)
@@ -81,7 +81,7 @@ func TestPreparedInputRechecksOwnerAndLifetime(t *testing.T) {
 		if expire {
 			release()
 		} else {
-			_, err = writer.(driver.ExecerContext).ExecContext(t.Context(), "SET SESSION otel_arrow_owner = 0", nil)
+			_, err = writer.(driver.ExecerContext).ExecContext(t.Context(), "set session otel_arrow_owner = 0", nil)
 			require.NoError(t, err)
 		}
 		_, err = prepared.(driver.StmtExecContext).ExecContext(t.Context(), nil)

@@ -219,7 +219,7 @@ func TestStoreIndexesCreated(t *testing.T) {
 	defer s.Close()
 
 	var count int
-	err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
+	err = s.db.QueryRowContext(ctx, "select count(*) from duckdb_indexes() where schema_name = 'main'").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, len(queries.Indexes()), count, "all explicit native indexes are installed")
 }
@@ -269,7 +269,7 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	var indexCount int
-	err = s2.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
+	err = s2.db.QueryRowContext(ctx, "select count(*) from duckdb_indexes() where schema_name = 'main'").Scan(&indexCount)
 	require.NoError(t, err)
 	assert.Equal(t, len(queries.Indexes()), indexCount, "reopening preserves all explicit native indexes")
 	require.NoError(t, s2.Close())

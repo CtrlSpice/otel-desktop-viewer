@@ -1,0 +1,2221 @@
+/*
+ * Shared chart and detail state for one metric view. Mutable choices live in
+ * one state cell; computed values derive from that state and the current metric.
+ * The metric getter keeps the context identity stable across navigation.
+ */
+import { createContext, untrack } from 'svelte'
+import { SvelteSet } from 'svelte/reactivity'
+import type {
+  MetricViewData,
+  MetricSeriesViewData,
+  AggregateBucket,
+  MetricType,
+  DataPoint,
+  HistogramDataPoint,
+  ExponentialHistogramDataPoint,
+  Attributes,
+  ScalarViewBucket,
+  ScalarAggregate,
+} from '@/types/api-types'
+import {
+  rateBucketStartForSourceDatapoint,
+  sparklineToChartPoints,
+  timeseriesToChartTimeseries,
+} from '@/features/metrics/Charts/chart-projection'
+import {
+  distinguishingResourceAttributes,
+  seriesLabelsByKey,
+} from '@/features/metrics/Series/series-labels'
+import {
+  seriesBucketsToSlices,
+  buildVisibleSeriesQuantileChartTimeseries,
+  DEFAULT_HISTOGRAM_QUANTILES,
+  histogramSliceToChartDatapoint,
+  parseQuantileSeriesKey,
+  quantileKeyFromValue,
+  type HistogramAggregationError,
+  type HistogramChartDataPoint,
+  type HistogramSlicePoint,
+} from '@/features/metrics/Histograms/histogram-aggregation'
+import {
+  heatmapColumnSelectionAt,
+  heatmapColumnEndNs as columnEndNs,
+  type HeatmapColumnSelection,
+} from '@/features/metrics/Histograms/heatmap-column-selection'
+import {
+  quantilePointSelectionAt,
+  type QuantilePointSelection,
+} from '@/features/metrics/Histograms/quantile-point-selection'
+import {
+  AGG_KEY_SELECTED,
+  AGG_KEY_TOTAL,
+  AGG_KEY_AVG_SELECTED,
+  AGG_KEY_AVG_TOTAL,
+  availableAggregationViews,
+  DEFAULT_AGGREGATION_VIEW,
+  availableSeriesStatBadges,
+  isAggregateLineKey,
+  rateSlopeBucketSegment,
+  availableRateSlopeOverlay,
+  type AggregateLineKey,
+  type AggregateResult,
+  type AggregationView,
+  type ResetIndicesByKey,
+  type SeriesStat,
+  type SeriesStats,
+} from '@/features/metrics/Charts/aggregation'
+import type {
+  ChartPoint,
+  ChartTimeseries,
+  LegendTimeseries,
+} from '@/features/metrics/metric-chart-types'
+import {
+  AGG_COLOR_SELECTED,
+  AGG_COLOR_ALL,
+  metricSeriesPalette,
+} from '@/utils/colours/chart-palette'
+import { themeSignal } from '@/state/theme.svelte'
+import { SERIES_COLOR_COUNT } from '@/themes'
+import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
+import { savedColorSlots } from '@/utils/colours/color-slots'
+import {
+  minimalSeriesTable,
+  compactSeriesTable,
+  type SeriesTable,
+} from '@/features/metrics/Series/minimal-series-labels'
+import {
+  DEFAULT_VISIBLE_TIMESERIES,
+  MAX_VISIBLE_TIMESERIES,
+  loadPersistedAggregationView,
+  reconcileTimeseriesVisible,
+  resolveTimeseriesVisible,
+  savePersistedAggregationView,
+  savePersistedTimeseriesVisible,
+  visibleKeyListsEqual,
+} from '@/features/metrics/Series/metric-timeseries-visible'
+import {
+  loadHistogramViewPreference,
+  saveHistogramViewPreference,
+  type HistogramViewPreference,
+} from '@/features/metrics/Histograms/histogram-view-preference'
+import {
+  acquireColor,
+  remapColorAssignments,
+  releaseColor,
+  seedColorAssignments,
+  syncColorAssignments,
+  type TimeseriesColorByKey,
+} from '@/features/metrics/Series/metric-timeseries-colors'
+import {
+  metricViewQueriesEqual,
+  parseMetricViewQuery,
+  readRoute,
+  setMetricViewQuery,
+  subscribeToRoute,
+  signalIdFromPath,
+  type HistoryMode,
+  type MetricViewParseContext,
+  type MetricViewQuery,
+} from '@/route'
+
+const [getMetricViewContext, setMetricViewContext] =
+  createContext<MetricViewContext>()
+
+const CHART_POINTS_PER_SERIES = 2000
+
+/** Store buckets, each contributing up to four chart points. */
+export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
+
+/** Maximum store buckets for Sum, Average and Rate views. */
+export const SCALAR_VIEW_BUCKETS = 120
+
+/** Row sparkline width in pixels. */
+export const SPARKLINE_WIDTH_PX = 96
+
+/** Rough previews simplify the main chart's samples to at most one point per pixel. */
+export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
+
+export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
+
+export type HistogramContributionSelection = {
+  datapointID: string
+  /** Null means the source has no activity in this aggregate (e.g. a baseline). */
+  point: HistogramSlicePoint | null
+}
+
+export type BucketSeriesError =
+  | { kind: 'unspecified'; message: string }
+  | { kind: 'boundsMismatch'; message: string }
+  | { kind: 'other'; message: string }
+
+type HistogramTimeseriesGroup = {
+  key: string
+  attributes: Attributes
+  pointCount: number
+}
+
+type MetricViewState = {
+  previewSeriesKey: string | null
+  selectedRateBucket: { seriesKey: string; timestampNs: bigint } | null
+  selectedDatapointID: string | null
+  selectedSeriesKey: string | null
+  selectionSource: 'chart' | 'detail' | null
+  activeHistogramTab: HistogramTab
+  selectedHistogramBucketStart: bigint | null
+  selectedQuantileKey: string | null
+  visibleSeries: SvelteSet<string>
+  timeseriesColorByKey: TimeseriesColorByKey
+  aggregationView: AggregationView
+  showSelectionStatOverlays: boolean
+}
+
+type TransformedSeries = {
+  series: ChartTimeseries[]
+  resets: ResetIndicesByKey
+}
+
+type HistogramAggregationResult = {
+  perAttribute: HistogramSlicePoint[]
+  heatmap: HistogramSlicePoint[]
+  summary: HistogramSlicePoint | null
+  error: BucketSeriesError | null
+  aggregatedError: BucketSeriesError | null
+}
+
+export interface MetricViewContext {
+  /** Transient series-header emphasis; does not select a datapoint or persist. */
+  previewSeriesKey: string | null
+  readonly metric: MetricViewData | undefined
+  /** Source response for the displayed scalar chart, independent of Properties. */
+  readonly chartMetric: MetricViewData | undefined
+  readonly chartSeriesStatsByKey: ReadonlyMap<string, SeriesStats>
+  readonly metricType: MetricType
+  readonly temporality: string
+  readonly temporalityCode: number | null
+  readonly isMonotonic: boolean | null
+  readonly isHistogramKind: boolean
+  readonly isUnsafeTemporality: boolean
+  readonly totalDatapointCount: number
+
+  readonly selectedDatapointID: string | null
+  /** Where the current datapoint selection came from. */
+  readonly selectionSource: 'chart' | 'detail' | null
+  /** Rows belonging to the chart's selected point or time bucket in the inspected series. */
+  readonly chartRelatedDatapointIDs: ReadonlySet<string>
+  readonly activeHistogramTab: HistogramTab
+  readonly selectedDatapoint: DataPoint | undefined
+
+  /** Series keys in store order, without chart-point projection. */
+  readonly gaugeSumSeriesKeys: readonly string[]
+  readonly gaugeSumLegendTimeseries: LegendTimeseries[]
+  /** Exact timestamp of the displayed selected point. Raw views use the source
+   * datapoint timestamp; Rate uses the synthetic bucket containing that source. */
+  readonly highlightedTimestamp: bigint | null
+  /** Attributes key of the timeseries owning `selectedDatapoint`, or
+   *  `null` when nothing is selected. Used by the chart to draw the
+   *  selection dot in the right series's color. */
+  readonly selectedSeriesKey: string | null
+
+  /** Current view selection: 'raw' | 'sum' | 'avg' | 'rate'. */
+  readonly aggregationView: AggregationView
+  /** Which view options the dropdown should offer (varies by metric
+   *  type, temporality, monotonicity, and series count). Always
+   *  contains at least 'raw'. */
+  readonly availableAggregationViews: AggregationView[]
+  /** Post-view series the chart actually plots. Raw mode: per-series
+   *  visibility-filtered lines. Aggregated modes: raw lines plus up to
+   *  two cross-timeseries lines (Selected, All). */
+  readonly transformedGaugeSumChartTimeseries: ChartTimeseries[]
+  /** Which aggregate line keys are present (for legend rendering).
+   *  Empty when aggregationView === 'raw'. */
+  readonly aggregatePresentKeys: AggregateLineKey[]
+  /** Whether min / max / avg selection overlays render on the chart. */
+  readonly showSelectionStatOverlays: boolean
+  /** Show the stat overlay toggle in the chart control bar. */
+  readonly showChartStatOverlaysToggleVisible: boolean
+  /** Sum + cumulative + monotonic + rate: offer rate slope at selection. */
+  readonly rateSlopeOverlayAvailable: boolean
+  /** Rate slope (Δrate/Δt) at the selected bucket, or undefined. */
+  readonly selectedRateSlope: number | undefined
+  /** Start/end of data plotted in the chart (gauge/sum points or histogram window). */
+  readonly chartDataTimeRange: { startMs: number; endMs: number } | undefined
+  /** Reset markers per series, indexed into the transformed (visible)
+   * series' output points. Only populated in raw mode. */
+  readonly sumResetIndicesByKey: ResetIndicesByKey
+
+  readonly histogramLegendTimeseries: LegendTimeseries[]
+  readonly histogramTimeseriesCount: number
+  /** Series checked in the legend. Empty means none for filterable metrics. */
+  readonly visibleSeries: SvelteSet<string>
+  readonly seriesTable: SeriesTable
+  /** Resets and seeds view state before the metric renders. */
+  seedForMetric(metric: MetricViewData | undefined): void
+  /** Received series datapoints, or undefined until fetched. */
+  seriesDatapoints(seriesKey: string): DataPoint[] | undefined
+  readonly heatmapBucketSeries: HistogramSlicePoint[] | null
+  readonly bucketSeriesError: BucketSeriesError | null
+  readonly aggregatedDatapoint: HistogramChartDataPoint | undefined
+  readonly aggregatedError: BucketSeriesError | null
+  readonly histogramChartDatapoint: HistogramChartDataPoint | undefined
+  readonly histogramChartError: BucketSeriesError | null
+  readonly histogramContribution: HistogramContributionSelection | null
+  readonly activeHistogramDp:
+    HistogramDataPoint | ExponentialHistogramDataPoint | undefined
+  /** Selected column bounds. End is one nanosecond before the next column. */
+  readonly heatmapColumnStartNs: bigint | null
+  readonly heatmapColumnEndNs: bigint | null
+  /** Quantile line key (e.g. `"0.95"`) when selection came from a quantile chart point click. */
+  readonly selectedQuantileKey: string | null
+  readonly heatmapColumnSelection: HeatmapColumnSelection | null
+  readonly quantilePointSelection: QuantilePointSelection | null
+  readonly quantileChartTimeseries: ChartTimeseries[]
+  readonly quantileColorByKey: TimeseriesColorByKey
+  readonly activeQuantileOverlays: ReadonlySet<string>
+
+  readonly filteredTimeseries: MetricViewData['timeseries']
+  /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
+   *  have no entry; their checkbox uses neutral. */
+  readonly timeseriesColorByKey: TimeseriesColorByKey
+  readonly savedTimeseriesColorByKey: TimeseriesColorByKey
+  /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
+  readonly timeseriesChartColors: string[]
+  readonly legendFilterActive: boolean
+  /** Sparkline points per Series tab row, keyed by `seriesRef`, reduced by
+   *  the store to the row's own width. Reflects the current AggregationView
+   *  (the rate buckets in rate view, the sparkline reduction otherwise).
+   *  Covers every candidate series, not just visible ones -- an unchecked row
+   *  keeps its shape, because that is what tells the reader to check it. Empty
+   *  for histogram / unspecified temporality. */
+  readonly sparklineByKey: ReadonlyMap<string, readonly ChartPoint[]>
+  /** Min / max / avg / (sometimes) total per row. From the store's whole-window
+   *  stats, except in rate view, where they describe {@link sparklineByKey}'s
+   *  transform instead. */
+  readonly seriesStatsByKey: ReadonlyMap<string, SeriesStats>
+  /** Which stat badges TimeseriesPanel should render for this metric/view. */
+  readonly availableSeriesStatBadges: readonly SeriesStat[]
+
+  /** Inspect one series independently of chart visibility. Clears its prior datapoint. */
+  selectSeries(key: string): void
+  setActiveHistogramTab(tab: HistogramTab): void
+  setAggregationView(next: AggregationView): void
+  setShowSelectionStatOverlays(next: boolean): void
+  /** Replace the visible-set for the Gauge/Sum legend. The legend
+   * keeps a `bind:visibleKeys` model; we expose a setter so the
+   * sole writer is still us. */
+  /** Toggle chart visibility and persist immediately. */
+  toggleTimeseriesVisible(key: string, checked: boolean): void
+  /** Uncheck every timeseries and release all colour assignments. */
+  clearAllTimeseriesVisible(): void
+  /** Toggle selection + (optionally) expansion + jump to the
+   * histogram tab in bucket scope. Used by the detail view. */
+  onDatapointClick(dp: DataPoint): void
+  /** Heatmap column click: toggle the exact selected time bucket. */
+  onHeatmapSelect(timestampNs: bigint): void
+  /** Time-series chart point click: select one exact source datapoint. */
+  onChartPointClick(seriesKey: string, datapointID: string): void
+  /** Transient selection of an exact derived Rate bucket, not a raw datapoint. */
+  onRateChartPointClick(seriesKey: string, timestampNs: bigint): void
+  /** Quantiles tab: toggle sticky bucket selection at the clicked x. */
+  onQuantileChartPointClick(
+    seriesKey: string,
+    timestampNs: bigint,
+    quantileKey?: string | null
+  ): void
+  /** Clear only selection owned by a chart interaction. Detail-pane datapoint
+   * selection remains intact when a histogram cursor clears its transient cell. */
+  clearChartSelection(): void
+}
+
+/**
+ * Turn the store's aggregate buckets into the slice shape the heatmap draws.
+ *
+ * Every number is already merged. The store owns
+ * scale alignment, zero-threshold folding and the vector sums, so this only
+ * maps field names and widens the counts to numbers.
+ */
+export function aggregateToSlices(
+  buckets: AggregateBucket[] | null
+): HistogramSlicePoint[] {
+  if (!buckets) return []
+  return buckets.map(b => {
+    const totals = {
+      count: Number(b.count),
+      sum: b.sum ?? undefined,
+      // Derived from the buckets server-side; a merge cannot carry the
+      // originals through.
+      min: b.min,
+      max: b.max,
+    }
+    // Explicit and exponential bucket fields are mutually exclusive.
+    if (b.explicitBounds !== undefined || b.bucketCounts !== undefined) {
+      return {
+        kind: 'histogram' as const,
+        timestamp: BigInt(b.timestamp),
+        seriesRef: '',
+        bounds: b.explicitBounds ?? [],
+        counts: b.bucketCounts?.map(Number) ?? [],
+        totals,
+        quantiles: b.quantiles ?? null,
+      }
+    }
+    return {
+      kind: 'expHistogram' as const,
+      timestamp: BigInt(b.timestamp),
+      seriesRef: '',
+      scale: b.scale ?? 0,
+      zeroThreshold: b.zeroThreshold ?? 0,
+      zeroCount: Number(b.zeroCount ?? 0n),
+      positiveOffset: b.positiveBucketOffset ?? 0,
+      positiveCounts: b.positiveBucketCounts?.map(Number) ?? [],
+      negativeOffset: b.negativeBucketOffset ?? 0,
+      negativeCounts: b.negativeBucketCounts?.map(Number) ?? [],
+      totals,
+      quantiles: b.quantiles ?? null,
+    }
+  })
+}
+
+export function createMetricViewContext(
+  getMetric: () => MetricViewData | undefined,
+  /** Store-computed aggregate for the current legend selection. */
+  getAggregate: () => AggregateBucket[] | null = () => null,
+  /** The same merge over a single bucket spanning the window. */
+  getAggregateSummary: () => AggregateBucket | null = () => null,
+  /** Store-computed scalar folds for checked and full series pools. */
+  getScalarAggregate: () => ScalarAggregate | null = () => null,
+  /** Received datapoints for one series, once fetched. */
+  getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
+    undefined,
+  /** Per-series merges over the selected heatmap column, once fetched. */
+  getColumnDistribution: () => MetricViewData | undefined = () => undefined,
+  getHistogramContribution: () => HistogramContributionSelection | null = () =>
+    null,
+  /** Independent aggregate answers retain their source metadata and window. */
+  getAggregateMetric: (
+    wholeWindow: boolean
+  ) => MetricViewData | undefined = () => getMetric(),
+  /** Newly checked chart series are independent of the metadata response. */
+  getChartDatapoints: (
+    seriesKey: string,
+    source?: MetricViewData
+  ) => DataPoint[] | undefined = () => undefined,
+  getAggregateVisibleKeys: () => readonly string[] | undefined = () => undefined
+): MetricViewContext {
+  // The only mutable per-metric state cell.
+  const view = $state<MetricViewState>({
+    previewSeriesKey: null,
+    selectedRateBucket: null,
+    selectedDatapointID: null,
+    // Explicitly chosen series, independent of any datapoint selection.
+    selectedSeriesKey: null,
+    selectionSource: null,
+    activeHistogramTab: 'heatmap',
+    selectedHistogramBucketStart: null,
+    selectedQuantileKey: null,
+    visibleSeries: new SvelteSet<string>(),
+    timeseriesColorByKey: new Map<string, string>(),
+    aggregationView: 'raw',
+    showSelectionStatOverlays: true,
+  })
+
+  const activeQuantileOverlays = $derived(
+    new Set(
+      view.showSelectionStatOverlays
+        ? DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
+        : []
+    )
+  )
+
+  // The route stores stable sub-view choices; heatmap column selection is transient.
+  // Compare route changes with this snapshot because defaults need not be in the URL.
+
+  let urlMetricViewSnapshot: MetricViewQuery | null = null
+
+  // An absent `agg` restores the seeded aggregation.
+  let seededAggregationView: AggregationView = 'raw'
+  let seededHistogramTab: HistogramViewPreference = 'heatmap'
+
+  type PendingUrlDatapoint = { id: string; seriesKey: string }
+
+  // A raw-only datapoint cannot be validated until its URL-named series has
+  // been fetched. Keep that identity private until it resolves so chart
+  // selection continues to see either one exact datapoint or no datapoint.
+  let pendingUrlDatapoint = $state<PendingUrlDatapoint | null>(null)
+  // Once a loaded series proves a pending id absent, suppress that same URL
+  // request until navigation leaves it. A later cache refresh must not make a
+  // datapoint appear selected without a new navigation event.
+  let rejectedUrlDatapoint: PendingUrlDatapoint | null = null
+
+  function metricParseContext(): MetricViewParseContext {
+    const index = selectableDatapointIndex
+    return {
+      isHistogramKind,
+      allowedAggs: availableAggregationViewsList,
+      datapointIDs: index.datapointIDs,
+      seriesKeys: index.seriesKeys,
+      defaultHistogramTab: seededHistogramTab,
+    }
+  }
+
+  type ParsedMetricUrl = {
+    query: MetricViewQuery
+    pending: PendingUrlDatapoint | null
+  }
+
+  function samePendingDatapoint(
+    a: PendingUrlDatapoint | null,
+    b: PendingUrlDatapoint | null
+  ): boolean {
+    return (
+      a !== null && b !== null && a.id === b.id && a.seriesKey === b.seriesKey
+    )
+  }
+
+  /** Parse the route while allowing a datapoint whose named series is loading. */
+  function parseMetricUrl(): ParsedMetricUrl {
+    const routeQuery = readRoute().query
+    const parsed = parseMetricViewQuery(routeQuery, metricParseContext())
+    const requestedID = routeQuery.dp || null
+    const rawRequest =
+      requestedID && parsed.series
+        ? { id: requestedID, seriesKey: parsed.series }
+        : null
+
+    if (
+      rejectedUrlDatapoint &&
+      !samePendingDatapoint(rejectedUrlDatapoint, rawRequest)
+    ) {
+      rejectedUrlDatapoint = null
+    }
+
+    if (!requestedID) return { query: parsed, pending: null }
+
+    if (samePendingDatapoint(rejectedUrlDatapoint, rawRequest)) {
+      return { query: { ...parsed, dp: null }, pending: null }
+    }
+
+    const index = selectableDatapointIndex
+    const owner = index.seriesKeyByDatapointID.get(requestedID)
+    if (owner !== undefined) {
+      const ownedByUrlSeries = parsed.series === null || parsed.series === owner
+      return {
+        query: { ...parsed, dp: ownedByUrlSeries ? requestedID : null },
+        pending: null,
+      }
+    }
+
+    if (!rawRequest || index.loadedRawSeries.has(rawRequest.seriesKey)) {
+      return { query: { ...parsed, dp: null }, pending: null }
+    }
+
+    return {
+      query: { ...parsed, dp: rawRequest.id },
+      pending: rawRequest,
+    }
+  }
+
+  function viewStateToMetricViewQuery(): MetricViewQuery {
+    const datapointID =
+      view.selectedDatapointID ?? pendingUrlDatapoint?.id ?? null
+    if (isHistogramKind) {
+      return {
+        kind: 'histogram',
+        htab: view.activeHistogramTab,
+        hscope: 'window',
+        dp: datapointID,
+        series: selectedSeriesKey,
+      }
+    }
+    return {
+      kind: 'timeseries',
+      // Write raw explicitly so it differs from an absent aggregation choice.
+      agg: view.aggregationView,
+      dp: datapointID,
+      series: selectedSeriesKey,
+    }
+  }
+
+  /** Applies the validated route sub-view; absent `agg` restores the seeded value. */
+  function applyMetricUrlToView(parsed = parseMetricUrl()): void {
+    view.selectedRateBucket = null
+    const q = parsed.query
+    urlMetricViewSnapshot = q
+    pendingUrlDatapoint = parsed.pending
+
+    if (q.kind === 'timeseries') {
+      view.aggregationView = q.agg ?? seededAggregationView
+    } else {
+      view.activeHistogramTab = q.htab
+    }
+
+    if (q.dp && selectableDatapointIndex.datapointByID.has(q.dp)) {
+      view.selectedDatapointID = q.dp
+      view.selectionSource = 'detail'
+    } else {
+      view.selectedDatapointID = null
+      view.selectionSource = null
+    }
+
+    // The series survives independently of the datapoint. A link older than a
+    // retention window still names a live series long after the specific point
+    // it was built from has been pruned, so restoring it is what keeps a
+    // shared link meaningful rather than silently empty.
+    view.selectedSeriesKey = q.series
+  }
+
+  function writeMetricUrl(mode: HistoryMode): void {
+    // Retained controls still operate on the displayed metric. They must not
+    // attach its series, datapoint or view choices to a different requested ID.
+    if (
+      signalIdFromPath('metrics', readRoute().path) !== getMetric()?.metricRef
+    )
+      return
+    const q = viewStateToMetricViewQuery()
+    urlMetricViewSnapshot = q
+    setMetricViewQuery(q, mode)
+  }
+
+  const metricType = $derived.by(
+    (): MetricType => getMetric()?.metricType ?? 'Empty'
+  )
+
+  const chartMetric = $derived(
+    (metricType === 'Gauge' || metricType === 'Sum') &&
+      view.aggregationView !== 'raw' &&
+      view.visibleSeries.size >= 2 &&
+      getScalarAggregate()
+      ? (getAggregateMetric(false) ?? getMetric())
+      : getMetric()
+  )
+
+  function chartPoints(
+    series: MetricSeriesViewData,
+    source = getMetric()
+  ): DataPoint[] {
+    return getChartDatapoints(series.seriesRef, source) ?? series.datapoints
+  }
+
+  function chartSeries(
+    series: MetricSeriesViewData,
+    source = getMetric()
+  ): MetricSeriesViewData {
+    const points = getChartDatapoints(series.seriesRef, source)
+    // Native Arrow views are read-only getters. Shadow only the loaded points;
+    // leave attributes, numeric types and all other lazy columns untouched.
+    return points === undefined
+      ? series
+      : Object.create(series, {
+          datapoints: { value: points, enumerable: true },
+        })
+  }
+
+  function* allDatapoints(
+    m: MetricViewData | undefined
+  ): IterableIterator<DataPoint> {
+    if (!m) return
+    for (const ts of m.timeseries) {
+      for (const dp of chartPoints(ts, m)) yield dp
+    }
+  }
+
+  function datapointTemporality(dp: DataPoint): string | undefined {
+    switch (dp.metricType) {
+      case 'Sum':
+      case 'Histogram':
+      case 'ExponentialHistogram':
+        return dp.aggregationTemporality
+      case 'Gauge':
+        return undefined
+    }
+  }
+
+  const chartDatapointIndex = $derived.by(() => {
+    const datapointByID = new Map<string, DataPoint>()
+    const seriesKeyByDatapointID = new Map<string, string>()
+    for (const ts of chartMetric?.timeseries ?? []) {
+      for (const dp of chartPoints(ts, chartMetric)) {
+        datapointByID.set(dp.id, dp)
+        seriesKeyByDatapointID.set(dp.id, ts.seriesRef)
+      }
+    }
+    return { datapointByID, seriesKeyByDatapointID }
+  })
+
+  /** Selection index over chart rows and fetched received rows. Received rows win. */
+  const selectableDatapointIndex = $derived.by(() => {
+    const datapointByID = new Map<string, DataPoint>()
+    const seriesKeyByDatapointID = new Map<string, string>()
+    const datapointIDs = new Set<string>()
+    const seriesKeys = new Set<string>()
+    const loadedRawSeries = new Set<string>()
+    const m = getMetric()
+
+    if (m) {
+      for (const ts of m.timeseries) {
+        const seriesKey = ts.seriesRef
+        seriesKeys.add(seriesKey)
+
+        for (const datapoint of chartPoints(ts)) {
+          datapointByID.set(datapoint.id, datapoint)
+          seriesKeyByDatapointID.set(datapoint.id, seriesKey)
+          datapointIDs.add(datapoint.id)
+        }
+
+        const raw = getSeriesDatapoints(seriesKey)
+        if (raw === undefined) continue
+        loadedRawSeries.add(seriesKey)
+        for (const datapoint of raw) {
+          datapointByID.set(datapoint.id, datapoint)
+          seriesKeyByDatapointID.set(datapoint.id, seriesKey)
+          datapointIDs.add(datapoint.id)
+        }
+      }
+    }
+
+    // A retained plotted point remains selectable after independent detail refresh.
+    if (chartMetric !== m) {
+      for (const [id, dp] of chartDatapointIndex.datapointByID) {
+        datapointIDs.add(id)
+        const key = chartDatapointIndex.seriesKeyByDatapointID.get(id)
+        if (key === undefined) continue
+        seriesKeys.add(key)
+        if (!datapointByID.has(id)) {
+          datapointByID.set(id, dp)
+          seriesKeyByDatapointID.set(id, key)
+        }
+      }
+    }
+    return {
+      datapointByID,
+      seriesKeyByDatapointID,
+      datapointIDs,
+      seriesKeys,
+      loadedRawSeries,
+    }
+  })
+
+  const temporality = $derived.by(() => {
+    const m = getMetric()
+    if (m?.aggregationTemporality) return m.aggregationTemporality
+    for (const dp of allDatapoints(m)) {
+      const t = datapointTemporality(dp)
+      if (t) return t
+    }
+    return ''
+  })
+
+  const temporalityCode = $derived.by((): number | null => {
+    return getMetric()?.aggregationTemporalityCode ?? null
+  })
+
+  const isMonotonic = $derived.by((): boolean | null => {
+    if (metricType !== 'Sum') return null
+    const m = getMetric()
+    if (m?.isMonotonic != null) return m.isMonotonic
+    for (const dp of allDatapoints(m)) {
+      if (dp.metricType === 'Sum') return dp.isMonotonic
+    }
+    return null
+  })
+
+  const isHistogramKind = $derived(
+    metricType === 'Histogram' || metricType === 'ExponentialHistogram'
+  )
+
+  const isUnsafeTemporality = $derived.by(() => {
+    if (
+      metricType !== 'Histogram' &&
+      metricType !== 'ExponentialHistogram' &&
+      metricType !== 'Sum'
+    ) {
+      return false
+    }
+    return temporalityCode !== 1 && temporalityCode !== 2
+  })
+
+  // Use the store's window count because the response may narrow or reduce datapoints.
+  const totalDatapointCount = $derived(getMetric()?.datapointCount ?? 0)
+
+  /** Series keys used to seed visibility without projecting chart points. */
+  const gaugeSumKeys = $derived.by((): string[] => {
+    const m = getMetric()
+    if (!m || (metricType !== 'Gauge' && metricType !== 'Sum')) return []
+    return m.timeseries.map(ts => ts.seriesRef)
+  })
+
+  /** Scalar series metadata and on-demand chart-point projection. */
+  const gaugeSumGroups = $derived.by(() => {
+    const m = chartMetric
+    const scalar = metricType === 'Gauge' || metricType === 'Sum'
+    const source = m && scalar ? m.timeseries : []
+
+    // Use the same all-series identity as the table, even when siblings are
+    // hidden. Labels are presentation only; seriesRef still owns selection/colour.
+    const labelFor = (ts: MetricSeriesViewData) => {
+      const label = chartSeriesTable.labels.get(ts.seriesRef)
+      if (!label) return ts.seriesRef
+      return label.needsIdentity
+        ? `${label.text} · ${ts.seriesRef}`
+        : label.text
+    }
+
+    return {
+      timeseries: source,
+      keys: source.map(ts => ts.seriesRef),
+      labels: source.map(ts => ({
+        key: ts.seriesRef,
+        label: labelFor(ts),
+      })),
+      /** Project visible series in store order without further thinning. */
+      projectVisible: (visible: { has: (key: string) => boolean }) =>
+        timeseriesToChartTimeseries(
+          source
+            .filter(ts => visible.has(ts.seriesRef))
+            .map(ts => chartSeries(ts, m)),
+          labelFor
+        ).chartTimeseries,
+    }
+  })
+
+  const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
+    const m = getMetric()
+    if (!m) return []
+    const series = m.timeseries
+    const distinguishing = distinguishingResourceAttributes(series)
+    return series.map(ts => ({
+      key: ts.seriesRef,
+      attributes: [
+        ...ts.attributes,
+        ...(distinguishing.get(ts.seriesRef) ?? []),
+      ],
+    }))
+  })
+
+  /**
+   * The store's per-bucket answer for one view, as chart points.
+   *
+   * An empty bucket reads differently per view, which is why the store sends
+   * null rather than zero. Sum and Rate mean "nothing happened in this window",
+   * so they draw a zero. Average has no answer -- the mean of nothing is not
+   * nought -- so it leaves a gap. A bucket that *has* samples but no value is
+   * the first bucket of a cumulative series: no predecessor, so no interval,
+   * and nothing to draw either.
+   */
+  function viewPoints(
+    views: ScalarViewBucket[] | null,
+    view: 'sum' | 'avg' | 'rate'
+  ): ChartPoint[] {
+    if (!views) return []
+    const out: ChartPoint[] = []
+    for (const b of views) {
+      const value = view === 'sum' ? b.sum : view === 'avg' ? b.avg : b.rate
+      // Rate points carry the store's slope for the tangent overlay; the
+      // other views have no tangent and their points stay two fields.
+      const slope = view === 'rate' ? (b.slope ?? null) : undefined
+      if (value === null) {
+        if (b.sampleCount > 0) continue
+        if (view === 'avg') continue
+        out.push({
+          date: new Date(Number(b.bucketStart / 1_000_000n)),
+          value: 0,
+          timestampNs: b.bucketStart,
+          slope,
+        })
+        continue
+      }
+      out.push({
+        date: new Date(Number(b.bucketStart / 1_000_000n)),
+        value,
+        timestampNs: b.bucketStart,
+        slope,
+      })
+    }
+    return out
+  }
+
+  /** Per-series lines for a store-computed view, plus the buckets whose counter
+   *  restarted -- which the rate chart marks. */
+  function seriesFromViews(
+    series: readonly { key: string; label: string }[],
+    view: 'sum' | 'avg' | 'rate'
+  ): TransformedSeries {
+    const m = chartMetric
+    const resets: ResetIndicesByKey = new Map()
+    if (!m) return { series: [], resets }
+    const byKey = new Map(m.timeseries.map(ts => [ts.seriesRef, ts.views]))
+    const out: ChartTimeseries[] = []
+    for (const s of series) {
+      const views = byKey.get(s.key) ?? null
+      out.push({ ...s, points: viewPoints(views, view) })
+      if (!views) continue
+      const flagged: number[] = []
+      views.forEach((b, i) => {
+        if (b.hasReset) flagged.push(i)
+      })
+      if (flagged.length > 0) resets.set(s.key, flagged)
+    }
+    return { series: out, resets }
+  }
+
+  /** Visible raw series, or store-computed per-series rates in Rate view. */
+  const rawTransformed = $derived.by((): TransformedSeries => {
+    if (gaugeSumGroups.keys.length === 0)
+      return {
+        series: [],
+        resets: new Map<string, number[]>(),
+      }
+    if (view.aggregationView === 'rate') {
+      return seriesFromViews(
+        gaugeSumGroups.labels.filter(s => view.visibleSeries.has(s.key)),
+        'rate'
+      )
+    }
+    // Sum and Average are cross-series views; per-series lines stay raw.
+    return {
+      series: gaugeSumGroups.projectVisible(view.visibleSeries),
+      resets: new Map<string, number[]>(),
+    }
+  })
+
+  /** Store-reduced row sparklines for every scalar series. Rate view uses rate buckets. */
+  const sparklinePointsByKey = $derived.by(
+    (): ReadonlyMap<string, readonly ChartPoint[]> => {
+      if (isHistogramKind) return new Map()
+      // Unsafe temporality cannot distinguish running totals from interval counts.
+      if (isUnsafeTemporality) return new Map()
+      const out = new Map<string, readonly ChartPoint[]>()
+      const rate = view.aggregationView === 'rate'
+      for (const ts of getMetric()?.timeseries ?? []) {
+        out.set(
+          ts.seriesRef,
+          rate
+            ? viewPoints(ts.views, 'rate')
+            : sparklineToChartPoints(ts.sparkline)
+        )
+      }
+      return out
+    }
+  )
+
+  function seriesStats(
+    m: MetricViewData | undefined
+  ): ReadonlyMap<string, SeriesStats> {
+    const out = new Map<string, SeriesStats>()
+    if (
+      !m ||
+      (m.metricType !== 'Gauge' && m.metricType !== 'Sum') ||
+      (m.metricType === 'Sum' &&
+        m.aggregationTemporalityCode !== 1 &&
+        m.aggregationTemporalityCode !== 2)
+    )
+      return out
+
+    // Raw, Sum and Average use whole-window source stats; Rate uses rate-line stats.
+    if (view.aggregationView === 'rate') {
+      for (const ts of m?.timeseries ?? []) {
+        const rs = ts.rateStats
+        if (!rs) continue
+        out.set(ts.seriesRef, { min: rs.min, max: rs.max, avg: rs.avg })
+      }
+      return out
+    }
+
+    for (const ts of m?.timeseries ?? []) {
+      const st = ts.stats
+      if (!st) continue
+      out.set(ts.seriesRef, {
+        min: st.min,
+        max: st.max,
+        avg: st.avg,
+        total: st.sum,
+      })
+    }
+    return out
+  }
+  const seriesStatsByKey = $derived(seriesStats(getMetric()))
+  const chartSeriesStatsByKey = $derived(seriesStats(chartMetric))
+
+  const availableSeriesStatBadgesList = $derived.by((): SeriesStat[] => {
+    if (isHistogramKind || isUnsafeTemporality) return []
+    return availableSeriesStatBadges({
+      metricType,
+      temporality,
+      aggregationView: view.aggregationView,
+    })
+  })
+
+  /** The aggregate request is narrowed to checked series; its whole pool is
+   * their combined line. Keep the existing Selected/Total graph identities. */
+  const aggregatedTransformed = $derived.by((): AggregateResult => {
+    const pools = getScalarAggregate()
+    if (!pools) return { lines: [], presentKeys: [] }
+    const v = view.aggregationView
+    if (v === 'raw') return { lines: [], presentKeys: [] }
+    const checkedCount =
+      getAggregateVisibleKeys()?.length ?? view.visibleSeries.size
+    const total = gaugeSumGroups.keys.length
+    if (checkedCount < 2) return { lines: [], presentKeys: [] }
+    const modes: ('sum' | 'avg' | 'rate')[] =
+      v === 'sum-avg' ? ['sum', 'avg'] : [v]
+    const result: AggregateResult = { lines: [], presentKeys: [] }
+    for (const mode of modes) {
+      const points = viewPoints(pools.all, mode)
+      if (points.length === 0) continue
+      const key =
+        mode === 'avg'
+          ? checkedCount === total
+            ? AGG_KEY_AVG_TOTAL
+            : AGG_KEY_AVG_SELECTED
+          : checkedCount === total
+            ? AGG_KEY_TOTAL
+            : AGG_KEY_SELECTED
+      result.lines.push({
+        key,
+        label: mode === 'sum' ? 'Sum' : mode === 'avg' ? 'Average' : 'Rate',
+        points,
+      })
+      result.presentKeys.push(key)
+    }
+    return result
+  })
+
+  /** Aggregate legend keys after duplicate-line and visibility rules. */
+  const aggregatePresentKeys = $derived.by((): AggregateLineKey[] => {
+    if (view.aggregationView === 'raw') return []
+    if (gaugeSumGroups.keys.length < 2) return []
+    let keys = aggregatedTransformed.presentKeys
+    if (rawTransformed.series.length < 2) {
+      keys = keys.filter(k => k !== AGG_KEY_SELECTED)
+    }
+    return keys
+  })
+
+  const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
+    return (
+      (view.aggregationView !== 'rate' &&
+        availableAggregationViewsList.some(
+          mode => mode === 'sum' || mode === 'avg'
+        )) ||
+      (isHistogramKind && !isUnsafeTemporality)
+    )
+  })
+
+  const rateSlopeOverlayAvailable = $derived.by((): boolean => {
+    const m = chartMetric
+    if (!m || (m.metricType !== 'Gauge' && m.metricType !== 'Sum')) return false
+    return availableRateSlopeOverlay({
+      metricType: m.metricType,
+      temporality:
+        m === getMetric() ? temporality : (m.aggregationTemporality ?? ''),
+      isMonotonic: m === getMetric() ? isMonotonic : (m.isMonotonic ?? null),
+      aggregationView: view.aggregationView,
+    })
+  })
+
+  /** Effective store window. Null endpoints mean there is no chart domain. */
+  const chartDataTimeRange = $derived.by(
+    (): { startMs: number; endMs: number } | undefined => {
+      const effective = isHistogramKind
+        ? getAggregateMetric(false)?.window.effective
+        : chartMetric?.window.effective
+      if (
+        !effective ||
+        effective.startNs === null ||
+        effective.endNs === null ||
+        effective.endNs < effective.startNs
+      ) {
+        return undefined
+      }
+      const startMs = Number(effective.startNs / 1_000_000n)
+      const endMs = Number(effective.endNs / 1_000_000n)
+      return { startMs, endMs: Math.max(startMs + 1, endMs) }
+    }
+  )
+
+  /** Source lines retain their timestamps; aggregates use their own bucket grid. */
+  const transformedGaugeSumChartTimeseries = $derived.by(
+    (): ChartTimeseries[] => {
+      if (view.aggregationView === 'raw') return rawTransformed.series
+      if (gaugeSumGroups.keys.length < 2) return rawTransformed.series
+      const selectedCount = rawTransformed.series.length
+      let aggLines = aggregatedTransformed.lines
+      if (selectedCount < 2) {
+        aggLines = aggLines.filter(l => l.key !== AGG_KEY_SELECTED)
+      }
+      if (aggLines.length === 0) return rawTransformed.series
+
+      return [...rawTransformed.series, ...aggLines]
+    }
+  )
+
+  /** Reset markers are shown only in raw mode. */
+  const sumResetIndicesByKey = $derived.by((): ResetIndicesByKey => {
+    if (view.aggregationView !== 'raw') return new Map()
+    return rawTransformed.resets
+  })
+
+  /** Which AggregationView options the dropdown should offer. Driven by metric
+   *  type + shape + series count. See availableAggregationViews() in
+   *  aggregation.ts for the rules. */
+  const availableAggregationViewsList = $derived.by((): AggregationView[] => {
+    const m = chartMetric
+    const type = m?.metricType ?? 'Empty'
+    if (
+      (type === 'Sum' ||
+        type === 'Histogram' ||
+        type === 'ExponentialHistogram') &&
+      m?.aggregationTemporalityCode !== 1 &&
+      m?.aggregationTemporalityCode !== 2
+    )
+      return ['raw']
+    return availableAggregationViews(
+      type,
+      m === getMetric() ? temporality : (m?.aggregationTemporality ?? ''),
+      m === getMetric() ? isMonotonic : (m?.isMonotonic ?? null),
+      gaugeSumGroups.keys.length
+    )
+  })
+
+  const selectedDatapoint = $derived.by((): DataPoint | undefined => {
+    const id = view.selectedDatapointID
+    return id === null
+      ? undefined
+      : view.selectionSource === 'chart'
+        ? chartDatapointIndex.datapointByID.get(id)
+        : selectableDatapointIndex.datapointByID.get(id)
+  })
+
+  const highlightedTimestamp = $derived.by((): bigint | null => {
+    if (view.aggregationView === 'rate' && view.selectedRateBucket) {
+      return view.selectedRateBucket.timestampNs
+    }
+    const dp = selectedDatapoint
+    if (!dp || (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum')) {
+      return null
+    }
+    if (view.aggregationView !== 'rate') return dp.timestamp
+
+    const datapointID = view.selectedDatapointID
+    if (datapointID === null) return null
+    const owner =
+      selectableDatapointIndex.seriesKeyByDatapointID.get(datapointID)
+    const series = chartMetric?.timeseries.find(
+      candidate => candidate.seriesRef === owner
+    )
+    return series
+      ? (rateBucketStartForSourceDatapoint(
+          chartSeries(series, chartMetric),
+          datapointID
+        ) ?? null)
+      : null
+  })
+
+  /** Series owning the selected datapoint, or the explicitly selected series. */
+  const selectedSeriesKey = $derived.by((): string | null => {
+    const m = view.selectionSource === 'chart' ? chartMetric : getMetric()
+    if (!m) return null
+
+    // An exact datapoint selection takes precedence over a series selection.
+    const id = view.selectedDatapointID
+    if (id !== null) {
+      const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
+      if (owner !== undefined) return owner
+    }
+
+    // Otherwise fall back to an explicitly chosen series. This is what a link
+    // restores once its datapoint has aged out: the point is gone, the line is
+    // still there, and the user still lands on it.
+    if (view.selectedSeriesKey !== null) {
+      const known = m.timeseries.some(
+        ts => ts.seriesRef === view.selectedSeriesKey
+      )
+      if (known) return view.selectedSeriesKey
+    }
+    return null
+  })
+
+  const selectedRateSlope = $derived.by((): number | undefined => {
+    if (!rateSlopeOverlayAvailable) return undefined
+    const key = selectedSeriesKey
+    if (!key || highlightedTimestamp === null) return undefined
+    const series = transformedGaugeSumChartTimeseries.find(s => s.key === key)
+    if (!series) return undefined
+    const point = series.points.find(
+      candidate => candidate.timestampNs === highlightedTimestamp
+    )
+    return point
+      ? rateSlopeBucketSegment(series.points, point)?.slope
+      : undefined
+  })
+
+  const latestHistogramDp = $derived.by(() => {
+    const m = getMetric()
+    if (!m || !isHistogramKind) return undefined
+    let best: HistogramDataPoint | ExponentialHistogramDataPoint | undefined
+    for (const dp of allDatapoints(m)) {
+      if (
+        dp.metricType !== 'Histogram' &&
+        dp.metricType !== 'ExponentialHistogram'
+      )
+        continue
+      if (!best || dp.timestamp > best.timestamp) {
+        best = dp
+      }
+    }
+    return best
+  })
+
+  const histogramTimeseriesGroups = $derived.by(
+    (): HistogramTimeseriesGroup[] => {
+      const m = getMetric()
+      if (!m || !isHistogramKind) return []
+      // Use the store's window count because datapoints may be narrowed out.
+      return m.timeseries.map(ts => ({
+        key: ts.seriesRef,
+        attributes: ts.attributes,
+        pointCount: ts.datapointCount,
+      }))
+    }
+  )
+
+  // Independent detail replies do not change either aggregate projection.
+  const histogramHeatmap = $derived(aggregateToSlices(getAggregate()))
+  const histogramSummary = $derived.by(() => {
+    const summary = getAggregateSummary()
+    return summary ? aggregateToSlices([summary])[0]! : null
+  })
+
+  const histogramAggregation = $derived.by((): HistogramAggregationResult => {
+    const m = getMetric()
+    const empty = {
+      perAttribute: [],
+      heatmap: [],
+      summary: null,
+      error: null,
+      aggregatedError: null,
+    }
+    if (!m || !isHistogramKind) return empty
+    if (isUnsafeTemporality) {
+      const err = histogramAggregationErrorToBucketSeriesError({
+        kind: 'unspecified',
+        message: `Aggregation temporality is ${temporality || 'unknown'}`,
+      })
+      return { ...empty, error: err, aggregatedError: err }
+    }
+
+    // A refreshed detail response cannot relabel a retained chart's answer.
+    function boundsError(
+      source: MetricViewData | undefined,
+      hasBuckets: boolean
+    ) {
+      const mismatch = source?.boundsMismatch
+      if (
+        !mismatch ||
+        hasBuckets ||
+        source.timeseries.some(ts => ts.datapoints.length > 0)
+      )
+        return null
+      return histogramAggregationErrorToBucketSeriesError({
+        kind: 'boundsMismatch',
+        message:
+          `Histogram bounds disagree across datapoints in this window ` +
+          `(${mismatch.seriesBuckets} series buckets, ` +
+          `${mismatch.aggregateBuckets} aggregate buckets could not be merged)`,
+      })
+    }
+
+    // The store has already bucketed, merged and resolved temporality.
+    const perAttribute = seriesBucketsToSlices(
+      m.timeseries.map(ts => chartSeries(ts, m))
+    )
+
+    // Null means the aggregate is loading or no series is selected.
+    const heatmapResult = histogramHeatmap
+    const summaryResult = histogramSummary
+
+    return {
+      perAttribute,
+      heatmap: heatmapResult,
+      summary: summaryResult,
+      error: boundsError(getAggregateMetric(false), heatmapResult.length > 0),
+      aggregatedError: boundsError(
+        getAggregateMetric(true),
+        summaryResult !== null
+      ),
+    }
+  })
+
+  const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
+    const m = getMetric()
+    if (!m) return []
+    const distinguishing = distinguishingResourceAttributes(m.timeseries)
+    return histogramTimeseriesGroups.map(g => ({
+      key: g.key,
+      attributes: [...g.attributes, ...(distinguishing.get(g.key) ?? [])],
+    }))
+  })
+
+  const seriesRows = $derived(
+    isHistogramKind ? histogramLegendTimeseries : gaugeSumLegendTimeseries
+  )
+  const seriesTable = $derived.by(() => {
+    const series = getMetric()?.timeseries
+    if (series?.every(row => row.labelPreviews !== undefined))
+      return compactSeriesTable(series)
+    return minimalSeriesTable(
+      seriesRows,
+      series?.every(row => row.attributesComplete === false) ?? false
+    )
+  })
+
+  const chartSeriesTable = $derived.by(() => {
+    const series = chartMetric?.timeseries ?? []
+    if (series.every(row => row.labelPreviews !== undefined))
+      return compactSeriesTable(series)
+    const distinguishing = distinguishingResourceAttributes(series)
+    return minimalSeriesTable(
+      series.map(ts => ({
+        key: ts.seriesRef,
+        attributes: [
+          ...ts.attributes,
+          ...(distinguishing.get(ts.seriesRef) ?? []),
+        ],
+      })),
+      series.every(row => row.attributesComplete === false)
+    )
+  })
+
+  const heatmapBucketSeries = $derived.by((): HistogramSlicePoint[] | null => {
+    if (!isHistogramKind) return null
+    if (histogramAggregation.error) return []
+    return histogramAggregation.heatmap
+  })
+
+  const aggregatedDatapoint = $derived.by(
+    (): HistogramChartDataPoint | undefined => {
+      const m = getAggregateMetric(true)
+      const summary = histogramAggregation.summary
+      const code = m?.aggregationTemporalityCode ?? null
+      if (!m || !summary || code === null) return undefined
+      return histogramSliceToChartDatapoint(
+        summary,
+        `${m.metricRef}:aggregated`,
+        m.aggregationTemporality ?? '',
+        code
+      )
+    }
+  )
+
+  const histogramBucketDatapoint = $derived.by(
+    (): HistogramDataPoint | ExponentialHistogramDataPoint | undefined => {
+      const m = getMetric()
+      if (!m || !isHistogramKind) return undefined
+
+      const dp = selectedDatapoint
+      if (
+        dp &&
+        (dp.metricType === 'Histogram' ||
+          dp.metricType === 'ExponentialHistogram')
+      ) {
+        return dp
+      }
+      return undefined
+    }
+  )
+
+  const histogramChartDatapoint = $derived(aggregatedDatapoint)
+
+  const histogramChartError = $derived.by((): BucketSeriesError | null => {
+    return histogramAggregation.aggregatedError
+  })
+
+  const activeHistogramDp = $derived.by(() => {
+    const pinned = histogramBucketDatapoint
+    if (pinned) return pinned
+    return latestHistogramDp
+  })
+
+  const heatmapColumnStartNs = $derived(view.selectedHistogramBucketStart)
+
+  /**
+   * Selected column end. Uses the next start because local-time columns vary
+   * across DST; the final column uses the preceding gap or the window end.
+   */
+  const heatmapColumnEndNs = $derived.by((): bigint | null => {
+    const startNs = view.selectedHistogramBucketStart
+    if (startNs === null) return null
+    const series = heatmapBucketSeries
+    if (!series || series.length === 0) return null
+    const windowEndNs = getAggregateMetric(false)?.window.effective.endNs
+    if (windowEndNs === null || windowEndNs === undefined) return null
+    return columnEndNs(
+      series.map(s => s.timestamp),
+      startNs,
+      windowEndNs
+    )
+  })
+
+  const heatmapColumnSelection = $derived.by(
+    (): HeatmapColumnSelection | null => {
+      if (view.selectedHistogramBucketStart === null) return null
+      const series = heatmapBucketSeries
+      if (!series || series.length === 0) return null
+      return heatmapColumnSelectionAt(series, view.selectedHistogramBucketStart)
+    }
+  )
+
+  const quantilePointSelection = $derived.by(
+    (): QuantilePointSelection | null => {
+      if (view.selectedHistogramBucketStart === null) return null
+      const merged = heatmapBucketSeries
+      if (!merged || merged.length === 0) return null
+      // Wait for the exact selected-column response.
+      const column = getColumnDistribution()
+      if (!column) return null
+      const columnSlices = seriesBucketsToSlices(column.timeseries)
+      if (columnSlices.length === 0) return null
+      return quantilePointSelectionAt(
+        columnSlices,
+        merged,
+        view.selectedHistogramBucketStart,
+        // All-visible contains every key; none-visible is empty.
+        view.visibleSeries
+      )
+    }
+  )
+
+  const quantileChartTimeseries = $derived.by((): ChartTimeseries[] => {
+    if (!isHistogramKind || histogramAggregation.error) return []
+    const perAttribute = histogramAggregation.perAttribute
+    if (!Array.isArray(perAttribute) || perAttribute.length === 0) return []
+
+    const activeQuantiles = DEFAULT_HISTOGRAM_QUANTILES.filter(q =>
+      activeQuantileOverlays.has(quantileKeyFromValue(q))
+    )
+    if (activeQuantiles.length === 0) return []
+
+    return buildVisibleSeriesQuantileChartTimeseries(
+      perAttribute,
+      activeQuantiles,
+      view.visibleSeries,
+      getMetric()?.timeseries.every(row => row.labelPreviews !== undefined)
+        ? new Map(
+            [...seriesTable.labels].map(([key, label]) => [
+              key,
+              label.needsIdentity ? `${label.text} · ${key}` : label.text,
+            ])
+          )
+        : seriesLabelsByKey(getMetric()?.timeseries ?? [])
+    )
+  })
+
+  const quantileColorByKey = $derived.by((): TimeseriesColorByKey => {
+    const map = new Map<string, string>()
+    for (const ts of quantileChartTimeseries) {
+      const parsed = parseQuantileSeriesKey(ts.key)
+      if (!parsed) continue
+      const color = resolvedTimeseriesColors.get(parsed.seriesKey)
+      if (color) map.set(ts.key, color)
+    }
+    return map
+  })
+
+  // An empty set means no visible series only for metric shapes with a legend.
+  const hasSeriesFilter = $derived(
+    metricType === 'Gauge' || metricType === 'Sum' || isHistogramKind
+  )
+
+  const visibleDpCanonicalKeys = $derived.by((): Set<string> =>
+    hasSeriesFilter ? view.visibleSeries : new Set()
+  )
+
+  const filteredTimeseries = $derived.by(() => {
+    const m = getMetric()
+    if (!m) return []
+    const filter = visibleDpCanonicalKeys
+    if (filter === null) return m.timeseries
+    return m.timeseries.filter(ts => filter.has(ts.seriesRef))
+  })
+
+  // Palette capacity is separate from the existing scalar visibility cap.
+  const timeseriesChartColors = $derived(
+    metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
+  )
+
+  const resolvedTimeseriesColors = $derived.by((): TimeseriesColorByKey => {
+    const scope = colorScope()
+    return new Map(
+      [...view.timeseriesColorByKey].map(([key, color]) => [
+        key,
+        graphColorOverrides.get(scope, key)?.color ?? color,
+      ])
+    )
+  })
+
+  const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
+
+  const savedTimeseriesColors = $derived.by((): TimeseriesColorByKey => {
+    const scope = colorScope()
+    const saved = new Map(
+      savedColorSlots(scope).map(([key, slot]) => [
+        key,
+        timeseriesChartColors[slot]!,
+      ])
+    )
+    for (const [key] of graphColorOverrides.entries(scope)) {
+      const override = graphColorOverrides.get(scope, key)
+      if (override) saved.set(key, override.color)
+    }
+    return saved
+  })
+
+  let assignedColorPool: readonly string[] = []
+
+  function colorScope(metricRef = getMetric()?.metricRef): string {
+    return `metric:${metricRef ?? ''}`
+  }
+
+  function replaceColorAssignments(
+    next: TimeseriesColorByKey,
+    pool: readonly string[] = timeseriesChartColors
+  ) {
+    view.timeseriesColorByKey = next
+    assignedColorPool = [...pool]
+  }
+
+  /** Ensure every visible series has a colour assignment. */
+  function ensureColorAssignments(
+    visible: ReadonlySet<string>,
+    legendKeys: readonly string[]
+  ) {
+    if (visible.size === 0) {
+      replaceColorAssignments(new Map())
+      return
+    }
+    // A non-empty map may still contain assignments for a different metric.
+    let allAssigned = true
+    for (const key of visible) {
+      if (!view.timeseriesColorByKey.has(key)) {
+        allAssigned = false
+        break
+      }
+    }
+    if (allAssigned) return
+    // Use the same shape-specific pool as every other assignment path.
+    replaceColorAssignments(
+      seedColorAssignments(
+        timeseriesChartColors,
+        visible,
+        legendKeys,
+        colorScope()
+      )
+    )
+  }
+
+  /** Reset and seed every per-metric choice synchronously before rendering. */
+  function seedForMetric(m: MetricViewData | undefined) {
+    view.previewSeriesKey = null
+    view.selectedRateBucket = null
+    const metricRef = m?.metricRef
+
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
+    view.selectedDatapointID = null
+    view.selectionSource = null
+    view.selectedHistogramBucketStart = null
+    view.selectedQuantileKey = null
+    seededHistogramTab = loadHistogramViewPreference()
+    view.activeHistogramTab = seededHistogramTab
+
+    // An applicable saved preference wins over the Raw default; URLs apply below.
+    const persistedAggregationView = metricRef
+      ? loadPersistedAggregationView(metricRef, availableAggregationViewsList)
+      : null
+    seededAggregationView = persistedAggregationView ?? DEFAULT_AGGREGATION_VIEW
+    view.aggregationView = seededAggregationView
+    view.showSelectionStatOverlays = true
+
+    // Scalars cap visible series; histogram selection remains uncapped.
+    const histIsHistogram =
+      m?.metricType === 'Histogram' || m?.metricType === 'ExponentialHistogram'
+    if (histIsHistogram) {
+      const histKeys = m ? m.timeseries.map(ts => ts.seriesRef) : []
+      const histVisible = new SvelteSet(
+        metricRef && histKeys.length > 0
+          ? resolveTimeseriesVisible(
+              histKeys,
+              metricRef,
+              DEFAULT_VISIBLE_TIMESERIES,
+              null
+            )
+          : []
+      )
+      view.visibleSeries = histVisible
+      const histPool = metricSeriesPalette(
+        SERIES_COLOR_COUNT,
+        themeSignal.value
+      )
+      replaceColorAssignments(
+        seedColorAssignments(
+          histPool,
+          histVisible,
+          histKeys,
+          colorScope(metricRef)
+        )
+      )
+    } else {
+      const gsKeys = gaugeSumKeys
+      const gsVisible = new SvelteSet(
+        metricRef
+          ? resolveTimeseriesVisible(gsKeys, metricRef)
+          : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
+      )
+      view.visibleSeries = gsVisible
+      const pool = metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
+      replaceColorAssignments(
+        seedColorAssignments(pool, gsVisible, gsKeys, colorScope(metricRef))
+      )
+    }
+
+    // A valid route sub-view overrides seeded defaults.
+    applyMetricUrlToView()
+  }
+
+  // Apply external route changes without echoing this context's writes.
+  $effect(() => {
+    const unsubscribe = subscribeToRoute(() => {
+      // Registration invokes synchronously; keep callback reads untracked.
+      untrack(() => {
+        const requested = signalIdFromPath('metrics', readRoute().path)
+        const displayed = getMetric()?.metricRef
+        if (requested && displayed && requested !== displayed) return
+        const parsed = parseMetricUrl()
+        const fromUrl = parsed.query
+        if (
+          urlMetricViewSnapshot &&
+          metricViewQueriesEqual(fromUrl, urlMetricViewSnapshot)
+        ) {
+          return
+        }
+        applyMetricUrlToView(parsed)
+      })
+    })
+    return unsubscribe
+  })
+
+  // Remap colours when the theme or shape-specific palette changes.
+  $effect(() => {
+    const nextPool = timeseriesChartColors
+    if (
+      assignedColorPool.length === 0 ||
+      assignedColorPool.join('\0') === nextPool.join('\0')
+    ) {
+      return
+    }
+    replaceColorAssignments(
+      remapColorAssignments(
+        view.timeseriesColorByKey,
+        assignedColorPool,
+        nextPool
+      ),
+      nextPool
+    )
+  })
+
+  $effect(() => {
+    const m = getMetric()
+    const metricRef = m?.metricRef
+    if (!metricRef) return
+
+    if (metricType === 'Gauge' || metricType === 'Sum') {
+      // Details controls use current rows, not a retained chart's source rows.
+      const keys = gaugeSumKeys
+      void keys.join('\0')
+      const next = reconcileTimeseriesVisible(
+        view.visibleSeries,
+        keys,
+        metricRef
+      )
+
+      if (!visibleKeyListsEqual(view.visibleSeries, next)) {
+        const visible = new SvelteSet(next)
+        view.visibleSeries = visible
+        const assigned = new Map(view.timeseriesColorByKey)
+        syncColorAssignments(
+          timeseriesChartColors,
+          assigned,
+          visible,
+          keys,
+          colorScope()
+        )
+        replaceColorAssignments(assigned)
+      } else {
+        ensureColorAssignments(view.visibleSeries, keys)
+      }
+      return
+    }
+
+    if (!isHistogramKind) return
+    const keys = histogramTimeseriesGroups.map(g => g.key)
+    if (keys.length === 0) return
+    void keys.join('\0')
+    const next = reconcileTimeseriesVisible(
+      view.visibleSeries,
+      keys,
+      metricRef,
+      null
+    )
+    if (!visibleKeyListsEqual(view.visibleSeries, next)) {
+      const visible = new SvelteSet(next)
+      view.visibleSeries = visible
+      const assigned = new Map(view.timeseriesColorByKey)
+      syncColorAssignments(
+        timeseriesChartColors,
+        assigned,
+        visible,
+        keys,
+        colorScope()
+      )
+      replaceColorAssignments(assigned)
+    } else {
+      ensureColorAssignments(view.visibleSeries, keys)
+    }
+  })
+
+  // Resolve a route datapoint once its named received series has loaded.
+  $effect(() => {
+    const pending = pendingUrlDatapoint
+    if (!pending) return
+
+    const raw = getSeriesDatapoints(pending.seriesKey)
+    if (raw === undefined) return
+
+    pendingUrlDatapoint = null
+    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(
+      pending.id
+    )
+    if (owner !== pending.seriesKey) {
+      rejectedUrlDatapoint = pending
+      if (
+        urlMetricViewSnapshot?.dp === pending.id &&
+        urlMetricViewSnapshot.series === pending.seriesKey
+      ) {
+        urlMetricViewSnapshot = { ...urlMetricViewSnapshot, dp: null }
+      }
+      if (
+        view.selectedDatapointID === null &&
+        view.selectionSource === 'detail'
+      ) {
+        view.selectionSource = null
+      }
+      return
+    }
+
+    view.selectedDatapointID = pending.id
+    // A transient heatmap/quantile selection can coexist with this exact detail
+    // datapoint. Preserve its chart ownership until clearChartSelection restores
+    // the detail source.
+    if (view.selectionSource !== 'chart') view.selectionSource = 'detail'
+  })
+
+  // Inspection survives visibility changes; only a missing datapoint clears it.
+  $effect(() => {
+    const id = view.selectedDatapointID
+    if (id === null) return
+
+    const m = getMetric()
+    if (!m) return
+
+    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
+    if (owner === undefined) {
+      view.selectedDatapointID = null
+      view.selectionSource = null
+      return
+    }
+  })
+
+  // Replace an aggregation choice that the current metric no longer supports.
+  $effect(() => {
+    const allowed = availableAggregationViewsList
+    if (allowed.includes(view.aggregationView)) return
+    const next = DEFAULT_AGGREGATION_VIEW
+    view.aggregationView = next
+    const metricRef = getMetric()?.metricRef
+    if (metricRef) savePersistedAggregationView(metricRef, next)
+  })
+
+  function selectSeries(key: string) {
+    if (!getMetric()?.timeseries.some(series => series.seriesRef === key))
+      return
+    if (selectedSeriesKey === key) return
+    view.selectedSeriesKey = key
+    view.selectedDatapointID = null
+    view.selectedRateBucket = null
+    view.selectedHistogramBucketStart = null
+    view.selectedQuantileKey = null
+    view.selectionSource = null
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
+    writeMetricUrl('push')
+  }
+
+  function setActiveHistogramTab(tab: HistogramTab) {
+    view.activeHistogramTab = tab
+    saveHistogramViewPreference(tab === 'quantiles' ? 'heatmap' : tab)
+    // Back returns to the prior tab.
+    writeMetricUrl('push')
+  }
+
+  function setAggregationView(next: AggregationView) {
+    view.selectedRateBucket = null
+    view.aggregationView = next
+    const metricRef = getMetric()?.metricRef
+    if (metricRef) savePersistedAggregationView(metricRef, next)
+    writeMetricUrl('replace')
+  }
+
+  function setShowSelectionStatOverlays(next: boolean) {
+    view.showSelectionStatOverlays = next
+  }
+
+  function toggleTimeseriesVisible(key: string, checked: boolean) {
+    const metricRef = getMetric()?.metricRef
+    const assigned = new Map(view.timeseriesColorByKey)
+    if (checked) {
+      if (
+        acquireColor(timeseriesChartColors, assigned, key, colorScope()) ===
+        null
+      )
+        return
+    } else {
+      releaseColor(assigned, key)
+    }
+    replaceColorAssignments(assigned)
+
+    const next = new SvelteSet(view.visibleSeries)
+    if (checked) next.add(key)
+    else next.delete(key)
+    view.visibleSeries = next
+    if (metricRef) savePersistedTimeseriesVisible(metricRef, next)
+  }
+
+  function clearAllTimeseriesVisible() {
+    replaceColorAssignments(new Map())
+    const metricRef = getMetric()?.metricRef
+    view.visibleSeries = new SvelteSet()
+    if (metricRef) savePersistedTimeseriesVisible(metricRef, view.visibleSeries)
+  }
+
+  function onDatapointClick(dp: DataPoint) {
+    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(dp.id)
+    if (!owner || (selectedSeriesKey !== null && owner !== selectedSeriesKey))
+      return
+    view.selectedSeriesKey = owner
+    const nextDatapointID = view.selectedRateBucket
+      ? dp.id
+      : view.selectedDatapointID === dp.id
+        ? null
+        : dp.id
+    view.selectedRateBucket = null
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
+    view.selectionSource = 'detail'
+    view.selectedHistogramBucketStart = null
+    view.selectedQuantileKey = null
+    view.selectedDatapointID = nextDatapointID
+    if (view.selectedDatapointID === null) {
+      view.selectionSource = null
+    }
+    // Back returns to the prior selection.
+    writeMetricUrl('push')
+  }
+
+  function onHeatmapSelect(timestampNs: bigint) {
+    if (view.selectedHistogramBucketStart === timestampNs) {
+      view.selectedHistogramBucketStart = null
+      view.selectedQuantileKey = null
+      if (view.selectionSource === 'chart') restoreDetailSelectionSource()
+      return
+    }
+    view.selectionSource = 'chart'
+    view.selectedHistogramBucketStart = timestampNs
+    view.selectedQuantileKey = null
+  }
+
+  function onChartPointClick(seriesKey: string, datapointID: string) {
+    if (isAggregateLineKey(seriesKey) || !view.visibleSeries.has(seriesKey))
+      return
+    const m = chartMetric
+    if (!m) return
+    const ts = m.timeseries.find(t => t.seriesRef === seriesKey)
+    if (
+      !ts ||
+      !chartPoints(ts, m).some(datapoint => datapoint.id === datapointID)
+    )
+      return
+
+    view.selectedSeriesKey = seriesKey
+    view.selectedRateBucket = null
+
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
+    view.selectionSource = 'chart'
+    view.selectedDatapointID = datapointID
+    writeMetricUrl('push')
+  }
+
+  function onRateChartPointClick(seriesKey: string, timestampNs: bigint) {
+    if (view.aggregationView !== 'rate' || isAggregateLineKey(seriesKey)) return
+    const series = transformedGaugeSumChartTimeseries.find(
+      series => series.key === seriesKey
+    )
+    if (!series?.points.some(point => point.timestampNs === timestampNs)) return
+    selectSeries(seriesKey)
+    view.selectedSeriesKey = seriesKey
+    view.selectedRateBucket = { seriesKey, timestampNs }
+    view.selectionSource = 'chart'
+  }
+
+  $effect(() => {
+    const selection = view.selectedRateBucket
+    if (!selection) return
+    const stillDrawn =
+      view.aggregationView === 'rate' &&
+      transformedGaugeSumChartTimeseries.some(
+        series =>
+          series.key === selection.seriesKey &&
+          series.points.some(
+            point => point.timestampNs === selection.timestampNs
+          )
+      )
+    if (stillDrawn) return
+    view.selectedRateBucket = null
+    restoreDetailSelectionSource()
+  })
+
+  function onQuantileChartPointClick(
+    _seriesKey: string,
+    timestampNs: bigint,
+    quantileKey: string | null = null
+  ) {
+    if (quantileKey === null) {
+      // Plot/tooltip click: same bucket toggles off (heatmap parity).
+      if (view.selectedHistogramBucketStart === timestampNs) {
+        view.selectedHistogramBucketStart = null
+        view.selectedQuantileKey = null
+        if (view.selectionSource === 'chart') restoreDetailSelectionSource()
+        return
+      }
+    } else if (
+      view.selectedHistogramBucketStart === timestampNs &&
+      view.selectedQuantileKey === quantileKey
+    ) {
+      view.selectedHistogramBucketStart = null
+      view.selectedQuantileKey = null
+      if (view.selectionSource === 'chart') restoreDetailSelectionSource()
+      return
+    }
+    view.selectionSource = 'chart'
+    view.selectedHistogramBucketStart = timestampNs
+    view.selectedQuantileKey = quantileKey
+  }
+
+  function clearChartSelection() {
+    if (view.selectedRateBucket) {
+      view.selectedRateBucket = null
+      restoreDetailSelectionSource()
+      return
+    }
+    const hadHistogramSelection =
+      view.selectedHistogramBucketStart !== null ||
+      view.selectedQuantileKey !== null
+    if (hadHistogramSelection) {
+      view.selectedHistogramBucketStart = null
+      view.selectedQuantileKey = null
+      if (view.selectionSource === 'chart') {
+        // A heatmap/quantile pick can coexist with a raw histogram datapoint
+        // selected in the detail pane. Clearing the transient chart cell must
+        // reveal that selection again rather than erase it.
+        restoreDetailSelectionSource()
+      }
+      return
+    }
+
+    if (view.selectionSource !== 'chart' && !isHistogramKind) return
+    const hadDatapointSelection = view.selectedDatapointID !== null
+    view.selectedDatapointID = null
+    view.selectionSource = null
+    if (hadDatapointSelection) writeMetricUrl('push')
+  }
+
+  function restoreDetailSelectionSource() {
+    view.selectionSource = view.selectedDatapointID === null ? null : 'detail'
+  }
+
+  const chartRelatedDatapointIDs = $derived.by(() => {
+    const key = selectedSeriesKey
+    if (
+      view.selectionSource !== 'chart' ||
+      !key ||
+      !view.visibleSeries.has(key)
+    )
+      return new Set<string>()
+    const source = isHistogramKind ? getMetric() : chartMetric
+    const series = source?.timeseries.find(ts => ts.seriesRef === key)
+    if (!series) return new Set<string>()
+    const points = getSeriesDatapoints(key) ?? chartPoints(series, source)
+    const rateBucket = view.selectedRateBucket
+    if (rateBucket) {
+      return new Set(
+        points
+          .filter(
+            dp =>
+              rateBucketStartForSourceDatapoint(
+                { ...series, datapoints: [dp] },
+                dp.id
+              ) === rateBucket.timestampNs
+          )
+          .map(dp => dp.id)
+      )
+    }
+    const start = heatmapColumnStartNs
+    const end = heatmapColumnEndNs
+    if (start !== null && end !== null) {
+      return new Set(
+        points
+          .filter(dp => dp.timestamp >= start && dp.timestamp <= end)
+          .map(dp => dp.id)
+      )
+    }
+    return new Set(view.selectedDatapointID ? [view.selectedDatapointID] : [])
+  })
+
+  const ctx: MetricViewContext = {
+    get previewSeriesKey() {
+      return view.previewSeriesKey
+    },
+    set previewSeriesKey(key) {
+      view.previewSeriesKey = key
+    },
+    get histogramContribution() {
+      const contribution = getHistogramContribution()
+      return view.selectionSource === 'detail' &&
+        contribution?.datapointID === view.selectedDatapointID &&
+        selectedSeriesKey !== null &&
+        view.visibleSeries.has(selectedSeriesKey)
+        ? contribution
+        : null
+    },
+    get metric() {
+      return getMetric()
+    },
+    get chartMetric() {
+      return chartMetric
+    },
+    get chartSeriesStatsByKey() {
+      return chartSeriesStatsByKey
+    },
+    get metricType() {
+      return metricType
+    },
+    get temporality() {
+      return temporality
+    },
+    get temporalityCode() {
+      return temporalityCode
+    },
+    get isMonotonic() {
+      return isMonotonic
+    },
+    get isHistogramKind() {
+      return isHistogramKind
+    },
+    get isUnsafeTemporality() {
+      return isUnsafeTemporality
+    },
+    get totalDatapointCount() {
+      return totalDatapointCount
+    },
+
+    get selectedDatapointID() {
+      return view.selectedDatapointID
+    },
+    get selectionSource() {
+      return view.selectionSource
+    },
+    get chartRelatedDatapointIDs() {
+      return chartRelatedDatapointIDs
+    },
+    get activeHistogramTab() {
+      // Old shared links now open the combined heatmap without dropping
+      // their raw datapoint, series, or history state.
+      return view.activeHistogramTab === 'quantiles'
+        ? 'heatmap'
+        : view.activeHistogramTab
+    },
+    get selectedDatapoint() {
+      return selectedDatapoint
+    },
+
+    get gaugeSumSeriesKeys() {
+      return gaugeSumGroups.keys
+    },
+    get gaugeSumLegendTimeseries() {
+      return gaugeSumLegendTimeseries
+    },
+    get highlightedTimestamp() {
+      return highlightedTimestamp
+    },
+    get selectedSeriesKey() {
+      return selectedSeriesKey
+    },
+
+    get aggregationView() {
+      return view.aggregationView
+    },
+    get availableAggregationViews() {
+      return availableAggregationViewsList
+    },
+    get transformedGaugeSumChartTimeseries() {
+      return transformedGaugeSumChartTimeseries
+    },
+    get aggregatePresentKeys() {
+      return aggregatePresentKeys
+    },
+    get showSelectionStatOverlays() {
+      return view.showSelectionStatOverlays
+    },
+    get showChartStatOverlaysToggleVisible() {
+      return showChartStatOverlaysToggleVisible
+    },
+    get rateSlopeOverlayAvailable() {
+      return rateSlopeOverlayAvailable
+    },
+    get selectedRateSlope() {
+      return selectedRateSlope
+    },
+    get chartDataTimeRange() {
+      return chartDataTimeRange
+    },
+    get sumResetIndicesByKey() {
+      return sumResetIndicesByKey
+    },
+
+    get histogramLegendTimeseries() {
+      return histogramLegendTimeseries
+    },
+    get histogramTimeseriesCount() {
+      return histogramTimeseriesGroups.length
+    },
+    get visibleSeries() {
+      return view.visibleSeries
+    },
+    get seriesTable() {
+      return seriesTable
+    },
+    seedForMetric,
+    seriesDatapoints(seriesKey: string) {
+      return getSeriesDatapoints(seriesKey)
+    },
+    get heatmapBucketSeries() {
+      return heatmapBucketSeries
+    },
+    get bucketSeriesError() {
+      return histogramAggregation.error
+    },
+    get aggregatedDatapoint() {
+      return aggregatedDatapoint
+    },
+    get aggregatedError() {
+      return histogramAggregation.aggregatedError
+    },
+    get histogramChartDatapoint() {
+      return histogramChartDatapoint
+    },
+    get histogramChartError() {
+      return histogramChartError
+    },
+    get activeHistogramDp() {
+      return activeHistogramDp
+    },
+    get heatmapColumnStartNs() {
+      return heatmapColumnStartNs
+    },
+    get heatmapColumnEndNs() {
+      return heatmapColumnEndNs
+    },
+    get selectedQuantileKey() {
+      return view.selectedQuantileKey
+    },
+    get heatmapColumnSelection() {
+      return heatmapColumnSelection
+    },
+    get quantilePointSelection() {
+      return quantilePointSelection
+    },
+    get quantileChartTimeseries() {
+      return quantileChartTimeseries
+    },
+    get quantileColorByKey() {
+      return quantileColorByKey
+    },
+    get activeQuantileOverlays() {
+      return activeQuantileOverlays
+    },
+
+    get filteredTimeseries() {
+      return filteredTimeseries
+    },
+    get timeseriesColorByKey() {
+      if (view.aggregationView === 'raw') return resolvedTimeseriesColors
+      const merged = new Map(resolvedTimeseriesColors)
+      merged.set(AGG_KEY_SELECTED, AGG_COLOR_SELECTED)
+      merged.set(AGG_KEY_TOTAL, AGG_COLOR_SELECTED)
+      merged.set(AGG_KEY_AVG_SELECTED, AGG_COLOR_ALL)
+      merged.set(AGG_KEY_AVG_TOTAL, AGG_COLOR_ALL)
+      return merged
+    },
+    get timeseriesChartColors() {
+      return timeseriesChartColors
+    },
+    get savedTimeseriesColorByKey() {
+      return savedTimeseriesColors
+    },
+    get legendFilterActive() {
+      return legendFilterActive
+    },
+    get sparklineByKey() {
+      return sparklinePointsByKey
+    },
+    get seriesStatsByKey() {
+      return seriesStatsByKey
+    },
+    get availableSeriesStatBadges() {
+      return availableSeriesStatBadgesList
+    },
+
+    selectSeries,
+    setActiveHistogramTab,
+    setAggregationView,
+    setShowSelectionStatOverlays,
+    toggleTimeseriesVisible,
+    clearAllTimeseriesVisible,
+    onDatapointClick,
+    onHeatmapSelect,
+    onChartPointClick,
+    onRateChartPointClick,
+    onQuantileChartPointClick,
+    clearChartSelection,
+  }
+
+  setMetricViewContext(ctx)
+  return ctx
+}
+
+function histogramAggregationErrorToBucketSeriesError(
+  err: HistogramAggregationError
+): BucketSeriesError {
+  return err
+}
+
+export { getMetricViewContext }

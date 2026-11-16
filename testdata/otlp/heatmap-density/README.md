@@ -20,10 +20,10 @@ with `preview.density.hist.` or `preview.density.exhist.`.
 | `04_very_dense` | 160 | 96 |
 
 Resize the chart or Details pane to compare both sides of the 12px threshold.
-When either cell dimension falls below 12px, adjacent colours touch and only
-the occupied area's perimeter is rounded. Dots switch from every boundary to
-every second boundary on both axes. Empty buckets remain empty; edge dots and
-interior dots all use 60% opacity.
+When either cell dimension falls below 12px, neighbouring occupied cells join
+across colour bands. Shared outer boundaries and internal two-colour turns are
+rounded, with thin outlines inside each colour region. Empty buckets and holes
+remain empty. Diagonal-only contacts remain separate. No decorative dot grid is drawn.
 
 The names describe relative density, not a forced rendering mode. Chart size
 determines the mode. Each metric has one series; one load adds 768 datapoints
