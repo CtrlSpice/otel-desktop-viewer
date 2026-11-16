@@ -2,7 +2,7 @@ with
 		eligible_spans as materialized (
 			select distinct s.trace_id
 			from spans s
-			where ((variant_exists(s.attributes, $3) and otel_value_kind(s.attributes[$3]) = $4 and try_cast(s.attributes[$3] as varchar) = $5)) AND s.start_time >= $1::ubigint and s.start_time <= $2::ubigint
+			where ((variant_exists(s.attributes, $3) and otel_value_kind(s.attributes[$3]) = $4 and try_cast(s.attributes[$3] as varchar) = $5)) and s.start_time >= $1::ubigint and s.start_time <= $2::ubigint
 		),
 		selected_trace_ids as materialized (
 			select trace_id from eligible_spans

@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import PrimaryNavigation from './PrimaryNavigation.svelte'
   import SearchBar from '../Search/SearchBar.svelte'
-  import PaneHeader from '../PaneHeader.svelte'
+  import PaneHeader from '../Layout/PaneHeader.svelte'
   import ThemeToggle from '../ThemeToggle.svelte'
   import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
 

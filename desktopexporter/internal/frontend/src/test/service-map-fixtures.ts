@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { fireEvent } from '@testing-library/svelte'
-import HomePage from '@/pages/HomePage.svelte'
+import HomePage from '@/features/home/HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from './render-helpers'
 import type {
@@ -75,7 +75,7 @@ export function discoveryRequests<T>() {
   return { requests, read }
 }
 
-export function mountServiceMap() {
+export function mockHomeEnvironment() {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
   for (const key of [
@@ -93,6 +93,10 @@ export function mountServiceMap() {
   vi.spyOn(telemetryAPI, 'getImportConfig').mockResolvedValue({
     otlpHttpPort: 4318,
   })
+}
+
+export function mountServiceMap() {
+  mockHomeEnvironment()
   const list = discoveryRequests<ServiceSummary>()
   const connections = discoveryRequests<ServiceConnection>()
   const spans = discoveryRequests<ServiceConnectionSpan>()

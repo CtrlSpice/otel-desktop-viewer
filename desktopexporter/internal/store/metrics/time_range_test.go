@@ -19,7 +19,7 @@ func TestMetricSummaryTimePredicateShapes(t *testing.T) {
 		{"unbounded", timerange.TimeRange{}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id)", "", []any{}},
 		{"end only", timerange.TimeRange{End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp <= $1::ubigint)", "where d.timestamp <= $1::ubigint", []any{"20"}},
 		{"start only", timerange.TimeRange{Start: &start}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= $1::ubigint)", "where d.timestamp >= $1::ubigint", []any{"10"}},
-		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= $1::ubigint AND d.timestamp <= $2::ubigint)", "where d.timestamp >= $1::ubigint AND d.timestamp <= $2::ubigint", []any{"10", "20"}},
+		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= $1::ubigint and d.timestamp <= $2::ubigint)", "where d.timestamp >= $1::ubigint and d.timestamp <= $2::ubigint", []any{"10", "20"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, where, args, err := buildMetricSQL(nil, tc.timeRange)

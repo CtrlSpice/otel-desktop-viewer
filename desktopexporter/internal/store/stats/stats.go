@@ -13,7 +13,7 @@ var ErrStatsInternal = errors.New("stats store internal error")
 // GetTraceSpanCount returns the total number of spans for a given trace.
 func GetTraceSpanCount(ctx context.Context, db *sql.DB, traceID string) (int64, error) {
 	var count int64
-	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM spans WHERE trace_id = ?`, traceID).Scan(&count)
+	err := db.QueryRowContext(ctx, `select count(*) from spans where trace_id = ?`, traceID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("GetTraceSpanCount: %w: %w", ErrStatsInternal, err)
 	}

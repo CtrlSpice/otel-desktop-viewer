@@ -44,7 +44,7 @@ func TestNativeValueTextMatchesPdata(t *testing.T) {
 			encoded, err := ingest.ValueBytes(value)
 			require.NoError(t, err)
 			var text string
-			require.NoError(t, macroDB(t).QueryRow("SELECT otel_value_text(variant_bytes_to_variant(?::BLOB))", encoded).Scan(&text))
+			require.NoError(t, macroDB(t).QueryRow("select otel_value_text(variant_bytes_to_variant(?::blob))", encoded).Scan(&text))
 			assert.Equal(t, value.AsString(), text)
 		})
 	}
@@ -60,7 +60,7 @@ func TestNativeValueTextDoubleFormatting(t *testing.T) {
 		encoded, err := ingest.ValueBytes(value)
 		require.NoError(t, err)
 		var text string
-		require.NoError(t, macroDB(t).QueryRow("SELECT otel_value_text(variant_bytes_to_variant(?::BLOB))", encoded).Scan(&text))
+		require.NoError(t, macroDB(t).QueryRow("select otel_value_text(variant_bytes_to_variant(?::blob))", encoded).Scan(&text))
 		assert.Equal(t, value.AsString(), text, fmt.Sprintf("bits %016x", bits))
 	}
 }
@@ -79,7 +79,7 @@ func TestNativeValueTextSelectedDuplicateMapsMatchesPdata(t *testing.T) {
 		encoded, err := ingest.ValueBytes(value)
 		require.NoError(t, err)
 		var text string
-		require.NoError(t, macroDB(t).QueryRow("SELECT otel_value_text(variant_bytes_to_variant(?::BLOB))", encoded).Scan(&text))
+		require.NoError(t, macroDB(t).QueryRow("select otel_value_text(variant_bytes_to_variant(?::blob))", encoded).Scan(&text))
 		assert.Equal(t, value.AsString(), text)
 	}
 }

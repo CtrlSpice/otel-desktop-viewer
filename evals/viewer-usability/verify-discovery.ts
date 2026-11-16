@@ -33,13 +33,13 @@ export async function verifyDiscovery(endpoint: string, start: bigint, end: bigi
   const server = record(document.servers[0])
   assert.equal(typeof server.url, 'string')
   const rpcURL = new URL(String(server.url), documentURL)
-  const sql = `SELECT m.name, m.aggregation_temporality, m.is_monotonic,
-    d.start_time::VARCHAR AS start_time, d.timestamp::VARCHAR AS timestamp,
-    d.int_value::VARCHAR AS int_value
-    FROM metrics m JOIN metric_datapoints d ON d.metric_id=m.id
-    WHERE m.name='http.server.request.count' AND m.service_name='api-gateway'
-    AND d.timestamp BETWEEN ${start}::UBIGINT AND ${end}::UBIGINT
-    ORDER BY d.timestamp DESC LIMIT 1`
+  const sql = `select m.name, m.aggregation_temporality, m.is_monotonic,
+    d.start_time::varchar as start_time, d.timestamp::varchar as timestamp,
+    d.int_value::varchar as int_value
+    from metrics m join metric_datapoints d on d.metric_id=m.id
+    where m.name='http.server.request.count' and m.service_name='api-gateway'
+    and d.timestamp between ${start}::ubigint and ${end}::ubigint
+    order by d.timestamp desc limit 1`
   const rpcResponse = await fetch(rpcURL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

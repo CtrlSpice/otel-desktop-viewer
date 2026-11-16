@@ -30,8 +30,8 @@ test('root discovery follows advertised paths and obtains the actual counter res
       assert.equal(request.method, 'query')
       assert.equal(request.params.limit, 1)
       assert.match(request.params.sql, /http\.server\.request\.count/)
-      assert.ok(request.params.sql.includes(start + '::UBIGINT'))
-      assert.ok(request.params.sql.includes(end + '::UBIGINT'))
+      assert.ok(request.params.sql.includes(start + '::ubigint'))
+      assert.ok(request.params.sql.includes(end + '::ubigint'))
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify({
         jsonrpc: '2.0', id: request.id,

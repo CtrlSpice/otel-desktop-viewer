@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { traceServiceColor } from '@/utils/trace-service-color'
+  import { traceServiceColor } from '@/utils/colours/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
 
   let { service }: { service: string } = $props()

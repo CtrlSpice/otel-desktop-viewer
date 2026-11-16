@@ -24,7 +24,7 @@ func TestRequireReadOnlyCancellationLeavesConnectionReusable(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { require.NoError(t, conn.Close()) }()
 
-		statement := "SELECT " + strings.Repeat("1,", 100_000) + "1"
+		statement := "select " + strings.Repeat("1,", 100_000) + "1"
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 		defer cancel()
 		_, err = requireReadOnly(ctx, conn, statement)
@@ -33,7 +33,7 @@ func TestRequireReadOnlyCancellationLeavesConnectionReusable(t *testing.T) {
 		assert.NotErrorIs(t, err, ErrReadOnly)
 
 		var value int
-		require.NoError(t, conn.QueryRowContext(context.Background(), "SELECT 1").Scan(&value))
+		require.NoError(t, conn.QueryRowContext(context.Background(), "select 1").Scan(&value))
 		assert.Equal(t, 1, value)
 		return nil
 	}))

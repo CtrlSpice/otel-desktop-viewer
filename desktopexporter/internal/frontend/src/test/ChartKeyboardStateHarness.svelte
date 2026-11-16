@@ -4,7 +4,7 @@
     createLineChartKeyboardCursor,
     createOrderedChartKeyboardCursor,
     type ChartKeyboardCursorState,
-  } from '@/components/metrics/utils/chart-keyboard-state.svelte'
+  } from '@/features/metrics/Charts/chart-keyboard-state.svelte'
   import type {
     CursorKey,
     KeyboardLine,
@@ -12,7 +12,7 @@
     LineCursorCommand,
     OrderedCursor,
     OrderedCursorCommand,
-  } from '@/components/metrics/utils/chart-keyboard-cursor'
+  } from '@/features/metrics/Charts/chart-keyboard-cursor'
 
   type Props = {
     keys?: readonly CursorKey[]

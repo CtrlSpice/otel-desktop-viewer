@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 test('Home keeps Getting started in List, service cards in the map and Telemetry in Details', async ({
   page,
@@ -11,9 +11,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
     localStorage.setItem('signal-drawer:open', 'true')
     localStorage.setItem('signal-detail:open', 'true')
   })
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result = (() => {

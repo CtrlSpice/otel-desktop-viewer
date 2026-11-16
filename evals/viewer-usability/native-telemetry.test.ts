@@ -36,7 +36,7 @@ test('native tools propagate into viewer RPCs and retain success/error trace evi
     requests.push({ path: req.url, body })
     assert.equal(req.headers.traceparent, undefined, 'Model endpoint must not receive owned-server context')
     const tool = body.tools?.some((t: { name: string }) => t.name === 'bash') && toolsReturned < 2
-    const sql = toolsReturned === 0 ? 'SELECT 1 AS value' : 'SELECT * FROM missing_telemetry_test_table'
+    const sql = toolsReturned === 0 ? 'select 1 as value' : 'select * from missing_telemetry_test_table'
     const callID = 'call_fixture_' + toolsReturned
     if (tool) toolsReturned++
     const item = tool
@@ -103,7 +103,7 @@ test('native tools propagate into viewer RPCs and retain success/error trace evi
     // Graceful viewer shutdown flushes its native exporter before inspection.
     await ownedViewerStop(run, viewer)(); viewer = undefined
     const cli = async (...args: string[]) => JSON.parse((await promisify(execFile)(path.join(observerRoot, 'otel-desktop-viewer'), [...args, '--endpoint', observer!.endpoint, '--json'], { maxBuffer: 16 * 1024 * 1024 })).stdout)
-    const sql = `SELECT service_name, name, span_id_wire(span_id), span_id_wire(parent_span_id), status_code FROM spans WHERE trace_id_wire(trace_id)='${receipt.traceID}' ORDER BY start_time`
+    const sql = `select service_name, name, span_id_wire(span_id), span_id_wire(parent_span_id), status_code from spans where trace_id_wire(trace_id)='${receipt.traceID}' order by start_time`
     let stored
     for (let retry = 0; retry < 50; retry++) {
       stored = await cli('query', sql)

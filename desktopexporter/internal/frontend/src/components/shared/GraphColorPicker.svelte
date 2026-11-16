@@ -3,7 +3,7 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { RefreshIcon } from '@hugeicons/core-free-icons'
   import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
-  import { graphInkFamily } from '@/utils/graph-ink-family'
+  import { graphInkFamily } from '@/utils/colours/graph-ink-family'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
 
   let {

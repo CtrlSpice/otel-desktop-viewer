@@ -3,6 +3,7 @@ package search
 import (
 	"database/sql"
 	"math"
+	"strings"
 	"testing"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -137,7 +138,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "CONTAINS",
 			value:          "test",
-			expectedSQL:    "Name LIKE $3",
+			expectedSQL:    "Name like $3",
 			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
@@ -145,7 +146,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "^",
 			value:          "test",
-			expectedSQL:    "Name LIKE $3",
+			expectedSQL:    "Name like $3",
 			expectedParams: []NamedParam{{"value_2", "test%"}},
 		},
 		{
@@ -153,7 +154,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "$",
 			value:          "span",
-			expectedSQL:    "Name LIKE $3",
+			expectedSQL:    "Name like $3",
 			expectedParams: []NamedParam{{"value_2", "%span"}},
 		},
 		{
@@ -161,7 +162,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "NOT CONTAINS",
 			value:          "test",
-			expectedSQL:    "Name NOT LIKE $3",
+			expectedSQL:    "Name not like $3",
 			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
@@ -169,8 +170,24 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "IN",
 			value:          `["test1","test2","test3"]`,
-			expectedSQL:    "Name IN $3",
+			expectedSQL:    "Name in $3",
 			expectedParams: []NamedParam{{"value_2", []any{"test1", "test2", "test3"}}},
+		},
+		{
+			name:           "LIKE renders lowercase without changing pattern case",
+			expression:     "Name",
+			operator:       "LIKE",
+			value:          "SELECT%",
+			expectedSQL:    "Name like $3",
+			expectedParams: []NamedParam{{"value_2", "SELECT%"}},
+		},
+		{
+			name:           "NOT LIKE renders lowercase without changing pattern case",
+			expression:     "Name",
+			operator:       "NOT LIKE",
+			value:          "SELECT%",
+			expectedSQL:    "Name not like $3",
+			expectedParams: []NamedParam{{"value_2", "SELECT%"}},
 		},
 		{
 			// Null checks use dedicated operators rather than a sentinel value.
@@ -178,7 +195,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "IS NULL",
 			value:          "",
-			expectedSQL:    "Name IS NULL",
+			expectedSQL:    "Name is null",
 			expectedParams: nil,
 		},
 		{
@@ -186,7 +203,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "IS NOT NULL",
 			value:          "",
-			expectedSQL:    "Name IS NOT NULL",
+			expectedSQL:    "Name is not null",
 			expectedParams: nil,
 		},
 		{
@@ -221,7 +238,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "IN",
 			value:          `["a,b","c"]`,
-			expectedSQL:    "Name IN $3",
+			expectedSQL:    "Name in $3",
 			expectedParams: []NamedParam{{"value_2", []any{"a,b", "c"}}},
 		},
 		{
@@ -258,7 +275,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "s.SearchText {COND}",
 			operator:       "CONTAINS",
 			value:          "test",
-			expectedSQL:    "s.SearchText LIKE $3",
+			expectedSQL:    "s.SearchText like $3",
 			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
@@ -266,7 +283,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "s.SearchText {COND}",
 			operator:       "IS NULL",
 			value:          "",
-			expectedSQL:    "s.SearchText IS NULL",
+			expectedSQL:    "s.SearchText is null",
 			expectedParams: nil,
 		},
 		{
@@ -300,6 +317,8 @@ func TestBuildOperatorCondition(t *testing.T) {
 				resolved = WireID(tt.expression)
 			}
 			sql, err := BuildOperatorCondition(resolved, query, &params)
+			assert.Equal(t, tt.operator, query.FieldOperator)
+			assert.Equal(t, tt.value, query.Value)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -347,7 +366,7 @@ func TestAttributeNumericOperands(t *testing.T) {
 			&params,
 		)
 		require.NoError(t, err)
-		assert.Equal(t, "a.value::double IN CAST($1 AS DOUBLE[])", condition)
+		assert.Equal(t, "a.value::double in cast($1 as double[])", condition)
 		require.Len(t, params, 1)
 		values := params[0].Value.([]any)
 		assert.Equal(t, 1.5, values[0])
@@ -474,7 +493,7 @@ func TestBuildOperatorCondition_NativeIntegerList(t *testing.T) {
 	query := &Query{Field: &FieldDefinition{Type: "int64[]"}, FieldOperator: "IN", Value: `["9007199254740993","4.2e1"]`}
 	sql, err := BuildOperatorCondition(NativeInteger("l.timestamp"), query, &params)
 	require.NoError(t, err)
-	assert.Equal(t, "l.timestamp IN CAST($1 AS BIGINT[])", sql)
+	assert.Equal(t, "l.timestamp in cast($1 as bigint[])", sql)
 	assert.Equal(t, []NamedParam{{"value_0", []any{int64(9007199254740993), int64(42)}}}, params)
 
 	query.Value = `["42.5"]`
@@ -599,7 +618,7 @@ func TestBuildOperatorCondition_Duration(t *testing.T) {
 	query = &Query{FieldOperator: "IN", Value: `["1s","0.5ns"]`}
 	sql, err = BuildOperatorCondition(Duration("s.duration"), query, &params)
 	require.NoError(t, err)
-	assert.Equal(t, "s.duration IN CAST($1 AS BIGINT[])", sql)
+	assert.Equal(t, "s.duration in cast($1 as bigint[])", sql)
 	assert.Equal(t, []NamedParam{{"value_0", []any{int64(1000000000), int64(1)}}}, params)
 
 	for _, value := range []string{"-1ms", "9223372036854775808ns", `["1s","bad"]`, "[]", "[null]"} {
@@ -619,7 +638,7 @@ func TestBuildOperatorCondition_WireIDList(t *testing.T) {
 	query := &Query{FieldOperator: "IN", Value: `["ABC-123","not-an-id"]`}
 	sql, err := BuildOperatorCondition(WireID("span_id_wire(s.span_id)"), query, &params)
 	require.NoError(t, err)
-	assert.Equal(t, "span_id_wire(s.span_id) IN $1", sql)
+	assert.Equal(t, "span_id_wire(s.span_id) in $1", sql)
 	assert.Equal(t, []NamedParam{{"value_0", []any{"abc123", "notanid"}}}, params)
 }
 
@@ -659,7 +678,7 @@ func TestBuildOperatorCondition_MembershipBindsHostileValues(t *testing.T) {
 	}, &params)
 
 	require.NoError(t, err)
-	assert.Equal(t, "s.name NOT IN $1", sql)
+	assert.Equal(t, "s.name not in $1", sql)
 	assert.NotContains(t, sql, hostile)
 	assert.Equal(t, []NamedParam{{"value_0", []any{hostile, "safe"}}}, params)
 }
@@ -674,7 +693,7 @@ func TestBuildSearchSQL_NilQuery(t *testing.T) {
 	cte, where, args, err := BuildSearchSQL(nil, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Empty(t, cte)
-	assert.Equal(t, "StartTime >= $1::ubigint AND StartTime <= $2::ubigint", where)
+	assert.Equal(t, "StartTime >= $1::ubigint and StartTime <= $2::ubigint", where)
 	assert.Equal(t, []any{"1000", "2000"}, args)
 }
 
@@ -698,7 +717,7 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 	cte, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Empty(t, cte)
-	assert.Equal(t, "(Name = $3) AND StartTime >= $1::ubigint AND StartTime <= $2::ubigint", where)
+	assert.Equal(t, "(Name = $3) and StartTime >= $1::ubigint and StartTime <= $2::ubigint", where)
 	assert.Equal(t, []any{"1000", "2000", "test-span"}, args)
 }
 
@@ -740,10 +759,27 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 	cte, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Empty(t, cte)
-	assert.Contains(t, where, "Name = $3 AND Kind = $4")
+	assert.Contains(t, where, "Name = $3 and Kind = $4")
 	assert.Len(t, args, 4)
 	assert.Equal(t, "1000", args[0])
 	assert.Equal(t, "2000", args[1])
+
+	for _, operator := range []string{"AND", "and", "And", "OR", "or", "Or"} {
+		t.Run(operator, func(t *testing.T) {
+			query.Group.LogicalOperator = operator
+			_, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
+			require.NoError(t, err)
+			assert.Contains(t, where, "Name = $3 "+strings.ToLower(operator)+" Kind = $4")
+			assert.Equal(t, operator, query.Group.LogicalOperator)
+			assert.Equal(t, []any{"1000", "2000", "a", "b"}, args)
+		})
+	}
+	for _, operator := range []string{"XOR", "AND true --"} {
+		query.Group.LogicalOperator = operator
+		_, _, _, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
+		assert.ErrorIs(t, err, ErrInvalidQuery)
+		assert.Equal(t, operator, query.Group.LogicalOperator)
+	}
 }
 
 func TestBuildSearchSQL_GlobalORs(t *testing.T) {
@@ -768,7 +804,7 @@ func TestBuildSearchSQL_GlobalORs(t *testing.T) {
 	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
 	_, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
-	assert.Contains(t, where, "SearchText LIKE $3 OR Name LIKE $4")
+	assert.Contains(t, where, "SearchText like $3 or Name like $4")
 	assert.Contains(t, args, "%test%")
 }
 
@@ -833,7 +869,7 @@ func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
 	timeCondition, timeParams := TimePredicate("t", &start, nil)
 	cte, where, args, err := BuildSearchSQL(node, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
-	assert.Equal(t, "((a.col = $2 AND b.col = $3)) AND t >= $1::ubigint", where)
+	assert.Equal(t, "((a.col = $2 and b.col = $3)) and t >= $1::ubigint", where)
 	assert.Empty(t, cte)
 	assert.Len(t, args, 3)
 }
@@ -849,7 +885,7 @@ func TestTimePredicateShapes(t *testing.T) {
 		{"unbounded", nil, nil, "", nil},
 		{"end only", nil, &end, "ts <= $1::ubigint", []NamedParam{{Name: "time_end", Value: unsignedScalar(end)}}},
 		{"start only", &start, nil, "ts >= $1::ubigint", []NamedParam{{Name: "time_start", Value: unsignedScalar(start)}}},
-		{"bounded", &start, &end, "ts >= $1::ubigint AND ts <= $2::ubigint", []NamedParam{{Name: "time_start", Value: unsignedScalar(start)}, {Name: "time_end", Value: unsignedScalar(end)}}},
+		{"bounded", &start, &end, "ts >= $1::ubigint and ts <= $2::ubigint", []NamedParam{{Name: "time_start", Value: unsignedScalar(start)}, {Name: "time_end", Value: unsignedScalar(end)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gotSQL, gotArgs := TimePredicate("ts", tc.start, tc.end)

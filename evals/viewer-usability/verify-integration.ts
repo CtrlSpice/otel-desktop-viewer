@@ -47,7 +47,7 @@ const ready = await prepare(root)
 try {
   const counts = await query(
     ready.endpoint,
-    'SELECT (SELECT count(*) FROM spans), (SELECT count(*) FROM logs), (SELECT count(*) FROM metric_datapoints)'
+    'select (select count(*) from spans), (select count(*) from logs), (select count(*) from metric_datapoints)'
   )
   assert.deepEqual(counts.rows, [manifest.counts])
   const stats = record(

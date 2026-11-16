@@ -11,7 +11,7 @@ import {
 } from './attribute-field-reference'
 import { createQueryCompletionSource } from './codemirror/completions'
 import { queryLanguage } from './codemirror/query-language'
-import { queryText } from '@/components/home/home-search'
+import { queryText } from '@/features/home/home-search'
 
 describe('nested selected addresses', () => {
   it.each([

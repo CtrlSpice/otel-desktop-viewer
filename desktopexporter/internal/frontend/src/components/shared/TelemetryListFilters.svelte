@@ -4,7 +4,7 @@
   import FilterPopover from './Toolbar/FilterPopover.svelte'
   import FilterOption from './Toolbar/FilterOption.svelte'
   import ListFilter from './Search/ListFilter.svelte'
-  import FieldGroup from './FieldGroup.svelte'
+  import FieldGroup from './Detail/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     FilterIcon,
@@ -15,7 +15,7 @@
     CircleIcon,
   } from '@hugeicons/core-free-icons'
   import { METRIC_TYPE_ENUM } from '@/constants/fields'
-  import { traceServiceColor } from '@/utils/trace-service-color'
+  import { traceServiceColor } from '@/utils/colours/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import {
     readListFilters,

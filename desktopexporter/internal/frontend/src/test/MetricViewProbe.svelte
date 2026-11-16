@@ -3,15 +3,15 @@
   import {
     createMetricViewContext,
     type MetricViewContext,
-  } from '@/contexts/metric-view-context.svelte'
+  } from '@/features/metrics/metric-view-context.svelte'
   import type {
     DataPoint,
     MetricViewData,
     ScalarAggregate,
   } from '@/types/api-types'
-  import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
-  import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
-  import type { DatapointSeries } from '@/components/metrics/Detail/SeriesDatapointList.svelte'
+  import TimeseriesPanel from '@/features/metrics/Detail/TimeseriesPanel.svelte'
+  import MetricDetailView from '@/features/metrics/Detail/MetricDetailView.svelte'
+  import type { DatapointSeries } from '@/features/metrics/Detail/SeriesDatapointList.svelte'
 
   // createMetricViewContext() registers $effects, so it only works inside a
   // component. This probe renders the sub-view state the URL sync owns so

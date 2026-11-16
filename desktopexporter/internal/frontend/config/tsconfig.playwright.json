@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "composite": false,
+    "lib": ["ES2022", "DOM"],
+    "noEmit": true,
+    "strict": true,
+    "paths": { "@/*": ["../src/*"] },
+    "target": "ES2022",
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["playwright.config.ts", "../e2e/**/*.ts"]
+}

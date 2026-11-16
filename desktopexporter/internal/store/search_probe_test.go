@@ -101,7 +101,7 @@ func TestMembershipExcludesSQLNull(t *testing.T) {
 			require.Len(t, params, 1)
 			var count int
 			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-				return db.QueryRowContext(ctx, `select count(*) from (values (NULL::varchar), ('blocked'), ('allowed')) t(candidate)
+				return db.QueryRowContext(ctx, `select count(*) from (values (null::varchar), ('blocked'), ('allowed')) t(candidate)
 				where `+condition, params[0].Value).Scan(&count)
 			}))
 			assert.Equal(t, 1, count)

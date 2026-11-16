@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte'
   import { createFileImporter } from '@/services/import-service'
-  import HomePage from '@/pages/HomePage.svelte'
-  import MetricsPage from '@/pages/MetricsPage.svelte'
-  import LogsPage from '@/pages/LogsPage.svelte'
-  import TracesPage from '@/pages/TracesPage.svelte'
-  import EvalsPage from '@/pages/EvalsPage.svelte'
+  import HomePage from '@/features/home/HomePage.svelte'
+  import MetricsPage from '@/features/metrics/MetricsPage.svelte'
+  import LogsPage from '@/features/logs/LogsPage.svelte'
+  import TracesPage from '@/features/traces/TracesPage.svelte'
+  import EvalsPage from '@/features/evals/EvalsPage.svelte'
   import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
   import ImportFiles from '@/components/shared/ImportFiles.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -17,7 +17,7 @@
   } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
   import { createWorkspaceContext } from '@/contexts/workspace-context.svelte'
-  import WorkspaceShell from '@/components/shared/WorkspaceShell.svelte'
+  import WorkspaceShell from '@/components/shared/Layout/WorkspaceShell.svelte'
   import { createNavigationCounts } from '@/contexts/navigation-counts.svelte'
 
   let {

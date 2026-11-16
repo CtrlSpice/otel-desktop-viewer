@@ -214,7 +214,7 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"getTraceView", []any{testTraceIDHex}},
 		{"getTraceOverview", []any{testTraceIDHex}},
 		{"getSpan", []any{"0000000000000001", testTraceIDHex}},
-		{"query", []any{"SELECT 9007199254740993::BIGINT AS exact"}},
+		{"query", []any{"select 9007199254740993::bigint as exact"}},
 		{"searchTraceSummaries", []any{nil, nil}},
 		{"searchLogSummaries", []any{nil, nil}},
 		{"searchMetricSummaries", []any{nil, nil}},

@@ -48,7 +48,7 @@ const rpc=http.createServer(async(req,res)=>{
  if(phase==='preparation'){fs.writeFileSync(root+'/phase-ready','');return;}
  let body='';for await(const chunk of req)body+=chunk;
  const request=JSON.parse(body);
- res.end(JSON.stringify({result:request.method==='getStats'?{rejections:[]}:{columns:[],rows:request.params.sql==='SELECT 1'?[[1]]:[[0,0,0]],truncated:false}}));
+ res.end(JSON.stringify({result:request.method==='getStats'?{rejections:[]}:{columns:[],rows:request.params.sql==='select 1'?[[1]]:[[0,0,0]],truncated:false}}));
 });
 const ingest=http.createServer((req,res)=>{req.resume();res.end('{}');});
 rpc.listen(port('--browser-port'),'127.0.0.1');ingest.listen(port('--http'),'127.0.0.1');

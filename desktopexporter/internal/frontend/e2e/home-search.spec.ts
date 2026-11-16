@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 test('Home selection, map, telemetry and workspace links share the submitted query', async ({
   page,
@@ -33,9 +33,7 @@ test('Home selection, map, telemetry and workspace links share the submitted que
   await page.addInitScript(() => {
     localStorage.setItem('signal-detail:open', 'true')
   })
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'searchMetricSummaries') metricQueries.push(params)

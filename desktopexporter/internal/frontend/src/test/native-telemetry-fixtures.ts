@@ -21,7 +21,7 @@ import {
   type Data,
 } from 'apache-arrow'
 import type { AttributeFixture, TraceFixture } from './telemetry-fixture-types'
-import { serviceColorIdentity } from '../utils/service-color-identity'
+import { serviceColorIdentity } from '../utils/colours/service-color-identity'
 
 type Value =
   | null

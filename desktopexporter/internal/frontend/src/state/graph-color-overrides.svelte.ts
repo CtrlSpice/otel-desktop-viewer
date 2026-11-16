@@ -7,7 +7,7 @@ import {
 import {
   serviceColorIdentity,
   serviceColorStorageVersion,
-} from '@/utils/service-color-identity'
+} from '@/utils/colours/service-color-identity'
 
 const PREFIX = `graph-colour-overrides:${GRAPH_PALETTE_VERSION}:`
 const storageKey = (scope: string) =>

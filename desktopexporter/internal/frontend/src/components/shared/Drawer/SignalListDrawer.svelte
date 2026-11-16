@@ -4,9 +4,9 @@
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowUp02Icon } from '@hugeicons/core-free-icons'
-  import PanelToggle from '../PanelToggle.svelte'
-  import PanelClip from '../PanelClip.svelte'
-  import PaneHeader from '../PaneHeader.svelte'
+  import PanelToggle from '../Layout/PanelToggle.svelte'
+  import PanelClip from '../Layout/PanelClip.svelte'
+  import PaneHeader from '../Layout/PaneHeader.svelte'
   import WorkspaceToolbar from '@/components/shared/Toolbar/WorkspaceToolbar.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
   import {
@@ -22,7 +22,7 @@
   import {
     keyDeltaFor,
     resolveNextPos,
-  } from '@/components/shared/utils/table-keyboard-nav'
+  } from '@/components/shared/Tables/table-keyboard-nav'
 
   type Props<T> = {
     items: T[]
