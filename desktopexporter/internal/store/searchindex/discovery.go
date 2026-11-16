@@ -144,7 +144,7 @@ func discoverySQL(options DiscoveryOptions, allKeys bool, owners string) (string
 	if selected {
 		filter = `(v.value ilike $5 escape '\' or ($5='%%' and v.kind in('map','array','empty')))`
 	} else if strings.TrimSpace(options.Term) == "" && !allKeys {
-		filter = "($5 IS NULL AND false)"
+		filter = "($5 is null and false)"
 	}
 	q := owners + `select p.id,p.key,p.attribute_scope,p.owner,p.path::varchar as path,p.kind,count(distinct v.id) as match_count
 	 from search_paths p join search_postings l on l.path_id=p.id join discovery_owners o on o.id=l.owner_id join search_values v on v.id=l.value_id

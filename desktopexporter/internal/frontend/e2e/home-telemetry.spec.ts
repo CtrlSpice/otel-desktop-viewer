@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 test('service inspection scopes the counted Telemetry tabs with independent 25-card pages', async ({
   page,
@@ -19,9 +19,7 @@ test('service inspection scopes the counted Telemetry tabs with independent 25-c
     localStorage.setItem('signal-drawer:open', 'true')
     localStorage.setItem('signal-detail:open', 'true')
   })
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params = {} } = route.request().postDataJSON()
     requests.push({ method, params })

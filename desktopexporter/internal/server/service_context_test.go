@@ -75,7 +75,7 @@ func TestServicesGroupResourcesWithoutSplittingScopesOrDoubleCountingTraces(t *t
 		var key, raw string
 		var builder discovery.Builder
 		statement := builder.Services(discovery.Query{})
-		err := db.QueryRowContext(t.Context(), "EXPLAIN (ANALYZE, FORMAT JSON) "+statement, builder.Args()...).Scan(&key, &raw)
+		err := db.QueryRowContext(t.Context(), "explain (analyze, format json) "+statement, builder.Args()...).Scan(&key, &raw)
 		if err != nil {
 			return err
 		}

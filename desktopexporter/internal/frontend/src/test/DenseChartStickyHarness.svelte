@@ -3,8 +3,8 @@
 </script>
 
 <script lang="ts">
-  import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
-  import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
+  import ChartSticky from '@/features/metrics/Charts/ChartSticky.svelte'
+  import ChartSelectionLegend from '@/features/metrics/Charts/ChartSelectionLegend.svelte'
 
   let selections = $state(0)
   const rows = Array.from({ length: 22 }, (_, index) => ({

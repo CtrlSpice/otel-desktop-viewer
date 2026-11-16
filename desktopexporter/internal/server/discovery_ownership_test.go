@@ -54,8 +54,8 @@ func TestDiscoveryOwnershipPlans(t *testing.T) {
 		return metrics.Ingest(t.Context(), conn, md)
 	}))
 	for _, tc := range []struct{ signal, owner, legacy string }{
-		{"traces", "event", `SELECT struct_pack(trace_id := s.trace_id, span_id := s.span_id) AS record_id, e.timestamp AS time_ns, s.service_name, s.resource, e.attributes FROM spans s JOIN events e ON e.trace_id=s.trace_id AND e.span_id=s.span_id`},
-		{"metrics", "exemplar", `SELECT d.id AS record_id, e.timestamp AS time_ns, m.service_name, d.resource, e.attributes FROM metric_datapoints d JOIN metrics m ON m.id=d.metric_id JOIN exemplars e ON e.metric_datapoint_id=d.id`},
+		{"traces", "event", `select struct_pack(trace_id := s.trace_id, span_id := s.span_id) as record_id, e.timestamp as time_ns, s.service_name, s.resource, e.attributes from spans s join events e on e.trace_id=s.trace_id and e.span_id=s.span_id`},
+		{"metrics", "exemplar", `select d.id as record_id, e.timestamp as time_ns, m.service_name, d.resource, e.attributes from metric_datapoints d join metrics m on m.id=d.metric_id join exemplars e on e.metric_datapoint_id=d.id`},
 	} {
 		t.Run(tc.owner, func(t *testing.T) {
 			start, end := "101", "102"
@@ -77,7 +77,7 @@ func TestDiscoveryOwnershipPlans(t *testing.T) {
 					}
 					statement := builder.Values(query, location, records, "value")
 					var result []byte
-					err := db.QueryRowContext(t.Context(), "SELECT coalesce(to_json(list(entry)), '[]')::VARCHAR FROM ("+statement+")", builder.Args()...).Scan(&result)
+					err := db.QueryRowContext(t.Context(), "select coalesce(to_json(list(entry)), '[]')::varchar from ("+statement+")", builder.Args()...).Scan(&result)
 					require.NoError(t, err)
 					if i == 0 {
 						previous = result
@@ -85,7 +85,7 @@ func TestDiscoveryOwnershipPlans(t *testing.T) {
 						require.JSONEq(t, string(previous), string(result))
 					}
 					var key, plan string
-					err = db.QueryRowContext(t.Context(), "EXPLAIN ANALYZE "+statement, builder.Args()...).Scan(&key, &plan)
+					err = db.QueryRowContext(t.Context(), "explain analyze "+statement, builder.Args()...).Scan(&key, &plan)
 					require.NoError(t, err)
 					t.Logf("%s version=%d\n%s", tc.owner, i, plan)
 					// Event traversal must no longer scan spans once for parents
@@ -111,7 +111,7 @@ func TestHomeDiscoveryNativePipelinePlan(t *testing.T) {
 	t.Logf("HOME_SQL\n%s\nEND_HOME_SQL", plan.statement)
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		var key, explain string
-		err := db.QueryRowContext(t.Context(), "EXPLAIN ANALYZE "+plan.statement, plan.args...).Scan(&key, &explain)
+		err := db.QueryRowContext(t.Context(), "explain analyze "+plan.statement, plan.args...).Scan(&key, &explain)
 		require.NoError(t, err)
 		t.Log(explain)
 		return nil

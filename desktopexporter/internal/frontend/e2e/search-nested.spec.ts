@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 test('a selected nested suggestion retains keys, indices, owner and type through reload', async ({
   page,
@@ -10,9 +10,7 @@ test('a selected nested suggestion retains keys, indices, owner and type through
     releaseDefinitions = resolve
   })
   const path = ['attributes', 'nested', 0, '0', '']
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
+
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getLogAttributeDefinitions') await definitionsReady

@@ -1,5 +1,5 @@
 import { getContext, setContext } from 'svelte'
-import type { LayoutOptions } from '@/components/shared/WorkspaceShell.svelte'
+import type { LayoutOptions } from '@/components/shared/Layout/WorkspaceShell.svelte'
 
 const key = Symbol('workspace')
 

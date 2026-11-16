@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
-	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/google/uuid"
 	"golang.org/x/exp/jsonrpc2"
@@ -164,35 +163,6 @@ func decodePositionalParams(raw json.RawMessage, minParams, maxParams int) ([]an
 	return params, nil
 }
 
-type queryParams struct {
-	statement string
-	limit     uint64
-}
-
-func parseQueryParams(raw json.RawMessage) (queryParams, error) {
-	params, err := decodePositionalParams(raw, 1, 2)
-	if err != nil {
-		return queryParams{}, err
-	}
-	statement, ok := params[0].(string)
-	if !ok {
-		return queryParams{}, fmt.Errorf("sql must be a string: %w", jsonrpc2.ErrInvalidParams)
-	}
-	limit := storequery.DefaultLimit
-	if len(params) == 2 {
-		number, ok := params[1].(json.Number)
-		if !ok {
-			return queryParams{}, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
-		}
-		parsed, err := strconv.ParseUint(number.String(), 10, 64)
-		if err != nil {
-			return queryParams{}, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
-		}
-		limit = parsed
-	}
-	return queryParams{statement: statement, limit: limit}, nil
-}
-
 type searchParams struct {
 	timeRange store.TimeRange
 	query     any
@@ -261,23 +231,6 @@ func parseSearchOptions(params []any) (search.ResultOptions, error) {
 	}, nil
 }
 
-// getMetricViewParams holds the common chart request plus detail-only fields.
-type getMetricViewParams struct {
-	metricRef            string
-	timeRange            store.TimeRange
-	targetBuckets        int64
-	seriesRefs           []string
-	quantiles            []float64
-	tzOffsetNs           int64
-	viewBuckets          int64
-	sparklineBuckets     int64
-	selectedSeriesRefs   []string
-	datapointSeriesRefs  []string
-	datapointSeriesLimit int64
-	datapointRef         string
-	tzName               string
-}
-
 func parseOptionalInt(params []any, index int, name string) (int64, error) {
 	if len(params) <= index || params[index] == nil {
 		return 0, nil
@@ -315,37 +268,6 @@ func parseOptionalStringList(params []any, index int) ([]string, error) {
 	return values, nil
 }
 
-func parseOptionalQuantiles(params []any, index int) ([]float64, error) {
-	if len(params) <= index || params[index] == nil {
-		return nil, nil
-	}
-	raw, ok := params[index].([]any)
-	if !ok {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	var quantiles []float64
-	for _, value := range raw {
-		var quantile float64
-		switch number := value.(type) {
-		case json.Number:
-			parsed, err := number.Float64()
-			if err != nil {
-				return nil, fmt.Errorf("quantiles must be numbers, got %q: %w", number.String(), jsonrpc2.ErrInvalidParams)
-			}
-			quantile = parsed
-		case float64:
-			quantile = number
-		default:
-			return nil, fmt.Errorf("quantiles must be numbers, got %T: %w", value, jsonrpc2.ErrInvalidParams)
-		}
-		if quantile < 0 || quantile > 1 {
-			return nil, fmt.Errorf("quantiles must be between 0 and 1, got %v: %w", quantile, jsonrpc2.ErrInvalidParams)
-		}
-		quantiles = append(quantiles, quantile)
-	}
-	return quantiles, nil
-}
-
 func parseOptionalString(params []any, index int) (string, error) {
 	if len(params) <= index || params[index] == nil {
 		return "", nil
@@ -355,214 +277,6 @@ func parseOptionalString(params []any, index int) (string, error) {
 		return "", jsonrpc2.ErrInvalidParams
 	}
 	return value, nil
-}
-
-func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetricViewParams, error) {
-	maxParams := 13
-	if aggregateOnly {
-		maxParams = 11
-	}
-	params, err := decodePositionalParams(raw, 3, maxParams)
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	metricRef, err := parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	timeRange, err := parseTimeRange(params[1], params[2])
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	targetBuckets, err := parseOptionalNonNegativeInt(params, 3, "targetBuckets")
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	seriesRefs, err := parseOptionalStringList(params, 4)
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	quantiles, err := parseOptionalQuantiles(params, 5)
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	tzOffsetNs, err := parseOptionalInt(params, 6, "tzOffsetNs")
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	viewBuckets, err := parseOptionalNonNegativeInt(params, 7, "viewBuckets")
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-
-	selectedSeriesIndex, tzNameIndex := 9, 10
-	var sparklineBuckets int64
-	if aggregateOnly {
-		selectedSeriesIndex, tzNameIndex = 8, 9
-	} else {
-		sparklineBuckets, err = parseOptionalNonNegativeInt(params, 8, "sparklineBuckets")
-		if err != nil {
-			return getMetricViewParams{}, err
-		}
-	}
-	selectedSeriesRefs, err := parseOptionalStringList(params, selectedSeriesIndex)
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-	tzName, err := parseOptionalString(params, tzNameIndex)
-	if err != nil {
-		return getMetricViewParams{}, err
-	}
-
-	var datapointSeriesRefs []string
-	var datapointSeriesLimit int64
-	if !aggregateOnly {
-		datapointSeriesRefs, err = parseOptionalStringList(params, 11)
-		if err != nil {
-			return getMetricViewParams{}, err
-		}
-		datapointSeriesLimit, err = parseOptionalNonNegativeInt(params, 12, "datapointSeriesLimit")
-		if err != nil {
-			return getMetricViewParams{}, err
-		}
-	}
-
-	var datapointRef string
-	if aggregateOnly && len(params) > 10 && params[10] != nil {
-		datapointRef, err = parseIDParam(params[10], jsonrpc2.ErrInvalidParams, normalizeUUID)
-		if err != nil {
-			return getMetricViewParams{}, err
-		}
-	}
-	return getMetricViewParams{
-		metricRef: metricRef, timeRange: timeRange, targetBuckets: targetBuckets,
-		seriesRefs: seriesRefs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
-		viewBuckets: viewBuckets, sparklineBuckets: sparklineBuckets,
-		selectedSeriesRefs: selectedSeriesRefs, datapointSeriesRefs: datapointSeriesRefs,
-		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName, datapointRef: datapointRef,
-	}, nil
-}
-
-type getMetricSeriesParams struct {
-	metricRef         string
-	seriesRef         string
-	timeRange         store.TimeRange
-	includeDatapoints bool
-}
-
-type metricSeriesOrderParams struct {
-	metricRef  string
-	seriesRefs []string
-	key        string
-	timeRange  store.TimeRange
-	descending bool
-}
-
-func parseMetricSeriesOrderParams(raw json.RawMessage) (metricSeriesOrderParams, error) {
-	var result metricSeriesOrderParams
-	params, err := decodePositionalParams(raw, 6, 6)
-	if err != nil {
-		return result, err
-	}
-	result.metricRef, err = parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
-	if err != nil {
-		return result, err
-	}
-	result.timeRange, err = parseTimeRange(params[1], params[2])
-	if err != nil {
-		return result, err
-	}
-	if params[3] == nil {
-		return result, jsonrpc2.ErrInvalidParams
-	}
-	result.seriesRefs, err = parseOptionalStringList(params, 3)
-	if err != nil {
-		return result, err
-	}
-	for i, ref := range result.seriesRefs {
-		result.seriesRefs[i], err = normalizeUUID(ref)
-		if err != nil {
-			return result, ErrInvalidMetricRef
-		}
-	}
-	key, ok := params[4].(string)
-	if !ok {
-		return result, jsonrpc2.ErrInvalidParams
-	}
-	result.key = key
-	direction, ok := params[5].(string)
-	if !ok || (direction != "asc" && direction != "desc") {
-		return result, jsonrpc2.ErrInvalidParams
-	}
-	result.descending = direction == "desc"
-	return result, nil
-}
-
-func parseGetMetricSeriesParams(raw json.RawMessage) (getMetricSeriesParams, error) {
-	params, err := decodePositionalParams(raw, 4, 5)
-	if err != nil {
-		return getMetricSeriesParams{}, err
-	}
-	metricRef, err := parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
-	if err != nil {
-		return getMetricSeriesParams{}, err
-	}
-	seriesRef, err := parseIDParam(params[1], ErrInvalidMetricRef, normalizeUUID)
-	if err != nil {
-		return getMetricSeriesParams{}, err
-	}
-	timeRange, err := parseTimeRange(params[2], params[3])
-	if err != nil {
-		return getMetricSeriesParams{}, err
-	}
-	includeDatapoints := true
-	if len(params) > 4 && params[4] != nil {
-		var ok bool
-		includeDatapoints, ok = params[4].(bool)
-		if !ok {
-			return getMetricSeriesParams{}, jsonrpc2.ErrInvalidParams
-		}
-	}
-	return getMetricSeriesParams{metricRef: metricRef, seriesRef: seriesRef, timeRange: timeRange, includeDatapoints: includeDatapoints}, nil
-}
-
-// getFieldValueCompletions returns distinct values of one completable column, for
-// value completion in the search box. Which fields complete is decided by
-// each signal package's allowlist, so an unknown field is an invalid-params
-// answer rather than an empty list -- a typo should look like one. The limit
-// is clamped rather than trusted: the caller wants a dropdown, not a dump.
-type fieldValuesParams struct {
-	signal string
-	field  string
-	term   string
-	limit  int64
-}
-
-func parseFieldValuesParams(raw json.RawMessage) (fieldValuesParams, error) {
-	params, err := decodePositionalParams(raw, 4, 4)
-	if err != nil {
-		return fieldValuesParams{}, err
-	}
-	values := make([]string, 3)
-	for index := range values {
-		value, ok := params[index].(string)
-		if !ok {
-			return fieldValuesParams{}, jsonrpc2.ErrInvalidParams
-		}
-		values[index] = value
-	}
-	// Same decoder targetBuckets uses: accepts a JSON number or a string.
-	limit, err := parseTimestampParam(params[3], "limit")
-	if err != nil {
-		return fieldValuesParams{}, err
-	}
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	return fieldValuesParams{signal: values[0], field: values[1], term: values[2], limit: limit}, nil
 }
 
 // parseIDParams unmarshals a request's params as a non-empty array of entity

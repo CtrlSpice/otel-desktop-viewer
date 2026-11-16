@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/sqlfunctions"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +27,7 @@ func TestQueriesParse(t *testing.T) {
 
 	db := sql.OpenDB(connector)
 	t.Cleanup(func() { _ = db.Close() })
-	require.NoError(t, queries.RegisterFunctions(t.Context(), db))
+	require.NoError(t, sqlfunctions.Register(t.Context(), db))
 
 	// Order matters: types, then tables, then indexes, then macros -- the same
 	// sequence NewStore uses, for the same reasons.

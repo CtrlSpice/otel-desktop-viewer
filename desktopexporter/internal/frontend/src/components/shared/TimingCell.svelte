@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import WaterfallTimeRuler from '@/components/traces/Waterfall/WaterfallTimeRuler.svelte'
-  import WaterfallTimeGuides from '@/components/traces/Waterfall/WaterfallTimeGuides.svelte'
-  import { waterfallTimeAxis } from '@/components/traces/Waterfall/WaterfallTimeAxisHeader.svelte'
+  import WaterfallTimeRuler from '@/features/traces/Waterfall/WaterfallTimeRuler.svelte'
+  import WaterfallTimeGuides from '@/features/traces/Waterfall/WaterfallTimeGuides.svelte'
+  import { waterfallTimeAxis } from '@/features/traces/Waterfall/WaterfallTimeAxisHeader.svelte'
   let {
     maximum,
     header = false,

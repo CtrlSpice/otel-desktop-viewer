@@ -104,7 +104,7 @@ func Resolver(defaultOwner string, owners map[string]ValueOwner,
 				expressions = append(expressions, expression)
 			}
 			if len(expressions) == 0 {
-				return []ResolvedExpression{{SQL: "NULL", PresentSQL: "false", ValueSQL: "NULL::variant"}}, nil
+				return []ResolvedExpression{{SQL: "null", PresentSQL: "false", ValueSQL: "null::variant"}}, nil
 			}
 			return expressions, nil
 		}

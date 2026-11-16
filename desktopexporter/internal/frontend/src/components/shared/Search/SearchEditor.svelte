@@ -19,7 +19,7 @@
   } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import { attributeSampleText } from '@/services/arrow-search'
+  import { attributeSampleText } from '@/services/arrow/arrow-search'
   import {
     getTimeContext,
     selectionToQueryRangeNs,
@@ -42,7 +42,7 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import { QuestionMarkIcon } from '@/icons'
-  import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import FieldErrorMessage from '@/components/shared/Detail/FieldErrorMessage.svelte'
   import SearchHelpDialog from './SearchHelpDialog.svelte'
   import { attributeTokens } from './codemirror/attribute-tokens'
   import { multilineQueryPaste } from './codemirror/paste'

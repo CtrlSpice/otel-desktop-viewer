@@ -9,6 +9,7 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/sqlfunctions"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +29,7 @@ func initializeSchema(ctx context.Context, db *sql.DB, dbPath string, logger *za
 		return compat, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 	// Native functions are connection registrations, not persisted schema objects.
-	if err := queries.RegisterFunctions(ctx, db); err != nil {
+	if err := sqlfunctions.Register(ctx, db); err != nil {
 		return compat, fmt.Errorf("%w while registering value functions: %w", ErrStoreInitFailed, err)
 	}
 	ddl := append(queries.Types(), queries.Tables()...)

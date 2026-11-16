@@ -260,9 +260,9 @@ func TestMetricNumericsHistogramVectorMerges(t *testing.T) {
 			vectors            [3]string
 			first, second, all []string
 		}{
-			{"unequal lengths and NULL slots", [3]string{"[1,NULL,3]", "[4]", "[NULL,2]"}, []string{"5", "0", "3"}, []string{"", "2"}, []string{"5", "2", "3"}},
+			{"unequal lengths and NULL slots", [3]string{"[1,null,3]", "[4]", "[null,2]"}, []string{"5", "0", "3"}, []string{"", "2"}, []string{"5", "2", "3"}},
 			{"empty vectors", [3]string{"[]", "[]", "[]"}, []string{}, []string{}, []string{}},
-			{"absent vectors", [3]string{"NULL", "NULL", "NULL"}, []string{}, nil, []string{}},
+			{"absent vectors", [3]string{"null", "null", "null"}, []string{}, nil, []string{}},
 			{"exact totals above uint64", [3]string{"[18446744073709551615,1]", "[1]", "[2,3]"}, []string{"18446744073709551616", "1"}, []string{"2", "3"}, []string{"18446744073709551618", "4"}},
 		} {
 			t.Run(kind+"/"+tc.name, func(t *testing.T) {

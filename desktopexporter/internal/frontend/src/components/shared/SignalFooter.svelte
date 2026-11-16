@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import DetailNav from './DetailNav.svelte'
+  import DetailNav from './Detail/DetailNav.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Delete02Icon } from '@hugeicons/core-free-icons'
 

@@ -54,7 +54,7 @@ func TestBodyPreviewTruncates(t *testing.T) {
 		select length(body_preview(json_object('kind', 'string', 'value', repeat('x', 500)))),
 		       length(body_preview(json_object('kind', 'string', 'value', repeat('y', 50)))),
 		       body_preview(json_object('kind', 'string', 'value', '')) = '',
-		       body_preview(NULL) is null
+		       body_preview(null) is null
 	`).Scan(&long, &short, &emptyOK, &nullOK))
 
 	assert.Equal(t, 300, long, "a long body must be cut to the preview length")

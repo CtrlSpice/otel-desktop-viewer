@@ -1,5 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './test-fixtures'
+import type { Page } from '@playwright/test'
 import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import { THEMES, themeRgb } from './theme-colours'
 
@@ -79,9 +80,6 @@ function traceFixture(index: number): TraceFixture {
 }
 
 async function intercept(page: Page) {
-  await page.route('**/api/features', route =>
-    route.fulfill({ json: { evals: { enabled: false } } })
-  )
   await routeTelemetry(page, async route => {
     const { id, method, params } = route.request().postDataJSON()
     const result =

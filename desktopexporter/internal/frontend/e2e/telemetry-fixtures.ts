@@ -1,9 +1,9 @@
 import type { Page, Route, Request } from '@playwright/test'
 import { tableToIPC } from 'apache-arrow'
 import { telemetryDataset } from '../src/test/native-telemetry-fixtures'
-import { ArrowFrame } from '../src/services/arrow-data'
-import { traceData } from '../src/services/arrow-traces'
-import { tableValuePreview } from '../src/components/shared/table-value-preview'
+import { ArrowFrame } from '../src/services/arrow/arrow-data'
+import { traceData } from '../src/services/arrow/arrow-traces'
+import { tableValuePreview } from '../src/components/shared/Tables/table-value-preview'
 import type { TraceFixture } from '../src/test/telemetry-fixture-types'
 import type { TraceColumn } from '../src/types/api-types'
 

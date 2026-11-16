@@ -18,7 +18,7 @@ func TestLogTimePredicateShapes(t *testing.T) {
 		{"unbounded", timerange.TimeRange{}, "true", []any{}},
 		{"end only", timerange.TimeRange{End: &end}, "l.log_time <= $1::ubigint", []any{"20"}},
 		{"start only", timerange.TimeRange{Start: &start}, "l.log_time >= $1::ubigint", []any{"10"}},
-		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "l.log_time >= $1::ubigint AND l.log_time <= $2::ubigint", []any{"10", "20"}},
+		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "l.log_time >= $1::ubigint and l.log_time <= $2::ubigint", []any{"10", "20"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, where, args, err := buildLogSQL(nil, tc.timeRange)
