@@ -20,9 +20,9 @@ To reproduce the headers, run these commands from the repository root:
 
 ```sh
 curl -L https://github.com/duckdb/duckdb/archive/d54cbbe3df17e8e5ce68312f483b4155836112aa.tar.gz -o duckdb-source.tar.gz
-python3 desktopexporter/internal/store/commitbridge/vendor.py duckdb-source.tar.gz
+go run ./desktopexporter/internal/store/commitbridge/generate duckdb-source.tar.gz
 go test ./desktopexporter/internal/store/commitbridge
 ```
 
-`vendor.py` verifies the archive checksum and copies the bridge's transitive
+The Go command verifies the archive checksum and copies the bridge's transitive
 header dependencies without modifying them.
