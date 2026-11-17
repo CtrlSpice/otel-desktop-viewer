@@ -5,7 +5,7 @@ import type { FieldDefinition } from '@/search/model'
 
 afterEach(() => vi.restoreAllMocks())
 
-it('shares in-flight discovery, then fetches fresh definitions for later requests', async () => {
+it('keeps discovery abort signals with each editor and fetches fresh definitions', async () => {
   let resolve!: (fields: FieldDefinition[]) => void
   const fetch = vi
     .spyOn(telemetryAPI, 'getTraceAttributeDefinitions')
@@ -16,14 +16,19 @@ it('shares in-flight discovery, then fetches fresh definitions for later request
         })
     )
     .mockResolvedValue([])
-  const first = getDynamicAttributes('traces')
-  const second = getDynamicAttributes('traces')
-  expect(second).toBe(first)
-  expect(fetch).toHaveBeenCalledTimes(1)
+  const firstOwner = new AbortController()
+  const secondOwner = new AbortController()
+  const first = getDynamicAttributes('traces', firstOwner.signal)
+  const second = getDynamicAttributes('traces', secondOwner.signal)
+  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch.mock.calls.map(call => call[0])).toEqual([
+    firstOwner.signal,
+    secondOwner.signal,
+  ])
   resolve([])
   await Promise.all([first, second])
   await getDynamicAttributes('traces')
-  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch).toHaveBeenCalledTimes(3)
 })
 
 it('does not retain a failed request or mix signal catalogues', async () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
+  import { createRead } from '@/services/reads'
   import DetailProperty from '@/components/shared/Detail/DetailProperty.svelte'
   import {
     createPopoverID,
@@ -11,14 +12,17 @@
     type ServiceSummary,
   } from '@/services/discovery-types'
   let { service }: { service: ServiceSummary } = $props()
-  let labels = $state<{ serviceName: string; serviceNamespace: string }>()
-  let loading = $state(false)
+  const read = createRead<{
+    serviceName: string
+    serviceNamespace: string
+  }>({ formatError: String })
+  const labels = $derived(read.data)
+  const loading = $derived(read.pending)
   const loadingNotice = createLoadingNotice(
     () => loading,
-    () => serviceIdentity(service)
+    () => read.requestKey
   )
-  let error = $state('')
-  let request: AbortController | undefined
+  const error = $derived(read.error ?? '')
   const id = createPopoverID('service-labels')
   let trigger = $state<HTMLButtonElement>()
   let popover = $state<HTMLDivElement>()
@@ -34,28 +38,13 @@
   })
   $effect(() => {
     void service
-    labels = undefined
-    error = ''
-    loading = false
-    return () => request?.abort()
+    read.clear()
+    return () => read.cancel()
   })
   async function inspect() {
-    request?.abort()
-    const controller = new AbortController()
-    request = controller
-    loading = true
-    error = ''
-    try {
-      const result = await telemetryAPI.getServiceLabels(
-        serviceIdentity(service),
-        controller.signal
-      )
-      if (!controller.signal.aborted) labels = result
-    } catch (reason) {
-      if (!controller.signal.aborted) error = String(reason)
-    } finally {
-      if (!controller.signal.aborted) loading = false
-    }
+    await read.load(signal =>
+      telemetryAPI.getServiceLabels(serviceIdentity(service), signal)
+    )
   }
 </script>
 

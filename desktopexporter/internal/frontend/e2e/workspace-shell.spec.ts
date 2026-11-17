@@ -9,7 +9,7 @@ const shellSelectors = [
   '.page-layout__main-chrome',
   '.page-layout__main-chrome > .pane-header',
   '.page-layout__main-chrome > .pane-header .pane-header__top',
-  '.time-filter-trigger',
+  'button[aria-label^="Change time range"]',
   '#signal-drawer-detail',
 ]
 

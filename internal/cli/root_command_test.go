@@ -19,25 +19,6 @@ import (
 
 const expectedRootHelp = `otel-desktop-viewer
 
-View OpenTelemetry data locally or inspect a running viewer.
-
-The bare command runs the viewer in the foreground until it receives a signal.
-Client commands require a running viewer.
-
-For automation, reuse an existing viewer. Otherwise, start
-  otel-desktop-viewer --open-browser=false
-as a managed child. Retain its process handle, wait for the configured viewer
-HTTP endpoint to accept connections, then terminate and wait for the child only
-if you started it. Never stop a viewer you did not start.
-
-To observe the viewer itself, keep a monitoring viewer running:
-  otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
-Then start the observed viewer in another terminal:
-  otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
-Omitting --self-telemetry-endpoint keeps self-telemetry off. The monitoring
-endpoint must remain running through observed viewer shutdown. The caller owns
-starting, stopping, and waiting for both foreground processes.
-
 USAGE
   otel-desktop-viewer [flags]
   otel-desktop-viewer <command> [flags]
@@ -55,6 +36,7 @@ COMMANDS
   services  Discover services and their telemetry counts
   query     🦆 Run SQL against a running viewer
   export    📤 Export stored telemetry as OTLP JSON
+  import    📥 Import OTLP JSON files into a running viewer
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")
@@ -286,7 +268,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"attributes", "export", "log", "logs", "metric", "metrics", "query", "services", "skills", "span", "trace", "traces"}, names)
+	assert.Equal(t, []string{"attributes", "export", "import", "log", "logs", "metric", "metrics", "query", "services", "skills", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}

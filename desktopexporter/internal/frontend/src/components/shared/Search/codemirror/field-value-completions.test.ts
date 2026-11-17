@@ -3,6 +3,7 @@ import { EditorState } from '@codemirror/state'
 import { CompletionContext } from '@codemirror/autocomplete'
 import { createFieldValueSource } from './field-value-completions'
 import { createFieldValueCache } from './field-value-cache'
+import { ReadMap } from '@/services/reads/map.svelte'
 import { getFieldsBySignal } from '@/constants/fields'
 import { queryLanguage } from './query-language'
 import { createPathFieldReference } from '../attribute-field-reference'
@@ -19,7 +20,7 @@ describe('selected attribute values', () => {
     const values = vi.fn(async () => ['/checkout'])
     const columns = vi.fn(async () => [])
     const source = createFieldValueSource(
-      createFieldValueCache(columns, 'traces'),
+      createFieldValueCache(columns, 'traces', new ReadMap()),
       () => [field],
       values
     )
@@ -33,7 +34,11 @@ describe('selected attribute values', () => {
     const doc = 'span.attributes["http.route"]::VARCHAR = "che'
     const state = EditorState.create({ doc, extensions: [queryLanguage] })
     const result = await source(new CompletionContext(state, doc.length, false))
-    expect(values).toHaveBeenCalledWith(field, 'che')
+    expect(values).toHaveBeenCalledWith(
+      field,
+      'che',
+      expect.any(CompletionContext)
+    )
     expect(columns).not.toHaveBeenCalled()
     expect(result?.options.map(value => value.label)).toEqual(['/checkout'])
   })
@@ -50,8 +55,9 @@ function makeSource(
   ) => Promise<string[]> = async () => NAMES
 ) {
   return {
-    source: createFieldValueSource(createFieldValueCache(fetch, signal), () =>
-      getFieldsBySignal(signal)
+    source: createFieldValueSource(
+      createFieldValueCache(fetch, signal, new ReadMap()),
+      () => getFieldsBySignal(signal)
     ),
     fetch,
   }
@@ -133,7 +139,13 @@ describe('span name value completions', () => {
     })
     const r = await source(new CompletionContext(state, 7, false))
     expect(r).not.toBeNull()
-    expect(fetch).toHaveBeenCalledWith('metrics', 'unit', '', 500)
+    expect(fetch).toHaveBeenCalledWith(
+      'metrics',
+      'unit',
+      '',
+      500,
+      expect.any(AbortSignal)
+    )
   })
 
   it('preserves case-insensitive built-in field lookup', async () => {
@@ -146,7 +158,13 @@ describe('span name value completions', () => {
 
     await source(new CompletionContext(state, state.doc.length, false))
 
-    expect(fetch).toHaveBeenCalledWith('traces', 'name', '', 500)
+    expect(fetch).toHaveBeenCalledWith(
+      'traces',
+      'name',
+      '',
+      500,
+      expect.any(AbortSignal)
+    )
   })
 
   it('fetches each field once per session, shared across triggers', async () => {
@@ -171,7 +189,13 @@ describe('span name value completions', () => {
       extensions: [queryLanguage],
     })
     await source(new CompletionContext(state, 7, false))
-    expect(fetch).toHaveBeenCalledWith('traces', 'name', '', 500)
+    expect(fetch).toHaveBeenCalledWith(
+      'traces',
+      'name',
+      '',
+      500,
+      expect.any(AbortSignal)
+    )
   })
 
   it('returns nothing when the fetch fails', async () => {
@@ -188,7 +212,7 @@ describe('IN array values', () => {
 
   async function units(doc: string, pos = doc.length) {
     const source = createFieldValueSource(
-      createFieldValueCache(async () => UNITS, 'metrics'),
+      createFieldValueCache(async () => UNITS, 'metrics', new ReadMap()),
       () => getFieldsBySignal('metrics')
     )
     const state = EditorState.create({ doc, extensions: [queryLanguage] })
@@ -230,7 +254,7 @@ describe('IN array values', () => {
 describe('operator gating', () => {
   async function traces(doc: string) {
     const source = createFieldValueSource(
-      createFieldValueCache(async () => NAMES, 'traces'),
+      createFieldValueCache(async () => NAMES, 'traces', new ReadMap()),
       () => getFieldsBySignal('traces')
     )
     const state = EditorState.create({ doc, extensions: [queryLanguage] })
@@ -239,7 +263,7 @@ describe('operator gating', () => {
 
   async function metrics(doc: string) {
     const source = createFieldValueSource(
-      createFieldValueCache(async () => ['ms', 's'], 'metrics'),
+      createFieldValueCache(async () => ['ms', 's'], 'metrics', new ReadMap()),
       () => getFieldsBySignal('metrics')
     )
     const state = EditorState.create({ doc, extensions: [queryLanguage] })

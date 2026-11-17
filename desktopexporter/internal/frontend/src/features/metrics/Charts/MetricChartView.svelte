@@ -45,7 +45,7 @@
     aggregateSummaryError?: string
     aggregateMetric?: MetricViewData
     aggregateSummaryMetric?: MetricViewData
-    requestKey?: AbortSignal
+    requestKey?: number
   } = $props()
 
   const ctx = getMetricViewContext()

@@ -5,6 +5,7 @@ import HomePage, { rejectionLabel } from './HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
+import { notifyDataChanged } from '@/test/event-source'
 
 describe('rejectionLabel', () => {
   it('labels known rejection kinds', () => {
@@ -177,9 +178,38 @@ describe('Home service discovery', () => {
     )
     expect(traces).toHaveBeenCalledTimes(calls + 1)
     expect(document.querySelector('.service-map__canvas svg')).toBe(canvas)
+
+    const connections =
+      Promise.withResolvers<
+        Awaited<ReturnType<typeof telemetryAPI.discoverServiceConnections>>
+      >()
+    const telemetry =
+      Promise.withResolvers<
+        Awaited<ReturnType<typeof telemetryAPI.searchTraceSummaries>>
+      >()
+    vi.mocked(telemetryAPI.discoverServiceConnections).mockReturnValueOnce(
+      connections.promise
+    )
+    traces.mockReturnValueOnce(telemetry.promise)
+    await fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    await waitFor(() => expect(services).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(traces).toHaveBeenCalledTimes(calls + 2))
+    const signal = traces.mock.lastCall!.at(-1) as AbortSignal
+    for (let i = 0; i < 5; i++) await notifyDataChanged()
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(services).toHaveBeenCalledTimes(3)
+    expect(signal.aborted).toBe(false)
+    connections.resolve({ items: [], truncated: false })
+    await notifyDataChanged()
+    expect(services).toHaveBeenCalledTimes(3)
+    expect(signal.aborted).toBe(false)
+    telemetry.resolve([])
+    await waitFor(() => expect(services).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(traces).toHaveBeenCalledTimes(calls + 3))
+    expect(document.querySelector('.service-map__canvas svg')).toBe(canvas)
   })
 
-  it('keeps pending statistics independent of service pagination without displaying an invented zero', async () => {
+  it('keeps pending statistics independent of service pagination and refresh without displaying an invented zero', async () => {
     let finish!: (stats: Stats) => void
     const stats = vi.spyOn(telemetryAPI, 'getStats').mockImplementation(
       () =>
@@ -190,10 +220,12 @@ describe('Home service discovery', () => {
     vi.spyOn(telemetryAPI, 'getImportConfig').mockResolvedValue({
       otlpHttpPort: 4318,
     })
-    vi.spyOn(telemetryAPI, 'discoverServices').mockResolvedValue({
-      items: [],
-      truncated: true,
-    })
+    const services = vi
+      .spyOn(telemetryAPI, 'discoverServices')
+      .mockResolvedValue({
+        items: [],
+        truncated: true,
+      })
     setTestUrl('/')
     renderWithContexts(HomePage)
     await screen.findByText('Loading storage information…')
@@ -203,6 +235,8 @@ describe('Home service discovery', () => {
     ).not.toHaveTextContent('[0]')
     const signal = stats.mock.calls[0]![0]!
     await fireEvent.click(screen.getByRole('button', { name: 'More services' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(services).toHaveBeenCalledTimes(3))
     expect(stats).toHaveBeenCalledTimes(1)
     expect(signal.aborted).toBe(false)
     finish({

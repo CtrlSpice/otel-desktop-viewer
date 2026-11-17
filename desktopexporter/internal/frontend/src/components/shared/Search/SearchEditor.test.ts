@@ -16,8 +16,6 @@ it('does not discover fields on mount and loads them on search focus', async () 
   setTestUrl('/traces')
   renderWithContexts(SearchEditor, {
     signal: 'traces',
-    sortValue: 'startTime',
-    sortDirection: 'desc',
     onSearchRequest: vi.fn(),
   })
   await new Promise(resolve => setTimeout(resolve, 300))
@@ -40,8 +38,6 @@ it('loads restored-query definitions immediately and does not submit a stale edi
   setTestUrl('/traces?q=' + encodeURIComponent('name = "restored"'))
   const result = renderWithContexts(SearchEditor, {
     signal: 'traces',
-    sortValue: 'startTime',
-    sortDirection: 'desc',
     onSearchRequest: submit,
   })
   await waitFor(() => expect(fields).toHaveBeenCalledTimes(1))
@@ -78,8 +74,6 @@ it('submits an untouched restored query after its definitions arrive', async () 
   )
   renderWithContexts(SearchEditor, {
     signal: 'traces',
-    sortValue: 'startTime',
-    sortDirection: 'desc',
     onSearchRequest: submit,
   })
   await waitFor(() => expect(resolve).toBeDefined())

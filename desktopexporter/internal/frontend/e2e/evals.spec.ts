@@ -368,7 +368,7 @@ test('experiment selection, assessments, filtering and browser history stay conn
         return [name?.startsWith('Change time range') ? 'Time' : name]
       })
     )
-  ).toEqual(['Refresh', 'Clear search', 'Search query help', 'Time'])
+  ).toEqual(['Clear search', 'Search query help'])
   await expect
     .poll(() =>
       toolbar.getByRole('search').evaluate(element => {
@@ -402,7 +402,7 @@ test('experiment selection, assessments, filtering and browser history stay conn
   ).toHaveCount(0)
   await expect(
     toolbar.getByRole('button', { name: /^Change time range/ })
-  ).toHaveText('')
+  ).toHaveAccessibleName('Change time range, All time')
   await expect(
     page.getByRole('region', { name: 'Evaluation results', exact: true })
   ).toContainText('Guide-assisted agent')

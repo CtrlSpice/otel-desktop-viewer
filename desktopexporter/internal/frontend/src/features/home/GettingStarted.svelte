@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte'
+  import { createRead } from '@/services/reads'
   import PaneHeader, {
     paneTabID,
   } from '@/components/shared/Layout/PaneHeader.svelte'
@@ -12,6 +13,8 @@
   let protocol = $state('http')
   let httpPort = $state<number | null>(null)
   let grpcPort = $state<number | null>(null)
+  const configRead =
+    createRead<Awaited<ReturnType<typeof telemetryAPI.getImportConfig>>>()
   const panelID = $props.id()
   const tabs = [
     { id: 'http', label: 'HTTP' },
@@ -24,19 +27,13 @@
     `otel-cli exec \\\n  --endpoint http://localhost:${httpPort ?? 4318} \\\n  --protocol http/protobuf \\\n  --service my-service \\\n  --name "test trace" \\\n  -- sleep 1`
   )
   onMount(() => {
-    const controller = new AbortController()
-    void telemetryAPI
-      .getImportConfig(controller.signal)
-      .then(config => {
-        if (!controller.signal.aborted) {
-          httpPort = config.otlpHttpPort
-          grpcPort = config.otlpGrpcPort ?? null
-        }
-      })
-      .catch(() => {
-        // The guide labels the default port when configuration is unavailable.
-      })
-    return () => controller.abort()
+    void configRead.load(
+      signal => telemetryAPI.getImportConfig(signal),
+      config => {
+        httpPort = config.otlpHttpPort
+        grpcPort = config.otlpGrpcPort ?? null
+      }
+    )
   })
 </script>
 

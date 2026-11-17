@@ -27,7 +27,11 @@ function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
 export function createFieldValueSource(
   cache: FieldValueCache,
   getFields: () => FieldDefinition[],
-  attributeValues?: (field: FieldDefinition, term: string) => Promise<string[]>
+  attributeValues?: (
+    field: FieldDefinition,
+    term: string,
+    context: CompletionContext
+  ) => Promise<string[]>
 ) {
   return async function fieldValueSource(
     context: CompletionContext
@@ -132,7 +136,7 @@ export function createFieldValueSource(
     try {
       names =
         usesFieldToken(def) && attributeValues
-          ? await attributeValues(def, typed)
+          ? await attributeValues(def, typed, context)
           : await cache.values(def.name)
     } catch {
       // The cache evicts failures so a later trigger can retry.

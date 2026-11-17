@@ -53,6 +53,14 @@ export default defineConfig({
     port: 3001, // Fixed port for v2 frontend
     strictPort: true, // Fail if port is in use instead of trying another
     proxy: {
+      '/api/changes': {
+        target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/api/import-target': {
+        target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/api/data': {
         target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,

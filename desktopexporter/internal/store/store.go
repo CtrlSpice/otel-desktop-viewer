@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/arrowbridge"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/commitbridge"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
@@ -29,9 +30,10 @@ var (
 )
 
 type Store struct {
-	db     *sql.DB
-	conn   driver.Conn
-	dbPath string // empty means in-memory mode
+	db      *sql.DB
+	conn    driver.Conn
+	dbPath  string // empty means in-memory mode
+	commits *commitbridge.Observer
 
 	// mu protects db and conn. Queries and ingest hold it for reading so they
 	// may overlap. Pool mutations and Close hold it for writing and exclude
@@ -79,13 +81,21 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if dbPath != "" {
 		dbPath = filepath.Clean(dbPath)
 	}
-	connector, err := duckdb.NewConnector(dbPath, nil)
+	commits := commitbridge.New()
+	initialized := false
+	defer func() {
+		if !initialized {
+			commits.Close()
+		}
+	}()
+	connector, err := duckdb.NewConnector(dbPath, commits.Init)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
+		_ = connector.Close()
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
@@ -95,7 +105,6 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	db.SetMaxOpenConns(maxPoolConns)
 	db.SetMaxIdleConns(maxPoolConns)
 	db.SetConnMaxIdleTime(5 * time.Minute)
-	initialized := false
 	defer func() {
 		if !initialized {
 			_ = db.Close()
@@ -126,6 +135,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	return &Store{
 		db:           db,
 		conn:         conn,
+		commits:      commits,
 		dbPath:       dbPath,
 		logger:       logger,
 		schemaCompat: schemaCompat,
@@ -151,8 +161,17 @@ func (s *Store) Close() error {
 		dbErr = s.db.Close()
 		s.db = nil
 	}
+	if s.commits != nil {
+		s.commits.Close()
+	}
 
 	return errors.Join(connErr, dbErr)
+}
+
+// CommitSnapshot reports writes committed by any store connection, including
+// retention and successful ingestion sub-batches. It performs no database work.
+func (s *Store) CommitSnapshot() (uint64, <-chan struct{}, bool) {
+	return s.commits.Snapshot()
 }
 
 // WithConn runs fn against the store's dedicated appender connection. Ingest

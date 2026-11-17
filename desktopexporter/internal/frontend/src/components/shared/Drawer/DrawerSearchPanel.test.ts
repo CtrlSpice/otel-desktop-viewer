@@ -8,8 +8,6 @@ function renderPanel(props: Record<string, unknown> = {}) {
   setTestUrl('/traces')
   return renderWithContexts(DrawerSearchPanel, {
     signal: 'traces',
-    sortValue: 'duration',
-    sortDirection: 'desc',
     ...props,
   })
 }
@@ -22,11 +20,11 @@ describe('DrawerSearchPanel toolbar segment', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps an accessible name on the icon-only time range control', () => {
+  it('labels the time control with the selected range', () => {
     renderPanel({ segment: 'toolbar' })
     expect(
       screen.getByRole('button', { name: /^Change time range/ })
-    ).toBeInTheDocument()
+    ).toHaveAccessibleName('Change time range, All time')
     expect(
       screen.queryByText('Time range', { exact: true })
     ).not.toBeInTheDocument()

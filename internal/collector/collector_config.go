@@ -1,15 +1,12 @@
 package collector
 
 import (
-	_ "embed"
 	"net"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/redaction"
 	"go.opentelemetry.io/collector/otelcol"
 )
-
-//go:embed collector_redaction.yaml
-var collectorRedaction string
 
 // ConfigOptions contains the viewer and receiver settings parsed by the CLI.
 type ConfigOptions struct {
@@ -66,7 +63,7 @@ func URIs(o ConfigOptions) []string {
 		`yaml:service::pipelines::logs::processors: [redaction, batch]`,
 		`yaml:service::pipelines::logs::exporters: [desktop]`,
 	}
-	URIs = append(URIs, "yaml:"+collectorRedaction)
+	URIs = append(URIs, "yaml:"+redaction.Policy)
 	return append(URIs, telemetryURIs(o)...)
 }
 

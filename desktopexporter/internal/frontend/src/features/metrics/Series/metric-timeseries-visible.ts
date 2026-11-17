@@ -237,26 +237,6 @@ export function resolveTimeseriesVisible(
   return currentKeys.slice(0, initialVisible)
 }
 
-/** Drop keys no longer present after a refresh; re-seed only when stale. */
-export function reconcileTimeseriesVisible(
-  visible: ReadonlySet<string>,
-  currentKeys: readonly string[],
-  metricRef: string,
-  maxChecked: number | null = MAX_VISIBLE_TIMESERIES
-): string[] {
-  const current = new Set(currentKeys)
-  const hadStale = [...visible].some(k => !current.has(k))
-  const kept = [...visible].filter(k => current.has(k))
-  const capped = maxChecked === null ? kept : kept.slice(0, maxChecked)
-  if (capped.length > 0 || !hadStale) return capped
-  return resolveTimeseriesVisible(
-    currentKeys,
-    metricRef,
-    DEFAULT_VISIBLE_TIMESERIES,
-    maxChecked
-  )
-}
-
 export function visibleKeyListsEqual(
   a: Iterable<string>,
   b: readonly string[]

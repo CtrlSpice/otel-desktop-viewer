@@ -3,6 +3,9 @@ import { get } from 'svelte/store'
 import { evalsEnabled } from '@/state/features'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { evalAPI } from '@/features/evals/services/eval-service'
+import { getDataChanges } from '@/contexts/data-changes.svelte'
+import { createRefreshCoordinator } from '@/services/refresh-coordinator'
+import { createRead } from '@/services/reads'
 
 export type NavigationCounts = Partial<
   Record<'home' | 'traces' | 'metrics' | 'logs' | 'evals', number>
@@ -15,35 +18,43 @@ export function createNavigationCounts() {
   let homeCounts = $state<NavigationCounts | null>(null)
   let homeSearchActive = $state(false)
   let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
-  let generation = 0
-  let request: AbortController | undefined
-  async function refresh() {
-    request?.abort()
-    const controller = new AbortController()
-    request = controller
-    const current = ++generation
+  const statsRead = createRead<
+    Awaited<ReturnType<typeof telemetryAPI.getStats>>
+  >({ group: null })
+  const homeRead = createRead<number>({ group: null })
+  const evalsRead = createRead<
+    Awaited<ReturnType<typeof evalAPI.searchEvalExperiments>>
+  >({ group: null })
+  async function fetchCounts() {
     function publish(value: NavigationCounts) {
-      if (current === generation && !controller.signal.aborted)
-        counts = { ...counts, ...value }
+      counts = { ...counts, ...value }
     }
     await Promise.allSettled([
-      telemetryAPI.getStats(controller.signal).then(stats =>
-        publish({
-          traces: stats.traces.traceCount,
-          metrics: stats.metrics.metricCount,
-          logs: stats.logs.logCount,
-        })
+      statsRead.load(
+        signal => telemetryAPI.getStats(signal),
+        stats =>
+          publish({
+            traces: stats.traces.traceCount,
+            metrics: stats.metrics.metricCount,
+            logs: stats.logs.logCount,
+          })
       ),
-      telemetryAPI
-        .getServiceCount(controller.signal)
-        .then(home => publish({ home })),
+      homeRead.load(
+        signal => telemetryAPI.getServiceCount(signal),
+        home => publish({ home })
+      ),
       __EVALS_BUILT__ && get(evalsEnabled)
-        ? evalAPI
-            .searchEvalExperiments({ limit: 1 }, controller.signal)
-            .then(evals => publish({ evals: evals.total }))
+        ? evalsRead.load(
+            signal => evalAPI.searchEvalExperiments({ limit: 1 }, signal),
+            evals => publish({ evals: evals.total })
+          )
         : publish({ evals: undefined }),
     ])
   }
+  const coordinator = createRefreshCoordinator(fetchCounts)
+  const refresh = coordinator.request
+  const changes = getDataChanges()
+  if (changes) onDestroy(changes.subscribe(() => void refresh()))
   const state = {
     get counts() {
       return homeCounts ? { ...counts, ...homeCounts } : counts
@@ -74,7 +85,9 @@ export function createNavigationCounts() {
       enabledBefore = enabled
     })
   })
-  onDestroy(() => request?.abort())
+  onDestroy(() => {
+    coordinator.dispose()
+  })
   return state
 }
 

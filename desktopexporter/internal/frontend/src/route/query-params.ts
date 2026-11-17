@@ -8,6 +8,7 @@ export const METRIC_VIEW_PARAMS = [
   'hscope',
   'dp',
   'series',
+  'visible',
 ] as const
 export type MetricViewParam = (typeof METRIC_VIEW_PARAMS)[number]
 
