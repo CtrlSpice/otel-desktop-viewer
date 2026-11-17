@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { Time02Icon } from '@hugeicons/core-free-icons'
+  import {
+    getTimeContext,
+    TIME_RANGE_PRESETS,
+  } from '@/contexts/time-context.svelte'
   import { formatDateTimeRangeLabel } from '@/utils/time'
+  import { wallClock } from '@/state/wall-clock.svelte'
   import {
     createPopoverID,
     setupAnchorPopover,
@@ -8,6 +14,7 @@
   } from '@/components/shared/utils/anchor-popover'
   import PresetTimeRanges from './PresetTimeRanges.svelte'
   import TimeRangeFilterBody from './TimeRangeFilterBody.svelte'
+  import IconButton from '../IconButton.svelte'
 
   const ctx = getTimeContext()
 
@@ -27,14 +34,6 @@
     previousSelection = currentSelection
   })
 
-  function presetLabel(durationMs: number): string {
-    const day = 24 * 60 * 60_000
-    const hour = 60 * 60_000
-    if (durationMs % day === 0) return `${durationMs / day}d`
-    if (durationMs % hour === 0) return `${durationMs / hour}h`
-    return `${durationMs / 60_000}m`
-  }
-
   $effect(() => {
     const popover = popoverEl
     const trigger = triggerEl
@@ -49,24 +48,33 @@
     })
   })
 
-  let ariaLabel = $derived.by(() => {
-    const label =
-      ctx.selection.type === 'all'
-        ? 'All time'
-        : ctx.selection.type === 'preset'
-          ? `Last ${presetLabel(ctx.selection.durationMs)}`
-          : formatDateTimeRangeLabel(
-              ctx.selection.start,
-              ctx.selection.end,
-              ctx.tz,
-              { includeTimezone: true }
-            )
-    return `Change time range, ${label}`
+  const rangeLabel = $derived.by(() => {
+    const selection = ctx.selection
+    if (selection.type === 'all') return 'All time'
+    if (selection.type === 'preset') {
+      const preset = TIME_RANGE_PRESETS.find(
+        preset => preset.durationMs === selection.durationMs
+      )!
+      return `Last ${preset.label}`
+    }
+    return formatDateTimeRangeLabel(selection.start, selection.end, ctx.tz, {
+      style: 'compact',
+      now: Number(wallClock.now / 1_000_000n),
+    })
   })
+  const exactRangeLabel = $derived.by(() => {
+    const selection = ctx.selection
+    if (selection.type === 'all' || selection.type === 'preset') {
+      return rangeLabel
+    }
+    return formatDateTimeRangeLabel(selection.start, selection.end, ctx.tz, {
+      includeTimezone: true,
+    })
+  })
+  const ariaLabel = $derived(`Change time range, ${exactRangeLabel}`)
 
   let {
-    class:
-      className = 'btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content',
+    class: className = '',
     popoverAnchor = 'below-end',
   }: {
     class?: string
@@ -75,29 +83,21 @@
   } = $props()
 </script>
 
-<button
-  bind:this={triggerEl}
-  type="button"
-  class="time-filter-trigger tooltip tooltip-bottom {className}"
+<IconButton
+  bind:element={triggerEl}
+  class={className}
   popovertarget={popoverID}
   aria-expanded={popoverOpen}
-  aria-label={ariaLabel}
-  data-tip={popoverOpen ? '' : 'Time range'}
+  label={ariaLabel}
+  tooltip={popoverOpen ? '' : `Change time range, ${rangeLabel}`}
 >
-  <svg
-    class="h-[17px] w-[17px] shrink-0"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+  <HugeiconsIcon
+    icon={Time02Icon}
+    size={17}
+    strokeWidth={1.5}
     aria-hidden="true"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 8v4l2 2" />
-  </svg>
-</button>
+  />
+</IconButton>
 
 <div
   bind:this={popoverEl}
@@ -118,11 +118,5 @@
     width: 32rem;
     font-family: var(--font-sans);
     container-type: inline-size;
-  }
-
-  .time-filter-trigger::before {
-    left: auto;
-    right: 0;
-    --tt-trans: 0%;
   }
 </style>

@@ -8,6 +8,7 @@ desktopexporter/internal/frontend-legacy/
 .vscode/
 *.db
 *.duckdb*
+!desktopexporter/internal/store/commitbridge/LICENSE.duckdb
 *.wal
 *.tmp/
 *.log

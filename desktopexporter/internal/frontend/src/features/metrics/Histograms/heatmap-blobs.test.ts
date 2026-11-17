@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { buildHistogramHeatmapData } from './histogram-heatmap-data'
 import {
-  buildHeatmapBlobs,
-  heatmapBlobDetail,
-  heatmapBlobPath,
-  type HeatmapBlob,
+  buildHeatmapContours,
+  heatmapBlobRadius,
+  heatmapContourPath,
+  type HeatmapContour,
 } from './heatmap-blobs'
 
 function model(columns: number[][]) {
@@ -28,8 +28,8 @@ function model(columns: number[][]) {
   )
 }
 
-function area(blob: HeatmapBlob) {
-  return blob.rings.reduce(
+function area(contour: HeatmapContour) {
+  return contour.rings.reduce(
     (total, ring) =>
       total +
       ring.reduce((sum, point, index) => {
@@ -41,70 +41,104 @@ function area(blob: HeatmapBlob) {
   )
 }
 
-describe('heatmap blobs', () => {
-  it('joins neighbouring colours in dense mode while preserving every cell and empty holes', () => {
-    const data = model([
-      [1, 2, 3],
-      [4, 0, 5],
-      [6, 7, 8],
-    ])
-    const blobs = buildHeatmapBlobs(data, [2, 4, 6, 8], true)
-    expect(blobs).toHaveLength(1)
-    expect(blobs[0]!.rings).toHaveLength(2)
-    expect(area(blobs[0]!)).toBe(8)
-    expect(new Set(blobs[0]!.cells)).toEqual(new Set(data.cells))
-    expect(
-      blobs[0]!.cells.map(cell => cell.count).sort((a, b) => a - b)
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
-    expect(
-      buildHeatmapBlobs(
-        model([
-          [1, 0],
-          [0, 2],
-        ]),
-        [2],
-        true
+function contains(contour: HeatmapContour, x: number, y: number) {
+  let inside = false
+  for (const ring of contour.rings) {
+    for (const [index, point] of ring.entries()) {
+      const next = ring[(index + 1) % ring.length]!
+      if (
+        point.y > y !== next.y > y &&
+        x < point.x + ((y - point.y) * (next.x - point.x)) / (next.y - point.y)
       )
-    ).toHaveLength(2)
-  })
+        inside = !inside
+    }
+  }
+  return inside
+}
 
-  it('switches to joined colours only below 12px in either cell dimension', () => {
-    expect(heatmapBlobDetail(12, 20).joinColours).toBe(false)
-    expect(heatmapBlobDetail(11.99, 20).joinColours).toBe(true)
-    expect(heatmapBlobDetail(20, 11.99).joinColours).toBe(true)
-    expect(heatmapBlobDetail(20, 12).joinColours).toBe(false)
-  })
-
-  it('joins touching cells by colour band while retaining individual counts and identities', () => {
+describe('heatmap count contours', () => {
+  it('paints nested count regions low to high while retaining each cell once', () => {
     const data = model([
-      [1, 2],
-      [2, 3],
+      [9, 1],
+      [5, 9],
     ])
-    const blobs = buildHeatmapBlobs(data, [1, 3])
-    expect(blobs).toHaveLength(2)
-    expect(blobs.map(blob => blob.cells.length)).toEqual([3, 1])
-    expect(new Set(blobs.flatMap(blob => blob.cells))).toEqual(
-      new Set(data.cells)
+    const contours = buildHeatmapContours(data, [1, 5, 9])
+    expect(contours.map(contour => contour.band)).toEqual([1, 2, 3])
+    expect(contours.map(area)).toEqual([4, 3, 2])
+    expect(
+      contours.map(contour => contour.cells.map(cell => cell.datum.count))
+    ).toEqual([[1], [5], [9, 9]])
+    expect(contours.flatMap(contour => contour.cells)).toHaveLength(
+      data.cells.length
     )
-    expect(blobs.map(area)).toEqual([3, 1])
-    expect(blobs[0]!.cells.map(cell => cell.count).sort()).toEqual([1, 2, 2])
-  })
-
-  it('keeps diagonal neighbours and empty columns separate', () => {
     expect(
-      buildHeatmapBlobs(
-        model([
-          [1, 0],
-          [0, 1],
-        ]),
-        [1]
+      new Set(
+        contours.flatMap(contour => contour.cells.map(cell => cell.datum))
       )
-    ).toHaveLength(2)
-    expect(buildHeatmapBlobs(model([[1], [0], [1]]), [1])).toHaveLength(2)
+    ).toEqual(new Set(data.cells))
   })
 
-  it('preserves a hole surrounded by one colour', () => {
-    const [blob] = buildHeatmapBlobs(
+  it('preserves count order at every rotated two-, three- and four-band junction', () => {
+    for (let assignment = 0; assignment < 256; assignment++) {
+      const data = model(
+        Array.from({ length: 2 }, (_, x) =>
+          Array.from(
+            { length: 2 },
+            (_, y) => 1 + ((assignment >> (2 * (2 * x + y))) & 3)
+          )
+        )
+      )
+      const contours = buildHeatmapContours(data, [1, 2, 3, 4])
+      expect(contours.map(contour => contour.band)).toEqual(
+        [...new Set(data.cells.map(cell => cell.count))].sort((a, b) => a - b)
+      )
+      for (const contour of contours) {
+        expect(area(contour)).toBe(
+          data.cells.filter(cell => cell.count >= contour.band).length
+        )
+        for (const cell of data.cells) {
+          const x = data.columns.findIndex(
+            column => column.key === cell.columnKey
+          )
+          const y = data.rows.findIndex(row => row.key === cell.bucketKey)
+          expect(contains(contour, x + 0.5, y + 0.5)).toBe(
+            cell.count >= contour.band
+          )
+        }
+      }
+    }
+  })
+
+  it('keeps holes, missing columns and diagonal-only contacts empty', () => {
+    for (let mask = 0; mask < 512; mask++) {
+      const columns = Array.from({ length: 3 }, (_, x) =>
+        Array.from({ length: 3 }, (_, y) => (mask >> (x * 3 + y)) & 1)
+      )
+      const data = model(columns)
+      const contours = buildHeatmapContours(data, [1])
+      expect(contours.reduce((sum, contour) => sum + area(contour), 0)).toBe(
+        data.cells.length
+      )
+      for (const contour of contours) {
+        for (let x = 0; x < 3; x++)
+          for (let y = 0; y < 3; y++)
+            expect(contains(contour, x + 0.5, y + 0.5)).toBe(
+              columns[x]![2 - y] === 1
+            )
+        expect(heatmapContourPath(contour, 0.2, 0.1)).not.toMatch(
+          /NaN|Infinity/
+        )
+      }
+    }
+    const [diagonal] = buildHeatmapContours(
+      model([
+        [1, 0],
+        [0, 1],
+      ]),
+      [1]
+    )
+    expect(diagonal!.rings).toHaveLength(2)
+    const [hole] = buildHeatmapContours(
       model([
         [1, 1, 1],
         [1, 0, 1],
@@ -112,144 +146,62 @@ describe('heatmap blobs', () => {
       ]),
       [1]
     )
-    expect(blob!.rings).toHaveLength(2)
-    expect(area(blob!)).toBe(8)
-    const path = heatmapBlobPath(blob!, 20, 40)
-    expect(path.match(/M/g)).toHaveLength(2)
-    expect(path.match(/Z/g)).toHaveLength(2)
-    expect(path.match(/Q/g)).toHaveLength(8)
+    expect(hole!.rings).toHaveLength(2)
+    expect(area(hole!)).toBe(8)
   })
 
-  it('rounds inward turns without entering an empty bucket', () => {
-    const blob: HeatmapBlob = {
-      key: 'elbow',
-      band: 0,
+  it('rounds internal concave turns toward the lower-count layer', () => {
+    // In screen order: low/middle above middle/high. The middle threshold
+    // surrounds the low corner; the high threshold sits on top of the middle.
+    const contours = buildHeatmapContours(
+      model([
+        [2, 1],
+        [3, 2],
+      ]),
+      [1, 2, 3]
+    )
+    const middle = contours[1]!
+    const high = contours[2]!
+    for (const pitch of [4, 8, 12, 24, 40]) {
+      const radius = heatmapBlobRadius(pitch, pitch)
+      expect(heatmapContourPath(middle, pitch, pitch)).toContain(
+        `L${pitch - radius},${pitch}Q${pitch},${pitch} ${pitch},${pitch - radius}`
+      )
+      expect(heatmapContourPath(high, pitch, pitch)).toContain(
+        `Q${pitch},${pitch} ${pitch + radius},${pitch}`
+      )
+    }
+  })
+
+  it('retains the exterior curve and its clearance around empty buckets', () => {
+    const contour: HeatmapContour = {
+      band: 1,
       cells: [],
       rings: [
         [
-          { x: 0, y: 0 },
-          { x: 2, y: 0 },
-          { x: 2, y: 1 },
-          { x: 1, y: 1 },
-          { x: 1, y: 2 },
-          { x: 0, y: 2 },
+          { x: 0, y: 0, internal: false },
+          { x: 2, y: 0, internal: false },
+          { x: 2, y: 1, internal: false },
+          { x: 1, y: 1, internal: false },
+          { x: 1, y: 2, internal: false },
+          { x: 0, y: 2, internal: false },
         ],
       ],
     }
-    for (const pitch of [0.2, 4, 12, 24, 40]) {
-      const path = heatmapBlobPath(blob, pitch, pitch)
-      expect(path.match(/Q/g)).toHaveLength(6)
-      if (pitch === 40) {
-        // Both turns use an 18px curve; the inward control recedes just enough
-        // to keep the missing lower-right bucket unpainted.
-        expect(path).toContain('Q2,2 20,2')
-        expect(path).toContain('L53.5,35.5Q35.5,35.5 35.5,53.5')
-      }
-      // Sample the rendered quadratic boundaries, including the inward turn.
-      const segments = path.matchAll(
-        /[ML]([\d.e-]+),([\d.e-]+)Q([\d.e-]+),([\d.e-]+) ([\d.e-]+),([\d.e-]+)/g
-      )
-      for (const segment of segments) {
-        const [sx, sy, cx, cy, ex, ey] = segment.slice(1).map(Number) as [
-          number,
-          number,
-          number,
-          number,
-          number,
-          number,
-        ]
-        for (let step = 0; step <= 100; step++) {
-          const t = step / 100
-          const x = (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t ** 2 * ex
-          const y = (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t ** 2 * ey
-          expect(x > pitch + 1e-9 && y > pitch + 1e-9).toBe(false)
-        }
-      }
-    }
+    const path = heatmapContourPath(contour, 40, 40)
+    expect(path).toContain('Q0,0 2,0')
+    expect(path).toContain('L41.5,39.5Q39.5,39.5 39.5,41.5')
+    expect(path.match(/Q/g)).toHaveLength(6)
+    expect(heatmapContourPath(contour, 0, 40)).toBe('')
   })
 
-  it('traces every small-grid topology without losing cells or filling holes', () => {
-    for (let mask = 0; mask < 512; mask++) {
-      const columns = Array.from({ length: 3 }, (_, x) =>
-        Array.from({ length: 3 }, (_, y) => (mask >> (x * 3 + y)) & 1)
-      )
-      const data = model(columns)
-      const blobs = buildHeatmapBlobs(data, [1])
-      expect(
-        blobs.reduce((sum, blob) => sum + area(blob), 0),
-        `mask ${mask}`
-      ).toBe(data.cells.length)
-      expect(new Set(blobs.flatMap(blob => blob.cells))).toEqual(
-        new Set(data.cells)
-      )
-      for (const blob of blobs) {
-        expect(heatmapBlobPath(blob, 0.2, 0.1)).not.toMatch(/NaN|Infinity/)
-      }
+  it('uses the same rounding at every density and fits tiny cells', () => {
+    for (const size of [8, 16, 28, 48]) {
+      expect(heatmapBlobRadius(size, 200)).toBe(2)
+      expect(heatmapBlobRadius(200, size)).toBe(2)
     }
-  })
-
-  it('insets only the perimeter of a solid region and handles unmeasured charts', () => {
-    const [blob] = buildHeatmapBlobs(
-      model([
-        [1, 1],
-        [1, 1],
-      ]),
-      [1]
-    )
-    expect(blob!.rings[0]).toHaveLength(4)
-    const path = heatmapBlobPath(blob!, 20, 40)
-    expect(path.match(/Q/g)).toHaveLength(4)
-    expect(path).toContain('39')
-    expect(path).toContain('79')
-    expect(heatmapBlobPath(blob!, 0, 40)).toBe('')
-  })
-
-  it.each([
-    { pitch: 8, gap: 1 },
-    { pitch: 16, gap: 2 },
-    { pitch: 28, gap: 3 },
-    { pitch: 48, gap: 4 },
-  ])(
-    'keeps full edge clearance and shared gaps at $pitch px density',
-    ({ pitch, gap }) => {
-      const blobs = buildHeatmapBlobs(model([[1], [2]]), [2])
-      const grid = { columns: 2, rows: 1 }
-      const bounds = blobs.map(blob => {
-        const coordinates = [
-          ...heatmapBlobPath(blob, pitch, pitch, grid).matchAll(
-            /([\d.]+),([\d.]+)/g
-          ),
-        ]
-        const xs = coordinates.map(match => Number(match[1]))
-        const ys = coordinates.map(match => Number(match[2]))
-        return {
-          left: Math.min(...xs),
-          right: Math.max(...xs),
-          top: Math.min(...ys),
-          bottom: Math.max(...ys),
-        }
-      })
-      expect(bounds[0]).toEqual({
-        left: gap,
-        right: pitch - gap / 2,
-        top: gap,
-        bottom: pitch - gap,
-      })
-      expect(bounds[1]).toEqual({
-        left: pitch + gap / 2,
-        right: pitch * 2 - gap,
-        top: gap,
-        bottom: pitch - gap,
-      })
-    }
-  )
-
-  it('uses the narrower dimension and keeps the liner from consuming tiny cells', () => {
-    for (const size of [0.2, 8, 16, 28, 48]) {
-      const detail = heatmapBlobDetail(size, 200)
-      expect(detail).toEqual(heatmapBlobDetail(200, size))
-      expect(detail.liner * 2).toBeLessThanOrEqual(size / 4)
-    }
-    expect(heatmapBlobDetail(0, 200).liner).toBe(0)
+    expect(heatmapBlobRadius(0.2, 200)).toBe(0.1)
+    expect(heatmapBlobRadius(200, 0.2)).toBe(0.1)
+    expect(heatmapBlobRadius(0, 200)).toBe(0)
   })
 })

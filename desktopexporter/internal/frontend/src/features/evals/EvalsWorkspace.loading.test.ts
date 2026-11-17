@@ -340,7 +340,7 @@ it.each(
     }
     const settleReplacement = async () => {
       lists[replacementIndex].reject(new Error('Replacement list unavailable'))
-      await tick()
+      await screen.findByText('Replacement list unavailable')
     }
     await (settle === 'page-first' ? settlePage() : settleReplacement())
     if (settle === 'page-first' && outcome === 'success') {

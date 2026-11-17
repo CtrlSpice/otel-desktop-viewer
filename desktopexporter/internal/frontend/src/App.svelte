@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { createFileImporter } from '@/services/import-service'
   import HomePage from '@/features/home/HomePage.svelte'
   import MetricsPage from '@/features/metrics/MetricsPage.svelte'
@@ -10,7 +10,7 @@
   import ImportFiles from '@/components/shared/ImportFiles.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import { isPlainLeftClick, navigate } from '@/route'
+  import { isPlainLeftClick, navigate, subscribeToRoute } from '@/route'
   import {
     createRouteContext,
     getRouteContext,
@@ -19,6 +19,11 @@
   import { createWorkspaceContext } from '@/contexts/workspace-context.svelte'
   import WorkspaceShell from '@/components/shared/Layout/WorkspaceShell.svelte'
   import { createNavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import { createDataChanges } from '@/contexts/data-changes.svelte'
+  import {
+    createImportNavigation,
+    lookupImportTarget,
+  } from '@/services/import-navigation'
 
   let {
     importFiles,
@@ -28,24 +33,59 @@
     importFailures?: readonly ImportFailure[]
   } = $props()
 
+  createRouteContext()
+  createTimeContext()
+  const changes = createDataChanges()
+  createNavigationCounts()
+  const workspace = createWorkspaceContext()
+
+  let importMessage = $state('')
+  let importRequestKey = $state(0)
   let localImportFailures = $state<ImportFailure[]>([])
-  const importer = createFileImporter(window.location.href, failure => {
+  function reportImportFailure(failure: ImportFailure) {
     localImportFailures.push(failure)
+  }
+  const importNavigation = createImportNavigation({
+    subscribe: changes.subscribe,
+    lookup: lookupImportTarget,
+    navigate(record, destination) {
+      const query = new URLSearchParams({ time: 'all' })
+      if (destination.spanID) query.set('span', destination.spanID)
+      navigate(
+        `/${record.signal}/${encodeURIComponent(destination.id)}?${query}`
+      )
+      void tick().then(() => changes.refreshViews())
+    },
+    status(message) {
+      importMessage = message
+    },
+    onFailure: reportImportFailure,
   })
+  onMount(() => {
+    let previous = window.location.href
+    return subscribeToRoute(() => {
+      if (window.location.href === previous) return
+      previous = window.location.href
+      importNavigation.cancel()
+    })
+  })
+
+  const importer = createFileImporter(window.location.href, reportImportFailure)
   const allImportFailures = $derived([
     ...importFailures,
     ...localImportFailures,
   ])
   function handleImportFiles(files: File[]) {
     if (importFiles) importFiles(files)
-    else void importer.enqueue(files)
+    else if (files.length) {
+      importRequestKey++
+      void importer.enqueue(files, importNavigation.select(files[0].name))
+    }
   }
-  onDestroy(() => importer.cancel())
-
-  createRouteContext()
-  createTimeContext()
-  createNavigationCounts()
-  const workspace = createWorkspaceContext()
+  onDestroy(() => {
+    importNavigation.cancel()
+    importer.cancel()
+  })
 
   const routeContext = getRouteContext()
   let mainElement = $state<HTMLElement | null>(null)
@@ -142,6 +182,12 @@
       main: emptyPane,
       detail: emptyPane,
     }}
+    loadingMessage={workspace.props?.loadingMessage || importMessage}
+    loadingRequestKey={workspace.props?.loadingMessage
+      ? workspace.props.loadingRequestKey
+      : importMessage
+        ? `import:${importRequestKey}`
+        : undefined}
   />
 </main>
 

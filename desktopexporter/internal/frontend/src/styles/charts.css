@@ -110,7 +110,7 @@
 }
 
 /* Translucent interaction washes preserve the underlying data colours. */
-.metric-chart-view :where(.histogram-hover-column, .heatmap-hover-column) {
+.metric-chart-view :where(.histogram-hover-column) {
   fill: var(--item-hover-bg);
   fill-opacity: 0.45;
   stroke: none;
@@ -118,7 +118,7 @@
   ry: var(--radius-selector);
   pointer-events: none;
 }
-.metric-chart-view :where(.value-bucket-pin-highlight, .heatmap-selection) {
+.metric-chart-view :where(.value-bucket-pin-highlight) {
   fill: var(--item-selected-bg);
   fill-opacity: 0.55;
   stroke: var(--item-selected-bg);

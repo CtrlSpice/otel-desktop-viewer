@@ -57,11 +57,13 @@ export const attributeSearchAPI = {
     signal: string,
     field: string,
     term: string,
-    limit: number
+    limit: number,
+    abort?: AbortSignal
   ): Promise<string[]> => {
     const rawData = await callArrow(
       'getFieldValueCompletions',
-      named({ signal, field, term, limit })
+      named({ signal, field, term, limit }),
+      abort
     )
     return rowViews(rawData, (frame, row) => frame.cell('value', row).text())
   },
@@ -73,12 +75,14 @@ export const attributeSearchAPI = {
       owner?: string
       path?: readonly (string | number)[]
       type?: string
-    } = {}
+    } = {},
+    signal?: AbortSignal
   ): Promise<AttributeMatch[]> => {
     if (!term.trim() && !options.path) return []
     const rawData = await callArrow(
       'searchAttributeMatches',
-      named({ term, ...options })
+      named({ term, ...options }),
+      signal
     )
     return rowViews(rawData, attributeMatch)
   },

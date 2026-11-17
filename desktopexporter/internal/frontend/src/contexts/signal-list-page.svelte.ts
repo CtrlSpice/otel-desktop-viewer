@@ -1,35 +1,32 @@
 // Shared list-page orchestration for traces / logs / metrics pages.
 //
 // Owns the duplicated wiring: mount/fetch, sort, URL-driven selection with
-// shared-link-safe auto-select, time-range refetch, stats polling refresh
-// indicator, footer keyboard nav, and search-result override. Callers keep
+// shared-link-safe auto-select, time-range refetch, commit-driven refresh
+// indicator and footer keyboard nav. Callers keep
 // signal-specific sort fns, detail fetching, and Svelte snippets.
 //
 // File extension is `.svelte.ts` because we use `$state` / `$effect` inside.
 
-import { onMount, onDestroy } from 'svelte'
+import { onMount, onDestroy, untrack } from 'svelte'
 import { getTimeContext } from '@/contexts/time-context.svelte'
 import { getRouteContext } from '@/contexts/route-context.svelte'
+import { getDataChanges } from '@/contexts/data-changes.svelte'
+import { createRefreshCoordinator } from '@/services/refresh-coordinator'
+import { createRead } from '@/services/reads'
 import {
   navigateToItem,
   signalIdFromPath,
   type HistoryMode,
   type SignalName,
 } from '@/route'
-import type { SearchResultEvent } from '@/types/api-types'
 import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
-import {
-  beginListUpdate,
-  cancelPendingListUpdates,
-  isLatestListUpdate,
-} from '@/components/shared/utils/list-update-seq'
 
 export type SortDirection = 'asc' | 'desc'
 
 export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   signal: SignalName
   getItemID: (item: TItem) => string
-  fetchList: () => Promise<TItem[]>
+  fetchList: (signal: AbortSignal) => Promise<TItem[]>
   compare: (
     a: TItem,
     b: TItem,
@@ -41,8 +38,10 @@ export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   preserveMissingSelection?: boolean
   /** Paged results already have a stable server order. */
   serverSorted?: boolean
-  /** Called after each poll interval; update polled stat counters here. */
-  pollStats?: () => Promise<void>
+  /** Called after committed changes; update freshness counters here. */
+  refreshStats?: () => Promise<void>
+  /** Defer freshness reads until the displayed list's baseline has settled. */
+  statsPending?: () => boolean
   /** Derive refresh pulse + aside tip from baseline vs polled counters. */
   refreshFromStats?: () => { pulse: boolean; tip: string }
 }
@@ -68,13 +67,10 @@ export type SignalListPage<TItem, TSortColumn extends string> = {
   selectFirst(): void
   selectLast(): void
   handleRefresh(): void
-  handleSearchResults(event: SearchResultEvent): void
   runListFetch(): Promise<void>
   /** Publish a page of the displayed reading without superseding its replacement. */
   publishItems(next: TItem[]): void
 }
-
-const POLL_INTERVAL_MS = 3000
 
 /** Index of the item whose id matches, or -1 when id is missing / not found. */
 export function findItemIndexByID<T>(
@@ -110,12 +106,12 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
 ): SignalListPage<TItem, TSortColumn> {
   const timeContext = getTimeContext()
   const routeContext = getRouteContext()
+  const changes = getDataChanges()
 
   let items = $state<TItem[]>([])
-  let loading = $state(true)
-  let requestKey = $state(0)
-  let error = $state<string | null>(null)
+  const list = createRead<TItem[]>({ errorMessage: 'Failed to load list' })
   let mounted = $state(false)
+  const loading = $derived(!mounted || list.requestKey === 0 || list.pending)
 
   let sortColumn = $state(opts.initialSort.column)
   let sortDirection = $state<SortDirection>(opts.initialSort.direction)
@@ -180,39 +176,40 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   $effect(() => {
     void timeContext.selection
     if (mounted) {
-      void runListFetch()
+      untrack(() => void runListFetch())
     }
   })
 
-  $effect(() => {
-    if (!mounted || !opts.pollStats) return
-    const id = setInterval(async () => {
+  let statsRevision = $state(0)
+  let refreshedStatsRevision = 0
+  const statsRefresh = createRefreshCoordinator(async () => {
+    if (loading || opts.statsPending?.()) return
+    refreshedStatsRevision = statsRevision
+    if (opts.refreshStats) {
       try {
-        await opts.pollStats!()
+        await opts.refreshStats()
         updateRefreshIndicator()
       } catch {
-        /* polling failures are silent */
+        /* Freshness failures do not replace displayed data. */
       }
-    }, POLL_INTERVAL_MS)
-    return () => clearInterval(id)
+    }
   })
+  if (changes) onDestroy(changes.subscribe(() => statsRevision++))
+  $effect(() => {
+    if (
+      statsRevision !== refreshedStatsRevision &&
+      !loading &&
+      !opts.statsPending?.()
+    )
+      void statsRefresh.request()
+  })
+  onDestroy(() => statsRefresh.dispose())
 
   async function runListFetch() {
-    const updateSeq = beginListUpdate(opts.signal)
-    requestKey = updateSeq
-    try {
-      loading = true
-      error = null
-      const next = await opts.fetchList()
-      if (!isLatestListUpdate(opts.signal, updateSeq)) return
+    await list.load(opts.fetchList, next => {
       items = next
       updateRefreshIndicator()
-    } catch (err) {
-      if (!isLatestListUpdate(opts.signal, updateSeq)) return
-      error = err instanceof Error ? err.message : 'Failed to load list'
-    } finally {
-      if (isLatestListUpdate(opts.signal, updateSeq)) loading = false
-    }
+    })
   }
 
   function handleSortChange(value: TSortColumn, direction: SortDirection) {
@@ -242,25 +239,11 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   }
 
   function handleRefresh() {
-    if (searchEditorApi) searchEditorApi.submit()
-    else void runListFetch()
-  }
-
-  function handleSearchResults(event: SearchResultEvent) {
-    if (event.signal !== opts.signal) return
-    if (!isLatestListUpdate(event.signal, event.updateSeq)) return
-    error = null
-    // SAFETY: Each page pairs its TItem with the matching signal's SearchResultEvent producer.
-    items = event.results as TItem[]
-    loading = false
+    void runListFetch()
   }
 
   onMount(() => {
     mounted = true
-  })
-
-  onDestroy(() => {
-    cancelPendingListUpdates(opts.signal)
   })
 
   return {
@@ -271,10 +254,10 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
       return loading
     },
     get requestKey() {
-      return requestKey
+      return list.requestKey
     },
     get error() {
-      return error
+      return list.error
     },
     get mounted() {
       return mounted
@@ -315,7 +298,6 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
     selectFirst,
     selectLast,
     handleRefresh,
-    handleSearchResults,
     runListFetch,
     publishItems(next) {
       items = next

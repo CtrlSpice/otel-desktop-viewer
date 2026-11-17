@@ -1,51 +1,33 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { createRead } from '@/services/reads'
   import { Download01Icon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
+  import IconButton from './IconButton.svelte'
   import { downloadOTLP, type ExportSignal } from '@/services/export-service'
 
   let { signal, id }: { signal: ExportSignal; id: string } = $props()
-  let pending = $state(false)
-  let error = $state('')
-  let activeRequest: AbortController | undefined
+  const downloadRead = createRead<void>({
+    group: null,
+    errorMessage: 'Download failed',
+  })
+  const pending = $derived(downloadRead.pending)
+  const error = $derived(downloadRead.error ?? '')
 
   $effect(() => {
     void signal
     void id
-    activeRequest?.abort()
-    activeRequest = undefined
-    pending = false
-    error = ''
+    downloadRead.clear()
   })
-  onDestroy(() => activeRequest?.abort())
 
   async function download() {
     if (pending) return
-    error = ''
-    pending = true
-    const controller = new AbortController()
-    activeRequest = controller
-    try {
-      await downloadOTLP(signal, id, controller.signal)
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        error = err instanceof Error ? err.message : 'Download failed'
-      }
-    } finally {
-      if (activeRequest === controller) {
-        pending = false
-        activeRequest = undefined
-      }
-    }
+    await downloadRead.load(abort => downloadOTLP(signal, id, abort))
   }
 </script>
 
-<button
-  type="button"
-  class="header-icon-button tooltip tooltip-left"
+<IconButton
   onclick={download}
-  aria-label="Download {signal}"
-  data-tip="Download {signal}"
+  label="Download {signal}"
   aria-busy={pending}
   aria-disabled={pending}
   disabled={!id}
@@ -56,7 +38,7 @@
     strokeWidth={1.5}
     aria-hidden="true"
   />
-</button>
+</IconButton>
 
 {#if error}
   <span role="alert" class="text-error text-xs">{error}</span>

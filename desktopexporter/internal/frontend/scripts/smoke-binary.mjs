@@ -403,10 +403,126 @@ try {
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(copied)
+
+  const selectedURL = page.url()
+  let detailRequests = 0
+  page.on('request', request => {
+    if (request.url() === `${baseURL}/api/data/getLog`) detailRequests++
+  })
+  const live = page.getByRole('button', { name: 'Live', exact: true })
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  const receivedLogCount = count =>
+    page.waitForResponse(async response => {
+      if (
+        response.url() !== `${baseURL}/rpc` ||
+        response.request().postDataJSON()?.method !== 'getStats'
+      )
+        return false
+      return (await response.json()).result?.logs?.logCount === count
+    })
+  const appendLog = async marker => {
+    const response = await fetch(`http://127.0.0.1:${httpPort}/v1/logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: marker },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    })
+    assert.equal(response.status, 200)
+  }
+  const offCommit = receivedLogCount(2)
+  await appendLog('live-off-arrival')
+  await offCommit
+  assert.equal(detailRequests, 0)
+  assert.equal(page.url(), selectedURL)
+
+  const enabled = page.waitForResponse(`${baseURL}/api/data/getLog`)
+  await live.click()
+  await enabled
+  await expect(live).toHaveAttribute('aria-pressed', 'true')
+  const onCommit = receivedLogCount(3)
+  const refreshed = page.waitForResponse(`${baseURL}/api/data/getLog`)
+  await appendLog('live-on-arrival')
+  await Promise.all([onCommit, refreshed])
+  assert.equal(page.url(), selectedURL)
+  await body
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(copied)
+
+  await live.click()
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  await page.goto(baseURL)
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles({
+    name: 'redacted-first-log.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: 'browser-import-destination' },
+                    attributes: [
+                      {
+                        key: 'password',
+                        value: { stringValue: 'synthetic-import-secret' },
+                      },
+                      {
+                        key: 'exact',
+                        value: { intValue: exactInteger },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ),
+  })
+  await expect(page).not.toHaveURL(selectedURL, { timeout: 15000 })
+  await expect(page).toHaveURL(/\/logs\/[a-f0-9-]+\?time=all$/)
+  await expect(body).toContainText('browser-import-destination')
+  const importedID = new URL(page.url()).pathname.split('/').at(-1)
+  const imported = await json(`${baseURL}/export/logs/${importedID}`)
+  const importedLog = imported.resourceLogs[0].scopeLogs[0].logRecords[0]
+  assert.match(
+    importedLog.attributes.find(attribute => attribute.key === 'password').value
+      .stringValue,
+    /\*{4}/
+  )
+  assert.deepEqual(
+    importedLog.attributes.find(attribute => attribute.key === 'exact').value,
+    { intValue: exactInteger }
+  )
   assert.deepEqual(errors, [])
   assertRunning()
   console.log(
-    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity and trace export`
+    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity, trace export, Live off/on selection and redacted browser import`
   )
 } catch (error) {
   console.error(output)

@@ -1045,9 +1045,9 @@ describe('histogram source contributions', () => {
       ctx.onDatapointClick(source)
       await tick()
       expect(
-        [...document.querySelectorAll('[data-contribution-count]')].map(e =>
-          e.getAttribute('data-contribution-count')
-        )
+        [...document.querySelectorAll('[data-contribution-count]')]
+          .map(e => e.getAttribute('data-contribution-count'))
+          .sort()
       ).toEqual(['2', '3'])
       expect(
         screen.queryByRole('status', { name: 'Datapoint contribution' })
@@ -1243,6 +1243,20 @@ describe('HistogramHeatmap keyboard model', () => {
     expect(readout()).toContain('Row 1 of 4, bucket >1.003. Count 0.')
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })
     expect(readout()).toContain('Row 2 of 4, bucket (1.002, 1.003]. Count 0.')
+    await fireEvent.keyDown(surface, { key: 'Enter' })
+    const cursor = document.querySelector('.chart-keyboard-cursor-cell')!
+    const selected = document.querySelector('.heatmap-cell[data-selected]')!
+    expect(selected).not.toBeNull()
+    for (const attribute of ['x', 'y', 'width', 'height'])
+      expect(selected.getAttribute(attribute)).toBe(
+        cursor.getAttribute(attribute)
+      )
+    expect(selected.closest('[clip-path]')).toBeNull()
+    await fireEvent.blur(surface)
+    expect(document.querySelector('.chart-keyboard-cursor-cell')).toBeNull()
+    expect(selected).toBeInTheDocument()
+    await fireEvent.focus(surface)
+    await fireEvent.keyDown(surface, { key: 'ArrowDown' })
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })
     expect(readout()).toContain('Row 3 of 4, bucket (1.001, 1.002]. Count 0.')
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })

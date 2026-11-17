@@ -223,16 +223,16 @@ it('keeps replacement and page failures owned by their respective refresh and Mo
   requests[4].reject(new Error('Next page failed'))
   await view.findByText(/Next page failed/)
   await fireEvent.click(view.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(view.queryByText(/Replacement failed/)).toBeNull())
   expect(discovery.mock.calls[5][0]!.offset).toBe(0)
   expect(JSON.stringify(discovery.mock.calls[5][0]!.queries)).toContain('B')
-  expect(view.queryByText(/Replacement failed/)).toBeNull()
   expect(view.getByRole('alert')).toHaveTextContent('Next page failed')
   await receive(5, ['B-first'])
   expectNodes(['B-first'])
   expect(view.queryByRole('alert')).toBeNull()
 })
 
-it('starts independent work immediately and resets the shared 200ms notice when its identity changes', async () => {
+it('waits for pagination before refreshing and resets the 200ms notice for replacement work', async () => {
   const { view, discovery, requests, receive, more, expectNodes } =
     mountDiscovery()
   await receive(0, ['A-first'])
@@ -247,16 +247,14 @@ it('starts independent work immediately and resets the shared 200ms notice when 
   expect(view.getByText('Loading service map…')).toBeInTheDocument()
 
   await fireEvent.click(view.getByRole('button', { name: 'Refresh' }))
-  expect(discovery).toHaveBeenCalledTimes(3)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(discovery).toHaveBeenCalledTimes(2)
   expect(discovery.mock.calls[1][1]?.aborted).toBe(false)
-  expect(view.queryByText('Loading service map…')).toBeNull()
-  await vi.advanceTimersByTimeAsync(199)
-  expect(view.queryByText('Loading service map…')).toBeNull()
-  await vi.advanceTimersByTimeAsync(1)
   expect(view.getByText('Loading service map…')).toBeInTheDocument()
 
   requests[1].reject(new Error('Page failed'))
   await vi.advanceTimersByTimeAsync(0)
+  expect(discovery).toHaveBeenCalledTimes(3)
   expect(view.queryByText('Loading service map…')).toBeNull()
   expect(view.getByRole('button', { name: 'More services' })).toBeEnabled()
   await vi.advanceTimersByTimeAsync(199)
