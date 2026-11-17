@@ -137,3 +137,17 @@ The frontend uses the server's aggregates and handles axes, coordinates,
 colours, visible series, histogram/heatmap layout, selections, URLs and saved
 preferences. Legend changes request new aggregate data without fetching the
 full Metric view again.
+
+Metric links carry the checked series in `visible`, as comma-separated
+database-local series references. `visible=none` keeps the chart empty. An
+explicit selection overrides browser preferences. When `visible` is absent,
+the viewer loads the saved selection or its defaults and records it in the URL.
+Missing series stay in the URL and become visible if their data returns; new
+series are not added automatically. Gauge and Sum charts allow 22 checked
+series; histogram selection has no series-count cap.
+
+Checkbox changes update the current URL without adding a Back-button step.
+The inspected `series` and exact datapoint `dp` are independent of chart
+visibility. Histogram links use `htab=heatmap` or `htab=histogram`. The
+**Percentiles** checkbox is a browser preference shared by both histogram types
+and is excluded from URLs.

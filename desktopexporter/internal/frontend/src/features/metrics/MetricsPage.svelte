@@ -85,7 +85,7 @@
     selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import { resolveTimezoneName, timezoneOffsetMinutes } from '@/utils/time'
-  import { navigateToItem } from '@/route'
+  import { navigateToItem, parseMetricVisibleSeries, readRoute } from '@/route'
   import type { MetricViewData, MetricStats } from '@/types/api-types'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/Layout/PageLayout.svelte'
@@ -949,7 +949,9 @@
 
   async function fetchMetricDetail(summary: MetricSelection) {
     const requestedDatapointSeries =
-      persistedVisibleKeys(summary.metricRef) ?? undefined
+      parseMetricVisibleSeries(readRoute().query) ??
+      persistedVisibleKeys(summary.metricRef) ??
+      undefined
     await detailRead.load(async signal => {
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,

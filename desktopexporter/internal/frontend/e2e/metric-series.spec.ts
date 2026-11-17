@@ -197,6 +197,205 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+for (const metricType of ['Gauge', 'Sum'] as const) {
+  test(`${metricType} shared visibility overrides preferences and restores through reload and history`, async ({
+    page,
+    browser,
+  }) => {
+    const value: MetricFixture = {
+      ...metric,
+      metricType,
+      aggregationTemporalityCode: metricType === 'Sum' ? 1 : null,
+      aggregationTemporality: metricType === 'Sum' ? 'Delta' : null,
+      isMonotonic: metricType === 'Sum' ? true : null,
+      timeseries: timeseries.map(series => ({
+        ...series,
+        datapoints: series.datapoints.map(point => {
+          if (point.metricType !== 'Gauge')
+            throw new Error('Expected a Gauge fixture')
+          return metricType === 'Sum'
+            ? {
+                ...point,
+                metricType,
+                aggregationTemporalityCode: 1,
+                aggregationTemporality: 'Delta',
+                isMonotonic: true,
+              }
+            : point
+        }),
+      })),
+    }
+    async function mockLinkedMetric(target: Page) {
+      const chartRequests: string[][] = []
+      await target.route('**/api/features', route =>
+        route.fulfill({ json: { evals: { enabled: false } } })
+      )
+      await routeTelemetry(target, async route => {
+        const { id, method, params } = route.request().postDataJSON()
+        function resultForRequest() {
+          if (method === 'getMetric') return exactMetricFixture(value)
+          if (method === 'getMetricView') {
+            if (params.targetBuckets > 0)
+              chartRequests.push(params.datapointSeriesRefs)
+            return {
+              ...value,
+              timeseries: value.timeseries
+                .filter(
+                  series =>
+                    !params.seriesRefs ||
+                    params.seriesRefs.includes(series.seriesRef)
+                )
+                .map(series => ({
+                  ...series,
+                  datapoints:
+                    !params.datapointSeriesRefs ||
+                    params.datapointSeriesRefs.includes(series.seriesRef)
+                      ? series.datapoints
+                      : [],
+                })),
+            }
+          }
+          if (method === 'getMetricAggregateView')
+            return { aggregate: null, scalarAggregate: null }
+          if (method === 'searchMetricSummaries')
+            return [
+              {
+                ...summary,
+                metricType,
+                aggregationTemporalityCode: value.aggregationTemporalityCode,
+                aggregationTemporality: value.aggregationTemporality,
+                isMonotonic: value.isMonotonic,
+              },
+            ]
+          if (method === 'getStats')
+            return {
+              traces: {
+                traceCount: 0,
+                spanCount: 0,
+                serviceCount: 0,
+                errorCount: 0,
+                lastReceived: null,
+              },
+              logs: { logCount: 0, errorCount: 0, lastReceived: null },
+              metrics: {
+                metricCount: 1,
+                dataPointCount: 80,
+                lastReceived: null,
+              },
+              rejections: [],
+            }
+          return []
+        }
+        await route.fulfill({
+          json: { jsonrpc: '2.0', id, result: resultForRequest() },
+        })
+      })
+      return chartRequests
+    }
+    const requests = await mockLinkedMetric(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('signal-detail:open', 'true')
+      localStorage.setItem(
+        'metrics:view:series-layout',
+        JSON.stringify({ visibleKeys: ['first'] })
+      )
+    })
+    await page.setViewportSize({ width: 1920, height: 1100 })
+    const query = new URLSearchParams({
+      time: 'all',
+      q: 'name = "request.duration"',
+      agg: 'raw',
+      visible: 'second',
+      series: 'first',
+      dp: 'first-0',
+    })
+    await page.goto(`/metrics/${metric.metricRef}?${query}`)
+    const lines = page.locator('.metric-series-line')
+    await expect(lines).toHaveCount(1)
+    await expect(lines).toHaveAttribute('data-series-key', 'second')
+    await expect(page.locator('[data-dp-id="first-0"]')).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+    expect(requests[0]).toEqual(['second'])
+    const copied = page.url()
+    const fresh = await browser.newContext({
+      viewport: { width: 1920, height: 1100 },
+    })
+    try {
+      const opened = await fresh.newPage()
+      const freshRequests = await mockLinkedMetric(opened)
+      await opened.goto(copied)
+      await expect(opened.locator('.metric-series-line')).toHaveCount(1)
+      await expect(opened.locator('.metric-series-line')).toHaveAttribute(
+        'data-series-key',
+        'second'
+      )
+      expect(freshRequests[0]).toEqual(['second'])
+      await page.reload()
+      await expect(lines).toHaveCount(1)
+      await expect(lines).toHaveAttribute('data-series-key', 'second')
+      await expect(page).toHaveURL(copied)
+
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+        .uncheck()
+      await expect(lines).toHaveCount(0)
+      expect(new URL(page.url()).searchParams.get('visible')).toBe('none')
+      await opened.goto(page.url())
+      await expect(
+        opened.getByRole('checkbox', {
+          name: 'Show route: /first in chart',
+          exact: true,
+        })
+      ).not.toBeChecked()
+      await expect(
+        opened.getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+      ).not.toBeChecked()
+      expect(freshRequests.at(-1)).toEqual([])
+
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /first in chart',
+          exact: true,
+        })
+        .check()
+      await expect(lines).toHaveCount(1)
+      const beforeInspection = page.url()
+      await page
+        .getByRole('button', { name: 'Select route: /second', exact: true })
+        .click()
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+        .check()
+      await expect(lines).toHaveCount(2)
+      const afterInspection = page.url()
+      await page.goBack()
+      await expect(page).toHaveURL(beforeInspection)
+      await expect(lines).toHaveCount(1)
+      await expect(page.locator('[data-dp-id="first-0"]')).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      )
+      await page.goForward()
+      await expect(page).toHaveURL(afterInspection)
+      await expect(lines).toHaveCount(2)
+      expect(new URL(page.url()).searchParams.get('q')).toBe(query.get('q'))
+    } finally {
+      await fresh.close()
+    }
+  })
+}
+
 test('retained datapoints identify their owner through a failed series switch and retry', async ({
   page,
 }) => {
@@ -1401,6 +1600,101 @@ test.describe('independent histogram aggregate loading', () => {
     quantiles: { '0.5': 1.5, '0.95': 1.9, '0.99': 2 },
     explicitBounds: [1, 2],
     bucketCounts: [2, 7, 3],
+  }
+
+  for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
+    test(`${metricType} links restore 100 visible series without a selection cap`, async ({
+      page,
+    }) => {
+      const keys = Array.from(
+        { length: 100 },
+        (_, index) =>
+          `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+      )
+      const distribution =
+        metricType === 'Histogram'
+          ? { explicitBounds: [1, 2], bucketCounts: [2, 7, 3] }
+          : {
+              scale: 0,
+              zeroCount: 2,
+              zeroThreshold: 0.1,
+              positiveBucketOffset: 0,
+              positiveBucketCounts: [7, 3],
+              negativeBucketOffset: 0,
+              negativeBucketCounts: [],
+            }
+      const value: MetricFixture = {
+        ...metric,
+        metricType,
+        aggregationTemporalityCode: 1,
+        aggregationTemporality: 'Delta',
+        timeseries: keys.map((key, index) => ({
+          ...timeseries[0]!,
+          seriesRef: key,
+          attributes: [
+            { key: 'index', value: { kind: 'int64', value: String(index) } },
+          ],
+          datapoints: [],
+        })),
+      }
+      const selected: string[][] = []
+      const initial: string[][] = []
+      await routeTelemetry(page, async route => {
+        const { id, method, params } = route.request().postDataJSON()
+        function resultForRequest() {
+          if (method === 'getMetric') return exactMetricFixture(value)
+          if (method === 'getMetricView') {
+            initial.push(params.datapointSeriesRefs)
+            return value
+          }
+          if (method === 'searchMetricSummaries')
+            return [
+              {
+                ...summary,
+                metricType,
+                aggregationTemporalityCode: 1,
+                aggregationTemporality: 'Delta',
+                seriesCount: keys.length,
+                seriesCardinality: keys.length,
+              },
+            ]
+          if (method === 'getMetricAggregateView') {
+            selected.push(params.seriesRefs)
+            return {
+              aggregate: [{ ...bucket, ...distribution }],
+              scalarAggregate: null,
+            }
+          }
+        }
+        const result = resultForRequest()
+        if (result === undefined) return route.fallback()
+        await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+      })
+      const query = new URLSearchParams({
+        time: 'all',
+        htab: 'quantiles',
+        hscope: 'window',
+        visible: keys.join(','),
+      })
+      await page.goto(`/metrics/${metric.metricRef}?${query}`)
+      await expect(page.locator('.heatmap-cell').first()).toBeVisible()
+      expect(initial[0]).toEqual(keys)
+      expect(selected).toHaveLength(2)
+      expect(
+        selected.every(
+          selection => JSON.stringify(selection) === JSON.stringify(keys)
+        )
+      ).toBe(true)
+      const url = new URL(page.url())
+      expect(url.searchParams.get('visible')).toBe(keys.join(','))
+      expect(url.searchParams.get('htab')).toBe('heatmap')
+      expect(url.searchParams.has('hscope')).toBe(false)
+      await page.reload()
+      await expect(page.locator('.heatmap-cell').first()).toBeVisible()
+      await expect(page).toHaveURL(url.href)
+      expect(selected).toHaveLength(4)
+      expect(selected.at(-1)).toEqual(keys)
+    })
   }
 
   async function holdAggregates(
@@ -3276,8 +3570,21 @@ for (const { id: theme } of THEMES) {
         await expect(quantileLabels).toHaveCount(0)
         await expect(page.locator('.heatmap-quantile-channel')).toHaveCount(0)
         await expect(countLegend).toBeVisible()
+        if (theme === 'madoromi-fuyu-yoru') {
+          const url = page.url()
+          await page.reload()
+          await expect(overlaysToggle).not.toBeChecked()
+          await expect(countLegend).toBeVisible()
+          await expect(quantileLines).toHaveCount(0)
+          await expect(page).toHaveURL(url)
+        }
         await overlaysToggle.check()
         await expect(quantileLines).toHaveCount(3)
+        if (theme === 'madoromi-fuyu-yoru') {
+          await page.reload()
+          await expect(overlaysToggle).toBeChecked()
+          await expect(quantileLines).toHaveCount(3)
+        }
       }
       await page.goto(
         `/metrics/${metric.metricRef}?htab=quantiles&hscope=window&series=first&dp=hist-0`
@@ -4932,5 +5239,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(raw)
   expect(exportRequests).toBe(2)
   await expect(bubble.locator('details')).toHaveAttribute('open')
-  await expect(page).toHaveURL(`/metrics/${metric.metricRef}?agg=raw`)
+  await expect(page).toHaveURL(
+    `/metrics/${metric.metricRef}?agg=raw&visible=first%2Csecond`
+  )
 })

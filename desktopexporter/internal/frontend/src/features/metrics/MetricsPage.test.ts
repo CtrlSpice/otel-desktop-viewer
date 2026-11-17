@@ -244,6 +244,76 @@ async function renderSelected(metricType: MetricType) {
     })
 }
 
+describe('visible series links', () => {
+  it.each(
+    (['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const).flatMap(
+      metricType =>
+        ['second,missing', 'none'].map(visible => ({ metricType, visible }))
+    )
+  )(
+    'uses $visible before the first $metricType chart read',
+    async ({ metricType, visible }) => {
+      const metric = makeMetric(metricType)
+      metric.timeseries.push({ ...metric.timeseries[0]!, seriesRef: 'second' })
+      searchMetricSummaries.mockResolvedValue([makeSummary(metricType)])
+      getStats.mockResolvedValue(makeStats())
+      getMetricView.mockResolvedValue(metric)
+      getMetricAggregateView.mockResolvedValue({
+        aggregate: null,
+        scalarAggregate: null,
+      })
+      savePersistedTimeseriesVisible(metric.metricRef, ['route=/checkout'])
+      setTestUrl(
+        `/metrics/metric-1?time=all&visible=${visible}&series=route%3D%2Fcheckout`
+      )
+      renderWithContexts(MetricsPage)
+      await screen.findByRole('table', { name: 'Metric fields' })
+      expect(getMetricView.mock.calls[0]![11]).toEqual(
+        visible === 'none' ? [] : ['missing', 'second']
+      )
+      const checkboxes = screen.getAllByRole('checkbox', {
+        name: /^Show default series · .+ in chart$/,
+      })
+      expect(checkboxes[0]).not.toBeChecked()
+      if (visible === 'none') expect(checkboxes[1]).not.toBeChecked()
+      else expect(checkboxes[1]).toBeChecked()
+      const requestedURL = window.location.href
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() =>
+        expect(searchMetricSummaries).toHaveBeenCalledTimes(2)
+      )
+      expect(window.location.href).toBe(requestedURL)
+      expect(readRoute().query.series).toBe('route=/checkout')
+    }
+  )
+
+  it('uses the latest URL selection when a pending detail response arrives', async () => {
+    const metric = makeMetric('Gauge')
+    metric.timeseries.push({ ...metric.timeseries[0]!, seriesRef: 'second' })
+    searchMetricSummaries.mockResolvedValue([makeSummary('Gauge')])
+    getStats.mockResolvedValue(makeStats())
+    const pending = deferred<MetricViewData>()
+    getMetricView.mockReturnValueOnce(pending.promise).mockResolvedValue(metric)
+    setTestUrl('/metrics/metric-1?time=all&visible=route%3D%2Fcheckout')
+    renderWithContexts(MetricsPage)
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(1))
+    navigateCurrentRoute(
+      withQueryPatch(readRoute().query, { visible: 'second' }),
+      'replace'
+    )
+    pending.resolve(metric)
+    await screen.findByRole('table', { name: 'Metric fields' })
+    await waitFor(() => expect(getMetricView).toHaveBeenCalledTimes(2))
+    expect(getMetricView.mock.calls[1]![11]).toEqual(['second'])
+    expect(readRoute().query.visible).toBe('second')
+    const checkboxes = screen.getAllByRole('checkbox', {
+      name: /^Show default series · .+ in chart$/,
+    })
+    expect(checkboxes[0]).not.toBeChecked()
+    expect(checkboxes[1]).toBeChecked()
+  })
+})
+
 describe('Metric list and freshness statistics', () => {
   it.each(['search', 'refresh'] as const)(
     'retains the selected chart and details through a failed %s and recovery',
@@ -2755,11 +2825,21 @@ describe('MetricsPage raw series fetching', () => {
         await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
       }
       expect(document.querySelector('[data-dp-id="dp-reduced"]')).toBe(row)
+      const displayedURL = window.location.href
+      expect(readRoute().query).toEqual(
+        outcome === 'success'
+          ? {
+              time: 'all',
+              series: 'route=/checkout',
+              visible: 'route=/checkout',
+            }
+          : { time: 'all', series: 'route=/checkout' }
+      )
       await fireEvent.keyDown(row, { key: 'Enter' })
       expect(row).toHaveAttribute('aria-expanded', 'false')
       await fireEvent.keyDown(row, { key: ' ' })
       expect(row).toHaveAttribute('aria-expanded', 'true')
-      expect(window.location.href).toBe(requestedURL)
+      expect(window.location.href).toBe(displayedURL)
       await fireEvent.click(
         screen.getByRole('button', { name: 'Copy asDouble' })
       )
