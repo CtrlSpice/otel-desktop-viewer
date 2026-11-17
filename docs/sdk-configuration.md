@@ -149,3 +149,11 @@ the request.
 
 See the [Collector's nesting limit](https://github.com/open-telemetry/opentelemetry-collector/pull/15597)
 for details of the receiver's protective limit.
+
+## Compressed telemetry
+
+The Collector bounds zstd decompression windows by the receiver's message limit,
+with an 8 MiB minimum. With viewer defaults, the window bound is 20 MiB for HTTP
+and 8 MiB for gRPC; gRPC still limits decoded messages to 4 MiB. A request can be
+rejected even when its decoded payload fits the message limit if its zstd frame
+declares a larger window.
