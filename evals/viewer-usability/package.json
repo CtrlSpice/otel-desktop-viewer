@@ -17,17 +17,17 @@
     "verify:integration": "node verify-integration.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.2",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/api-logs": "0.222.0",
     "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
     "@opentelemetry/resources": "2.12.0",
     "@opentelemetry/sdk-logs": "0.222.0",
     "promptfoo": "0.125.1",
-    "tar": "7.5.22"
+    "tar": "7.5.23"
   },
   "devDependencies": {
-    "@types/node": "26.6.4",
+    "@types/node": "26.6.6",
     "typescript": "6.0.3"
   },
   "overrides": {

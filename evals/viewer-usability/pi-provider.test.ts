@@ -8,6 +8,7 @@ import { SUITE, TEMPORARY } from './runtime.ts'
 import { observerEnvironment } from './clean-environment.ts'
 
 test('native providers × repetitions retain six fresh Pi sessions and untouched export identities', { skip: process.platform !== 'darwin', timeout: 120000 }, async () => {
+  const runtimeVersion = JSON.parse(fs.readFileSync(path.join(SUITE, 'node_modules/@earendil-works/pi-coding-agent/package.json'), 'utf8')).version
   const root = fs.mkdtempSync(path.join(TEMPORARY, 'pi-native-repetitions-'))
   fs.chmodSync(root, 0o700)
   const blocked = path.join(root, 'private-canary.txt')
@@ -74,6 +75,7 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
     assert.equal(cases.length, 6)
     const attribute = (span: any, key: string) => span.attributes.find((a: any) => a.key === key)?.value
     for (const row of rows) {
+      assert.equal(row.response.metadata.runtimeVersion, runtimeVersion)
       assert.equal(row.response.metadata.promptfoo, undefined)
       const identity = JSON.parse(fs.readFileSync(path.join(row.response.metadata.evidence, 'identity.json'), 'utf8'))
       assert.equal(row.repeatIndex, identity.promptfoo.repeatIndex)
