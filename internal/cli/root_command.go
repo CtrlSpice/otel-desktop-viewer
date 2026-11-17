@@ -137,25 +137,6 @@ func writeRootHelp(cmd *cobra.Command, _ []string) {
 func writeRootHelpTo(cmd *cobra.Command, writer io.Writer) {
 	_, _ = fmt.Fprintf(writer, `%s
 
-View OpenTelemetry data locally or inspect a running viewer.
-
-The bare command runs the viewer in the foreground until it receives a signal.
-Client commands require a running viewer.
-
-For automation, reuse an existing viewer. Otherwise, start
-  %s --open-browser=false
-as a managed child. Retain its process handle, wait for the configured viewer
-HTTP endpoint to accept connections, then terminate and wait for the child only
-if you started it. Never stop a viewer you did not start.
-
-To observe the viewer itself, keep a monitoring viewer running:
-  otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
-Then start the observed viewer in another terminal:
-  otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
-Omitting --self-telemetry-endpoint keeps self-telemetry off. The monitoring
-endpoint must remain running through observed viewer shutdown. The caller owns
-starting, stopping, and waiting for both foreground processes.
-
 USAGE
   %s [flags]
   %s <command> [flags]
@@ -191,7 +172,7 @@ VIEWER FLAGS
 GLOBAL FLAGS
   -h, --help      Help for this command
   -v, --version   Version for %s
-`, cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath())
+`, cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath())
 }
 
 func writeCommandHelp(cmd *cobra.Command, _ []string) {
