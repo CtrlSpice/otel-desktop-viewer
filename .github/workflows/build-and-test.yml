@@ -237,6 +237,39 @@ jobs:
     - name: Exercise embedded UI, ingestion and export
       run: node desktopexporter/internal/frontend/scripts/smoke-binary.mjs ./otel-desktop-viewer
 
+  evals-runner:
+    # The Pi provider integration test exercises the macOS filesystem sandbox.
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: evals/viewer-usability
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            evals/viewer-usability/package-lock.json
+            desktopexporter/internal/frontend/package-lock.json
+      - name: Install runner dependencies
+        run: npm ci
+      - name: Install presentation dependencies
+        run: npm ci
+        working-directory: desktopexporter/internal/frontend
+      - name: Audit runner dependencies
+        run: npm audit
+      - name: Type check runner
+        run: npm run typecheck
+      - name: Type check presentation
+        run: npm run typecheck:presentation
+      - name: Create offline fixture parent
+        run: |
+          node -e 'require("node:fs").mkdirSync(require("node:os").tmpdir() + "/opencode", { recursive: true })'
+      - name: Local runner and presentation tests
+        run: npm test
+
   evals-backend:
     runs-on: ubuntu-latest
     timeout-minutes: 20

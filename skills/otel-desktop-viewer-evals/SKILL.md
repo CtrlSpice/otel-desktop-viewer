@@ -10,6 +10,10 @@ Use the viewer's inspection guide for telemetry queries: `otel-desktop-viewer sk
 The setup below was checked with Promptfoo 0.125.1, Pi 1.5.0, and Claude Code 2.1.307.
 Check capabilities again when runtime versions change.
 
+The default viewer-usability runner uses Pi for OpenAI investigations and grading,
+and Claude Code for Opus investigations. OpenCode V2 has a separate entry point,
+`evals/viewer-usability/opencode-v2-evaluate.mjs`; it is not the default runner.
+
 ## Establish the run
 
 1. Identify the evaluation runner, agent runtime, and their versions.
