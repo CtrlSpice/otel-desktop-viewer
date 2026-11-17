@@ -87,14 +87,15 @@ import {
   DEFAULT_VISIBLE_TIMESERIES,
   MAX_VISIBLE_TIMESERIES,
   loadPersistedAggregationView,
-  reconcileTimeseriesVisible,
   resolveTimeseriesVisible,
   savePersistedAggregationView,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/features/metrics/Series/metric-timeseries-visible'
 import {
+  loadHistogramPercentilesPreference,
   loadHistogramViewPreference,
+  saveHistogramPercentilesPreference,
   saveHistogramViewPreference,
   type HistogramViewPreference,
 } from '@/features/metrics/Histograms/histogram-view-preference'
@@ -108,11 +109,14 @@ import {
 } from '@/features/metrics/Series/metric-timeseries-colors'
 import {
   metricViewQueriesEqual,
+  metricVisibleSeriesToParam,
+  navigateCurrentRoute,
   parseMetricViewQuery,
   readRoute,
   setMetricViewQuery,
   subscribeToRoute,
   signalIdFromPath,
+  withQueryPatch,
   type HistoryMode,
   type MetricViewParseContext,
   type MetricViewQuery,
@@ -430,6 +434,8 @@ export function createMetricViewContext(
   // Compare route changes with this snapshot because defaults need not be in the URL.
 
   let urlMetricViewSnapshot: MetricViewQuery | null = null
+  // Keep the requested IDs when retention or the time window hides their rows.
+  let requestedVisibleSeries = $state<string[] | null>(null)
 
   // An absent `agg` restores the seeded aggregation.
   let seededAggregationView: AggregationView = 'raw'
@@ -517,13 +523,17 @@ export function createMetricViewContext(
   function viewStateToMetricViewQuery(): MetricViewQuery {
     const datapointID =
       view.selectedDatapointID ?? pendingUrlDatapoint?.id ?? null
+    const visible = requestedVisibleSeries ?? [...view.visibleSeries]
     if (isHistogramKind) {
       return {
         kind: 'histogram',
-        htab: view.activeHistogramTab,
-        hscope: 'window',
+        htab:
+          view.activeHistogramTab === 'quantiles'
+            ? 'heatmap'
+            : view.activeHistogramTab,
         dp: datapointID,
         series: selectedSeriesKey,
+        visible,
       }
     }
     return {
@@ -532,6 +542,7 @@ export function createMetricViewContext(
       agg: view.aggregationView,
       dp: datapointID,
       series: selectedSeriesKey,
+      visible,
     }
   }
 
@@ -539,8 +550,33 @@ export function createMetricViewContext(
   function applyMetricUrlToView(parsed = parseMetricUrl()): void {
     view.selectedRateBucket = null
     const q = parsed.query
-    urlMetricViewSnapshot = q
     pendingUrlDatapoint = parsed.pending
+    const metric = getMetric()
+    const keys = metric?.timeseries.map(series => series.seriesRef) ?? []
+    requestedVisibleSeries =
+      q.visible ??
+      (metric
+        ? resolveTimeseriesVisible(
+            keys,
+            metric.metricRef,
+            DEFAULT_VISIBLE_TIMESERIES,
+            isHistogramKind ? null : MAX_VISIBLE_TIMESERIES
+          )
+        : [])
+    const visible = availableVisibleSeries(keys)
+    if (!visibleKeyListsEqual(view.visibleSeries, visible)) {
+      view.visibleSeries = new SvelteSet(visible)
+      replaceColorAssignments(
+        seedColorAssignments(
+          timeseriesChartColors,
+          view.visibleSeries,
+          keys,
+          colorScope()
+        )
+      )
+    }
+    ensureColorAssignments(view.visibleSeries, keys)
+    urlMetricViewSnapshot = { ...q, visible: requestedVisibleSeries }
 
     if (q.kind === 'timeseries') {
       view.aggregationView = q.agg ?? seededAggregationView
@@ -561,6 +597,32 @@ export function createMetricViewContext(
     // it was built from has been pruned, so restoring it is what keeps a
     // shared link meaningful rather than silently empty.
     view.selectedSeriesKey = q.series
+
+    // Capture defaults without changing unrelated URL selections or local preferences.
+    const route = readRoute()
+    if (
+      metric &&
+      signalIdFromPath('metrics', route.path) === metric.metricRef
+    ) {
+      const visible = metricVisibleSeriesToParam(requestedVisibleSeries)
+      if (
+        route.query.visible !== visible ||
+        route.query.hscope !== undefined ||
+        route.query.htab === 'quantiles'
+      ) {
+        const query = withQueryPatch(route.query, { visible, hscope: null })
+        if (query.htab === 'quantiles') query.htab = 'heatmap'
+        navigateCurrentRoute(query, 'replace')
+      }
+    }
+  }
+
+  function availableVisibleSeries(keys: readonly string[]): string[] {
+    const available = new Set(keys)
+    const kept = (requestedVisibleSeries ?? [...view.visibleSeries]).filter(
+      key => available.has(key)
+    )
+    return isHistogramKind ? kept : kept.slice(0, MAX_VISIBLE_TIMESERIES)
   }
 
   function writeMetricUrl(mode: HistoryMode): void {
@@ -568,9 +630,13 @@ export function createMetricViewContext(
     // attach its series, datapoint or view choices to a different requested ID.
     if (
       signalIdFromPath('metrics', readRoute().path) !== getMetric()?.metricRef
-    )
+    ) {
+      // Returning to this metric must restore its URL after retained controls changed.
+      urlMetricViewSnapshot = null
       return
+    }
     const q = viewStateToMetricViewQuery()
+    requestedVisibleSeries = q.visible
     urlMetricViewSnapshot = q
     setMetricViewQuery(q, mode)
   }
@@ -1533,51 +1599,14 @@ export function createMetricViewContext(
       : null
     seededAggregationView = persistedAggregationView ?? DEFAULT_AGGREGATION_VIEW
     view.aggregationView = seededAggregationView
-    view.showSelectionStatOverlays = true
-
-    // Scalars cap visible series; histogram selection remains uncapped.
     const histIsHistogram =
       m?.metricType === 'Histogram' || m?.metricType === 'ExponentialHistogram'
-    if (histIsHistogram) {
-      const histKeys = m ? m.timeseries.map(ts => ts.seriesRef) : []
-      const histVisible = new SvelteSet(
-        metricRef && histKeys.length > 0
-          ? resolveTimeseriesVisible(
-              histKeys,
-              metricRef,
-              DEFAULT_VISIBLE_TIMESERIES,
-              null
-            )
-          : []
-      )
-      view.visibleSeries = histVisible
-      const histPool = metricSeriesPalette(
-        SERIES_COLOR_COUNT,
-        themeSignal.value
-      )
-      replaceColorAssignments(
-        seedColorAssignments(
-          histPool,
-          histVisible,
-          histKeys,
-          colorScope(metricRef)
-        )
-      )
-    } else {
-      const gsKeys = gaugeSumKeys
-      const gsVisible = new SvelteSet(
-        metricRef
-          ? resolveTimeseriesVisible(gsKeys, metricRef)
-          : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
-      )
-      view.visibleSeries = gsVisible
-      const pool = metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
-      replaceColorAssignments(
-        seedColorAssignments(pool, gsVisible, gsKeys, colorScope(metricRef))
-      )
-    }
+    view.showSelectionStatOverlays = histIsHistogram
+      ? loadHistogramPercentilesPreference()
+      : true
 
-    // A valid route sub-view overrides seeded defaults.
+    replaceColorAssignments(new Map())
+    // Restore URL visibility before falling back to this metric's local defaults.
     applyMetricUrlToView()
   }
 
@@ -1631,11 +1660,7 @@ export function createMetricViewContext(
       // Details controls use current rows, not a retained chart's source rows.
       const keys = gaugeSumKeys
       void keys.join('\0')
-      const next = reconcileTimeseriesVisible(
-        view.visibleSeries,
-        keys,
-        metricRef
-      )
+      const next = availableVisibleSeries(keys)
 
       if (!visibleKeyListsEqual(view.visibleSeries, next)) {
         const visible = new SvelteSet(next)
@@ -1657,14 +1682,8 @@ export function createMetricViewContext(
 
     if (!isHistogramKind) return
     const keys = histogramTimeseriesGroups.map(g => g.key)
-    if (keys.length === 0) return
     void keys.join('\0')
-    const next = reconcileTimeseriesVisible(
-      view.visibleSeries,
-      keys,
-      metricRef,
-      null
-    )
+    const next = availableVisibleSeries(keys)
     if (!visibleKeyListsEqual(view.visibleSeries, next)) {
       const visible = new SvelteSet(next)
       view.visibleSeries = visible
@@ -1726,8 +1745,17 @@ export function createMetricViewContext(
     const m = getMetric()
     if (!m) return
 
-    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
+    const index = selectableDatapointIndex
+    const owner = index.seriesKeyByDatapointID.get(id)
     if (owner === undefined) {
+      const series = view.selectedSeriesKey
+      // Omitted chart points and a pending raw refresh do not prove absence.
+      if (
+        series &&
+        index.seriesKeys.has(series) &&
+        !index.loadedRawSeries.has(series)
+      )
+        return
       view.selectedDatapointID = null
       view.selectionSource = null
       return
@@ -1776,10 +1804,20 @@ export function createMetricViewContext(
 
   function setShowSelectionStatOverlays(next: boolean) {
     view.showSelectionStatOverlays = next
+    if (isHistogramKind) saveHistogramPercentilesPreference(next)
   }
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
     const metricRef = getMetric()?.metricRef
+    if (!getMetric()?.timeseries.some(series => series.seriesRef === key))
+      return
+    if (
+      checked &&
+      !isHistogramKind &&
+      !view.visibleSeries.has(key) &&
+      view.visibleSeries.size >= MAX_VISIBLE_TIMESERIES
+    )
+      return
     const assigned = new Map(view.timeseriesColorByKey)
     if (checked) {
       if (
@@ -1796,14 +1834,22 @@ export function createMetricViewContext(
     if (checked) next.add(key)
     else next.delete(key)
     view.visibleSeries = next
-    if (metricRef) savePersistedTimeseriesVisible(metricRef, next)
+    const requested = new Set(requestedVisibleSeries ?? next)
+    if (checked) requested.add(key)
+    else requested.delete(key)
+    requestedVisibleSeries = [...requested].sort()
+    if (metricRef)
+      savePersistedTimeseriesVisible(metricRef, requestedVisibleSeries)
+    writeMetricUrl('replace')
   }
 
   function clearAllTimeseriesVisible() {
     replaceColorAssignments(new Map())
     const metricRef = getMetric()?.metricRef
     view.visibleSeries = new SvelteSet()
+    requestedVisibleSeries = []
     if (metricRef) savePersistedTimeseriesVisible(metricRef, view.visibleSeries)
+    writeMetricUrl('replace')
   }
 
   function onDatapointClick(dp: DataPoint) {

@@ -567,7 +567,7 @@ try {
     [
       'metrics',
       metricID,
-      { series: seriesID, dp: datapointID, agg: 'raw' },
+      { series: seriesID, dp: datapointID, agg: 'raw', visible: 'none' },
       'getMetricView',
     ],
   ]) {
@@ -596,6 +596,9 @@ try {
           await expect(
             page.locator(`[data-dp-id="${datapointID}"]`)
           ).toHaveAttribute('aria-expanded', 'true')
+          await expect(
+            page.getByRole('checkbox', { name: / in chart$/ })
+          ).not.toBeChecked()
         }
       }
       await selectedDetail()
@@ -780,6 +783,95 @@ try {
     ).rows,
     [['after-cli-errors']]
   )
+
+  // Large direct links must survive the actual HTTP server and a fresh browser.
+  const linkedMetrics = ['histogram', 'exponentialHistogram'].map(kind => ({
+    name: `url-smoke-${kind}`,
+    [kind]: {
+      aggregationTemporality: 1,
+      dataPoints: Array.from({ length: 1000 }, (_, index) => ({
+        attributes: [{ key: 'index', value: { intValue: String(index) } }],
+        startTimeUnixNano: String(BigInt(timestamp) - 1000000000n),
+        timeUnixNano: timestamp,
+        count: '1',
+        sum: 1.5,
+        min: 1,
+        max: 2,
+        ...(kind === 'histogram'
+          ? { explicitBounds: [2], bucketCounts: ['1', '0'] }
+          : {
+              scale: 0,
+              zeroCount: '0',
+              positive: { offset: 0, bucketCounts: ['1'] },
+            }),
+      })),
+    },
+  }))
+  const longLinkFile = join(importDirectory, 'long-metric-links.json')
+  await writeFile(
+    longLinkFile,
+    JSON.stringify({
+      resourceMetrics: [
+        { resource, scopeMetrics: [{ scope, metrics: linkedMetrics }] },
+      ],
+    })
+  )
+  const longLinkImport = await importFiles([longLinkFile])
+  assert.equal(longLinkImport.code, 0, longLinkImport.text)
+  const longLinkRows = () =>
+    rpc('query', {
+      sql: "select id::varchar, name from metrics where name like 'url-smoke-%' order by name",
+    })
+  await expect.poll(async () => (await longLinkRows()).rows.length).toBe(2)
+  for (const [id, name] of (await longLinkRows()).rows) {
+    const rows = await rpc('query', {
+      sql: `select series_id::varchar from metric_datapoints where metric_id = '${id}' order by series_id`,
+      limit: 1000,
+    })
+    const keys = rows.rows.map(row => row[0])
+    assert.equal(keys.length, 1000)
+    const url = `${baseURL}/metrics/${id}?${new URLSearchParams({ time: 'all', htab: 'histogram', visible: keys.join(',') })}`
+    assert.ok(Buffer.byteLength(url) > 39000)
+    const fresh = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+    })
+    try {
+      const linked = await fresh.newPage()
+      linked.on('pageerror', error => errors.push(error.message))
+      const requested = []
+      linked.on('request', request => {
+        if (request.url().endsWith('/api/data/getMetricAggregateView'))
+          requested.push(request.postDataJSON().seriesRefs)
+      })
+      const response = await linked.goto(url)
+      assert.equal(response.status(), 200)
+      await expect(linked.locator('.lc-bars-bar:visible').first()).toBeVisible()
+      await expect(
+        linked.getByRole('list', { name: 'Histogram count scale' })
+      ).toContainText('1,000')
+      await expect.poll(() => requested.length).toBe(2)
+      assert.ok(
+        requested.every(
+          selection => JSON.stringify(selection) === JSON.stringify(keys)
+        )
+      )
+      const copied = linked.url()
+      assert.equal(new URL(copied).searchParams.get('visible'), keys.join(','))
+      await linked.reload()
+      await expect(linked.locator('.lc-bars-bar:visible').first()).toBeVisible()
+      await expect(
+        linked.getByRole('list', { name: 'Histogram count scale' })
+      ).toContainText('1,000')
+      await expect.poll(() => requested.length).toBe(4)
+      assert.deepEqual(requested.at(-1), keys)
+      assert.equal(linked.url(), copied)
+      console.log(
+        `${name}: 1000 selected series restored from ${Buffer.byteLength(copied)}-byte URL and reload`
+      )
+    } finally {
+      await fresh.close()
+    }
+  }
   assert.deepEqual(errors, [])
   assertRunning()
   console.log(

@@ -152,6 +152,7 @@ describe('mergeItemQuery', () => {
         htab: 'heatmap',
         hscope: 'window',
         dp: 'dp-1',
+        visible: 'series-1,series-2',
       },
       SIGNAL_ITEM_QUERY_PARAMS
     )

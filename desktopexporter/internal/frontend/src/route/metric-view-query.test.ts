@@ -4,6 +4,8 @@ import {
   metricViewQueriesEqual,
   metricViewQueryToParams,
   parseMetricViewQuery,
+  parseMetricVisibleSeries,
+  metricVisibleSeriesToParam,
   type MetricViewParseContext,
   type MetricViewQuery,
 } from './metric-view-query'
@@ -22,6 +24,77 @@ const histogramCtx = {
   seriesKeys: new Set(['series-h1']),
 } satisfies MetricViewParseContext
 
+describe('visible series', () => {
+  it('distinguishes defaults from an explicitly empty chart', () => {
+    expect(parseMetricVisibleSeries({})).toBeNull()
+    for (const visible of ['none', '', ' , ']) {
+      expect(parseMetricVisibleSeries({ visible })).toEqual([])
+    }
+    expect(metricVisibleSeriesToParam([])).toBe('none')
+  })
+
+  it('canonicalizes the set and retains missing IDs independently of inspection', () => {
+    const query = parseMetricViewQuery(
+      {
+        visible: ' series-2,missing,series-2, ',
+        series: 'series-1',
+        dp: 'dp-1',
+      },
+      timeseriesCtx
+    )
+    expect(query.visible).toEqual(['missing', 'series-2'])
+    expect(query.series).toBe('series-1')
+    expect(query.dp).toBe('dp-1')
+    expect(metricViewQueryToParams(query).visible).toBe('missing,series-2')
+    expect(
+      metricViewQueriesEqual(query, {
+        ...query,
+        visible: ['series-2', 'missing'],
+      })
+    ).toBe(true)
+    expect(
+      metricViewQueriesEqual(query, { ...query, visible: ['series-2'] })
+    ).toBe(false)
+    expect(
+      metricViewQueriesEqual(
+        { ...query, visible: null },
+        { ...query, visible: [] }
+      )
+    ).toBe(false)
+  })
+
+  it('round-trips an uncapped histogram set through URL encoding', () => {
+    const keys = Array.from(
+      { length: 1000 },
+      (_, index) =>
+        `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    )
+    const query = parseMetricViewQuery(
+      { visible: keys.join(',') },
+      histogramCtx
+    )
+    const encoded = new URLSearchParams(metricViewQueryToParams(query))
+    expect(parseMetricVisibleSeries(Object.fromEntries(encoded))).toEqual(keys)
+  })
+
+  it('writes current histogram fields and removes obsolete scope from old links', () => {
+    const route = {
+      htab: 'quantiles',
+      hscope: 'bucket',
+      visible: 'none',
+      time: 'all',
+      q: 'service.name = "checkout"',
+    }
+    const query = parseMetricViewQuery(route, histogramCtx)
+    expect(mergeRouteQueryWithMetricView(route, query)).toEqual({
+      htab: 'heatmap',
+      visible: 'none',
+      time: 'all',
+      q: route.q,
+    })
+  })
+})
+
 describe('parseMetricViewQuery', () => {
   it('parses timeseries params and strips histogram keys', () => {
     const q = parseMetricViewQuery(
@@ -33,6 +106,7 @@ describe('parseMetricViewQuery', () => {
       agg: 'rate',
       dp: 'dp-1',
       series: null,
+      visible: null,
     })
   })
 
@@ -43,10 +117,10 @@ describe('parseMetricViewQuery', () => {
     )
     expect(q).toEqual({
       kind: 'histogram',
-      htab: 'quantiles',
-      hscope: 'window',
+      htab: 'heatmap',
       dp: 'dp-h1',
       series: null,
+      visible: null,
     })
   })
 
@@ -64,20 +138,32 @@ describe('parseMetricViewQuery', () => {
     ).toEqual({
       kind: 'histogram',
       htab: 'histogram',
-      hscope: 'window',
       dp: 'dp-h1',
       series: 'series-h1',
+      visible: null,
     })
   })
 
   it('rejects disallowed agg on timeseries', () => {
     const q = parseMetricViewQuery({ agg: 'not-a-view' }, timeseriesCtx)
-    expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null, series: null })
+    expect(q).toEqual({
+      kind: 'timeseries',
+      agg: null,
+      dp: null,
+      series: null,
+      visible: null,
+    })
   })
 
   it('rejects unknown datapoint id', () => {
     const q = parseMetricViewQuery({ dp: 'missing' }, timeseriesCtx)
-    expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null, series: null })
+    expect(q).toEqual({
+      kind: 'timeseries',
+      agg: null,
+      dp: null,
+      series: null,
+      visible: null,
+    })
   })
 
   it('defaults invalid histogram enums', () => {
@@ -88,9 +174,9 @@ describe('parseMetricViewQuery', () => {
     expect(q).toEqual({
       kind: 'histogram',
       htab: 'heatmap',
-      hscope: 'window',
       dp: null,
       series: null,
+      visible: null,
     })
   })
 })
@@ -101,13 +187,14 @@ describe('metricViewQueriesEqual', () => {
     agg: 'rate',
     dp: 'dp-1',
     series: null,
+    visible: null,
   }
   const histogram: MetricViewQuery = {
     kind: 'histogram',
-    htab: 'quantiles',
-    hscope: 'window',
+    htab: 'heatmap',
     dp: 'dp-h1',
     series: null,
+    visible: null,
   }
 
   it('matches identical timeseries queries', () => {
@@ -136,7 +223,7 @@ describe('metricViewQueriesEqual', () => {
 
   it('rejects differing histogram tabs', () => {
     expect(
-      metricViewQueriesEqual(histogram, { ...histogram, htab: 'heatmap' })
+      metricViewQueriesEqual(histogram, { ...histogram, htab: 'histogram' })
     ).toBe(false)
   })
 
@@ -145,6 +232,7 @@ describe('metricViewQueriesEqual', () => {
     const reordered = {
       dp: 'dp-1',
       series: null,
+      visible: null,
       agg: 'rate',
       kind: 'timeseries',
     } as MetricViewQuery
@@ -159,6 +247,7 @@ describe('metricViewQueryToParams', () => {
       agg: 'avg',
       dp: 'dp-1',
       series: null,
+      visible: null,
     }
     expect(metricViewQueryToParams(q)).toEqual({ agg: 'avg', dp: 'dp-1' })
   })
@@ -167,13 +256,12 @@ describe('metricViewQueryToParams', () => {
     const q: MetricViewQuery = {
       kind: 'histogram',
       htab: 'histogram',
-      hscope: 'window',
       dp: null,
       series: null,
+      visible: null,
     }
     expect(metricViewQueryToParams(q)).toEqual({
       htab: 'histogram',
-      hscope: 'window',
     })
   })
 
@@ -190,6 +278,7 @@ describe('metricViewQueryToParams', () => {
       agg: 'sum',
       dp: 'dp-2',
       series: null,
+      visible: null,
     }
     const merged = mergeRouteQueryWithMetricView(routeQuery, view)
     expect(merged).toEqual({
@@ -246,6 +335,7 @@ describe('series param', () => {
         agg: null,
         dp: null,
         series: 'series-1',
+        visible: null,
       })
     ).toEqual({ series: 'series-1' })
 
@@ -255,6 +345,7 @@ describe('series param', () => {
         agg: null,
         dp: null,
         series: null,
+        visible: null,
       })
     ).toEqual({})
   })
@@ -264,6 +355,7 @@ describe('series param', () => {
       kind: 'timeseries',
       agg: null,
       dp: null,
+      visible: null,
     } as const
     expect(
       metricViewQueriesEqual(
@@ -285,6 +377,7 @@ describe('series param', () => {
       agg: 'sum',
       dp: 'dp-2',
       series: 'series-2',
+      visible: null,
     }
     const merged = mergeRouteQueryWithMetricView({ start: '1' }, view)
     expect(merged.series).toBe('series-2')
