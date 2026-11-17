@@ -10,7 +10,7 @@ The lockfile includes patched transitive dependencies. Overrides pin
 because Promptfoo's dependency constraints still select affected versions. When
 updating these pins, run `npm audit`, `npm run typecheck`,
 `npm run typecheck:presentation` and `npm test` from `evals/viewer-usability`
-after installing the runner and frontend dependencies.
+after the setup in [Checks](#checks).
 
 ## Configuration
 
@@ -132,21 +132,35 @@ Row-only JSONL is not a full import envelope.
 
 Investigator and grader execution errors remain errors. Grades are provisional;
 Fail/Partial/Pass remain 0/0.5/1 under the approved rubrics. Native scheduling
-continues after individual errors; the old per-model pause/resume queue is not used.
+continues after individual errors.
 
 ## Checks
 
+From the repository root:
+
+The V2 offline fixtures use an `opencode` subdirectory in the system temporary directory.
+
 ```sh
+npm ci --prefix desktopexporter/internal/frontend
+npm ci --prefix evals/viewer-usability
+npm audit --prefix evals/viewer-usability
 npm run typecheck --prefix evals/viewer-usability
-node --test evals/viewer-usability/config.test.ts \
-  evals/viewer-usability/pi-provider.test.ts \
-  evals/viewer-usability/grade.test.ts
+npm run typecheck:presentation --prefix evals/viewer-usability
+node -e 'require("node:fs").mkdirSync(require("node:os").tmpdir() + "/opencode", { recursive: true })'
+npm test --prefix evals/viewer-usability
 ```
 
-The provider integration test runs six actual Pi processes against a scripted
+Dependabot opens weekly dependency update PRs for this runner and groups minor
+and patch updates. CI runs these checks on macOS. `npm test` includes TypeScript,
+presentation and MJS tests with at most two test files running at once. Tests
+that require `OTEL_EVAL_VIEWER_BINARY` or `EVAL_PRESENTATION_RUN` skip when those
+inputs are absent; CI does not supply them.
+
+`pi-provider.test.ts` runs six actual Pi processes against a scripted
 loopback model service. It checks native exports, received repetition indices,
 fresh conversations, successful viewer-tool execution and blocked protected reads.
 It makes no paid model requests.
 
-The former OpenCode workflow is retained in `LEGACY.md`, `legacy-config.ts`,
-`native-evaluate.ts` and the `*:legacy` commands for historical work.
+The separate OpenCode V2 integration uses `opencode-v2-evaluate.mjs` and its
+matching evidence and verification helpers. It is independent of the default
+Pi/Claude Code workflow. Local tests do not require an OpenCode executable.
