@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { DataType, tableFromIPC } from 'apache-arrow'
 import { chromium, expect } from '@playwright/test'
@@ -52,6 +54,7 @@ child.stderr.on('data', chunk => {
   output += chunk
 })
 let browser
+let importDirectory
 const errors = []
 
 function assertRunning() {
@@ -519,10 +522,268 @@ try {
     importedLog.attributes.find(attribute => attribute.key === 'exact').value,
     { intValue: exactInteger }
   )
+
+  await mkdir(join(tmpdir(), 'opencode'), { recursive: true })
+  importDirectory = await mkdtemp(join(tmpdir(), 'opencode', 'cli-import-'))
+  const importFiles = async files => {
+    const command = spawn(resolve(process.argv[2]), [
+      'import',
+      ...files,
+      '--endpoint',
+      baseURL,
+    ])
+    let text = ''
+    command.stdout.on('data', chunk => (text += chunk))
+    command.stderr.on('data', chunk => (text += chunk))
+    const [code] = await once(command, 'exit')
+    return { code, text }
+  }
+  const metricIDs = await rpc('query', {
+    sql: `select metric_id::varchar, series_id::varchar, id::varchar
+      from metric_datapoints order by timestamp limit 1`,
+  })
+  const [metricID, seriesID, datapointID] = metricIDs.rows[0]
+  const filter = 'service.name = "ci-smoke"'
+  const reads = new Map()
+  const pending = new Set()
+  let importLookups = 0
+  page.on('request', request => {
+    if (request.url().startsWith(`${baseURL}/api/import-target/`))
+      importLookups++
+    if (request.url().startsWith(`${baseURL}/api/data/`)) {
+      pending.add(request)
+      const method = new URL(request.url()).pathname.split('/').at(-1)
+      reads.set(method, (reads.get(method) ?? 0) + 1)
+    }
+  })
+  page.on('requestfinished', request => pending.delete(request))
+  page.on('requestfailed', request => pending.delete(request))
+  const settled = () => expect.poll(() => pending.size).toBe(0)
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  let sequence = 0
+  for (const [signal, id, selection, method] of [
+    ['logs', logRows.rows[0][0], {}, 'getLog'],
+    ['traces', traceId, { span: spanId }, 'getTraceView'],
+    [
+      'metrics',
+      metricID,
+      { series: seriesID, dp: datapointID, agg: 'raw' },
+      'getMetricView',
+    ],
+  ]) {
+    for (const enabled of [false, true]) {
+      const params = new URLSearchParams({
+        time: 'all',
+        q: filter,
+        ...selection,
+      })
+      await page.goto(`${baseURL}/${signal}/${id}?${params}`)
+      const search = page.getByRole('textbox', {
+        name: `Search ${signal}`,
+        exact: true,
+      })
+      const selectedDetail = async () => {
+        await expect(search).toHaveText(filter)
+        if (signal === 'logs') {
+          await expect(
+            page.getByRole('table', { name: 'Log fields' })
+          ).toContainText('ci-smoke-log')
+        } else if (signal === 'traces') {
+          await expect(
+            page.getByRole('table', { name: 'Span fields' })
+          ).toContainText('ci-smoke-span')
+        } else {
+          await expect(
+            page.locator(`[data-dp-id="${datapointID}"]`)
+          ).toHaveAttribute('aria-expanded', 'true')
+        }
+      }
+      await selectedDetail()
+      await settled()
+      assert.ok(reads.has(method), `${signal} did not request ${method}`)
+      if (enabled) {
+        const before = reads.get(method)
+        await live.click()
+        await expect.poll(() => reads.get(method)).toBeGreaterThan(before)
+        await settled()
+      }
+      await expect(live).toHaveAttribute('aria-pressed', String(enabled))
+      const selected = page.url()
+      const beforeReads = reads.get(method)
+      const before = await rpc('getStats')
+      const marker = `cli-import-${++sequence}`
+      const newSpanID = sequence.toString(16).padStart(16, '0')
+      const traces = structuredClone(payloads.traces)
+      traces.resourceSpans[0].scopeSpans[0].spans = [
+        {
+          ...span,
+          traceId: sequence.toString(16).padStart(32, '0'),
+          spanId: newSpanID,
+          name: marker,
+        },
+        {
+          ...span,
+          spanId: newSpanID,
+          parentSpanId: spanId,
+          name: `${marker}-child`,
+        },
+      ]
+      const metrics = structuredClone(payloads.metrics)
+      const metric = metrics.resourceMetrics[0].scopeMetrics[0].metrics[0]
+      metric.gauge.dataPoints[0].timeUnixNano = String(
+        BigInt(timestamp) + BigInt(sequence) * 1000000n
+      )
+      metrics.resourceMetrics[0].scopeMetrics[0].metrics.push({
+        ...structuredClone(metric),
+        name: marker,
+      })
+      const contents = JSON.stringify({
+        ...traces,
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: marker },
+                    attributes: [
+                      {
+                        key: 'password',
+                        value: { stringValue: 'synthetic-cli-secret' },
+                      },
+                      { key: 'exact', value: { intValue: exactInteger } },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        ...metrics,
+      })
+      const file = join(importDirectory, `${marker}.json`)
+      await writeFile(file, contents)
+      const notified = receivedLogCount(before.logs.logCount + 1)
+      const result = await importFiles([file])
+      assert.equal(result.code, 0, result.text)
+      assert.ok(result.text.includes('Received'), result.text)
+      assert.equal(await readFile(file, 'utf8'), contents)
+      // Receiver acceptance alone does not prove that these writes committed.
+      await expect
+        .poll(async () => {
+          const stats = await rpc('getStats')
+          return [
+            stats.traces.spanCount,
+            stats.logs.logCount,
+            stats.metrics.dataPointCount,
+          ]
+        })
+        .toEqual([
+          before.traces.spanCount + 2,
+          before.logs.logCount + 1,
+          before.metrics.dataPointCount + 2,
+        ])
+      await notified
+      if (enabled) {
+        await expect.poll(() => reads.get(method)).toBeGreaterThan(beforeReads)
+      } else {
+        assert.equal(reads.get(method), beforeReads)
+        await page.getByRole('button', { name: /^Refresh(?:$|:)/ }).click()
+        await expect.poll(() => reads.get(method)).toBeGreaterThan(beforeReads)
+      }
+      await settled()
+      assert.equal(page.url(), selected)
+      await selectedDetail()
+      assert.equal(importLookups, 0)
+      const storedLog = await rpc('query', {
+        sql: `select id::varchar from logs where body::varchar = '${marker}'`,
+      })
+      assert.equal(storedLog.rows.length, 1)
+      const cliLog = await json(
+        `${baseURL}/export/logs/${storedLog.rows[0][0]}`
+      )
+      const attrs = cliLog.resourceLogs[0].scopeLogs[0].logRecords[0].attributes
+      assert.match(
+        attrs.find(a => a.key === 'password').value.stringValue,
+        /\*{4}/
+      )
+      assert.deepEqual(attrs.find(a => a.key === 'exact').value, {
+        intValue: exactInteger,
+      })
+      const download = page.waitForEvent('download')
+      const exportRequest = page.waitForRequest(
+        request =>
+          request.method() === 'GET' &&
+          request.url().startsWith(`${baseURL}/export/${signal}/`)
+      )
+      await page
+        .getByRole('button', {
+          name: `Download ${signal.slice(0, -1)}`,
+          exact: true,
+        })
+        .click()
+      await download
+      assert.equal(
+        new URL((await exportRequest).url()).pathname,
+        `/export/${signal}/${id}`
+      )
+      console.log(
+        `CLI import retained ${signal} selection with Live ${enabled ? 'on' : 'off'}`
+      )
+    }
+  }
+
+  // A malformed later JSONL object sends none of that file. Receiver errors
+  // still allow a later file to commit, without changing the inspected item.
+  const selected = page.url()
+  const bad = join(importDirectory, 'malformed.jsonl')
+  const rejected = join(importDirectory, 'receiver-rejected.json')
+  const good = join(importDirectory, 'after-errors.json')
+  const logPayload = record =>
+    JSON.stringify({
+      resourceLogs: [
+        { resource, scopeLogs: [{ scope, logRecords: [record] }] },
+      ],
+    })
+  await writeFile(
+    bad,
+    logPayload({ body: { stringValue: 'must-not-be-sent' } }) + '\n{'
+  )
+  await writeFile(rejected, logPayload({ timeUnixNano: 'invalid-timestamp' }))
+  await writeFile(
+    good,
+    logPayload({
+      timeUnixNano: timestamp,
+      body: { stringValue: 'after-cli-errors' },
+    })
+  )
+  const beforeErrors = await rpc('getStats')
+  const notified = receivedLogCount(beforeErrors.logs.logCount + 1)
+  const failedImport = await importFiles([bad, rejected, good])
+  assert.equal(failedImport.code, 1, failedImport.text)
+  assert.ok(failedImport.text.includes('invalid JSON'), failedImport.text)
+  assert.ok(failedImport.text.includes('Rejected:'), failedImport.text)
+  assert.ok(failedImport.text.includes('Received'), failedImport.text)
+  await notified
+  await settled()
+  assert.equal(page.url(), selected)
+  assert.equal(importLookups, 0)
+  assert.deepEqual(
+    (
+      await rpc('query', {
+        sql: `select body::varchar from logs
+      where body::varchar in ('must-not-be-sent', 'after-cli-errors')`,
+      })
+    ).rows,
+    [['after-cli-errors']]
+  )
   assert.deepEqual(errors, [])
   assertRunning()
   console.log(
-    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity, trace export, Live off/on selection and redacted browser import`
+    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity, trace export, Live off/on selection, redacted browser import and actual CLI imports retaining all three inspected signals`
   )
 } catch (error) {
   console.error(output)
@@ -541,5 +802,7 @@ try {
         await stopped
       }
     }
+    if (importDirectory)
+      await rm(importDirectory, { recursive: true, force: true })
   }
 }
