@@ -13,7 +13,7 @@ import type {
 } from '@/types/api-types'
 import { ArrowFrame } from './arrow-data'
 import { attributes, rowViews } from './arrow-values'
-import { cachedView } from './arrow-record'
+import { cachedView } from './lazy-view'
 
 function text(frame: ArrowFrame, row: number, name: string): string {
   const cell = frame.cell(name, row)

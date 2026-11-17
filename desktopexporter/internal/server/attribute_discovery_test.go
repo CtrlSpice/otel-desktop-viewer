@@ -74,7 +74,7 @@ func TestAttributeDiscoveryLiteralTerms(t *testing.T) {
 					values := record.Column(6).(*array.List).ListValues()
 					require.Equal(t, len(samples), values.Len())
 					if stage == "values" {
-						require.Equal(t, tc.value, values.(*array.String).Value(0))
+						require.Equal(t, tc.value, readArrowVariant(t, values, 0).Value())
 					}
 				})
 			})

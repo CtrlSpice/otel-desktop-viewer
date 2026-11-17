@@ -184,10 +184,15 @@ Both share parameter validation and query builders.
 
 - **Arrow** carries frontend lists, details, charts and most discovery.
   `arrowbridge` reads native DuckDB batches;
-  [`arrowread`](../desktopexporter/internal/store/arrowread/) converts `VARIANT`
-  to standard Arrow types and writes binary IPC without converting data to JSON.
-  The frontend validates the complete response, keeps its buffers and reads
-  nested values on demand. It keeps 64-bit integers as `bigint`.
+  [`arrowread`](../desktopexporter/internal/store/arrowread/) retains their schema
+  and writes those batches as binary IPC. `VARIANT` uses the
+  `arrow.parquet.variant` extension: a struct with `metadata` and `value` binary
+  fields. Nesting inside a value does not deepen the Arrow schema.
+  The frontend checks stream completion and row count, keeps the buffers and
+  uses [`arrow-variant.ts`](../desktopexporter/internal/frontend/src/services/arrow/arrow-variant.ts)
+  to read values on demand. It validates a container's offset table when opened
+  and decodes text and child values when requested. It keeps 64-bit integers as
+  `bigint`.
 - **JSON-RPC** serves CLI queries and frontend statistics, deletion, some
   discovery and SQL lookups. SQL templates can construct JSON, which Go forwards
   without re-encoding. The `query` RPC accepts read-only SQL.
@@ -202,7 +207,7 @@ numeric representations and the remaining HTTP routes.
 Each Svelte 5/TypeScript page loads its data and tracks the selected records.
 
 [`services/telemetry-service.ts`](../desktopexporter/internal/frontend/src/services/telemetry-service.ts)
-exposes `telemetryAPI` and keeps statistics and import-configuration calls.
+exposes `telemetryAPI` and handles statistics and import-configuration calls.
 Request groups live in [`trace-service.ts`](../desktopexporter/internal/frontend/src/services/trace-service.ts),
 [`log-service.ts`](../desktopexporter/internal/frontend/src/services/log-service.ts),
 [`metric-service.ts`](../desktopexporter/internal/frontend/src/services/metric-service.ts),

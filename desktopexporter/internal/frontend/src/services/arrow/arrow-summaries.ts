@@ -11,7 +11,7 @@ import type {
 } from '@/types/api-types'
 import { ArrowFrame } from './arrow-data'
 import { attributeValue, attributes, rowViews } from './arrow-values'
-import { cachedView } from './arrow-record'
+import { cachedView } from './lazy-view'
 import { resourceData, scopeData } from './arrow-traces'
 
 function text(frame: ArrowFrame, row: number, name: string): string {

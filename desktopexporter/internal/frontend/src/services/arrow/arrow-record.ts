@@ -1,4 +1,5 @@
 import { ArrowCell, ArrowFrame } from './arrow-data'
+import { memoize } from './lazy-view'
 
 /** Define enumerable column getters without decoding the row's values. */
 export function columnView<T extends object>(
@@ -21,47 +22,12 @@ export function columnView<T extends object>(
   return Object.defineProperties({}, descriptors) as T
 }
 
-/** Response-owned lazy values; consumers must derive rather than mutate arrays. */
-export function memoize<T>(read: () => T): () => T {
-  let initialized = false
-  let value: T
-  return () => {
-    if (!initialized) {
-      value = read()
-      if (Array.isArray(value)) Object.freeze(value)
-      initialized = true
-    }
-    return value
-  }
-}
-
-/** Cache a response view's getters without visiting its retained Arrow columns. */
-export function cachedView<T extends object>(view: T): T {
-  const descriptors = Object.getOwnPropertyDescriptors(view)
-  for (const descriptor of Object.values(descriptors)) {
-    if (descriptor.get) descriptor.get = memoize(descriptor.get.bind(view))
-  }
-  return Object.defineProperties(view, descriptors)
-}
-
 export function cachedColumnView<T extends object>(
   frame: ArrowFrame,
   row: number,
   readers: { [K in keyof T]: (cell: ArrowCell) => T[K] }
 ): T {
   return columnView(frame, row, readers, true)
-}
-
-/** Compose views without evaluating getters as object spread would. */
-export function extendView<T extends object, U extends object>(
-  base: T,
-  extra: U
-): T & U {
-  // SAFETY: All T descriptors are installed on the U object without reading them.
-  return Object.defineProperties(
-    extra,
-    Object.getOwnPropertyDescriptors(base)
-  ) as T & U
 }
 
 export const text = (cell: ArrowCell): string =>
@@ -81,7 +47,8 @@ export function listValues<T>(
   read: (cell: ArrowCell) => T
 ): T[] {
   const values = cell.list()
+  const metadata = cell.type.children[0]!.metadata
   return Array.from({ length: values.length }, (_, row) =>
-    read(new ArrowCell(values, row))
+    read(new ArrowCell(values, row, metadata))
   )
 }
