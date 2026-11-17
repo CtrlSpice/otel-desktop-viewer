@@ -2,11 +2,13 @@
 .cursor/
 .claude/
 .clinerules/
+.opencode/
 otel-desktop-viewer
 desktopexporter/internal/frontend-legacy/
 .vscode/
 *.db
 *.duckdb*
+!desktopexporter/internal/store/commitbridge/LICENSE.duckdb
 *.wal
 *.tmp/
 *.log
@@ -20,6 +22,8 @@ dist/
 # one outside the frontend directory)
 node_modules/
 desktopexporter/internal/frontend/dist/
+desktopexporter/internal/frontend/dist-evals/
+desktopexporter/internal/server/static-evals/
 desktopexporter/internal/frontend/.vite/
 desktopexporter/internal/frontend/*.local
 desktopexporter/internal/frontend/playwright-report/

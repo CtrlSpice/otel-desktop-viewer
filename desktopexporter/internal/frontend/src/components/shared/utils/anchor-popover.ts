@@ -19,7 +19,7 @@ export function createPopoverID(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** Fixed position relative to the trigger. */
+/** Fixed position at the requested trigger anchor. */
 export function positionAnchorPopover(
   trigger: HTMLElement,
   popover: HTMLElement,

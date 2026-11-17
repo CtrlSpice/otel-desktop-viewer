@@ -23,8 +23,8 @@ create or replace macro metric_datapoint_view_json(d, exemplars, exemplar_count,
 				'sum', double_wire_json(d.sum),
 				'min', double_wire_json(d.min),
 				'max', double_wire_json(d.max),
-				'bucketCounts', list_transform(d.bucket_counts, value -> value::varchar),
-				'explicitBounds', list_transform(d.explicit_bounds, value -> double_wire_json(value)),
+				'bucketCounts', list_transform(d.bucket_counts, lambda value: value::varchar),
+				'explicitBounds', list_transform(d.explicit_bounds, lambda value: double_wire_json(value)),
 				'aggregationTemporalityCode', d.aggregation_temporality,
 				'aggregationTemporality', case d.aggregation_temporality
 					when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
@@ -49,9 +49,9 @@ create or replace macro metric_datapoint_view_json(d, exemplars, exemplar_count,
 				'zeroCount', d.zero_count::varchar,
 				'zeroThreshold', double_wire_json(d.zero_threshold),
 				'positiveBucketOffset', d.positive_bucket_offset,
-				'positiveBucketCounts', list_transform(d.positive_bucket_counts, value -> value::varchar),
+				'positiveBucketCounts', list_transform(d.positive_bucket_counts, lambda value: value::varchar),
 				'negativeBucketOffset', d.negative_bucket_offset,
-				'negativeBucketCounts', list_transform(d.negative_bucket_counts, value -> value::varchar),
+				'negativeBucketCounts', list_transform(d.negative_bucket_counts, lambda value: value::varchar),
 				'aggregationTemporalityCode', d.aggregation_temporality,
 				'aggregationTemporality', case d.aggregation_temporality
 					when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'

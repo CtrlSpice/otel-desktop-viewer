@@ -60,7 +60,7 @@ func TestGetSpanNames(t *testing.T) {
 			"checkout/verify": 3,
 			"db/select 100%":  2,
 			"auth/login":      1,
-		}), s.FlushedIDs())
+		}))
 	}))
 
 	// Most frequent first; ties broken by name.

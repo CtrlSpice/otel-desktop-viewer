@@ -1,51 +1,52 @@
-<script lang="ts" generics="TSortColumn extends string">
-  import { onMount, onDestroy, type Snippet } from 'svelte'
+<script lang="ts">
+  import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte'
+  import { createRead, createReadMap } from '@/services/reads'
   import {
     EditorView,
     placeholder as cmPlaceholder,
     tooltips,
   } from '@codemirror/view'
   import { EditorState, Compartment } from '@codemirror/state'
-  import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
+  import {
+    autocompletion,
+    closeBrackets,
+    type CompletionContext,
+  } from '@codemirror/autocomplete'
+  import { forceLinting } from '@codemirror/lint'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
-  import type { FieldDefinition, SearchSignal } from '@/search/model'
+  import type {
+    FieldDefinition,
+    SearchSignal,
+    ParsedSearchRequest,
+  } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import {
-    getTimeContext,
-    selectionToQueryRangeMs,
-    selectionToQueryRangeNs,
-  } from '@/contexts/time-context.svelte'
-  import type { SearchResultEvent } from '@/types/api-types'
-  import { runSearch, type SearchContext } from './search-dispatch'
-  import {
-    beginListUpdate,
-    cancelPendingListUpdates,
-  } from '@/components/shared/utils/list-update-seq'
+  import { attributeSampleText } from '@/services/arrow/arrow-search'
   import type { FilterDescriptor } from '@/components/shared/Toolbar/filter-types'
   import { queryLanguageSupport } from './codemirror/query-language'
   import { createQueryCompletionSource } from './codemirror/completions'
   import { createFieldValueCache } from '@/components/shared/Search/codemirror/field-value-cache'
   import { createFieldValueSource } from '@/components/shared/Search/codemirror/field-value-completions'
-  import { createValueDiscoverySource } from './codemirror/value-completions'
+  import { storedKindForField } from './attribute-field-reference'
   import { createQueryLinter } from './codemirror/linter'
-  import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
+  import { queryTheme } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon, HelpCircleIcon } from '@hugeicons/core-free-icons'
-  import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { QuestionMarkIcon } from '@/icons'
+  import FieldErrorMessage from '@/components/shared/Detail/FieldErrorMessage.svelte'
+  import SearchHelpDialog from './SearchHelpDialog.svelte'
+  import IconButton from '../IconButton.svelte'
+  import { attributeTokens } from './codemirror/attribute-tokens'
+  import { multilineQueryPaste } from './codemirror/paste'
+  import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
-  import type { SearchEditorAPI } from './search-editor-api'
-  import type { SortDirection } from '@/contexts/signal-list-page.svelte'
+  import type { SearchDefinition, SearchEditorAPI } from './search-editor-api'
 
   type SearchEditorProps = {
-    signal: SearchSignal
-    sortValue: TSortColumn
-    sortDirection: SortDirection
-    onSearchResults?: (event: SearchResultEvent) => void
     /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
     inToolbar?: boolean
     /** 'drawer' moves action buttons to a footer row below the editor. */
@@ -54,21 +55,31 @@
     onReady?: (api: SearchEditorAPI) => void
     /** Called whenever the search error state changes. */
     onSearchError?: (error: string | null) => void
+    onQueryChange?: (text: string, fields: FieldDefinition[]) => void
+    onQuerySubmit?: (text: string) => void
+    /** The page's resource owns fetching after the editor validates the query. */
+    onSearchRequest?: (request: ParsedSearchRequest | null) => void
     /** Actions pinned top-right inside the editor container (drawer variant only). */
     headerActions?: Snippet
-  }
-
-  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+  } & (
+    | { signal: SearchSignal; definition?: never }
+    | {
+        signal?: never
+        definition: SearchDefinition
+        onSearchRequest: (request: ParsedSearchRequest | null) => void
+      }
+  )
 
   let {
     signal,
-    sortValue,
-    sortDirection,
-    onSearchResults,
+    definition,
     inToolbar = false,
     variant = 'default',
     onReady,
     onSearchError,
+    onQueryChange,
+    onQuerySubmit,
+    onSearchRequest,
     headerActions,
     filters = [],
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
@@ -78,12 +89,9 @@
     /Mac|iPhone|iPad/.test(navigator.userAgent)
   const modKey = isMac ? '⌘' : 'Ctrl'
 
-  const timeContext = getTimeContext()
-
   let editorContainer = $state<HTMLDivElement | null>(null)
   let editorView: EditorView | null = null
   let searchError = $state<string | null>(null)
-  let alive = true
   const placeholderCompartment = new Compartment()
 
   let activeFilterID = $state<string | null>(null)
@@ -99,11 +107,31 @@
   let prevBodyOverflow = $state<string | null>(null)
   const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
 
-  let availableFields = $state<FieldDefinition[]>([])
+  const staticFieldsList = $derived(
+    definition?.fields ?? (signal ? [...getStaticFieldsForSearch(signal)] : [])
+  )
+  let queryText = $state('')
+  const fieldRead = createRead<{
+    signal: SearchSignal
+    fields: FieldDefinition[]
+  }>()
+  const definitionsLoaded = $derived(
+    !signal || fieldRead.data?.signal === signal
+  )
+  const availableFields = $derived([
+    ...staticFieldsList,
+    ...(signal && fieldRead.data?.signal === signal
+      ? fieldRead.data.fields
+      : []),
+  ])
+  const fieldValues = createReadMap<string, string[]>()
+  const attributeValues = createReadMap<CompletionContext, string[]>()
+  let definitionsWanted = $state(false)
+  let pendingRestoration: string | undefined
 
-  let signalLabel = $derived(capitalize(signal))
-  let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
-  let placeholderText = $derived(`search ${signal}...`)
+  $effect(() => onQueryChange?.(queryText, availableFields))
+
+  let placeholderText = $derived(`search ${definition?.label ?? signal}...`)
 
   $effect(() => {
     editorView?.dispatch({
@@ -113,27 +141,29 @@
     })
   })
 
-  /** Fetch dynamic attributes from the shared dictionary. */
+  /** Discover fields only for an active search, not while opening telemetry. */
   $effect(() => {
-    const base = [...staticFieldsList]
-    availableFields = base
+    const requestedSignal = signal
+    const wanted = definitionsWanted
+    if (!requestedSignal || !wanted) return
+    void fieldRead.load(async abort => ({
+      signal: requestedSignal,
+      fields: await getDynamicAttributes(requestedSignal, abort),
+    }))
+    return () => fieldRead.cancel()
+  })
 
-    let cancelled = false
-    const t = window.setTimeout(async () => {
-      try {
-        void selectionToQueryRangeMs(timeContext.selection, Date.now())
-        const dynamicAttrs = await getDynamicAttributes(signal)
-        if (cancelled) return
-        availableFields = [...base, ...dynamicAttrs]
-      } catch (error) {
-        console.warn('Failed to load dynamic attributes:', error)
-      }
-    }, 250)
-
-    return () => {
-      cancelled = true
-      window.clearTimeout(t)
-    }
+  $effect(() => {
+    void availableFields
+    if (!definitionsLoaded) return
+    untrack(() => {
+      if (editorView) forceLinting(editorView)
+      if (
+        pendingRestoration !== undefined &&
+        pendingRestoration === editorView?.state.doc.toString()
+      )
+        onSubmit()
+    })
   })
 
   /** Wire up close/cancel/click-outside on the help dialog element. */
@@ -186,69 +216,40 @@
     }
   })
 
-  /** Build a SearchContext from the current component state. */
-  function currentSearchContext(): SearchContext {
-    const { startTime, endTime } = selectionToQueryRangeNs(
-      timeContext.selection,
-      Date.now()
-    )
-
-    return { signal, startTime, endTime }
-  }
-
-  /** Fetch without any search filter and deliver via onSearchResults. */
-  function fetchClean(updateSeq: number) {
-    const ctx = currentSearchContext()
-    executeSearch(runSearch(ctx, updateSeq))
-  }
-
-  function executeSearch(search: Promise<SearchResultEvent>) {
-    search
-      .then(event => {
-        if (!alive) return
-        onSearchResults?.(event)
-      })
-      .catch(err => {
-        if (!alive) return
-        searchError = 'Search failed: ' + err.message
-      })
+  let routeQuery = ''
+  function rememberQuery(text: string) {
+    const route = readRoute()
+    const next = text.trim() ? text : ''
+    routeQuery = next
+    if ((route.query.q ?? '') !== next)
+      navigateCurrentRoute({ ...route.query, q: next || undefined }, 'replace')
   }
 
   function onSubmit() {
     const text = editorView?.state.doc.toString() ?? ''
+    if (signal && !definitionsLoaded && text.trim()) {
+      pendingRestoration = text
+      definitionsWanted = true
+      return
+    }
+    pendingRestoration = undefined
+    // Initial URL submission can precede the reactive change notification.
+    onQueryChange?.(text, availableFields)
 
     if (!text.trim()) {
       searchError = null
-      fetchClean(beginListUpdate(signal))
+      rememberQuery(text)
+      onQuerySubmit?.(text)
+      onSearchRequest?.(null)
       return
     }
 
     try {
       const request = parseSearchRequest(text, availableFields, signal)
       searchError = null
-      if (!request) {
-        fetchClean(beginListUpdate(signal))
-        return
-      }
-
-      const { predicate: queryTree, limit } = request
-      if (!queryTree && limit === null) {
-        fetchClean(beginListUpdate(signal))
-        return
-      }
-
-      const searchCtx = currentSearchContext()
-      const sort = { field: sortValue, direction: sortDirection }
-      const updateSeq = beginListUpdate(signal)
-      executeSearch(
-        runSearch(
-          searchCtx,
-          updateSeq,
-          queryTree ?? undefined,
-          limit ?? undefined,
-          sort
-        )
-      )
+      rememberQuery(text)
+      onQuerySubmit?.(text)
+      onSearchRequest?.(request)
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }
@@ -301,35 +302,82 @@
   })
 
   onMount(() => {
-    ensureTooltipStyles()
-
     const mountEl = editorContainer
     if (!mountEl) return
 
     // One cache for the whole editor session, shared by both value sources.
-    const fieldValueCache = createFieldValueCache(
-      telemetryAPI.getFieldValueCompletions,
-      signal
-    )
+    const fieldValueCache = signal
+      ? createFieldValueCache(
+          telemetryAPI.getFieldValueCompletions,
+          signal,
+          fieldValues
+        )
+      : null
 
+    const initialQuery = readRoute().query.q ?? ''
+    routeQuery = initialQuery
+    queryText = initialQuery
     const state = EditorState.create({
-      doc: '',
+      doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
+        EditorView.domEventHandlers({
+          focus: () => {
+            definitionsWanted = true
+          },
+        }),
+        EditorView.contentAttributes.of({
+          'aria-label': `Search ${definition?.label ?? signal}`,
+        }),
+        ...(signal ? [attributeTokens(signal)] : []),
+        multilineQueryPaste,
         autocompletion({
-          // Key-first runs first and wins where it applies; value-first only
-          // fires on bare text at the top level, where the other has nothing to
-          // offer. Async, so it cannot block typing.
+          // Fetch values only after the user selects an exact field.
           override: [
-            createQueryCompletionSource(() => availableFields, signal),
-            createValueDiscoverySource(
-              telemetryAPI.searchAttributeMatches,
-              () => availableFields,
-              fieldValueCache
-            ),
-            // Column values for discoverable fields (`name = `, `unit = `),
-            // from the same per-session cache bare-text discovery reads.
-            createFieldValueSource(fieldValueCache, () => availableFields),
+            async context => {
+              let fields = availableFields
+              if (signal && !definitionsLoaded) {
+                definitionsWanted = true
+                await tick()
+                await fieldRead.completion
+                fields = availableFields
+              }
+              if (context.aborted) return null
+              return createQueryCompletionSource(() => fields, signal)(context)
+            },
+            ...(fieldValueCache
+              ? [
+                  // Column values and exact selected attribute paths.
+                  createFieldValueSource(
+                    fieldValueCache,
+                    () => availableFields,
+                    async (field, term, context) => {
+                      const read = attributeValues.for(context)
+                      context.addEventListener('abort', () =>
+                        attributeValues.delete(context)
+                      )
+                      await read.load(async abort => {
+                        const matches =
+                          await telemetryAPI.searchAttributeMatches(
+                            term,
+                            {
+                              signal,
+                              owner: field.owner,
+                              path: field.path,
+                              type: storedKindForField(field),
+                            },
+                            abort
+                          )
+                        return matches.flatMap(match =>
+                          match.sampleValues.flatMap(attributeSampleText)
+                        )
+                      })
+                      attributeValues.delete(context)
+                      return read.data ?? []
+                    }
+                  ),
+                ]
+              : []),
           ],
           activateOnTyping: true,
           icons: false,
@@ -340,6 +388,12 @@
         tooltips({ position: 'fixed' }),
         closeBrackets(),
         history(),
+        EditorView.updateListener.of(update => {
+          if (update.docChanged) {
+            pendingRestoration = undefined
+            queryText = update.state.doc.toString()
+          }
+        }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
         // Single-line input: no soft-wrap, swallow Enter (we map it to submit
@@ -360,12 +414,30 @@
     onReady?.({
       submit: onSubmit,
       clear: clearSearch,
+      setQuery: text => {
+        if (!editorView) return
+        editorView.dispatch({
+          changes: { from: 0, to: editorView.state.doc.length, insert: text },
+        })
+        onSubmit()
+      },
+    })
+    if (initialQuery || definition) onSubmit()
+    return subscribeToRoute(() => {
+      const route = readRoute()
+      const path = definition?.path ?? `/${signal}`
+      if (route.path !== path && !route.path.startsWith(`${path}/`)) return
+      const next = route.query.q ?? ''
+      if (next === routeQuery || !editorView) return
+      routeQuery = next
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: next },
+      })
+      onSubmit()
     })
   })
 
   onDestroy(() => {
-    alive = false
-    cancelPendingListUpdates(signal)
     editorView?.destroy()
   })
 </script>
@@ -381,20 +453,6 @@
           {@render headerActions()}
         </div>
       {/if}
-      <span class="search-editor__leading-icon" aria-hidden="true">
-        <svg
-          class="h-3.5 w-3.5 shrink-0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-        </svg>
-      </span>
       <div class="editor-mount" bind:this={editorContainer}></div>
       <div
         class="search-editor__footer-actions"
@@ -405,37 +463,26 @@
             <FieldErrorMessage message={searchError} />
           </div>
         {/if}
-        <div class="join join-horizontal shrink-0 rounded-full">
-          <button
-            type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
-            onclick={openHelp}
-            aria-label="Search query help"
-            data-tip="Query help"
-          >
-            <HugeiconsIcon
-              icon={HelpCircleIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
-              aria-hidden="true"
-            />
-          </button>
-          <button
-            type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
-            onclick={clearSearch}
-            aria-label="Clear search"
-            data-tip="Clear search"
-          >
+        <div class="header-icon-controls shrink-0">
+          <IconButton onclick={clearSearch} label="Clear search">
             <HugeiconsIcon
               icon={Cancel01Icon}
-              size="1em"
+              size={17}
               strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
+              class="shrink-0"
               aria-hidden="true"
             />
-          </button>
+          </IconButton>
+          <IconButton
+            onclick={openHelp}
+            label="Search query help"
+            tooltip="Query help"
+          >
+            <QuestionMarkIcon
+              class="h-[17px] w-[17px] shrink-0"
+              aria-hidden="true"
+            />
+          </IconButton>
         </div>
       </div>
     </div>
@@ -459,13 +506,7 @@
           aria-label="Search query help"
           data-tip="Query help"
         >
-          <HugeiconsIcon
-            icon={HelpCircleIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
+          <QuestionMarkIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -507,202 +548,17 @@
     </div>
 
     {#if activeFilter && !inToolbar}
-      <div bind:this={filterPopoverEl} class="search-filter-popover">
+      <div
+        bind:this={filterPopoverEl}
+        class="popover-surface search-filter-popover"
+      >
         {@render activeFilter.content()}
       </div>
     {/if}
   </div>
 {/if}
 
-<!-- Help dialog: rendered OUTSIDE .search-editor-container to avoid clipping -->
-<dialog
-  bind:this={helpDialogElement}
-  class="help-dialog"
-  closedby="any"
-  tabindex="-1"
->
-  <header class="help-dialog-header">
-    <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
-    <button
-      type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content tooltip tooltip-left"
-      onclick={() => helpDialogElement?.close()}
-      aria-label="Close"
-      data-tip="Close"
-    >
-      <svg
-        class="h-5 w-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M18 6L6 18M6 6l12 12" />
-      </svg>
-    </button>
-  </header>
-
-  <div class="help-dialog-body">
-    <div class="help-query-lines">
-      <p>
-        Type plain words to search everything — fields, attributes, and values
-        alike
-      </p>
-      <p>
-        Or filter precisely with <code class="q-field">field</code>
-        <code class="q-operator">operator</code>
-        <code class="q-value">value</code>
-      </p>
-      <p>
-        Combine filters with <code class="q-logic">AND</code> or
-        <code class="q-logic">OR</code> — <code class="q-logic">AND</code> binds
-        tighter, parentheses <code class="q-paren">( )</code> override
-      </p>
-      <p>
-        Quote values containing spaces:
-        <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
-      </p>
-      <p>
-        Attribute suggestions include their exact scope and stored kind, for
-        example <code class="q-field">attr(span, "attempts", int64)</code>. This
-        selects received integer values; it does not convert other values.
-      </p>
-      <p>
-        Cap the returned results by appending
-        <code class="q-logic">| LIMIT 100</code>
-      </p>
-    </div>
-
-    <h3 class="help-section-heading">Operators</h3>
-    <table class="help-op-table">
-      <thead>
-        <tr>
-          <th scope="col">Category</th>
-          <th scope="col">Operators</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th scope="row">Equality</th>
-          <td>
-            <code class="help-op-code">=</code>,
-            <code class="help-op-code">!=</code>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Comparison</th>
-          <td>
-            <code class="help-op-code">&gt;</code>,
-            <code class="help-op-code">&lt;</code>,
-            <code class="help-op-code">&gt;=</code>,
-            <code class="help-op-code">&lt;=</code>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Text</th>
-          <td>
-            <code class="help-op-code">CONTAINS</code>,
-            <code class="help-op-code">NOT CONTAINS</code>
-            <span class="help-op-note">
-              <code class="help-op-code">^</code> (starts with)
-              <code class="help-op-code">$</code> (ends with)
-            </span>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Pattern</th>
-          <td>
-            <code class="help-op-code">=~</code>,
-            <code class="help-op-code">!~</code>,
-            <code class="help-op-code">REGEXP</code>
-            <span class="help-op-note">
-              full match — wrap substrings: <code class="help-op-code"
-                >.*checkout.*</code
-              ></span
-            >
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">List</th>
-          <td>
-            <code class="help-op-code">IN</code>,
-            <code class="help-op-code">NOT IN</code>
-            <span class="help-op-note">
-              <code class="help-op-code">kind IN [Server, Client]</code></span
-            >
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Null</th>
-          <td>
-            <code class="help-op-code">= NULL</code>,
-            <code class="help-op-code">!= NULL</code>
-            <span class="help-op-note">
-              bare <code class="help-op-code">NULL</code> or
-              <code class="help-op-code">nil</code> checks for absence; quoted
-              <code class="help-op-code">"NULL"</code> is the literal text</span
-            >
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h3 class="help-section-heading">Examples</h3>
-
-    {#if signal === 'traces'}
-      <pre class="help-example"><code class="q-field">name</code> <code
-          class="q-operator">CONTAINS</code
-        > <code class="q-value">http</code> <code class="q-logic"
-          >| LIMIT 100</code
-        ></pre>
-      <pre class="help-example"><code class="q-field">kind</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">Server</code> <code class="q-logic">AND</code
-        > <code class="q-field">statusCode</code> <code class="q-operator"
-          >=</code
-        > <code class="q-value">Error</code> <code class="q-logic">AND</code
-        > <code class="q-field">name</code> <code class="q-operator"
-          >CONTAINS</code
-        > <code class="q-value">checkout</code></pre>
-    {:else if signal === 'logs'}
-      <pre class="help-example"><code class="q-field">severityText</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">ERROR</code></pre>
-      <pre class="help-example"><code class="q-field">severityText</code> <code
-          class="q-operator">=</code
-        > <code class="q-value">WARN</code> <code class="q-logic">AND</code
-        > <code class="q-field">body</code> <code class="q-operator"
-          >CONTAINS</code
-        > <code class="q-value">disk</code> <code class="q-logic">AND</code
-        > <code class="q-field">traceID</code> <code class="q-operator">=</code
-        > <code class="q-value">4af9f2c…</code></pre>
-    {:else}
-      <pre class="help-example"><code class="q-field">name</code> <code
-          class="q-operator">CONTAINS</code
-        > <code class="q-value">requests</code> <code class="q-logic">AND</code
-        > <code class="q-field">type</code> <code class="q-operator">=</code
-        > <code class="q-value">Gauge</code></pre>
-    {/if}
-
-    <h3 class="help-section-heading">Keyboard shortcuts</h3>
-    <ul class="help-shortcut-list">
-      <li>
-        <kbd class="kbd kbd-sm">Enter</kbd>
-        <span class="help-shortcut-sep">—</span>
-        run query
-      </li>
-      <li>
-        <kbd class="kbd kbd-sm">Ctrl</kbd>
-        <kbd class="kbd kbd-sm">Space</kbd>
-        <span class="help-shortcut-sep">—</span>
-        open autocomplete
-      </li>
-    </ul>
-  </div>
-</dialog>
+<SearchHelpDialog bind:element={helpDialogElement} {signal} {definition} />
 
 <style lang="postcss">
   @reference "../../../app.css";
@@ -710,7 +566,7 @@
   .search-editor-wrapper {
     @apply relative w-full;
     min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
   }
 
   .search-editor-wrapper--drawer {
@@ -725,22 +581,9 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply items-center gap-1.5 py-1 pl-4 pr-2;
+    @apply items-center py-1 pl-4 pr-0;
+    gap: var(--control-icon-gap);
     height: auto;
-  }
-
-  .search-editor-wrapper--drawer .search-editor__leading-icon {
-    @apply flex shrink-0 items-center;
-    color: var(--color-subtle);
-  }
-
-  .search-editor-wrapper--drawer
-    .search-editor-container:hover:not(:focus-within) {
-    background-color: var(--color-base-100);
-  }
-
-  .search-editor-wrapper--drawer .search-editor-container:focus-within {
-    background-color: var(--color-base-100);
   }
 
   .search-editor__header-actions {
@@ -752,39 +595,36 @@
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
-    height: var(--table-row-h);
-    min-height: var(--table-row-h);
-    max-height: var(--table-row-h);
+    height: var(--search-editor-row-height, var(--table-row-h));
+    min-height: var(--search-editor-row-height, var(--table-row-h));
+    max-height: var(--search-editor-row-height, var(--table-row-h));
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
     overflow-x: auto;
     overflow-y: hidden;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
-    padding-top: 0;
-    padding-bottom: 0;
+    padding-block: calc(
+      (
+          var(--search-editor-row-height, var(--table-row-h)) -
+            var(--text-base) * var(--text-base--line-height)
+        ) /
+        2
+    );
     padding-left: 0;
     padding-right: 0.5rem;
-    min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    min-height: var(--search-editor-row-height, var(--table-row-h));
+    line-height: var(--text-base--line-height);
     white-space: nowrap;
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-line) {
-    line-height: var(--table-row-h);
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-placeholder) {
-    line-height: var(--table-row-h);
   }
 
   .search-editor-wrapper--drawer .search-editor__footer-actions {
     @apply static ml-auto flex shrink-0 items-center gap-2;
     inset: auto;
-    height: var(--table-row-h);
+    height: var(--search-editor-row-height, var(--table-row-h));
     align-self: center;
   }
 
@@ -855,124 +695,6 @@
   }
 
   .search-filter-popover {
-    @apply border-t border-base-300/70 bg-base-100/80 backdrop-blur-sm;
     @apply px-3 py-2;
-  }
-
-  .help-dialog {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    translate: -50% -50%;
-    margin: 0;
-    box-sizing: border-box;
-    width: min(32rem, calc(100vw - 2rem));
-    max-height: min(85vh, calc(100vh - 2rem));
-    overflow: hidden;
-
-    @apply rounded-lg border border-base-300 bg-base-100 p-0 text-base-content shadow-xl;
-    overscroll-behavior: contain;
-  }
-
-  .help-dialog[open] {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .help-dialog::backdrop {
-    background-color: rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(6px);
-  }
-
-  .help-dialog-header {
-    @apply flex shrink-0 items-center justify-between gap-3 border-b border-base-300 px-4 py-3;
-  }
-
-  .help-dialog-title {
-    @apply min-w-0 flex-1 text-lg font-semibold leading-snug tracking-tight;
-  }
-
-  .help-dialog-body {
-    @apply overflow-y-auto px-4 pb-4 pt-3;
-    min-height: 0;
-    overscroll-behavior: contain;
-  }
-
-  .help-section-heading {
-    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-base-content/70;
-  }
-
-  .help-query-lines {
-    @apply mt-1 space-y-1 text-sm text-base-content/80;
-  }
-
-  .help-op-table {
-    @apply mt-2 w-full border-collapse text-left text-sm text-base-content/80;
-  }
-
-  .help-op-table thead th {
-    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-base-content/70;
-  }
-
-  .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-base-content/80;
-  }
-
-  .help-op-table tbody td {
-    @apply py-2 align-top;
-  }
-
-  .help-op-code {
-    @apply rounded bg-base-200/80 px-1 py-0.5 font-mono text-xs text-base-content;
-  }
-
-  .help-op-note {
-    @apply mt-1 block text-xs text-base-content/75;
-  }
-
-  .help-op-note .help-op-code {
-    @apply mx-0.5;
-  }
-
-  .help-shortcut-list {
-    @apply mt-2 space-y-2 text-sm text-base-content/80;
-  }
-
-  .help-shortcut-list li {
-    @apply flex flex-wrap items-center gap-1.5;
-  }
-
-  .help-shortcut-sep {
-    @apply mx-0.5 text-base-content/50;
-  }
-
-  .help-example {
-    @apply mt-2 overflow-x-auto rounded-md bg-base-200 p-3 font-mono text-xs leading-relaxed text-base-content;
-  }
-
-  .help-example :global(code) {
-    @apply whitespace-pre-wrap break-all bg-transparent p-0;
-  }
-
-  /* Match CodeMirror query token colors (see lang/theme.ts + app.css --color-*) */
-  .q-field {
-    color: var(--color-accent);
-  }
-
-  .q-operator {
-    color: var(--color-subtle);
-  }
-
-  .q-logic {
-    color: var(--color-primary);
-    font-weight: 600;
-  }
-
-  .q-value {
-    color: var(--color-warning);
-  }
-
-  .q-paren {
-    color: var(--color-subtle);
   }
 </style>

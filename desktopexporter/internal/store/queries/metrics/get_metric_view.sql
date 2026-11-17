@@ -1,61 +1,29 @@
 
-		with input as (
-			select ?::uuid as metric_id,
-				list_extract(?::ubigint[], 1) as time_start,
-				list_extract(?::ubigint[], 1) as time_end,
-				?::bigint as target_buckets,
-				-- NULL means all series; [] means none. Bind as text because the
-				-- driver corrupts bound []duckdb.UUID values.
-				?::varchar[] as series_ids,
-				-- Histogram quantiles; [] skips quantile computation.
-				?::double[] as quantiles,
-				-- Viewer UTC offset in nanoseconds; 0 aligns buckets to UTC.
-				?::bigint as tz_offset_ns,
-				-- Sum, Average, and Rate resolution, independent of target_buckets.
-				?::bigint as view_buckets,
-				-- Sparkline resolution; extrema emit at most two points per bucket.
-				?::bigint as sparkline_buckets,
-				-- Series in the Selected aggregate; NULL means none selected.
-				?::varchar[] as selected_series_ids,
-				-- IANA zone for per-bucket offsets; NULL uses tz_offset_ns.
-				?::varchar as tz_name,
-				?::varchar[] as datapoint_series_ids,
-				-- Datapoint-series limit in response order; 0 means unlimited and
-				-- datapoint_series_ids takes precedence.
-				?::bigint as datapoint_series_limit
-		),
-		selected_metric as (
-			select s.*, r.schema_url as resource_schema_url,
-				r.attribute_ids as resource_attribute_ids,
-				r.dropped_attributes_count as resource_dropped_attributes_count,
-				sc.name as scope_name, sc.version as scope_version,
-				sc.attribute_ids as scope_attribute_ids,
-				sc.schema_url as scope_schema_url,
-				sc.dropped_attributes_count as scope_dropped_attributes_count
+		with selected_metric as (
+			select s.*, s.resource.schema_url as resource_schema_url,
+				s.scope.schema_url as scope_schema_url
 			from metrics s
-			join resources r on r.id = s.resource_id
-			join scopes sc on sc.id = s.scope_id, input
-			where s.id = input.metric_id
+			where s.id = {{bind "metric_id"}}::uuid
 		),
 		-- Attach parent Metric descriptor fields to datapoints.
 		filtered_dps as (
-			-- Resolve the shared bounds vector once at the datapoint boundary.
-			select d.* exclude (bounds_id),
-				hb.bounds as explicit_bounds,
+			select d.*,
 				-- Per-instant zone offset, falling back to the fixed caller offset.
-				coalesce(tz_offset_ns_at(d.timestamp, input.tz_name),
-				         input.tz_offset_ns) as tz_shift,
+				coalesce(tz_offset_ns_at(d.timestamp, {{bind "tz_name"}}::varchar),
+				         {{bind "tz_offset_ns"}}::bigint) as tz_shift,
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
-			from metric_datapoints d
-			left join histogram_bounds hb on hb.id = d.bounds_id,
-				input, selected_metric s
-			where d.metric_id = input.metric_id
-			  {{.TimeFilter}}
+			from metric_points_for({{bind "metric_id"}}::uuid,
+				list_extract({{bind "time_start"}}::ubigint[], 1),
+				list_extract({{bind "time_end"}}::ubigint[], 1)) d,
+				selected_metric s
+			where d.metric_id = {{bind "metric_id"}}::uuid
+			  {{if .HasStart}}and d.timestamp >= list_extract({{bind "time_start"}}::ubigint[], 1){{end}}
+			  {{if .HasEnd}}and d.timestamp <= list_extract({{bind "time_end"}}::ubigint[], 1){{end}}
 			  -- Filter before reduction. NULL means no filter; [] means no series.
-			  and (input.series_ids is null
-			       or list_contains(input.series_ids, d.series_id::varchar))
+			  and ({{bind "series_ids"}}::varchar[] is null
+			       or list_contains({{bind "series_ids"}}::varchar[], d.series_id::varchar))
 		),
 		-- Rank exemplars from both value extremes. Non-finite and absent values
 		-- sort last. DOUBLE orders mixed numeric values; HUGEINT distinguishes
@@ -72,7 +40,11 @@
 						exact_int := try_cast(e.double_value as hugeint)
 					)
 				end as value_order
-			from exemplars e
+			from (
+				select e.id, point_id as metric_datapoint_id, e.timestamp, e.double_value,
+				       e.int_value, e.trace_id, e.span_id, e.attributes
+				from (select id as point_id, unnest(exemplars) as e from filtered_dps) points
+			) e
 			where e.metric_datapoint_id in (select id from filtered_dps)
 		),
 		exemplars_ranked as (
@@ -91,6 +63,18 @@
 			) e
 		),
 
+		selected_metric_json as materialized (
+			{{if arrow}}select s.*, s.metadata as metadata_json,
+				{{template "resource" "s.resource"}} as resource_json,
+				{{template "scope" "s.scope"}} as scope_json
+			{{else}}select s.*, attribute_document(s.metadata) as metadata_json,
+				json_object('attributes', attribute_document(s.resource.attributes),
+					'droppedAttributesCount', s.resource.dropped_attributes_count) as resource_json,
+				json_object('name', s.scope.name, 'version', s.scope.version,
+					'attributes', attribute_document(s.scope.attributes),
+					'droppedAttributesCount', s.scope.dropped_attributes_count) as scope_json{{end}}
+			from selected_metric s
+		),
 		-- Value extents used to rank exemplar-bearing datapoints.
 		exemplar_extents as (
 			select metric_datapoint_id,
@@ -103,8 +87,8 @@
 			-- (timestamp, id) gives total order; json_group_array rejects ORDER BY.
 			select e.metric_datapoint_id,
 				-- Retain at most five exemplars per datapoint.
-				to_json(list(exemplar_json(e) order by e.timestamp, e.id)
-				        filter (where e.rn <= 5)) as exemplars,
+				{{if arrow}}list({{template "exemplar"}} order by e.timestamp, e.id) filter (where e.rn <= 5){{else}}to_json(list(exemplar_json(e, attribute_document(e.attributes)) order by e.timestamp, e.id)
+				        filter (where e.rn <= 5)){{end}} as exemplars,
 				-- Count before capping so the wire reports withheld exemplars.
 				count(*) as exemplar_count
 			from exemplars_ranked e
@@ -118,9 +102,9 @@
 			from filtered_dps
 		),
 		effective_window as (
-			select coalesce(i.time_start, e.min_ts) as start_ns,
-				coalesce(i.time_end, e.max_ts) as end_ns
-			from input i, data_extent e
+			select coalesce(list_extract({{bind "time_start"}}::ubigint[], 1), e.min_ts) as start_ns,
+				coalesce(list_extract({{bind "time_end"}}::ubigint[], 1), e.max_ts) as end_ns
+			from data_extent e
 		),
 		reduction_span as (
 			select case
@@ -134,15 +118,15 @@
 			select case
 				-- Gauge and Sum elect scalar points; histograms merge counts.
 				when s.metric_type in ('Gauge', 'Sum')
-					then bucket_width_ns(rs.span_ns, i.target_buckets)
+					then bucket_width_ns(rs.span_ns, {{bind "target_buckets"}}::bigint)
 				-- Delta histograms add activity; Cumulative histograms difference
 				-- consecutive running totals before adding.
 				when s.metric_type in ('Histogram', 'ExponentialHistogram')
 				     and s.aggregation_temporality in (1, 2)
-					then bucket_width_ns(rs.span_ns, i.target_buckets)
+					then bucket_width_ns(rs.span_ns, {{bind "target_buckets"}}::bigint)
 			end as width_ns
 			-- Keep lambda arguments relational; DuckDB rejects subqueries in lambdas.
-			from input i, selected_metric s, reduction_span rs
+			from selected_metric s, reduction_span rs
 		),
 
 		-- Histogram merge and scalar election share bucket boundaries.
@@ -162,20 +146,21 @@
 				case
 					-- A one-bucket summary covers the whole window rather than one
 					-- absolute ladder interval.
-					when (select target_buckets from input) = 1
+					when {{bind "target_buckets"}}::bigint = 1
 						then coalesce((select min_ts from data_extent), d.timestamp)
 					else
 						bucket_start_utc(
 							floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 							          (select width_ns from reduction))
 								::hugeint * (select width_ns from reduction)::hugeint,
-							(select tz_name from input),
-							(select tz_offset_ns from input))
+							{{bind "tz_name"}}::varchar,
+							{{bind "tz_offset_ns"}}::bigint)
 				end as bucket_start
 			from filtered_dps d
 			where (select width_ns from reduction) is not null
 		),
 
+{{- if not .NoScalarPools}}
 		-- Difference cumulative values before reduction. The first reading has no
 		-- interval; after a reset, the current value is the interval activity.
 		-- Non-finite doubles remain in the datapoint response but not arithmetic.
@@ -307,14 +292,14 @@
 			-- A requested count of 0 must still produce NULL width.
 			select bucket_width_ns(rs.span_ns,
 				case when c.cadence_ns is null or c.cadence_ns <= 0
-					then i.view_buckets
-					else least(i.view_buckets,
+					then {{bind "view_buckets"}}::bigint
+					else least({{bind "view_buckets"}}::bigint,
 					           greatest(1, (rs.span_ns // c.cadence_ns)::bigint))
 				end) as width_ns
-			from input i, reduction_span rs, series_cadence c
+			from reduction_span rs, series_cadence c
 		),
 		scalar_view_bucketed as (
-			select d.series_id,
+			select d.series_id, d.timestamp, d.id,
 				floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 				          (select width_ns from scalar_view_grid))
 					::hugeint * (select width_ns from scalar_view_grid)::hugeint as bucket_local,
@@ -322,10 +307,10 @@
 					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 					          (select width_ns from scalar_view_grid))
 						::hugeint * (select width_ns from scalar_view_grid)::hugeint,
-					(select tz_name from input),
-					(select tz_offset_ns from input)) as bucket_start,
+					{{bind "tz_name"}}::varchar,
+					{{bind "tz_offset_ns"}}::bigint) as bucket_start,
 				d.value,
-				coalesce(sd.delta_double, sd.delta_int::double) as delta,
+				coalesce(sd.delta_double, hugeint_to_double(sd.delta_int)) as delta,
 				sd.is_reset
 			from scalar_dps d
 			left join scalar_deltas sd
@@ -349,8 +334,8 @@
 						e.first_bucket + unnest(range(
 							((e.last_bucket - e.first_bucket) // g.width_ns)::bigint + 1
 						))::hugeint * g.width_ns::hugeint,
-						(select tz_name from input),
-						(select tz_offset_ns from input)) as bucket_start
+						{{bind "tz_name"}}::varchar,
+						{{bind "tz_offset_ns"}}::bigint) as bucket_start
 				from scalar_view_extent e, scalar_view_grid g
 			)
 		),
@@ -360,9 +345,10 @@
 			select sp.series_id,
 				sp.bucket_start,
 				count(b.series_id) as sample_count,
-				sum(b.value) as value_sum,
-				avg(b.value) as value_avg,
-				sum(b.delta) / ((select width_ns from scalar_view_grid) / 1e9) as rate,
+				-- Order additions, not just output rows. IDs resolve timestamp ties.
+				sum(b.value order by b.timestamp, b.id) as value_sum,
+				avg(b.value order by b.timestamp, b.id) as value_avg,
+				sum(b.delta order by b.timestamp, b.id) / ((select width_ns from scalar_view_grid) / 1e9) as rate,
 				-- Mark any cumulative-counter reset within the bucket.
 				coalesce(bool_or(b.is_reset), false) as has_reset
 			from scalar_view_spine sp
@@ -382,22 +368,22 @@
 		scalar_view_slope as (
 			select series_id, bucket_start,
 				(drawn_rate - lag(drawn_rate) over w)
-					/ ((bucket_start - lag(bucket_start) over w) / 1e9) as slope
+					/ (hugeint_to_double(bucket_start - lag(bucket_start) over w) / 1e9) as slope
 			from scalar_view_drawn
 			window w as (partition by series_id order by bucket_start)
 		),
 		-- Rate stats include drawn gap zeros.
 		scalar_rate_stats as (
 			select series_id,
-				json_object('min', double_wire_json(min(drawn_rate)),
+				{{if arrow}}struct_pack(min := min(drawn_rate), max := max(drawn_rate), avg := avg(drawn_rate order by bucket_start)){{else}}json_object('min', double_wire_json(min(drawn_rate)),
 				            'max', double_wire_json(max(drawn_rate)),
-				            'avg', double_wire_json(avg(drawn_rate))) as rate_stats
+				            'avg', double_wire_json(avg(drawn_rate order by bucket_start))){{end}} as rate_stats
 			from scalar_view_drawn
 			group by series_id
 		),
 		scalar_views_agg as (
 			select a.series_id,
-				to_json(list(json_object(
+				{{if arrow}}list({{template "scalarBucket"}} order by a.bucket_start){{else}}to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
 					'sum', double_wire_json(a.value_sum),
@@ -405,7 +391,7 @@
 					'rate', double_wire_json(a.rate),
 					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
-				) order by a.bucket_start)) as views
+				) order by a.bucket_start)){{end}} as views
 			from scalar_view_agg a
 			left join scalar_view_slope sl
 				on sl.series_id = a.series_id and sl.bucket_start = a.bucket_start
@@ -418,9 +404,9 @@
 			select 'all' as pool, a.* from scalar_view_agg a
 			union all by name
 			select 'selected' as pool, a.*
-			from scalar_view_agg a, input i
-			where i.selected_series_ids is not null
-			  and list_contains(i.selected_series_ids, a.series_id::varchar)
+			from scalar_view_agg a
+			where {{bind "selected_series_ids"}}::varchar[] is not null
+			  and list_contains({{bind "selected_series_ids"}}::varchar[], a.series_id::varchar)
 		),
 		-- Inherit per-series spines so interior gaps remain and absent pool extents
 		-- do not become invented zero observations.
@@ -428,9 +414,9 @@
 			select pool,
 				bucket_start,
 				sum(sample_count) as sample_count,
-				sum(value_sum) as value_sum,
-				sum(value_sum) / nullif(sum(sample_count), 0) as value_avg,
-				sum(rate) as rate,
+				sum(value_sum order by series_id) as value_sum,
+				sum(value_sum order by series_id) / hugeint_to_double(nullif(sum(sample_count), 0)) as value_avg,
+				sum(rate order by series_id) as rate,
 				coalesce(bool_or(has_reset), false) as has_reset
 			from scalar_pool_rows
 			group by pool, bucket_start
@@ -445,13 +431,14 @@
 		scalar_pool_slope as (
 			select pool, bucket_start,
 				(drawn_rate - lag(drawn_rate) over w)
-					/ ((bucket_start - lag(bucket_start) over w) / 1e9) as slope
+					/ (hugeint_to_double(bucket_start - lag(bucket_start) over w) / 1e9) as slope
 			from scalar_pool_drawn
 			window w as (partition by pool order by bucket_start)
 		),
 		scalar_pools_json as (
 			select
-				coalesce(to_json(list(json_object(
+				{{if arrow}}coalesce(list({{template "scalarBucket"}} order by a.bucket_start) filter (where a.pool = 'selected'), []) as selected,
+				coalesce(list({{template "scalarBucket"}} order by a.bucket_start) filter (where a.pool = 'all'), []) as all_series{{else}}coalesce(to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
 					'sum', double_wire_json(a.value_sum),
@@ -468,66 +455,100 @@
 					'rate', double_wire_json(a.rate),
 					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
-				) order by a.bucket_start) filter (where a.pool = 'all')), json('[]')) as all_series
+				) order by a.bucket_start) filter (where a.pool = 'all')), json('[]')) as all_series{{end}}
 			from scalar_pool_agg a
 			left join scalar_pool_slope sl
 				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
 		),
 
-		-- Sparkline reduction keeps min/max shape without an empty-bucket spine.
-		sparkline_grid as (
-			-- Do not bucket more finely than the Metric's cadence.
-			select bucket_width_ns(rs.span_ns,
-				case when c.cadence_ns is null or c.cadence_ns <= 0
-					then i.sparkline_buckets
-					else least(i.sparkline_buckets,
-					           greatest(1, (rs.span_ns // c.cadence_ns)::bigint))
-				end) as width_ns
-			from input i, reduction_span rs, series_cadence c
+		-- Detect empty M4 buckets from original per-series occupancy. A repeated
+		-- local hour can send chronological samples back to an occupied bucket.
+		gauge_bucketed as (
+			select series_id, id, timestamp, bucket_start, tz_shift
+			from bucketed_dps
+			where metric_type = 'Gauge'
 		),
-		sparkline_bucketed as (
-			select d.series_id,
-				bucket_start_utc(
-					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
-					          (select width_ns from sparkline_grid))
-						::hugeint * (select width_ns from sparkline_grid)::hugeint,
-					(select tz_name from input),
-					(select tz_offset_ns from input)) as bucket_start,
-				d.timestamp,
-				d.value
-			from scalar_dps d
-			-- NULL width disables sparklines rather than forming one NULL group.
-			where (select width_ns from sparkline_grid) is not null
+		gauge_grid_extent as (
+			select distinct
+				floor_div(e.first_ts::hugeint + d.tz_shift::hugeint, g.width_ns)::hugeint * g.width_ns::hugeint as first_local,
+				floor_div(e.last_ts::hugeint + d.tz_shift::hugeint, g.width_ns)::hugeint * g.width_ns::hugeint as last_local
+			from (select min(timestamp) as first_ts, max(timestamp) as last_ts from gauge_bucketed) e,
+				(select distinct tz_shift from gauge_bucketed) d, reduction g
 		),
-		-- Keep each extremum's actual timestamp.
-		sparkline_extrema as (
-			select series_id,
-				bucket_start,
-				-- Timestamp tie-breaks keep flat buckets deterministic.
-				arg_min(timestamp, (value, timestamp)) as min_ts,
-				min(value) as min_value,
-				arg_max(timestamp, (value, timestamp)) as max_ts,
-				max(value) as max_value
-			from sparkline_bucketed
-			group by series_id, bucket_start
+		-- Construct the possible bucket sequence once, shared by all series.
+		-- Separate offset ranges avoid enumerating a skipped day at millisecond
+		-- resolution when a short requested window straddles a date-line jump.
+		gauge_local_grid as (
+			select distinct e.first_local + r.i::hugeint * g.width_ns::hugeint as bucket_local,
+				g.width_ns::hugeint as width_ns
+			from gauge_grid_extent e, reduction g,
+				lateral range(0, ((e.last_local - e.first_local) // g.width_ns)::bigint + 1) r(i)
+			where {{bind "target_buckets"}}::bigint > 1
 		),
-		-- UNION removes duplicate min/max points from flat buckets.
-		sparkline_points as (
-			select series_id, min_ts as timestamp, min_value as value
-			from sparkline_extrema
-			union by name
-			select series_id, max_ts as timestamp, max_value as value
-			from sparkline_extrema
+		gauge_resolved_grid as (
+			select *,
+				bucket_start_utc(bucket_local,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint) as bucket_start,
+				bucket_start_utc(bucket_local + width_ns,
+					{{bind "tz_name"}}::varchar, {{bind "tz_offset_ns"}}::bigint) - 1000 as last_ns
+			from gauge_local_grid
 		),
-		-- Histogram series have NULL sparklines.
-		sparkline_agg as (
-			select series_id,
-				to_json(list(json_object(
-					'timestamp', timestamp::varchar,
-					'value', double_wire_json(value)
-				) order by timestamp, value)) as sparkline
-			from sparkline_points
-			group by series_id
+		gauge_roundtrip_grid as (
+			select *,
+				bucket_start + coalesce(tz_offset_ns_at(bucket_start, {{bind "tz_name"}}::varchar),
+					{{bind "tz_offset_ns"}}::bigint) as start_local,
+				last_ns + coalesce(tz_offset_ns_at(last_ns, {{bind "tz_name"}}::varchar),
+					{{bind "tz_offset_ns"}}::bigint) as last_local
+			from gauge_resolved_grid
+		),
+		-- A local interval can receive samples if either its resolved start or
+		-- the instant just before its resolved end maps back inside it. Entirely
+		-- skipped intervals cannot be empty buckets; partially skipped ones can.
+		gauge_possible_buckets as (
+			select distinct bucket_start
+			from gauge_roundtrip_grid
+			where (start_local >= bucket_local and start_local < bucket_local + width_ns)
+				or (last_local >= bucket_local and last_local < bucket_local + width_ns)
+		),
+		-- Multiple local labels can resolve to one UTC bucket at a clock jump.
+		gauge_grid as (
+			select bucket_start, row_number() over (order by bucket_start) as bucket_index
+			from gauge_possible_buckets
+		),
+		gauge_occupied as (
+			select series_id, bucket_start, bucket_index,
+				lag(bucket_index) over (
+					partition by series_id order by bucket_start) as previous_index
+			from gauge_bucketed
+			join gauge_grid using (bucket_start)
+			group by series_id, bucket_start, bucket_index
+		),
+		gauge_bucket_sections as (
+			select series_id, bucket_start,
+				count(*) filter (where bucket_index > previous_index + 1) over (
+					partition by series_id order by bucket_start) as bucket_section
+			from gauge_occupied
+		),
+		-- Attach a break only when real chronological neighbours cross forward
+		-- over empty buckets. Moving back during a repeated hour is not a gap.
+		-- Match chart order: the reverse of timestamp DESC, id ASC on the wire.
+		gauge_neighbors as (
+			select d.series_id, d.id, d.timestamp, s.bucket_section,
+				lag(d.id) over w as previous_id,
+				lag(s.bucket_section) over w as previous_section
+			from gauge_bucketed d
+			join gauge_bucket_sections s using (series_id, bucket_start)
+			window w as (partition by d.series_id order by d.timestamp, d.id desc)
+		),
+		gauge_gaps as (
+			select series_id, id, previous_id, timestamp
+			from gauge_neighbors
+			where bucket_section > previous_section
+		),
+		gauge_gap_endpoints as (
+			select id from gauge_gaps
+			union
+			select previous_id as id from gauge_gaps
 		),
 
 		-- Exclude non-finite values from scalar min/max election.
@@ -574,10 +595,80 @@
 			select unnest([first_id, last_id, min_id, max_id]) as id from bucket_elected
 			union
 			select id from exemplar_carriers
+			union
+			select id from gauge_gap_endpoints
 		),
 
+		-- Cheap row previews reuse the main chart's elected samples and breaks.
+		-- No second original-sample occupancy scan or calendar grid is needed.
+		sparkline_samples as (
+			select d.series_id, d.id, d.timestamp,
+				coalesce(d.double_value, d.int_value) as value,
+				((d.timestamp::hugeint - (select start_ns from effective_window)::hugeint)
+					* {{bind "sparkline_buckets"}}::bigint
+					// (select end_ns::hugeint - start_ns::hugeint + 1 from effective_window)) as bucket,
+				count(g.id) over (partition by d.series_id order by d.timestamp, d.id desc
+					rows between unbounded preceding and current row) as section_id
+			from filtered_dps d
+			left join retained_ids r on r.id = d.id
+			left join gauge_gaps g on g.id = d.id
+			where d.metric_type in ('Gauge', 'Sum')
+			  and ((select kind from reduction_kind) <> 'elect' or r.id is not null)
+			  and {{bind "sparkline_buckets"}}::bigint > 0
+		),
+		-- At most two points per preview bucket. Carry inherited sections through
+		-- numeric filtering, but do not add extra points to preserve every boundary.
+		sparkline_extrema as (
+			select series_id, bucket,
+				arg_min(timestamp, (value, timestamp, id)) as min_ts,
+				arg_min(section_id, (value, timestamp, id)) as min_section,
+				min(value) as min_value,
+				arg_max(timestamp, (value, timestamp, id)) as max_ts,
+				arg_max(section_id, (value, timestamp, id)) as max_section,
+				max(value) as max_value
+			from sparkline_samples
+			where isfinite(value)
+			group by series_id, bucket
+		),
+		sparkline_points as (
+			select series_id, min_ts as timestamp, min_value as value, min_section as section_id
+			from sparkline_extrema
+			union by name
+			select series_id, max_ts as timestamp, max_value as value, max_section as section_id
+			from sparkline_extrema
+		),
+		sparkline_marked as (
+			select *, case when section_id <> lag(section_id) over (
+				partition by series_id order by timestamp, section_id, value) then true end as break_before
+			from sparkline_points
+		),
+		-- Histogram series have NULL sparklines.
+		sparkline_agg as (
+			select sp.series_id,
+				{{if arrow}}list(struct_pack(timestamp := sp.timestamp, value := sp.value,
+					breakBefore := sp.break_before)
+					order by sp.timestamp, sp.section_id, sp.value){{else}}to_json(list(json_merge_patch(json_object(
+					'timestamp', sp.timestamp::varchar,
+					'value', double_wire_json(sp.value)
+				), json_object('breakBefore', sp.break_before))
+					order by sp.timestamp, sp.section_id, sp.value)){{end}} as sparkline
+			from sparkline_marked sp
+			group by sp.series_id
+		),
+{{- end}}
+
+{{- if not .NoHistogramMerge}}
 		-- Merge histogram activity exactly. Exponential buckets first downscale
 		-- to the coarsest scale and left-pad to the smallest offset.
+{{- if .ExplicitHistogram}}
+		hist_padded as (
+			select b.*, null::integer as target_scale,
+				null::bigint as pos_target_offset, null::bigint as neg_target_offset,
+				null::hugeint[] as pos_p, null::hugeint[] as neg_p
+			from bucketed_dps b
+			where (select kind from reduction_kind) = 'merge'
+		),
+{{- else}}
 		hist_scaled as (
 			select b.*,
 				-- Cumulative series share one scale because differences cross buckets;
@@ -622,6 +713,12 @@
 					coalesce(a.neg_target_offset, a.neg_d.offset)) as neg_p
 			from hist_aligned a
 		),
+{{- end}}
+{{- if .DeltaHistogram}}
+		hist_activity as (
+			select * from hist_padded
+		),
+{{- else}}
 		-- Previous cumulative reading for interval activity.
 		hist_lagged as (
 			select p.*,
@@ -667,6 +764,7 @@
 			where l.aggregation_temporality <> 2
 			   or l.prev_count is not null
 		),
+{{- end}}
 
 		hist_merged as (
 			select
@@ -674,8 +772,8 @@
 				p.bucket_start,
 				-- Use the latest real datapoint ID for selection links.
 				arg_max(p.id, (p.timestamp, p.id)) as id,
-				-- series_id guarantees one attribute_ids value per group.
-				any_value(p.attribute_ids) as attribute_ids,
+				-- series_id guarantees one attribute set per group.
+				any_value(p.attributes) as attributes,
 				-- timestamp is the bucket start; start_time is the earliest received
 				-- observation-period start among constituents.
 				p.bucket_start as timestamp,
@@ -686,7 +784,7 @@
 				any_value(p.is_monotonic) as is_monotonic,
 				-- hist_activity has already normalized both temporalities to activity.
 				sum(p.count) as count,
-				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
+				case when count(p.sum) = count(*) then sum(p.sum order by p.timestamp, p.id) end as sum,
 				-- Explicit bounds must match exactly within the group.
 				any_value(p.explicit_bounds) as explicit_bounds,
 				count(distinct p.explicit_bounds::varchar) as distinct_bounds,
@@ -702,6 +800,11 @@
 			group by p.series_id, p.bucket_start
 		),
 
+{{- if .ExplicitHistogram}}
+		hist_folded as (
+			select * from hist_merged
+		),
+{{- else}}
 		-- Fold buckets below the largest merged zero threshold into zero_count.
 		-- Separate CTEs compute each fold once before unpacking its fields.
 		hist_folds as (
@@ -723,36 +826,49 @@
 				f.neg_fold.counts as negative_bucket_counts
 			from hist_folds f
 		),
+{{- end}}
+		-- Expand each merged distribution once for extents and quantiles.
+		hist_buckets_expanded as materialized (
+			select m.*, case when m.metric_type = 'Histogram'
+				then hist_buckets(m.explicit_bounds, m.bucket_counts)
+				else exp_buckets(m.scale, m.negative_bucket_offset, m.negative_bucket_counts,
+					m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts)
+			end as buckets
+			from hist_folded m
+			where m.distinct_bounds <= 1
+		),
+		hist_values as materialized (
+			select m.*, bucket_extents(m.buckets) as extents
+			from hist_buckets_expanded m
+		),
+{{- end}}
 
 		-- Add scalar interval activity. First and non-finite readings have NULL delta.
 		filtered_with_deltas as (
+{{- if .NoScalarPools}}
+			select d.*, null::hugeint as delta_int, null::double as delta_double,
+				null::boolean as is_reset
+			from filtered_dps d
+{{- else}}
 			select d.*, sd.delta_int, sd.delta_double, sd.is_reset as is_reset
 			from filtered_dps d
 			left join scalar_deltas sd
 				on sd.id = d.id
+{{- end}}
 		),
 		projected_dps as (
 			select * from filtered_with_deltas
 			where (select kind from reduction_kind) <> 'merge'
+{{- if not .NoHistogramMerge}}
 			union all by name
 			select
 				m.id, m.series_id, m.timestamp, m.start_time,
 				m.metric_type, m.aggregation_temporality, m.flags,
 				m.count, m.sum,
 				-- Derive extents from merged buckets, not received observations.
-				(bucket_extents(case
-					when m.metric_type = 'Histogram'
-						then hist_buckets(m.explicit_bounds, m.bucket_counts)
-					else exp_buckets(m.scale, m.negative_bucket_offset, m.negative_bucket_counts,
-					                 m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts)
-				end)).min as min,
-				(bucket_extents(case
-					when m.metric_type = 'Histogram'
-						then hist_buckets(m.explicit_bounds, m.bucket_counts)
-					else exp_buckets(m.scale, m.negative_bucket_offset, m.negative_bucket_counts,
-					                 m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts)
-				end)).max as max,
-				m.attribute_ids,
+				m.extents.min as min, m.extents.max as max,
+				m.buckets as histogram_buckets,
+				m.attributes,
 				m.explicit_bounds, m.bucket_counts,
 				m.scale, m.zero_count, m.zero_threshold,
 				m.positive_bucket_offset, m.positive_bucket_counts,
@@ -762,9 +878,8 @@
 				-- Histograms have no scalar delta.
 				null::hugeint as delta_int, null::double as delta_double,
 				null::boolean as is_reset
-			from hist_folded m
-			-- Drop and report buckets with incompatible explicit bounds.
-			where m.distinct_bounds <= 1
+			from hist_values m
+{{- end}}
 		),
 
 		-- Response series order: latest activity first, then series ID.
@@ -780,12 +895,12 @@
 		-- Named series override the limit; otherwise 0 means all series.
 		datapoint_series_allowed as (
 			select r.series_id
-			from datapoint_series_rank r, input i
+			from datapoint_series_rank r
 			where case
-				when i.datapoint_series_ids is not null
-					then list_contains(i.datapoint_series_ids, r.series_id::varchar)
-				when i.datapoint_series_limit > 0
-					then r.rn <= i.datapoint_series_limit
+				when {{bind "datapoint_series_ids"}}::varchar[] is not null
+					then list_contains({{bind "datapoint_series_ids"}}::varchar[], r.series_id::varchar)
+				when {{bind "datapoint_series_limit"}}::bigint > 0
+					then r.rn <= {{bind "datapoint_series_limit"}}::bigint
 				else true
 			end
 		),
@@ -803,38 +918,137 @@
 				d.series_id,
 				-- Stable database-local series reference for URLs and grouping.
 				d.series_id::varchar as attrs_key,
-				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
+				any_value(d.attributes) as attributes,
 				max(d.timestamp) as latest_ts,
 				-- Scalar stats cover the full window. Histogram scalar values are NULL.
 				count(coalesce(d.double_value, d.int_value)) as value_count,
 				min(coalesce(d.double_value, d.int_value)) as value_min,
 				max(coalesce(d.double_value, d.int_value)) as value_max,
-				sum(coalesce(d.double_value, d.int_value)) as value_sum
+				sum(coalesce(d.double_value, d.int_value) order by d.timestamp, d.id) as value_sum
 			-- Group on the fixed-width indexed series ID.
 		from projected_dps d
 			group by d.series_id
 		),
 
+		-- Label candidates use the complete window cohort, not the datapoint
+		-- shipping/visibility subset. Compare canonical typed values, never JSON
+		-- scalar coercions or hashes. Counting presence separately keeps absent
+		-- attributes distinct from received empty/null values.
+		series_label_entries as materialized (
+			select t.series_id, keys.key,
+				attribute_native_field(parts.value, keys.key) as value
+			from ts_dps_agg t,
+			lateral (select variant_to_parquet_variant(variant_normalize(t.attributes))
+				::struct(metadata blob, value blob) as value) parts,
+			unnest(variant_keys(t.attributes)) keys(key)
+		),
+		series_label_parts as materialized (
+			select series_id, key, variant_to_parquet_variant(variant_normalize(value))
+				::struct(metadata blob, value blob) as parts
+			from series_label_entries
+		),
+		-- Shared context values recur across series and keys. Encode each distinct
+		-- native value once, before joining its exact identity back to the cohort.
+		series_label_values as materialized (
+			select parts, otel_wire_json(parts.metadata, parts.value) as signature
+			from (select distinct parts from series_label_parts)
+		),
+		series_label_comparisons as materialized (
+			select p.*, v.signature
+			from series_label_parts p join series_label_values v using (parts)
+		),
+		series_label_keys as (
+			select key from series_label_comparisons
+			group by key
+			having count(distinct signature) > 1
+				or count(*) < (select count(*) from ts_dps_agg)
+		),
+		series_label_renderings as materialized (
+			select parts, otel_metric_label_info(parts.metadata, parts.value) as info
+			from (select distinct parts from series_label_comparisons
+				where key in (select key from series_label_keys))
+		),
+		series_label_classes as (
+			select t.series_id, k.key, c.signature,
+				dense_rank() over (partition by k.key order by c.signature nulls first) as class,
+				coalesce(r.info.label, '[absent]') as label,
+				coalesce(r.info.kind, 'missing') as kind,
+				coalesce(r.info.labelLength, 8) as label_cost,
+				coalesce(r.info.signatureLength, 2) as signature_cost,
+				coalesce(r.info.kindLength, 7) as kind_cost
+			from ts_dps_agg t cross join series_label_keys k
+			left join series_label_comparisons c on c.series_id = t.series_id and c.key = k.key
+			left join series_label_renderings r on r.parts = c.parts
+		),
+		series_label_costs as (
+			select *, case when count(distinct coalesce(signature, '[missing]'))
+				over (partition by key, label) > 1 then
+				case when count(distinct coalesce(signature, '[missing]'))
+					over (partition by key, label, kind) > 1 then signature_cost
+					else label_cost + kind_cost + 3 end
+				else label_cost end as cost
+			from series_label_classes
+		),
+		series_label_columns as (
+			select key, list(class order by series_id) as groups,
+				sum(cost)::bigint as cost
+			from series_label_costs group by key
+		),
+		series_label_selected as materialized (
+			select unnest(otel_metric_label_columns(coalesce(to_json(list(
+				struct_pack(key := key, groups := groups, cost := cost))), '[]'))) as key
+			from series_label_columns
+		),
+		series_label_preview_values as (
+			select c.series_id, c.key, c.class, c.kind,
+				case when c.signature is null then '[absent]'
+					else native_column_preview(e.value) end as preview
+			from series_label_costs c
+			left join series_label_entries e on e.series_id = c.series_id and e.key = c.key
+			where c.key in (select key from series_label_selected)
+		),
+		series_label_preview_displays as (
+			select series_id, key, kind, case
+				when count(distinct class) over (partition by key, preview) <= 1 then preview
+				when count(distinct class) over (partition by key, preview, kind) <= 1
+					then preview || ' (' || kind || ')'
+				else preview || ' (value ' || class::varchar || ')'
+			end as text
+			from series_label_preview_values
+		),
+		series_label_previews as (
+			select series_id, list(struct_pack(key := key, text := text, kind := kind) order by key) as previews
+			from series_label_preview_displays group by series_id
+		),
+
 		-- Build wire JSON only for datapoints surviving reduction and narrowing.
 		shipped_dps as (
-			select d.* from projected_dps d
+{{- if .NoScalarPools}}
+			select d.*, null::boolean as break_before from projected_dps d
+			where d.series_id in (select series_id from datapoint_series_allowed)
+{{- else}}
+			select d.*, case when g.id is not null then true end as break_before
+			from projected_dps d
+			left join gauge_gaps g on g.id = d.id
 			left join retained_ids r on r.id = d.id
 			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
 			  and d.series_id in (select series_id from datapoint_series_allowed)
+{{- end}}
 		),
+{{- if not .NoHistogramMerge}}
 		-- Compute requested quantiles relationally with one bucket walk per datapoint.
 		dp_qsrc as (
 			select d.id,
-				case when d.metric_type = 'Histogram'
+				coalesce(d.histogram_buckets, case when d.metric_type = 'Histogram'
 					then hist_buckets(d.explicit_bounds, d.bucket_counts)
 					else exp_buckets(d.scale,
 						d.negative_bucket_offset, d.negative_bucket_counts,
 						d.zero_count,
-						d.positive_bucket_offset, d.positive_bucket_counts) end as buckets,
+						d.positive_bucket_offset, d.positive_bucket_counts) end) as buckets,
 				d.metric_type = 'Histogram' as is_linear
 			from shipped_dps d
 			where d.metric_type in ('Histogram', 'ExponentialHistogram')
-			  and len((select quantiles from input)) > 0
+			  and len({{bind "quantiles"}}::double[]) > 0
 		),
 		-- One unnest and cumulative count per datapoint.
 		dp_q_acc as (
@@ -847,68 +1061,88 @@
 			from dp_qsrc b, unnest(b.buckets) with ordinality u(b, i)
 		),
 		-- First non-empty bucket whose cumulative count crosses q * n.
+		-- The window sums remain exact HUGEINTs. Only the probability comparison
+		-- and interpolation project counts to correctly rounded binary64.
 		dp_q_picked as (
 			select a.id, qq.q,
-				case when a.is_linear
-					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n)
-					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n) end as v,
-				row_number() over (partition by a.id, qq.q order by a.i) as rn
-			from dp_q_acc a, (select unnest((select quantiles from input)) as q) qq
-			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
+				arg_min(struct_pack(lo := a.lo, hi := a.hi, acc_prev := a.acc_prev,
+					cnt := a.cnt, n := a.n, is_linear := a.is_linear), a.i) as bucket
+			from dp_q_acc a, (select unnest({{bind "quantiles"}}::double[]) as q) qq
+			where a.n > 0 and a.cnt > 0 and hugeint_to_double(a.acc) >= qq.q * hugeint_to_double(a.n)
+			group by a.id, qq.q
+		),
+		dp_q_values as (
+			select id, q, case when bucket.is_linear
+				then interp_linear(bucket.lo, bucket.hi, bucket.acc_prev, bucket.cnt, q * hugeint_to_double(bucket.n))
+				else interp_loglin(bucket.lo, bucket.hi, bucket.acc_prev, bucket.cnt, q * hugeint_to_double(bucket.n)) end as v
+			from dp_q_picked
 		),
 		-- Preserve request key order with ordered lists. Empty histograms emit each
 		-- requested key with NULL value.
 		dp_quantiles as (
-			select t.id, to_json(map(
+			select t.id, {{if arrow}}map(list(t.q::varchar order by t.qi), list(p.v order by t.qi)){{else}}to_json(map(
 				list(t.q::varchar order by t.qi),
-				list(double_wire_json(p.v) order by t.qi))) as quantiles
+				list(double_wire_json(p.v) order by t.qi))){{end}} as quantiles
 			from (select b.id, qq.q, qq.qi from dp_qsrc b,
-				(select u.q, u.i as qi from unnest((select quantiles from input)) with ordinality u(q, i)) qq) t
-			left join dp_q_picked p on p.id = t.id and p.q = t.q and p.rn = 1
+				(select u.q, u.i as qi from unnest({{bind "quantiles"}}::double[]) with ordinality u(q, i)) qq) t
+			left join dp_q_values p on p.id = t.id and p.q = t.q
 			group by t.id
 		),
+{{- end}}
 		ts_dps_json as (
 			select d.series_id,
-				to_json(list(metric_datapoint_view_json(
+				{{if arrow}}list({{template "viewPoint" .}} order by d.timestamp desc, d.id){{else}}to_json(list(json_merge_patch(metric_datapoint_view_json(
 					d,
-					coalesce((select exemplars from exemplars_agg where exemplars_agg.metric_datapoint_id = d.id), json('[]')),
-					coalesce((select exemplar_count from exemplars_agg where exemplars_agg.metric_datapoint_id = d.id), 0),
-					dq.quantiles
-				) order by d.timestamp desc, d.id)) as datapoints
+					coalesce(ea.exemplars, json('[]')),
+					coalesce(ea.exemplar_count, 0),
+					{{if .NoHistogramMerge}}null::json{{else}}dq.quantiles{{end}}
+				), json_object('breakBefore', d.break_before)) order by d.timestamp desc, d.id)){{end}} as datapoints
 			from shipped_dps d
+			left join exemplars_agg ea on ea.metric_datapoint_id = d.id
+{{- if not .NoHistogramMerge}}
 			left join dp_quantiles dq on dq.id = d.id
+{{- end}}
 			group by d.series_id
 		),
 		-- Pack series newest first with their exact parent Metric Resource payload.
 		timeseries_agg as (
-			select to_json(list(metric_series_view_json(
+			select {{if arrow}}list({{template "viewSeries" .}} order by t.latest_ts desc, t.attrs_key){{else}}to_json(list(metric_series_view_json(
 				t.attrs_key,
-				t.attributes_sample,
-				resource_json(s.resource_attribute_ids, s.resource_dropped_attributes_count),
+				'[]'::json,
+				s.resource_json,
 				-- [] means this series shipped no datapoints.
 				coalesce(tj.datapoints, json('[]')),
 				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
 				swc.datapoint_count,
 				swc.latest_ns::varchar,
+{{- if .NoScalarPools}}
+				null::json, null::json, null::json
+{{- else}}
 				srs.rate_stats,
 				sv.views,
 				sp.sparkline
+{{- end}}
+				, coalesce(slp.previews, [])
 			-- Series ID makes equal latest timestamps deterministic.
-			) order by t.latest_ts desc, t.attrs_key)) as timeseries
+			) order by t.latest_ts desc, t.attrs_key)){{end}} as timeseries
 			from ts_dps_agg t
+			left join series_label_previews slp on slp.series_id = t.series_id
 			-- Narrowed series have no datapoint JSON row.
 			left join ts_dps_json tj on tj.series_id = t.series_id
-			join metric_series ms on ms.id = t.series_id
-			cross join selected_metric s
+			cross join selected_metric_json s
+{{- if not .NoScalarPools}}
 			-- Histograms and empty scalar series have no scalar views.
 			left join scalar_views_agg sv on sv.series_id = t.series_id
 			-- Sparklines are returned for every scalar series, including unchecked rows.
 			left join sparkline_agg sp on sp.series_id = t.series_id
 			-- Histograms have no rate stats.
 			left join scalar_rate_stats srs on srs.series_id = t.series_id
+{{- end}}
 			-- Every aggregated series has a window-count row.
 			left join series_window_counts swc on swc.series_id = t.series_id
-		),
+		)
+{{- if not .NoHistogramMerge}}
+		,
 		-- Merge reduced histogram series by bucket for heatmaps and summaries.
 		-- Exclude any bucket already refused by a per-series bounds mismatch.
 		agg_refused_buckets as (
@@ -916,6 +1150,15 @@
 			from hist_folded
 			where distinct_bounds > 1
 		),
+{{- if .ExplicitHistogram}}
+		agg_padded as (
+			select f.*, null::integer as agg_scale,
+				null::bigint as pos_agg_offset, null::bigint as neg_agg_offset,
+				f.positive_bucket_counts as pos_p, f.negative_bucket_counts as neg_p
+			from hist_folded f
+			where f.bucket_start not in (select bucket_start from agg_refused_buckets)
+		),
+{{- else}}
 		agg_scaled as (
 			select f.*, min(f.scale) over (partition by f.bucket_start) as agg_scale
 			from hist_folded f
@@ -945,6 +1188,7 @@
 					coalesce(a.neg_agg_offset, a.neg_d.offset)) as neg_p
 			from agg_aligned a
 		),
+{{- end}}
 		agg_merged as (
 			select
 				p.bucket_start,
@@ -952,7 +1196,7 @@
 				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				sum(p.count) as count,
-				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
+				case when count(p.sum) = count(*) then sum(p.sum order by p.series_id) end as sum,
 				any_value(p.agg_scale) as scale,
 				max(p.zero_threshold) as zero_threshold,
 				sum(p.zero_count) as zero_count,
@@ -969,13 +1213,34 @@
 			group by p.bucket_start
 		),
 		-- Fold buckets below the merged zero threshold into zero_count.
-		agg_folds as (
+		-- Materialize folded vectors before repeated JSON macro expansion to
+		-- bound DuckDB 2's correlated-subquery planning work.
+		agg_folds as materialized (
 			select m.*,
+{{- if .ExplicitHistogram}}
+				struct_pack(counts := m.positive_bucket_counts, "offset" := m.positive_bucket_offset, folded := 0::hugeint) as pos_fold,
+				struct_pack(counts := m.negative_bucket_counts, "offset" := m.negative_bucket_offset, folded := 0::hugeint) as neg_fold
+{{- else}}
 				zero_fold(m.positive_bucket_counts, m.positive_bucket_offset,
 					m.zero_threshold, m.scale) as pos_fold,
 				zero_fold(m.negative_bucket_counts, m.negative_bucket_offset,
 					m.zero_threshold, m.scale) as neg_fold
+{{- end}}
 			from agg_merged m
+		),
+		agg_buckets_expanded as materialized (
+			select f.*, case when f.explicit_bounds is not null
+				then hist_buckets(f.explicit_bounds, f.bucket_counts)
+				else exp_buckets(f.scale, f.neg_fold.offset, f.neg_fold.counts,
+					f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
+					f.pos_fold.offset, f.pos_fold.counts)
+			end as buckets
+			from agg_folds f
+			where f.distinct_bounds <= 1
+		),
+		agg_values as materialized (
+			select f.*, bucket_extents(f.buckets) as extents
+			from agg_buckets_expanded f
 		),
 		-- Report refused per-series and cross-series explicit-bounds merges.
 		bounds_mismatch as (
@@ -990,17 +1255,10 @@
 		-- Aggregate quantiles use the same relational bucket walk as datapoints.
 		agg_qsrc as (
 			select f.bucket_start,
-				-- Non-NULL bounds identify explicit histograms; [] is one catch-all bucket.
-				case when f.explicit_bounds is not null
-					then hist_buckets(f.explicit_bounds, f.bucket_counts)
-					else exp_buckets(f.scale,
-						f.neg_fold."offset", f.neg_fold.counts,
-						f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
-						f.pos_fold."offset", f.pos_fold.counts) end as buckets,
+				f.buckets,
 				(f.explicit_bounds is not null) as is_linear
-			from agg_folds f
-			where f.distinct_bounds <= 1
-			  and len((select quantiles from input)) > 0
+			from agg_values f
+			where len({{bind "quantiles"}}::double[]) > 0
 		),
 		agg_q_acc as (
 			select b.bucket_start, b.is_linear, u.b.lo as lo, u.b.hi as hi, u.b.cnt as cnt, u.i as i,
@@ -1013,39 +1271,99 @@
 		),
 		agg_q_picked as (
 			select a.bucket_start, qq.q,
-				case when a.is_linear
-					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n)
-					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n) end as v,
-				row_number() over (partition by a.bucket_start, qq.q order by a.i) as rn
-			from agg_q_acc a, (select unnest((select quantiles from input)) as q) qq
-			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
+				arg_min(struct_pack(lo := a.lo, hi := a.hi, acc_prev := a.acc_prev,
+					cnt := a.cnt, n := a.n, is_linear := a.is_linear), a.i) as bucket
+			from agg_q_acc a, (select unnest({{bind "quantiles"}}::double[]) as q) qq
+			where a.n > 0 and a.cnt > 0 and hugeint_to_double(a.acc) >= qq.q * hugeint_to_double(a.n)
+			group by a.bucket_start, qq.q
+		),
+		agg_q_values as (
+			select bucket_start, q, case when bucket.is_linear
+				then interp_linear(bucket.lo, bucket.hi, bucket.acc_prev, bucket.cnt, q * hugeint_to_double(bucket.n))
+				else interp_loglin(bucket.lo, bucket.hi, bucket.acc_prev, bucket.cnt, q * hugeint_to_double(bucket.n)) end as v
+			from agg_q_picked
 		),
 		agg_quantiles as (
-			select t.bucket_start, to_json(map(
+			select t.bucket_start, {{if arrow}}map(list(t.q::varchar order by t.qi), list(p.v order by t.qi)){{else}}to_json(map(
 				list(t.q::varchar order by t.qi),
-				list(double_wire_json(p.v) order by t.qi))) as quantiles
+				list(double_wire_json(p.v) order by t.qi))){{end}} as quantiles
 			from (select b.bucket_start, qq.q, qq.qi from agg_qsrc b,
-				(select u.q, u.i as qi from unnest((select quantiles from input)) with ordinality u(q, i)) qq) t
-			left join agg_q_picked p on p.bucket_start = t.bucket_start and p.q = t.q and p.rn = 1
+				(select u.q, u.i as qi from unnest({{bind "quantiles"}}::double[]) with ordinality u(q, i)) qq) t
+			left join agg_q_values p on p.bucket_start = t.bucket_start and p.q = t.q
 			group by t.bucket_start
 		),
+{{- if .ContributionID}}
+		-- Project one source's activity through the SAME two zero folds and scale
+		-- alignment as its containing aggregate. Filtering before hist_activity
+		-- would lose the cumulative predecessor and falsely show a raw snapshot.
+		contribution_series_fold as (
+			select p.*, m.zero_threshold as series_zero_threshold,
+				zero_fold(p.pos_p, coalesce(p.pos_target_offset, 0),
+					m.zero_threshold, p.target_scale) as pos_fold,
+				zero_fold(p.neg_p, coalesce(p.neg_target_offset, 0),
+					m.zero_threshold, p.target_scale) as neg_fold
+			from hist_activity p
+			join hist_merged m using (series_id, bucket_start)
+			where p.id::varchar = {{bind "contribution_id"}}::varchar
+			  and m.distinct_bounds <= 1
+		),
+		contribution_scaled as (
+			select p.*, a.scale as aggregate_scale,
+				a.zero_threshold as aggregate_zero_threshold,
+				downscale_exp_buckets(p.pos_fold.counts, p.pos_fold.offset,
+					p.target_scale - a.scale) as contribution_pos,
+				downscale_exp_buckets(p.neg_fold.counts, p.neg_fold.offset,
+					p.target_scale - a.scale) as contribution_neg
+			from contribution_series_fold p
+			join agg_folds a using (bucket_start)
+			where a.distinct_bounds <= 1
+		),
+		-- The contribution projection repeats the same folded vectors too.
+		contribution_folded as materialized (
+			select p.*,
+				zero_fold(p.contribution_pos.counts, p.contribution_pos.offset,
+					p.aggregate_zero_threshold, p.aggregate_scale) as final_pos,
+				zero_fold(p.contribution_neg.counts, p.contribution_neg.offset,
+					p.aggregate_zero_threshold, p.aggregate_scale) as final_neg
+			from contribution_scaled p
+		),
+		contribution_values as materialized (
+			select p.*, bucket_extents(case when p.explicit_bounds is not null
+				then hist_buckets(p.explicit_bounds, p.bucket_counts)
+				else exp_buckets(p.aggregate_scale, p.final_neg.offset, p.final_neg.counts,
+					p.zero_count + p.pos_fold.folded + p.neg_fold.folded + p.final_pos.folded + p.final_neg.folded,
+					p.final_pos.offset, p.final_pos.counts)
+			end) as extents
+			from contribution_folded p
+		),
+		contribution_agg as (
+			select {{if arrow}}list({{template "contributionBucket"}}){{else}}to_json(list(metric_aggregate_bucket_view_json(
+				p.bucket_start, p.start_time, p.count, p.sum, p.aggregate_scale,
+				p.aggregate_zero_threshold,
+				p.zero_count + p.pos_fold.folded + p.neg_fold.folded,
+				p.final_pos, p.final_neg, p.explicit_bounds, p.bucket_counts, null, p.extents
+			))){{end}} as contribution
+			from contribution_values p
+		),
+{{- end}}
 		aggregate_agg as (
-			select to_json(list(metric_aggregate_bucket_view_json(
+			select {{if arrow}}list({{template "aggregateBucket"}} order by f.bucket_start){{else}}to_json(list(metric_aggregate_bucket_view_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
 				f.zero_threshold, f.zero_count, f.pos_fold, f.neg_fold,
 				f.explicit_bounds, f.bucket_counts,
-				aq.quantiles
-			) order by f.bucket_start)) as aggregate
-			from agg_folds f
+				aq.quantiles, f.extents
+			) order by f.bucket_start)){{end}} as aggregate
+			from agg_values f
 			left join agg_quantiles aq on aq.bucket_start = f.bucket_start
 			-- Do not merge incompatible explicit bounds.
 			where f.distinct_bounds <= 1
 		)
+{{- end}}
 		-- Known Metrics return a row even when the window has no datapoints.
-		select cast(json_object(
+		{{if arrow}}{{template "metricView" .}}{{else}}select cast(json_object(
 {{- if not .AggregateOnly}}
 			'metricRef', s.id, 'name', s.name, 'description', s.description, 'unit', s.unit,
-			'metadata', attrs_json(s.metadata_ids),
+			'metadata', s.metadata_json,
 			'metricType', s.metric_type,
 			'aggregationTemporalityCode', case
 				when s.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then s.aggregation_temporality
@@ -1055,23 +1373,24 @@
 				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
 				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end else null end,
 			'isMonotonic', case when s.metric_type = 'Sum' then s.is_monotonic else null end,
-			'resourceDroppedAttributesCount', s.resource_dropped_attributes_count,
+			'resourceDroppedAttributesCount', s.resource.dropped_attributes_count,
 			'resourceSchemaUrl', s.resource_schema_url,
-			'resource', resource_json(s.resource_attribute_ids,
-				s.resource_dropped_attributes_count),
-			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
+			'resource', s.resource_json,
+			'scopeName', s.scope.name, 'scopeVersion', s.scope.version,
 			'scopeSchemaUrl', s.scope_schema_url,
-			'scopeDroppedAttributesCount', s.scope_dropped_attributes_count,
+			'scopeDroppedAttributesCount', s.scope.dropped_attributes_count,
 			'scope', coalesce(
-				scope_json(s.scope_name, s.scope_version, s.scope_attribute_ids,
-					s.scope_dropped_attributes_count),
-				json_object('name', s.scope_name, 'version', s.scope_version,
+				s.scope_json,
+				json_object('name', s.scope.name, 'version', s.scope.version,
 				            'attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
 			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]')),
 {{- end}}
 			-- NULL means no histogram merge; [] means a merge with no output buckets.
 			'aggregate', {{if .NoHistogramMerge}}null{{else}}(select aggregate from aggregate_agg){{end}},
+{{- if .ContributionID}}
+			'contribution', {{if .NoHistogramMerge}}json('[]'){{else}}coalesce((select contribution from contribution_agg), json('[]')){{end}},
+{{- end}}
 			-- Scalar pools use the per-series bucket shape. Histograms emit empty pools.
 			'scalarAggregate', {{if .NoScalarPools}}json_object(
 				'selected', json('[]'),
@@ -1086,18 +1405,18 @@
 				select count(*) as dp_count from filtered_dps group by series_id
 			)), 0),
 			-- NULL boundsMismatch means no histogram merge was refused.
-			'boundsMismatch', (
+			'boundsMismatch', {{if .NoHistogramMerge}}null{{else}}(
 				select case when series_buckets > 0 or aggregate_buckets > 0
 					then json_object(
 						'seriesBuckets', series_buckets,
 						'aggregateBuckets', aggregate_buckets)
 				end
 				from bounds_mismatch
-			),
+			){{end}},
 			'window', json_object(
 				'requested', json_object(
-					'startNs', (select time_start from input)::varchar,
-					'endNs', (select time_end from input)::varchar
+					'startNs', list_extract({{bind "time_start"}}::ubigint[], 1)::varchar,
+					'endNs', list_extract({{bind "time_end"}}::ubigint[], 1)::varchar
 				),
 				'effective', json_object(
 					'startNs', (select start_ns from effective_window)::varchar,
@@ -1106,4 +1425,4 @@
 			)
 {{- end}}
 		) as varchar) as metric
-		from selected_metric s
+		from {{if .AggregateOnly}}selected_metric{{else}}selected_metric_json{{end}} s{{end}}

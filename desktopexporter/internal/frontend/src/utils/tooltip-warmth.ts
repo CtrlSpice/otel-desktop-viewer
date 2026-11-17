@@ -59,6 +59,7 @@ export function createTooltipWarmth(
 const TOOLTIP_SELECTOR = '.tooltip[data-tip]'
 const INSTANT_PROPERTY = '--tooltip-show-delay'
 const SUPPRESSED_ATTRIBUTE = 'data-tooltip-suppressed'
+const POSITION_PROPERTY = '--tooltip-offset-x'
 
 /** Wires the controller to real pointer/focus events via delegation on
  * `root`, so newly-mounted tooltips are covered with no per-component setup.
@@ -81,6 +82,40 @@ export function initTooltipWarmth(
 
   const pointerActive = new Set<Element>()
   const focusActive = new Set<Element>()
+
+  function positionHeaderTooltip(tooltip: Element) {
+    if (
+      !rootWindow ||
+      !(tooltip instanceof rootWindow.HTMLElement) ||
+      !tooltip.closest('.pane-header')
+    )
+      return
+
+    const bounds = tooltip.getBoundingClientRect()
+    const width = Number.parseFloat(
+      rootWindow.getComputedStyle(tooltip, '::before').width
+    )
+    if (!Number.isFinite(width)) return
+    const viewportWidth = rootWindow.document.documentElement.clientWidth
+    const preferredLeft =
+      bounds.left + bounds.width / 2 < viewportWidth / 2
+        ? bounds.left
+        : bounds.right - width
+    const left = Math.max(8, Math.min(preferredLeft, viewportWidth - width - 8))
+    const border =
+      Number.parseFloat(rootWindow.getComputedStyle(tooltip).borderLeftWidth) ||
+      0
+    tooltip.style.setProperty(
+      POSITION_PROPERTY,
+      `${left - bounds.left - border}px`
+    )
+  }
+
+  function positionActiveTooltips() {
+    for (const tooltip of new Set([...pointerActive, ...focusActive])) {
+      positionHeaderTooltip(tooltip)
+    }
+  }
 
   function pruneDetached(active: Set<Element>) {
     for (const tooltip of active) {
@@ -124,6 +159,7 @@ export function initTooltipWarmth(
     const tooltip = tooltipForEvent(e)
     if (!tooltip || stayedInside(e, tooltip) || active.has(tooltip)) return
 
+    positionHeaderTooltip(tooltip)
     if (!pointerActive.has(tooltip) && !focusActive.has(tooltip)) {
       tooltip.removeAttribute(SUPPRESSED_ATTRIBUTE)
     }
@@ -169,6 +205,8 @@ export function initTooltipWarmth(
   root.addEventListener('focusin', onFocusIn)
   root.addEventListener('focusout', onFocusOut)
   root.addEventListener('keydown', onKeyDown)
+  root.addEventListener('scroll', positionActiveTooltips, true)
+  rootWindow?.addEventListener('resize', positionActiveTooltips)
 
   return () => {
     root.removeEventListener('pointerover', onPointerOver)
@@ -176,8 +214,12 @@ export function initTooltipWarmth(
     root.removeEventListener('focusin', onFocusIn)
     root.removeEventListener('focusout', onFocusOut)
     root.removeEventListener('keydown', onKeyDown)
+    root.removeEventListener('scroll', positionActiveTooltips, true)
+    rootWindow?.removeEventListener('resize', positionActiveTooltips)
     for (const tooltip of root.querySelectorAll(TOOLTIP_SELECTOR)) {
       tooltip.removeAttribute(SUPPRESSED_ATTRIBUTE)
+      if (rootWindow && tooltip instanceof rootWindow.HTMLElement)
+        tooltip.style.removeProperty(POSITION_PROPERTY)
     }
     if (
       rootWindow &&
@@ -185,6 +227,8 @@ export function initTooltipWarmth(
       root.matches(TOOLTIP_SELECTOR)
     ) {
       root.removeAttribute(SUPPRESSED_ATTRIBUTE)
+      if (root instanceof rootWindow.HTMLElement)
+        root.style.removeProperty(POSITION_PROPERTY)
     }
     warmth.destroy()
     target.style.removeProperty(INSTANT_PROPERTY)

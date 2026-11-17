@@ -9,6 +9,7 @@ permissions:
 jobs:
   test-go-install-windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
 
@@ -41,12 +42,5 @@ jobs:
     - name: Test go install
       run: |
         go install github.com/CtrlSpice/otel-desktop-viewer@latest
-        otel-desktop-viewer.exe --version
-        $process = Start-Process -FilePath "otel-desktop-viewer.exe" -ArgumentList "--open-browser=false" -PassThru
-        try {
-            Wait-Process -InputObject $process -Timeout 20
-        } catch {
-            # A timeout means the server remained running.
-            Write-Host "App started successfully (timeout after 20s is expected)"
-            Stop-Process -InputObject $process -Force
-        }
+        if ($LASTEXITCODE -ne 0) { throw "go install failed" }
+        ./.github/scripts/smoke-viewer.ps1 -Executable (Get-Command otel-desktop-viewer.exe).Source

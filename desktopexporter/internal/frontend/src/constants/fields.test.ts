@@ -9,6 +9,7 @@ import {
 
 const staticFieldNames = {
   traces: [
+    'serviceIdentity',
     'resource.droppedAttributesCount',
     'scope.name',
     'scope.version',
@@ -40,6 +41,7 @@ const staticFieldNames = {
     'link.droppedAttributesCount',
   ],
   logs: [
+    'serviceIdentity',
     'resource.droppedAttributesCount',
     'scope.name',
     'scope.version',
@@ -56,6 +58,7 @@ const staticFieldNames = {
     'eventName',
   ],
   metrics: [
+    'serviceIdentity',
     'resource.droppedAttributesCount',
     'scope.name',
     'scope.version',
@@ -71,10 +74,7 @@ describe('static scalar membership contract', () => {
   for (const signal of ['traces', 'logs', 'metrics'] as const) {
     it(`${signal} exposes and parses IN and NOT IN for every static field`, () => {
       const fields = getStaticFieldsForSearch(signal)
-      const namedFields = fields.filter(
-        (field): field is Extract<FieldDefinition, { searchScope: 'field' }> =>
-          field.searchScope === 'field'
-      )
+      const namedFields = fields
       expect(namedFields.map(field => field.name)).toEqual(
         staticFieldNames[signal]
       )
@@ -91,7 +91,7 @@ describe('static scalar membership contract', () => {
         ).toHaveLength(1)
 
         for (const operator of ['IN', 'NOT IN']) {
-          const node = parseQuery(`${field.name} ${operator} ["0"]`, fields)
+          const node = parseQuery(`${field.name} ${operator} ("0")`, fields)
           expect(node?.type, `${field.name} ${operator}`).toBe('condition')
         }
       }
@@ -101,7 +101,7 @@ describe('static scalar membership contract', () => {
   it('does not advertise the unsupported metric received field', () => {
     expect(
       getStaticFieldsForSearch('metrics').some(
-        field => field.searchScope === 'field' && field.name === 'received'
+        field => field.name === 'received'
       )
     ).toBe(false)
   })
@@ -140,8 +140,8 @@ describe('membership operand shape', () => {
       {
         name: 'custom.value',
         type: 'string',
-        searchScope: 'attribute',
-        attributeScope: 'span',
+        owner: 'span',
+        path: ['attributes', 'custom.value'],
         operators: getOperatorsForFieldType('string'),
       },
     ]
@@ -156,15 +156,15 @@ describe('membership operand shape', () => {
       {
         name: 'custom.items',
         type: 'array',
-        searchScope: 'attribute',
-        attributeScope: 'span',
+        owner: 'span',
+        path: ['attributes', 'custom.items'],
         operators: getOperatorsForFieldType('array'),
       },
     ]
 
     for (const operator of ['IN', 'NOT IN']) {
       expect(() =>
-        parseQuery(`custom.items ${operator} [value]`, fields)
+        parseQuery(`custom.items ${operator} (value)`, fields)
       ).toThrow(/not valid/)
     }
   })

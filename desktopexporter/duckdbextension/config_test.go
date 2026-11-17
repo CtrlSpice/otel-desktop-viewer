@@ -62,6 +62,15 @@ func TestExtensionConfigValidate(t *testing.T) {
 			cfg:  Config{Endpoint: "localhost:8000", DbMaxSize: "0"},
 		},
 		{
+			name: "custom receiver ports",
+			cfg:  Config{OTLPHTTPPort: 50576, OTLPGRPCPort: 50575},
+		},
+		{
+			name:    "invalid grpc port",
+			cfg:     Config{OTLPGRPCPort: 65536},
+			wantErr: "invalid otlp_grpc_port",
+		},
+		{
 			name:    "invalid max size",
 			cfg:     Config{Endpoint: "localhost:8000", DbMaxSize: "lots"},
 			wantErr: "invalid db_max_size",

@@ -1,0 +1,39 @@
+{
+  "name": "otel-cli-usability-evaluation",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=2 *.test.ts *.test.mjs presentation/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:presentation": "node ../../desktopexporter/internal/frontend/node_modules/svelte-check/bin/svelte-check --tsconfig presentation/tsconfig.json",
+    "stage": "node stage-dataset.ts",
+    "prepare:run": "node prepare.ts",
+    "verify": "node verify.ts",
+    "pilot": "node pi-evaluate.ts --task checkout-failure",
+    "evaluate": "node pi-evaluate.ts",
+    "verify:integration": "node verify-integration.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/api-logs": "0.222.0",
+    "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
+    "@opentelemetry/resources": "2.12.0",
+    "@opentelemetry/sdk-logs": "0.222.0",
+    "promptfoo": "0.125.1",
+    "tar": "7.5.22"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "typescript": "6.0.3"
+  },
+  "overrides": {
+    "@hono/node-server": "2.1.6",
+    "basic-ftp": "6.2.4",
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
+  }
+}

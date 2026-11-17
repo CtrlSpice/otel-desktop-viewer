@@ -47,7 +47,7 @@ func TestGetTraceLogSummariesPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	span.SetStartTimestamp(1)
 	span.SetEndTimestamp(2)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	data := plog.NewLogs()
@@ -87,19 +87,19 @@ func TestGetTraceLogSummariesPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	otherTrace.Body().SetStr("same-span-other-trace")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	// Fix the equal-time IDs so the expected ID tie-break is explicit rather
 	// than dependent on random ingest UUIDs.
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		if _, err := db.ExecContext(ctx,
-			`update logs set id = ?::uuid where body_preview(body) = ?`,
+			`update logs set id = ?::uuid where body_preview(otel_value_json(body)) = ?`,
 			"00000000-0000-0000-0000-0000000000ff", "tie-a"); err != nil {
 			return err
 		}
 		_, err := db.ExecContext(ctx,
-			`update logs set id = ?::uuid where body_preview(body) = ?`,
+			`update logs set id = ?::uuid where body_preview(otel_value_json(body)) = ?`,
 			"00000000-0000-0000-0000-000000000010", "tie-b")
 		return err
 	}))
@@ -163,7 +163,7 @@ func TestGetTraceLogSummariesIgnoresSearchTimeRangeAndHasNoDefaultLimit(t *testi
 		record.Body().SetStr("complete")
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	clipped, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {

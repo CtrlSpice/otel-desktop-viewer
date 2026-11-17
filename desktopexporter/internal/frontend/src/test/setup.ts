@@ -1,5 +1,14 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
+import { TestEventSource } from './event-source'
+
+if (typeof window !== 'undefined' && typeof EventSource === 'undefined') {
+  Object.defineProperty(globalThis, 'EventSource', {
+    configurable: true,
+    writable: true,
+    value: TestEventSource,
+  })
+}
 
 // Node >= 22 ships an experimental global `localStorage` that is present but
 // non-functional unless the process is started with --localstorage-file. It

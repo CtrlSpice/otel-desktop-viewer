@@ -15,6 +15,14 @@ type Config struct {
 	// Zero leaves import unavailable when this extension is used without that receiver.
 	OTLPHTTPPort int `mapstructure:"otlp_http_port"`
 
+	// OTLPGRPCPort advertises the co-located receiver in the setup guide.
+	// Zero means no gRPC receiver port was supplied.
+	OTLPGRPCPort int `mapstructure:"otlp_grpc_port"`
+
+	// FeatureFlagsFile opts into local experimental flags. Empty disables all
+	// experiments without starting a provider. Paths are relative to the cwd.
+	FeatureFlagsFile string `mapstructure:"feature_flags_file"`
+
 	// Db defines the path of your database file. Setting an empty string opens
 	// DuckDB in in-memory mode.
 	Db string `mapstructure:"db"`
@@ -49,6 +57,9 @@ func (cfg *Config) SelfTelemetry() bool {
 func (cfg *Config) Validate() error {
 	if cfg.OTLPHTTPPort < 0 || cfg.OTLPHTTPPort > 65535 {
 		return fmt.Errorf("invalid otlp_http_port %d", cfg.OTLPHTTPPort)
+	}
+	if cfg.OTLPGRPCPort < 0 || cfg.OTLPGRPCPort > 65535 {
+		return fmt.Errorf("invalid otlp_grpc_port %d", cfg.OTLPGRPCPort)
 	}
 	if _, err := parseByteSize(cfg.DbMaxSize); err != nil {
 		return fmt.Errorf("invalid db_max_size %q: %w", cfg.DbMaxSize, err)

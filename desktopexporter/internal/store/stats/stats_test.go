@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -67,6 +69,7 @@ type statsJSON struct {
 type storageStatsJSON struct {
 	SizeBytes    float64 `json:"sizeBytes"`
 	MaxSizeBytes float64 `json:"maxSizeBytes"`
+	InMemory     bool    `json:"inMemory"`
 }
 
 type traceStatsJSON struct {
@@ -96,7 +99,7 @@ func rawStats(t *testing.T, s *store.Store, ctx context.Context) json.RawMessage
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap(), s.InMemory())
 	})
 	require.NoError(t, err)
 	return raw
@@ -107,12 +110,26 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap(), s.InMemory())
 	})
 	require.NoError(t, err)
 	var result statsJSON
 	require.NoError(t, json.Unmarshal(raw, &result))
 	return result
+}
+
+func TestGetStatsStorageMode(t *testing.T) {
+	for _, inMemory := range []bool{true, false} {
+		path := ""
+		if !inMemory {
+			path = filepath.Join(t.TempDir(), "telemetry.duckdb")
+		}
+		s, err := store.NewStore(t.Context(), path, zap.NewNop())
+		require.NoError(t, err)
+		result := getStats(t, s, t.Context())
+		assert.Equal(t, inMemory, result.Storage.InMemory)
+		require.NoError(t, s.Close())
+	}
 }
 
 func TestGetStats_Empty(t *testing.T) {
@@ -144,7 +161,7 @@ func TestGetStats_WithTraces(t *testing.T) {
 	tr := buildTestTraces(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, tr, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, tr)
 	})
 	require.NoError(t, err)
 
@@ -168,7 +185,7 @@ func TestGetStats_WithLogs(t *testing.T) {
 	lg := buildTestLogs(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, lg, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, lg)
 	})
 	require.NoError(t, err)
 
@@ -188,7 +205,7 @@ func TestGetStats_WithMetrics(t *testing.T) {
 	m := buildTestMetrics()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, m, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, m)
 	})
 	require.NoError(t, err)
 
@@ -208,13 +225,13 @@ func TestGetStats_AllSignals(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		if err := spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs()); err != nil {
+		if err := spans.Ingest(ctx, conn, buildTestTraces(baseTime)); err != nil {
 			return err
 		}
-		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime), s.FlushedIDs()); err != nil {
+		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime)); err != nil {
 			return err
 		}
-		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
 	})
 	require.NoError(t, err)
 
@@ -354,7 +371,7 @@ func TestGetStats_NoRejectionsWhenNothingRefused(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, buildTestTraces(baseTime))
 	}))
 
 	var got struct {
@@ -373,7 +390,7 @@ func TestGetStats_CarriesRejections(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	for range 2 {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs())
+			return spans.Ingest(ctx, conn, buildTestTraces(baseTime))
 		}))
 	}
 

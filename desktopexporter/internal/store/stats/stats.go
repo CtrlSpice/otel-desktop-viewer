@@ -13,7 +13,7 @@ var ErrStatsInternal = errors.New("stats store internal error")
 // GetTraceSpanCount returns the total number of spans for a given trace.
 func GetTraceSpanCount(ctx context.Context, db *sql.DB, traceID string) (int64, error) {
 	var count int64
-	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM spans WHERE trace_id = ?`, traceID).Scan(&count)
+	err := db.QueryRowContext(ctx, `select count(*) from spans where trace_id = ?`, traceID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("GetTraceSpanCount: %w: %w", ErrStatsInternal, err)
 	}
@@ -25,12 +25,13 @@ func GetTraceSpanCount(ctx context.Context, db *sql.DB, traceID string) (int64, 
 // current storage usage and the retention cap (0 = retention disabled); they
 // are measured by the caller because size lives outside the SQL schema
 // (file stat or duckdb_memory, depending on mode).
-func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int64) (json.RawMessage, error) {
+func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int64, inMemory bool) (json.RawMessage, error) {
 	query := `
 		select cast(json_object(
 			'storage', json_object(
 				'sizeBytes',    ?::bigint,
-				'maxSizeBytes', ?::bigint
+				'maxSizeBytes', ?::bigint,
+				'inMemory', ?::boolean
 			),
 			'traces', (select json_object(
 				'traceCount',   count(distinct trace_id),
@@ -74,7 +75,7 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 	`
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, sizeBytes, maxSizeBytes).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, sizeBytes, maxSizeBytes, inMemory).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetStats: %w: %w", ErrStatsInternal, err)
 	}
 	// The projection is a json_object of scalar subqueries over aggregates,

@@ -1,0 +1,188 @@
+<script lang="ts" module>
+  /** Metric-agnostic mini-legend row. */
+  export type SelectionLegendRow = {
+    /** Stable identity for keyed-each. */
+    key: string
+    /** Hex / token resolved by the caller from its color-by-key map. */
+    color: string
+    /** Display text (series label, aggregate label, etc.). */
+    label: string
+    /** Optional 1-2 char glyph to the left of the label (we use it for
+     *  aggregation operator symbols: Σ / μ / Δ/t). */
+    glyph?: string | null
+    /** Accessible title for the glyph (read by screen readers when set). */
+    glyphTitle?: string | null
+    /** Pre-formatted value string. Caller formats so this component
+     *  doesn't have to care about units or decimal precision. */
+    valueText: string
+    /** Marks the user-picked row. Bolder weight + a colored left
+     *  accent so the eye anchors on it even amongst aggregates. */
+    isPrimary?: boolean
+    /** Optional presentation-only emphasis for a reference overlay. */
+    emphasis?: { active: boolean; toggle: () => void }
+  }
+</script>
+
+<script lang="ts">
+  import type { Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import ChartOverlayLabel from './ChartOverlayLabel.svelte'
+  import type { AggregateSummaryRow } from '@/features/metrics/Charts/aggregation'
+  import ChartAggregateSummaryRows from '@/features/metrics/Charts/ChartAggregateSummaryRows.svelte'
+  /* Callers position the card and provide preformatted rows. */
+  type Props = {
+    /** Pre-formatted timestamp string (e.g. "16:42:18.123 PDT").
+     *  Caller decides resolution and timezone so we match whatever
+     *  other timestamps in the same view are using. */
+    timestamp: string
+    /** Rows to show, in render order. Empty array hides the whole
+     *  card (caller can also conditionally render the component, but
+     *  this lets the component own its own emptiness gracefully). */
+    rows?: readonly SelectionLegendRow[]
+    /** Side-by-side column groups (each group is a vertical mini-table).
+     *  When set, takes precedence over `rows`. */
+    rowColumns?: readonly (readonly SelectionLegendRow[])[]
+    /** Optional heading per `rowColumns` entry (same length). */
+    columnLabels?: readonly string[]
+    /** Wider layout for `rowColumns` — drops the narrow max-width cap. */
+    variant?: 'default' | 'columns'
+    /** Optional aggregate summary rows at the bottom (dashed-line
+     *  markers matching Selected / All aggregate lines). */
+    aggregateRows?: readonly AggregateSummaryRow[]
+    /** Selection-specific details before the aggregate rows. */
+    leading?: Snippet
+    /** Dismiss the pinned chart selection. */
+    onDismiss?: () => void
+  }
+
+  let {
+    timestamp,
+    rows = [],
+    rowColumns = [],
+    columnLabels = [],
+    variant = 'default',
+    aggregateRows = [],
+    leading,
+    onDismiss,
+  }: Props = $props()
+
+  let hasRowColumns = $derived(rowColumns.some(column => column.length > 0))
+</script>
+
+{#if timestamp || rows.length > 0 || hasRowColumns || aggregateRows.length > 0}
+  <div
+    class="chart-selection-legend"
+    class:chart-selection-legend--columns={variant === 'columns'}
+    aria-live="polite"
+    aria-atomic="true"
+  >
+    {#if onDismiss}
+      <div class="chart-selection-legend__heading">
+        <div class="chart-selection-legend__timestamp">{timestamp}</div>
+        <button
+          type="button"
+          class="header-icon-button chart-selection-legend__dismiss"
+          aria-label="Dismiss pinned bucket description"
+          title="Dismiss pinned bucket description"
+          onclick={event => {
+            event.stopPropagation()
+            onDismiss?.()
+          }}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={1.5} />
+        </button>
+      </div>
+    {:else if timestamp}
+      <div class="chart-selection-legend__timestamp">{timestamp}</div>
+    {/if}
+    {@render leading?.()}
+    {#if hasRowColumns}
+      <div class="chart-selection-legend__columns">
+        {#each rowColumns as column, columnIndex (columnIndex)}
+          {#if column.length > 0}
+            <div class="chart-selection-legend__column">
+              {#if columnLabels[columnIndex]}
+                <div class="chart-selection-legend__column-label">
+                  {columnLabels[columnIndex]}
+                </div>
+              {/if}
+              <ul class="chart-selection-legend__rows">
+                {#each column as row (row.key)}
+                  <li class="chart-selection-legend__row">
+                    <span
+                      class="chart-selection-legend__dot"
+                      style:--color={row.color}
+                      aria-hidden="true"
+                    ></span>
+                    <span
+                      class="chart-selection-legend__label"
+                      title={row.label}
+                    >
+                      {#if row.glyph}<span
+                          class="chart-selection-legend__glyph"
+                          title={row.glyphTitle ?? undefined}
+                          aria-label={row.glyphTitle ?? undefined}
+                          >{row.glyph}</span
+                        >
+                      {/if}{#if row.emphasis}<ChartOverlayLabel
+                          label={row.label}
+                          active={row.emphasis.active}
+                          onclick={row.emphasis.toggle}
+                        />{:else}{row.label}{/if}
+                    </span>
+                    <span class="chart-selection-legend__value"
+                      >{row.valueText}</span
+                    >
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+        {/each}
+      </div>
+    {:else if rows.length > 0}
+      <ul class="chart-selection-legend__rows">
+        {#each rows as row (row.key)}
+          <li class="chart-selection-legend__row">
+            <span
+              class="chart-selection-legend__dot"
+              style:--color={row.color}
+              aria-hidden="true"
+            ></span>
+            <span class="chart-selection-legend__label" title={row.label}>
+              {#if row.glyph}<span
+                  class="chart-selection-legend__glyph"
+                  title={row.glyphTitle ?? undefined}
+                  aria-label={row.glyphTitle ?? undefined}>{row.glyph}</span
+                >
+              {/if}{#if row.emphasis}<ChartOverlayLabel
+                  label={row.label}
+                  active={row.emphasis.active}
+                  onclick={row.emphasis.toggle}
+                />{:else}{row.label}{/if}
+            </span>
+            <span class="chart-selection-legend__value">{row.valueText}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if aggregateRows.length > 0}
+      <ChartAggregateSummaryRows rows={aggregateRows} />
+    {/if}
+  </div>
+{/if}
+
+<!-- Styles live in app.css under .metric-chart-view :where(.chart-selection-legend) -->
+
+<style lang="postcss">
+  @reference "../../../app.css";
+
+  .chart-selection-legend__heading {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .chart-selection-legend__dismiss {
+    @apply pointer-events-auto shrink-0;
+  }
+</style>

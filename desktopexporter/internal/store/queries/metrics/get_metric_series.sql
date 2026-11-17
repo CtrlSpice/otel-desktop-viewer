@@ -1,40 +1,35 @@
 -- Exact retained received data for one generated database-local Metric/series
 -- pair. Bounds apply only to received datapoint timestamps.
-with input as (
-	select ?::uuid as metric_id, ?::uuid as series_id,
-		list_extract(?::ubigint[], 1) as time_start,
-		list_extract(?::ubigint[], 1) as time_end
-),
-selected_metric as materialized (
-	select m.*, r.schema_url as resource_schema_url,
-		r.attribute_ids as resource_attribute_ids,
-		r.dropped_attributes_count as resource_dropped_attributes_count,
-		sc.name as scope_name, sc.version as scope_version,
-		sc.attribute_ids as scope_attribute_ids, sc.schema_url as scope_schema_url,
-		sc.dropped_attributes_count as scope_dropped_attributes_count
-	from metrics m
-	join resources r on r.id = m.resource_id
-	join scopes sc on sc.id = m.scope_id, input i
-	where m.id = i.metric_id
+with selected_metric as materialized (
+	select m.* from metrics m
+	where m.id = $1::uuid
 ),
 selected_series as materialized (
-	select s.* from metric_series s, input i
-	where s.id = i.series_id and s.metric_id = i.metric_id
+	select s.* from metric_series s
+	where s.id = $2::uuid and s.metric_id = $1::uuid
 ),
 selected_datapoints as materialized (
-	select d.*, hb.bounds as explicit_bounds
+	select d.*
 	from metric_datapoints d
 	join selected_series s on s.id = d.series_id
-	left join histogram_bounds hb on hb.id = d.bounds_id,
-		input i
-	where (i.time_start is null or d.timestamp >= i.time_start)
-	  and (i.time_end is null or d.timestamp <= i.time_end)
+	where {{if .ContextOnly}}false and {{end}}(list_extract($3::ubigint[], 1) is null or d.timestamp >= list_extract($3::ubigint[], 1))
+	  and (list_extract($4::ubigint[], 1) is null or d.timestamp <= list_extract($4::ubigint[], 1))
 ),
-exemplar_documents as materialized (
-	select e.metric_datapoint_id,
-		to_json(list(exemplar_json(e) order by e.timestamp, e.id)) as documents
-	from exemplars e
+selected_exemplars as materialized (
+	select e.* from exemplars e
 	join selected_datapoints d on d.id = e.metric_datapoint_id
+){{if arrow}}, exemplar_documents as (
+    select e.metric_datapoint_id, list({{template "exemplar"}} order by e.timestamp, e.id) as documents
+    from selected_exemplars e group by e.metric_datapoint_id
+)
+select {{template "metricColumns"}}, s.id::varchar as seriesRef, s.attributes,
+    (select coalesce(list({{template "receivedPoint"}} order by d.timestamp, d.id), [])
+     from selected_datapoints d left join exemplar_documents e on e.metric_datapoint_id = d.id) as datapoints
+from selected_metric m join selected_series s on s.metric_id = m.id
+{{else}}, exemplar_documents as materialized (
+	select e.metric_datapoint_id,
+		to_json(list(exemplar_json(e, attribute_document(e.attributes)) order by e.timestamp, e.id)) as documents
+	from selected_exemplars e
 	group by e.metric_datapoint_id
 ),
 datapoint_documents as materialized (
@@ -66,8 +61,8 @@ datapoint_documents as materialized (
 					'flags', d.flags,
 					'exemplars', coalesce(e.documents, json('[]')),
 					'count', d.count::varchar,
-					'bucketCounts', list_transform(d.bucket_counts, n -> n::varchar),
-					'explicitBounds', list_transform(d.explicit_bounds, bound -> double_wire_json(bound))),
+					'bucketCounts', list_transform(d.bucket_counts, lambda n: n::varchar),
+					'explicitBounds', list_transform(d.explicit_bounds, lambda bound: double_wire_json(bound))),
 				case when d.sum is null then json('{}') else json_object('sum', double_wire_json(d.sum)) end,
 				case when d.min is null then json('{}') else json_object('min', double_wire_json(d.min)) end,
 				case when d.max is null then json('{}') else json_object('max', double_wire_json(d.max)) end)
@@ -83,9 +78,9 @@ datapoint_documents as materialized (
 					'zeroCount', d.zero_count::varchar,
 					'zeroThreshold', double_wire_json(d.zero_threshold),
 					'positive', json_object('offset', d.positive_bucket_offset,
-						'bucketCounts', list_transform(d.positive_bucket_counts, n -> n::varchar)),
+						'bucketCounts', list_transform(d.positive_bucket_counts, lambda n: n::varchar)),
 					'negative', json_object('offset', d.negative_bucket_offset,
-						'bucketCounts', list_transform(d.negative_bucket_counts, n -> n::varchar))),
+						'bucketCounts', list_transform(d.negative_bucket_counts, lambda n: n::varchar))),
 				case when d.sum is null then json('{}') else json_object('sum', double_wire_json(d.sum)) end,
 				case when d.min is null then json('{}') else json_object('min', double_wire_json(d.min)) end,
 				case when d.max is null then json('{}') else json_object('max', double_wire_json(d.max)) end)
@@ -102,20 +97,20 @@ select m.metric_type,
 			'name', m.name,
 			'description', m.description,
 			'unit', m.unit,
-			'metadata', attrs_json(m.metadata_ids),
+			'metadata', attribute_document(m.metadata),
 			'metricType', m.metric_type,
 			'resource', json_object(
-				'attributes', attrs_json(m.resource_attribute_ids),
-				'droppedAttributesCount', m.resource_dropped_attributes_count,
-				'schemaUrl', m.resource_schema_url),
+				'attributes', attribute_document(m.resource.attributes),
+				'droppedAttributesCount', m.resource.dropped_attributes_count,
+				'schemaUrl', m.resource.schema_url),
 			'scope', json_object(
-				'name', m.scope_name,
-				'version', m.scope_version,
-				'attributes', attrs_json(m.scope_attribute_ids),
-				'droppedAttributesCount', m.scope_dropped_attributes_count,
-				'schemaUrl', m.scope_schema_url),
+				'name', m.scope.name,
+				'version', m.scope.version,
+				'attributes', attribute_document(m.scope.attributes),
+				'droppedAttributesCount', m.scope.dropped_attributes_count,
+				'schemaUrl', m.scope.schema_url),
 			'seriesRef', s.id::varchar,
-			'attributes', attrs_json(s.attribute_ids),
+			'attributes', attribute_document(s.attributes),
 			'datapoints', coalesce((select to_json(list(d.document order by d.timestamp, d.id)) from datapoint_documents d), json('[]'))),
 		case m.metric_type
 			when 'Sum' then json_object(
@@ -126,4 +121,4 @@ select m.metric_type,
 			else json('{}')
 		end) as varchar) as document
 from selected_metric m
-join selected_series s on s.metric_id = m.id
+join selected_series s on s.metric_id = m.id{{end}}

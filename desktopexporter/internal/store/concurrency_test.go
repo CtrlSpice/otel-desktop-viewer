@@ -74,7 +74,7 @@ func TestConcurrentIngestQueryAndRetention(t *testing.T) {
 			for time.Now().Before(deadline) {
 				traces := buildUniqueTraces(seq.Add(1))
 				err := s.WithConn(func(conn driver.Conn) error {
-					return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+					return spans.Ingest(ctx, conn, traces)
 				})
 				if err != nil {
 					fail(fmt.Errorf("ingest: %w", err))
@@ -200,7 +200,7 @@ func TestReadsRunDuringIngest(t *testing.T) {
 
 	// Prime, so the reader has rows to scan and the appender is warm.
 	if err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildWideTraces(0, 2000), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, buildWideTraces(0, 2000))
 	}); err != nil {
 		t.Fatalf("prime ingest: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestReadsRunDuringIngest(t *testing.T) {
 	// to it rather than to a wall-clock guess.
 	start := time.Now()
 	if err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildWideTraces(1, 20000), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, buildWideTraces(1, 20000))
 	}); err != nil {
 		t.Fatalf("timed ingest: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestReadsRunDuringIngest(t *testing.T) {
 			default:
 			}
 			if err := s.WithConn(func(conn driver.Conn) error {
-				return spans.Ingest(ctx, conn, buildWideTraces(seq, 20000), s.FlushedIDs())
+				return spans.Ingest(ctx, conn, buildWideTraces(seq, 20000))
 			}); err != nil {
 				ingestErr.Store(err)
 				return
@@ -292,7 +292,7 @@ func TestIngestIsSerializedAgainstItself(t *testing.T) {
 					}
 				}
 				defer inFlight.Add(-1)
-				return spans.Ingest(ctx, conn, buildWideTraces(seq+100, 500), s.FlushedIDs())
+				return spans.Ingest(ctx, conn, buildWideTraces(seq+100, 500))
 			})
 			if err != nil {
 				failures.Store(err)
@@ -310,10 +310,8 @@ func TestIngestIsSerializedAgainstItself(t *testing.T) {
 	}
 }
 
-// TestPoolWriteExcludesIngest is the invariant the split must not lose. Ingest
-// inserts dictionary rows before flushing the owner rows that reference them,
-// so a sweep or prune landing in that window would delete rows the batch is
-// about to point at -- silently, since no foreign key reaches into a uuid[].
+// TestPoolWriteExcludesIngest prevents a sweep or prune from deleting histogram
+// bounds or Metric identities while an ingestion batch is still using them.
 func TestPoolWriteExcludesIngest(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
@@ -329,7 +327,7 @@ func TestPoolWriteExcludesIngest(t *testing.T) {
 			_ = s.WithConn(func(conn driver.Conn) error {
 				ingesting.Store(true)
 				defer ingesting.Store(false)
-				return spans.Ingest(ctx, conn, buildWideTraces(seq, 4000), s.FlushedIDs())
+				return spans.Ingest(ctx, conn, buildWideTraces(seq, 4000))
 			})
 		}
 	}()

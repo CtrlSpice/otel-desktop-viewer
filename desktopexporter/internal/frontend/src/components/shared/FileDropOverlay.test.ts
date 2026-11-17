@@ -19,7 +19,7 @@ describe('FileDropOverlay', () => {
     expect(screen.queryByRole('status')).toBeNull()
     await fireEvent.dragEnter(window, { dataTransfer: fileTransfer() })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Drop OTLP JSON files to import'
+      'Drop telemetry or evaluation JSON / JSONL files to import'
     )
     await fireEvent.dragEnter(document.body, { dataTransfer: fileTransfer() })
     await fireEvent.dragLeave(document.body, { dataTransfer: fileTransfer() })

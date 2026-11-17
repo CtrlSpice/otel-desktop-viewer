@@ -11,16 +11,12 @@ import (
 //
 // # What constrains it
 //
-// Declared foreign keys, and only those:
+// Owning tables must precede their child views:
 //
-//	spans, logs        -> resources, scopes
 //	events, links      -> spans
-//	metrics     -> resources, scopes
-//	datapoints         -> metric_series, histogram_bounds
-//	exemplars          -> datapoints
+//	metrics, metric_series, metric_datapoints, exemplars -> metric_records
 //
-// So attributes comes first (it references nothing), then resources and
-// scopes, then each signal above its own children.
+// Each signal is created before its children.
 //
 // Macros are last, and among themselves they are ordered too: DuckDB binds a
 // macro body when the macro is created, so `exp_buckets` must follow

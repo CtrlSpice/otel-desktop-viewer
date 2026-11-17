@@ -1,4 +1,8 @@
-{{.CTEs}},
+-- Share the flattened point projection across native search hits, window counts,
+-- last values and all-time series cardinality. Re-expanding the owning lists for
+-- each consumer repeatedly decodes the same nested VARIANT payloads.
+with metric_datapoints as materialized (select * from main.metric_datapoints),
+{{if .CTEs}}{{.CTEs}},{{end}}
 		filtered_metrics as (
 			select s.*
 			{{.From}}
@@ -7,7 +11,7 @@
 		metric_latest_dp as (
 			select d.metric_id, max(d.timestamp) as last_dp_ts
 			from metric_datapoints d
-			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
+			inner join filtered_metrics fm on d.metric_id = fm.id
 			{{.DatapointWhere}}
 			group by d.metric_id
 		),
@@ -18,14 +22,14 @@
 			{{if .CandidateOrder}}order by {{.CandidateOrder}}{{.CandidateLimit}}{{end}}
 		),
 		filtered_dps as (
-			select d.* from metric_datapoints d
-			inner join candidate_metrics fm on d.metric_id = fm.id, search_params
+			select d.*, fm.metric_type from metric_datapoints d
+			inner join candidate_metrics fm on d.metric_id = fm.id
 			{{.DatapointWhere}}
 		),
 		-- series_count is window-scoped; series_cardinality covers all retained
 		-- datapoints. Identity-only series rows do not count as active.
-		metric_series_count as (
-			select metric_id, count(distinct series_id) as series_count
+		metric_counts as (
+			select metric_id, count(distinct series_id) as series_count, count(*) as datapoint_count
 			from filtered_dps
 			group by metric_id
 		),
@@ -35,40 +39,32 @@
 			where metric_id in (select id from candidate_metrics)
 			group by metric_id
 		),
-		metric_datapoint_count as (
-			select metric_id, count(*) as datapoint_count
-			from filtered_dps
-			group by metric_id
-		),
 		metric_last_value as (
 			select
 				d.metric_id,
 				arg_max(coalesce(d.double_value, d.int_value), d.timestamp) as last_value
 			from filtered_dps d
-			inner join candidate_metrics fm on fm.id = d.metric_id
-			where fm.metric_type in ('Gauge', 'Sum')
+			where d.metric_type in ('Gauge', 'Sum')
 			group by d.metric_id
 		),
 		summary_rows as (
 			select
 				fm.id,
 				fm.name,
-				fm.description,
 				fm.unit,
 				fm.metric_type,
 				fm.aggregation_temporality,
 				fm.is_monotonic,
 				fm.service_name,
-				msc.series_count,
+				mc.series_count,
 				coalesce(msc_all.series_cardinality, 0) as series_cardinality,
-				mdc.datapoint_count,
+				mc.datapoint_count,
 				mlv.last_value,
 				mldp.last_dp_ts
 			from candidate_metrics fm
 			left join metric_latest_dp mldp on mldp.metric_id = fm.id
-			left join metric_series_count msc on msc.metric_id = fm.id
+			left join metric_counts mc on mc.metric_id = fm.id
 			left join metric_series_cardinality msc_all on msc_all.metric_id = fm.id
-			left join metric_datapoint_count mdc on mdc.metric_id = fm.id
 			left join metric_last_value mlv on mlv.metric_id = fm.id
 		),
 		selected_summaries as (
@@ -76,10 +72,18 @@
 			from summary_rows
 			order by {{.SummaryOrder}}{{.SummaryLimit}}
 		)
+		{{if arrow}}select sub.id::varchar as metricRef,
+			sub.name, sub.unit, sub.metric_type as metricType,
+			case when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram')
+				then sub.aggregation_temporality end as aggregationTemporalityCode,
+			case when sub.metric_type = 'Sum' then sub.is_monotonic end as isMonotonic,
+			sub.service_name as serviceName, sub.series_count as seriesCount,
+			sub.series_cardinality as seriesCardinality, sub.datapoint_count as dataPointCount,
+			sub.last_value as lastValue, sub.last_dp_ts as lastSeen
+		from selected_summaries sub order by {{.SummaryOrder}}{{else}}
 		select cast(coalesce(to_json(list(json_object(
 			'metricRef', cast(sub.id as varchar),
 			'name', sub.name,
-			'description', sub.description,
 			'unit', sub.unit,
 			'metricType', sub.metric_type,
 			-- Code is received OTLP data; label is a display projection.
@@ -104,4 +108,4 @@
 			'lastValue', double_wire_json(sub.last_value),
 			'lastSeen', sub.last_dp_ts::varchar
 		) order by {{.SummaryOrder}})), '[]') as varchar) as summaries
-		from selected_summaries sub
+		from selected_summaries sub{{end}}

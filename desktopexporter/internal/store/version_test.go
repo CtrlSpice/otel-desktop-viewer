@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -63,7 +64,7 @@ func TestSchemaInitializationHonorsCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = initializeSchemaVersion(ctx, db, true)
+	_, err = initializeSchema(ctx, db, "", zap.NewNop(), schema.Version, nil)
 	require.ErrorIs(t, err, context.Canceled)
 
 	var schemaMetaTables int
@@ -96,11 +97,10 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 		reopened.Close()
 	}
 
-	// The error has to say which file and what to do, since there is no
-	// migration path -- the user's only move is to delete it or point --db
-	// elsewhere.
+	// A newer file requires a newer executable, not a destructive reset.
 	assert.Contains(t, err.Error(), "future.db", "name the file")
 	assert.Contains(t, err.Error(), "--db", "say what to do about it")
+	assert.Contains(t, err.Error(), "upgrade the viewer")
 
 	require.Equal(t, 1, logs.Len(), "and it must be logged, not only returned")
 	fields := logs.All()[0].ContextMap()
@@ -108,23 +108,27 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 	assert.Equal(t, int64(schema.Version), fields["expected_version"])
 }
 
-func TestVersionTwentyOneDatabaseIsRefusedWithoutModification(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "v21.db")
-	s := newFileStore(t, path)
-	require.NoError(t, s.Close())
-	db, err := sql.Open("duckdb", path)
-	require.NoError(t, err)
-	_, err = db.Exec(`update schema_meta set version = 21`)
-	require.NoError(t, err)
-	require.NoError(t, db.Close())
-	before, err := os.ReadFile(path)
-	require.NoError(t, err)
-	_, err = NewStore(context.Background(), path, zap.NewNop())
-	require.ErrorIs(t, err, ErrSchemaIncompatible)
-	after, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Equal(t, before, after)
-	assert.Equal(t, 22, schema.Version)
+func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
+	for _, version := range []int{21, 22, 23, 24, 25, 26} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
+			s := newFileStore(t, path)
+			require.NoError(t, s.Close())
+			db, err := sql.Open("duckdb", path)
+			require.NoError(t, err)
+			_, err = db.Exec(`update schema_meta set version = ?`, version)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			_, err = NewStore(context.Background(), path, zap.NewNop())
+			require.ErrorIs(t, err, ErrSchemaIncompatible)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+			assert.Greater(t, schema.Version, version)
+		})
+	}
 }
 
 // Version 15 wrote zero for both absent and supplied-zero histogram statistics.
@@ -202,26 +206,11 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 	// Build a database the way a pre-versioning build would leave it: real
 	// tables with a row in spans, and no schema_meta at all.
 	s := newFileStore(t, path)
+	seedOwners(t, s)
 	err := s.WithDBWrite(func(db *sql.DB) error {
-		// spans.resource_id / scope_id are NOT NULL FKs, so the owner rows
-		// have to exist first.
-		if _, err := db.Exec(`
-			insert into resources (id, payload_id, attribute_ids)
-			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-				'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`); err != nil {
-			return err
-		}
-		if _, err := db.Exec(`
-			insert into scopes (id, name, version, attribute_ids)
-			values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`); err != nil {
-			return err
-		}
 		_, err := db.Exec(`
-			insert into spans (trace_id, span_id, resource_id, scope_id, attribute_ids)
-			values (?::uuid, 1::ubigint,
-				'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-				'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid,
-				[]::uuid[])`,
+			insert into spans (trace_id, span_id, resource, scope, attributes)
+			values (?::uuid, 1::ubigint, seed_resource(), seed_scope(), '{}'::json::variant)`,
 			"11111111-1111-1111-1111-111111111111")
 		return err
 	})

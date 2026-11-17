@@ -1,0 +1,75 @@
+{
+  "source": "https://developers.openai.com/api/docs/pricing",
+  "verifiedOn": "2026-10-08",
+  "serviceTier": "standard",
+  "currency": "USD",
+  "tokensPerUnit": 1000000,
+  "shortContextMaximum": 272000,
+  "models": {
+    "openai/gpt-6-astra": {
+      "name": "Astra 6",
+      "short": {
+        "input": 10,
+        "cacheRead": 1,
+        "cacheWrite": 12.5,
+        "output": 50
+      },
+      "long": { "input": 20, "cacheRead": 2, "cacheWrite": 25, "output": 75 }
+    },
+    "openai/gpt-6.1-sol": {
+      "name": "Sol 6.1",
+      "short": {
+        "input": 2,
+        "cacheRead": 0.1,
+        "cacheWrite": 2.5,
+        "output": 10
+      },
+      "long": { "input": 4, "cacheRead": 0.2, "cacheWrite": 5, "output": 15 }
+    },
+    "openai/gpt-6-luna": {
+      "name": "Luna 6",
+      "short": {
+        "input": 0.1,
+        "cacheRead": 0.01,
+        "cacheWrite": 0.125,
+        "output": 0.5
+      },
+      "long": {
+        "input": 0.2,
+        "cacheRead": 0.02,
+        "cacheWrite": 0.25,
+        "output": 0.75
+      }
+    },
+    "openai/gpt-5.6-sol": {
+      "name": "Sol 5.6",
+      "short": { "input": 4, "cacheRead": 0.4, "cacheWrite": 5, "output": 20 },
+      "long": { "input": 8, "cacheRead": 0.8, "cacheWrite": 10, "output": 30 }
+    },
+    "openai/gpt-5.6-luna": {
+      "name": "Luna 5.6",
+      "short": {
+        "input": 0.2,
+        "cacheRead": 0.02,
+        "cacheWrite": 0.25,
+        "output": 1.2
+      },
+      "long": {
+        "input": 0.4,
+        "cacheRead": 0.04,
+        "cacheWrite": 0.5,
+        "output": 1.8
+      }
+    },
+    "openai/gpt-5.6-terra": {
+      "name": "Terra 5.6",
+      "short": {
+        "input": 2,
+        "cacheRead": 0.2,
+        "cacheWrite": 2.5,
+        "output": 12
+      },
+      "long": { "input": 4, "cacheRead": 0.4, "cacheWrite": 5, "output": 18 }
+    }
+  }
+}

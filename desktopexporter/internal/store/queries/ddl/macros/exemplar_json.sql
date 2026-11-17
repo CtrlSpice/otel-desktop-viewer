@@ -1,6 +1,6 @@
 -- exemplar_json renders one exemplar for the wire.
--- Filtered attributes are resolved per exemplar.
-create or replace macro exemplar_json(e) as (
+-- The caller resolves filtered attributes before constructing the document.
+create or replace macro exemplar_json(e, attributes) as (
 		json_object(
 			'timestamp', e.timestamp::varchar,
 			'valueType', case
@@ -12,6 +12,6 @@ create or replace macro exemplar_json(e) as (
 			'intValue', e.int_value::varchar,
 			'traceID', trace_id_wire(e.trace_id),
 			'spanID', span_id_wire(e.span_id),
-			'filteredAttributes', attrs_json(e.attribute_ids)
+			'filteredAttributes', attributes
 		)
 	)

@@ -16,9 +16,9 @@ func TestTraceTimePredicateShapes(t *testing.T) {
 		wantArgs  []any
 	}{
 		{"unbounded", timerange.TimeRange{}, "true", []any{}},
-		{"end only", timerange.TimeRange{End: &end}, "s.start_time <= time_end", []any{[]uint64{end}}},
-		{"start only", timerange.TimeRange{Start: &start}, "s.start_time >= time_start", []any{[]uint64{start}}},
-		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "s.start_time >= time_start and s.start_time <= time_end", []any{[]uint64{start}, []uint64{end}}},
+		{"end only", timerange.TimeRange{End: &end}, "s.start_time <= $1::ubigint", []any{"20"}},
+		{"start only", timerange.TimeRange{Start: &start}, "s.start_time >= $1::ubigint", []any{"10"}},
+		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "s.start_time >= $1::ubigint and s.start_time <= $2::ubigint", []any{"10", "20"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, where, _, args, err := buildTraceSQL(nil, tc.timeRange)

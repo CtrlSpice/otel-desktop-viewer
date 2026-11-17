@@ -8,6 +8,7 @@ import {
   remToPx,
   clampPanelRem,
   remToFraction,
+  resolvePanelResize,
 } from './panel-width'
 
 afterEach(() => {
@@ -15,6 +16,30 @@ afterEach(() => {
 })
 
 describe('panel width rules', () => {
+  it('shares resistance and release thresholds across pixel, rem and fraction resizers', () => {
+    for (const scale of [1, 16, 0.01]) {
+      const near = resolvePanelResize(
+        20 * scale,
+        22 * scale,
+        40 * scale,
+        4 * scale
+      )
+      expect(near.preview).toBeCloseTo(21.3 * scale)
+      expect(near.size).toBeCloseTo(22 * scale)
+      expect(near.collapsed).toBe(false)
+      expect(
+        resolvePanelResize(17 * scale, 22 * scale, 40 * scale, 4 * scale)
+          .collapsed
+      ).toBe(true)
+      expect(
+        resolvePanelResize(25 * scale, 22 * scale, 40 * scale, 4 * scale)
+      ).toMatchObject({
+        preview: 25 * scale,
+        size: 25 * scale,
+        collapsed: false,
+      })
+    }
+  })
   it('keeps the default inside the bounds', () => {
     expect(PANEL_DEFAULT_REM).toBeGreaterThan(PANEL_MIN_REM)
     expect(PANEL_DEFAULT_REM).toBeLessThan(PANEL_MAX_REM)

@@ -1,46 +1,36 @@
 // Search field definitions for different signal types
 import {
   OPERATORS,
+  builtinFieldReference,
   type FieldDefinition,
   type SearchSignal,
+  type ValueOwner,
 } from '@/search/model'
 
-export type ColumnCategory = 'pinned' | 'flexible' | 'detail'
-
-export type ColumnVisibility = {
-  fieldID: string
-  label: string
-  category: ColumnCategory
-}
-
-export const LOG_COLUMN_DEFAULTS: ColumnVisibility[] = [
-  { fieldID: 'timestamp', label: 'Timestamp', category: 'pinned' },
-  { fieldID: 'service', label: 'Service', category: 'pinned' },
-  { fieldID: 'severity', label: 'Severity', category: 'flexible' },
-  { fieldID: 'traceID', label: 'Trace ID', category: 'detail' },
-  { fieldID: 'body', label: 'Body', category: 'flexible' },
-]
-
-export const TRACE_COLUMN_DEFAULTS: ColumnVisibility[] = [
-  { fieldID: 'traceID', label: 'Trace ID', category: 'pinned' },
-  { fieldID: 'rootName', label: 'Root Name', category: 'pinned' },
-  { fieldID: 'service', label: 'Service', category: 'flexible' },
-  { fieldID: 'startTime', label: 'Start Time', category: 'flexible' },
-  { fieldID: 'duration', label: 'Duration', category: 'flexible' },
-  { fieldID: 'spanCount', label: 'Spans', category: 'flexible' },
-  { fieldID: 'errorCount', label: 'Errors', category: 'flexible' },
-  { fieldID: 'exceptionCount', label: 'Exceptions', category: 'flexible' },
-]
-
-type StaticFieldDefinition = Extract<FieldDefinition, { searchScope: 'field' }>
+type StaticFieldDefinition = Omit<FieldDefinition, 'owner' | 'path'>
 
 function withScalarMembership(
+  owner: ValueOwner,
   fields: StaticFieldDefinition[]
-): StaticFieldDefinition[] {
-  return fields.map(field => ({
-    ...field,
-    operators: [...field.operators, OPERATORS.IN, OPERATORS.NOT_IN],
-  }))
+): FieldDefinition[] {
+  return fields.map(
+    ({
+      name,
+      type,
+      operators,
+      description,
+      enumValues,
+      discoverableValues,
+    }) => ({
+      name,
+      type,
+      description,
+      enumValues,
+      discoverableValues,
+      ...builtinFieldReference(name, owner),
+      operators: [...operators, OPERATORS.IN, OPERATORS.NOT_IN],
+    })
+  )
 }
 
 /** OTLP span kind string names (aligns with pdata). */
@@ -68,11 +58,11 @@ export const LOG_SEVERITY_TEXT_ENUM = [
 
 /** Metric instrument / datapoint type strings used in this app’s store and API. */
 export const METRIC_TYPE_ENUM = [
-  'Empty',
   'Gauge',
   'Sum',
   'Histogram',
   'ExponentialHistogram',
+  'Empty',
 ] as const
 
 // Field suggestions based on signal
@@ -98,52 +88,29 @@ export function getStaticFieldsForSearch(
   return getFieldsBySignal(signal)
 }
 
-/** Same searchable field identity (for column filter toggles and detail visibility). */
-export function sameFieldDefinition(
-  a: FieldDefinition,
-  b: FieldDefinition
-): boolean {
-  if (a.searchScope !== b.searchScope) return false
-  if (a.searchScope === 'global' || b.searchScope === 'global') return false
-  if (!('name' in a) || !('name' in b)) return false
-  if (a.name !== b.name) return false
-  if (a.searchScope === 'attribute' && b.searchScope === 'attribute') {
-    return (
-      'attributeScope' in a &&
-      'attributeScope' in b &&
-      a.attributeScope === b.attributeScope
-    )
-  }
-  return true
-}
-
 // Span/Trace fields
-export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
+export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership('span', [
   {
     name: 'traceID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Unique identifier for the trace',
   },
   {
     name: 'traceState',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.CONTAINS],
     description: 'W3C trace state',
   },
   {
     name: 'spanID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Unique identifier for the span',
   },
   {
     name: 'parentSpanID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'ID of the parent span',
   },
@@ -151,14 +118,13 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
     name: 'name',
     discoverableValues: true,
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
-      OPERATORS.ENDS_WITH,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
     ],
     description: 'Name of the span',
@@ -166,7 +132,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'kind',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'Span kind (Unspecified, Internal, Server, Client, Producer, Consumer)',
@@ -175,7 +140,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'kindCode',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -187,7 +151,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'startTime',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -201,7 +164,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'endTime',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -215,7 +177,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'duration',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -229,7 +190,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'droppedAttributesCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -241,7 +201,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'droppedEventsCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -253,7 +212,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'droppedLinksCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -265,7 +223,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'statusCode',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Status code (Unset, Ok, Error)',
     enumValues: SPAN_STATUS_CODE_ENUM,
@@ -273,7 +230,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'statusCodeValue',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -285,7 +241,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'statusMessage',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -298,14 +253,13 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'event.name',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
-      OPERATORS.ENDS_WITH,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
     ],
     description: 'Name of span events',
@@ -313,7 +267,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'event.timestamp',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -327,7 +280,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'event.droppedAttributesCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -339,7 +291,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'flags',
     type: 'int64',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'W3C trace flags for the span context (bit 0 sampled, bit 1 remote parent)',
@@ -347,28 +298,24 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'link.flags',
     type: 'int64',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'W3C trace flags for the linked context',
   },
   {
     name: 'link.traceID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Trace ID of linked spans',
   },
   {
     name: 'link.spanID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Span ID of linked spans',
   },
   {
     name: 'link.traceState',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -380,7 +327,6 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'link.droppedAttributesCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -392,11 +338,10 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
 ])
 
 // Log-specific fields
-export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
+export const LOG_FIELDS: FieldDefinition[] = withScalarMembership('log', [
   {
     name: 'timestamp',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -410,7 +355,6 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'observedTimestamp',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -424,21 +368,18 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'traceID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Trace ID associated with this log',
   },
   {
     name: 'spanID',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Span ID associated with this log',
   },
   {
     name: 'severityText',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'Text representation of log severity (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)',
@@ -447,7 +388,6 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'severityNumber',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -461,14 +401,13 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'body',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
-      OPERATORS.ENDS_WITH,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
     ],
     description: 'Log message body/content',
@@ -476,7 +415,6 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'droppedAttributesCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -488,7 +426,6 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'flags',
     type: 'int64',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Log record flags',
   },
@@ -496,14 +433,13 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
     name: 'eventName',
     discoverableValues: true,
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
-      OPERATORS.ENDS_WITH,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
     ],
     description: 'Name of the event associated with this log',
@@ -511,19 +447,18 @@ export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
 ])
 
 // Metric-specific fields
-export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership([
+export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership('metric', [
   {
     name: 'name',
     discoverableValues: true,
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
-      OPERATORS.ENDS_WITH,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
     ],
     description: 'Name of the metric',
@@ -531,7 +466,6 @@ export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'description',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -545,7 +479,6 @@ export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership([
     name: 'unit',
     discoverableValues: true,
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -557,7 +490,6 @@ export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'type',
     type: 'string',
-    searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'Type of metric (Empty, Gauge, Sum, Histogram, ExponentialHistogram)',
@@ -566,18 +498,17 @@ export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership([
 ])
 
 // Instrumentation Scope fields
-export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership([
+export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership('scope', [
   {
     name: 'scope.name',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
-      OPERATORS.ENDS_WITH,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
     ],
     description: 'Name of the instrumentation scope',
@@ -585,20 +516,18 @@ export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'scope.version',
     type: 'string',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
-      OPERATORS.STARTS_WITH,
+      OPERATORS.LIKE,
     ],
     description: 'Version of the instrumentation scope',
   },
   {
     name: 'scope.droppedAttributesCount',
     type: 'int64',
-    searchScope: 'field',
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
@@ -610,17 +539,26 @@ export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership([
 ])
 
 // Resource fields
-export const RESOURCE_FIELDS: FieldDefinition[] = withScalarMembership([
-  {
-    name: 'resource.droppedAttributesCount',
-    type: 'int64',
-    searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.GREATER_THAN,
-      OPERATORS.LESS_THAN,
-    ],
-    description: 'Number of resource attributes dropped due to limits',
-  },
-])
+export const RESOURCE_FIELDS: FieldDefinition[] = withScalarMembership(
+  'resource',
+  [
+    {
+      name: 'serviceIdentity',
+      type: 'string',
+      operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
+      description:
+        'Catalogue reference for an exact typed service name and namespace',
+    },
+    {
+      name: 'resource.droppedAttributesCount',
+      type: 'int64',
+      operators: [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.GREATER_THAN,
+        OPERATORS.LESS_THAN,
+      ],
+      description: 'Number of resource attributes dropped due to limits',
+    },
+  ]
+)

@@ -1,0 +1,125 @@
+<script lang="ts">
+  // Code 0 uses the OTel "MUST not be used" warning; unknown codes stay distinct.
+
+  type Props = {
+    size?: 'mini' | 'full'
+    temporalityCode: number
+    temporalityLabel: string
+  }
+
+  let { size = 'full', temporalityCode, temporalityLabel }: Props = $props()
+
+  const SPEC_URL =
+    'https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto#L286'
+</script>
+
+{#if temporalityCode !== 0 && size === 'mini'}
+  <span
+    class="callout-mini callout-mini--unknown tooltip tooltip-top"
+    data-tip={`Unsafe unknown temporality code ${temporalityCode}`}
+  >
+    {temporalityLabel}; received code {temporalityCode}
+  </span>
+{:else if temporalityCode !== 0}
+  <div class="callout-full callout-unknown" role="alert">
+    <strong>Unsafe aggregation temporality</strong>
+    <span>{temporalityLabel}</span>
+    <span>Received numeric code: {temporalityCode}</span>
+    <span
+      >Derived chart modes are unavailable because this code is unknown.</span
+    >
+  </div>
+{:else if size === 'mini'}
+  <span
+    class="callout-mini tooltip tooltip-top"
+    data-tip="Temporality: unspecified"
+  >
+    unspecifiedTemporality
+  </span>
+{:else}
+  <!-- The preformatted image scrolls horizontally to preserve alignment. -->
+  <div
+    class="callout-full"
+    role="img"
+    aria-label="Lulu the axolotl and her telescope contemplate AGGREGATION_TEMPORALITY_UNSPECIFIED, which the OTel spec says MUST not be used."
+  >
+    <div>
+      <pre class="callout-ascii">╭───────────────────────────────────────────╮
+│ Look, Lulu. AggregationTemporality
+│ defines how a metric aggregator reports
+│ aggregated values. It describes how
+│ those values relate to the time interval  
+│ over which they are aggregated.    ✧°⊹˖                            ✧  °⊹
+╰────╮─────────────────────────✧ ˚ ⊹₊`AGGREGATION_TEMPORALITY_CUMULATIVE`
+                                      AGGREGATION_TEMPORALITY_DELTA ⊹
+≡(   ó‿ò )≡  =(◕‿◕ )=  🔭            ⊹˖°                         ⊹ ⋆.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔⟡</pre>
+    </div>
+
+    <div>
+      <pre class="callout-ascii">        ╭────────────────────────────────╮
+        │ But what's that shadowy place  
+        │ over there?                    
+        ╰──────────╭─────────────────────▒▓▓██████▓▒░
+  ≡(  ᵕÓᯅÒ )≡  =( •𐃷•)=  🔭       ░▒▓█`AGGREGATION_TEMPORALITY_UNSPECIFIED`
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔░▒▒▒▓▓████▓▒░</pre>
+    </div>
+
+    <div>
+      <pre class="callout-ascii">╭───────────────────────────────╮
+│ UNSPECIFIED is the default    
+│ AggregationTemporality, Lulu. 
+│                               
+│ It MUST not be used."         
+╰────────╮──────────────────────╯░░▒▒▒▓▓███████████▓▒░
+  ≡(   òДó )≡  =(•ᴖ• )=  🔭       ░▒▓█`AGGREGATION_TEMPORALITY_UNSPECIFIED`
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔░▒▒▒▓▓████▓▒░</pre>
+    </div>
+
+    <a
+      class="callout-link"
+      href={SPEC_URL}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      It MUST not be used.
+    </a>
+  </div>
+{/if}
+
+<style lang="postcss">
+  @reference "../../../app.css";
+
+  .callout-mini {
+    @apply inline-flex items-center font-mono italic text-base tracking-tight text-base-content/45;
+  }
+
+  .callout-full {
+    @apply flex h-full flex-col items-center justify-center gap-3 px-4 py-8 text-center;
+  }
+
+  .callout-mini--unknown,
+  .callout-unknown {
+    @apply text-base-content;
+  }
+
+  /*
+   * The art is wider than the panel can be at narrow splits, and
+   * re-flowing would garble the alignment. Scroll horizontally
+   * instead. Tab size 4 matches the source so the panels (which use
+   * `\t` runs for indentation) line up. inline-block + max-w-full
+   * keeps the box from claiming the entire callout width on wide
+   * panels.
+   */
+  .callout-ascii {
+    @apply inline-block max-w-full overflow-x-auto rounded-lg border-0 bg-base-100 px-4 py-3 text-left font-mono text-base leading-tight text-base-content;
+    white-space: pre;
+    tab-size: 4;
+    -moz-tab-size: 4;
+  }
+
+  .callout-link {
+    @apply text-sm italic text-(--color-subtle) underline decoration-dotted underline-offset-4;
+    @apply hover:text-base-content;
+  }
+</style>

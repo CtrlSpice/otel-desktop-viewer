@@ -1,0 +1,2096 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359760000000000",
+              "endTimeUnixNano": "1791359760200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-001"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-001"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740993"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359762000000000",
+              "endTimeUnixNano": "1791359762200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-002"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-002"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740994"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000003",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359764000000000",
+              "endTimeUnixNano": "1791359764200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-003"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-003"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740995"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000004",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359766000000000",
+              "endTimeUnixNano": "1791359766200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-004"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-004"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740996"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000005",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359768000000000",
+              "endTimeUnixNano": "1791359768200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-005"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-005"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740997"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000006",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359770000000000",
+              "endTimeUnixNano": "1791359770200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-006"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-006"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740998"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000007",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359772000000000",
+              "endTimeUnixNano": "1791359772200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-007"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-007"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254740999"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000008",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359774000000000",
+              "endTimeUnixNano": "1791359774200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-008"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-008"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "stringValue": "9007199254741000"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000009",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359776000000000",
+              "endTimeUnixNano": "1791359776200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-009"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-009"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741001"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000a",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359778000000000",
+              "endTimeUnixNano": "1791359778200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-010"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-010"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741002"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000b",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359780000000000",
+              "endTimeUnixNano": "1791359780200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-011"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-011"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741003"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000c",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359782000000000",
+              "endTimeUnixNano": "1791359782200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-012"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-012"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741004"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000d",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359784000000000",
+              "endTimeUnixNano": "1791359784200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-013"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-013"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741005"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000e",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359786000000000",
+              "endTimeUnixNano": "1791359786200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-014"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-014"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741006"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000f",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359788000000000",
+              "endTimeUnixNano": "1791359788200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-015"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-015"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741007"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000010",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791359790000000000",
+              "endTimeUnixNano": "1791359790200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-016"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-016"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741008"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000019",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360016000000000",
+              "endTimeUnixNano": "1791360016200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-025"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-025"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741017"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000001a",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360018000000000",
+              "endTimeUnixNano": "1791360018200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-026"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-026"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741018"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000001b",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360020000000000",
+              "endTimeUnixNano": "1791360020200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-027"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-027"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741019"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000001c",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360022000000000",
+              "endTimeUnixNano": "1791360022200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-028"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-028"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741020"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000001d",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360024000000000",
+              "endTimeUnixNano": "1791360024200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-029"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-029"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741021"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000001e",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360026000000000",
+              "endTimeUnixNano": "1791360026200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-030"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-030"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741022"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000001f",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360028000000000",
+              "endTimeUnixNano": "1791360028200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-031"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-031"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741023"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000020",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360030000000000",
+              "endTimeUnixNano": "1791360030200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-032"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-032"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741024"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.1.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360000000000000",
+              "endTimeUnixNano": "1791360001200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "402"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-017"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-017"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741009"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Payment declined"
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360002000000000",
+              "endTimeUnixNano": "1791360002600000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-018"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-018"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741010"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000013",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360004000000000",
+              "endTimeUnixNano": "1791360005500000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-019"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-019"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741011"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000014",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360006000000000",
+              "endTimeUnixNano": "1791360006800000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "504"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-020"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-020"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741012"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Payment unavailable"
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000015",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360008000000000",
+              "endTimeUnixNano": "1791360008400000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "503"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-021"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-021"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741013"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Payment unavailable"
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000016",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360010000000000",
+              "endTimeUnixNano": "1791360010400000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "503"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-022"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-022"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741014"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Payment unavailable"
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000017",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360012000000000",
+              "endTimeUnixNano": "1791360012200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-023"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-023"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741015"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "00000000000000000000000000000018",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360014000000000",
+              "endTimeUnixNano": "1791360014200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "request.id",
+                  "value": {
+                    "stringValue": "checkout-024"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-024"
+                  }
+                },
+                {
+                  "key": "order.sequence",
+                  "value": {
+                    "intValue": "9007199254741016"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "catalog-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000002",
+              "name": "catalog/resolve-items",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000025000000",
+              "endTimeUnixNano": "1791360000280000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000002",
+              "name": "catalog/resolve-items",
+              "kind": 1,
+              "startTimeUnixNano": "1791360002025000000",
+              "endTimeUnixNano": "1791360002100000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "inventory-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000003",
+              "name": "inventory/reserve-stock",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000285000000",
+              "endTimeUnixNano": "1791360000500000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000003",
+              "name": "inventory/reserve-stock",
+              "kind": 1,
+              "startTimeUnixNano": "1791360002105000000",
+              "endTimeUnixNano": "1791360002200000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "order-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000004",
+              "name": "order/create",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000505000000",
+              "endTimeUnixNano": "1791360000780000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000004",
+              "name": "order/create",
+              "kind": 1,
+              "startTimeUnixNano": "1791360002205000000",
+              "endTimeUnixNano": "1791360002300000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "payment-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000005",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000785000000",
+              "endTimeUnixNano": "1791360001050000000",
+              "attributes": [],
+              "status": {
+                "code": 2,
+                "message": "Card declined"
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000006",
+              "name": "stripe/create-charge",
+              "kind": 3,
+              "startTimeUnixNano": "1791360000882000000",
+              "endTimeUnixNano": "1791360001000000000",
+              "attributes": [
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "api.stripe.com"
+                  }
+                },
+                {
+                  "key": "error.type",
+                  "value": {
+                    "stringValue": "PaymentDeclinedError"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Card declined: insufficient funds"
+              },
+              "parentSpanId": "0000000000000005",
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1791360000950000000",
+                  "attributes": [
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "PaymentDeclinedError"
+                      }
+                    },
+                    {
+                      "key": "exception.message",
+                      "value": {
+                        "stringValue": "Card declined: insufficient funds"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000005",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360002305000000",
+              "endTimeUnixNano": "1791360002500000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000006",
+              "name": "stripe/create-charge",
+              "kind": 3,
+              "startTimeUnixNano": "1791360002325000000",
+              "endTimeUnixNano": "1791360002405000000",
+              "attributes": [
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "api.stripe.com"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000005"
+            },
+            {
+              "traceId": "00000000000000000000000000000013",
+              "spanId": "0000000000000002",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360004100000000",
+              "endTimeUnixNano": "1791360005450000000",
+              "attributes": [],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000013",
+              "spanId": "0000000000000003",
+              "name": "stripe/create-charge",
+              "kind": 3,
+              "startTimeUnixNano": "1791360004150000000",
+              "endTimeUnixNano": "1791360005400000000",
+              "attributes": [
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "api.stripe.com"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              },
+              "parentSpanId": "0000000000000002"
+            },
+            {
+              "traceId": "00000000000000000000000000000014",
+              "spanId": "0000000000000002",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360006100000000",
+              "endTimeUnixNano": "1791360006750000000",
+              "attributes": [],
+              "status": {
+                "code": 2,
+                "message": "Payment provider timed out"
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000014",
+              "spanId": "0000000000000003",
+              "name": "stripe/create-charge",
+              "kind": 3,
+              "startTimeUnixNano": "1791360006150000000",
+              "endTimeUnixNano": "1791360006700000000",
+              "attributes": [
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "api.stripe.com"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Payment provider timed out"
+              },
+              "parentSpanId": "0000000000000002"
+            },
+            {
+              "traceId": "00000000000000000000000000000015",
+              "spanId": "0000000000000002",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360008100000000",
+              "endTimeUnixNano": "1791360008350000000",
+              "attributes": [],
+              "status": {
+                "code": 2,
+                "message": "Payment circuit breaker open"
+              },
+              "parentSpanId": "0000000000000001"
+            },
+            {
+              "traceId": "00000000000000000000000000000016",
+              "spanId": "0000000000000002",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360010100000000",
+              "endTimeUnixNano": "1791360010350000000",
+              "attributes": [],
+              "status": {
+                "code": 2,
+                "message": "Payment circuit breaker open"
+              },
+              "parentSpanId": "0000000000000001"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

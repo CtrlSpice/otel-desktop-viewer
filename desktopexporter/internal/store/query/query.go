@@ -38,12 +38,7 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 	if strings.TrimSpace(statement) == "" {
 		return nil, fmt.Errorf("empty SQL: %w", ErrReadOnly)
 	}
-	originalNames, err := requireReadOnly(ctx, conn, statement)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := conn.ExecContext(ctx, "BEGIN TRANSACTION READ ONLY"); err != nil {
+	if _, err := conn.ExecContext(ctx, "begin transaction read only"); err != nil {
 		return nil, fmt.Errorf("begin read-only transaction: %w", err)
 	}
 	transactionOpen := true
@@ -53,15 +48,19 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 		}
 	}()
 
+	// query() uses DuckDB's parser to reject multiple statements without running
+	// them. Do this before PrepareContext, which executes every leading statement
+	// in a multi-statement string, including transaction control.
 	sourceNames, databaseTypes, err := describeQuery(ctx, conn, statement)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, errors.Join(ctxErr, err)
 		}
-		// PrepareContext supports cancellation but, unlike Prepare, accepts a
-		// multi-statement string. DuckDB's query table function supplies the
-		// existing single-statement check, so keep that failure in ErrReadOnly.
 		return nil, fmt.Errorf("%w: %w", err, ErrReadOnly)
+	}
+	originalNames, err := requireReadOnly(ctx, conn, statement)
+	if err != nil {
+		return nil, err
 	}
 	if len(originalNames) != len(databaseTypes) {
 		return nil, fmt.Errorf("query metadata changed from %d to %d columns", len(originalNames), len(databaseTypes))
@@ -81,7 +80,10 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 		return nil, fmt.Errorf("execute read-only query: %w", err)
 	}
 	if !json.Valid([]byte(raw)) {
-		return nil, errors.New("DuckDB returned invalid query response JSON")
+		raw = quoteNonFiniteJSON(raw)
+		if !json.Valid([]byte(raw)) {
+			return nil, errors.New("DuckDB returned invalid query response JSON")
+		}
 	}
 	result = json.RawMessage(raw)
 
@@ -96,7 +98,7 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 func describeQuery(ctx context.Context, conn *sql.Conn, statement string) (names, types []string, err error) {
 	literal := "'" + strings.ReplaceAll(statement, "'", "''") + "'"
 	rows, err := conn.QueryContext(ctx,
-		"SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM query("+literal+"))")
+		"select column_name, column_type from (describe select * from query("+literal+"))")
 	if err != nil {
 		return nil, nil, fmt.Errorf("inspect query result: %w", err)
 	}
@@ -115,33 +117,70 @@ func describeQuery(ctx context.Context, conn *sql.Conn, statement string) (names
 	return names, types, nil
 }
 
+// DuckDB to_json emits bare non-finite numbers inside nested values. Quote only
+// those tokens, leaving strings and exact integer/decimal spellings untouched.
+func quoteNonFiniteJSON(raw string) string {
+	var out strings.Builder
+	out.Grow(len(raw))
+	for i := 0; i < len(raw); {
+		start := i
+		if raw[i] == '"' {
+			i++
+			for i < len(raw) {
+				c := raw[i]
+				i++
+				if c == '\\' && i < len(raw) {
+					i++
+				} else if c == '"' {
+					break
+				}
+			}
+		} else if strings.ContainsRune("{}[]:, \t\r\n", rune(raw[i])) {
+			i++
+		} else {
+			for i < len(raw) && !strings.ContainsRune("{}[]:, \t\r\n\"", rune(raw[i])) {
+				i++
+			}
+			token := raw[start:i]
+			if token == "NaN" || token == "Infinity" || token == "-Infinity" {
+				out.WriteByte('"')
+				out.WriteString(token)
+				out.WriteByte('"')
+				continue
+			}
+		}
+		out.WriteString(raw[start:i])
+	}
+	return out.String()
+}
+
 func responseQuery(names, databaseTypes []string, statement string, columnsJSON []byte, limit uint64) (string, []any) {
 	values := make([]string, len(names))
 	for i, name := range names {
 		quoted := `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 		values[i] = "to_json(" + quoted + ")"
 		if databaseTypes[i] == "FLOAT" || databaseTypes[i] == "DOUBLE" {
-			values[i] = "otlp_double_json(json_object('kind', 'double', 'value', double_wire_json(" + quoted + ")))"
+			values[i] = "otlp_double_json(" + quoted + ")"
 		}
 	}
 	rowJSON := "json_array(" + strings.Join(values, ", ") + ")"
-	limited := "SELECT " + rowJSON + " AS row_json, row_number() OVER () AS row_number FROM query(?)"
-	rowsJSON := "coalesce(to_json(list(row_json ORDER BY row_number)), json('[]'))"
+	limited := "select " + rowJSON + " as row_json, row_number() over () as row_number from query(?)"
+	rowsJSON := "coalesce(to_json(list(row_json order by row_number)), json('[]'))"
 	truncated := "false"
 	args := []any{string(columnsJSON)}
 	if limit < math.MaxUint64 {
-		limited += " LIMIT ?"
-		rowsJSON = "coalesce(to_json(list(row_json ORDER BY row_number) FILTER (WHERE row_number <= ?)), json('[]'))"
+		limited += " limit ?"
+		rowsJSON = "coalesce(to_json(list(row_json order by row_number) filter (where row_number <= ?)), json('[]'))"
 		truncated = "count(*) > ?"
 		args = append(args, limit, limit, statement, limit+1)
 	} else {
 		args = append(args, statement)
 	}
-	querySQL := "SELECT CAST(json_object(" +
-		"'columns', ?::JSON, " +
+	querySQL := "select cast(json_object(" +
+		"'columns', ?::json, " +
 		"'rows', " + rowsJSON + ", " +
 		"'truncated', " + truncated +
-		") AS VARCHAR) FROM (" + limited + ") AS limited"
+		") as varchar) from (" + limited + ") as limited"
 	return querySQL, args
 }
 
@@ -189,7 +228,7 @@ func requireReadOnly(ctx context.Context, conn *sql.Conn, statement string) ([]s
 }
 
 func rollback(conn *sql.Conn, requestCtx context.Context) error {
-	_, err := conn.ExecContext(context.WithoutCancel(requestCtx), "ROLLBACK")
+	_, err := conn.ExecContext(context.WithoutCancel(requestCtx), "rollback")
 	if err != nil {
 		return fmt.Errorf("rollback read-only transaction: %w", err)
 	}

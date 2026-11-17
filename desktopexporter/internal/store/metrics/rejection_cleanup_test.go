@@ -71,7 +71,7 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 			var rejected ingest.Rejected
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 				var err error
-				rejected, err = metrics.IngestReport(ctx, conn, batch, s.FlushedIDs())
+				rejected, err = metrics.IngestReport(ctx, conn, batch)
 				return err
 			}))
 			require.Equal(t, 1, rejected.Count())
@@ -94,14 +94,20 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 				otlp := getMetricOTLP(t, s, ctx, id)
 				decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(otlp)
 				require.NoError(t, err)
-				require.Equal(t, 1, decoded.MetricCount())
+				wantRecords := 1
+				if name == "Gauge" {
+					wantRecords = 2
+				}
+				require.Equal(t, wantRecords, decoded.MetricCount(), "both received Gauge descriptors survive")
 				assert.Zero(t, decoded.DataPointCount())
 			}
 			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_datapoints`))
 			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_series`))
-			require.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
-			require.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))
-			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from attributes where key like 'rejected.%'`))
+			require.Equal(t, 1, countRows(t, s, ctx, `select count(distinct resource.id) from metrics`))
+			require.Equal(t, 1, countRows(t, s, ctx, `select count(distinct scope.id) from metrics`))
+			require.Zero(t, countRows(t, s, ctx, `select count(*) from metrics m,
+				unnest(variant_keys(m.resource.attributes) || variant_keys(m.scope.attributes) || variant_keys(m.metadata)) t(key)
+				where key like 'rejected.%'`))
 		})
 	}
 }

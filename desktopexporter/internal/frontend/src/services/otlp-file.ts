@@ -1,4 +1,5 @@
-import { JSONParser, TokenType } from '@streamparser/json'
+import { TokenType } from '@streamparser/json'
+import { scanJSONFile } from './json-file'
 
 export const OTLP_REQUEST_BYTES = 20 * 1024 * 1024
 export type ImportSignal = 'traces' | 'logs' | 'metrics'
@@ -27,6 +28,7 @@ export type FileRange = { start: number; end: number }
 export type ResourceRange = FileRange & { collections: CollectionRange[] }
 type CollectionRange = FileRange & {
   items: ResourceRange[]
+  firstItemStart?: number
   splittable: boolean
 }
 
@@ -95,168 +97,223 @@ export async function scanOTLPFile(
     profiles: [],
     invalid: [],
   }
-  // The tokenizer accepts UTF-8 BOMs but reports offsets after the BOM.
-  const prefix = new Uint8Array(await file.slice(0, 3).arrayBuffer())
-  const byteBase =
-    prefix[0] === 0xef && prefix[1] === 0xbb && prefix[2] === 0xbf ? 3 : 0
-  const parser = new JSONParser({
-    paths: [],
-    keepStack: false,
-    separator: '\n',
-  })
   const frames: Frame[] = []
   let wrappers = 0
 
-  parser.onToken = ({ token, value, offset }) => {
-    const position = offset + byteBase
-    const parent = frames.at(-1)
-    if (token === TokenType.SEPARATOR) return
-    if (
-      token === TokenType.STRING &&
-      parent?.type === 'object' &&
-      parent.expectingKey
-    ) {
-      // The library emits string values for STRING tokens.
-      parent.key = value as string
-      return
-    }
-    if (token === TokenType.COLON) {
-      if (parent) parent.expectingKey = false
-      return
-    }
-    if (token === TokenType.COMMA) {
-      if (parent?.type === 'object') parent.expectingKey = true
-      return
-    }
-    if (token === TokenType.RIGHT_BRACE || token === TokenType.RIGHT_BRACKET) {
-      const closed = frames.pop()
-      if (closed?.node && closed.role !== 'metricData')
-        closed.node.end = position + 1
-      if (closed?.collection) closed.collection.end = position + 1
-      return
-    }
-
-    const object = token === TokenType.LEFT_BRACE
-    const array = token === TokenType.LEFT_BRACKET
-    let role: Role = 'opaque'
-    let node: ResourceRange | undefined
-    let collection: CollectionRange | undefined
-    let currentSignal = parent?.signal
-
-    if (!parent) {
-      if (!object) throw new Error('OTLP input must contain JSON objects.')
-      role = 'root'
-    } else if (parent.role === 'root') {
-      wrappers++
-      currentSignal = wrapperSignal(parent.key)
-      if (parent.key === 'resourceProfiles') {
-        plan.profiles.push({
-          reason: 'Profiles support coming soon',
-          offset: position,
-        })
-      } else if (!currentSignal) {
-        plan.invalid.push({
-          reason: `Invalid OTLP wrapper: ${parent.key}.`,
-          offset: position,
-        })
-      } else if (!array) {
-        plan.invalid.push({
-          reason: `${parent.key} must be an array.`,
-          offset: position,
-        })
-      } else {
-        role = 'resources'
-      }
-    } else if (parent.role === 'resources' && currentSignal) {
-      if (object) {
-        role = 'resource'
-        node = { start: position, end: position, collections: [] }
-        plan[currentSignal].push(node)
-      } else {
-        plan.invalid.push({
-          reason: `${resourceKeys[currentSignal]} must contain resource objects.`,
-          offset: position,
-        })
-      }
-    } else if (parent.type === 'array' && parent.collection) {
-      if (object) {
-        role =
-          parent.role === 'scopes'
-            ? 'scope'
-            : currentSignal === 'metrics' && parent.role === 'records'
-              ? 'metric'
-              : 'leaf'
-        node = { start: position, end: position, collections: [] }
-        parent.collection.items.push(node)
-      } else {
-        // Leave malformed OTLP intact for receiver validation; never omit it when splitting.
-        parent.collection.splittable = false
-      }
-    } else if (parent.node && currentSignal) {
+  await scanJSONFile(
+    file,
+    ({ token, value, offset }) => {
+      const position = offset
+      const parent = frames.at(-1)
+      if (token === TokenType.SEPARATOR) return
       if (
-        array &&
-        parent.role === 'resource' &&
-        parent.key === scopeKeys[currentSignal]
-      )
-        role = 'scopes'
-      if (
-        array &&
-        parent.role === 'scope' &&
-        parent.key === recordKeys[currentSignal]
-      )
-        role = 'records'
-      if (array && parent.role === 'metricData' && parent.key === 'dataPoints')
-        role = 'points'
-      if (object && parent.role === 'metric' && isMetricData(parent.key)) {
-        role = 'metricData'
-        node = parent.node
+        token === TokenType.STRING &&
+        parent?.type === 'object' &&
+        parent.expectingKey
+      ) {
+        parent.key = value
+        return
       }
-      if (role === 'scopes' || role === 'records' || role === 'points') {
-        collection = {
-          start: position,
-          end: position,
-          items: [],
-          splittable: true,
+      if (token === TokenType.COLON) {
+        if (parent) parent.expectingKey = false
+        return
+      }
+      if (token === TokenType.COMMA) {
+        if (parent?.type === 'object') parent.expectingKey = true
+        return
+      }
+      if (
+        token === TokenType.RIGHT_BRACE ||
+        token === TokenType.RIGHT_BRACKET
+      ) {
+        const closed = frames.pop()
+        if (closed?.node && closed.role !== 'metricData')
+          closed.node.end = position + 1
+        if (closed?.collection) closed.collection.end = position + 1
+        return
+      }
+
+      const object = token === TokenType.LEFT_BRACE
+      const array = token === TokenType.LEFT_BRACKET
+      let role: Role = 'opaque'
+      let node: ResourceRange | undefined
+      let collection: CollectionRange | undefined
+      let currentSignal = parent?.signal
+
+      if (!parent) {
+        if (!object) throw new Error('OTLP input must contain JSON objects.')
+        role = 'root'
+      } else if (parent.role === 'root') {
+        wrappers++
+        currentSignal = wrapperSignal(parent.key)
+        if (parent.key === 'resourceProfiles') {
+          plan.profiles.push({
+            reason: 'Profiles support coming soon',
+            offset: position,
+          })
+        } else if (!currentSignal) {
+          plan.invalid.push({
+            reason: `Invalid OTLP wrapper: ${parent.key}.`,
+            offset: position,
+          })
+        } else if (!array) {
+          plan.invalid.push({
+            reason: `${parent.key} must be an array.`,
+            offset: position,
+          })
+        } else {
+          role = 'resources'
         }
-        parent.node.collections.push(collection)
+      } else if (parent.role === 'resources' && currentSignal) {
+        if (object) {
+          role = 'resource'
+          node = { start: position, end: position, collections: [] }
+          plan[currentSignal].push(node)
+        } else {
+          plan.invalid.push({
+            reason: `${resourceKeys[currentSignal]} must contain resource objects.`,
+            offset: position,
+          })
+        }
+      } else if (parent.type === 'array' && parent.collection) {
+        parent.collection.firstItemStart ??= position
+        if (object) {
+          role =
+            parent.role === 'scopes'
+              ? 'scope'
+              : currentSignal === 'metrics' && parent.role === 'records'
+                ? 'metric'
+                : 'leaf'
+          node = { start: position, end: position, collections: [] }
+          parent.collection.items.push(node)
+        } else {
+          // Leave malformed OTLP intact for receiver validation; never omit it when splitting.
+          parent.collection.splittable = false
+        }
+      } else if (parent.node && currentSignal) {
+        if (
+          array &&
+          parent.role === 'resource' &&
+          parent.key === scopeKeys[currentSignal]
+        )
+          role = 'scopes'
+        if (
+          array &&
+          parent.role === 'scope' &&
+          parent.key === recordKeys[currentSignal]
+        )
+          role = 'records'
+        if (
+          array &&
+          parent.role === 'metricData' &&
+          parent.key === 'dataPoints'
+        )
+          role = 'points'
+        if (object && parent.role === 'metric' && isMetricData(parent.key)) {
+          role = 'metricData'
+          node = parent.node
+        }
+        if (role === 'scopes' || role === 'records' || role === 'points') {
+          collection = {
+            start: position,
+            end: position,
+            items: [],
+            splittable: true,
+          }
+          parent.node.collections.push(collection)
+        }
       }
-    }
 
-    if (object || array) {
-      frames.push({
-        type: object ? 'object' : 'array',
-        role,
-        key: '',
-        expectingKey: object,
-        signal: currentSignal,
-        node,
-        collection,
-      })
-    }
-  }
-
-  const reader = file.stream().getReader()
-  try {
-    while (true) {
-      signal?.throwIfAborted()
-      const next = await reader.read()
-      if (next.done) break
-      parser.write(next.value)
-    }
-    parser.end()
-    if (wrappers === 0)
-      plan.invalid.push({
-        reason: 'No OTLP resource wrappers found.',
-        offset: 0,
-      })
-    return plan
-  } finally {
-    await reader.cancel()
-    reader.releaseLock()
-  }
+      if (object || array) {
+        frames.push({
+          type: object ? 'object' : 'array',
+          role,
+          key: '',
+          expectingKey: object,
+          signal: currentSignal,
+          node,
+          collection,
+        })
+      }
+    },
+    signal
+  )
+  if (wrappers === 0)
+    plan.invalid.push({
+      reason: 'No OTLP resource wrappers found.',
+      offset: 0,
+    })
+  return plan
 }
 
 export type ImportBatch = { body: Blob } | { issue: ScanIssue }
+
+export type FirstOTLPRecord = { signal: ImportSignal; body: Blob }
+
+/** Keep the first record's exact bytes and enclosing resource/scope metadata. */
+export function firstOTLPRecord(
+  file: Blob,
+  plan: ImportPlan
+): FirstOTLPRecord | undefined {
+  let first:
+    | {
+        signal: ImportSignal
+        resource: ResourceRange
+        scope: ResourceRange
+        records: CollectionRange
+        start: number
+      }
+    | undefined
+  for (const signal of ['traces', 'logs', 'metrics'] as const) {
+    for (const resource of plan[signal]) {
+      for (const scopes of resource.collections) {
+        for (const scope of scopes.items) {
+          for (const records of scope.collections) {
+            const start = records.firstItemStart
+            if (start !== undefined && (!first || start < first.start))
+              first = {
+                signal,
+                resource,
+                scope,
+                records,
+                start,
+              }
+          }
+        }
+      }
+    }
+  }
+  if (!first) return
+  const record = first.records.items[0]
+  if (!record || record.start !== first.start) return
+  const path = [first.resource, first.scope, record]
+  // Metric identity excludes points. Retain only its first point so a large
+  // metric does not require materialising its complete payload for navigation.
+  const points = record.collections[0]
+  const point = points?.items[0]
+  if (
+    points?.firstItemStart !== undefined &&
+    point?.start !== points.firstItemStart
+  )
+    return
+  if (point) path.push(point)
+  let body = file.slice(path.at(-1)!.start, path.at(-1)!.end)
+  for (let index = path.length - 2; index >= 0; index--) {
+    const parent = path[index]
+    if (parent.collections.length !== 1) return
+    const collection = parent.collections[0]
+    body = new Blob([
+      file.slice(parent.start, collection.start + 1),
+      body,
+      file.slice(collection.end - 1, parent.end),
+    ])
+  }
+  body = new Blob([`{"${resourceKeys[first.signal]}":[`, body, ']}'], {
+    type: 'application/json',
+  })
+  if (body.size > OTLP_REQUEST_BYTES) return
+  return { signal: first.signal, body }
+}
 
 /** Split only known collection boundaries, copying all surrounding metadata bytes. */
 function* splitResource(

@@ -1,31 +1,11 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import SignalListPageProbe from '@/test/SignalListPageProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-import type { LogSummary } from '@/types/api-types'
-import {
-  beginListUpdate,
-  cancelPendingListUpdates,
-  isLatestListUpdate,
-  resetListUpdateSeqForTests,
-} from '@/components/shared/utils/list-update-seq'
 
 type Item = { id: string; name: string }
-
-function searchResult(id: string, name: string): LogSummary & Item {
-  return {
-    id,
-    logRef: id,
-    name,
-    timestamp: 0n,
-    severityText: '',
-    severityNumber: 0,
-    serviceName: '',
-    bodyPreview: '',
-  }
-}
 
 function renderProbe(
   url: string,
@@ -50,10 +30,6 @@ async function waitForListLoaded() {
 }
 
 describe('createSignalListPage integration', () => {
-  beforeEach(() => {
-    resetListUpdateSeqForTests()
-  })
-
   it('loads the list on mount and exposes sorted items', async () => {
     const items = [
       { id: 'c', name: 'charlie' },
@@ -78,6 +54,55 @@ describe('createSignalListPage integration', () => {
 
     expect(screen.getByTestId('selected-id').textContent).toBe('log-b')
     expect(screen.getByTestId('selected-index').textContent).toBe('1')
+  })
+
+  it('refreshes the submitted list without submitting or clearing the editor draft', async () => {
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
+      | undefined
+    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alfa' }])
+    const submit = vi.fn()
+    const clear = vi.fn()
+    setTestUrl('/logs')
+    renderWithContexts(SignalListPageProbe, {
+      fetchList,
+      onContext: ctx => {
+        page = ctx
+      },
+    })
+    await waitForListLoaded()
+    page!.searchEditorApi = { submit, clear }
+
+    page!.handleRefresh()
+
+    expect(submit).not.toHaveBeenCalled()
+    expect(clear).not.toHaveBeenCalled()
+    expect(fetchList).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes the list when no search editor is attached', async () => {
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
+      | undefined
+    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alfa' }])
+    setTestUrl('/logs')
+    renderWithContexts(SignalListPageProbe, {
+      fetchList,
+      onContext: ctx => {
+        page = ctx
+      },
+    })
+    await waitForListLoaded()
+
+    page!.handleRefresh()
+
+    await vi.waitFor(() => expect(fetchList).toHaveBeenCalledTimes(2))
   })
 
   it('does not clobber a shared-link id before the list finishes loading', async () => {
@@ -159,12 +184,10 @@ describe('createSignalListPage integration', () => {
     await waitForListLoaded()
 
     const slowFetch = page!.runListFetch()
-    const searchSeq = beginListUpdate('logs')
-    page!.handleSearchResults({
-      signal: 'logs',
-      updateSeq: searchSeq,
-      results: [searchResult('search-only', 'search-only')],
-    })
+    fetchList.mockResolvedValueOnce([
+      { id: 'search-only', name: 'search-only' },
+    ])
+    await page!.runListFetch()
     await tick()
 
     expect(screen.getByTestId('item-ids').textContent).toBe('search-only')
@@ -207,13 +230,9 @@ describe('createSignalListPage integration', () => {
     })
     await waitForListLoaded()
 
-    const staleSearchSeq = beginListUpdate('logs')
+    const staleSearch = page!.runListFetch()
+    const resolveSearch = resolveSlowFetch
     const slowFetch = page!.runListFetch()
-    page!.handleSearchResults({
-      signal: 'logs',
-      updateSeq: staleSearchSeq,
-      results: [searchResult('stale-search', 'stale')],
-    })
     await tick()
 
     expect(screen.getByTestId('item-ids').textContent).toBe('a')
@@ -223,25 +242,10 @@ describe('createSignalListPage integration', () => {
       { id: 'y', name: 'yankee' },
     ])
     await slowFetch
+    resolveSearch([{ id: 'stale-search', name: 'stale' }])
+    await staleSearch
     await tick()
 
     expect(screen.getByTestId('item-ids').textContent).toBe('x,y')
-  })
-
-  it("does not let one signal's list update invalidate another signal's seq", () => {
-    const logsSeq = beginListUpdate('logs')
-    beginListUpdate('metrics')
-
-    expect(isLatestListUpdate('logs', logsSeq)).toBe(true)
-  })
-
-  it('cancelPendingListUpdates invalidates in-flight ops for that signal only', () => {
-    const logsSeq = beginListUpdate('logs')
-    const metricsSeq = beginListUpdate('metrics')
-
-    cancelPendingListUpdates('logs')
-
-    expect(isLatestListUpdate('logs', logsSeq)).toBe(false)
-    expect(isLatestListUpdate('metrics', metricsSeq)).toBe(true)
   })
 })

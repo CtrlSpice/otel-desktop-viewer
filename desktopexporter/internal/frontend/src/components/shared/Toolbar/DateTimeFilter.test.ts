@@ -30,9 +30,12 @@ describe('DateTimeFilter', () => {
     expect(
       screen.getByRole('button', { name: /Change time range/i })
     ).toBeInTheDocument()
+    expect(
+      screen.queryByText('Time range', { exact: true })
+    ).not.toBeInTheDocument()
   })
 
-  it('renders the popover body with presets, custom range, timezone, and recents', async () => {
+  it('renders presets, custom range, and timezone without recent ranges', async () => {
     renderComponent()
     await tick()
     const popover = getPopover()
@@ -41,9 +44,39 @@ describe('DateTimeFilter', () => {
     expect(
       screen.getByRole('toolbar', { name: 'Time range presets' })
     ).toBeInTheDocument()
-    expect(popover).toHaveTextContent('Custom Range')
+    expect(popover).not.toHaveTextContent('Custom Range')
+    expect(screen.getByLabelText('Start')).toBeVisible()
+    expect(screen.getByLabelText('End')).toBeVisible()
     expect(popover).toHaveTextContent('Timezone')
-    expect(popover).toHaveTextContent('Recent')
+    expect(popover).not.toHaveTextContent('Recent')
+  })
+
+  it('updates the compact tooltip without changing the exact selected range', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-16T04:59:50Z'))
+    localStorage.setItem('time-tz', 'America/New_York')
+    const start = Date.parse('2026-01-15T15:00:00.123Z')
+    const end = Date.parse('2026-01-15T16:30:00.456Z')
+    setTestUrl(`/traces?start=${start}&end=${end}`)
+    renderWithContexts(DateTimeFilter)
+    await tick()
+
+    const trigger = screen.getByRole('button', { name: /Change time range/i })
+    const exactLabel =
+      'Change time range, 2026-01-15, 10:00:00.123 - 2026-01-15, 11:30:00.456 EST'
+    expect(trigger).toHaveTextContent(/^$/)
+    expect(trigger).toHaveAccessibleName(exactLabel)
+    expect(trigger.getAttribute('data-tip')?.replace(/\s+/g, ' ')).toBe(
+      'Change time range, Today, 10:00 – 11:30'
+    )
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    await tick()
+    expect(trigger.getAttribute('data-tip')?.replace(/\s+/g, ' ')).toBe(
+      'Change time range, Jan 15, 10:00 – 11:30'
+    )
+    expect(trigger).toHaveAccessibleName(exactLabel)
+    expect(window.location.search).toBe(`?start=${start}&end=${end}`)
   })
 
   it('opens the popover and applies a preset selection end-to-end', async () => {
@@ -60,7 +93,7 @@ describe('DateTimeFilter', () => {
       expect(trigger).toHaveAttribute('aria-expanded', 'true')
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 5m' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Last 5 min' }))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toEqual({
@@ -70,6 +103,8 @@ describe('DateTimeFilter', () => {
     await waitFor(() =>
       expect(trigger).toHaveAttribute('aria-expanded', 'false')
     )
+    expect(trigger).toHaveAttribute('data-tip', 'Change time range, Last 5 min')
+    expect(trigger).toHaveAccessibleName('Change time range, Last 5 min')
   })
 
   it('closes when All is clicked while All is already selected', async () => {

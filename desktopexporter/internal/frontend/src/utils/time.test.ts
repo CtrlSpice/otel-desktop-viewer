@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatDurationParts,
   formatSignedDuration,
+  formatRelativeTime,
   formatEditableDateTime,
   formatTimestamp,
   formatTimestampParts,
@@ -184,17 +185,33 @@ describe('formatDurationParts', () => {
     })
   })
 
-  it('formats minute-long durations in seconds', () => {
+  it('formats minute-long durations using standard minute labels', () => {
     expect(formatDurationParts(oneMinuteNs)).toEqual({
-      value: '60.000',
-      unit: 's',
+      value: '1',
+      unit: 'minute',
+    })
+    expect(formatDurationParts(318n * oneSecondNs)).toEqual({
+      value: '5.3',
+      unit: 'minutes',
+    })
+    expect(formatDurationParts(1_269_508_000_000n)).toEqual({
+      value: '21.2',
+      unit: 'minutes',
     })
   })
 
-  it('formats hour-long durations in seconds', () => {
+  it('formats hour-long durations using standard hour labels', () => {
     expect(formatDurationParts(oneHourNs)).toEqual({
-      value: '3600.000',
-      unit: 's',
+      value: '1',
+      unit: 'hour',
+    })
+    expect(formatDurationParts(90n * oneMinuteNs)).toEqual({
+      value: '1.5',
+      unit: 'hours',
+    })
+    expect(formatDurationParts(48n * oneHourNs)).toEqual({
+      value: '48',
+      unit: 'hours',
     })
   })
 
@@ -226,6 +243,37 @@ describe('formatSignedDuration', () => {
     expect(formatSignedDuration(-oneSecondNs)).toBe('-1.000 s')
     expect(formatSignedDuration(oneMsNs)).toBe('+1.000 ms')
     expect(formatSignedDuration(0n)).toBe('+0 ns')
+  })
+})
+
+describe('formatRelativeTime', () => {
+  const now = 1_800_000_000_000_000_000n
+
+  it.each([
+    [0n, 'just now'],
+    [-59_999_999_999n, 'just now'],
+    [-60_000_000_000n, '1 minute ago'],
+    [-300_000_000_000n, '5 minutes ago'],
+    [-3_599_999_999_999n, '59 minutes ago'],
+    [-3_600_000_000_000n, '1 hour ago'],
+    [-86_400_000_000_000n, '1 day ago'],
+    [-604_800_000_000_000n, '1 week ago'],
+    [-2_592_000_000_000_000n, '1 month ago'],
+    [-31_536_000_000_000_000n, '1 year ago'],
+    [1n, 'in less than a minute'],
+    [60_000_000_000n, 'in 1 minute'],
+    [300_000_000_000n, 'in 5 minutes'],
+    [604_800_000_000_000n, 'in 1 week'],
+  ])('formats the signed offset %s as %s', (offset, expected) => {
+    expect(formatRelativeTime(now + offset, now)).toBe(expected)
+  })
+
+  it('compares bigint timestamps before converting the display count', () => {
+    const largeNow = 18_446_744_073_709_551_615n
+    expect(formatRelativeTime(largeNow - 60_000_000_000n, largeNow)).toBe(
+      '1 minute ago'
+    )
+    expect(formatRelativeTime(0n, now)).toBe('57 years ago')
   })
 })
 
@@ -366,6 +414,44 @@ describe('formatDateTimeRangeLabel', () => {
     )
     expect(formatted).toContain('01:30:00.000 EST')
     expect(formatted).toContain('03:30:00.000 EDT')
+  })
+
+  it.each([
+    ['2026-08-02T07:00:00Z', '2026-11-12T23:55:38Z', 'Aug 2 – Nov 12'],
+    [
+      '2025-12-31T23:00:00Z',
+      '2026-01-01T01:00:00Z',
+      'Dec 31, 2025 – Jan 1, 2026',
+    ],
+    ['2025-01-15T07:00:00Z', '2025-01-16T08:30:00Z', 'Jan 15 – 16, 2025'],
+  ])(
+    'keeps compact range years unambiguous: %s to %s',
+    (start, end, expected) => {
+      const formatted = formatDateTimeRangeLabel(
+        Date.parse(start),
+        Date.parse(end),
+        'UTC',
+        { style: 'compact', now: Date.parse('2026-11-12T23:59:00Z') }
+      )
+      expect(formatted.replace(/\s+/g, ' ')).toBe(expected)
+    }
+  )
+
+  it('uses the selected timezone for Today and changes it at local midnight', () => {
+    const start = Date.parse('2026-01-16T00:00:00Z')
+    const end = Date.parse('2026-01-16T01:30:00Z')
+    expect(
+      formatDateTimeRangeLabel(start, end, newYork, {
+        style: 'compact',
+        now: Date.parse('2026-01-16T04:59:59Z'),
+      }).replace(/\s+/g, ' ')
+    ).toBe('Today, 19:00 – 20:30')
+    expect(
+      formatDateTimeRangeLabel(start, end, newYork, {
+        style: 'compact',
+        now: Date.parse('2026-01-16T05:00:00Z'),
+      }).replace(/\s+/g, ' ')
+    ).toBe('Jan 15, 19:00 – 20:30')
   })
 })
 

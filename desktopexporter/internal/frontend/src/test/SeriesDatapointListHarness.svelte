@@ -3,8 +3,8 @@
   import {
     createMetricViewContext,
     type MetricViewContext,
-  } from '@/contexts/metric-view-context.svelte'
-  import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
+  } from '@/features/metrics/metric-view-context.svelte'
+  import SeriesDatapointList from '@/features/metrics/Detail/SeriesDatapointList.svelte'
   import type { DataPoint, MetricViewData } from '@/types/api-types'
 
   type Props = {
@@ -73,7 +73,11 @@
   untrack(() => oncontext?.(ctx))
 
   $effect(() => {
-    if (expandDatapointID) ctx.expandedDatapoints.add(expandDatapointID)
+    const point = datapoints.find(dp => dp.id === expandDatapointID)
+    if (point)
+      untrack(() => {
+        if (ctx.selectedDatapointID !== point.id) ctx.onDatapointClick(point)
+      })
   })
 </script>
 

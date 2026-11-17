@@ -36,8 +36,8 @@ func TestCancellationIsNotAnInternalError(t *testing.T) {
 				spans.ErrSpansStoreInternal, context.Canceled),
 		},
 		{
-			name: "dictionary interrupt restored as cancellation",
-			err: fmt.Errorf("dictionary flush attributes: %w: %w", ingest.ErrIngestInternal,
+			name: "catalogue interrupt restored as cancellation",
+			err: fmt.Errorf("catalogue write: %w: %w", ingest.ErrNotRowFault,
 				errors.Join(context.Canceled, &duckdb.Error{Type: duckdb.ErrorTypeInterrupt, Msg: "Interrupted!"})),
 		},
 	}

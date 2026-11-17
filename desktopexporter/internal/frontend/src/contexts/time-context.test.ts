@@ -11,6 +11,7 @@ import {
 import { loadRecentTimeRanges, normalizeTimezone } from '@/utils/time'
 import TimeProbe from '@/test/TimeProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import { navigate, parseRoute } from '@/route'
 
 /** Renders the probe and returns the live time context it captured. */
 function renderProbe(): TimeContext {
@@ -420,6 +421,47 @@ describe('time context external URL adoption', () => {
 })
 
 describe('time context own-write echo', () => {
+  it('keeps live presets across ordinary signal and item navigation', async () => {
+    setTestUrl('/traces')
+    const context = renderProbe()
+    context.setSelection({ type: 'preset', durationMs: 300_000 })
+    await tick()
+    const query = window.location.search
+    const writtenAt = Number(new URLSearchParams(query).get('end'))
+    for (const path of ['/logs', '/logs/one', '/metrics', '/traces']) {
+      navigate(path + query)
+      await tick()
+      expect(context.selection).toEqual({ type: 'preset', durationMs: 300_000 })
+      expect(
+        selectionToQueryRangeMs(context.selection, writtenAt + 300_000)
+      ).toEqual({
+        startTime: writtenAt,
+        endTime: writtenAt + 300_000,
+      })
+    }
+  })
+
+  it('adopts an exact reading equal to the picker snapshot without changing the saved preset', async () => {
+    setTestUrl('/')
+    const context = renderProbe()
+    context.setSelection({ type: 'preset', durationMs: 300_000 })
+    await tick()
+    const saved = localStorage.getItem('time-selection')
+    const destination = '/logs' + window.location.search
+    const query = parseRoute(destination).query
+    context.adoptUrlWindow(query)
+    navigate(destination)
+    await tick()
+    expect(
+      selectionToQueryRangeMs(context.selection, Number(query.end) + 161)
+    ).toEqual({
+      startTime: Number(query.start),
+      endTime: Number(query.end),
+    })
+    expect(context.selection.type).toBe('custom')
+    expect(localStorage.getItem('time-selection')).toBe(saved)
+  })
+
   it('does not re-adopt the URL window it just wrote as an external change', async () => {
     setTestUrl('/traces')
     const context = renderProbe()

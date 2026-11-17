@@ -1,0 +1,7 @@
+{{goal}}
+
+Executable: {{binary}}
+Endpoint: {{endpoint}}
+Time window: {{start}} through {{end}}, inclusive.
+
+The viewer is already running. Do not start, stop or reconfigure viewers. Keep scratch files inside your assigned temporary working directory. Work independently.

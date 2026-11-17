@@ -136,7 +136,7 @@ func TestSearchTraceSummariesNullableTimeRangesExecute(t *testing.T) {
 		span.SetEndTimestamp(pcommon.Timestamp(timestamp + 10))
 	}
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 
 	start, end := uint64(200), uint64(200)
@@ -179,7 +179,7 @@ func TestSearchTraceSummariesDurationExact(t *testing.T) {
 	span.SetStartTimestamp(1)
 	span.SetEndTimestamp(pcommon.Timestamp(duration + 1))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 
 	// This is the JSON-shaped condition emitted by the frontend service.
@@ -277,7 +277,7 @@ func TestSearchTraceSummariesFiltersSelectWholeTracesAndAnnotateMatches(t *testi
 	addSpan("service-a", "0000000000000003", "0000000000000001", "outside error", 50, 80, ptrace.StatusCodeError)
 	addSpan("service-b", "0000000000000004", "0000000000000001", "outside match", 400, 450, ptrace.StatusCodeOk)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, data)
 	}))
 
 	query := &search.QueryNode{
@@ -335,7 +335,7 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	assert.NoError(t, err, "failed to ingest spans")
 
@@ -366,7 +366,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -414,7 +414,7 @@ func TestEmptySpans(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, ptrace.NewTraces(), s.FlushedIDs())
+		return spans.Ingest(ctx, conn, ptrace.NewTraces())
 	})
 	assert.NoError(t, err)
 
@@ -422,15 +422,14 @@ func TestEmptySpans(t *testing.T) {
 	assert.Empty(t, summaries)
 }
 
-// TestClearTraces verifies the two-step delete contract: Clear removes owners
-// and children, then SweepOrphans removes unreferenced shared dictionary rows.
+// TestClearTraces verifies that clearing spans and children removes their payloads.
 func TestClearTraces(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	assert.NoError(t, err)
 
@@ -439,14 +438,11 @@ func TestClearTraces(t *testing.T) {
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
 
-	// Snapshot the dictionary so the post-Clear assertion is "unchanged", not
-	// merely "non-empty" -- a Clear that deleted some but not all attribute rows
-	// would slip past a non-empty check.
-	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
+	// Confirm the fixture carries attributes before removing its rows.
+	attrsBefore := countRows(t, s, ctx, "select sum(len(variant_keys(attributes))) from spans")
 	assert.Greater(t, attrsBefore, 0)
 	assert.Greater(t, countRows(t, s, ctx, `
-		select count(*) from spans s, unnest(s.attribute_ids) t(id)
-		join attributes a on a.id = t.id`), 0)
+		select count(*) from spans s, unnest(variant_keys(s.attributes)) t(key)`), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return spans.Clear(ctx, db)
@@ -459,21 +455,11 @@ func TestClearTraces(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
 
-	// The dictionary, resources and scopes are untouched by Clear.
-	assert.Equal(t, attrsBefore, countRows(t, s, ctx, "select count(*) from attributes"),
-		"Clear must not delete attribute rows: they are shared with logs and metrics")
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from resources"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from scopes"), 0)
-
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"))
 
 	// Spans were the only signal ingested, so after the sweep nothing is
 	// referenced and the three tables empty out completely.
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
 
 // getTraceTraceID returns the trace ID from GetTraceView JSON (traceID in response is hex string).
@@ -520,7 +506,7 @@ func TestTraceSuite(t *testing.T) {
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	assert.NoError(t, err, "failed to ingest test trace")
 
@@ -622,7 +608,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	assert.NoError(t, err, "failed to ingest test trace")
 
@@ -681,7 +667,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 			Query: &search.Query{
 				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
-				Value:         "root-event",
+				Value:         "root-event-1", // untargeted FTS matches tokens, not substrings
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -1263,16 +1249,15 @@ func TestSearchTraceSummaries(t *testing.T) {
 	})
 }
 
-// TestIngestSpans_LargeBatchStaysConsistent verifies owner arrays resolve in the
-// dictionary for a batch larger than the flush interval.
+// TestIngestSpans_LargeBatchStaysConsistent checks owned payloads across Arrow chunks.
 func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
-	const batchSize = spans.FlushInterval + 1
+	const batchSize = 8193
 	traces := createTestTracesPdataN(batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	assert.NoError(t, err)
 
@@ -1283,18 +1268,14 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
 
-	// Sample the first span, the last one before the mid-batch flush, and the
-	// first one after it -- the boundary is where a split-brain would show.
+	// Sample the first span and both sides of a 2048-row Arrow scan chunk.
 	// SpanID for index i is stored as the native integer i+1.
-	//
-	// Join attribute_ids to the dictionary so dangling IDs fail the assertion.
-	for _, spanIndex := range []int{0, spans.FlushInterval - 1, spans.FlushInterval} {
+	for _, spanIndex := range []int{0, 2047, 2048, batchSize - 1} {
 		spanID := fmt.Sprintf("%d", spanIndex+1)
 		attrCount := countRows(t, s, ctx, `
 			select count(*)
-			from (select unnest(attribute_ids) as id from spans where span_id = ?::ubigint) x
-			join attributes a on a.id = x.id
-			where a.key in ('span.index', 'flush_test')
+			from spans, unnest(variant_keys(attributes)) a(key)
+			where span_id = ?::ubigint and a.key in ('span.index', 'flush_test')
 		`, spanID)
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
@@ -1303,18 +1284,12 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	span1ID := "1"
 	resAttr := countRows(t, s, ctx, `
 		select count(*)
-		from spans s
-		join resources r on r.id = s.resource_id
-		join (select id, key from attributes) a
-		  on list_contains(r.attribute_ids, a.id)
+		from spans s, unnest(variant_keys(s.resource.attributes)) a(key)
 		where s.span_id = ?::ubigint
 	`, span1ID)
 	scopeAttr := countRows(t, s, ctx, `
 		select count(*)
-		from spans s
-		join scopes sc on sc.id = s.scope_id
-		join (select id, key from attributes) a
-		  on list_contains(sc.attribute_ids, a.id)
+		from spans s, unnest(variant_keys(s.scope.attributes)) a(key)
 		where s.span_id = ?::ubigint
 	`, span1ID)
 	assert.GreaterOrEqual(t, resAttr, 1)
@@ -1331,11 +1306,11 @@ func TestIngest_CanceledContext(t *testing.T) {
 	var rejected ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
 		var err error
-		rejected, err = spans.IngestReport(ctx, conn, createTestTracesPdataN(1), s.FlushedIDs())
+		rejected, err = spans.IngestReport(ctx, conn, createTestTracesPdataN(1))
 		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -1350,7 +1325,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
 			var err error
-			rejected, err = spans.IngestReport(ctx, conn, traces, s.FlushedIDs())
+			rejected, err = spans.IngestReport(ctx, conn, traces)
 			return err
 		})
 	}()
@@ -1358,7 +1333,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, rejected)
+	assert.Zero(t, rejected.Count())
 }
 
 // TestGetTraceViewWith32CharHexTraceID verifies that GetTraceView finds a trace when given the 32-char hex form (no hyphens).
@@ -1368,7 +1343,7 @@ func TestGetTraceViewWith32CharHexTraceID(t *testing.T) {
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	require.NoError(t, err)
 
@@ -1388,7 +1363,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	assert.NoError(t, err)
 
@@ -1397,7 +1372,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
 
-	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
+	attrsBefore := countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))")
 	assert.Greater(t, attrsBefore, 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
@@ -1410,19 +1385,11 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
 
-	// Same two-step contract as TestClearTraces: deleting the owners strands the
-	// dictionary rows, and only the sweep may reclaim them. See the comment
-	// there for why the delete path cannot make that call itself.
-	assert.Equal(t, attrsBefore, countRows(t, s, ctx, "select count(*) from attributes"),
-		"DeleteSpansByTraceIDs must leave the dictionary alone")
+	// Deleting spans removes their attributes immediately.
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"),
+		"attributes are removed with their spans")
 
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
-
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
+	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -1693,7 +1660,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	traces, _, _, _ := buildTracesForSummaryOrdering(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	})
 	require.NoError(t, err)
 
@@ -1703,12 +1670,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
 			select count(*) from spans s
-			join resources r on r.id = s.resource_id
-			where s.service_name <> coalesce((
-				select json_extract_string(a.value, '$.value')
-				from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
-				where a.key = 'service.name'
-			), '')
+			where s.service_name <> coalesce(s.resource.attributes['service.name']::varchar, '')
 		`).Scan(&mismatches)
 	}))
 	assert.Equal(t, 0, mismatches,
@@ -1719,7 +1681,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	var joined int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
-			select count(*) from spans s join resources r on r.id = s.resource_id
+			select count(*) from spans s where s.resource is not null
 		`).Scan(&joined)
 	}))
 	assert.Equal(t, countRows(t, s, ctx, "select count(*) from spans"), joined,
@@ -1748,16 +1710,13 @@ func TestSchemaURLsAreStored(t *testing.T) {
 	span.SetSpanID(pcommon.SpanID([8]byte{2}))
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	var gotRes, gotScope string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(
-			`select r.schema_url, sc.schema_url
-			 from spans sp
-			 join resources r on r.id = sp.resource_id
-			 join scopes sc on sc.id = sp.scope_id`,
+			`select resource.schema_url, scope.schema_url from spans`,
 		).Scan(&gotRes, &gotScope)
 	}))
 	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")
@@ -1842,7 +1801,7 @@ func TestGetTraceViewReportsUnplacedSpans(t *testing.T) {
 	add(traces, cycleWithEarlyChild, "0000000000000062", "0000000000000061", 20)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	type placement struct {
@@ -2049,7 +2008,7 @@ func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
 	link.SetFlags(linkFlags)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -2107,7 +2066,7 @@ func TestSearchTraceSummariesByFlags(t *testing.T) {
 	sp2.SetEndTimestamp(2000)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+		return spans.Ingest(ctx, conn, traces)
 	}))
 
 	run := func(fieldName string, value string) []map[string]any {

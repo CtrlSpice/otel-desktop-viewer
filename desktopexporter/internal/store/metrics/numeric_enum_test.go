@@ -52,7 +52,7 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 	gaugeDP.SetTimestamp(9)
 	gaugeDP.SetIntValue(9)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, data)
 	}))
 
 	var count, distinctCodes int

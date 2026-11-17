@@ -25,7 +25,7 @@ func TestLogScalarMembershipExecution(t *testing.T) {
 	records.At(1).Attributes().PutInt("same.key", 42)
 	records.At(0).Attributes().PutEmptySlice("received.array").AppendEmpty().SetStr("value")
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+		return logs.Ingest(ctx, conn, data)
 	}))
 
 	searchCount := func(field *search.FieldDefinition, operator, value string) (int, error) {

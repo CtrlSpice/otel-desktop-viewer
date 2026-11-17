@@ -3,29 +3,19 @@ version: 2
 partial:
   by: target
 
+git:
+  ignore_tag_prefixes:
+    - checkpoint/
+
 env:
   - CGO_ENABLED=1
+  - EVALS=0
 
 before:
   hooks:
     - cmd: go mod tidy
 
 builds:
-  - id: macos_amd64
-    binary: otel-desktop-viewer
-    goos: 
-      - darwin
-    goarch:
-      - amd64
-    # Reproducible binary timestamp.
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    # Remove local file paths from the binary.
-    flags:
-      - -trimpath
-    # Strip debug info and inject build metadata.
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
-
   - id: macos_arm64
     binary: otel-desktop-viewer
     goos: 
@@ -77,7 +67,6 @@ builds:
 archives:
   - id: otel-desktop-viewer-archive
     ids:
-      - macos_amd64
       - macos_arm64
       - linux_amd64
       - linux_arm64
@@ -92,7 +81,6 @@ archives:
   # Homebrew excludes Windows.
   - id: homebrew-archive
     ids:
-      - macos_amd64
       - macos_arm64
       - linux_amd64
       - linux_arm64
@@ -113,6 +101,7 @@ nfpms:
       - deb
       - rpm
     vendor: CtrlSpice
+    maintainer: CtrlSpice <amelia.ardath@gmail.com>
     homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
     description: "CLI tool for receiving OpenTelemetry traces, metrics, and logs on your local machine."
     license: Apache-2.0
@@ -138,20 +127,22 @@ changelog:
 
 release:
   name_template: "v{{ .Version }}"
-  # Update the second paragraph when release schema compatibility changes.
+  # Update the schema number and available migration steps for each release.
   header: |
     ## Before you upgrade
 
-    The store keeps a schema version and will not open a database written by a
-    different one. It says so and stops, naming the file and what to do:
-    delete it, or pass a different `--db`. Nothing is migrated and nothing is
-    silently reinterpreted.
+    At startup, the viewer checks the database schema. Supported forward upgrades
+    run in one transaction. Unsupported versions or invalid schema metadata stop
+    startup without resetting the database.
 
-    **This release crosses that line from 0.4.x.** Databases written by 0.4.x
-    will not open. If you run with `--db` and want to keep looking at what is
-    in there, keep a 0.4.x binary around; otherwise delete the file and let
-    0.5.0 make a new one. Running without `--db` is unaffected, since that is
-    in-memory and starts empty every time.
+    **This release uses schema 27, the automatic-upgrade baseline.** It includes no
+    production migration steps. Pre-27 databases and databases newer than schema 27
+    cannot open. To keep viewing an older database, use its original binary.
+    Start this release with a new `--db` path to keep the older file intact.
+    Running without `--db` is unaffected: it starts with an empty in-memory store.
+
+    Public releases exclude Evals. Source builds can include it with
+    `make build EVALS=1`; both variants use the same schema.
 
   footer: >-
     ---
@@ -161,7 +152,6 @@ notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       ids:
-        - macos_amd64
         - macos_arm64
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"

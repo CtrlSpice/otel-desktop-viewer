@@ -6,18 +6,39 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded branch runs and serialize setup-go cache writes.
+env:
+  EVALS: '0'
+
+# Cancel superseded runs for the same pull request.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  release-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v7
+    - uses: goreleaser/goreleaser-action@v7
+      with:
+        distribution: goreleaser-pro
+        version: v2.19.0
+        # Legacy Docker publishing remains supported by this pinned release.
+        args: check --soft
+
   build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env: ${{ matrix.env }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         include:
+          - os: ubuntu-latest
+            env:
+              CGO_ENABLED: 1
           - os: windows-latest
             env:
               CGO_ENABLED: 1
@@ -66,9 +87,13 @@ jobs:
       run: go build -o otel-desktop-viewer
       if: matrix.os != 'windows-latest'
 
-    # Include the root CLI package and desktopexporter packages.
+    # Include the internal CLI/Collector and desktopexporter packages.
     - name: Go Tests
       run: go test ./...
+
+    - name: Windows executable smoke
+      if: matrix.os == 'windows-latest'
+      run: ./.github/scripts/smoke-viewer.ps1 -Executable (Resolve-Path ./otel-desktop-viewer.exe).Path
 
   # These source checks need neither CGO nor the platform matrix.
   go-checks:
@@ -95,6 +120,12 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        evals: ['0', '1']
+    env:
+      EVALS: ${{ matrix.evals }}
     defaults:
       run:
         working-directory: desktopexporter/internal/frontend
@@ -112,6 +143,11 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    # Fail before the browser jobs if the committed public bundle is stale.
+    - name: Built assets are current
+      working-directory: ${{ github.workspace }}
+      run: make build-ts-check
+
     # The committed parser must match query.grammar.
     - name: Generated parser matches the grammar
       run: |
@@ -125,7 +161,7 @@ jobs:
       run: npm run check
 
     - name: Type check (Playwright)
-      run: npx tsc --project tsconfig.playwright.json
+      run: npx tsc --project config/tsconfig.playwright.json
 
     - name: Unit tests (Vitest)
       run: npm test
@@ -133,24 +169,129 @@ jobs:
     - name: Format check (Prettier)
       run: npm run format:check
 
+  browser:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        evals: ['0', '1']
+        shard: [1, 2, 3, 4]
+    env:
+      EVALS: ${{ matrix.evals }}
+    defaults:
+      run:
+        working-directory: desktopexporter/internal/frontend
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+    - run: npm ci
     - name: Install Chromium for Playwright
+      timeout-minutes: 15
       run: npx playwright install --with-deps chromium
 
-    - name: Accessibility tests (Playwright and axe)
-      run: npm run test:a11y
+    - name: Browser and accessibility tests
+      run: npm run test:a11y -- --shard=${{ matrix.shard }}/4
 
     - name: Upload Playwright artifacts
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
-        name: playwright-accessibility-report
+        name: playwright-evals-${{ matrix.evals }}-shard-${{ matrix.shard }}
         path: |
           desktopexporter/internal/frontend/playwright-report/
           desktopexporter/internal/frontend/test-results/
         if-no-files-found: ignore
         retention-days: 14
 
-    # The committed bundle must match the frontend sources and lockfile.
-    - name: Built assets are current
-      working-directory: ${{ github.workspace }}
-      run: make build-ts-check
+  embedded-smoke:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-go@v7
+      with:
+        go-version: '1.26'
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+    - run: npm ci
+      working-directory: desktopexporter/internal/frontend
+    - name: Native Variant compatibility in both Evals modes
+      run: npm run test:variant
+      working-directory: desktopexporter/internal/frontend
+    - name: Install Chromium
+      timeout-minutes: 15
+      run: npx playwright install --with-deps chromium
+      working-directory: desktopexporter/internal/frontend
+    - name: Build public executable with committed assets
+      run: go build -o otel-desktop-viewer
+    - name: Exercise embedded UI, ingestion and export
+      run: node desktopexporter/internal/frontend/scripts/smoke-binary.mjs ./otel-desktop-viewer
+
+  evals-runner:
+    # The Pi provider integration test exercises the macOS filesystem sandbox.
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: evals/viewer-usability
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            evals/viewer-usability/package-lock.json
+            desktopexporter/internal/frontend/package-lock.json
+      - name: Install runner dependencies
+        run: npm ci
+      - name: Install presentation dependencies
+        run: npm ci
+        working-directory: desktopexporter/internal/frontend
+      - name: Audit runner dependencies
+        run: npm audit
+      - name: Type check runner
+        run: npm run typecheck
+      - name: Type check presentation
+        run: npm run typecheck:presentation
+      - name: Create offline fixture parent
+        run: |
+          node -e 'require("node:fs").mkdirSync(require("node:os").tmpdir() + "/opencode", { recursive: true })'
+      - name: Local runner and presentation tests
+        run: npm test
+
+  evals-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVALS: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+      - run: npm ci
+        working-directory: desktopexporter/internal/frontend
+      - run: make test-go EVALS=1
+      - name: Public binary excludes Evals implementation
+        run: |
+          go list -deps . > public-dependencies.txt
+          if grep -E '/internal/(evaldecode|store/evals)$|github.com/open-feature/' public-dependencies.txt; then
+            echo 'Public build includes an Evals dependency'
+            exit 1
+          fi

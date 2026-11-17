@@ -46,8 +46,8 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		"HistogramDataPoint.Exemplars":            {"exemplars", "metric_datapoint_id"},
 		"ExponentialHistogramDataPoint.Exemplars": {"exemplars", "metric_datapoint_id"},
 		// Field is plural and prefixed; the column is the ordinary one.
-		"Exemplar.FilteredAttributes":            {"exemplars", "attribute_ids"},
-		"HistogramDataPoint.ExplicitBounds":      {"metric_datapoints", "bounds_id"},
+		"Exemplar.FilteredAttributes":            {"exemplars", "attributes"},
+		"HistogramDataPoint.ExplicitBounds":      {"metric_datapoints", "explicit_bounds"},
 		"ExponentialHistogramDataPoint.Positive": {"metric_datapoints", "positive_bucket_counts"},
 		"ExponentialHistogramDataPoint.Negative": {"metric_datapoints", "negative_bucket_counts"},
 		// The oneof carrying a metric's datapoints. Not a field in its own
@@ -157,8 +157,6 @@ func TestSchemaCoversOTLP(t *testing.T) {
 					strings.TrimSuffix(n, "_unix_nano"),
 					strings.ReplaceAll(n, "timestamp", "time"),
 					n + "_ids", n + "_id", n + "_count",
-					// Attributes -> attribute_ids: field plural, column singular.
-					strings.TrimSuffix(n, "s") + "_ids",
 				}
 				found := false
 				for _, c := range candidates {

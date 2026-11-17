@@ -40,13 +40,15 @@ func TestNativeUnsignedColumnTypesAndNullability(t *testing.T) {
 		{"spans", "parent_span_id", "UBIGINT", "YES"},
 		{"spans", "start_time", "UBIGINT", "YES"},
 		{"spans", "end_time", "UBIGINT", "YES"},
-		{"events", "id", "UUID", "NO"},
-		{"events", "trace_id", "UUID", "NO"},
-		{"events", "span_id", "UBIGINT", "NO"},
+		// DuckDB reports projected view columns as nullable; owner identity
+		// constraints are enforced on the owning tables.
+		{"events", "id", "UUID", "YES"},
+		{"events", "trace_id", "UUID", "YES"},
+		{"events", "span_id", "UBIGINT", "YES"},
 		{"events", "timestamp", "UBIGINT", "YES"},
-		{"links", "id", "UUID", "NO"},
-		{"links", "trace_id", "UUID", "NO"},
-		{"links", "span_id", "UBIGINT", "NO"},
+		{"links", "id", "UUID", "YES"},
+		{"links", "trace_id", "UUID", "YES"},
+		{"links", "span_id", "UBIGINT", "YES"},
 		{"links", "linked_trace_id", "UUID", "YES"},
 		{"links", "linked_span_id", "UBIGINT", "YES"},
 		{"logs", "id", "UUID", "NO"},
@@ -56,8 +58,8 @@ func TestNativeUnsignedColumnTypesAndNullability(t *testing.T) {
 		{"logs", "observed_timestamp", "UBIGINT", "YES"},
 		{"metric_datapoints", "timestamp", "UBIGINT", "YES"},
 		{"metric_datapoints", "start_time", "UBIGINT", "YES"},
-		{"exemplars", "id", "UUID", "NO"},
-		{"exemplars", "metric_datapoint_id", "UUID", "NO"},
+		{"exemplars", "id", "UUID", "YES"},
+		{"exemplars", "metric_datapoint_id", "UUID", "YES"},
 		{"exemplars", "trace_id", "UUID", "YES"},
 		{"exemplars", "span_id", "UBIGINT", "YES"},
 		{"exemplars", "timestamp", "UBIGINT", "YES"},
@@ -121,27 +123,20 @@ func TestSpanIDWireMacro(t *testing.T) {
 	require.False(t, null.Valid)
 }
 
-// The wire format keys resources and scopes by seq, so the sequence defaults
-// have to actually fire on insert.
-func TestSequencesAssignShortKeys(t *testing.T) {
+func TestSignalsOwnNativePayloads(t *testing.T) {
 	db := freshDB(t)
-
-	_, err := db.Exec(`insert into attributes values
-		('11111111-1111-1111-1111-111111111111','service.name','{"kind":"string","value":"checkout"}')`)
-	require.NoError(t, err)
-
-	for _, id := range []string{
-		"22222222-2222-2222-2222-222222222222",
-		"33333333-3333-3333-3333-333333333333",
-	} {
-		_, err = db.Exec(`insert into resources (id, payload_id, attribute_ids)
-			values (?::uuid, gen_random_uuid(), ['11111111-1111-1111-1111-111111111111']::uuid[])`, id)
-		require.NoError(t, err)
+	var obsolete int
+	require.NoError(t, db.QueryRow(`select count(*) from duckdb_tables()
+		where table_name in ('attributes','resources','scopes')`).Scan(&obsolete))
+	require.Zero(t, obsolete)
+	for _, table := range []string{"spans", "logs", "metrics", "metric_datapoints"} {
+		for _, column := range []string{"resource", "scope"} {
+			var typ string
+			require.NoError(t, db.QueryRow(`select data_type from duckdb_columns()
+				where table_name=? and column_name=?`, table, column).Scan(&typ))
+			require.Contains(t, typ, "attributes VARIANT", table+"."+column)
+		}
 	}
-
-	var a, b int
-	require.NoError(t, db.QueryRow(`select min(seq), max(seq) from resources`).Scan(&a, &b))
-	require.NotEqual(t, a, b, "each resource must get its own wire key")
 }
 
 // DuckDB cannot index a LIST directly. Casting the complete list to VARCHAR is

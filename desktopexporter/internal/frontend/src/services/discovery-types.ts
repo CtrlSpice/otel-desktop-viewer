@@ -1,0 +1,165 @@
+import type { AttributeValue } from '@/types/api-types'
+import type { HomeQueries } from '@/features/home/home-search'
+
+export const SIGNAL_ORDER = ['traces', 'metrics', 'logs'] as const
+export type DiscoverySignal = (typeof SIGNAL_ORDER)[number]
+export type DiscoveryOwner =
+  | 'resource'
+  | 'scope'
+  | 'span'
+  | 'event'
+  | 'link'
+  | 'log'
+  | 'datapoint'
+  | 'exemplar'
+  | 'metadata'
+export type DiscoveryOptions = {
+  kind:
+    | 'services'
+    | 'keys'
+    | 'connections'
+    | 'connection-spans'
+    | 'home-values'
+    | 'home-value'
+  signal?: DiscoverySignal
+  ownerType?: DiscoveryOwner
+  serviceName?: string
+  namespace?: string
+  serviceIdentity?: string
+  targetIdentity?: string
+  key?: string
+  term?: string
+  startTime?: string | null
+  endTime?: string | null
+  offset?: number
+  limit?: number
+  sortBy?: 'name' | 'frequency'
+  sortDirection?: 'asc' | 'desc'
+  queries?: HomeQueries
+  valueKind?: string
+  valueRef?: string
+  locale?: string
+}
+export type ServiceSummary = {
+  serviceColorKey?: string
+  labelsComplete?: boolean
+  serviceName: string
+  serviceNamespace: string
+  serviceIdentity?: string
+  serviceNameKind?: string
+  serviceNamespaceKind?: string
+  traceCount: number
+  spanCount: number
+  errorSpanCount: number
+  logCount: number
+  errorLogCount: number
+  logSeverityCounts: Record<
+    'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'other',
+    number
+  >
+  metricCount: number
+  dataPointCount: number
+  exemplarCount: number
+  lastSeen: string | null
+}
+export type AttributeKey = {
+  key: string
+  kind: string
+  foundOn: { signal: DiscoverySignal; ownerType: DiscoveryOwner }[]
+}
+
+export type ServiceConnection = {
+  source: ServiceSummary
+  target: ServiceSummary
+  spanCount: number
+  traceCount: number
+  errorSpanCount: number
+}
+
+export type ServiceConnectionSpan = {
+  traceID: string
+  spanID: string
+  name: string
+  startTime: string
+  endTime: string
+  statusCode: number
+}
+export type DiscoveryTotals = {
+  home: number
+  traces: number
+  metrics: number
+  logs: number
+}
+export type DiscoveryPage<T> = {
+  items: T[]
+  truncated: boolean
+  totals?: DiscoveryTotals
+}
+
+export type HomeRecordCounts = Record<DiscoverySignal, number>
+export type HomeCoverageValue = {
+  /** Database-scoped exact reference. Never a preview or content hash. */
+  identity: string
+  /** Exact received representative; canonical row identity can span NaN payloads. */
+  valueRef: string
+  kind: AttributeValue['kind']
+  preview: string
+  colorHash: number
+  counts: HomeRecordCounts
+  count: number
+  kindCount: number
+  denominator: number
+  relativeFrequency: number
+  foundOn: AttributeKey['foundOn']
+}
+export type HomeCoveragePage = {
+  values: HomeCoverageValue[]
+  kinds: { kind: string; count: number; counts: HomeRecordCounts }[]
+  denominators: HomeRecordCounts
+  denominator: number
+  total: number
+  truncated: boolean
+}
+
+export function serviceIdentity(service: ServiceSummary): string {
+  return (
+    service.serviceIdentity ??
+    JSON.stringify([service.serviceNamespace, service.serviceName])
+  )
+}
+
+export function serviceSignalHref(
+  service: ServiceSummary,
+  signal: DiscoverySignal,
+  range: Pick<DiscoveryOptions, 'startTime' | 'endTime'> = {},
+  query = ''
+): string {
+  return discoverySignalHref(signal, range, serviceQueryText(service, query))
+}
+
+export function serviceQueryText(service: ServiceSummary, query = ''): string {
+  const match = (key: string, value: string) => {
+    const field = `resource.attributes[${JSON.stringify(key)}]::VARCHAR`
+    return value === ''
+      ? `(${field} = "" OR ${field} IS NULL)`
+      : `${field} = ${JSON.stringify(value)}`
+  }
+  const serviceQuery =
+    service.serviceIdentity !== undefined
+      ? `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
+      : `${match('service.name', service.serviceName)} AND ${match('service.namespace', service.serviceNamespace)}`
+  return query ? `(${query}) AND ${serviceQuery}` : serviceQuery
+}
+
+export function discoverySignalHref(
+  signal: DiscoverySignal,
+  range: Pick<DiscoveryOptions, 'startTime' | 'endTime'>,
+  q: string
+): string {
+  const params = new URLSearchParams({ q })
+  if (range.startTime && range.endTime) {
+    params.set('start', String(BigInt(range.startTime) / 1_000_000n))
+    params.set('end', String(BigInt(range.endTime) / 1_000_000n))
+  } else params.set('time', 'all')
+  return `/${signal}?${params}`
+}

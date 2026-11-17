@@ -12,13 +12,19 @@ import { navigate } from '@/route'
 import { setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
 import type { ImportFailure } from '@/types/import-types'
+import { telemetryAPI } from '@/services/telemetry-service'
+import { notifyDataChanged } from '@/test/event-source'
 
 const {
   getStats,
   searchTraceSummaries,
-  searchLogSummaries,
+  getTraceView,
+  getTraceLogSummaries,
+  searchLogPage,
+  getLogErrorNavigation,
   getLog,
   searchMetricSummaries,
+  getMetric,
   getMetricView,
   getTraceAttributeDefinitions,
   getLogAttributeDefinitions,
@@ -26,9 +32,13 @@ const {
 } = vi.hoisted(() => ({
   getStats: vi.fn(),
   searchTraceSummaries: vi.fn(),
-  searchLogSummaries: vi.fn(),
+  getTraceView: vi.fn(),
+  getTraceLogSummaries: vi.fn(),
+  searchLogPage: vi.fn(),
+  getLogErrorNavigation: vi.fn(),
   getLog: vi.fn(),
   searchMetricSummaries: vi.fn(),
+  getMetric: vi.fn(),
   getMetricView: vi.fn(),
   getTraceAttributeDefinitions: vi.fn(),
   getLogAttributeDefinitions: vi.fn(),
@@ -42,11 +52,20 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
+      getServiceCount: vi.fn().mockResolvedValue(0),
+      discoverServices: vi
+        .fn()
+        .mockResolvedValue({ items: [], truncated: false }),
+      getImportConfig: vi.fn().mockResolvedValue({ otlpHttpPort: 4318 }),
       getStats,
       searchTraceSummaries,
-      searchLogSummaries,
+      getTraceView,
+      getTraceLogSummaries,
+      searchLogPage,
+      getLogErrorNavigation,
       getLog,
       searchMetricSummaries,
+      getMetric,
       getMetricView,
       getTraceAttributeDefinitions,
       getLogAttributeDefinitions,
@@ -74,9 +93,22 @@ beforeEach(() => {
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
   searchTraceSummaries.mockResolvedValue([])
-  searchLogSummaries.mockResolvedValue([])
+  getTraceView.mockImplementation(async (traceID: string) => ({
+    traceID,
+    spans: [],
+    unplacedSpanCount: 0,
+  }))
+  getTraceLogSummaries.mockResolvedValue([])
+  searchLogPage.mockResolvedValue({ total: 0, logs: [] })
+  getLogErrorNavigation.mockResolvedValue({
+    count: 0,
+    index: null,
+    previous: null,
+    next: null,
+  })
   getLog.mockResolvedValue(null)
   searchMetricSummaries.mockResolvedValue([])
+  getMetric.mockResolvedValue(null)
   getMetricView.mockResolvedValue(null)
   getTraceAttributeDefinitions.mockResolvedValue([])
   getLogAttributeDefinitions.mockResolvedValue([])
@@ -84,6 +116,82 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('updates navigation counts on commits with Live off while page reads are pending', async () => {
+    setTestUrl('/logs?time=all')
+    searchLogPage.mockImplementationOnce(() => new Promise(() => {}))
+    render(App)
+    const navigation = within(
+      screen.getByRole('navigation', { name: 'Primary' })
+    )
+    await navigation.findByRole('link', { name: 'Logs [0]' })
+    expect(screen.getByRole('button', { name: 'Live' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 7 },
+      logs: { ...EMPTY_STATS.logs, logCount: 8 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 9 },
+    })
+    await notifyDataChanged()
+    await navigation.findByRole('link', { name: 'Logs [8]' })
+    expect(
+      navigation.getByRole('link', { name: 'Traces [7]' })
+    ).toBeInTheDocument()
+    expect(
+      navigation.getByRole('link', { name: 'Metrics [9]' })
+    ).toBeInTheDocument()
+    expect(searchLogPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Live and manual refresh progressing while navigation counts are pending', async () => {
+    setTestUrl('/logs?time=all')
+    render(App)
+    await screen.findByText('No logs match this search and time range.')
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(1))
+    vi.mocked(telemetryAPI.getServiceCount).mockImplementationOnce(
+      () => new Promise<number>(() => {})
+    )
+    await fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(2))
+    for (let calls = 3; calls <= 5; calls++) {
+      notifyDataChanged()
+      await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(calls))
+    }
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(6))
+    expect(telemetryAPI.getServiceCount).toHaveBeenCalledTimes(2)
+  })
+
+  it('publishes available navigation counts without waiting for service counts', async () => {
+    setTestUrl('/traces')
+    vi.mocked(telemetryAPI.getServiceCount).mockImplementationOnce(
+      () => new Promise(() => {})
+    )
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 7 },
+      logs: { ...EMPTY_STATS.logs, logCount: 8 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 9 },
+    })
+    const { unmount } = render(App)
+    const navigation = within(
+      screen.getByRole('navigation', { name: 'Primary' })
+    )
+    await navigation.findByRole('link', { name: 'Traces [7]' })
+    expect(
+      navigation.getByRole('link', { name: 'Logs [8]' })
+    ).toBeInTheDocument()
+    expect(
+      navigation.getByRole('link', { name: 'Metrics [9]' })
+    ).toBeInTheDocument()
+    const signal = vi.mocked(telemetryAPI.getServiceCount).mock.calls[0]![0]!
+    await unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
   it('keeps failed-file counts separate from rejected telemetry in Home Overview', async () => {
     setTestUrl('/')
     const timestamp = BigInt(Date.now()) * 1_000_000n
@@ -118,9 +226,24 @@ describe('App real-page composition', () => {
     const panel = await screen.findByRole('region', {
       name: 'Ingestion issues',
     })
+    await userEvent.click(
+      screen.getByText('Ingestion issues').closest('summary')!
+    )
     expect(within(panel).getByText('1 file')).toBeInTheDocument()
     expect(await within(panel).findByText('2 records')).toBeInTheDocument()
-    expect(within(panel).getByText(/Invalid JSON\./)).toBeInTheDocument()
+    const files = within(panel).getByRole('button', {
+      name: /^File import issues 1 file Last seen /,
+    })
+    const records = within(panel).getByRole('button', {
+      name: /^duplicate span id 2 records Last seen /,
+    })
+    expect(files).toHaveAttribute('aria-expanded', 'false')
+    expect(records).toHaveAttribute('aria-expanded', 'false')
+    expect(within(panel).getByText(/Invalid JSON\./)).not.toBeVisible()
+    await userEvent.click(files)
+    expect(within(panel).getByText(/Invalid JSON\./)).toBeVisible()
+    expect(records).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(records)
     expect(
       within(panel).getByRole('link', { name: '0000000000000001' })
     ).toHaveAttribute(
@@ -177,7 +300,7 @@ describe('App real-page composition', () => {
     })
     expect(within(panel).getByText('example.json')).toBeInTheDocument()
     navigate('/logs')
-    await screen.findByText('No logs in this time range')
+    await screen.findByText('No logs match this search and time range.')
     expect(screen.queryByText('Import issue in example.json.')).toBeNull()
     await view.rerender({
       importFailures: [
@@ -198,7 +321,7 @@ describe('App real-page composition', () => {
   })
 
   it.each([
-    { path: '/logs', fetchList: searchLogSummaries },
+    { path: '/logs', fetchList: searchLogPage },
     { path: '/traces', fetchList: searchTraceSummaries },
     { path: '/metrics', fetchList: searchMetricSummaries },
   ])(
@@ -232,16 +355,18 @@ describe('App real-page composition', () => {
     const importFiles = vi.fn()
     render(App, { importFiles })
     expect(
-      screen.getByRole('button', { name: 'Import files' })
+      screen.getByRole('button', { name: /^Import files\./ })
     ).toBeInTheDocument()
     navigate('/logs')
-    await screen.findByText('No logs in this time range')
-    expect(screen.queryByRole('button', { name: 'Import files' })).toBeNull()
+    await screen.findByText('No logs match this search and time range.')
+    expect(screen.queryByRole('button', { name: /^Import files\./ })).toBeNull()
     const file = new File(['{"resourceLogs":[]}'], 'renamed.json')
     const dataTransfer = { types: ['Files'], files: [file] }
     await fireEvent.dragEnter(window, { dataTransfer })
     expect(
-      screen.getByText('Drop OTLP JSON files to import')
+      screen.getByText(
+        'Drop telemetry or evaluation JSON / JSONL files to import'
+      )
     ).toBeInTheDocument()
     await fireEvent.drop(window, { dataTransfer })
     expect(importFiles).toHaveBeenCalledWith([file])
@@ -252,29 +377,37 @@ describe('App real-page composition', () => {
     setTestUrl('/traces/trace-1')
     render(App)
 
-    await screen.findByText('No traces in this time range')
+    await waitFor(() =>
+      expect(getTraceView).toHaveBeenCalledWith(
+        'trace-1',
+        undefined,
+        expect.any(AbortSignal),
+        expect.any(Array)
+      )
+    )
+    expect(window.location.pathname).toBe('/traces/trace-1')
     expect(searchTraceSummaries).toHaveBeenCalled()
+    navigate('/traces')
+    await screen.findByText('No traces in this time range')
 
     navigate('/metrics/metric-1')
-    await screen.findByText('No metrics in this time range')
+    await screen.findByText('The selected metric was not found.')
     expect(searchMetricSummaries).toHaveBeenCalled()
+    expect(getMetric).toHaveBeenCalledWith('metric-1', expect.any(AbortSignal))
 
     navigate('/logs/log-1')
-    await screen.findByText('No logs in this time range')
-    expect(searchLogSummaries).toHaveBeenCalled()
+    await screen.findByText('No logs match this search and time range.')
+    expect(searchLogPage).toHaveBeenCalled()
 
     navigate('/unknown')
-    await screen.findByRole('heading', {
-      level: 1,
-      name: 'OpenTelemetry Desktop Viewer',
-    })
+    await screen.findByRole('region', { name: 'Service map' })
     expect(getStats).toHaveBeenCalled()
   })
 
   it('preserves focus across repeated master-detail pathname changes', async () => {
     setTestUrl('/metrics/a')
     render(App)
-    await screen.findByText('No metrics in this time range')
+    await screen.findByText('The selected metric was not found.')
     const control = document.createElement('button')
     document.body.appendChild(control)
     control.focus()
@@ -305,7 +438,7 @@ describe('App real-page composition', () => {
     render(App)
     const main = screen.getByRole('main')
     const trigger = await screen.findByRole('button', {
-      name: /change time range/i,
+      name: 'Delete all metrics',
     })
     trigger.focus()
     let oldPageWasDestroyedBeforeFocus: boolean | undefined

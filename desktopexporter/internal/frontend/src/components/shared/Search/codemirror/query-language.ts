@@ -6,13 +6,17 @@ const queryHighlighting = styleTags({
   'FieldName/Word': t.propertyName,
   Operator: t.compareOperator,
   'KeywordOperator/...': t.operatorKeyword,
-  'And Or Limit': t.logicOperator,
-  ModifierPipe: t.operatorKeyword,
+  'And Or': t.logicOperator,
+  'Where Limit': t.keyword,
+  Between: t.operatorKeyword,
+  'AttributeReference/Word': t.propertyName,
+  'TypeAnnotation/Word': t.typeName,
+  TypeSeparator: t.punctuation,
   QuotedString: t.string,
   Word: t.literal,
   Null: t.null,
-  'Array/[ Array/]': t.squareBracket,
-  'Group/( Group/)': t.paren,
+  'PathSegment/[ PathSegment/]': t.squareBracket,
+  'Array/( Array/) Group/( Group/)': t.paren,
 })
 
 export const queryLanguage = LRLanguage.define({

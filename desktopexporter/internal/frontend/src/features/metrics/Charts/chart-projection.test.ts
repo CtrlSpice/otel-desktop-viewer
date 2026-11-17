@@ -1,0 +1,275 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  rateBucketStartForSourceDatapoint,
+  sparklineToChartPoints,
+  timeseriesToChartTimeseries,
+} from './chart-projection'
+import type {
+  GaugeDataPoint,
+  MetricSeriesViewData,
+  SumDataPoint,
+} from '@/types/api-types'
+
+describe('sparklineToChartPoints', () => {
+  it('keeps nanosecond identity and true-or-absent breaks without mutating source samples', () => {
+    const points = Object.freeze([
+      Object.freeze({ timestamp: 1_000_100n, value: 0 }),
+      Object.freeze({
+        timestamp: 1_000_900n,
+        value: 2,
+        breakBefore: true as const,
+      }),
+    ])
+    const projected = sparklineToChartPoints(points)
+    expect(projected.map(point => point.date.getTime())).toEqual([1, 1])
+    expect(projected.map(point => point.timestampNs)).toEqual([
+      1_000_100n,
+      1_000_900n,
+    ])
+    expect(projected[0]).not.toHaveProperty('breakBefore')
+    expect(projected[1]?.breakBefore).toBe(true)
+    expect(sparklineToChartPoints(null)).toEqual([])
+  })
+})
+
+describe('timeseriesToChartTimeseries', () => {
+  it('approximates an exact integer only in the chart projection', () => {
+    const datapoint: GaugeDataPoint = {
+      id: 'integer',
+      timestamp: 1n,
+      timestampMs: 0,
+      startTime: 0n,
+      flags: 0,
+      exemplars: [],
+      metricType: 'Gauge',
+      doubleValue: null,
+      intValue: 9_007_199_254_740_993n,
+      valueType: 'Int',
+    }
+    const timeseries = [
+      {
+        seriesRef: 'series-a',
+        attributes: [],
+        resource: { attributes: [], droppedAttributesCount: 0 },
+        datapoints: [datapoint],
+        stats: null,
+        datapointCount: 1,
+        lastSeenNs: 1n,
+        views: null,
+        rateStats: null,
+        sparkline: null,
+      },
+    ] satisfies MetricSeriesViewData[]
+
+    const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
+
+    expect(line!.points[0]!.value).toBe(Number(9_007_199_254_740_993n))
+    expect(datapoint.intValue).toBe(9_007_199_254_740_993n)
+  })
+
+  it('approximates an exact calculated delta only in the chart projection', () => {
+    const datapoint: SumDataPoint = {
+      id: 'integer-sum',
+      timestamp: 2n,
+      timestampMs: 0,
+      startTime: 0n,
+      flags: 0,
+      exemplars: [],
+      metricType: 'Sum',
+      doubleValue: null,
+      intValue: 9_007_199_254_740_993n,
+      valueType: 'Int',
+      isMonotonic: true,
+      aggregationTemporalityCode: 2,
+      aggregationTemporality: 'Cumulative',
+      delta: 9_007_199_254_740_993n,
+      isReset: false,
+    }
+    const timeseries = [
+      {
+        seriesRef: 'series-a',
+        attributes: [],
+        resource: { attributes: [], droppedAttributesCount: 0 },
+        datapoints: [datapoint],
+        stats: null,
+        datapointCount: 1,
+        lastSeenNs: 2n,
+        views: null,
+        rateStats: null,
+        sparkline: null,
+      },
+    ] satisfies MetricSeriesViewData[]
+
+    const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
+
+    expect(line!.points[0]!.delta).toBe(Number(datapoint.delta))
+    expect(datapoint.delta).toBe(9_007_199_254_740_993n)
+  })
+
+  it('opens datapoints once and preserves exact source identity when Date coordinates collide', () => {
+    const base = 1_700_000_000_000_000_000n
+    const timeseries = [
+      {
+        seriesRef: 'series-a',
+        attributes: [],
+        resource: { attributes: [], droppedAttributesCount: 0 },
+        datapoints: [
+          {
+            id: 'later',
+            timestamp: base + 900n,
+            timestampMs: 1_700_000_000_000,
+            startTime: base,
+            flags: 0,
+            exemplars: [],
+            metricType: 'Gauge',
+            doubleValue: 2,
+            intValue: null,
+            valueType: 'double',
+            breakBefore: true,
+          },
+          {
+            id: 'earlier',
+            timestamp: base + 100n,
+            timestampMs: 1_700_000_000_000,
+            startTime: base,
+            flags: 0,
+            exemplars: [],
+            metricType: 'Gauge',
+            doubleValue: 1,
+            intValue: null,
+            valueType: 'double',
+          },
+        ],
+        stats: null,
+        datapointCount: 2,
+        lastSeenNs: base + 900n,
+        views: null,
+        rateStats: null,
+        sparkline: null,
+      },
+    ] satisfies MetricSeriesViewData[]
+
+    const datapoints = timeseries[0]!.datapoints
+    const readDatapoints = vi.fn(() => datapoints)
+    Object.defineProperty(timeseries[0], 'datapoints', { get: readDatapoints })
+    const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
+
+    expect(readDatapoints).toHaveBeenCalledTimes(1)
+    expect(line!.points[0]).not.toHaveProperty('breakBefore')
+    expect(line!.points[1]!.breakBefore).toBe(true)
+    expect(line!.points.map(point => point.date.getTime())).toEqual([
+      1_700_000_000_000, 1_700_000_000_000,
+    ])
+    expect(
+      line!.points.map(point => [point.sourceDatapointID, point.timestampNs])
+    ).toEqual([
+      ['earlier', base + 100n],
+      ['later', base + 900n],
+    ])
+  })
+
+  it('maps an exact same-ms raw identity onto its synthetic rate bucket', () => {
+    const base = 1_700_000_000_000_000_000n
+    const series = {
+      seriesRef: 'series-a',
+      attributes: [],
+      resource: { attributes: [], droppedAttributesCount: 0 },
+      datapoints: [
+        {
+          id: 'later',
+          timestamp: base + 900n,
+          timestampMs: 1_700_000_000_000,
+          startTime: base,
+          flags: 0,
+          exemplars: [],
+          metricType: 'Sum',
+          doubleValue: 9,
+          intValue: null,
+          valueType: 'double',
+          isMonotonic: true,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        },
+        {
+          id: 'middle',
+          timestamp: base + 400n,
+          timestampMs: 1_700_000_000_000,
+          startTime: base,
+          flags: 0,
+          exemplars: [],
+          metricType: 'Sum',
+          doubleValue: 5,
+          intValue: null,
+          valueType: 'double',
+          isMonotonic: true,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        },
+        {
+          id: 'first',
+          timestamp: base + 100n,
+          timestampMs: 1_700_000_000_000,
+          startTime: base,
+          flags: 0,
+          exemplars: [],
+          metricType: 'Sum',
+          doubleValue: 1,
+          intValue: null,
+          valueType: 'double',
+          isMonotonic: true,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        },
+      ],
+      stats: null,
+      datapointCount: 3,
+      lastSeenNs: base + 900n,
+      views: [
+        {
+          bucketStart: base,
+          sampleCount: 1,
+          sum: 1,
+          avg: 1,
+          rate: null,
+          slope: null,
+          hasReset: false,
+        },
+        {
+          bucketStart: base + 300n,
+          sampleCount: 1,
+          sum: 5,
+          avg: 5,
+          rate: 2,
+          slope: null,
+          hasReset: false,
+        },
+        {
+          bucketStart: base + 600n,
+          sampleCount: 1,
+          sum: 9,
+          avg: 9,
+          rate: 4,
+          slope: 6,
+          hasReset: false,
+        },
+      ],
+      rateStats: { min: 2, max: 4, avg: 3 },
+      sparkline: null,
+    } satisfies MetricSeriesViewData
+
+    const views = series.views
+    const readViews = vi.fn(() => views)
+    Object.defineProperty(series, 'views', { get: readViews })
+
+    expect(rateBucketStartForSourceDatapoint(series, 'later')).toBe(base + 600n)
+    expect(readViews).toHaveBeenCalledTimes(1)
+    expect(rateBucketStartForSourceDatapoint(series, 'middle')).toBe(
+      base + 300n
+    )
+    expect(rateBucketStartForSourceDatapoint(series, 'first')).toBeUndefined()
+    expect(
+      rateBucketStartForSourceDatapoint(series, 'raw-only-at-same-time')
+    ).toBeUndefined()
+    expect(readViews).toHaveBeenCalledTimes(3)
+  })
+})

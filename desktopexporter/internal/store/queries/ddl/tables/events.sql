@@ -1,12 +1,3 @@
-create table if not exists events (
-		id uuid primary key,
-		-- The owning span's trace. Part of the key that reaches it: a span id
-		-- alone does not identify a span across traces.
-		trace_id uuid not null,
-		span_id ubigint not null,
-		name varchar,
-		timestamp ubigint,
-		attribute_ids uuid[] not null,
-		dropped_attributes_count uinteger,
-		foreign key (trace_id, span_id) references spans(trace_id, span_id)
-	)
+create or replace view events as
+select e.id, s.trace_id, s.span_id, e.name, e.timestamp, e.attributes, e.dropped_attributes_count, e.ordinal
+from (select trace_id, span_id, unnest(events) as e from spans) s;

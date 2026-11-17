@@ -1,0 +1,218 @@
+{
+  "madoromi-haru-hiru": {
+    "colors": {
+      "primary": "#694d80",
+      "secondary": "#1e5d88",
+      "accent": "#18644a",
+      "info": "#1e5d88",
+      "success": "#18644a",
+      "warning": "#7a5000",
+      "error": "#9b334e"
+    },
+    "syntax": {
+      "sakura": "#71504e",
+      "nadeshiko": "#71504e",
+      "botan": "#9b334e",
+      "fuji": "#694d80",
+      "kikyo": "#694d80",
+      "beni": "#9b334e",
+      "akane": "#71504e",
+      "kaki": "#7a5000",
+      "yamabuki": "#7a5000",
+      "wakaba": "#18644a",
+      "tokiwa": "#18644a",
+      "sora": "#1e5d88",
+      "ruri": "#1e5d88",
+      "ai": "#71504e"
+    }
+  },
+  "madoromi-natsu-hiru": {
+    "colors": {
+      "primary": "#694d80",
+      "secondary": "#1e5d88",
+      "accent": "#18644a",
+      "info": "#1e5d88",
+      "success": "#18644a",
+      "warning": "#7a5000",
+      "error": "#9b334e"
+    },
+    "syntax": {
+      "sakura": "#71504e",
+      "nadeshiko": "#71504e",
+      "botan": "#9b334e",
+      "fuji": "#694d80",
+      "kikyo": "#694d80",
+      "beni": "#9b334e",
+      "akane": "#71504e",
+      "kaki": "#7a5000",
+      "yamabuki": "#7a5000",
+      "wakaba": "#18644a",
+      "tokiwa": "#18644a",
+      "sora": "#1e5d88",
+      "ruri": "#1e5d88",
+      "ai": "#71504e"
+    }
+  },
+  "madoromi-aki-hiru": {
+    "colors": {
+      "primary": "#694d80",
+      "secondary": "#1e5d88",
+      "accent": "#18644a",
+      "info": "#1e5d88",
+      "success": "#18644a",
+      "warning": "#7a5000",
+      "error": "#9b334e"
+    },
+    "syntax": {
+      "sakura": "#71504e",
+      "nadeshiko": "#71504e",
+      "botan": "#9b334e",
+      "fuji": "#694d80",
+      "kikyo": "#694d80",
+      "beni": "#9b334e",
+      "akane": "#71504e",
+      "kaki": "#7a5000",
+      "yamabuki": "#7a5000",
+      "wakaba": "#18644a",
+      "tokiwa": "#18644a",
+      "sora": "#1e5d88",
+      "ruri": "#1e5d88",
+      "ai": "#71504e"
+    }
+  },
+  "madoromi-fuyu-hiru": {
+    "colors": {
+      "primary": "#694d80",
+      "secondary": "#1e5d88",
+      "accent": "#18644a",
+      "info": "#1e5d88",
+      "success": "#18644a",
+      "warning": "#7a5000",
+      "error": "#9b334e"
+    },
+    "syntax": {
+      "sakura": "#71504e",
+      "nadeshiko": "#71504e",
+      "botan": "#9b334e",
+      "fuji": "#694d80",
+      "kikyo": "#694d80",
+      "beni": "#9b334e",
+      "akane": "#71504e",
+      "kaki": "#7a5000",
+      "yamabuki": "#7a5000",
+      "wakaba": "#18644a",
+      "tokiwa": "#18644a",
+      "sora": "#1e5d88",
+      "ruri": "#1e5d88",
+      "ai": "#71504e"
+    }
+  },
+  "madoromi-haru-yoru": {
+    "colors": {
+      "primary": "#caace5",
+      "secondary": "#68a5d5",
+      "accent": "#8bd3b3",
+      "info": "#68a5d5",
+      "success": "#8bd3b3",
+      "warning": "#edb667",
+      "error": "#ed7d93"
+    },
+    "syntax": {
+      "sakura": "#e6c0bd",
+      "nadeshiko": "#e6c0bd",
+      "botan": "#ed7d93",
+      "fuji": "#caace5",
+      "kikyo": "#caace5",
+      "beni": "#ed7d93",
+      "akane": "#e6c0bd",
+      "kaki": "#edb667",
+      "yamabuki": "#edb667",
+      "wakaba": "#8bd3b3",
+      "tokiwa": "#8bd3b3",
+      "sora": "#68a5d5",
+      "ruri": "#68a5d5",
+      "ai": "#e6c0bd"
+    }
+  },
+  "madoromi-natsu-yoru": {
+    "colors": {
+      "primary": "#caace5",
+      "secondary": "#68a5d5",
+      "accent": "#8bd3b3",
+      "info": "#68a5d5",
+      "success": "#8bd3b3",
+      "warning": "#edb667",
+      "error": "#ed7d93"
+    },
+    "syntax": {
+      "sakura": "#e6c0bd",
+      "nadeshiko": "#e6c0bd",
+      "botan": "#ed7d93",
+      "fuji": "#caace5",
+      "kikyo": "#caace5",
+      "beni": "#ed7d93",
+      "akane": "#e6c0bd",
+      "kaki": "#edb667",
+      "yamabuki": "#edb667",
+      "wakaba": "#8bd3b3",
+      "tokiwa": "#8bd3b3",
+      "sora": "#68a5d5",
+      "ruri": "#68a5d5",
+      "ai": "#e6c0bd"
+    }
+  },
+  "madoromi-aki-yoru": {
+    "colors": {
+      "primary": "#caace5",
+      "secondary": "#68a5d5",
+      "accent": "#8bd3b3",
+      "info": "#68a5d5",
+      "success": "#8bd3b3",
+      "warning": "#edb667",
+      "error": "#ed7d93"
+    },
+    "syntax": {
+      "sakura": "#e6c0bd",
+      "nadeshiko": "#e6c0bd",
+      "botan": "#ed7d93",
+      "fuji": "#caace5",
+      "kikyo": "#caace5",
+      "beni": "#ed7d93",
+      "akane": "#e6c0bd",
+      "kaki": "#edb667",
+      "yamabuki": "#edb667",
+      "wakaba": "#8bd3b3",
+      "tokiwa": "#8bd3b3",
+      "sora": "#68a5d5",
+      "ruri": "#68a5d5",
+      "ai": "#e6c0bd"
+    }
+  },
+  "madoromi-fuyu-yoru": {
+    "colors": {
+      "primary": "#caace5",
+      "secondary": "#68a5d5",
+      "accent": "#8bd3b3",
+      "info": "#68a5d5",
+      "success": "#8bd3b3",
+      "warning": "#edb667",
+      "error": "#ed7d93"
+    },
+    "syntax": {
+      "sakura": "#e6c0bd",
+      "nadeshiko": "#e6c0bd",
+      "botan": "#ed7d93",
+      "fuji": "#caace5",
+      "kikyo": "#caace5",
+      "beni": "#ed7d93",
+      "akane": "#e6c0bd",
+      "kaki": "#edb667",
+      "yamabuki": "#edb667",
+      "wakaba": "#8bd3b3",
+      "tokiwa": "#8bd3b3",
+      "sora": "#68a5d5",
+      "ruri": "#68a5d5",
+      "ai": "#e6c0bd"
+    }
+  }
+}

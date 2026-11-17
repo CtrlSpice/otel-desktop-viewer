@@ -8,6 +8,7 @@ updates:
       opentelemetry:
         patterns:
           - "go.opentelemetry.io/*"
+          - "github.com/open-telemetry/opentelemetry-collector-contrib/*"
 
   - package-ecosystem: npm
     directory: /desktopexporter/internal/frontend
@@ -23,6 +24,16 @@ updates:
       # unblocked by TS 7.1 (~Oct 2026). Remove once svelte-check supports it.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /evals/viewer-usability
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /

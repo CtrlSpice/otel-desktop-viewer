@@ -22,7 +22,7 @@ func BenchmarkSearchLogSummariesLimit(b *testing.B) {
 	}
 	defer s.Close()
 	if err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 20_000), s.FlushedIDs())
+		return logs.Ingest(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 20_000))
 	}); err != nil {
 		b.Fatal(err)
 	}

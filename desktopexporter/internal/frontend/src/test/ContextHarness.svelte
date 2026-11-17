@@ -2,6 +2,7 @@
   import type { Component } from 'svelte'
   import { createRouteContext } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
+  import { createDataChanges } from '@/contexts/data-changes.svelte'
 
   // testing-library reserves the top-level `props` key during rerender.
   type Props = {
@@ -12,6 +13,7 @@
 
   createRouteContext()
   createTimeContext()
+  createDataChanges()
 </script>
 
 <TestComponent {...componentProps} />

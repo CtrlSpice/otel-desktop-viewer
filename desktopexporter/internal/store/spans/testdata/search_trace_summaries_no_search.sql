@@ -1,10 +1,8 @@
-with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end),
+with
 		eligible_spans as materialized (
 			select distinct s.trace_id
-			from search_params, spans s
-		join resources r on r.id = s.resource_id
-		join scopes sc on sc.id = s.scope_id
-			where s.start_time >= time_start and s.start_time <= time_end
+			from spans s
+			where s.start_time >= $1::ubigint and s.start_time <= $2::ubigint
 		),
 		selected_trace_ids as materialized (
 			select trace_id from eligible_spans
@@ -29,6 +27,31 @@ with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubig
 			select *
 			from trace_summaries
 			order by trace_start_time desc, trace_id asc
+		),
+		service_counts as (
+			select s.trace_id, coalesce(s.service_name, '') as service_name, count(*) as span_count
+			from spans s
+			join selected_summaries selected on selected.trace_id = s.trace_id
+			group by s.trace_id, coalesce(s.service_name, '')
+		),
+		ranked_services as (
+			select *, row_number() over (partition by trace_id order by span_count desc, service_name) as rank
+			from service_counts
+		),
+		service_parts as (
+			select trace_id, 'service:' || service_name as key,
+				coalesce(nullif(service_name, ''), 'Unknown service') as label,
+				span_count, false as other
+			from ranked_services where rank <= 8
+			union all
+			select trace_id, 'other-services', 'Other services', sum(span_count), true
+			from ranked_services where rank > 8 group by trace_id
+		),
+		service_breakdowns as (
+			select trace_id, to_json(list(json_object(
+				'key', key, 'label', label, 'count', span_count, 'other', other
+			) order by other, span_count desc, key)) as parts
+			from service_parts group by trace_id
 		)
 		select cast(coalesce(to_json(list(json_object(
 			'traceID',      replace(sub.trace_id::varchar, '-', ''),
@@ -45,7 +68,8 @@ with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubig
 				else null
 			end,
 			'spanCount',    sub.span_count,
-			'errorCount',   sub.error_count
+			'errorCount',   sub.error_count,
+			'serviceBreakdown', (select parts from service_breakdowns where trace_id = sub.trace_id)
 		) order by trace_start_time desc, trace_id asc
 		)), '[]') as varchar) as summaries
 		from selected_summaries sub

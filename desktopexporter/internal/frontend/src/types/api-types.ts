@@ -1,13 +1,30 @@
-import type { JsonAggregateBucket } from '@/types/wire-types'
-
 export type RootSpan = {
   serviceName: string
   name: string
 }
 
+/** Lightweight timing projection for an exact stored trace/span pair. */
+export type SpanTiming = {
+  traceID: string
+  spanID: string
+  name: string
+  serviceName: string
+  startTime: bigint
+  endTime: bigint
+  statusCodeValue: number
+}
+
 export type MatchedSpan = {
   traceID: string
   spanID: string
+}
+
+/** Bounded display composition. `key` retains identity; `label` is a display preview. */
+export type SummaryBreakdownPart = {
+  key: string
+  label: string
+  count: number
+  other?: boolean
 }
 
 export type TraceSummary = {
@@ -22,6 +39,8 @@ export type TraceSummary = {
   durationNs: bigint | null
   spanCount: number
   errorCount: number
+  /** All retained spans in the trace, by service; not elapsed-time shares. */
+  serviceBreakdown?: SummaryBreakdownPart[]
   /** Computed identities of matching spans; present only for filtered searches. */
   matchedSpans?: MatchedSpan[]
 }
@@ -78,13 +97,44 @@ export type SpanData = {
   /** Readable label derived from statusCodeValue by SQL. */
   statusCode: string
   statusMessage: string
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
+}
+
+export type TraceColumn = { source: 'span' | 'resource' | 'scope'; key: string }
+export type TraceColumnOption = TraceColumn & { count: number }
+export type TraceColumnPreview = TraceColumn & {
+  spanID: string
+  values: { valueType: AttributeValue['kind']; preview: string }[]
+}
+
+/** Display projection only. No attribute, link or received-record export surface. */
+export type WaterfallEventData = Omit<EventData, 'attributes'> & {
+  /** Only tool label/error/timestamp provenance, never full received attributes. */
+  summaryAttributes: Attributes
+}
+export type WaterfallSpanData = Omit<
+  SpanData,
+  'attributes' | 'links' | 'resource' | 'scope' | 'events'
+> & {
+  resource: Omit<ResourceData, 'attributes'> & { serviceName: string }
+  scope: Omit<ScopeData, 'attributes'>
+  columnValues: TraceColumnPreview[]
+  events: WaterfallEventData[]
+}
+export type WaterfallSpan = SpanData | WaterfallSpanData
+export type WaterfallSpanNode = Omit<SpanNode, 'spanData'> & {
+  spanData: WaterfallSpan
+}
+export type TraceWaterfallData = Omit<TraceData, 'spans'> & {
+  spans: WaterfallSpanNode[]
+  availableColumns: TraceColumnOption[]
 }
 
 export type Attribute = {
   id?: string
   key: string
   value: AttributeValue
-  hasConflict?: boolean
 }
 
 export type AttributeValue =
@@ -93,8 +143,20 @@ export type AttributeValue =
   | { kind: 'bool'; value: boolean }
   | { kind: 'int64'; value: bigint }
   | { kind: 'double'; value: number }
-  | { kind: 'array'; value: AttributeValue[] }
-  | { kind: 'map'; value: AttributeMapEntry[]; conflictingKeys?: string[] }
+  | {
+      kind: 'array'
+      value: AttributeValue[]
+      readonly childCount?: number
+      readonly previewChildren?: AttributeValue[]
+      childAt?: (index: number) => AttributeValue
+    }
+  | {
+      kind: 'map'
+      value: AttributeMapEntry[]
+      readonly childCount?: number
+      readonly previewChildren?: AttributeMapEntry[]
+      childAt?: (index: number) => AttributeMapEntry
+    }
 
 export type AttributeMapEntry = {
   key: string
@@ -130,6 +192,8 @@ export type LinkData = {
   droppedAttributesCount: number
   /** W3C trace flags for the linked context. */
   flags: number
+  /** Read-time names for presentation only; never exported as OTLP fields. */
+  summary?: { target: { name: string; serviceName: string } | null }
 }
 
 export type LogData = {
@@ -147,10 +211,12 @@ export type LogData = {
   droppedAttributesCount: number
   flags: number
   eventName: string
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
 }
 
 // LogSummary is the lightweight card-shaped projection returned by
-// the searchLogSummaries JSON-RPC method. Full LogData (with body, attributes,
+// the searchLogSummaries dataset. Full LogData (with body, attributes,
 // resource, scope, etc) is fetched on demand via getLog(logRef).
 //
 // `logRef` is a tool-minted UUID -- in the wire payload because the UI
@@ -161,7 +227,7 @@ export type LogData = {
 // otherwise ObservedTimestamp. The summary doesn't carry observed
 // separately; consumers that need both fall back to the detail row.
 //
-// `bodyPreview` is server-truncated to the first N characters.
+// `bodyPreview` is bounded display text: abbreviated strings or a typed summary.
 // Full body, traceID, and spanID are available on LogData
 // (fetched on demand for the detail pane).
 export type LogSummary = {
@@ -171,6 +237,29 @@ export type LogSummary = {
   severityNumber: number
   serviceName: string
   bodyPreview: string
+  bodyType?: AttributeValue['kind']
+  eventName?: string
+}
+
+export type LogColumn = {
+  source: 'log' | 'resource' | 'scope'
+  kind: 'field' | 'attribute'
+  key: string
+}
+export type LogTableRow = LogSummary & {
+  columnValues?: (LogColumn & {
+    present: boolean
+    valueType: AttributeValue['kind']
+    preview: string
+  })[]
+}
+
+export type LogErrorTarget = { logRef: string; offset: number }
+export type LogErrorNavigation = {
+  count: number
+  index: number | null
+  previous: LogErrorTarget | null
+  next: LogErrorTarget | null
 }
 
 /** Complete trace-scoped log projection used for span correlation. */
@@ -208,8 +297,7 @@ export type Exemplar = ExemplarBase &
 type BaseDataPoint = {
   id: string
   timestamp: bigint
-  /** The same instant in epoch milliseconds, from the store. Charts read this
-   *  rather than dividing `timestamp` per datapoint. */
+  /** The same instant truncated to epoch milliseconds for chart coordinates. */
   timestampMs: number
   startTime: bigint
   flags: number
@@ -221,6 +309,8 @@ type BaseDataPoint = {
 
 export type GaugeDataPoint = BaseDataPoint & {
   metricType: 'Gauge'
+  /** Derived from empty M4 buckets before reduction; never a received OTLP flag. */
+  breakBefore?: true
   doubleValue: number | null
   /** Received NumberDataPoint.as_int, kept exact across JSON. */
   intValue: bigint | null
@@ -332,7 +422,12 @@ export type SeriesRateStats = {
 export type MetricSeriesViewData = {
   /** Database-local series reference. */
   seriesRef: string
+  /** Empty in preview responses; exact context is available through getMetricSeries. */
   attributes: Attributes
+  /** False when received attributes were withheld. */
+  attributesComplete?: boolean
+  /** Bounded server-selected columns; getMetricSeriesOrder sorts exact values in the database. */
+  labelPreviews?: { key: string; text: string; kind?: string }[]
   /** Resource associated with the parent Metric. */
   resource: ResourceData
   datapoints: DataPoint[]
@@ -372,15 +467,22 @@ export type ScalarAggregate = {
   all: ScalarViewBucket[]
 }
 
-export type AggregateBucket = Omit<
-  JsonAggregateBucket,
-  'sum' | 'min' | 'max' | 'explicitBounds' | 'zeroThreshold' | 'quantiles'
-> & {
+export type AggregateBucket = {
+  timestamp: bigint
+  startTime: bigint
+  count: bigint
   sum: number | null
   min?: number
   max?: number
   explicitBounds?: number[]
   zeroThreshold?: number
+  bucketCounts?: bigint[]
+  scale?: number
+  zeroCount?: bigint
+  positiveBucketOffset?: number
+  positiveBucketCounts?: bigint[]
+  negativeBucketOffset?: number
+  negativeBucketCounts?: bigint[]
   quantiles: Record<string, number | null> | null
 }
 
@@ -389,6 +491,8 @@ export type AggregateBucket = Omit<
 export type MetricAggregateViewData = {
   aggregate: AggregateBucket[] | null
   scalarAggregate: ScalarAggregate | null
+  /** Selected source's activity, on the aggregate's bucket schema. */
+  contribution?: AggregateBucket[] | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */
@@ -550,13 +654,14 @@ export type ExactMetricSeries = ExactMetricIdentity & {
 export type SparklinePoint = {
   timestamp: bigint
   value: number
+  /** Inherited main-chart break, carried through preview filtering and reduction. */
+  breakBefore?: true
 }
 
 // Metric summary for sidebar cards.
 export type MetricSummary = {
   metricRef: string
   name: string
-  description: string
   unit: string
   metricType: MetricType
   aggregationTemporality: string | null
@@ -574,7 +679,7 @@ export type MetricSummary = {
    * histograms. */
   lastValue: number | null
   // Timestamp of the most recent in-range datapoint (nanoseconds).
-  lastSeen: bigint
+  lastSeen: bigint | null
 }
 
 export function metricSummaryKey(s: MetricSummary): string {
@@ -615,28 +720,9 @@ export type Rejection = {
 }
 
 export type Stats = {
+  storage?: { sizeBytes: number; maxSizeBytes: number; inMemory?: boolean }
   traces: TraceStats
   logs: LogStats
   metrics: MetricStats
   rejections: Rejection[]
 }
-
-export type SearchResultEvent =
-  | {
-      signal: 'traces'
-      results: TraceSummary[]
-      queryTree?: unknown
-      updateSeq: number
-    }
-  | {
-      signal: 'logs'
-      results: LogSummary[]
-      queryTree?: unknown
-      updateSeq: number
-    }
-  | {
-      signal: 'metrics'
-      results: MetricSummary[]
-      queryTree?: unknown
-      updateSeq: number
-    }

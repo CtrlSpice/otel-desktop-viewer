@@ -1,0 +1,152 @@
+{
+  "checkout-failure": {
+    "reference": "spans\n\nspan_id           parent_span_id    name                     status_code  status_message\n----------------  ----------------  -----------------------  -----------  ---------------------------------\n0000000000000001  NULL              POST /api/v2/orders      2            Payment declined\n0000000000000002  0000000000000001  catalog/resolve-items    1\n0000000000000003  0000000000000001  inventory/reserve-stock  1\n0000000000000004  0000000000000001  order/create             1\n0000000000000005  0000000000000001  payment/charge           2            Card declined\n0000000000000006  0000000000000005  stripe/create-charge     2            Card declined: insufficient funds\n\nspans: checkout-017 root\n\nname                 start_time           end_time             duration_ns  http.response.status_code\n-------------------  -------------------  -------------------  -----------  -------------------------\nPOST /api/v2/orders  1791360000000000000  1791360001200000000  1200000000   402\n\nevents (span_name from the same-trace span join)\n\nspan_name             name       timestamp            exception.type        exception.message\n--------------------  ---------  -------------------  --------------------  ---------------------------------\nstripe/create-charge  exception  1791360000950000000  PaymentDeclinedError  Card declined: insufficient funds\n\nlogs (body.kind and body.value project the stored typed body)\n\ntimestamp            span_id           matching_span_id  span_name                body.kind  body.value\n-------------------  ----------------  ----------------  -----------------------  ---------  --------------------------------------------\n1791360000490000000  0000000000000003  0000000000000003  inventory/reserve-stock  string     Stock below threshold; reservation succeeded\n1791360000950000000  0000000000000006  0000000000000006  stripe/create-charge     string     Payment declined: insufficient_funds\n1791360001200000000  0000000000000001  0000000000000001  POST /api/v2/orders      string     POST /api/v2/orders returned 402\n1791360001250000000  NULL              NULL              NULL                     string     Request audit recorded\n1791360001400000000  000000000000ffff  NULL              NULL                     string     Delayed payment audit received\n\nstart_time, end_time and timestamp are exact Unix nanoseconds. duration_ns is computed as end_time::HUGEINT - start_time::HUGEINT, in exact integer nanoseconds. span_id and parent_span_id are hexadecimal renderings of received IDs.\n\nstatus_code is the received enum number. matching_span_id is computed by matching both trace_id and span_id against stored spans.",
+    "criteria": [
+      {
+        "id": "reported-cause",
+        "text": "Identifies the reported payment decline for insufficient funds with relevant telemetry support.",
+        "scoring": {
+          "Fail": "Gives the wrong cause, or does not identify a cause supported by telemetry.",
+          "Partial": "Correctly identifies that payment was declined, but does not identify insufficient funds as the reason.",
+          "Pass": "Identifies the payment decline due to insufficient funds, supported by recorded telemetry."
+        }
+      }
+    ]
+  },
+  "checkout-latency": {
+    "reference": "spans (request.id from each trace's root span attributes)\n\nrequest.id    name                  span_id           parent_span_id    start_time           end_time             duration_ns  status_code\n------------  --------------------  ----------------  ----------------  -------------------  -------------------  -----------  -----------\ncheckout-018  POST /api/v2/orders   0000000000000001  NULL              1791360002000000000  1791360002600000000  600000000    1\ncheckout-018  payment/charge        0000000000000005  0000000000000001  1791360002305000000  1791360002500000000  195000000    1\ncheckout-018  stripe/create-charge  0000000000000006  0000000000000005  1791360002325000000  1791360002405000000  80000000     1\ncheckout-019  POST /api/v2/orders   0000000000000001  NULL              1791360004000000000  1791360005500000000  1500000000   1\ncheckout-019  payment/charge        0000000000000002  0000000000000001  1791360004100000000  1791360005450000000  1350000000   1\ncheckout-019  stripe/create-charge  0000000000000003  0000000000000002  1791360004150000000  1791360005400000000  1250000000   1\n\nstart_time, end_time and timestamp are exact Unix nanoseconds. duration_ns is computed as end_time::HUGEINT - start_time::HUGEINT, in exact integer nanoseconds. span_id and parent_span_id are hexadecimal renderings of received IDs.\n\nstripe/create-charge is nested inside payment/charge, which is nested inside POST /api/v2/orders.",
+    "criteria": [
+      {
+        "id": "payment-comparison",
+        "text": "Explains the slowdown with a supported comparison of payment processing timings.",
+        "scoring": {
+          "Fail": "Gives an incorrect explanation, or no useful supported comparison.",
+          "Partial": "Correctly compares overall durations, or identifies payment processing as slower, but does not explain the slowdown with supporting payment timings.",
+          "Pass": "Explains that the extra time is in payment processing, supported by a timing comparison between the requests. Not every reference timing is required."
+        }
+      }
+    ]
+  },
+  "failure-rate": {
+    "reference": "Population: spans where service_name='api-gateway' and parent_span_id IS NULL, within the manifest bounds.\n\ncloud.region  service.version  first_start_time     last_start_time      checkout_count  failed_count  failure_rate\n------------  ---------------  -------------------  -------------------  --------------  ------------  ------------\nwest          1.0.0            1791359760000000000  1791359774000000000  8               0             0\neast          1.0.0            1791359776000000000  1791359790000000000  8               0             0\nwest          1.1.0            1791360000000000000  1791360014000000000  8               4             0.5\neast          1.0.0            1791360016000000000  1791360030000000000  8               0             0\n\ncloud.region and service.version are received resource attribute keys. Computed columns: first_start_time=min(start_time), last_start_time=max(start_time), both exact Unix nanoseconds; checkout_count=count(*); failed_count=count(*) where status_code=2; failure_rate=failed_count/checkout_count as DuckDB DOUBLE, unitless. Groups use resource attributes and the start_time boundary 1791360000000000000.",
+    "criteria": [
+      {
+        "id": "rate-change",
+        "text": "Reports the change in the checkout failure rate. Gateway version and region are optional extra findings.",
+        "scoring": {
+          "Fail": "Reports an incorrect trend, or does not establish how the failure rate changed.",
+          "Partial": "Correctly identifies that the failure rate increased, but does not provide a complete before-and-after rate comparison.",
+          "Pass": "Reports the increase from 0% to 25%, supported by recorded checkout requests: 0 failures among 16 earlier checkouts and 4 among 16 later checkouts. Equivalent fractions are accepted."
+        }
+      }
+    ]
+  },
+  "trace-logs": {
+    "reference": "logs for trace_id 00000000000000000000000000000011\n\ntimestamp            span_id           matching_span_id  span_name                body.kind  body.value\n-------------------  ----------------  ----------------  -----------------------  ---------  --------------------------------------------\n1791360000490000000  0000000000000003  0000000000000003  inventory/reserve-stock  string     Stock below threshold; reservation succeeded\n1791360000950000000  0000000000000006  0000000000000006  stripe/create-charge     string     Payment declined: insufficient_funds\n1791360001200000000  0000000000000001  0000000000000001  POST /api/v2/orders      string     POST /api/v2/orders returned 402\n1791360001250000000  NULL              NULL              NULL                     string     Request audit recorded\n1791360001400000000  000000000000ffff  NULL              NULL                     string     Delayed payment audit received\n\ntimestamp is exact Unix nanoseconds. body.kind and body.value project the stored typed body. span_name and matching_span_id come from joining stored spans on both trace_id and span_id; NULL preserves absence.",
+    "criteria": [
+      {
+        "id": "complete-logs",
+        "text": "Shows all five logs associated with checkout-017. Explaining stored-span associations is optional.",
+        "scoring": {
+          "Fail": "Does not show any correct logs for this checkout.",
+          "Partial": "Shows some associated logs, but the returned set is incomplete or includes unrelated logs.",
+          "Pass": "Shows the complete, correct set of five associated log entries, including the log without a span ID and the log with an unmatched span ID. No particular presentation format is required."
+        }
+      }
+    ]
+  },
+  "customer-count": {
+    "reference": "attributes referenced by recorded api-gateway root spans\n\nkey          kind    distinct_customer_count\n-----------  ------  -----------------------\ncustomer.id  string  32\n\nkind comes from the stored typed attribute value. distinct_customer_count is computed as the count of distinct customer.id string values in the manifest window.",
+    "criteria": [
+      {
+        "id": "complete-observed-count",
+        "text": "Reports 32 distinct customers supported by recorded customer IDs. Request count alone is not evidence of distinct customer count.",
+        "scoring": {
+          "Fail": "Gives an incorrect count, or does not answer the count question.",
+          "Pass": "Reports 32 distinct customers, supported by the recorded customer IDs."
+        }
+      }
+    ]
+  },
+  "sequence-types": {
+    "reference": "attributes referenced by recorded api-gateway root spans\n\nrequest.id    key             kind    value\n------------  --------------  ------  ----------------\ncheckout-001  order.sequence  int64   9007199254740993\ncheckout-002  order.sequence  int64   9007199254740994\ncheckout-003  order.sequence  int64   9007199254740995\ncheckout-004  order.sequence  int64   9007199254740996\ncheckout-005  order.sequence  int64   9007199254740997\ncheckout-006  order.sequence  int64   9007199254740998\ncheckout-007  order.sequence  int64   9007199254740999\ncheckout-008  order.sequence  string  9007199254741000\ncheckout-009  order.sequence  int64   9007199254741001\ncheckout-010  order.sequence  int64   9007199254741002\ncheckout-011  order.sequence  int64   9007199254741003\ncheckout-012  order.sequence  int64   9007199254741004\ncheckout-013  order.sequence  int64   9007199254741005\ncheckout-014  order.sequence  int64   9007199254741006\ncheckout-015  order.sequence  int64   9007199254741007\ncheckout-016  order.sequence  int64   9007199254741008\ncheckout-017  order.sequence  int64   9007199254741009\ncheckout-018  order.sequence  int64   9007199254741010\ncheckout-019  order.sequence  int64   9007199254741011\ncheckout-020  order.sequence  int64   9007199254741012\ncheckout-021  order.sequence  int64   9007199254741013\ncheckout-022  order.sequence  int64   9007199254741014\ncheckout-023  order.sequence  int64   9007199254741015\ncheckout-024  order.sequence  int64   9007199254741016\ncheckout-025  order.sequence  int64   9007199254741017\ncheckout-026  order.sequence  int64   9007199254741018\ncheckout-027  order.sequence  int64   9007199254741019\ncheckout-028  order.sequence  int64   9007199254741020\ncheckout-029  order.sequence  int64   9007199254741021\ncheckout-030  order.sequence  int64   9007199254741022\ncheckout-031  order.sequence  int64   9007199254741023\ncheckout-032  order.sequence  int64   9007199254741024\n\nkind and value are the stored typed attribute fields. Integer payloads are exact decimal strings.",
+    "criteria": [
+      {
+        "id": "stored-types",
+        "text": "Identifies the stored data types used for order sequence numbers. An exact example in the answer is useful but optional.",
+        "scoring": {
+          "Fail": "Gives incorrect types, claims the values all have the same type, or provides no useful answer.",
+          "Partial": "Identifies a correct stored type but leaves the other type unresolved, or recognises mixed types without identifying them.",
+          "Pass": "Identifies both integer (int64) and string values, supported by recorded attributes."
+        }
+      }
+    ]
+  },
+  "trace-export": {
+    "reference": "spans for checkout-017\n\ntrace_id                          span_count\n--------------------------------  ----------\n00000000000000000000000000000011  6\n\nspan_id           parent_span_id    name                     status_code  status_message\n----------------  ----------------  -----------------------  -----------  ---------------------------------\n0000000000000001  NULL              POST /api/v2/orders      2            Payment declined\n0000000000000002  0000000000000001  catalog/resolve-items    1\n0000000000000003  0000000000000001  inventory/reserve-stock  1\n0000000000000004  0000000000000001  order/create             1\n0000000000000005  0000000000000001  payment/charge           2            Card declined\n0000000000000006  0000000000000005  stripe/create-charge     2            Card declined: insufficient funds\n\nspan_count is computed as count(*) for the trace. Span IDs are hexadecimal renderings. Code verification checks the produced file, importability and retained span values, resource/scope context, events and parent relationships.",
+    "criteria": [
+      {
+        "id": "usable-export",
+        "text": "Produces a complete, reloadable export of checkout-017 and reports its location.",
+        "scoring": {
+          "Fail": "Does not provide a complete, reloadable export of the requested checkout with its location: the file is missing, invalid, incomplete, contains the wrong checkout, or the reported location does not identify the verified file. Running a command or claiming success is insufficient.",
+          "Pass": "Produces a complete, reloadable export of checkout-017, verified by code, and reports a location identifying that file."
+        }
+      }
+    ]
+  },
+  "request-latency": {
+    "reference": "metrics\n\nname                          metric_type  unit  aggregation_temporality  service_name\n----------------------------  -----------  ----  -----------------------  ------------\nhttp.server.request.duration  Histogram    s     1                        api-gateway\n\nmetric_datapoints\n\nstart_time           timestamp            count  sum                min   max   mean_s\n-------------------  -------------------  -----  -----------------  ----  ----  -------------------\n1791359675000000000  1791359700000000000  3      0.45               0.05  0.25  0.15\n1791359700000000000  1791359725000000000  3      0.45               0.05  0.25  0.15\n1791359725000000000  1791359750000000000  3      0.45               0.05  0.25  0.15\n1791359750000000000  1791359775000000000  11     2.05               0.05  0.25  0.18636363636363634\n1791359775000000000  1791359800000000000  11     2.05               0.05  0.25  0.18636363636363634\n1791359800000000000  1791359825000000000  3      0.45               0.05  0.25  0.15\n1791359825000000000  1791359850000000000  3      0.45               0.05  0.25  0.15\n1791359850000000000  1791359875000000000  3      0.45               0.05  0.25  0.15\n1791359875000000000  1791359900000000000  3      0.45               0.05  0.25  0.15\n1791359900000000000  1791359925000000000  3      0.45               0.05  0.25  0.15\n1791359925000000000  1791359950000000000  3      0.45               0.05  0.25  0.15\n1791359950000000000  1791359975000000000  3      0.45               0.05  0.25  0.15\n1791359975000000000  1791360000000000000  3      0.45               0.05  0.25  0.15\n1791360000000000000  1791360025000000000  16     6.750000000000002  0.05  1.5   0.4218750000000001\n1791360025000000000  1791360050000000000  6      1.05               0.05  0.25  0.17500000000000002\n1791360050000000000  1791360075000000000  3      0.45               0.05  0.25  0.15\n1791360075000000000  1791360100000000000  3      0.45               0.05  0.25  0.15\n1791360100000000000  1791360125000000000  3      0.45               0.05  0.25  0.15\n1791360125000000000  1791360150000000000  3      0.45               0.05  0.25  0.15\n1791360150000000000  1791360175000000000  3      0.45               0.05  0.25  0.15\n1791360175000000000  1791360200000000000  3      0.45               0.05  0.25  0.15\n1791360200000000000  1791360225000000000  3      0.45               0.05  0.25  0.15\n1791360225000000000  1791360250000000000  3      0.45               0.05  0.25  0.15\n1791360250000000000  1791360275000000000  3      0.45               0.05  0.25  0.15\n\nmetric_datapoints joined to histogram_bounds\n\ntimestamp            bucket_counts  bounds\n-------------------  -------------  ---------------\n1791360025000000000  [1, 11, 2, 2]  [0.1, 0.5, 1.0]\n\nexemplars\n\ntimestamp            double_value  trace_id                          span_id\n-------------------  ------------  --------------------------------  ----------------\n1791360001200000000  1.2           00000000000000000000000000000011  0000000000000001\n\nstart_time and timestamp are exact Unix nanoseconds. sum, min, max, bounds and double_value use the received Metric unit s. mean_s is computed as sum/count in seconds using DuckDB DOUBLE. aggregation_temporality=1 means delta.",
+    "criteria": [
+      {
+        "id": "spike-and-recovery",
+        "text": "Describes the request latency trend using recorded latency evidence. Reference means are guidance; other supported latency measurements are accepted.",
+        "scoring": {
+          "Fail": "Gives an incorrect account of the trend, or no useful supported account.",
+          "Partial": "Correctly describes part of the trend, but misses the spike or the recovery.",
+          "Pass": "Correctly describes both the spike and the return towards baseline, supported by recorded latency evidence. Exact reference numbers are not required."
+        }
+      }
+    ]
+  },
+  "request-count": {
+    "reference": "metrics\n\nname                       metric_type  unit       aggregation_temporality  is_monotonic  service_name\n-------------------------  -----------  ---------  -----------------------  ------------  ------------\nhttp.server.request.count  Sum          {request}  2                        true          api-gateway\n\nmetric_datapoints\n\nstart_time           timestamp            value_type  int_value\n-------------------  -------------------  ----------  ---------\n1791359675000000000  1791359700000000000  Int         3\n1791359675000000000  1791359725000000000  Int         6\n1791359675000000000  1791359750000000000  Int         9\n1791359675000000000  1791359775000000000  Int         20\n1791359675000000000  1791359800000000000  Int         31\n1791359675000000000  1791359825000000000  Int         34\n1791359675000000000  1791359850000000000  Int         37\n1791359675000000000  1791359875000000000  Int         40\n1791359675000000000  1791359900000000000  Int         43\n1791359675000000000  1791359925000000000  Int         46\n1791359675000000000  1791359950000000000  Int         49\n1791359675000000000  1791359975000000000  Int         52\n1791359675000000000  1791360000000000000  Int         55\n1791359675000000000  1791360025000000000  Int         71\n1791359675000000000  1791360050000000000  Int         77\n1791359675000000000  1791360075000000000  Int         80\n1791359675000000000  1791360100000000000  Int         83\n1791359675000000000  1791360125000000000  Int         86\n1791359675000000000  1791360150000000000  Int         89\n1791359675000000000  1791360175000000000  Int         92\n1791359675000000000  1791360200000000000  Int         95\n1791359675000000000  1791360225000000000  Int         98\n1791359675000000000  1791360250000000000  Int         101\n1791359675000000000  1791360275000000000  Int         104\n\nstart_time and timestamp are exact Unix nanoseconds. int_value is the received cumulative request count, rendered as an exact decimal string. aggregation_temporality=2 means cumulative. The common start_time and final timestamp match the manifest window.",
+    "criteria": [
+      {
+        "id": "full-window-total",
+        "text": "Reports 104 requests for the full window with counter support.",
+        "scoring": {
+          "Fail": "Gives an incorrect count, or does not answer the count question.",
+          "Pass": "Reports 104 requests, supported by the counter over the full requested period."
+        }
+      }
+    ]
+  },
+  "cpu-comparison": {
+    "reference": "The system.cpu.utilization Gauge belongs to api-gateway. Recorded CPU ratios near checkout-019 are 0.14 at 08:00:00Z and 0.16 at 08:00:25Z (14% and 16%). checkout-019 runs from 08:00:04Z to 08:00:05.5Z. Recorded CPU ratios repeat between 0.10 and 0.18 throughout the time window. The nearby recorded readings are within that same range, with no unusual increase in those readings. No alternative cause, exhaustive sample list or exact caveat about sampling gaps or missing service coverage is required for this comparison. Assess additional unsupported claims separately from completion of the requested comparison.",
+    "criteria": [
+      {
+        "id": "recorded-comparison",
+        "text": "Compares the nearby recorded CPU readings with the rest of the time window, supported by recorded values.",
+        "scoring": {
+          "Fail": "Gives an incorrect comparison or no useful supported answer to the comparison question.",
+          "Pass": "Correctly compares the nearby recorded CPU readings with the rest of the window and supports the comparison with recorded values. Equivalent ratios or percentages, sensible rounding and equivalent wording are accepted. Listing every sample is not required."
+        }
+      }
+    ]
+  },
+  "cpu-evidence": {
+    "reference": "metrics\n\nname                    metric_type  unit  service_name\n----------------------  -----------  ----  ------------\nsystem.cpu.utilization  Gauge        1     api-gateway\n\nmetric_datapoints\n\ntimestamp            value_type  double_value\n-------------------  ----------  ------------\n1791359700000000000  Double      0.1\n1791359725000000000  Double      0.12\n1791359750000000000  Double      0.14\n1791359775000000000  Double      0.16\n1791359800000000000  Double      0.18\n1791359825000000000  Double      0.1\n1791359850000000000  Double      0.12\n1791359875000000000  Double      0.14\n1791359900000000000  Double      0.16\n1791359925000000000  Double      0.18\n1791359950000000000  Double      0.1\n1791359975000000000  Double      0.12\n1791360000000000000  Double      0.14\n1791360025000000000  Double      0.16\n1791360050000000000  Double      0.18\n1791360075000000000  Double      0.1\n1791360100000000000  Double      0.12\n1791360125000000000  Double      0.14\n1791360150000000000  Double      0.16\n1791360175000000000  Double      0.18\n1791360200000000000  Double      0.1\n1791360225000000000  Double      0.12\n1791360250000000000  Double      0.14\n1791360275000000000  Double      0.16\n\nspans for checkout-019\n\nname                 start_time           end_time\n-------------------  -------------------  -------------------\nPOST /api/v2/orders  1791360004000000000  1791360005500000000\n\ntimestamp, start_time and end_time are exact Unix nanoseconds. double_value is the received CPU ratio (unit 1). Consecutive timestamps differ by 25000000000 ns, computed from the recorded samples. Available CPU series: api-gateway.",
+    "criteria": [
+      {
+        "id": "nearby-readings",
+        "text": "Reports nearby CPU readings with their timestamps and associated service. Listing all 24 samples or establishing CPU usage caused by the checkout is not required. Ratios and equivalent percentages are accepted.",
+        "scoring": {
+          "Fail": "Gives incorrect readings, or no relevant supported readings.",
+          "Partial": "Gives correct nearby readings, but omits the timestamps or associated service needed to interpret them.",
+          "Pass": "Gives correct nearby readings with their timestamps and identifies api-gateway as the associated service."
+        }
+      }
+    ]
+  }
+}

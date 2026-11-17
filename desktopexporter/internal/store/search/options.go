@@ -22,8 +22,10 @@ type ResultOptions struct {
 
 func SortDirectionSQL(direction string) (string, error) {
 	switch direction {
-	case "asc", "desc":
-		return direction, nil
+	case "asc":
+		return "asc", nil
+	case "desc":
+		return "desc", nil
 	default:
 		return "", fmt.Errorf("unsupported sort direction %q: %w", direction, ErrInvalidSort)
 	}

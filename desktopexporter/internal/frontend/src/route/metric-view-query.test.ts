@@ -50,6 +50,26 @@ describe('parseMetricViewQuery', () => {
     })
   })
 
+  it('opens old snapshot links in whole-window mode while keeping the selection', () => {
+    expect(
+      parseMetricViewQuery(
+        {
+          htab: 'histogram',
+          hscope: 'bucket',
+          dp: 'dp-h1',
+          series: 'series-h1',
+        },
+        histogramCtx
+      )
+    ).toEqual({
+      kind: 'histogram',
+      htab: 'histogram',
+      hscope: 'window',
+      dp: 'dp-h1',
+      series: 'series-h1',
+    })
+  })
+
   it('rejects disallowed agg on timeseries', () => {
     const q = parseMetricViewQuery({ agg: 'not-a-view' }, timeseriesCtx)
     expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null, series: null })
@@ -85,7 +105,7 @@ describe('metricViewQueriesEqual', () => {
   const histogram: MetricViewQuery = {
     kind: 'histogram',
     htab: 'quantiles',
-    hscope: 'bucket',
+    hscope: 'window',
     dp: 'dp-h1',
     series: null,
   }
@@ -114,12 +134,9 @@ describe('metricViewQueriesEqual', () => {
     ).toBe(false)
   })
 
-  it('rejects differing histogram tab or scope', () => {
+  it('rejects differing histogram tabs', () => {
     expect(
       metricViewQueriesEqual(histogram, { ...histogram, htab: 'heatmap' })
-    ).toBe(false)
-    expect(
-      metricViewQueriesEqual(histogram, { ...histogram, hscope: 'window' })
     ).toBe(false)
   })
 
@@ -150,13 +167,13 @@ describe('metricViewQueryToParams', () => {
     const q: MetricViewQuery = {
       kind: 'histogram',
       htab: 'histogram',
-      hscope: 'bucket',
+      hscope: 'window',
       dp: null,
       series: null,
     }
     expect(metricViewQueryToParams(q)).toEqual({
       htab: 'histogram',
-      hscope: 'bucket',
+      hscope: 'window',
     })
   })
 

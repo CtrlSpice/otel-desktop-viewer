@@ -68,8 +68,8 @@
             aria-hidden="true"
           />
         </div>
-        <p class="grow-0 text-base font-semibold text-base-content">
-          Drop OTLP JSON files to import
+        <p class="grow-0 text-base font-normal text-base-content">
+          Drop telemetry or evaluation JSON / JSONL files to import
         </p>
       </div>
     </div>

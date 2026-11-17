@@ -1,0 +1,70 @@
+// Severity band logic for OpenTelemetry log severityNumber values.
+// Lifted out of LogsPage.svelte so SignalBadges and LogDetailView can
+// import severity helpers without reaching into a page module.
+
+export type SeverityBand =
+  'unspecified' | 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
+
+export function severityBand(severityNumber: number): SeverityBand {
+  if (severityNumber === 0) return 'unspecified'
+  if (severityNumber <= 4) return 'trace'
+  if (severityNumber <= 8) return 'debug'
+  if (severityNumber <= 12) return 'info'
+  if (severityNumber <= 16) return 'warn'
+  if (severityNumber <= 20) return 'error'
+  return 'fatal'
+}
+
+const BADGE_CLASS: Record<SeverityBand, string> = {
+  unspecified: 'badge badge-xs badge-neutral',
+  trace: 'badge badge-xs badge-neutral',
+  debug: 'badge badge-xs badge-success',
+  info: 'badge badge-xs badge-info',
+  warn: 'badge badge-xs badge-warning',
+  error: 'badge badge-xs badge-error',
+  fatal: 'badge badge-xs badge-error',
+}
+
+const BORDER_CLASS: Record<SeverityBand, string> = {
+  unspecified: 'border-l-neutral/40',
+  trace: 'border-l-neutral/40',
+  debug: 'border-l-success/40',
+  info: 'border-l-info/40',
+  warn: 'border-l-warning/40',
+  error: 'border-l-error/40',
+  fatal: 'border-l-error',
+}
+
+const SEVERITY_COLOR: Record<SeverityBand, string> = {
+  unspecified: 'var(--color-neutral)',
+  trace: 'var(--color-neutral)',
+  debug: 'var(--color-success)',
+  info: 'var(--color-info)',
+  warn: 'var(--color-warning)',
+  error: 'var(--color-error)',
+  fatal: 'var(--color-error)',
+}
+
+export function severityColor(severityNumber: number): string {
+  return SEVERITY_COLOR[severityBand(severityNumber)]
+}
+
+export function severityBadgeClass(severityNumber: number): string {
+  return BADGE_CLASS[severityBand(severityNumber)]
+}
+
+export function severityBorderClass(severityNumber: number): string {
+  return BORDER_CLASS[severityBand(severityNumber)]
+}
+
+export function severityLabel(
+  severityText: string,
+  severityNumber: number
+): string {
+  return (
+    severityText ||
+    (severityNumber === 0
+      ? 'Unspecified'
+      : severityBand(severityNumber).toUpperCase())
+  )
+}

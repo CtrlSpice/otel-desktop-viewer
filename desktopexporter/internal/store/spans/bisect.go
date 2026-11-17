@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/duckdb/duckdb-go/v2"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -19,15 +18,11 @@ func appendSpansBisecting(
 	ctx context.Context,
 	conn driver.Conn,
 	traces ptrace.Traces,
-	resourceIDs map[int]duckdb.UUID,
-	scopeIDs map[scopeKey]duckdb.UUID,
-	spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID,
 	skip map[int]error,
 ) (ingest.Rejected, error) {
-	return ingest.BisectingWrite(ctx, len(spanAttrs), skip, func(lo, hi int) error {
+	return ingest.BisectingWrite(ctx, traces.SpanCount(), skip, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
-			return appendPass(ctx, conn, traces, resourceIDs, scopeIDs,
-				spanAttrs, eventAttrs, linkAttrs,
+			return appendPass(ctx, conn, traces,
 				func(ordinal int) bool {
 					_, skipped := skip[ordinal]
 					return ordinal >= lo && ordinal < hi && !skipped

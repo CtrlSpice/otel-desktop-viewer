@@ -132,7 +132,16 @@ export function signalIdFromPath(
   const prefix = `${signalPath(signal)}/`
   if (!path.startsWith(prefix)) return null
   const segment = path.slice(prefix.length).split('/')[0]
-  return segment ? decodeURIComponent(segment) : null
+  if (!segment) return null
+  const id = decodeURIComponent(segment)
+  // Trace responses use lowercase, undashed OTLP IDs. Normalize accepted URL
+  // spellings before selection and exact Details identity checks.
+  if (
+    signal === 'traces' &&
+    /^(?:[\da-f]{32}|[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i.test(id)
+  )
+    return id.replaceAll('-', '').toLowerCase()
+  return id
 }
 
 /**
@@ -214,28 +223,38 @@ export function mergeItemQuery(
   return next
 }
 
+/** Item links keep a search only within its owning signal workspace. */
+function itemDestinationQuery(signal: SignalName): RouteQuery {
+  const route = readRoute()
+  const base = signalPath(signal)
+  return route.path === base || route.path.startsWith(`${base}/`)
+    ? route.query
+    : withoutParams(route.query, ['q'])
+}
+
 /**
  * Builds an href for a signal item path with optional item-scoped query params.
  *
  * @param signal - traces, metrics, or logs
  * @param id - item id
  * @param itemQuery - optional scoped params (e.g. span, event) applied after strip
+ * @param sourceQuery - query owned by the displayed reading; defaults to the current workspace
  */
 export function itemHref(
   signal: SignalName,
   id: string,
-  itemQuery?: ItemQueryPatch
+  itemQuery?: ItemQueryPatch,
+  sourceQuery: RouteQuery = itemDestinationQuery(signal)
 ): string {
-  const route = readRoute()
-  const query = mergeItemQuery(route.query, itemQuery)
+  const query = mergeItemQuery(sourceQuery, itemQuery)
   const path = `${signalPath(signal)}/${encodeURIComponent(id)}`
   return path + buildSearch(query)
 }
 
-/** Builds the bare list href for a signal while preserving route-wide query state. */
+/** Builds a list href. Explicit query state belongs to the destination signal. */
 export function signalHref(
   signal: SignalName,
-  query: RouteQuery = readRoute().query
+  query: RouteQuery = itemDestinationQuery(signal)
 ): string {
   return signalPath(signal) + buildSearch(mergeItemQuery(query))
 }
@@ -268,8 +287,7 @@ export function navigateToItem(
   mode: HistoryMode = 'push',
   itemQuery?: ItemQueryPatch
 ): void {
-  const route = readRoute()
-  const query = mergeItemQuery(route.query, itemQuery)
+  const query = mergeItemQuery(itemDestinationQuery(signal), itemQuery)
   const base = signalPath(signal)
   const path = id ? `${base}/${encodeURIComponent(id)}` : base
   navigate(path + buildSearch(query), mode)

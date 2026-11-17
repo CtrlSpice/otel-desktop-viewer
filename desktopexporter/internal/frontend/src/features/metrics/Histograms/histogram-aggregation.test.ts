@@ -1,0 +1,333 @@
+import { describe, expect, it } from 'vitest'
+import type {
+  DataPoint,
+  HistogramDataPoint,
+  MetricSeriesViewData,
+} from '@/types/api-types'
+import {
+  HEATMAP_BUCKET_TARGET,
+  histogramSliceToChartDatapoint,
+  seriesBucketsToSlices,
+  isHistogramAggregationError,
+  buildPerSeriesQuantileSeries,
+  buildVisibleSeriesQuantileChartTimeseries,
+  parseQuantileSeriesKey,
+  quantileSeriesKey,
+  type HistogramSlicePoint,
+} from '@/features/metrics/Histograms/histogram-aggregation'
+
+const ts1 = 1_000_000_000n
+const ts2 = 2_000_000_000n
+
+describe('isHistogramAggregationError', () => {
+  it.each(['unspecified', 'boundsMismatch'] as const)(
+    'accepts the %s error contract',
+    kind => {
+      expect(
+        isHistogramAggregationError({ kind, message: 'Cannot merge' })
+      ).toBe(true)
+    }
+  )
+
+  it.each([
+    null,
+    'unspecified',
+    { kind: 'other', message: 'Cannot merge' },
+    { kind: 'unspecified' },
+    { kind: 'boundsMismatch', message: 42 },
+  ])('rejects malformed error candidates', candidate => {
+    expect(isHistogramAggregationError(candidate)).toBe(false)
+  })
+})
+
+function metricSeries(
+  seriesRef: string,
+  datapoints: DataPoint[]
+): MetricSeriesViewData {
+  return {
+    seriesRef,
+    attributes: [],
+    resource: { attributes: [], droppedAttributesCount: 0 },
+    datapoints,
+    stats: null,
+    datapointCount: datapoints.length,
+    lastSeenNs: datapoints[0]?.timestamp ?? null,
+    views: null,
+    rateStats: null,
+    sparkline: null,
+  }
+}
+
+function histSlice(
+  timestamp: bigint,
+  seriesRef: string,
+  counts: number[]
+): HistogramSlicePoint {
+  return {
+    kind: 'histogram',
+    timestamp,
+    seriesRef,
+    bounds: [1, 2, 5, 10],
+    counts,
+    totals: {
+      count: counts.reduce((a, b) => a + b, 0),
+      sum: 0,
+      min: 0,
+      max: 10,
+    },
+    // Supplied by the store, as they are in a real response. The client no
+    // longer derives these, so a slice without them has no quantile to draw.
+    quantiles: { '0.5': 2, '0.95': 5, '0.99': 9 },
+  }
+}
+
+describe('histogramSliceToChartDatapoint quantiles', () => {
+  const explicit = histSlice(ts1, '', [0, 2, 7, 3, 0])
+  const exponential: HistogramSlicePoint = {
+    kind: 'expHistogram',
+    timestamp: ts1,
+    seriesRef: '',
+    scale: 0,
+    zeroThreshold: 0,
+    zeroCount: 0,
+    positiveOffset: 0,
+    positiveCounts: [2, 7, 3],
+    negativeOffset: 0,
+    negativeCounts: [],
+    totals: explicit.totals,
+    quantiles: { '0.5': 2.5, '0.95': 6, '0.99': 7 },
+  }
+  it.each([explicit, exponential])(
+    'preserves store-computed estimates for $kind distribution markers',
+    slice => {
+      const chart = histogramSliceToChartDatapoint(slice, 'merged', 'Delta', 1)
+      expect(chart.quantiles).toBe(slice.quantiles)
+      expect(
+        histogramSliceToChartDatapoint(
+          { ...slice, quantiles: null },
+          'empty',
+          'Delta',
+          1
+        ).quantiles
+      ).toBeNull()
+    }
+  )
+})
+
+describe('buildVisibleSeriesQuantileChartTimeseries', () => {
+  it('emits one line per visible series and active quantile', () => {
+    const perAttribute: HistogramSlicePoint[] = [
+      histSlice(ts1, 'host=a', [0, 50, 50, 0, 0]),
+      histSlice(ts1, 'host=b', [0, 30, 50, 20, 0]),
+      histSlice(ts2, 'host=a', [0, 10, 90, 0, 0]),
+    ]
+    const visible = new Set(['host=a', 'host=b'])
+    const result = buildVisibleSeriesQuantileChartTimeseries(
+      perAttribute,
+      [0.5, 0.95],
+      visible
+    )
+
+    expect(result.map(ts => ts.key).sort()).toEqual([
+      quantileSeriesKey('host=a', '0.5'),
+      quantileSeriesKey('host=a', '0.95'),
+      quantileSeriesKey('host=b', '0.5'),
+      quantileSeriesKey('host=b', '0.95'),
+    ])
+    expect(parseQuantileSeriesKey(result[0]!.key)).toEqual({
+      seriesKey: 'host=a',
+      quantileKey: '0.5',
+    })
+    expect(result[0]!.points[0]!.timestampNs).toBe(ts1)
+  })
+
+  it('respects legend visibility filter', () => {
+    const perAttribute: HistogramSlicePoint[] = [
+      histSlice(ts1, 'host=a', [0, 100, 0, 0, 0]),
+      histSlice(ts1, 'host=b', [0, 0, 100, 0, 0]),
+    ]
+    const visible = new Set(['host=a'])
+    const result = buildVisibleSeriesQuantileChartTimeseries(
+      perAttribute,
+      [0.5],
+      visible
+    )
+    expect(result).toHaveLength(1)
+    expect(result[0]!.key).toBe(quantileSeriesKey('host=a', '0.5'))
+  })
+
+  it('orders same-millisecond points by their exact timestamps', () => {
+    const earlier = 10_000_100n
+    const later = 10_000_900n
+    const result = buildVisibleSeriesQuantileChartTimeseries(
+      [
+        histSlice(later, 'host=a', [0, 50, 50, 0, 0]),
+        histSlice(earlier, 'host=a', [0, 50, 50, 0, 0]),
+      ],
+      [0.5],
+      new Set(['host=a'])
+    )
+
+    expect(result[0]!.points.map(point => point.timestampNs)).toEqual([
+      earlier,
+      later,
+    ])
+  })
+})
+
+describe('buildPerSeriesQuantileSeries', () => {
+  it('emits one line per visible seriesRef', () => {
+    const perAttribute: HistogramSlicePoint[] = [
+      histSlice(ts1, 'host=a', [0, 50, 50, 0, 0]),
+      histSlice(ts1, 'host=b', [0, 30, 50, 20, 0]),
+      histSlice(ts2, 'host=a', [0, 10, 90, 0, 0]),
+    ]
+    const visible = new Set(['host=a', 'host=b'])
+    const lines = buildPerSeriesQuantileSeries(perAttribute, 0.5, visible)
+    expect(lines.map(l => l.key).sort()).toEqual(['host=a', 'host=b'])
+    expect(lines[0]!.points).toHaveLength(2)
+  })
+})
+
+describe('HEATMAP_BUCKET_TARGET', () => {
+  // This request parameter controls the store's bucket width.
+  it('is the resolution a histogram asks the store for', () => {
+    expect(HEATMAP_BUCKET_TARGET).toBe(100)
+  })
+})
+
+describe('seriesBucketsToSlices', () => {
+  it('approximates exact counts only in chart slices without mutating the source', () => {
+    const datapoint: HistogramDataPoint = {
+      id: 'extreme',
+      metricType: 'Histogram',
+      timestamp: ts1,
+      timestampMs: 1000,
+      startTime: ts1,
+      count: 18_446_744_073_709_551_615n,
+      sum: 1,
+      min: 1,
+      max: 1,
+      explicitBounds: [],
+      bucketCounts: [18_446_744_073_709_551_615n],
+      exemplars: [],
+      flags: 0,
+      aggregationTemporalityCode: 1,
+      aggregationTemporality: 'Delta',
+    }
+
+    const [slice] = seriesBucketsToSlices([
+      metricSeries('driver=HAM', [datapoint]),
+    ])
+
+    expect(slice!.totals.count).toBe(Number(datapoint.count))
+    expect(slice!.kind === 'histogram' && slice.counts).toEqual([
+      Number(datapoint.bucketCounts[0]),
+    ])
+    expect(datapoint.count).toBe(18_446_744_073_709_551_615n)
+    expect(datapoint.bucketCounts).toEqual([18_446_744_073_709_551_615n])
+
+    const chartDatapoint = histogramSliceToChartDatapoint(
+      slice!,
+      'synthetic',
+      'Delta',
+      1
+    )
+    expect(chartDatapoint.count).toBe(Number(datapoint.count))
+    expect(typeof chartDatapoint.count).toBe('number')
+    expect(datapoint.count).toBe(18_446_744_073_709_551_615n)
+  })
+
+  it('emits one slice per store bucket, keyed by its series', () => {
+    const series = [
+      metricSeries('driver=ALO', [
+        {
+          id: 'a',
+          metricType: 'Histogram',
+          timestamp: ts1,
+          timestampMs: 1000,
+          startTime: ts1,
+          count: 3n,
+          sum: 6,
+          min: 1,
+          max: 3,
+          explicitBounds: [1, 2],
+          bucketCounts: [1n, 1n, 1n],
+          exemplars: [],
+          flags: 0,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        },
+        {
+          id: 'b',
+          metricType: 'Histogram',
+          timestamp: ts2,
+          timestampMs: 2000,
+          startTime: ts2,
+          count: 1n,
+          sum: 5,
+          min: 5,
+          max: 5,
+          explicitBounds: [1, 2],
+          bucketCounts: [0n, 0n, 1n],
+          exemplars: [],
+          flags: 0,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        },
+      ]),
+    ]
+
+    const slices = seriesBucketsToSlices(series)
+
+    // Two datapoints in, two slices out: no grouping, no re-bucketing. The
+    // store decided where the buckets are.
+    expect(slices).toHaveLength(2)
+    expect(slices.map(s => s.timestamp)).toEqual([ts1, ts2])
+    expect(slices.map(s => s.sourceDatapointID)).toEqual(['a', 'b'])
+    expect(slices.every(s => s.seriesRef === 'driver=ALO')).toBe(true)
+    expect(slices[0]!.totals.count).toBe(3)
+    expect(slices[1]!.totals.count).toBe(1)
+  })
+
+  it('carries the exponential fields through untouched', () => {
+    const series = [
+      metricSeries('driver=VER', [
+        {
+          id: 'c',
+          metricType: 'ExponentialHistogram',
+          timestamp: ts1,
+          timestampMs: 1000,
+          startTime: ts1,
+          count: 4n,
+          sum: 8,
+          min: 1,
+          max: 4,
+          scale: 2,
+          zeroCount: 1n,
+          zeroThreshold: 0.5,
+          positiveBucketOffset: 3,
+          positiveBucketCounts: [1n, 2n],
+          negativeBucketOffset: 0,
+          negativeBucketCounts: [],
+          exemplars: [],
+          flags: 0,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        },
+      ]),
+    ]
+
+    const slices = seriesBucketsToSlices(series)
+    expect(slices).toHaveLength(1)
+    const slice = slices[0]!
+    expect(slice.kind).toBe('expHistogram')
+    if (slice.kind !== 'expHistogram') return
+    // No rescaling: the store already aligned everything inside this bucket, so
+    // touching the scale here could only undo that.
+    expect(slice.scale).toBe(2)
+    expect(slice.positiveOffset).toBe(3)
+    expect(slice.positiveCounts).toEqual([1, 2])
+    expect(slice.zeroCount).toBe(1)
+  })
+})

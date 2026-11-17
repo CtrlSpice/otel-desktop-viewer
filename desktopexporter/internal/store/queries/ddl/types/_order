@@ -5,3 +5,7 @@
 #
 # This is the only place the order is written down. Filenames say what an
 # object is; this file says when it is built.
+otel_resource.sql
+otel_scope.sql
+otel_resource_input.sql
+otel_scope_input.sql
