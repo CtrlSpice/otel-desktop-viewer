@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { DataType, tableFromIPC } from 'apache-arrow'
 import { chromium, expect } from '@playwright/test'
@@ -52,6 +54,7 @@ child.stderr.on('data', chunk => {
   output += chunk
 })
 let browser
+let importDirectory
 const errors = []
 
 function assertRunning() {
@@ -403,10 +406,476 @@ try {
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(copied)
+
+  const selectedURL = page.url()
+  let detailRequests = 0
+  page.on('request', request => {
+    if (request.url() === `${baseURL}/api/data/getLog`) detailRequests++
+  })
+  const live = page.getByRole('button', { name: 'Live', exact: true })
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  const receivedLogCount = count =>
+    page.waitForResponse(async response => {
+      if (
+        response.url() !== `${baseURL}/rpc` ||
+        response.request().postDataJSON()?.method !== 'getStats'
+      )
+        return false
+      return (await response.json()).result?.logs?.logCount === count
+    })
+  const appendLog = async marker => {
+    const response = await fetch(`http://127.0.0.1:${httpPort}/v1/logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: marker },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    })
+    assert.equal(response.status, 200)
+  }
+  const offCommit = receivedLogCount(2)
+  await appendLog('live-off-arrival')
+  await offCommit
+  assert.equal(detailRequests, 0)
+  assert.equal(page.url(), selectedURL)
+
+  const enabled = page.waitForResponse(`${baseURL}/api/data/getLog`)
+  await live.click()
+  await enabled
+  await expect(live).toHaveAttribute('aria-pressed', 'true')
+  const onCommit = receivedLogCount(3)
+  const refreshed = page.waitForResponse(`${baseURL}/api/data/getLog`)
+  await appendLog('live-on-arrival')
+  await Promise.all([onCommit, refreshed])
+  assert.equal(page.url(), selectedURL)
+  await body
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(copied)
+
+  await live.click()
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  await page.goto(baseURL)
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles({
+    name: 'redacted-first-log.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: 'browser-import-destination' },
+                    attributes: [
+                      {
+                        key: 'password',
+                        value: { stringValue: 'synthetic-import-secret' },
+                      },
+                      {
+                        key: 'exact',
+                        value: { intValue: exactInteger },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ),
+  })
+  await expect(page).not.toHaveURL(selectedURL, { timeout: 15000 })
+  await expect(page).toHaveURL(/\/logs\/[a-f0-9-]+\?time=all$/)
+  await expect(body).toContainText('browser-import-destination')
+  const importedID = new URL(page.url()).pathname.split('/').at(-1)
+  const imported = await json(`${baseURL}/export/logs/${importedID}`)
+  const importedLog = imported.resourceLogs[0].scopeLogs[0].logRecords[0]
+  assert.match(
+    importedLog.attributes.find(attribute => attribute.key === 'password').value
+      .stringValue,
+    /\*{4}/
+  )
+  assert.deepEqual(
+    importedLog.attributes.find(attribute => attribute.key === 'exact').value,
+    { intValue: exactInteger }
+  )
+
+  await mkdir(join(tmpdir(), 'opencode'), { recursive: true })
+  importDirectory = await mkdtemp(join(tmpdir(), 'opencode', 'cli-import-'))
+  const importFiles = async files => {
+    const command = spawn(resolve(process.argv[2]), [
+      'import',
+      ...files,
+      '--endpoint',
+      baseURL,
+    ])
+    let text = ''
+    command.stdout.on('data', chunk => (text += chunk))
+    command.stderr.on('data', chunk => (text += chunk))
+    const [code] = await once(command, 'exit')
+    return { code, text }
+  }
+  const metricIDs = await rpc('query', {
+    sql: `select metric_id::varchar, series_id::varchar, id::varchar
+      from metric_datapoints order by timestamp limit 1`,
+  })
+  const [metricID, seriesID, datapointID] = metricIDs.rows[0]
+  const filter = 'service.name = "ci-smoke"'
+  const reads = new Map()
+  const pending = new Set()
+  let importLookups = 0
+  page.on('request', request => {
+    if (request.url().startsWith(`${baseURL}/api/import-target/`))
+      importLookups++
+    if (request.url().startsWith(`${baseURL}/api/data/`)) {
+      pending.add(request)
+      const method = new URL(request.url()).pathname.split('/').at(-1)
+      reads.set(method, (reads.get(method) ?? 0) + 1)
+    }
+  })
+  page.on('requestfinished', request => pending.delete(request))
+  page.on('requestfailed', request => pending.delete(request))
+  const settled = () => expect.poll(() => pending.size).toBe(0)
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  let sequence = 0
+  for (const [signal, id, selection, method] of [
+    ['logs', logRows.rows[0][0], {}, 'getLog'],
+    ['traces', traceId, { span: spanId }, 'getTraceView'],
+    [
+      'metrics',
+      metricID,
+      { series: seriesID, dp: datapointID, agg: 'raw', visible: 'none' },
+      'getMetricView',
+    ],
+  ]) {
+    for (const enabled of [false, true]) {
+      const params = new URLSearchParams({
+        time: 'all',
+        q: filter,
+        ...selection,
+      })
+      await page.goto(`${baseURL}/${signal}/${id}?${params}`)
+      const search = page.getByRole('textbox', {
+        name: `Search ${signal}`,
+        exact: true,
+      })
+      const selectedDetail = async () => {
+        await expect(search).toHaveText(filter)
+        if (signal === 'logs') {
+          await expect(
+            page.getByRole('table', { name: 'Log fields' })
+          ).toContainText('ci-smoke-log')
+        } else if (signal === 'traces') {
+          await expect(
+            page.getByRole('table', { name: 'Span fields' })
+          ).toContainText('ci-smoke-span')
+        } else {
+          await expect(
+            page.locator(`[data-dp-id="${datapointID}"]`)
+          ).toHaveAttribute('aria-expanded', 'true')
+          await expect(
+            page.getByRole('checkbox', { name: / in chart$/ })
+          ).not.toBeChecked()
+        }
+      }
+      await selectedDetail()
+      await settled()
+      assert.ok(reads.has(method), `${signal} did not request ${method}`)
+      if (enabled) {
+        const before = reads.get(method)
+        await live.click()
+        await expect.poll(() => reads.get(method)).toBeGreaterThan(before)
+        await settled()
+      }
+      await expect(live).toHaveAttribute('aria-pressed', String(enabled))
+      const selected = page.url()
+      const beforeReads = reads.get(method)
+      const before = await rpc('getStats')
+      const marker = `cli-import-${++sequence}`
+      const newSpanID = sequence.toString(16).padStart(16, '0')
+      const traces = structuredClone(payloads.traces)
+      traces.resourceSpans[0].scopeSpans[0].spans = [
+        {
+          ...span,
+          traceId: sequence.toString(16).padStart(32, '0'),
+          spanId: newSpanID,
+          name: marker,
+        },
+        {
+          ...span,
+          spanId: newSpanID,
+          parentSpanId: spanId,
+          name: `${marker}-child`,
+        },
+      ]
+      const metrics = structuredClone(payloads.metrics)
+      const metric = metrics.resourceMetrics[0].scopeMetrics[0].metrics[0]
+      metric.gauge.dataPoints[0].timeUnixNano = String(
+        BigInt(timestamp) + BigInt(sequence) * 1000000n
+      )
+      metrics.resourceMetrics[0].scopeMetrics[0].metrics.push({
+        ...structuredClone(metric),
+        name: marker,
+      })
+      const contents = JSON.stringify({
+        ...traces,
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: marker },
+                    attributes: [
+                      {
+                        key: 'password',
+                        value: { stringValue: 'synthetic-cli-secret' },
+                      },
+                      { key: 'exact', value: { intValue: exactInteger } },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        ...metrics,
+      })
+      const file = join(importDirectory, `${marker}.json`)
+      await writeFile(file, contents)
+      const notified = receivedLogCount(before.logs.logCount + 1)
+      const result = await importFiles([file])
+      assert.equal(result.code, 0, result.text)
+      assert.ok(result.text.includes('Received'), result.text)
+      assert.equal(await readFile(file, 'utf8'), contents)
+      // Receiver acceptance alone does not prove that these writes committed.
+      await expect
+        .poll(async () => {
+          const stats = await rpc('getStats')
+          return [
+            stats.traces.spanCount,
+            stats.logs.logCount,
+            stats.metrics.dataPointCount,
+          ]
+        })
+        .toEqual([
+          before.traces.spanCount + 2,
+          before.logs.logCount + 1,
+          before.metrics.dataPointCount + 2,
+        ])
+      await notified
+      if (enabled) {
+        await expect.poll(() => reads.get(method)).toBeGreaterThan(beforeReads)
+      } else {
+        assert.equal(reads.get(method), beforeReads)
+        await page.getByRole('button', { name: /^Refresh(?:$|:)/ }).click()
+        await expect.poll(() => reads.get(method)).toBeGreaterThan(beforeReads)
+      }
+      await settled()
+      assert.equal(page.url(), selected)
+      await selectedDetail()
+      assert.equal(importLookups, 0)
+      const storedLog = await rpc('query', {
+        sql: `select id::varchar from logs where body::varchar = '${marker}'`,
+      })
+      assert.equal(storedLog.rows.length, 1)
+      const cliLog = await json(
+        `${baseURL}/export/logs/${storedLog.rows[0][0]}`
+      )
+      const attrs = cliLog.resourceLogs[0].scopeLogs[0].logRecords[0].attributes
+      assert.match(
+        attrs.find(a => a.key === 'password').value.stringValue,
+        /\*{4}/
+      )
+      assert.deepEqual(attrs.find(a => a.key === 'exact').value, {
+        intValue: exactInteger,
+      })
+      const download = page.waitForEvent('download')
+      const exportRequest = page.waitForRequest(
+        request =>
+          request.method() === 'GET' &&
+          request.url().startsWith(`${baseURL}/export/${signal}/`)
+      )
+      await page
+        .getByRole('button', {
+          name: `Download ${signal.slice(0, -1)}`,
+          exact: true,
+        })
+        .click()
+      await download
+      assert.equal(
+        new URL((await exportRequest).url()).pathname,
+        `/export/${signal}/${id}`
+      )
+      console.log(
+        `CLI import retained ${signal} selection with Live ${enabled ? 'on' : 'off'}`
+      )
+    }
+  }
+
+  // A malformed later JSONL object sends none of that file. Receiver errors
+  // still allow a later file to commit, without changing the inspected item.
+  const selected = page.url()
+  const bad = join(importDirectory, 'malformed.jsonl')
+  const rejected = join(importDirectory, 'receiver-rejected.json')
+  const good = join(importDirectory, 'after-errors.json')
+  const logPayload = record =>
+    JSON.stringify({
+      resourceLogs: [
+        { resource, scopeLogs: [{ scope, logRecords: [record] }] },
+      ],
+    })
+  await writeFile(
+    bad,
+    logPayload({ body: { stringValue: 'must-not-be-sent' } }) + '\n{'
+  )
+  await writeFile(rejected, logPayload({ timeUnixNano: 'invalid-timestamp' }))
+  await writeFile(
+    good,
+    logPayload({
+      timeUnixNano: timestamp,
+      body: { stringValue: 'after-cli-errors' },
+    })
+  )
+  const beforeErrors = await rpc('getStats')
+  const notified = receivedLogCount(beforeErrors.logs.logCount + 1)
+  const failedImport = await importFiles([bad, rejected, good])
+  assert.equal(failedImport.code, 1, failedImport.text)
+  assert.ok(failedImport.text.includes('invalid JSON'), failedImport.text)
+  assert.ok(failedImport.text.includes('Rejected:'), failedImport.text)
+  assert.ok(failedImport.text.includes('Received'), failedImport.text)
+  await notified
+  await settled()
+  assert.equal(page.url(), selected)
+  assert.equal(importLookups, 0)
+  assert.deepEqual(
+    (
+      await rpc('query', {
+        sql: `select body::varchar from logs
+      where body::varchar in ('must-not-be-sent', 'after-cli-errors')`,
+      })
+    ).rows,
+    [['after-cli-errors']]
+  )
+
+  // Large direct links must survive the actual HTTP server and a fresh browser.
+  const linkedMetrics = ['histogram', 'exponentialHistogram'].map(kind => ({
+    name: `url-smoke-${kind}`,
+    [kind]: {
+      aggregationTemporality: 1,
+      dataPoints: Array.from({ length: 1000 }, (_, index) => ({
+        attributes: [{ key: 'index', value: { intValue: String(index) } }],
+        startTimeUnixNano: String(BigInt(timestamp) - 1000000000n),
+        timeUnixNano: timestamp,
+        count: '1',
+        sum: 1.5,
+        min: 1,
+        max: 2,
+        ...(kind === 'histogram'
+          ? { explicitBounds: [2], bucketCounts: ['1', '0'] }
+          : {
+              scale: 0,
+              zeroCount: '0',
+              positive: { offset: 0, bucketCounts: ['1'] },
+            }),
+      })),
+    },
+  }))
+  const longLinkFile = join(importDirectory, 'long-metric-links.json')
+  await writeFile(
+    longLinkFile,
+    JSON.stringify({
+      resourceMetrics: [
+        { resource, scopeMetrics: [{ scope, metrics: linkedMetrics }] },
+      ],
+    })
+  )
+  const longLinkImport = await importFiles([longLinkFile])
+  assert.equal(longLinkImport.code, 0, longLinkImport.text)
+  const longLinkRows = () =>
+    rpc('query', {
+      sql: "select id::varchar, name from metrics where name like 'url-smoke-%' order by name",
+    })
+  await expect.poll(async () => (await longLinkRows()).rows.length).toBe(2)
+  for (const [id, name] of (await longLinkRows()).rows) {
+    const rows = await rpc('query', {
+      sql: `select series_id::varchar from metric_datapoints where metric_id = '${id}' order by series_id`,
+      limit: 1000,
+    })
+    const keys = rows.rows.map(row => row[0])
+    assert.equal(keys.length, 1000)
+    const url = `${baseURL}/metrics/${id}?${new URLSearchParams({ time: 'all', htab: 'histogram', visible: keys.join(',') })}`
+    assert.ok(Buffer.byteLength(url) > 39000)
+    const fresh = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+    })
+    try {
+      const linked = await fresh.newPage()
+      linked.on('pageerror', error => errors.push(error.message))
+      const requested = []
+      linked.on('request', request => {
+        if (request.url().endsWith('/api/data/getMetricAggregateView'))
+          requested.push(request.postDataJSON().seriesRefs)
+      })
+      const response = await linked.goto(url)
+      assert.equal(response.status(), 200)
+      await expect(linked.locator('.lc-bars-bar:visible').first()).toBeVisible()
+      await expect(
+        linked.getByRole('list', { name: 'Histogram count scale' })
+      ).toContainText('1,000')
+      await expect.poll(() => requested.length).toBe(2)
+      assert.ok(
+        requested.every(
+          selection => JSON.stringify(selection) === JSON.stringify(keys)
+        )
+      )
+      const copied = linked.url()
+      assert.equal(new URL(copied).searchParams.get('visible'), keys.join(','))
+      await linked.reload()
+      await expect(linked.locator('.lc-bars-bar:visible').first()).toBeVisible()
+      await expect(
+        linked.getByRole('list', { name: 'Histogram count scale' })
+      ).toContainText('1,000')
+      await expect.poll(() => requested.length).toBe(4)
+      assert.deepEqual(requested.at(-1), keys)
+      assert.equal(linked.url(), copied)
+      console.log(
+        `${name}: 1000 selected series restored from ${Buffer.byteLength(copied)}-byte URL and reload`
+      )
+    } finally {
+      await fresh.close()
+    }
+  }
   assert.deepEqual(errors, [])
   assertRunning()
   console.log(
-    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity and trace export`
+    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity, trace export, Live off/on selection, redacted browser import and actual CLI imports retaining all three inspected signals`
   )
 } catch (error) {
   console.error(output)
@@ -425,5 +894,7 @@ try {
         await stopped
       }
     }
+    if (importDirectory)
+      await rm(importDirectory, { recursive: true, force: true })
   }
 }

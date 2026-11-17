@@ -51,6 +51,34 @@ describe('DateTimeFilter', () => {
     expect(popover).not.toHaveTextContent('Recent')
   })
 
+  it('updates the compact tooltip without changing the exact selected range', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-16T04:59:50Z'))
+    localStorage.setItem('time-tz', 'America/New_York')
+    const start = Date.parse('2026-01-15T15:00:00.123Z')
+    const end = Date.parse('2026-01-15T16:30:00.456Z')
+    setTestUrl(`/traces?start=${start}&end=${end}`)
+    renderWithContexts(DateTimeFilter)
+    await tick()
+
+    const trigger = screen.getByRole('button', { name: /Change time range/i })
+    const exactLabel =
+      'Change time range, 2026-01-15, 10:00:00.123 - 2026-01-15, 11:30:00.456 EST'
+    expect(trigger).toHaveTextContent(/^$/)
+    expect(trigger).toHaveAccessibleName(exactLabel)
+    expect(trigger.getAttribute('data-tip')?.replace(/\s+/g, ' ')).toBe(
+      'Change time range, Today, 10:00 – 11:30'
+    )
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    await tick()
+    expect(trigger.getAttribute('data-tip')?.replace(/\s+/g, ' ')).toBe(
+      'Change time range, Jan 15, 10:00 – 11:30'
+    )
+    expect(trigger).toHaveAccessibleName(exactLabel)
+    expect(window.location.search).toBe(`?start=${start}&end=${end}`)
+  })
+
   it('opens the popover and applies a preset selection end-to-end', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
@@ -75,6 +103,8 @@ describe('DateTimeFilter', () => {
     await waitFor(() =>
       expect(trigger).toHaveAttribute('aria-expanded', 'false')
     )
+    expect(trigger).toHaveAttribute('data-tip', 'Change time range, Last 5 min')
+    expect(trigger).toHaveAccessibleName('Change time range, Last 5 min')
   })
 
   it('closes when All is clicked while All is already selected', async () => {

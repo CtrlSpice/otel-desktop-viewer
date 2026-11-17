@@ -197,6 +197,205 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+for (const metricType of ['Gauge', 'Sum'] as const) {
+  test(`${metricType} shared visibility overrides preferences and restores through reload and history`, async ({
+    page,
+    browser,
+  }) => {
+    const value: MetricFixture = {
+      ...metric,
+      metricType,
+      aggregationTemporalityCode: metricType === 'Sum' ? 1 : null,
+      aggregationTemporality: metricType === 'Sum' ? 'Delta' : null,
+      isMonotonic: metricType === 'Sum' ? true : null,
+      timeseries: timeseries.map(series => ({
+        ...series,
+        datapoints: series.datapoints.map(point => {
+          if (point.metricType !== 'Gauge')
+            throw new Error('Expected a Gauge fixture')
+          return metricType === 'Sum'
+            ? {
+                ...point,
+                metricType,
+                aggregationTemporalityCode: 1,
+                aggregationTemporality: 'Delta',
+                isMonotonic: true,
+              }
+            : point
+        }),
+      })),
+    }
+    async function mockLinkedMetric(target: Page) {
+      const chartRequests: string[][] = []
+      await target.route('**/api/features', route =>
+        route.fulfill({ json: { evals: { enabled: false } } })
+      )
+      await routeTelemetry(target, async route => {
+        const { id, method, params } = route.request().postDataJSON()
+        function resultForRequest() {
+          if (method === 'getMetric') return exactMetricFixture(value)
+          if (method === 'getMetricView') {
+            if (params.targetBuckets > 0)
+              chartRequests.push(params.datapointSeriesRefs)
+            return {
+              ...value,
+              timeseries: value.timeseries
+                .filter(
+                  series =>
+                    !params.seriesRefs ||
+                    params.seriesRefs.includes(series.seriesRef)
+                )
+                .map(series => ({
+                  ...series,
+                  datapoints:
+                    !params.datapointSeriesRefs ||
+                    params.datapointSeriesRefs.includes(series.seriesRef)
+                      ? series.datapoints
+                      : [],
+                })),
+            }
+          }
+          if (method === 'getMetricAggregateView')
+            return { aggregate: null, scalarAggregate: null }
+          if (method === 'searchMetricSummaries')
+            return [
+              {
+                ...summary,
+                metricType,
+                aggregationTemporalityCode: value.aggregationTemporalityCode,
+                aggregationTemporality: value.aggregationTemporality,
+                isMonotonic: value.isMonotonic,
+              },
+            ]
+          if (method === 'getStats')
+            return {
+              traces: {
+                traceCount: 0,
+                spanCount: 0,
+                serviceCount: 0,
+                errorCount: 0,
+                lastReceived: null,
+              },
+              logs: { logCount: 0, errorCount: 0, lastReceived: null },
+              metrics: {
+                metricCount: 1,
+                dataPointCount: 80,
+                lastReceived: null,
+              },
+              rejections: [],
+            }
+          return []
+        }
+        await route.fulfill({
+          json: { jsonrpc: '2.0', id, result: resultForRequest() },
+        })
+      })
+      return chartRequests
+    }
+    const requests = await mockLinkedMetric(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('signal-detail:open', 'true')
+      localStorage.setItem(
+        'metrics:view:series-layout',
+        JSON.stringify({ visibleKeys: ['first'] })
+      )
+    })
+    await page.setViewportSize({ width: 1920, height: 1100 })
+    const query = new URLSearchParams({
+      time: 'all',
+      q: 'name = "request.duration"',
+      agg: 'raw',
+      visible: 'second',
+      series: 'first',
+      dp: 'first-0',
+    })
+    await page.goto(`/metrics/${metric.metricRef}?${query}`)
+    const lines = page.locator('.metric-series-line')
+    await expect(lines).toHaveCount(1)
+    await expect(lines).toHaveAttribute('data-series-key', 'second')
+    await expect(page.locator('[data-dp-id="first-0"]')).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+    expect(requests[0]).toEqual(['second'])
+    const copied = page.url()
+    const fresh = await browser.newContext({
+      viewport: { width: 1920, height: 1100 },
+    })
+    try {
+      const opened = await fresh.newPage()
+      const freshRequests = await mockLinkedMetric(opened)
+      await opened.goto(copied)
+      await expect(opened.locator('.metric-series-line')).toHaveCount(1)
+      await expect(opened.locator('.metric-series-line')).toHaveAttribute(
+        'data-series-key',
+        'second'
+      )
+      expect(freshRequests[0]).toEqual(['second'])
+      await page.reload()
+      await expect(lines).toHaveCount(1)
+      await expect(lines).toHaveAttribute('data-series-key', 'second')
+      await expect(page).toHaveURL(copied)
+
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+        .uncheck()
+      await expect(lines).toHaveCount(0)
+      expect(new URL(page.url()).searchParams.get('visible')).toBe('none')
+      await opened.goto(page.url())
+      await expect(
+        opened.getByRole('checkbox', {
+          name: 'Show route: /first in chart',
+          exact: true,
+        })
+      ).not.toBeChecked()
+      await expect(
+        opened.getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+      ).not.toBeChecked()
+      expect(freshRequests.at(-1)).toEqual([])
+
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /first in chart',
+          exact: true,
+        })
+        .check()
+      await expect(lines).toHaveCount(1)
+      const beforeInspection = page.url()
+      await page
+        .getByRole('button', { name: 'Select route: /second', exact: true })
+        .click()
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+        .check()
+      await expect(lines).toHaveCount(2)
+      const afterInspection = page.url()
+      await page.goBack()
+      await expect(page).toHaveURL(beforeInspection)
+      await expect(lines).toHaveCount(1)
+      await expect(page.locator('[data-dp-id="first-0"]')).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      )
+      await page.goForward()
+      await expect(page).toHaveURL(afterInspection)
+      await expect(lines).toHaveCount(2)
+      expect(new URL(page.url()).searchParams.get('q')).toBe(query.get('q'))
+    } finally {
+      await fresh.close()
+    }
+  })
+}
+
 test('retained datapoints identify their owner through a failed series switch and retry', async ({
   page,
 }) => {
@@ -1403,6 +1602,101 @@ test.describe('independent histogram aggregate loading', () => {
     bucketCounts: [2, 7, 3],
   }
 
+  for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
+    test(`${metricType} links restore 100 visible series without a selection cap`, async ({
+      page,
+    }) => {
+      const keys = Array.from(
+        { length: 100 },
+        (_, index) =>
+          `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+      )
+      const distribution =
+        metricType === 'Histogram'
+          ? { explicitBounds: [1, 2], bucketCounts: [2, 7, 3] }
+          : {
+              scale: 0,
+              zeroCount: 2,
+              zeroThreshold: 0.1,
+              positiveBucketOffset: 0,
+              positiveBucketCounts: [7, 3],
+              negativeBucketOffset: 0,
+              negativeBucketCounts: [],
+            }
+      const value: MetricFixture = {
+        ...metric,
+        metricType,
+        aggregationTemporalityCode: 1,
+        aggregationTemporality: 'Delta',
+        timeseries: keys.map((key, index) => ({
+          ...timeseries[0]!,
+          seriesRef: key,
+          attributes: [
+            { key: 'index', value: { kind: 'int64', value: String(index) } },
+          ],
+          datapoints: [],
+        })),
+      }
+      const selected: string[][] = []
+      const initial: string[][] = []
+      await routeTelemetry(page, async route => {
+        const { id, method, params } = route.request().postDataJSON()
+        function resultForRequest() {
+          if (method === 'getMetric') return exactMetricFixture(value)
+          if (method === 'getMetricView') {
+            initial.push(params.datapointSeriesRefs)
+            return value
+          }
+          if (method === 'searchMetricSummaries')
+            return [
+              {
+                ...summary,
+                metricType,
+                aggregationTemporalityCode: 1,
+                aggregationTemporality: 'Delta',
+                seriesCount: keys.length,
+                seriesCardinality: keys.length,
+              },
+            ]
+          if (method === 'getMetricAggregateView') {
+            selected.push(params.seriesRefs)
+            return {
+              aggregate: [{ ...bucket, ...distribution }],
+              scalarAggregate: null,
+            }
+          }
+        }
+        const result = resultForRequest()
+        if (result === undefined) return route.fallback()
+        await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+      })
+      const query = new URLSearchParams({
+        time: 'all',
+        htab: 'quantiles',
+        hscope: 'window',
+        visible: keys.join(','),
+      })
+      await page.goto(`/metrics/${metric.metricRef}?${query}`)
+      await expect(page.locator('.heatmap-cell').first()).toBeVisible()
+      expect(initial[0]).toEqual(keys)
+      expect(selected).toHaveLength(2)
+      expect(
+        selected.every(
+          selection => JSON.stringify(selection) === JSON.stringify(keys)
+        )
+      ).toBe(true)
+      const url = new URL(page.url())
+      expect(url.searchParams.get('visible')).toBe(keys.join(','))
+      expect(url.searchParams.get('htab')).toBe('heatmap')
+      expect(url.searchParams.has('hscope')).toBe(false)
+      await page.reload()
+      await expect(page.locator('.heatmap-cell').first()).toBeVisible()
+      await expect(page).toHaveURL(url.href)
+      expect(selected).toHaveLength(4)
+      expect(selected.at(-1)).toEqual(keys)
+    })
+  }
+
   async function holdAggregates(
     page: Page,
     includeNextMetric = false,
@@ -1656,7 +1950,7 @@ test.describe('independent histogram aggregate loading', () => {
     const bars = page.locator('.heatmap-cell')
     await expect(bars).toHaveCount(3)
     const before = await bars.evaluateAll(elements =>
-      elements.map(element => element.getAttribute('fill'))
+      elements.map(element => getComputedStyle(element).fill)
     )
     let replacement: FixtureRoute | undefined
     await routeTelemetry(page, route => {
@@ -1675,7 +1969,7 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(bars).toHaveCount(3)
     expect(
       await bars.evaluateAll(elements =>
-        elements.map(element => element.getAttribute('fill'))
+        elements.map(element => getComputedStyle(element).fill)
       )
     ).toEqual(before)
     await replacement!.fulfill({
@@ -1691,7 +1985,7 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(bars).toHaveCount(3)
     expect(
       await bars.evaluateAll(elements =>
-        elements.map(element => element.getAttribute('fill'))
+        elements.map(element => getComputedStyle(element).fill)
       )
     ).toEqual(before)
   })
@@ -1764,7 +2058,7 @@ test.describe('independent histogram aggregate loading', () => {
             )
         )
         .toEqual(ramp.map(rgb))
-      const fills = await mixedInkColours(page, ramp)
+      const fills = ramp.map(rgb)
       await expect
         .poll(() =>
           page
@@ -1860,10 +2154,7 @@ test.describe('independent histogram aggregate loading', () => {
           tab === 'Heatmap' ? '.heatmap-cell' : '.lc-bars-bar'
         )
         await expect(marks).toHaveCount(steps)
-        const expected =
-          tab === 'Heatmap'
-            ? await mixedInkColours(page, countRamp('madoromi-aki-hiru', steps))
-            : countRamp('madoromi-aki-hiru', steps).map(rgb)
+        const expected = countRamp('madoromi-aki-hiru', steps).map(rgb)
         expect(
           await marks.evaluateAll(marks =>
             marks.map(mark => getComputedStyle(mark).fill)
@@ -1966,7 +2257,13 @@ test.describe('independent histogram aggregate loading', () => {
       const body = request.postDataJSON()
       requests.push(body)
     })
-    await holdAggregates(page, false, 1)
+    const pending = await holdAggregates(page, false, 1)
+    for (const { route } of pending) await respond(route)
+    await routeTelemetry(page, route =>
+      route.request().postDataJSON().method === 'getMetricAggregateView'
+        ? respond(route)
+        : route.fallback()
+    )
     const checkbox = page.getByRole('checkbox', {
       name: 'Show route: /second in chart',
       exact: true,
@@ -2078,7 +2375,7 @@ test.describe('independent histogram aggregate loading', () => {
     await graph.press('ArrowRight')
     await expect(page.locator('.chart-keyboard-cursor-cell')).toBeVisible()
     await graph.press('Enter')
-    await expect(page.locator('.heatmap-selection')).toBeVisible()
+    await expect(page.locator('.heatmap-cell[data-selected]')).toHaveCount(1)
     expect(await cellGeometry()).toEqual(originalCells)
     expect(await paths()).toEqual(originalPaths)
   })
@@ -2174,6 +2471,86 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
+  for (const theme of ['madoromi-aki-hiru', 'madoromi-aki-yoru']) {
+    test(`zero-count heatmap selection stays visible after focus leaves in ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1920, height: 1000 })
+      await page.addInitScript(
+        theme => localStorage.setItem('theme', theme),
+        theme
+      )
+      const pending = await holdAggregates(page)
+      for (const { route } of pending)
+        await respond(route, { ...bucket, bucketCounts: [4, 0, 2], count: 6 })
+      const graph = page.getByRole('application', {
+        name: 'Histogram heatmap',
+        exact: true,
+      })
+      await graph.focus()
+      await graph.press('ArrowDown')
+      await expect(page.locator('.chart-keyboard-readout')).toContainText(
+        'Count 0.'
+      )
+      const cursor = page.locator('.chart-keyboard-cursor-cell')
+      const bounds = (await cursor.boundingBox())!
+      await graph.press('Enter')
+      await expect(page.locator('.heatmap-selected-cell')).toContainText(
+        /count\s*0/
+      )
+      await page.getByRole('button', { name: 'Refresh', exact: true }).focus()
+      await page.mouse.move(0, 0)
+      await expect(cursor).toHaveCount(0)
+      const selected = page.locator('.heatmap-cell[data-selected]')
+      await expect(selected).toHaveCount(1)
+      await expect(selected).toBeVisible()
+      expect(await selected.boundingBox()).toEqual(bounds)
+      const state = () =>
+        selected.evaluate(cell => {
+          const styles = getComputedStyle(cell)
+          const probe = document.createElement('span')
+          document.body.append(probe)
+          probe.style.color = 'var(--item-selected-bg)'
+          const selected = getComputedStyle(probe).color
+          probe.style.color = 'var(--item-hover-bg)'
+          const hover = getComputedStyle(probe).color
+          probe.remove()
+          return {
+            fill: styles.fill,
+            selected,
+            hover,
+          }
+        })
+      await expect
+        .poll(async () => {
+          const s = await state()
+          return s.fill === s.selected
+        })
+        .toBe(true)
+      await page.mouse.move(bounds.x + bounds.width - 4, bounds.y + 4)
+      await expect(page.locator('.heatmap-hover-cell')).toContainText(
+        /count\s*0/
+      )
+      await expect
+        .poll(async () => {
+          const s = await state()
+          return s.fill === s.hover
+        })
+        .toBe(true)
+      await page.mouse.move(0, 0)
+      await expect
+        .poll(async () => {
+          const s = await state()
+          return s.fill === s.selected
+        })
+        .toBe(true)
+      await page
+        .getByRole('button', { name: 'Dismiss pinned bucket description' })
+        .click()
+      await expect(selected).toHaveCount(0)
+    })
+  }
+
   test('pinned heatmap descriptions dismiss by pointer and keyboard and can reopen', async ({
     page,
   }) => {
@@ -2194,7 +2571,7 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(card.locator('.heatmap-selected-cell')).toBeVisible()
     await close.click()
     await expect(card).toHaveCount(0)
-    await expect(page.locator('.heatmap-selection')).toHaveCount(0)
+    await expect(page.locator('.heatmap-cell[data-selected]')).toHaveCount(0)
     await expect(graph).toBeFocused()
     expect(page.url()).toBe(url)
     await graph.press('Enter')
@@ -2271,24 +2648,32 @@ test.describe('independent histogram aggregate loading', () => {
     await expect(page.locator('.heatmap-cell')).toHaveCount(300)
   })
 
-  test('dense heatmaps join colours without changing cells or adding dot grids', async ({
+  test('heatmaps layer higher counts over lower counts with directional rounding at every density', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
+    const joins = [10, 20, 30, 50]
+    // The 296-count cell at 2026-10-07 10:22 PDT and its lower-count neighbours,
+    // clockwise from the top left. Rotate the same junction through all corners.
+    const joinCounts = [260, 296, 254, 236]
+    const counts = [1, 28, 55, 82, 109, 136, 163, 190, 217, 244, 271, 298]
     const aggregate = Array.from({ length: 81 }, (_, column) => ({
       ...bucket,
       timestamp: String(BigInt(startMs + column * 1000) * 1_000_000n),
       explicitBounds: [1, 2, 3, 4],
-      bucketCounts: Array.from({ length: 5 }, (_, row) =>
-        column === 70 || (column === 40 && row === 2)
-          ? 0
-          : column >= 10 && column <= 11 && row >= 1 && row <= 2
-            ? column === 11 && row === 2
-              ? 5
-              : 4
-            : 1 + ((column + row) % 12)
-      ),
+      bucketCounts: Array.from({ length: 5 }, (_, row) => {
+        if (column === 70 || (column === 40 && row === 2)) return 0
+        const rotation = joins.findIndex(
+          start => column === start || column === start + 1
+        )
+        if (rotation >= 0 && (row === 1 || row === 2)) {
+          const quadrant =
+            column === joins[rotation] ? (row === 2 ? 0 : 3) : row === 2 ? 1 : 2
+          return joinCounts[(quadrant + rotation) % 4]!
+        }
+        return counts[(column + row) % counts.length]!
+      }),
     }))
     for (const { route } of pending)
       await route.fulfill({
@@ -2310,132 +2695,94 @@ test.describe('independent histogram aggregate loading', () => {
                 rect.x.baseVal.value / rect.width.baseVal.value
               ),
               row: Math.round(rect.y.baseVal.value / rect.height.baseVal.value),
-              fill: rect.getAttribute('fill'),
+              fill: getComputedStyle(rect).fill,
             }
           })
           .sort((a, b) => a.column - b.column || a.row - b.row)
       )
-    await expect(group).not.toHaveClass(/heatmap-blobs--joined/)
     const originalCells = await cells()
-    for (const [width, joined] of [
-      [1200, true],
-      [2400, false],
-    ] as const) {
+    for (const width of [1200, 2400]) {
       await page.setViewportSize({ width, height: 1000 })
-      await expect
-        .poll(() =>
-          group.evaluate(element =>
-            element.classList.contains('heatmap-blobs--joined')
-          )
-        )
-        .toBe(joined)
       expect(await cells()).toEqual(originalCells)
-      if (joined) {
-        await expect(page.locator('.heatmap-blob')).toHaveCount(2)
-        await expect(
-          page.locator(
-            '.heatmap-blob > .heatmap-blob-fill,.heatmap-blob > .heatmap-blob-outline'
-          )
-        ).toHaveCount(0)
-        const regions = page.locator(
-          '.heatmap-colour-outlines .heatmap-blob-outline'
+      await expect(page.locator('.heatmap-count-layer')).toHaveCount(12)
+      const contours = page.locator('.heatmap-contour')
+      for (const contour of await contours.all())
+        await expect(contour).toHaveAttribute('d', /Q/)
+      const perimeter = page
+        .locator('.heatmap-blobs > defs clipPath path')
+        .first()
+      expect(
+        await perimeter.evaluate(
+          element => (element.getAttribute('d')!.match(/M/g) ?? []).length
         )
-        await expect(regions).toHaveCount(12)
-        const liners = await regions.evaluateAll(elements =>
-          elements.map(element => {
-            const clipID = element.getAttribute('clip-path')!.slice(5, -1)
-            const path = element.getAttribute('d')!
-            const probe = document.createElementNS(
-              'http://www.w3.org/2000/svg',
-              'path'
+      ).toBe(3)
+      const joinsPaintCorrectly = await group.evaluate((element, joins) => {
+        const cells = [
+          ...element.querySelectorAll<SVGRectElement>('.heatmap-cell'),
+        ]
+        const pitch = cells[0]!.width.baseVal.value
+        const height = cells[0]!.height.baseVal.value
+        const radius = Math.min(2, pitch / 2, height / 2)
+        const layers = [
+          ...element.querySelectorAll<SVGPathElement>('.heatmap-contour'),
+        ].reverse()
+        const colourAt = (x: number, y: number) => {
+          const top = layers.find(layer =>
+            layer.isPointInFill(new DOMPoint(x, y))
+          )
+          return top ? getComputedStyle(top).fill : null
+        }
+        const cellColour = (column: number, row: number) =>
+          getComputedStyle(
+            cells.find(
+              cell =>
+                Math.round(cell.x.baseVal.value / pitch) === column &&
+                Math.round(cell.y.baseVal.value / height) === row
+            )!
+          ).fill
+        return joins
+          .map((column, rotation) => {
+            const vertex = { x: (column + 1) * pitch, y: 3 * height }
+            const middleQuadrant = (4 - rotation) % 4
+            const quadrantOffsets = [
+              [-1, -1],
+              [1, -1],
+              [1, 1],
+              [-1, 1],
+            ] as const
+            const [mx, my] = quadrantOffsets[middleQuadrant]!
+            const middle = cellColour(column + (mx > 0 ? 1 : 0), my > 0 ? 3 : 2)
+            return quadrantOffsets.every(
+              ([dx, dy]) =>
+                colourAt(
+                  vertex.x + (dx * radius) / 8,
+                  vertex.y + (dy * radius) / 8
+                ) === middle &&
+                colourAt(
+                  vertex.x + dx * radius * 0.8,
+                  vertex.y + dy * radius * 0.8
+                ) === cellColour(column + (dx > 0 ? 1 : 0), dy > 0 ? 3 : 2)
             )
-            const colour =
-              getComputedStyle(element).getPropertyValue('--blob-color')
-            probe.style.stroke = `color-mix(in oklab, ${colour} 85%, var(--color-base-content))`
-            element.parentElement!.append(probe)
-            const expectedStroke = getComputedStyle(probe).stroke
-            probe.remove()
-            return {
-              sameBoundary:
-                path ===
-                document
-                  .getElementById(clipID)!
-                  .querySelector('path')!
-                  .getAttribute('d'),
-              fill: getComputedStyle(element).fill,
-              stroke: getComputedStyle(element).stroke,
-              expectedStroke,
-              width: Number.parseFloat(getComputedStyle(element).strokeWidth),
-              pointerEvents: getComputedStyle(element).pointerEvents,
-            }
           })
-        )
-        for (const liner of liners) {
-          expect(liner.sameBoundary).toBe(true)
-          expect(liner.fill).toBe('none')
-          expect(liner.stroke).toBe(liner.expectedStroke)
-          expect(liner.width).toBeGreaterThan(0)
-          expect(liner.pointerEvents).toBe('none')
-        }
-        const corners = page.locator('.heatmap-colour-corners path')
-        expect(await corners.count()).toBeGreaterThan(0)
-        for (const corner of await corners.all())
-          await expect(corner).toHaveAttribute('d', /Q/)
-        await expect(page.locator('.heatmap-joined-outline')).toHaveCount(2)
-        const outlines = await page
-          .locator('.heatmap-blob')
+          .concat([
+            colourAt(40.5 * pitch, 2.5 * height) === null,
+            colourAt(70.5 * pitch, 2.5 * height) === null,
+          ])
+      }, joins)
+      expect(joinsPaintCorrectly).toEqual([true, true, true, true, true, true])
+      expect(
+        await group
+          .locator('path, rect')
           .evaluateAll(elements =>
-            elements.map(element => {
-              const outline = element.querySelector<SVGGElement>(
-                '.heatmap-joined-outline'
-              )!
-              const maskID = outline.getAttribute('mask')!.slice(5, -1)
-              const mask = document.getElementById(maskID)!
-              const clipID = element.getAttribute('clip-path')!.slice(5, -1)
-              const clip = document.getElementById(clipID)!
-              return {
-                samePerimeter:
-                  mask.querySelector('path')!.getAttribute('d') ===
-                  clip.querySelector('path')!.getAttribute('d'),
-                rings: (
-                  mask.querySelector('path')!.getAttribute('d')!.match(/M/g) ??
-                  []
-                ).length,
-                pointerEvents: getComputedStyle(outline).pointerEvents,
-                colourWeight: getComputedStyle(outline)
-                  .getPropertyValue('--heatmap-cell-colour-weight')
-                  .trim(),
-                noCellStrokes: [...outline.querySelectorAll('rect')].every(
-                  rect => getComputedStyle(rect).stroke === 'none'
-                ),
-                sameColours: [...outline.querySelectorAll('rect')].every(
-                  (rect, index) =>
-                    rect.getAttribute('fill') ===
-                    element
-                      .querySelectorAll('.heatmap-cell')
-                      [index]!.getAttribute('fill')
-                ),
-              }
-            })
+            elements.every(
+              element => getComputedStyle(element).stroke === 'none'
+            )
           )
-        expect(outlines.map(outline => outline.rings).sort()).toEqual([1, 2])
-        for (const outline of outlines) {
-          expect(outline).toMatchObject({
-            samePerimeter: true,
-            pointerEvents: 'none',
-            colourWeight: '85%',
-            sameColours: true,
-            noCellStrokes: true,
-          })
-        }
-        await expect(page.locator('.heatmap-cell').first()).toHaveCSS(
-          'fill-opacity',
-          '1'
-        )
-      } else {
-        await expect(page.locator('.heatmap-joined-outline')).toHaveCount(0)
-        await expect(page.locator('.heatmap-colour-outlines')).toHaveCount(0)
-      }
+      ).toBe(true)
+      await expect(page.locator('.heatmap-cell').first()).toHaveCSS(
+        'fill-opacity',
+        '1'
+      )
       await expect(page.locator('.metric-dot-grid')).toHaveCount(0)
     }
   })
@@ -2591,7 +2938,7 @@ test.describe('independent histogram aggregate loading', () => {
       await expect(page.locator('.heatmap-cell')).toHaveCount(3)
       await expect(page.locator('.heatmap-cell').first()).toBeVisible()
       const paths = await page
-        .locator('.heatmap-blob-fill')
+        .locator('.heatmap-blobs > defs clipPath path')
         .evaluateAll(elements => elements.map(el => el.getAttribute('d')))
       await respond(
         pending.find(request => request.wholeWindow)!.route,
@@ -2610,7 +2957,7 @@ test.describe('independent histogram aggregate loading', () => {
       await expect(page.locator('.heatmap-cell')).toHaveCount(3)
       expect(
         await page
-          .locator('.heatmap-blob-fill')
+          .locator('.heatmap-blobs > defs clipPath path')
           .evaluateAll(elements => elements.map(el => el.getAttribute('d')))
       ).toEqual(paths)
     })
@@ -2848,8 +3195,8 @@ for (const { id: theme } of THEMES) {
         [
           'heatmap',
           '.heatmap-cell',
-          '.heatmap-hover-column',
-          '.heatmap-selection',
+          '.heatmap-cell[data-hovered]',
+          '.heatmap-cell[data-selected]',
           '.chart-keyboard-cursor-cell',
           'Histogram heatmap',
         ],
@@ -2866,18 +3213,15 @@ for (const { id: theme } of THEMES) {
           page.locator('.metric-chart-view .chart-stat-overlays-toggle')
         ).toHaveCount(0)
         if (tab === 'heatmap') {
-          // Each row has the same colour in both adjacent time columns.
-          // Render three connected outlines while retaining all six source cells.
-          const blobs = page.locator('.heatmap-blob')
-          await expect(blobs).toHaveCount(3)
-          for (const blob of await blobs.all()) {
-            await expect(blob.locator('.heatmap-cell')).toHaveCount(2)
-            await expect(blob.locator('.heatmap-blob-fill')).toHaveCount(1)
-            await expect(blob.locator('.heatmap-cell').first()).toHaveCSS(
+          const layers = page.locator('.heatmap-count-layer')
+          await expect(layers).toHaveCount(3)
+          for (const layer of await layers.all()) {
+            await expect(layer.locator('.heatmap-cell')).toHaveCount(2)
+            await expect(layer.locator('.heatmap-cell').first()).toHaveCSS(
               'fill-opacity',
-              '0'
+              '1'
             )
-            const clipped = await blob.evaluate(element => {
+            const clipped = await layer.evaluate(element => {
               const id = element.getAttribute('clip-path')!.slice(5, -1)
               return (
                 document
@@ -2912,8 +3256,7 @@ for (const { id: theme } of THEMES) {
           element => getComputedStyle(element).fill
         )
         const ramp = countRamp(theme, 4)
-        const fills =
-          tab === 'heatmap' ? await mixedInkColours(page, ramp) : ramp.map(rgb)
+        const fills = ramp.map(rgb)
         expect(dataFill).toBe(fills[0])
         const marks = page.locator(markSelector)
         await expect(marks).toHaveCount(tab === 'heatmap' ? 6 : 3)
@@ -2932,51 +3275,39 @@ for (const { id: theme } of THEMES) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
         const hover = page.locator(hoverSelector)
         await expect(hover).toBeVisible()
-        await expect(hover).toHaveCSS('fill', hoverColour)
-        await expect(hover).toHaveCSS('fill-opacity', '0.45')
-        await expect(hover).toHaveCSS('stroke', 'none')
-        await expect(hover).toHaveCSS('rx', '8px')
-        await expect(hover).toHaveCSS('pointer-events', 'none')
-        let hoveredFill = dataFill
         if (tab === 'heatmap') {
-          await expect(mark).toHaveClass(/heatmap-cell--hovered/)
+          await expect(mark).toHaveAttribute('data-hovered', 'true')
           await expect(mark).toHaveCSS('fill-opacity', '1')
-          await expect(page.locator('.heatmap-cell--hovered')).toHaveCount(1)
-          expect(
-            await hover.evaluate(element => {
-              const blobs = document.querySelector('.heatmap-blobs')!
-              return Boolean(
-                blobs.compareDocumentPosition(element) &
-                Node.DOCUMENT_POSITION_FOLLOWING
-              )
-            })
-          ).toBe(true)
-          hoveredFill = await mark.evaluate(
-            element => getComputedStyle(element).fill
-          )
-          expect(hoveredFill).not.toBe(dataFill)
-          expect(hoveredFill).toBe(
-            (await mixedInkColours(page, [ramp[0]!], 88))[0]
-          )
+          await expect(hover).toHaveCount(1)
+          await expect(
+            page.locator('.heatmap-hover-column, .heatmap-selection')
+          ).toHaveCount(0)
+          expect(await hover.boundingBox()).toEqual(box)
+          await expect(mark).toHaveCSS('fill', hoverColour)
+        } else {
+          await expect(hover).toHaveCSS('fill', hoverColour)
+          await expect(hover).toHaveCSS('fill-opacity', '0.45')
+          await expect(hover).toHaveCSS('stroke', 'none')
+          await expect(hover).toHaveCSS('rx', '8px')
+          await expect(hover).toHaveCSS('pointer-events', 'none')
         }
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
         const selection = page.locator(selectionSelector)
         await expect(selection).toBeVisible()
-        await expect(selection).toHaveCSS('fill', selectedColour)
-        await expect(selection).toHaveCSS('stroke', selectedColour)
-        await expect(selection).toHaveCSS('fill-opacity', '0.55')
-        await expect(selection).toHaveCSS('rx', '8px')
-        await expect(selection).toHaveCSS('pointer-events', 'none')
         if (tab === 'heatmap') {
-          await expect(mark).toHaveClass(/heatmap-cell--selected/)
-          const selectedFill = await mark.evaluate(
-            element => getComputedStyle(element).fill
-          )
-          expect(selectedFill).not.toBe(dataFill)
-          expect(selectedFill).not.toBe(hoveredFill)
-          expect(selectedFill).toBe(
-            (await mixedInkColours(page, [ramp[0]!], 84))[0]
-          )
+          await expect(mark).toHaveAttribute('data-selected', 'true')
+          await expect(selection).toHaveCount(1)
+          expect(await selection.boundingBox()).toEqual(box)
+          // Shared item states keep Low under the pointer, then restore Medium.
+          // The pinned readout can cover the centre; hover an exposed edge.
+          await page.mouse.move(box.x + box.width / 2, box.y + 8)
+          await expect(mark).toHaveCSS('fill', hoverColour)
+          await page.mouse.move(0, 0)
+          await expect(mark).toHaveCSS('fill', selectedColour)
+          await page.mouse.move(box.x + box.width / 2, box.y + 8)
+          await expect(mark).toHaveCSS('fill', hoverColour)
+          await page.mouse.move(0, 0)
+          await expect(mark).toHaveCSS('fill', selectedColour)
           const card = page.locator('.metric-heatmap-chart .chart-sticky__card')
           await expect(card).toBeVisible()
           const cellDetails = card.locator('.heatmap-selected-cell')
@@ -3035,16 +3366,20 @@ for (const { id: theme } of THEMES) {
           // A different row in the same column updates the picked cell,
           // rather than toggling the column pin off.
           const x = await mark.getAttribute('x')
-          const y = await mark.getAttribute('y')
-          const nextCell = page
-            .locator(`.heatmap-cell[x="${x}"]:not([y="${y}"])`)
-            .first()
+          const y = Number(await mark.getAttribute('y'))
+          const height = Number(await mark.getAttribute('height'))
+          const nextCell = page.locator(
+            `.heatmap-cell[x="${x}"][y="${y - height}"]`
+          )
           const nextBox = (await nextCell.boundingBox())!
           await page.mouse.click(
             nextBox.x + nextBox.width / 2,
             nextBox.y + nextBox.height / 2
           )
           await expect(selection).toBeVisible()
+          await expect(selection).toHaveCount(1)
+          await expect(mark).not.toHaveAttribute('data-selected')
+          await expect(mark).toHaveCSS('fill', dataFill)
           await expect(cellDetails.locator('dd').nth(1)).toHaveText('7')
           await expect
             .poll(async () => {
@@ -3057,6 +3392,11 @@ for (const { id: theme } of THEMES) {
             })
             .toBeLessThan(1)
         } else {
+          await expect(selection).toHaveCSS('fill', selectedColour)
+          await expect(selection).toHaveCSS('stroke', selectedColour)
+          await expect(selection).toHaveCSS('fill-opacity', '0.55')
+          await expect(selection).toHaveCSS('rx', '8px')
+          await expect(selection).toHaveCSS('pointer-events', 'none')
           await expect(mark).not.toHaveCSS('fill', dataFill)
           await expect(mark).toHaveCSS(
             'fill',
@@ -3085,11 +3425,10 @@ for (const { id: theme } of THEMES) {
         await expect(selection).toHaveCount(0)
         if (tab === 'heatmap') {
           await page.mouse.move(0, 0)
-          await expect(mark).not.toHaveClass(
-            /heatmap-cell--hovered|heatmap-cell--selected/
-          )
+          await expect(mark).not.toHaveAttribute('data-hovered')
+          await expect(mark).not.toHaveAttribute('data-selected')
           await expect(mark).toHaveCSS('fill', dataFill)
-          await expect(mark).toHaveCSS('fill-opacity', '0')
+          await expect(mark).toHaveCSS('fill-opacity', '1')
         } else {
           await page.mouse.move(0, 0)
           await keyboard.evaluate(element => (element as HTMLElement).blur())
@@ -3231,8 +3570,21 @@ for (const { id: theme } of THEMES) {
         await expect(quantileLabels).toHaveCount(0)
         await expect(page.locator('.heatmap-quantile-channel')).toHaveCount(0)
         await expect(countLegend).toBeVisible()
+        if (theme === 'madoromi-fuyu-yoru') {
+          const url = page.url()
+          await page.reload()
+          await expect(overlaysToggle).not.toBeChecked()
+          await expect(countLegend).toBeVisible()
+          await expect(quantileLines).toHaveCount(0)
+          await expect(page).toHaveURL(url)
+        }
         await overlaysToggle.check()
         await expect(quantileLines).toHaveCount(3)
+        if (theme === 'madoromi-fuyu-yoru') {
+          await page.reload()
+          await expect(overlaysToggle).toBeChecked()
+          await expect(quantileLines).toHaveCount(3)
+        }
       }
       await page.goto(
         `/metrics/${metric.metricRef}?htab=quantiles&hscope=window&series=first&dp=hist-0`
@@ -4887,5 +5239,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(raw)
   expect(exportRequests).toBe(2)
   await expect(bubble.locator('details')).toHaveAttribute('open')
-  await expect(page).toHaveURL(`/metrics/${metric.metricRef}?agg=raw`)
+  await expect(page).toHaveURL(
+    `/metrics/${metric.metricRef}?agg=raw&visible=first%2Csecond`
+  )
 })

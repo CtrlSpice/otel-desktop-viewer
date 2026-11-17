@@ -10,6 +10,7 @@
   } from '@internationalized/date'
   import FieldErrorMessage from '@/components/shared/Detail/FieldErrorMessage.svelte'
   import DateCalendar from '@/components/shared/DateCalendar.svelte'
+  import IconButton from '@/components/shared/IconButton.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import {
     formatEditableDateTime,
@@ -395,7 +396,7 @@
       />
     {/snippet}
 
-    <div class="range-editor-row">
+    <div class="range-editor-row input-surface">
       <label for="custom-start-date" class="endpoint-label"> Start: </label>
       <div class="endpoint-fields">
         <input
@@ -403,7 +404,7 @@
           type="text"
           aria-label="Start"
           placeholder="YYYY-MM-DD"
-          class="endpoint-input endpoint-date"
+          class="input-surface__input endpoint-input endpoint-date"
           class:input-error={startInputInvalid}
           aria-invalid={startInputInvalid}
           aria-describedby={startInputInvalid
@@ -412,13 +413,13 @@
           oninput={editStart}
           bind:value={startDateText}
         />
-        <span aria-hidden="true">,</span>
+        <span aria-hidden="true">,&nbsp;</span>
         <input
           id="custom-start-time"
           type="text"
           aria-label="Start time"
           placeholder="HH:mm:ss.SSS"
-          class="endpoint-input"
+          class="input-surface__input endpoint-input"
           class:input-error={startInputInvalid}
           aria-invalid={startInputInvalid}
           aria-describedby={startInputInvalid
@@ -428,17 +429,22 @@
           bind:value={startTimeText}
         />
       </div>
-      <button
-        type="button"
-        class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
-        aria-label="Choose start date"
+      <IconButton
+        class="endpoint-calendar-button"
+        label="Choose start date"
+        tooltip=""
         aria-expanded={openCalendar === 'start'}
         aria-controls="custom-start-calendar"
         onclick={() =>
           (openCalendar = openCalendar === 'start' ? null : 'start')}
       >
-        <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
-      </button>
+        <HugeiconsIcon
+          icon={Calendar03Icon}
+          size={17}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      </IconButton>
     </div>
 
     {#if openCalendar === 'start'}
@@ -480,7 +486,7 @@
       </div>
     {/if}
 
-    <div class="range-editor-row">
+    <div class="range-editor-row input-surface">
       <label for="custom-end-date" class="endpoint-label"> End: </label>
       <div class="endpoint-fields">
         <input
@@ -488,7 +494,7 @@
           type="text"
           aria-label="End"
           placeholder="YYYY-MM-DD"
-          class="endpoint-input endpoint-date"
+          class="input-surface__input endpoint-input endpoint-date"
           class:input-error={endInputInvalid}
           aria-invalid={endInputInvalid}
           aria-describedby={endInputInvalid
@@ -497,13 +503,13 @@
           oninput={event => editEndField('date', event.currentTarget.value)}
           bind:value={endDateText}
         />
-        <span aria-hidden="true">,</span>
+        <span aria-hidden="true">,&nbsp;</span>
         <input
           id="custom-end-time"
           type="text"
           aria-label="End time"
           placeholder="right now"
-          class="endpoint-input"
+          class="input-surface__input endpoint-input"
           class:input-error={endInputInvalid}
           aria-invalid={endInputInvalid}
           aria-describedby={endInputInvalid
@@ -513,16 +519,21 @@
           bind:value={endTimeText}
         />
       </div>
-      <button
-        type="button"
-        class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
-        aria-label="Choose end date"
+      <IconButton
+        class="endpoint-calendar-button"
+        label="Choose end date"
+        tooltip=""
         aria-expanded={openCalendar === 'end'}
         aria-controls="custom-end-calendar"
         onclick={() => (openCalendar = openCalendar === 'end' ? null : 'end')}
       >
-        <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
-      </button>
+        <HugeiconsIcon
+          icon={Calendar03Icon}
+          size={17}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      </IconButton>
     </div>
 
     {#if openCalendar === 'end'}
@@ -590,21 +601,8 @@
   }
 
   .range-editor-row {
-    @apply grid grid-cols-[max-content_minmax(0,1fr)_auto] items-center gap-x-2;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-field);
-    background-color: var(--color-input);
+    @apply grid grid-cols-[max-content_minmax(0,1fr)_auto] items-center gap-x-2 pr-1;
     margin-block: 0.25rem;
-  }
-
-  .range-editor-row:has(input:focus) {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
-  }
-
-  .range-editor-row:has(input.input-error) {
-    border-color: var(--color-error);
-    outline-color: var(--color-error);
   }
 
   .endpoint-label {
@@ -613,41 +611,20 @@
   }
 
   .endpoint-input {
-    @apply min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 text-left font-sans text-sm tabular-nums shadow-none outline-none;
+    @apply tabular-nums;
     field-sizing: content;
-    height: calc(var(--table-row-h) + 0.5rem);
-    line-height: var(--text-base--line-height);
-  }
-
-  .endpoint-input:focus-visible {
-    outline: none;
-  }
-
-  .endpoint-input::placeholder {
-    color: var(--color-subtle);
-    opacity: 1;
   }
 
   .endpoint-fields {
-    @apply flex min-w-0 items-center justify-end font-sans text-sm tabular-nums;
+    @apply flex min-w-0 items-center tabular-nums;
   }
 
   .endpoint-fields > span {
-    @apply pr-2 text-(--color-subtle);
+    color: var(--color-subtle);
   }
 
   .endpoint-date {
-    width: max(10ch, 6.5rem);
     flex-shrink: 0;
-  }
-
-  .endpoint-calendar-button {
-    @apply mr-1 h-7 min-h-0 w-7 border-transparent p-0 text-(--color-subtle) shadow-none;
-    @apply hover:bg-base-300/40 hover:text-base-content;
-  }
-
-  .endpoint-calendar-button[aria-expanded='true'] :global(svg) {
-    color: var(--color-primary);
   }
 
   .ambiguity-choices {
@@ -665,7 +642,7 @@
     .endpoint-label {
       grid-area: 1 / 1;
     }
-    .endpoint-calendar-button {
+    .range-editor-row :global(.endpoint-calendar-button) {
       grid-area: 1 / 2;
     }
     .endpoint-fields {

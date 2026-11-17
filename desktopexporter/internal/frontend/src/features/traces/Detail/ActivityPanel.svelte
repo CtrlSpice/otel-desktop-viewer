@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
+  import { createRead } from '@/services/reads'
   import type { EventData, TraceLogSummary } from '@/types/api-types'
   import LogCard from '@/features/logs/LogCard.svelte'
   import EventsPanel from './EventsPanel.svelte'
@@ -29,6 +30,8 @@
   let logProvenance = $state(
     new Map<string, NonNullable<ReturnType<typeof toolLogProvenance>>>()
   )
+  const provenanceRead =
+    createRead<Awaited<ReturnType<typeof telemetryAPI.getSpanLogs>>>()
 
   $effect(() => {
     logProvenance = new Map()
@@ -41,11 +44,9 @@
       return
     const [traceID, spanID] = spanKey.split('/')
     if (!traceID || !spanID) return
-    const controller = new AbortController()
-    void telemetryAPI
-      .getSpanLogs(traceID, spanID, controller.signal)
-      .then(records => {
-        if (controller.signal.aborted) return
+    void provenanceRead.load(
+      signal => telemetryAPI.getSpanLogs(traceID, spanID, signal),
+      records => {
         const entries = new Map<
           string,
           NonNullable<ReturnType<typeof toolLogProvenance>>
@@ -60,12 +61,9 @@
             })
         }
         logProvenance = entries
-      })
-      .catch(error => {
-        if (!controller.signal.aborted)
-          console.error('Failed to load activity provenance:', error)
-      })
-    return () => controller.abort()
+      }
+    )
+    return () => provenanceRead.cancel()
   })
 
   $effect(() => {

@@ -4,6 +4,7 @@
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { createRead } from '@/services/reads'
   import {
     isPlainLeftClick,
     itemHref,
@@ -27,8 +28,14 @@
   const spanID = $derived(displayed ? displayed.spanID : requestedSpanID)
   let trace = $state<TraceSummary | null>(null)
   let span = $state<SpanTiming | null>(null)
-  let loading = $state(true)
-  let error = $state('')
+  const reference = createRead<{
+    span: SpanTiming | null
+    trace: TraceSummary | null
+    spanMissing: boolean
+    traceMissing: boolean
+  }>()
+  const loading = $derived(reference.pending)
+  const error = $derived(reference.error ?? '')
   let retry = $state(0)
   let spanMissing = $state(false)
   let traceMissing = $state(false)
@@ -60,54 +67,50 @@
     void retry
     const id = requestedTraceID
     const linkedSpanID = requestedSpanID
-    const controller = new AbortController()
-    loading = true
-    error = ''
-    async function load() {
-      let nextSpan: SpanTiming | null = null
-      let nextTrace: TraceSummary | null = null
-      let nextSpanMissing = false
-      let nextTraceMissing = false
-      try {
+    void reference.load(
+      async signal => {
+        let nextSpan: SpanTiming | null = null
+        let nextTrace: TraceSummary | null = null
+        let nextSpanMissing = false
+        let nextTraceMissing = false
         if (linkedSpanID) {
           try {
             const spans = await telemetryAPI.getSpanTimings(
               [{ traceID: id, spanID: linkedSpanID }],
-              controller.signal
+              signal
             )
-            if (controller.signal.aborted) return
+            signal.throwIfAborted()
             nextSpan = spans[0] ?? null
             nextSpanMissing = !nextSpan
           } catch {
-            if (controller.signal.aborted) return
-            error = 'Unable to load the associated span.'
+            throw new Error('Unable to load the associated span.')
           }
         }
         if (!nextSpan) {
-          const result = await telemetryAPI.getTraceSummary(
-            id,
-            controller.signal
-          )
-          if (controller.signal.aborted) return
+          const result = await telemetryAPI
+            .getTraceSummary(id, signal)
+            .catch(() => {
+              throw new Error('Unable to load the associated trace.')
+            })
           nextTrace = result
           nextTraceMissing = result === null
         }
-        if (controller.signal.aborted || error) return
-        span = nextSpan
-        trace = nextTrace
-        spanMissing = nextSpanMissing
-        traceMissing = nextTraceMissing
-        displayed = { traceID: id, spanID: linkedSpanID }
-      } catch {
-        if (!controller.signal.aborted) {
-          error = 'Unable to load the associated trace.'
+        return {
+          span: nextSpan,
+          trace: nextTrace,
+          spanMissing: nextSpanMissing,
+          traceMissing: nextTraceMissing,
         }
-      } finally {
-        if (!controller.signal.aborted) loading = false
+      },
+      result => {
+        span = result.span
+        trace = result.trace
+        spanMissing = result.spanMissing
+        traceMissing = result.traceMissing
+        displayed = { traceID: id, spanID: linkedSpanID }
       }
-    }
-    void load()
-    return () => controller.abort()
+    )
+    return () => reference.cancel()
   })
 
   function openTrace(event: MouseEvent) {

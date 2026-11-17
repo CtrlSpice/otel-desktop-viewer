@@ -726,23 +726,3 @@ export type Stats = {
   metrics: MetricStats
   rejections: Rejection[]
 }
-
-export type SearchResultEvent =
-  | {
-      signal: 'traces'
-      results: TraceSummary[]
-      queryTree?: unknown
-      updateSeq: number
-    }
-  | {
-      signal: 'logs'
-      results: LogSummary[]
-      queryTree?: unknown
-      updateSeq: number
-    }
-  | {
-      signal: 'metrics'
-      results: MetricSummary[]
-      queryTree?: unknown
-      updateSeq: number
-    }

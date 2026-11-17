@@ -1,15 +1,13 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { untrack } from 'svelte'
+  import { createReadMap } from '@/services/reads'
   import type { LogData, SpanNode } from '@/types/api-types'
   import { telemetryAPI } from '@/services/telemetry-service'
   import DetailBubble from '@/components/shared/Detail/DetailBubble.svelte'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import type { EvalTelemetrySummary } from './eval-telemetry-summaries'
-  import type {
-    EvalRequestPart,
-    EvalRequestStatus,
-  } from '../eval-request-state'
+  import type { EvalRequestStatus } from '../eval-request-state'
 
   let {
     entries,
@@ -34,21 +32,17 @@
   const logCount = $derived(
     lastLogCount?.selection === selection ? lastLogCount.count : undefined
   )
-  let logParts = $state.raw<Map<string, EvalRequestPart<string[]>>>()
+  const reads = createReadMap<string, string[]>()
   let logPartsSelection = $state('')
   let logRequestKey = $state(0)
-  const logsPending = $derived(
-    [...(logParts?.values() ?? [])].some(part => part.status === 'pending')
-  )
-  const logsFailed = $derived(
-    [...(logParts?.values() ?? [])].some(part => part.status === 'failed')
-  )
+  const logsPending = $derived(reads.pending)
+  const logsFailed = $derived([...reads.values()].some(read => read.error))
   $effect(() => {
-    if (!evidenceLogs || !logParts || logPartsSelection !== selection) return
+    if (!evidenceLogs || logPartsSelection !== selection) return
     const refs = new Set(evidenceLogs.map(log => log.logRef))
-    for (const part of logParts.values()) {
-      if (part.status !== 'ready') return
-      for (const ref of part.value) refs.add(ref)
+    for (const read of reads.values()) {
+      if (read.pending || read.error || !read.data) return
+      for (const ref of read.data) refs.add(ref)
     }
     lastLogCount = { selection, count: refs.size }
   })
@@ -67,15 +61,11 @@
   const requests = new Map<
     string,
     {
-      controller: AbortController
       selection: string
       full: boolean
       nodes: SpanNode[]
     }
   >()
-  onDestroy(() => {
-    for (const { controller } of requests.values()) controller.abort()
-  })
   $effect(() => {
     void selection
     const references = untrack(() =>
@@ -86,12 +76,10 @@
       ...new Set(references.map(reference => reference.traceID.toLowerCase())),
     ]
     const selectedNodes = [...(nodes?.values() ?? [])]
-    const parts = new Map(untrack(() => logParts))
     for (const [id, request] of requests) {
       if (ids.includes(id)) continue
-      request.controller.abort()
       requests.delete(id)
-      parts.delete(id)
+      reads.delete(id)
     }
     for (const traceID of ids) {
       const refs = references.filter(
@@ -109,42 +97,28 @@
         previous.nodes.every((node, index) => node === traceNodes[index])
       )
         continue
-      previous?.controller.abort()
-      const controller = new AbortController()
       requests.set(traceID, {
-        controller,
         selection: selected,
         full,
         nodes: traceNodes,
       })
-      parts.set(traceID, { status: 'pending' })
       logRequestKey = untrack(() => logRequestKey) + 1
-      void telemetryAPI.getTraceLogSummaries(traceID, controller.signal).then(
-        logs =>
-          publish({
-            status: 'ready',
-            value: logs
-              .filter(
-                log =>
-                  full ||
-                  refs.some(
-                    reference =>
-                      !reference.spanID ||
-                      reference.spanID.toLowerCase() ===
-                        log.spanID?.toLowerCase()
-                  )
+      void reads.for(traceID).load(async signal => {
+        const logs = await telemetryAPI.getTraceLogSummaries(traceID, signal)
+        return logs
+          .filter(
+            log =>
+              full ||
+              refs.some(
+                reference =>
+                  !reference.spanID ||
+                  reference.spanID.toLowerCase() === log.spanID?.toLowerCase()
               )
-              .map(log => log.logRef),
-          }),
-        () => publish({ status: 'failed' })
-      )
-      function publish(part: EvalRequestPart<string[]>) {
-        if (controller.signal.aborted) return
-        logParts = new Map(untrack(() => logParts)).set(traceID, part)
-      }
+          )
+          .map(log => log.logRef)
+      })
     }
     logPartsSelection = selection
-    logParts = parts
   })
 </script>
 

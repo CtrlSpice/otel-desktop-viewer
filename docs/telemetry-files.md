@@ -18,6 +18,33 @@ Your browser must be able to reach the viewer's OTLP HTTP port (`4318` by defaul
 set with `--http`). If you use a reverse proxy, forwarding the web UI alone is
 not enough.
 
+### CLI file import
+
+Use an existing viewer; `--endpoint` selects its HTTP endpoint, not the OTLP port:
+
+```sh
+otel-desktop-viewer import checkout-017.json --endpoint http://localhost:8000
+otel-desktop-viewer import trace.json logs.json metrics.jsonl
+```
+
+| Command | Behaviour |
+| --- | --- |
+| `import <file> [file...]` | Sends regular JSON or JSONL files sequentially; later files continue after an individual failure |
+| `--endpoint <url>` | Discovers `otlpHttpPort` through `getImportConfig`, then uses the viewer hostname and receiver HTTP port |
+| `import --help` | Shows usage, examples and aligned flag sections without contacting a viewer |
+
+The command follows the browser's wrapper classification, complete-file syntax
+validation and 20 MiB batching rules. Requests read byte ranges from the file
+without re-encoding telemetry values. Metadata is copied when a resource, scope
+or Metric is split. Source files are not modified. The receiver validates OTel
+record fields.
+
+The result table reports each file, requests accepted without issues, and any
+file or receiver issues. Profiles are reported as coming soon. Any issue makes
+the command exit nonzero; other supported groups and later files continue. The
+command does not retry, start a viewer, or confirm completed database ingestion.
+Some telemetry may already be stored after a failure, so replay can duplicate it.
+
 ## Download telemetry
 
 Use an item's Download button or the CLI:
@@ -105,7 +132,7 @@ than cut down. Profiles are not supported.
 
 ## Encoding
 
-Browser imports preserve exact numbers, including negative zero, and keep
+Browser and CLI imports preserve exact numbers, including negative zero, and keep
 Resource and Scope data with each record.
 
 DuckDB selects, orders and groups records. A Go function converts native

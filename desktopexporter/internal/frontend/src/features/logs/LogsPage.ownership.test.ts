@@ -12,6 +12,7 @@ import { tick } from 'svelte'
 import LogsPage from './LogsPage.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { navigateToItem, navigateCurrentRoute } from '@/route'
+import { notifyDataChanged, TestEventSource } from '@/test/event-source'
 
 const api = vi.hoisted(() => ({
   searchLogPage: vi.fn(),
@@ -191,9 +192,11 @@ for (const failed of [false, true]) {
         screen.getByRole('button', { name: 'Next page' })
       ).not.toBeDisabled()
     )
-    expect(
-      document.querySelector(`[data-log-ref="${failed ? 'A' : 'B'}"]`)
-    ).not.toBeNull()
+    await waitFor(() =>
+      expect(
+        document.querySelector(`[data-log-ref="${failed ? 'A' : 'B'}"]`)
+      ).not.toBeNull()
+    )
     await fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
     await waitFor(() => expect(api.searchLogPage).toHaveBeenCalledTimes(4))
     expect(api.searchLogPage.mock.calls[3][4]).toEqual(
@@ -202,53 +205,97 @@ for (const failed of [false, true]) {
   })
 }
 
-it('starts and publishes list/detail independently; shared 200ms notice resets on replacement', async () => {
+it.each(['manual', 'live'] as const)(
+  'coalesces overlapping %s refreshes, retaining list/detail until each replacement settles',
+  async mode => {
+    await mount()
+    const fields = screen.getByRole('table', { name: 'Log fields' })
+    expect(TestEventSource.connections.size).toBe(1)
+    const list1 = deferred(),
+      list2 = deferred(),
+      record1 = deferred(),
+      record2 = deferred()
+    api.searchLogPage
+      .mockReturnValueOnce(list1.promise)
+      .mockReturnValueOnce(list2.promise)
+    api.getLog
+      .mockReturnValueOnce(record1.promise)
+      .mockReturnValueOnce(record2.promise)
+    vi.useFakeTimers()
+    await fireEvent.click(
+      screen.getByRole('button', { name: mode === 'live' ? 'Live' : 'Refresh' })
+    )
+    await tick()
+    expect(api.searchLogPage).toHaveBeenCalledTimes(2)
+    expect(api.getLog).toHaveBeenCalledTimes(2)
+    await act(() => vi.advanceTimersByTimeAsync(199))
+    expect(screen.queryByText('Loading selected log…')).toBeNull()
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(screen.getByText('Loading selected log…')).toBeInTheDocument()
+    if (mode === 'live') {
+      await notifyDataChanged()
+      await notifyDataChanged()
+    } else
+      await fireEvent.click(screen.getByRole('button', { name: /refresh/i }))
+    await tick()
+    expect(api.searchLogPage).toHaveBeenCalledTimes(2)
+    expect(api.getLog).toHaveBeenCalledTimes(2)
+    expect(api.searchLogPage.mock.calls[1].at(-1).aborted).toBe(false)
+    expect(api.getLog.mock.calls[1][1].aborted).toBe(false)
+    list1.resolve(result('intermediate-list'))
+    await act(async () => {
+      await Promise.resolve()
+      await tick()
+    })
+    expect(
+      document.querySelector('[data-log-ref="intermediate-list"]')
+    ).not.toBeNull()
+    expect(screen.getByRole('table', { name: 'Log fields' })).toHaveTextContent(
+      'detail-A'
+    )
+    record1.resolve(detail('intermediate-detail'))
+    await act(async () => {
+      await Promise.resolve()
+      await tick()
+      await tick()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(api.searchLogPage).toHaveBeenCalledTimes(3)
+    expect(api.getLog).toHaveBeenCalledTimes(3)
+    expect(screen.queryByText('Loading selected log…')).toBeNull()
+    list2.resolve(result('fresh-list'))
+    await act(async () => {
+      await Promise.resolve()
+      await tick()
+    })
+    expect(document.querySelector('[data-log-ref="fresh-list"]')).not.toBeNull()
+    expect(screen.getByRole('table', { name: 'Log fields' })).toHaveTextContent(
+      'detail-intermediate-detail'
+    )
+    await act(() => vi.advanceTimersByTimeAsync(199))
+    expect(screen.queryByText('Loading selected log…')).toBeNull()
+    record2.resolve(detail('fresh-detail'))
+    await act(async () => {
+      await Promise.resolve()
+      await tick()
+    })
+    expect(screen.getByRole('table', { name: 'Log fields' })).toHaveTextContent(
+      'detail-fresh-detail'
+    )
+    await act(() => vi.advanceTimersByTimeAsync(300))
+    expect(screen.queryByText('Loading selected log…')).toBeNull()
+    expect(screen.getByRole('table', { name: 'Log fields' })).toBe(fields)
+    expect(window.location.pathname).toBe('/logs/A')
+  }
+)
+
+it('updates freshness on commits while Live is off, without replacing displayed records', async () => {
   await mount()
-  const list1 = deferred(),
-    list2 = deferred(),
-    record1 = deferred(),
-    record2 = deferred()
-  api.searchLogPage
-    .mockReturnValueOnce(list1.promise)
-    .mockReturnValueOnce(list2.promise)
-  api.getLog
-    .mockReturnValueOnce(record1.promise)
-    .mockReturnValueOnce(record2.promise)
-  vi.useFakeTimers()
-  await fireEvent.click(screen.getByRole('button', { name: /refresh/i }))
-  await tick()
-  expect(api.searchLogPage).toHaveBeenCalledTimes(2)
-  expect(api.getLog).toHaveBeenCalledTimes(2)
-  await act(() => vi.advanceTimersByTimeAsync(199))
-  expect(screen.queryByText('Loading selected log…')).toBeNull()
-  await act(() => vi.advanceTimersByTimeAsync(1))
-  expect(screen.getByText('Loading selected log…')).toBeInTheDocument()
-  await fireEvent.click(screen.getByRole('button', { name: /refresh/i }))
-  await tick()
-  expect(api.searchLogPage).toHaveBeenCalledTimes(3)
-  expect(api.getLog).toHaveBeenCalledTimes(3)
-  expect(screen.queryByText('Loading selected log…')).toBeNull()
-  list2.resolve(result('fresh-list'))
-  await act(async () => {
-    await Promise.resolve()
-    await tick()
-  })
-  expect(document.querySelector('[data-log-ref="fresh-list"]')).not.toBeNull()
-  expect(screen.getByRole('table', { name: 'Log fields' })).toHaveTextContent(
-    'detail-A'
-  )
-  await act(() => vi.advanceTimersByTimeAsync(199))
-  expect(screen.queryByText('Loading selected log…')).toBeNull()
-  record2.resolve(detail('fresh-detail'))
-  await act(async () => {
-    await Promise.resolve()
-    await tick()
-  })
-  expect(screen.getByRole('table', { name: 'Log fields' })).toHaveTextContent(
-    'detail-fresh-detail'
-  )
-  await act(() => vi.advanceTimersByTimeAsync(300))
-  expect(screen.queryByText('Loading selected log…')).toBeNull()
+  const fields = screen.getByRole('table', { name: 'Log fields' })
+  await notifyDataChanged()
+  expect(api.searchLogPage).toHaveBeenCalledOnce()
+  expect(api.getLog).toHaveBeenCalledOnce()
+  expect(screen.getByRole('table', { name: 'Log fields' })).toBe(fields)
 })
 
 for (const staleFailure of [false, true]) {

@@ -28,9 +28,11 @@ import {
 } from './telemetry-request'
 
 export const logAPI = {
-  getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+  getLogAttributeDefinitions: async (
+    signal?: AbortSignal
+  ): Promise<FieldDefinition[]> => {
     return attributeDefinitions(
-      await callArrow('getLogAttributeDefinitions', named({}))
+      await callArrow('getLogAttributeDefinitions', named({}), signal)
     )
   },
 

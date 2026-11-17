@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { untrack } from 'svelte'
+  import { createReadMap } from '@/services/reads'
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
@@ -30,11 +31,7 @@
   } = $props()
 
   let traces = $state<Map<string, TraceSummary | null>>(new Map())
-  let pending = $state.raw(new Set<string>())
-  const requests = new Map<string, AbortController>()
-  onDestroy(() => {
-    for (const controller of requests.values()) controller.abort()
-  })
+  const requests = createReadMap<string, TraceSummary | null>()
   $effect(() => {
     const ids = [
       ...new Set(entries.map(entry => entry.reference.traceID.toLowerCase())),
@@ -62,40 +59,22 @@
   )
   $effect.pre(() => {
     const ids = lookupIDs ? lookupIDs.split(',') : []
-    for (const [id, controller] of requests) {
+    for (const id of untrack(() => [...requests.keys()])) {
       if (ids.includes(id)) continue
-      controller.abort()
       requests.delete(id)
     }
     // Absence belongs to the completed lookup, not a later pending or failed one.
     const current = new Map(untrack(() => traces))
-    const added = ids.filter(id => !requests.has(id))
+    const added = untrack(() => ids.filter(id => !requests.has(id)))
     for (const id of added) if (current.get(id) === null) current.delete(id)
     traces = current
-    pending = new Set(
-      [...untrack(() => pending)].filter(id => ids.includes(id)).concat(added)
-    )
     for (const id of added) {
-      const controller = new AbortController()
-      requests.set(id, controller)
-      void (async () => {
-        try {
-          const trace = await telemetryAPI.getTraceSummary(
-            id,
-            controller.signal
-          )
-          if (!controller.signal.aborted)
-            traces = new Map(untrack(() => traces)).set(id, trace)
-        } catch {
-          // A failed request does not establish that the trace is absent.
-        } finally {
-          if (!controller.signal.aborted) {
-            const next = new Set(untrack(() => pending))
-            next.delete(id)
-            pending = next
-          }
+      void requests.for(id).load(
+        signal => telemetryAPI.getTraceSummary(id, signal),
+        trace => {
+          traces = new Map(untrack(() => traces)).set(id, trace)
         }
-      })()
+      )
     }
   })
 </script>
@@ -106,7 +85,8 @@
     {@const trace = traces.get(entry.reference.traceID.toLowerCase())}
     {@const unavailable = !span && trace === null}
     {@const traceOnly = !entry.reference.spanID}
-    {@const tracePending = pending.has(entry.reference.traceID.toLowerCase())}
+    {@const tracePending =
+      requests.get(entry.reference.traceID.toLowerCase())?.pending ?? false}
     {@const spanStatus = status?.get(entry.reference.traceID.toLowerCase())}
     {@const startedAt =
       span?.startTime ?? (traceOnly ? trace?.startTime : undefined)}
@@ -153,7 +133,7 @@
           pending={tracePending}
           label="Loading trace…"
           requestKey={requests.get(entry.reference.traceID.toLowerCase())
-            ?.signal}
+            ?.requestKey}
           class="text-sm text-secondary"
         />
       </span>

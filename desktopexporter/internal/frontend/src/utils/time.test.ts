@@ -415,6 +415,44 @@ describe('formatDateTimeRangeLabel', () => {
     expect(formatted).toContain('01:30:00.000 EST')
     expect(formatted).toContain('03:30:00.000 EDT')
   })
+
+  it.each([
+    ['2026-08-02T07:00:00Z', '2026-11-12T23:55:38Z', 'Aug 2 – Nov 12'],
+    [
+      '2025-12-31T23:00:00Z',
+      '2026-01-01T01:00:00Z',
+      'Dec 31, 2025 – Jan 1, 2026',
+    ],
+    ['2025-01-15T07:00:00Z', '2025-01-16T08:30:00Z', 'Jan 15 – 16, 2025'],
+  ])(
+    'keeps compact range years unambiguous: %s to %s',
+    (start, end, expected) => {
+      const formatted = formatDateTimeRangeLabel(
+        Date.parse(start),
+        Date.parse(end),
+        'UTC',
+        { style: 'compact', now: Date.parse('2026-11-12T23:59:00Z') }
+      )
+      expect(formatted.replace(/\s+/g, ' ')).toBe(expected)
+    }
+  )
+
+  it('uses the selected timezone for Today and changes it at local midnight', () => {
+    const start = Date.parse('2026-01-16T00:00:00Z')
+    const end = Date.parse('2026-01-16T01:30:00Z')
+    expect(
+      formatDateTimeRangeLabel(start, end, newYork, {
+        style: 'compact',
+        now: Date.parse('2026-01-16T04:59:59Z'),
+      }).replace(/\s+/g, ' ')
+    ).toBe('Today, 19:00 – 20:30')
+    expect(
+      formatDateTimeRangeLabel(start, end, newYork, {
+        style: 'compact',
+        now: Date.parse('2026-01-16T05:00:00Z'),
+      }).replace(/\s+/g, ' ')
+    ).toBe('Jan 15, 19:00 – 20:30')
+  })
 })
 
 describe('getOffset', () => {

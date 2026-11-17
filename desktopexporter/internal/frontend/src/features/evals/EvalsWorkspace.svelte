@@ -2,7 +2,8 @@
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { createLoadingNotice } from '@/components/shared/utils/loading-notice.svelte'
   import { evalAPI } from '@/features/evals/services/eval-service'
-  import { onDestroy, onMount } from 'svelte'
+  import { onMount } from 'svelte'
+  import { createReadGroup, createRead } from '@/services/reads'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import { evalSearchDefinition } from '@/features/evals/search-fields'
   import type { ParsedSearchRequest } from '@/search/model'
@@ -37,7 +38,7 @@
     evalSourceFieldCopy,
     evalSourceExperimentCopy,
   } from '@/features/evals/eval-source-copy'
-  import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import {
     buildEvalOutline,
     type EvalOutlineRow,
@@ -75,6 +76,19 @@
     onViewIssue?: (event: MouseEvent) => void
   } = $props()
   const route = getRouteContext()
+  createReadGroup()
+  const listRead = createRead<void>({
+    errorMessage: 'Could not load experiments.',
+  })
+  const pagination = createRead<EvalExperimentSearchPage>({
+    errorMessage: 'Could not load more experiments.',
+  })
+  const experimentRead = createRead<{
+    summary: EvalStoredExperimentSummary
+    source: EvalSourceDataset
+    projected: EvalSourceProjection
+    experiment: EvalExperiment
+  }>({ errorMessage: 'Could not load this experiment.' })
   const query = $derived(evalQuery(route.route.query))
   const selectedExperimentID = $derived(query.experiment)
   const outcomeQuery = $derived(query.outcomes)
@@ -90,23 +104,18 @@
   let storedExperiments = $state<EvalStoredExperimentSummary[]>([])
   let storedFacets = $state<EvalStoredExperimentSummary['outcomes']>([])
   let experimentListHasMore = $state(false)
-  let experimentListLoading = $state(false)
-  let experimentListLoadingMore = $state(false)
-  let experimentListError = $state('')
-  let moreExperimentsError = $state('')
+  const experimentListLoading = $derived(listRead.pending)
+  const experimentListLoadingMore = $derived(pagination.pending)
+  const experimentListError = $derived(listRead.error ?? '')
+  const moreExperimentsError = $derived(pagination.error ?? '')
   let experimentListRevision = $state(0)
-  let experimentListRequestVersion = 0
-  let experimentListRequestKey = $state.raw<AbortSignal>()
-  let moreExperimentsRequestKey = $state.raw<AbortSignal>()
-  let moreExperimentsController: AbortController | undefined
+  const experimentListRequestKey = $derived(listRead.requestKey)
+  const moreExperimentsRequestKey = $derived(pagination.requestKey)
   let displayedListRequest:
     { query: EvalExperimentSearch; limit: number } | undefined
   function cancelPagination() {
-    moreExperimentsController?.abort()
-    moreExperimentsController = undefined
-    experimentListLoadingMore = false
+    pagination.clear()
   }
-  onDestroy(cancelPagination)
   let experimentIndexing = $state<EvalExperimentSearchPage['indexing']>({
     remaining: 0,
     unsupported: 0,
@@ -184,9 +193,9 @@
   let storedExperiment = $state<EvalExperiment>()
   let storedExperimentSource = $state<EvalSourceDataset>()
   let storedExperimentProjection = $state<EvalSourceProjection>()
-  let storedExperimentLoading = $state(false)
-  let storedExperimentRequestKey = $state.raw<AbortSignal>()
-  let storedExperimentError = $state('')
+  const storedExperimentLoading = $derived(experimentRead.pending)
+  const storedExperimentRequestKey = $derived(experimentRead.requestKey)
+  const storedExperimentError = $derived(experimentRead.error ?? '')
   const loadingNotice = createLoadingNotice(
     () => storedExperimentLoading,
     () => storedExperimentRequestKey
@@ -246,9 +255,11 @@
   let resolvedRow = $state.raw<EvalOutlineRow>()
   let traceViews = $state.raw<TraceData[]>([])
   let toolLogs = $state.raw<LogData[]>([])
-  let telemetryLoading = $state(false)
   let telemetryStatus = $state.raw<ReadonlyMap<string, EvalRequestStatus>>(
     new Map()
+  )
+  const telemetryLoading = $derived(
+    [...telemetryStatus.values()].some(status => status === 'pending')
   )
   const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
   const detailExperiment = $derived(
@@ -311,14 +322,8 @@
     void experimentListRevision
     if (!enabled || request === undefined) {
       cancelPagination()
-      experimentListLoading = false
       return
     }
-    const requestVersion = ++experimentListRequestVersion
-    const controller = new AbortController()
-    experimentListRequestKey = controller.signal
-    experimentListLoading = true
-    experimentListError = ''
     const search: EvalExperimentSearch = {
       criteria: request?.predicate,
       outcomes,
@@ -327,56 +332,33 @@
       limit: Math.min(100, cap),
       offset: 0,
     }
-    void (async () => {
-      try {
-        let page: EvalExperimentSearchPage
-        do {
-          page = await evalAPI.searchEvalExperiments(search, controller.signal)
-          if (
-            controller.signal.aborted ||
-            requestVersion !== experimentListRequestVersion
-          )
-            return
+    void listRead.load(async (signal, publish) => {
+      let page: EvalExperimentSearchPage
+      do {
+        signal.throwIfAborted()
+        page = await evalAPI.searchEvalExperiments(search, signal)
+        publish(() => {
           cancelPagination()
-          moreExperimentsError = ''
           displayedListRequest = { query: search, limit: cap }
           storedExperiments = page.experiments
           storedFacets = page.facets
           experimentListHasMore = page.hasMore && page.experiments.length < cap
           experimentIndexing = page.indexing
-        } while (page.indexing.remaining > 0)
-      } catch (error) {
-        if (!controller.signal.aborted && !isAbortError(error))
-          experimentListError =
-            error instanceof Error
-              ? error.message
-              : 'Could not load experiments.'
-      } finally {
-        if (
-          !controller.signal.aborted &&
-          requestVersion === experimentListRequestVersion
-        )
-          experimentListLoading = false
-      }
-    })()
-    return () => controller.abort()
+        })
+      } while (page.indexing.remaining > 0)
+    })
+    return () => listRead.cancel()
   })
 
   $effect(() => {
     const enabled = databaseMode
     const id = selectedExperimentID
-    storedExperimentError = ''
-    storedExperimentLoading = Boolean(enabled && id)
+    experimentRead.clearError()
     if (!enabled || !id) return
-    const controller = new AbortController()
-    storedExperimentRequestKey = controller.signal
-    void (async () => {
-      try {
-        const { summary, source } = await loadEvalExperimentSource(
-          id,
-          controller.signal
-        )
-        if (controller.signal.aborted) return
+    void experimentRead.load(
+      async signal => {
+        const { summary, source } = await loadEvalExperimentSource(id, signal)
+        signal.throwIfAborted()
         const projected = projectPromptfooDataset(source)
         if (projected.status !== 'supported') throw new Error(projected.reason)
         const projectedExperiment = projected.experiments.find(
@@ -386,10 +368,7 @@
           throw new Error(
             'The selected experiment was not found in its source rows.'
           )
-        storedExperimentSummary = summary
-        storedExperimentSource = source
-        storedExperimentProjection = projected
-        storedExperiment = {
+        const experiment = {
           ...projectedExperiment,
           id: summary.id,
           name: summary.name,
@@ -400,17 +379,16 @@
           pauseReason: undefined,
           startedAt: summary.startedAt ?? undefined,
         }
-      } catch (error) {
-        if (!controller.signal.aborted && !isAbortError(error))
-          storedExperimentError =
-            error instanceof Error
-              ? error.message
-              : 'Could not load this experiment.'
-      } finally {
-        if (!controller.signal.aborted) storedExperimentLoading = false
+        return { summary, source, projected, experiment }
+      },
+      reading => {
+        storedExperimentSummary = reading.summary
+        storedExperimentSource = reading.source
+        storedExperimentProjection = reading.projected
+        storedExperiment = reading.experiment
       }
-    })()
-    return () => controller.abort()
+    )
+    return () => experimentRead.cancel()
   })
 
   $effect(() => {
@@ -418,7 +396,6 @@
     resolvedRow = undefined
     traceViews = []
     toolLogs = []
-    telemetryLoading = false
     telemetryStatus = new Map()
   })
 
@@ -472,46 +449,28 @@
       experimentListLoadingMore
     )
       return
-    const controller = new AbortController()
-    moreExperimentsRequestKey = controller.signal
-    moreExperimentsController = controller
-    experimentListLoadingMore = true
-    moreExperimentsError = ''
-    try {
-      const page = await evalAPI.searchEvalExperiments(
-        {
-          ...source.query,
-          limit: Math.min(100, source.limit - storedExperiments.length),
-          offset: storedExperiments.length,
-        },
-        controller.signal
-      )
-      if (controller.signal.aborted || source !== displayedListRequest) return
-      const seen = new Set(storedExperiments.map(item => item.id))
-      storedExperiments = [
-        ...storedExperiments,
-        ...page.experiments.filter(item => !seen.has(item.id)),
-      ]
-      storedFacets = page.facets
-      experimentListHasMore =
-        page.hasMore && storedExperiments.length < source.limit
-      experimentIndexing = page.indexing
-    } catch (error) {
-      if (
-        source === displayedListRequest &&
-        !controller.signal.aborted &&
-        !isAbortError(error)
-      )
-        moreExperimentsError =
-          error instanceof Error
-            ? error.message
-            : 'Could not load more experiments.'
-    } finally {
-      if (moreExperimentsController === controller) {
-        moreExperimentsController = undefined
-        experimentListLoadingMore = false
+    await pagination.load(
+      signal =>
+        evalAPI.searchEvalExperiments(
+          {
+            ...source.query,
+            limit: Math.min(100, source.limit - storedExperiments.length),
+            offset: storedExperiments.length,
+          },
+          signal
+        ),
+      page => {
+        const seen = new Set(storedExperiments.map(item => item.id))
+        storedExperiments = [
+          ...storedExperiments,
+          ...page.experiments.filter(item => !seen.has(item.id)),
+        ]
+        storedFacets = page.facets
+        experimentListHasMore =
+          page.hasMore && storedExperiments.length < source.limit
+        experimentIndexing = page.indexing
       }
-    }
+    )
   }
 </script>
 
@@ -528,8 +487,6 @@
   {#snippet drawerSearch()}
     <SearchEditor
       definition={evalSearchDefinition}
-      sortValue={experimentSort}
-      sortDirection={experimentSortDirection}
       variant="drawer"
       onSearchRequest={request => {
         searchRequest = request
@@ -639,10 +596,9 @@
           selectedRowID={detailRowID}
           onSelect={selectRow}
           onResolveSelection={row => (resolvedRow = row)}
-          onTraceViews={(traces, loading, logs, status) => {
+          onTraceViews={(traces, _loading, logs, status) => {
             traceViews = traces
             toolLogs = logs
-            telemetryLoading = loading
             telemetryStatus = status
           }}
         >

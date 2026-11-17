@@ -96,7 +96,7 @@
     logsKnown?: boolean
     logsPending?: boolean
     logsError?: string
-    logsRequestKey?: AbortSignal
+    logsRequestKey?: number
     onRetryLogs?: () => void
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]

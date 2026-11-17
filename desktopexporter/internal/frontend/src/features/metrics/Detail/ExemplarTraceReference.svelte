@@ -2,6 +2,7 @@
   import Identifier from '@/components/shared/Identifier.svelte'
   import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { createRead } from '@/services/reads'
   import {
     isPlainLeftClick,
     itemHref,
@@ -13,6 +14,7 @@
 
   let { exemplar }: { exemplar: Exemplar } = $props()
   let unavailable = $state(false)
+  const reference = createRead<boolean>()
   const patch = $derived(
     exemplar.spanID ? { [SPAN_PARAM]: exemplar.spanID } : undefined
   )
@@ -22,27 +24,19 @@
 
   $effect(() => {
     const { traceID, spanID } = exemplar
-    const controller = new AbortController()
     unavailable = false
-    async function load() {
-      if (!traceID) return
-      try {
-        const missing = spanID
-          ? (
-              await telemetryAPI.getSpanTimings(
-                [{ traceID, spanID }],
-                controller.signal
-              )
-            ).length === 0
-          : (await telemetryAPI.getTraceSummary(traceID, controller.signal)) ===
-            null
-        if (!controller.signal.aborted) unavailable = missing
-      } catch {
-        // Failed lookups leave the reference unresolved, not confirmed absent.
+    if (!traceID) return
+    void reference.load(
+      async signal =>
+        spanID
+          ? (await telemetryAPI.getSpanTimings([{ traceID, spanID }], signal))
+              .length === 0
+          : (await telemetryAPI.getTraceSummary(traceID, signal)) === null,
+      missing => {
+        unavailable = missing
       }
-    }
-    void load()
-    return () => controller.abort()
+    )
+    return () => reference.cancel()
   })
 
   function open(event: MouseEvent) {

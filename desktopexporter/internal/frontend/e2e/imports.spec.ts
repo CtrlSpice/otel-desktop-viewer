@@ -1,4 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
+import { mockDataChanges, notifyDataChanged } from './data-changes'
 import { expect, test } from './test-fixtures'
 import AxeBuilder from '@axe-core/playwright'
 
@@ -17,6 +18,10 @@ const stats = {
 }
 
 test.beforeEach(async ({ page }) => {
+  await mockDataChanges(page)
+  await page.route('**/api/import-target/**', route =>
+    route.fulfill({ json: null })
+  )
   await routeTelemetry(page, async route => {
     const request = route.request().postDataJSON() as {
       id: number
@@ -145,6 +150,173 @@ test('a dropped file uses the current signal page error display and links to Hom
     issues.getByRole('list', { name: 'File import issues' })
   ).toBeVisible()
   await expect(page).toHaveURL(/\/#ingestion-issues$/)
+})
+
+test('opens the first file record on a commit with Live off, retaining it while later files load', async ({
+  page,
+}) => {
+  let stored = false
+  const id = '00000000-0000-0000-0000-000000000001'
+  const targets: string[] = []
+  await page.route('**/api/import-target/**', async route => {
+    targets.push(route.request().postData() ?? '')
+    expect(route.request().url()).toMatch(/\/logs$/)
+    await route.fulfill({ json: stored ? { id } : null })
+  })
+  await routeTelemetry(page, async route => {
+    const request = route.request().postDataJSON()
+    if (request.method !== 'getLog') return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          logRef: id,
+          timestamp: '1700000000000000123',
+          observedTimestamp: '0',
+          traceID: null,
+          spanID: null,
+          severityText: '',
+          severityNumber: 9,
+          body: { kind: 'string', value: 'First received log' },
+          resource: { attributes: [], droppedAttributesCount: 0 },
+          scope: {
+            name: '',
+            version: '',
+            attributes: [],
+            droppedAttributesCount: 0,
+          },
+          attributes: [],
+          droppedAttributesCount: 0,
+          flags: 0,
+          eventName: '',
+        },
+      },
+    })
+  })
+  let finishUpload!: () => void
+  const laterUpload = new Promise<void>(resolve => (finishUpload = resolve))
+  let requests = 0
+  await page.route('http://127.0.0.1:54318/v1/**', async route => {
+    if (++requests === 3) await laterUpload
+    await route.fulfill({
+      json: {},
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    })
+  })
+  await page.goto('/')
+  await page.evaluate(() => document.fonts.ready)
+  const layout = page.locator('.page-layout')
+  const layoutBeforeImport = await layout.boundingBox()
+  await expect(
+    page.getByRole('button', { name: 'Live', exact: true })
+  ).toHaveAttribute('aria-pressed', 'false')
+  const firstLog =
+    '{"timeUnixNano":"1700000000000000123","body":{"stringValue":"First received log"}}'
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles([
+    {
+      name: 'mixed.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(
+        `{"resourceLogs":[{"scopeLogs":[{"logRecords":[${firstLog}]}]}],"resourceSpans":[{}]}`
+      ),
+    },
+    {
+      name: 'later.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"resourceLogs":[{}]}'),
+    },
+  ])
+  await expect.poll(() => requests).toBe(3)
+  await expect.poll(() => targets.length).toBeGreaterThan(0)
+  await expect(page).toHaveURL(/\/$/)
+  const header = page.locator('.page-layout__main-chrome > .pane-header')
+  const notice = header
+    .getByRole('status')
+    .filter({ hasText: 'Opening the first record' })
+  await expect(notice).toBeVisible()
+  await expect(notice).toHaveAttribute(
+    'data-tip',
+    'Opening the first record in mixed.json…'
+  )
+  const headerBox = (await header.boundingBox())!
+  const noticeBox = (await notice.boundingBox())!
+  expect(noticeBox.x).toBeGreaterThanOrEqual(headerBox.x)
+  expect(noticeBox.x + noticeBox.width).toBeLessThanOrEqual(
+    headerBox.x + headerBox.width
+  )
+  expect(noticeBox.y).toBeGreaterThanOrEqual(headerBox.y)
+  expect(noticeBox.y + noticeBox.height).toBeLessThanOrEqual(
+    headerBox.y + headerBox.height
+  )
+  expect(
+    await notice.evaluate(element => !!element.closest('[aria-busy="true"]'))
+  ).toBe(false)
+  expect(await layout.boundingBox()).toEqual(layoutBeforeImport)
+  stored = true
+  await notifyDataChanged(page)
+  await expect(page).toHaveURL(`/logs/${id}?time=all`)
+  const detail = page.getByRole('table', { name: 'Log fields' })
+  await expect(detail).toContainText('First received log')
+  await expect(
+    page.getByText('Opening the first record', { exact: false })
+  ).toHaveCount(0)
+  const lookups = targets.length
+  finishUpload()
+  await notifyDataChanged(page)
+  await expect(page).toHaveURL(`/logs/${id}?time=all`)
+  expect(targets.length).toBe(lookups)
+  expect(
+    targets.every(
+      body => body.includes(firstLog) && !body.includes('resourceSpans')
+    )
+  ).toBe(true)
+})
+
+test('cancels pending import navigation when the route changes', async ({
+  page,
+}) => {
+  let lookups = 0
+  let stored = false
+  await page.route('**/api/import-target/logs', async route => {
+    lookups++
+    await route.fulfill({
+      json: stored ? { id: '00000000-0000-0000-0000-000000000001' } : null,
+    })
+  })
+  await page.route('http://127.0.0.1:54318/v1/logs', route =>
+    route.fulfill({
+      json: {},
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    })
+  )
+  await page.goto('/')
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles({
+    name: 'pending.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"Pending log"}}]}]}]}'
+    ),
+  })
+  const status = page
+    .getByRole('status')
+    .filter({ hasText: 'Opening the first record' })
+  await expect(status).toBeVisible()
+  await expect.poll(() => lookups).toBeGreaterThan(0)
+  await page.getByRole('link', { name: /^Metrics/ }).click()
+  await expect(status).toHaveCount(0)
+  const destination = page.url()
+  const before = lookups
+  stored = true
+  const refreshed = page.waitForResponse(
+    response =>
+      response.url().endsWith('/rpc') &&
+      response.request().postDataJSON()?.method === 'getStats'
+  )
+  await notifyDataChanged(page)
+  await refreshed
+  expect(page.url()).toBe(destination)
+  expect(lookups).toBe(before)
 })
 
 for (const theme of ['madoromi-aki-hiru', 'madoromi-aki-yoru']) {

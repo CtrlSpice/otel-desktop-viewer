@@ -41,7 +41,9 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { untrack } from 'svelte'
+  import { createRead } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
@@ -81,6 +83,16 @@
   } = $props()
 
   let timeContext = getTimeContext()
+  const readGroup = createPageReadGroup(handleRefresh)
+  const statsRead = createRead<
+    Awaited<ReturnType<typeof telemetryAPI.getStats>>
+  >({ group: null })
+  const pagination = createRead<
+    Awaited<ReturnType<typeof telemetryAPI.searchLogPage>>
+  >({ errorMessage: 'Failed to load logs' })
+  const navigationRead = createRead<LogErrorNavigation>({
+    errorMessage: 'Could not load error navigation',
+  })
 
   let baselineLogCount = $state(0)
   let polledLogCount = $state(0)
@@ -99,21 +111,12 @@
   let total = $state<number | null>(null)
   let listVersion = $state(0)
   let errorNavigation = $state<LogErrorNavigation | null>(null)
-  let errorNavigationError = $state('')
-  let errorNavigationLoading = $state(false)
+  const errorNavigationError = $derived(navigationRead.error ?? '')
+  const errorNavigationLoading = $derived(navigationRead.pending)
   let requestedPage = 1
-  let fetchVersion = 0
-  let listRequest: AbortController | undefined
-  let pageRequest: AbortController | undefined
-  let pageLoading = $state(false)
-  let pageRequestKey = $state(0)
-  let pageError = $state<string | null>(null)
-  let disposed = false
-  onDestroy(() => {
-    disposed = true
-    listRequest?.abort()
-    pageRequest?.abort()
-  })
+  const pageLoading = $derived(pagination.pending)
+  const pageRequestKey = $derived(pagination.requestKey)
+  const pageError = $derived(pagination.error)
   let lastTimeSelection = untrack(() => timeContext.selection)
   let queryWindow: ReturnType<typeof selectionToQueryRangeNs> | null = null
   let services = $state<string[]>([])
@@ -136,11 +139,8 @@
     preserveMissingSelection: true,
     serverSorted: true,
     compare: compareLogs,
-    fetchList: async (): Promise<LogTableRow[]> => {
-      const version = ++fetchVersion
-      listRequest?.abort()
-      const controller = new AbortController()
-      listRequest = controller
+    fetchList: async (signal): Promise<LogTableRow[]> => {
+      statsRead.cancel()
       const request = untrack(() => {
         if (lastTimeSelection !== timeContext.selection) {
           requestedPage = 1
@@ -171,19 +171,17 @@
           request.query?.limit ?? undefined,
           request.sort,
           request.columns,
-          controller.signal
+          signal
         )
       let result = await fetchPage(request.number)
-      if (disposed || version !== fetchVersion) return result.logs
+      signal.throwIfAborted()
       const lastPage = Math.max(1, Math.ceil(result.total / request.size))
       if (request.number > lastPage) {
         request.number = lastPage
         result = await fetchPage(lastPage)
       }
-      if (disposed || version !== fetchVersion) return result.logs
-      pageRequest?.abort()
-      pageLoading = false
-      pageError = null
+      signal.throwIfAborted()
+      pagination.clear()
       errorNavigation = null
       displayed = {
         window: { startTime: request.startTime, endTime: request.endTime },
@@ -197,21 +195,24 @@
       pageSize = request.size
       requestedPage = request.number
       listVersion++
-      // Stats are only a freshness indicator; a failed poll must not hide a page.
-      void telemetryAPI
-        .getStats()
-        .then(stats => {
-          if (disposed || version !== fetchVersion) return
+      // Stats are only a freshness indicator; a failed read must not hide a page.
+      void statsRead.load(
+        signal => telemetryAPI.getStats(signal),
+        stats => {
           baselineLogCount = stats.logs.logCount
           polledLogCount = stats.logs.logCount
-        })
-        .catch(() => {})
+        }
+      )
       return result.logs
     },
-    pollStats: async () => {
-      const s = await telemetryAPI.getStats()
-      polledLogCount = s.logs.logCount
-    },
+    statsPending: () => statsRead.pending,
+    refreshStats: () =>
+      statsRead.load(
+        signal => telemetryAPI.getStats(signal),
+        stats => {
+          polledLogCount = stats.logs.logCount
+        }
+      ),
     refreshFromStats: () => {
       const delta = polledLogCount - baselineLogCount
       const pending = delta > 0 ? delta : 0
@@ -257,44 +258,36 @@
     const selected = page.selectedID
     const mounted = page.mounted
     const reading = displayed
-    errorNavigationError = ''
+    navigationRead.clearError()
     if (!mounted || !reading) {
-      errorNavigationLoading = false
       return
     }
-    const controller = new AbortController()
     const request = untrack(() => ({
       window: reading.window,
       query: reading.query,
       sort: reading.sort,
     }))
-    errorNavigationLoading = true
-    void telemetryAPI
-      .getLogErrorNavigation(
-        request.window.startTime,
-        request.window.endTime,
-        selected,
-        request.query?.predicate ?? undefined,
-        request.query?.limit ?? undefined,
-        request.sort,
-        controller.signal
-      )
-      .then(result => {
-        if (!controller.signal.aborted) errorNavigation = result
-      })
-      .catch(error => {
-        if (!controller.signal.aborted) {
+    void navigationRead.load(
+      signal =>
+        telemetryAPI.getLogErrorNavigation(
+          request.window.startTime,
+          request.window.endTime,
+          selected,
+          request.query?.predicate ?? undefined,
+          request.query?.limit ?? undefined,
+          request.sort,
+          signal
+        ),
+      result => {
+        errorNavigation = result
+      },
+      {
+        onError: () => {
           errorNavigation = null
-          errorNavigationError =
-            error instanceof Error
-              ? error.message
-              : 'Could not load error navigation'
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) errorNavigationLoading = false
-      })
-    return () => controller.abort()
+        },
+      }
+    )
+    return () => navigationRead.cancel()
   })
 
   function selectError(target: LogErrorTarget) {
@@ -335,57 +328,46 @@
   async function fetchDisplayedPage(number: number, size: number) {
     const reading = displayed
     if (!reading) return
-    pageRequest?.abort()
-    const controller = new AbortController()
-    pageRequest = controller
-    pageRequestKey++
-    pageLoading = true
-    pageError = null
-    const current = () =>
-      !disposed && !controller.signal.aborted && displayed === reading
-    const fetchPage = (number: number) =>
-      telemetryAPI.searchLogPage(
-        reading.window.startTime,
-        reading.window.endTime,
-        size,
-        (number - 1) * size,
-        reading.query?.predicate ?? undefined,
-        reading.query?.limit ?? undefined,
-        reading.sort,
-        reading.columns,
-        controller.signal
-      )
-    try {
-      let result = await fetchPage(number)
-      if (!current()) return
-      const lastPage = Math.max(1, Math.ceil(result.total / size))
-      if (number > lastPage) {
-        number = lastPage
-        result = await fetchPage(number)
+    await pagination.load(
+      async signal => {
+        const fetchPage = (number: number) =>
+          telemetryAPI.searchLogPage(
+            reading.window.startTime,
+            reading.window.endTime,
+            size,
+            (number - 1) * size,
+            reading.query?.predicate ?? undefined,
+            reading.query?.limit ?? undefined,
+            reading.sort,
+            reading.columns,
+            signal
+          )
+        let result = await fetchPage(number)
+        signal.throwIfAborted()
+        const lastPage = Math.max(1, Math.ceil(result.total / size))
+        if (number > lastPage) {
+          number = lastPage
+          result = await fetchPage(number)
+        }
+        return result
+      },
+      result => {
+        total = result.total
+        pageNumber = number
+        pageSize = size
+        if (
+          reading.text === submittedText &&
+          reading.sort.field === page.sortColumn &&
+          reading.sort.direction === page.sortDirection &&
+          reading.window.startTime === queryWindow?.startTime &&
+          reading.window.endTime === queryWindow?.endTime
+        ) {
+          requestedPage = number
+        }
+        page.publishItems(result.logs)
+        listVersion++
       }
-      if (!current()) return
-      total = result.total
-      pageNumber = number
-      pageSize = size
-      if (
-        reading.text === submittedText &&
-        reading.sort.field === page.sortColumn &&
-        reading.sort.direction === page.sortDirection &&
-        reading.window.startTime === queryWindow?.startTime &&
-        reading.window.endTime === queryWindow?.endTime
-      ) {
-        requestedPage = number
-      }
-      page.publishItems(result.logs)
-      listVersion++
-    } catch (error) {
-      if (current()) {
-        pageError =
-          error instanceof Error ? error.message : 'Failed to load logs'
-      }
-    } finally {
-      if (current()) pageLoading = false
-    }
+    )
   }
 
   function changeSort(column: LogSortColumn, direction: LogSortDirection) {
@@ -447,7 +429,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Filters"
-  onRefresh={handleRefresh}
+  onRefresh={() => void readGroup.refresh()}
   refreshPulse={page.refreshPulse}
   refreshAsideTip={page.refreshAsideTip}
   loading={listLoading}
@@ -463,8 +445,6 @@
     <DrawerSearchPanel
       segment="search"
       signal="logs"
-      sortValue={page.sortColumn}
-      sortDirection={page.sortDirection}
       onSearchReady={api => (page.searchEditorApi = api)}
       onQueryChange={(text, availableFields) => {
         query = text
@@ -511,7 +491,7 @@
         sortColumn={displayed?.sort.field ?? page.sortColumn}
         sortDirection={displayed?.sort.direction ?? page.sortDirection}
         loading={listLoading}
-        loadingRequestKey={page.requestKey + pageRequestKey}
+        loadingRequestKey={`${page.requestKey}:${pageRequestKey}`}
         onSelect={selectLog}
         onInspect={inspectLog}
         onSort={changeSort}

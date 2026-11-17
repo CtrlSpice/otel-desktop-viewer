@@ -1,12 +1,18 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { LiveStreaming02Icon, RefreshIcon } from '@hugeicons/core-free-icons'
   import PrimaryNavigation from './PrimaryNavigation.svelte'
+  import DateTimeFilter from './DateTimeFilter.svelte'
   import SearchBar from '../Search/SearchBar.svelte'
   import PaneHeader from '../Layout/PaneHeader.svelte'
   import ThemeToggle from '../ThemeToggle.svelte'
+  import IconButton from '../IconButton.svelte'
   import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import { getDataChanges } from '@/contexts/data-changes.svelte'
 
   const totals = getNavigationCounts()
+  const changes = getDataChanges()
 
   let {
     search,
@@ -25,6 +31,10 @@
     refreshPulse?: boolean
     refreshAsideTip?: string
   } = $props()
+
+  const refreshLabel = $derived(
+    refreshPulse && refreshAsideTip ? `Refresh: ${refreshAsideTip}` : 'Refresh'
+  )
 </script>
 
 <header
@@ -43,19 +53,55 @@
             <PrimaryNavigation counts={totals?.counts} />
           </div>
         </div>
-        <div class="workspace-toolbar__search">
-          <SearchBar
-            {search}
-            {controls}
-            onRefresh={onRefresh
-              ? () => {
-                  onRefresh()
-                  void totals?.refresh()
-                }
-              : undefined}
-            {refreshPulse}
-            {refreshAsideTip}
-          />
+        <div
+          class="workspace-toolbar__data-controls"
+          role="group"
+          aria-label="Data controls"
+        >
+          {#if controls}{@render controls()}{:else}<DateTimeFilter />{/if}
+          {#if changes && onRefresh}
+            <IconButton
+              label="Live"
+              class="shrink-0"
+              aria-pressed={changes.live}
+              tooltip={changes.live
+                ? changes.connected
+                  ? 'Pause Live updates'
+                  : 'Live · reconnecting'
+                : 'Start Live updates'}
+              onclick={() => changes.setLive(!changes.live)}
+            >
+              <HugeiconsIcon
+                icon={LiveStreaming02Icon}
+                size={17}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </IconButton>
+          {/if}
+          {#if onRefresh || search}
+            <IconButton
+              label={refreshLabel}
+              data-selected={refreshPulse || undefined}
+              disabled={!onRefresh}
+              onclick={onRefresh}
+            >
+              <HugeiconsIcon
+                icon={RefreshIcon}
+                size={17}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </IconButton>
+            {#if refreshPulse}
+              <span class="sr-only" role="status"
+                >{refreshAsideTip || 'New data'}</span
+              >
+            {/if}
+          {/if}
+          <div class="workspace-toolbar__search">
+            <SearchBar {search} />
+          </div>
         </div>
         <div class="workspace-toolbar__actions">
           <ThemeToggle
@@ -72,10 +118,15 @@
   @reference "../../../app.css";
 
   .workspace-toolbar {
-    @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
-    grid-template-columns:
-      minmax(0, 1fr) clamp(16rem, 24vw, 28rem)
-      max-content;
+    @apply grid w-full min-w-0 items-center;
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+    column-gap: var(--layout-gap);
+    row-gap: var(--header-gap);
+  }
+
+  .workspace-toolbar__data-controls {
+    @apply flex min-w-0 items-center;
+    gap: var(--header-gap);
   }
 
   .workspace-toolbar__identity {
@@ -104,20 +155,33 @@
   }
 
   .workspace-toolbar__search {
-    @apply flex min-w-0 w-full;
+    @apply flex min-w-0;
+    width: clamp(16rem, 24vw, 28rem);
   }
 
   @media (max-width: 79.999rem) {
     .workspace-toolbar {
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) max-content;
     }
     .workspace-toolbar__identity {
       grid-column: 1 / -1;
     }
+    .workspace-toolbar__search {
+      flex: 1;
+      width: 0;
+    }
   }
 
   @media (max-width: 47.999rem) {
-    .workspace-toolbar__search,
+    .workspace-toolbar {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .workspace-toolbar__data-controls {
+      flex-wrap: wrap;
+    }
+    .workspace-toolbar__search {
+      flex-basis: 100%;
+    }
     .workspace-toolbar__actions {
       grid-column: 1 / -1;
     }
