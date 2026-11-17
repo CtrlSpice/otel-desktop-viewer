@@ -138,8 +138,8 @@ Open `http://localhost:8000/traces` and look for `test trace` from `viewer-test`
 The viewer uses the OpenTelemetry Collector's OTLP receiver. Its error
 `proto: exceeded max recursion depth` means that it rejected a protobuf request
 because its data was nested too deeply. The whole request is rejected before
-storage. Home's **Ingestion issues** panel counts these requests; the number of
-records and the field that caused the error are unknown because decoding stopped.
+storage. The number of records and the field that caused the error are unknown
+because decoding stopped.
 
 Reduce nested maps and arrays in the application sending the telemetry. Some
 SDKs can limit nesting in attribute values; check your SDK's configuration options.
