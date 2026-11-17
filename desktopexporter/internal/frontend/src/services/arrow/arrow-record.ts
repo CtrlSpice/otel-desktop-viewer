@@ -81,7 +81,8 @@ export function listValues<T>(
   read: (cell: ArrowCell) => T
 ): T[] {
   const values = cell.list()
+  const metadata = cell.type.children[0]!.metadata
   return Array.from({ length: values.length }, (_, row) =>
-    read(new ArrowCell(values, row))
+    read(new ArrowCell(values, row, metadata))
   )
 }

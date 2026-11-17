@@ -10,6 +10,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	pv "github.com/apache/arrow-go/v18/parquet/variant"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -83,17 +84,11 @@ func TestTraceWaterfallAndExactDetails(t *testing.T) {
 	require.Equal(t, int64(123), int64(traceStructField(t, events, "timestamp").(*array.Uint64).Value(0)))
 	_, hasEventAttributes := events.DataType().(*arrow.StructType).FieldIdx("attributes")
 	require.False(t, hasEventAttributes)
-	summary := traceStructField(t, events, "summaryAttributes").(*array.Map)
-	summaryKeys := summary.Keys().(*array.String)
-	for key, value := range map[string]string{"gen_ai.tool.name": "shell", "tool.is_error": "true", "opencode.event.timestamp.source": "received"} {
-		found := false
-		for i := 0; i < summaryKeys.Len(); i++ {
-			if summaryKeys.Value(i) == key {
-				require.Contains(t, summary.Items().ValueStr(i), value)
-				found = true
-			}
-		}
-		require.True(t, found, key)
+	summary := readArrowVariant(t, traceStructField(t, events, "summaryAttributes"), 0).Value().(pv.ObjectValue)
+	for key, value := range map[string]any{"gen_ai.tool.name": "shell", "tool.is_error": true, "opencode.event.timestamp.source": "received"} {
+		field, err := summary.ValueByKey(key)
+		require.NoError(t, err)
+		require.Equal(t, value, field.Value.Value())
 	}
 	previews := readArrowDataset(t, s, "getTraceColumnPreviews", `{"traceID":"`+testTraceIDHex+`","columns":[{"source":"span","key":"deep"},{"source":"span","key":"missing"}]}`)
 	require.Equal(t, int64(2), previews.NumRows())
@@ -110,8 +105,8 @@ func TestTraceWaterfallAndExactDetails(t *testing.T) {
 		require.Equal(t, id, detail.Column(detail.Schema().FieldIndices("traceID")[0]).(*array.String).Value(0))
 		full := traceStructField(t, traceRows(t, detail), "spanData").(*array.Struct)
 		require.Equal(t, 1, traceStructField(t, full, "links").(*array.List).ListValues().Len())
-		attrs := traceStructField(t, full, "attributes").(*array.Map)
-		require.GreaterOrEqual(t, attrs.ListValues().Len(), 2)
+		attrs := readArrowVariant(t, traceStructField(t, full, "attributes"), 0).Value().(pv.ObjectValue)
+		require.GreaterOrEqual(t, attrs.NumElements(), uint32(2))
 		fullEvents := traceStructField(t, full, "events").(*array.List).ListValues().(*array.Struct)
 		_, complete := fullEvents.DataType().(*arrow.StructType).FieldIdx("attributes")
 		require.True(t, complete)

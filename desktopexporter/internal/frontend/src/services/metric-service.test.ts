@@ -579,16 +579,16 @@ describe('telemetryAPI.getMetricView', () => {
       .metadata[0]!.value
     expect(value).toMatchObject({ kind: 'map' })
     if (value.kind !== 'map') throw new Error('Expected a map value')
-    expect(value.value[0]!.value).toEqual({
+    expect(value.value.find(entry => entry.key === 'count')!.value).toEqual({
       kind: 'int64',
       value: 9_223_372_036_854_775_807n,
     })
-    expect(
-      Object.is((value.value[1]!.value as { value: number }).value, -0)
-    ).toBe(true)
-    expect(
-      (value.value[2]!.value as { value: { value: number }[] }).value[0]!.value
-    ).toBe(Number.POSITIVE_INFINITY)
+    const zero = value.value.find(entry => entry.key === 'negativeZero')!.value
+    expect(zero.kind).toBe('double')
+    expect(Object.is(zero.value, -0)).toBe(true)
+    const list = value.value.find(entry => entry.key === 'list')!.value
+    if (list.kind !== 'array') throw new Error('Expected an array value')
+    expect(list.value[0]!.value).toBe(Number.POSITIVE_INFINITY)
   })
 
   it('retains NaN in scalar and nested native values', async () => {
@@ -619,11 +619,16 @@ describe('telemetryAPI.getMetricView', () => {
 
     const metadata = (await telemetryAPI.getMetricView('some-metric', 0n, 1n))!
       .metadata
-    expect(metadata[0]!.value).toEqual({ kind: 'double', value: NaN })
-    expect(metadata[1]!.value).toMatchObject({
-      kind: 'map',
-      value: [{ key: 'payload', value: { kind: 'double', value: NaN } }],
+    expect(metadata.find(entry => entry.key === 'payload')!.value).toEqual({
+      kind: 'double',
+      value: NaN,
     })
+    expect(metadata.find(entry => entry.key === 'nested')!.value).toMatchObject(
+      {
+        kind: 'map',
+        value: [{ key: 'payload', value: { kind: 'double', value: NaN } }],
+      }
+    )
   })
 })
 
