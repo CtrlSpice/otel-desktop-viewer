@@ -176,9 +176,24 @@ describe('App real-page composition', () => {
     const panel = await screen.findByRole('region', {
       name: 'Ingestion issues',
     })
+    await userEvent.click(
+      screen.getByText('Ingestion issues').closest('summary')!
+    )
     expect(within(panel).getByText('1 file')).toBeInTheDocument()
     expect(await within(panel).findByText('2 records')).toBeInTheDocument()
-    expect(within(panel).getByText(/Invalid JSON\./)).toBeInTheDocument()
+    const files = within(panel).getByRole('button', {
+      name: /^File import issues 1 file Last seen /,
+    })
+    const records = within(panel).getByRole('button', {
+      name: /^duplicate span id 2 records Last seen /,
+    })
+    expect(files).toHaveAttribute('aria-expanded', 'false')
+    expect(records).toHaveAttribute('aria-expanded', 'false')
+    expect(within(panel).getByText(/Invalid JSON\./)).not.toBeVisible()
+    await userEvent.click(files)
+    expect(within(panel).getByText(/Invalid JSON\./)).toBeVisible()
+    expect(records).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(records)
     expect(
       within(panel).getByRole('link', { name: '0000000000000001' })
     ).toHaveAttribute(

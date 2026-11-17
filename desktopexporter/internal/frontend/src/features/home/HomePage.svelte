@@ -5,6 +5,8 @@
         return 'duplicate span id'
       case 'span_refused':
         return 'rejected by the store'
+      case 'receiver_recursion_depth':
+        return 'receiver protobuf nesting limit'
       default:
         return kind
     }

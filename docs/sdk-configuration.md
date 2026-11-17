@@ -132,3 +132,28 @@ otel-cli exec --endpoint http://localhost:4318 --protocol http/protobuf \
 ```
 
 Open `http://localhost:8000/traces` and look for `test trace` from `viewer-test`.
+
+## Deeply nested telemetry
+
+The viewer uses the OpenTelemetry Collector's OTLP receiver. Its error
+`proto: exceeded max recursion depth` means that it rejected a protobuf request
+because its data was nested too deeply. The whole request is rejected before
+storage. The number of records and the field that caused the error are unknown
+because decoding stopped.
+
+Reduce nested maps and arrays in the application sending the telemetry. Some
+SDKs can limit nesting in attribute values; check your SDK's configuration options.
+Those attribute limits do not cover log bodies. SDK and receiver depth limits use
+different units, so an SDK setting cannot guarantee that the receiver will accept
+the request.
+
+See the [Collector's nesting limit](https://github.com/open-telemetry/opentelemetry-collector/pull/15597)
+for details of the receiver's protective limit.
+
+## Compressed telemetry
+
+The Collector bounds zstd decompression windows by the receiver's message limit,
+with an 8 MiB minimum. With viewer defaults, the window bound is 20 MiB for HTTP
+and 8 MiB for gRPC; gRPC still limits decoded messages to 4 MiB. A request can be
+rejected even when its decoded payload fits the message limit if its zstd frame
+declares a larger window.
