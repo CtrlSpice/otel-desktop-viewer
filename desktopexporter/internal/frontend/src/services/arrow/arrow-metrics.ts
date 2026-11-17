@@ -21,8 +21,6 @@ import { ArrowCell, ArrowFrame } from './arrow-data'
 import { attributes, rowViews } from './arrow-values'
 import {
   cachedColumnView as columnView,
-  extendView,
-  memoize,
   text,
   number,
   integer,
@@ -32,6 +30,7 @@ import {
   nullableText,
   listValues,
 } from './arrow-record'
+import { extendView, memoize } from './lazy-view'
 
 function resource(cell: ArrowCell): ExactMetricResource {
   return columnView(cell.struct(), 0, {

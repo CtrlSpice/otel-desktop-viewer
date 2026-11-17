@@ -1,7 +1,7 @@
 import { DataType } from 'apache-arrow'
 import type { Attribute, AttributeValue } from '@/types/api-types'
 import { ArrowCell, type ArrowFrame } from './arrow-data'
-import { cachedView, memoize } from './arrow-record'
+import { cachedView, memoize, memoizeByIndex } from './lazy-view'
 import {
   readVariantMetadata,
   readVariantValue,
@@ -69,7 +69,29 @@ function base64(bytes: Uint8Array): string {
 export function attributeValue(cell: ArrowCell): AttributeValue {
   if (cell.extensionName !== undefined)
     return variantAttributeValue(readArrowVariant(cell))
-  return cachedView(readAttributeValue(cell))
+  return readAttributeValue(cell)
+}
+
+/** Share presentation policy while each format supplies its lazy child reader. */
+function containerView<K extends 'array' | 'map', T>(
+  kind: K,
+  count: () => number,
+  readChild: (index: number) => T
+) {
+  const childAt = memoizeByIndex(readChild)
+  return cachedView({
+    kind,
+    childAt,
+    get childCount() {
+      return count()
+    },
+    get value() {
+      return Array.from({ length: count() }, (_, i) => childAt(i))
+    },
+    get previewChildren() {
+      return Array.from({ length: Math.min(count(), 3) }, (_, i) => childAt(i))
+    },
+  })
 }
 
 function variantEntry(entry: VariantMapEntry): Attribute {
@@ -104,54 +126,18 @@ function variantAttributeValue(value: VariantValue): AttributeValue {
           return base64(value.value)
         },
       })
-    case 'map': {
-      const children = new Map<number, Attribute>()
-      const childAt = (index: number): Attribute => {
-        let child = children.get(index)
-        if (!child) {
-          child = variantEntry(value.childAt(index))
-          children.set(index, child)
-        }
-        return child
-      }
-      return cachedView({
-        kind: 'map',
-        childCount: value.childCount,
-        childAt,
-        get value() {
-          return Array.from({ length: value.childCount }, (_, i) => childAt(i))
-        },
-        get previewChildren() {
-          return Array.from({ length: Math.min(value.childCount, 3) }, (_, i) =>
-            childAt(i)
-          )
-        },
-      })
-    }
-    case 'array': {
-      const children = new Map<number, AttributeValue>()
-      const childAt = (index: number): AttributeValue => {
-        let child = children.get(index)
-        if (!child) {
-          child = variantAttributeValue(value.childAt(index))
-          children.set(index, child)
-        }
-        return child
-      }
-      return cachedView({
-        kind: 'array',
-        childCount: value.childCount,
-        childAt,
-        get value() {
-          return Array.from({ length: value.childCount }, (_, i) => childAt(i))
-        },
-        get previewChildren() {
-          return Array.from({ length: Math.min(value.childCount, 3) }, (_, i) =>
-            childAt(i)
-          )
-        },
-      })
-    }
+    case 'map':
+      return containerView(
+        'map',
+        () => value.childCount,
+        index => variantEntry(value.childAt(index))
+      )
+    case 'array':
+      return containerView(
+        'array',
+        () => value.childCount,
+        index => variantAttributeValue(value.childAt(index))
+      )
   }
 }
 
@@ -171,95 +157,58 @@ function readAttributeValue(cell: ArrowCell): AttributeValue {
     case 'empty':
       return { kind: 'empty', value: null }
     case 'string':
-      return {
+      return cachedView({
         kind: 'string',
         get value() {
           return cell.text()
         },
-      }
+      })
     case 'int64':
-      return {
+      return cachedView({
         kind: 'int64',
         get value() {
           return cell.integer()
         },
-      }
+      })
     case 'double':
-      return {
+      return cachedView({
         kind: 'double',
         get value() {
           return cell.number()
         },
-      }
+      })
     case 'bool':
-      return {
+      return cachedView({
         kind: 'bool',
         get value() {
           return cell.boolean()
         },
-      }
+      })
     case 'bytes':
-      return {
+      return cachedView({
         kind: 'bytes',
         get value() {
           return base64(cell.bytes())
         },
-      }
+      })
     case 'map': {
       const entries = memoize(() => cell.map())
-      const children = new Map<number, Attribute>()
-      const childAt = (index: number): Attribute => {
-        let child = children.get(index)
-        if (!child) {
-          child = attributeEntry(entries(), index)
-          children.set(index, child)
-        }
-        return child
-      }
-      return {
-        kind: 'map',
-        childAt,
-        get value() {
-          return Array.from({ length: entries().length }, (_, i) => childAt(i))
-        },
-        get childCount() {
-          return entries().length
-        },
-        get previewChildren() {
-          return Array.from({ length: Math.min(entries().length, 3) }, (_, i) =>
-            childAt(i)
-          )
-        },
-      }
+      return containerView(
+        'map',
+        () => entries().length,
+        index => attributeEntry(entries(), index)
+      )
     }
     case 'array': {
       const values = memoize(() => cell.list())
-      const children = new Map<number, AttributeValue>()
-      const childAt = (index: number): AttributeValue => {
-        let child = children.get(index)
-        if (!child) {
-          child = attributeValue(
+      return containerView(
+        'array',
+        () => values().length,
+        index =>
+          attributeValue(
             new ArrowCell(values(), index, cell.type.children[0]!.metadata)
           )
-          children.set(index, child)
-        }
-        return child
-      }
-      return {
-        kind: 'array',
-        childAt,
-        get value() {
-          return Array.from({ length: values().length }, (_, i) => childAt(i))
-        },
-        get childCount() {
-          return values().length
-        },
-        get previewChildren() {
-          return Array.from({ length: Math.min(values().length, 3) }, (_, i) =>
-            childAt(i)
-          )
-        },
-      }
+      )
     }
   }
 }
