@@ -17,6 +17,10 @@
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { createRefreshCoordinator } from '@/services/refresh-coordinator'
+  import { createRead } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
+  import { getDataChanges } from '@/contexts/data-changes.svelte'
   import PageLayout from '@/components/shared/Layout/PageLayout.svelte'
   import DetailStack from '@/components/shared/Detail/DetailStack.svelte'
   import DetailBubble from '@/components/shared/Detail/DetailBubble.svelte'
@@ -56,6 +60,7 @@
   } from '@/contexts/time-context.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import type { Stats } from '@/types/api-types'
+  import type { FieldDefinition } from '@/search/model'
 
   let {
     importContent,
@@ -63,16 +68,22 @@
   }: { importContent?: Snippet; importFailures?: readonly ImportFailure[] } =
     $props()
   const time = getTimeContext()
+  const readGroup = createPageReadGroup(() => void load(0, true))
+  const listRead = createRead<
+    Awaited<ReturnType<typeof telemetryAPI.discoverServices>>
+  >({ formatError: String })
+  const pageRead = createRead<
+    Awaited<ReturnType<typeof telemetryAPI.discoverServices>>
+  >({ formatError: String })
+  const statsRead = createRead<Stats>({ group: null, formatError: String })
   const navigation = getNavigationCounts()
   const signals = SIGNAL_ORDER
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
-  let fieldsReady = false
-  let fieldRequest: Promise<void> | undefined
-  let submission = 0
+  const fieldRead = createRead<FieldDefinition[]>()
+  const submissionRead = createRead<void>()
   let queries = $state(homeQueries(null))
   let pendingQueries = homeQueries(null)
   let totalServices = $state<number>()
-  let alive = true
   let initialized = false
   let services = $state<ServiceSummary[]>([])
   let mapSelection = $state.raw<MapSelection | null>(null)
@@ -80,17 +91,16 @@
     mapSelection?.kind === 'service' ? mapSelection.service : null
   )
   let stats = $state<Stats | null>(null)
-  let statsError = $state('')
-  let statsLoading = $state(true)
-  let statsRequest = $state.raw<AbortController>()
-  let error = $state('')
-  let pageError = $state('')
+  const statsError = $derived(statsRead.error ?? '')
+  const statsLoading = $derived(statsRead.pending)
+  const error = $derived(submissionRead.error || listRead.error || '')
+  const pageError = $derived(pageRead.error ?? '')
   let draft = $state(readRoute().query.q ?? '')
   let routeQuery = readRoute().query.q ?? ''
   let term = $state('')
   let offset = $state(0)
   let more = $state(false)
-  let loaded = $state(false)
+  const loaded = $derived(listRead.data !== undefined)
   let revision = $state(0)
   function inspect(selection: MapSelection) {
     mapSelection = selection
@@ -104,10 +114,8 @@
   let displayedListRequest:
     | { range: typeof range; queries: typeof queries; searchActive: boolean }
     | undefined
-  let request = $state.raw<AbortController>()
-  let pageRequest = $state.raw<AbortController>()
-  const loading = $derived(!!request || !!pageRequest)
-  let requestKey = $state(0)
+  const loading = $derived(listRead.pending || pageRead.pending)
+  const requestKey = $derived(`${listRead.requestKey}:${pageRead.requestKey}`)
   const rejections = $derived(stats?.rejections ?? [])
   const issueCount = $derived(
     stats
@@ -116,38 +124,24 @@
       : undefined
   )
 
-  function refreshStats() {
-    statsRequest?.abort()
-    const controller = new AbortController()
-    statsRequest = controller
-    statsLoading = true
-    statsError = ''
-    void telemetryAPI
-      .getStats(controller.signal)
-      .then(value => {
-        if (!controller.signal.aborted) stats = value
-      })
-      .catch(reason => {
-        if (!controller.signal.aborted) statsError = String(reason)
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) statsLoading = false
-      })
+  const statsRefresh = createRefreshCoordinator(() =>
+    statsRead.load(
+      signal => telemetryAPI.getStats(signal),
+      value => {
+        stats = value
+      }
+    )
+  )
+  const changes = getDataChanges()
+  if (changes) onDestroy(changes.subscribe(() => void statsRefresh.request()))
+
+  function refresh() {
+    void statsRefresh.request()
+    void readGroup.refresh()
   }
 
   async function load(pageOffset = 0, refresh = false) {
-    if (!alive || (!refresh && (pageRequest || !more || !displayedListRequest)))
-      return
-    if (refresh) request?.abort()
-    const controller = new AbortController()
-    if (refresh) {
-      request = controller
-      error = ''
-    } else {
-      pageRequest = controller
-      pageError = ''
-    }
-    requestKey++
+    if (!refresh && (pageRead.pending || !more || !displayedListRequest)) return
     let nextRange = range
     if (refresh) {
       const bounds = selectionToQueryRangeNs(time.selection, Date.now())
@@ -175,131 +169,109 @@
       range = nextRange
       queries = options.queries
       revision++
-      refreshStats()
     }
-    try {
-      const page = await telemetryAPI.discoverServices(
-        options,
-        controller.signal
-      )
-      if (
-        !alive ||
-        controller.signal.aborted ||
-        (refresh
-          ? request !== controller
-          : pageRequest !== controller || displayedListRequest !== reading)
-      )
-        return
-      if (refresh) {
-        // Only a successful replacement invalidates the retained list's page.
-        pageRequest?.abort()
-        pageRequest = undefined
-        pageError = ''
-      }
-      services =
-        pageOffset === 0
-          ? page.items
-          : [
-              ...new Map(
-                [...services, ...page.items].map(service => [
-                  serviceIdentity(service),
-                  service,
-                ])
-              ).values(),
-            ]
-      displayedListRequest = reading
-      totalServices = page.totals?.home
-      navigation?.setHomeCounts(
-        page.totals ?? {},
-        {
-          traces: discoverySignalHref(
-            'traces',
-            reading.range,
-            queryText(reading.queries.traces)
-          ),
-          metrics: discoverySignalHref(
-            'metrics',
-            reading.range,
-            queryText(reading.queries.metrics)
-          ),
-          logs: discoverySignalHref(
-            'logs',
-            reading.range,
-            queryText(reading.queries.logs)
-          ),
-        },
-        reading.searchActive
-      )
-      more = page.truncated
-      offset = pageOffset
-      loaded = true
-      // Connection inspection follows its own received graph membership.
-      const previousService = inspectedService
-      if (previousService && refresh) {
-        const selected =
-          services.find(
-            service =>
-              serviceIdentity(service) === serviceIdentity(previousService)
-          ) ??
-          services[0] ??
-          null
-        if (
-          !selected ||
-          serviceIdentity(selected) !== serviceIdentity(previousService)
+    await (refresh ? listRead : pageRead).load(
+      signal => telemetryAPI.discoverServices(options, signal),
+      page => {
+        if (refresh) {
+          // Only a successful replacement invalidates the retained list's page.
+          pageRead.clear()
+        }
+        services =
+          pageOffset === 0
+            ? page.items
+            : [
+                ...new Map(
+                  [...services, ...page.items].map(service => [
+                    serviceIdentity(service),
+                    service,
+                  ])
+                ).values(),
+              ]
+        displayedListRequest = reading
+        totalServices = page.totals?.home
+        navigation?.setHomeCounts(
+          page.totals ?? {},
+          {
+            traces: discoverySignalHref(
+              'traces',
+              reading.range,
+              queryText(reading.queries.traces)
+            ),
+            metrics: discoverySignalHref(
+              'metrics',
+              reading.range,
+              queryText(reading.queries.metrics)
+            ),
+            logs: discoverySignalHref(
+              'logs',
+              reading.range,
+              queryText(reading.queries.logs)
+            ),
+          },
+          reading.searchActive
         )
-          mapSelection = selected
-            ? { kind: 'service', service: selected }
-            : null
-      } else if (!mapSelection && services[0]) {
-        mapSelection = { kind: 'service', service: services[0] }
-      }
-    } catch (reason) {
-      if (!alive || controller.signal.aborted) return
-      if (refresh && request === controller) error = String(reason)
-      else if (pageRequest === controller && displayedListRequest === reading)
-        pageError = String(reason)
-    } finally {
-      if (alive && request === controller) {
-        request = undefined
-        requestKey++
-      } else if (alive && pageRequest === controller) {
-        pageRequest = undefined
-        requestKey++
-      }
-    }
-  }
-  function ensureFields(): Promise<void> {
-    if (fieldsReady) return Promise.resolve()
-    fieldRequest ??= Promise.all(signals.map(getDynamicAttributes)).then(
-      groups => {
-        if (!alive) return
-        fields = homeFields([fields, ...groups])
-        fieldsReady = true
+        more = page.truncated
+        offset = pageOffset
+        // Connection inspection follows its own received graph membership.
+        const previousService = inspectedService
+        if (previousService && refresh) {
+          const selected =
+            services.find(
+              service =>
+                serviceIdentity(service) === serviceIdentity(previousService)
+            ) ??
+            services[0] ??
+            null
+          if (
+            !selected ||
+            serviceIdentity(selected) !== serviceIdentity(previousService)
+          )
+            mapSelection = selected
+              ? { kind: 'service', service: selected }
+              : null
+        } else if (!mapSelection && services[0]) {
+          mapSelection = { kind: 'service', service: services[0] }
+        }
       }
     )
-    return fieldRequest
+  }
+  function ensureFields(): Promise<void> {
+    if (!fieldRead.pending && !fieldRead.data)
+      void fieldRead.load(
+        async abort => {
+          const groups = await Promise.all(
+            signals.map(signal => getDynamicAttributes(signal, abort))
+          )
+          return homeFields([fields, ...groups])
+        },
+        received => {
+          fields = received
+        }
+      )
+    return fieldRead.completion
   }
   async function submit() {
     const text = draft
-    const current = ++submission
-    try {
+    await submissionRead.load(async (signal, publish) => {
       if (text.trim()) await ensureFields()
-      if (!alive || current !== submission || text !== draft) return
-      pendingQueries = homeQueries(parseQuery(text, fields))
-      initialized = true
-      term = text
-      routeQuery = text
-      const route = readRoute()
-      if ((route.query.q ?? '') !== text)
-        navigateCurrentRoute(
-          { ...route.query, q: text || undefined },
-          'replace'
-        )
-      void load(0, true)
-    } catch (reason) {
-      if (alive && current === submission)
-        error = reason instanceof Error ? reason.message : String(reason)
-    }
+      signal.throwIfAborted()
+      if (text !== draft) return
+      const parsed = homeQueries(parseQuery(text, fields))
+      publish(() => {
+        pendingQueries = parsed
+        initialized = true
+        term = text
+        routeQuery = text
+        const route = readRoute()
+        if ((route.query.q ?? '') !== text)
+          navigateCurrentRoute(
+            { ...route.query, q: text || undefined },
+            'replace'
+          )
+        void load(0, true)
+      })
+    })
   }
   $effect(() => {
     void time.selection
@@ -310,6 +282,7 @@
     })
   })
   onMount(() => {
+    void statsRefresh.request()
     return subscribeToRoute(() => {
       const route = readRoute()
       if (route.path !== '/') return
@@ -321,10 +294,7 @@
     })
   })
   onDestroy(() => {
-    alive = false
-    request?.abort()
-    pageRequest?.abort()
-    statsRequest?.abort()
+    statsRefresh.dispose()
     navigation?.setHomeCounts(null)
   })
   function relative(timestamp: bigint | null | undefined) {
@@ -366,7 +336,7 @@
   <DetailBubble label="Storage" initialOpen={false}>
     <LoadingStatus
       pending={statsLoading}
-      requestKey={statsRequest?.signal}
+      requestKey={statsRead.requestKey}
       label="Loading storage information…"
       class="block px-3 text-subtle"
     />
@@ -422,7 +392,7 @@
   >
     <LoadingStatus
       pending={statsLoading}
-      requestKey={statsRequest?.signal}
+      requestKey={statsRead.requestKey}
       label="Loading ingestion issues…"
       class="block px-3 text-subtle"
     />
@@ -453,8 +423,8 @@
   drawerLabel="Home"
   revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainSurface="base"
-  onRefresh={submit}
-  loading={!!request}
+  onRefresh={refresh}
+  loading={listRead.pending}
   loadingRequestKey={String(requestKey)}
 >
   {#snippet drawerSearch()}
@@ -508,7 +478,7 @@
       servicesLoaded={loaded}
       {totalServices}
       loadingServices={loading}
-      loadingMoreServices={!!pageRequest}
+      loadingMoreServices={pageRead.pending}
       servicesRequestKey={requestKey}
       servicesError={[error, pageError].filter(Boolean).join(' · ')}
       moreServices={more}

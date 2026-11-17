@@ -245,9 +245,11 @@ export const metricAPI = {
     }
   },
 
-  getMetricAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+  getMetricAttributeDefinitions: async (
+    signal?: AbortSignal
+  ): Promise<FieldDefinition[]> => {
     return attributeDefinitions(
-      await callArrow('getMetricAttributeDefinitions', named({}))
+      await callArrow('getMetricAttributeDefinitions', named({}), signal)
     )
   },
 

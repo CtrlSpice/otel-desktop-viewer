@@ -1,6 +1,7 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import { untrack } from 'svelte'
+  import { createReadMap, type Read } from '@/services/reads'
   import TraceCard from '@/features/traces/TraceCard.svelte'
   import LogCard from '@/features/logs/LogCard.svelte'
   import MetricCard from '@/features/metrics/MetricCard.svelte'
@@ -40,8 +41,7 @@
   type Group = {
     signal: DiscoverySignal
     cards: ServiceTelemetryCard[]
-    loading: boolean
-    error: string
+    read: Read<ServiceTelemetryCard[]>
     pageIndex: number
     scrollTop: number
     loaded: boolean
@@ -50,19 +50,25 @@
   const PAGE_SIZE_KEY = 'home-telemetry-page-size'
   let pageSize = $state(loadPageSize(PAGE_SIZE_KEY))
   let groups = $state<Group[]>([])
-  let requestKey = $state(0)
+  const reads = createReadMap<DiscoverySignal, ServiceTelemetryCard[]>({
+    formatError: String,
+    retainError: true,
+  })
+  const requestKey = $derived(reads.requestKey)
   const serviceKey = $derived(service ? serviceIdentity(service) : null)
   let selectedSignal = $state<DiscoverySignal>('traces')
   let viewport = $state<HTMLDivElement>()
   const panelID = $props.id()
   const labels = { traces: 'Traces', logs: 'Logs', metrics: 'Metrics' }
   const available = $derived(
-    groups.filter(group => group.loading || group.error || group.cards.length)
+    groups.filter(
+      group => group.read.pending || group.read.error || group.cards.length
+    )
   )
   const active = $derived(
     available.find(group => group.signal === selectedSignal) ?? available[0]
   )
-  const loading = $derived(active?.loading ?? false)
+  const loading = $derived(active?.read.pending ?? false)
   const tabs = $derived(
     SIGNAL_ORDER.map(signal => {
       const group = groups.find(group => group.signal === signal)
@@ -115,12 +121,10 @@
   $effect(() => {
     void revision
     void serviceKey
-    const controller = new AbortController()
     const selection = {
       service: untrack(() => service),
       options,
     }
-    requestKey = untrack(() => requestKey) + 1
     if (!selection.service) {
       groups = []
       return
@@ -135,8 +139,7 @@
         return {
           signal,
           cards: previous?.cards ?? [],
-          loading: true,
-          error: previous?.error ?? '',
+          read: reads.for(signal),
           pageIndex: previous?.pageIndex ?? 0,
           scrollTop: previous?.scrollTop ?? 0,
           loaded: previous?.loaded ?? false,
@@ -148,33 +151,29 @@
         }
       })
       for (const group of groups) {
-        void loadServiceTelemetry(
-          group.signal,
-          selectedService,
-          selection.options,
-          controller.signal
-        )
-          .then(cards => {
-            if (controller.signal.aborted) return
+        void group.read.load(
+          signal =>
+            loadServiceTelemetry(
+              group.signal,
+              selectedService,
+              selection.options,
+              signal
+            ),
+          cards => {
             group.cards = cards
             group.query = parseRoute(
               discoverySignalHref(group.signal, selection.options, '')
             ).query
-            group.error = ''
             group.loaded = true
             group.pageIndex = 0
             group.scrollTop = 0
-          })
-          .catch(error => {
-            if (controller.signal.aborted) return
-            group.error = String(error)
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) group.loading = false
-          })
+          }
+        )
       }
     })
-    return () => controller.abort()
+    return () => {
+      for (const read of reads.values()) read.cancel()
+    }
   })
   function cardID(card: ServiceTelemetryCard) {
     return card.signal === 'traces'
@@ -233,8 +232,8 @@
         label={`Loading matching ${active?.signal ?? 'telemetry'}…`}
         requestKey={`${requestKey}:${active?.signal ?? ''}`}
       />
-      {#if active?.error}<p role="alert" class="text-papaya">
-          {active.error}
+      {#if active?.read.error}<p role="alert" class="text-papaya">
+          {active.read.error}
         </p>
       {/if}
       {#if active}

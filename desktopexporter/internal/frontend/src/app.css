@@ -55,7 +55,18 @@
   color: var(--color-base-content);
   box-shadow: var(--popover-shadow);
   font-weight: 400;
+  max-width: min(20rem, calc(100vw - 2rem));
   @apply text-xs;
+}
+
+.pane-header .tooltip {
+  @apply tooltip-bottom;
+}
+
+.pane-header .tooltip::before {
+  left: var(--tooltip-offset-x, 0px);
+  right: auto;
+  --tt-trans: 0%;
 }
 
 /* tooltip-warmth.ts removes the show delay for warm tooltips. Hiding is immediate. */
@@ -558,6 +569,9 @@ html[data-theme] .cm-completionDetail::before {
 .anchor-popover__body {
   @apply min-h-0 flex-1 overflow-y-auto;
   overscroll-behavior: contain;
+  /* Keep outer focus rings inside the scroll clip without moving the fields. */
+  padding: calc(var(--focus-ring-width) + var(--focus-ring-offset));
+  margin: calc(-1 * (var(--focus-ring-width) + var(--focus-ring-offset)));
 }
 
 .anchor-popover--form {
@@ -637,21 +651,17 @@ html[data-theme] .cm-completionDetail::before {
   @apply before:h-px before:border-t;
 }
 
-/* Shared round controls for copy actions and chart overlays. */
+/* Shared circular header controls. */
 .header-icon-button {
-  @apply inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
-  width: var(--control-target-size);
+  @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
   height: var(--control-target-size);
-  color: var(--color-subtle);
+  color: var(--color-base-content);
+  flex-shrink: 0;
+  width: var(--control-target-size);
 }
 
 .header-icon-button:hover {
-  @apply bg-base-300 text-base-content;
-}
-
-.header-icon-button:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
+  background-color: var(--item-hover-bg);
 }
 
 .drawer-header-btn {
@@ -677,6 +687,35 @@ html[data-theme] .cm-completionDetail::before {
   border: 1px solid var(--color-border);
   background-color: var(--color-input);
   box-shadow: none;
+}
+
+/* Composite entry fields share one surface and one focus ring. */
+.input-surface {
+  @apply min-w-0 rounded-full font-sans text-sm text-base-content;
+  min-height: calc(var(--control-target-size) + 2px);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-input);
+  box-shadow: none;
+}
+
+.input-surface:has(:where(input, textarea, [contenteditable='true']):focus) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.input-surface:has([aria-invalid='true'], .search-editor-container--error) {
+  border-color: var(--color-error);
+  outline-color: var(--color-error);
+}
+
+.input-surface__input {
+  @apply min-w-0 max-w-full border-0 bg-transparent p-0 text-left font-sans text-sm text-base-content shadow-none;
+  height: var(--control-target-size);
+  line-height: var(--text-base--line-height);
+}
+
+.input-surface__input:focus-visible {
+  outline: none;
 }
 
 /* Query-entry controls. Use typed-field--pill for rounded ends. */
@@ -720,6 +759,7 @@ html[data-theme] .cm-textfield {
 }
 
 .typed-field::placeholder,
+.input-surface__input::placeholder,
 input.typed-field::placeholder,
 textarea.typed-field::placeholder,
 .typed-field .cm-editor :where(.cm-placeholder) {
@@ -827,11 +867,14 @@ button:focus-visible:not(.btn) {
 
 /* Shared item states. Hover temporarily overrides selection; focus is a separate outline. */
 :is(.item-state, .table-row) {
-  border-radius: 0.75rem;
   --item-state-bg: var(--item-idle-bg, transparent);
   background-color: var(--item-state-bg);
   transition: background-color var(--item-motion-duration)
     var(--motion-settle-easing);
+}
+
+:is(.item-state, .table-row):where(:not(.btn-circle, .header-icon-button)) {
+  border-radius: 0.75rem;
 }
 
 /* Real table rows paint their state on the cells so the outer corners round
@@ -868,6 +911,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   [aria-selected='true'],
   [aria-pressed='true'],
   [aria-checked='true'],
+  [aria-expanded='true']:not([aria-selected]),
   [aria-current='page'],
   [data-selected],
   .table-row--selected
@@ -876,7 +920,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 
 :is(.item-state, .table-row):where(
-  :is(:hover, .table-row--resize-hover):not(:disabled):not(
+  :is(:hover, [data-hovered], .table-row--resize-hover):not(:disabled):not(
       [aria-disabled='true']
     ):not([data-disabled])
 ) {

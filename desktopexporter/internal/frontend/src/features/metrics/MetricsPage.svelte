@@ -72,7 +72,9 @@
     HEATMAP_BUCKET_TARGET,
   } from '@/features/metrics/Histograms/histogram-aggregation'
   import type { AggregateBucket, DataPoint } from '@/types/api-types'
-  import { onDestroy, untrack } from 'svelte'
+  import { untrack } from 'svelte'
+  import { createRead, createReadMap } from '@/services/reads'
+  import { createPageReadGroup } from '@/contexts/page-read-group.svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import {
     telemetryAPI,
@@ -83,7 +85,7 @@
     selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import { resolveTimezoneName, timezoneOffsetMinutes } from '@/utils/time'
-  import { navigateToItem } from '@/route'
+  import { navigateToItem, parseMetricVisibleSeries, readRoute } from '@/route'
   import type { MetricViewData, MetricStats } from '@/types/api-types'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/Layout/PageLayout.svelte'
@@ -131,15 +133,37 @@
   const METRIC_CHART_PANEL_ID = 'metric-chart-tabpanel'
 
   let timeContext = getTimeContext()
+  const readGroup = createPageReadGroup(refreshMetrics)
+  const statsRead = createRead<
+    Awaited<ReturnType<typeof telemetryAPI.getStats>>
+  >({ group: null })
+  const metricError = (error: Error) =>
+    error.message === 'The selected metric was not found.'
+      ? error.message
+      : 'Could not load the selected metric.'
+  const summaryRead = createRead<MetricSelection>({
+    formatError: metricError,
+  })
+  const detailRead = createRead<Parameters<typeof publishMetricDetail>[0]>({
+    formatError: metricError,
+  })
+  type AggregateResult = Awaited<
+    ReturnType<typeof telemetryAPI.getMetricAggregateView>
+  >
+  const aggregateRead = createRead<AggregateResult>({
+    formatError: () => 'Could not load the chart aggregate.',
+  })
+  const aggregateSummaryRead = createRead<AggregateResult>({
+    formatError: () => 'Could not load the histogram aggregate.',
+  })
+  const chartSeriesRead = createRead<MetricViewData | null>({
+    formatError: () => 'Could not load the selected chart series.',
+  })
+  const contributionRead = createRead<AggregateResult>()
+  const columnRead = createRead<MetricViewData | null>()
 
   let baselineStats = $state<MetricStats | null>(null)
   let polledStats = $state<MetricStats | null>(null)
-  let listRequest: AbortController | undefined
-  let statsRequest: AbortController | undefined
-  onDestroy(() => {
-    listRequest?.abort()
-    statsRequest?.abort()
-  })
   let actionError = $state<string | null>(null)
   let query = $state('')
   let submittedText = $state('')
@@ -151,18 +175,11 @@
     getItemID: metricSummaryKey,
     initialSort: { column: 'lastSeen', direction: 'desc' },
     compare: compareMetrics,
-    fetchList: async () => {
-      listRequest?.abort()
-      statsRequest?.abort()
-      const controller = new AbortController()
-      const statsController = new AbortController()
-      listRequest = controller
-      statsRequest = statsController
+    fetchList: async signal => {
       // Freshness statistics run beside the list, but only a successful list
       // can establish a new baseline for the displayed results.
-      const stats = telemetryAPI
-        .getStats(statsController.signal)
-        .catch(() => null)
+      statsRead.clear()
+      const stats = statsRead.load(signal => telemetryAPI.getStats(signal))
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
@@ -177,39 +194,34 @@
             field: page.sortColumn,
             direction: page.sortDirection,
           })),
-          controller.signal
+          signal
         )
-        if (!controller.signal.aborted) {
+        if (!signal.aborted) {
           baselineStats = null
-          void stats.then(result => {
-            if (statsController.signal.aborted) return
+          void stats.then(() => {
+            if (signal.aborted) return
+            const result = statsRead.data
             if (result) {
               baselineStats = result.metrics
               polledStats = result.metrics
             }
-            if (statsRequest === statsController) statsRequest = undefined
           })
         }
         return results
       } catch (error) {
-        statsController.abort()
-        if (statsRequest === statsController) statsRequest = undefined
+        if (!signal.aborted) statsRead.cancel()
         throw error
       }
     },
-    pollStats: async () => {
-      if (statsRequest) return
-      const controller = new AbortController()
-      statsRequest = controller
-      try {
-        const stats = await telemetryAPI.getStats(controller.signal)
-        if (controller.signal.aborted) return
-        baselineStats ??= stats.metrics
-        polledStats = stats.metrics
-      } finally {
-        if (statsRequest === controller) statsRequest = undefined
-      }
-    },
+    statsPending: () => statsRead.pending,
+    refreshStats: () =>
+      statsRead.load(
+        signal => telemetryAPI.getStats(signal),
+        stats => {
+          baselineStats ??= stats.metrics
+          polledStats = stats.metrics
+        }
+      ),
   })
   const freshness = $derived.by(() => {
     if (!baselineStats || !polledStats) return { pulse: false, tip: '' }
@@ -240,8 +252,8 @@
     | 'serviceName'
   >
   let retainedSummary = $state<MetricSelection>()
-  let summaryLoading = $state(false)
-  let summaryError = $state('')
+  const summaryLoading = $derived(summaryRead.pending)
+  const summaryError = $derived(summaryRead.error ?? '')
   let summaryRetry = $state(0)
   let summaryLookupID = $state<string | null>(null)
   let selectedSummary = $derived(
@@ -263,8 +275,7 @@
   })
   $effect(() => {
     void summaryRetry
-    summaryLoading = false
-    summaryError = ''
+    summaryRead.clearError()
     const summary = page.selectedSummary
     if (summary) {
       retainedSummary = summary
@@ -273,15 +284,11 @@
     const id = summaryLookupID
     if (!id || untrack(() => retainedSummary?.metricRef) === id) return
     // A shared URL selects an identity independently of filtered-list membership.
-    const controller = new AbortController()
-    summaryLoading = true
-    void telemetryAPI
-      .getMetric(id, controller.signal)
-      .then(metric => {
-        if (controller.signal.aborted) return
+    void summaryRead.load(
+      async signal => {
+        const metric = await telemetryAPI.getMetric(id, signal)
         if (!metric) {
-          summaryError = 'The selected metric was not found.'
-          return
+          throw new Error('The selected metric was not found.')
         }
         const service = metric.resource.attributes.find(
           attribute =>
@@ -292,7 +299,7 @@
           metric.metricType === 'Gauge'
             ? null
             : metric.aggregationTemporalityCode
-        retainedSummary = {
+        return {
           metricRef: metric.metricRef,
           name: metric.name,
           metricType: metric.metricType,
@@ -305,25 +312,18 @@
           serviceName:
             service?.value.kind === 'string' ? service.value.value : '',
         }
-      })
-      .catch(error => {
-        if (!controller.signal.aborted) {
-          summaryError = 'Could not load the selected metric.'
-          console.error('Failed to fetch selected metric:', error)
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) summaryLoading = false
-      })
-    return () => {
-      controller.abort()
-    }
+      },
+      summary => {
+        retainedSummary = summary
+      }
+    )
+    return () => summaryRead.cancel()
   })
 
   let selectedMetric = $state<MetricViewData | undefined>(undefined)
-  let detailLoading = $state(false)
-  let detailRequestKey = $state(0)
-  let detailError = $state('')
+  const detailLoading = $derived(detailRead.pending)
+  const detailRequestKey = $derived(detailRead.requestKey)
+  const detailError = $derived(detailRead.error ?? '')
   let displayedMetricSummary = $state<MetricSelection>()
   let displayedSummary = $derived(
     selectedMetric ? displayedMetricSummary : selectedSummary
@@ -332,9 +332,9 @@
   // example, a cumulative baseline). Keep that distinct from omitted payloads.
   let loadedDatapointSeries = $state<ReadonlySet<string>>(new Set())
   let chartDatapoints = $state.raw(new SvelteMap<string, DataPoint[]>())
-  let chartSeriesLoading = $state(false)
-  let chartSeriesError = $state('')
-  let chartSeriesRequestKey = $state.raw<AbortSignal>()
+  const chartSeriesLoading = $derived(chartSeriesRead.pending)
+  const chartSeriesError = $derived(chartSeriesRead.error ?? '')
+  const chartSeriesRequestKey = $derived(chartSeriesRead.requestKey)
 
   // Cross-series histogram merge for the current legend selection.
   let selectedAggregate = $state<AggregateBucket[] | null>(null)
@@ -357,15 +357,30 @@
   let aggregateSummaryScope = $state.raw<AggregateScope>()
   const aggregateMetric = $derived(aggregateScope?.metric)
   const aggregateSummaryMetric = $derived(aggregateSummaryScope?.metric)
-  let aggregateLoading = $state(false)
-  let aggregateSummaryLoading = $state(false)
-  let aggregateError = $state('')
-  let aggregateSummaryError = $state('')
-  let aggregateRequestKey = $state.raw<AbortSignal>()
+  const aggregateLoading = $derived(aggregateRead.pending)
+  const aggregateSummaryLoading = $derived(aggregateSummaryRead.pending)
+  const aggregateError = $derived(aggregateRead.error ?? '')
+  const aggregateSummaryError = $derived(aggregateSummaryRead.error ?? '')
+  const aggregateRequestKey = $derived(aggregateRead.requestKey)
 
   // Unreduced inspected-series datapoints belong to the displayed response.
-  let seriesDatapoints = new SvelteMap<string, DatapointSeries>()
-  let seriesDatapointErrors = new SvelteMap<string, string>()
+  const seriesReads = createReadMap<string, DatapointSeries>({
+    formatError: () => 'Could not load datapoints.',
+  })
+  const seriesDatapoints = $derived(
+    new Map(
+      [...seriesReads].flatMap(([key, read]) =>
+        read.data ? [[key, read.data] as const] : []
+      )
+    )
+  )
+  const seriesDatapointErrors = $derived(
+    new Map(
+      [...seriesReads].flatMap(([key, read]) =>
+        read.error ? [[key, read.error] as const] : []
+      )
+    )
+  )
   let seriesDatapointsKey = ''
   let seriesRetry = $state(0)
   let seriesDatapointsMetricID = $derived(selectedMetric?.metricRef ?? null)
@@ -395,7 +410,6 @@
 
   // Per-series distributions for the selected heatmap column.
   let columnDistribution = $state<MetricViewData | undefined>(undefined)
-  let columnToken = 0
   let histogramContribution = $state<HistogramContributionSelection | null>(
     null
   )
@@ -486,31 +500,23 @@
     void detailRefresh
     const requestedID = page.selectedID
     const id = selectedMetricRef
-    detailController?.abort()
-    ++detailToken
+    detailRead.cancel()
     if (!id) {
-      detailLoading = false
-      detailError = ''
+      detailRead.clearError()
       if (!requestedID) selectedMetric = undefined
       return
     }
     const summary = untrack(() => selectedSummary)
     if (summary) void fetchMetricDetail(summary)
     return () => {
-      detailController?.abort()
-      ++detailToken
+      detailRead.cancel()
     }
   })
 
   // Aggregates depend on legend selection; metric detail depends on metric identity.
-  let aggregateToken = 0
-
   $effect(() => {
-    const token = ++aggregateToken
-    aggregateLoading = false
-    aggregateSummaryLoading = false
-    aggregateError = ''
-    aggregateSummaryError = ''
+    aggregateRead.clearError()
+    aggregateSummaryRead.clearError()
     const summary = displayedMetricSummary
     const metric = selectedMetric
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
@@ -545,8 +551,6 @@
       return
     }
 
-    aggregateLoading = true
-    aggregateSummaryLoading = !scalar
     const datapointScope = displayedDatapointScope
     if (!datapointScope) return
     const scope: AggregateScope = {
@@ -559,53 +563,49 @@
       datapointScope,
     }
     const requestAggregates = () => {
-      void fetchAggregate(scope, bounds, token, false, controller.signal)
+      void fetchAggregate(scope, bounds, false)
       if (
         summary.metricType === 'Histogram' ||
         summary.metricType === 'ExponentialHistogram'
       ) {
-        void fetchAggregate(scope, bounds, token, true, controller.signal)
+        void fetchAggregate(scope, bounds, true)
       }
     }
-    const controller = new AbortController()
-    aggregateRequestKey = controller.signal
     untrack(requestAggregates)
 
     return () => {
-      controller.abort()
-      ++aggregateToken
+      aggregateRead.cancel()
+      aggregateSummaryRead.cancel()
     }
   })
 
   async function fetchAggregate(
     scope: AggregateScope,
     bounds: { startTime: bigint; endTime: bigint },
-    token: number,
-    wholeWindow: boolean,
-    signal: AbortSignal
+    wholeWindow: boolean
   ) {
-    try {
-      const { startTime, endTime } = bounds
-      const quantiles = DEFAULT_HISTOGRAM_QUANTILES
-      // Both shapes aggregate only checked series. The scoped whole pool is
-      // sufficient for scalars; no second cross-series pool is needed.
-      const result = await telemetryAPI.getMetricAggregateView(
-        scope.metric.metricRef,
-        startTime,
-        endTime,
-        wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
-        scope.visibleKeys,
-        quantiles,
-        scope.timezoneOffsetNs,
-        // Keep pooled and per-series lines on the same bucket grid.
-        wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
-        wholeWindow ? undefined : [],
-        scope.timezoneName,
-        undefined,
-        signal
-      )
-      // A slower earlier request must not overwrite a newer answer.
-      if (!signal.aborted && token === aggregateToken) {
+    const { startTime, endTime } = bounds
+    const quantiles = DEFAULT_HISTOGRAM_QUANTILES
+    // Both shapes aggregate only checked series. The scoped whole pool is
+    // sufficient for scalars; no second cross-series pool is needed.
+    await (wholeWindow ? aggregateSummaryRead : aggregateRead).load(
+      signal =>
+        telemetryAPI.getMetricAggregateView(
+          scope.metric.metricRef,
+          startTime,
+          endTime,
+          wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
+          scope.visibleKeys,
+          quantiles,
+          scope.timezoneOffsetNs,
+          // Keep pooled and per-series lines on the same bucket grid.
+          wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
+          wholeWindow ? undefined : [],
+          scope.timezoneName,
+          undefined,
+          signal
+        ),
+      result => {
         if (wholeWindow) {
           selectedAggregateSummary = result?.aggregate?.[0] ?? null
           aggregateSummaryScope = scope
@@ -615,22 +615,7 @@
           aggregateScope = scope
         }
       }
-    } catch (err) {
-      if (signal.aborted) return
-      console.error('Failed to fetch metric aggregate:', err)
-      if (token === aggregateToken) {
-        if (wholeWindow) {
-          aggregateSummaryError = 'Could not load the histogram aggregate.'
-        } else {
-          aggregateError = 'Could not load the chart aggregate.'
-        }
-      }
-    } finally {
-      if (!signal.aborted && token === aggregateToken) {
-        if (wholeWindow) aggregateSummaryLoading = false
-        else aggregateLoading = false
-      }
-    }
+    )
   }
 
   function selectMetric(key: string) {
@@ -682,31 +667,31 @@
     ])
     if (key !== seriesDatapointsKey) {
       seriesDatapointsKey = key
-      seriesDatapoints.clear()
-      seriesDatapointErrors.clear()
+      seriesReads.clear()
     }
 
     // Cache publication must not trigger another live-window request.
     if (untrack(() => seriesDatapoints.has(selectedSeries))) return
-    const controller = new AbortController()
-    void fetchSeriesDatapoints(
-      {
-        metricRef,
-        seriesKey: selectedSeries,
-        seriesLabel: untrack(
-          () =>
-            metricCtx.seriesTable.labels.get(selectedSeries)?.text ??
-            'default series'
-        ),
-        startTime,
-        endTime,
-        timezoneOffsetNs,
-        timezoneName,
-        cacheKey: key,
-      },
-      controller.signal
+    const read = seriesReads.for(selectedSeries)
+    void read.load(signal =>
+      fetchSeriesDatapoints(
+        {
+          metricRef,
+          seriesKey: selectedSeries,
+          seriesLabel: untrack(
+            () =>
+              metricCtx.seriesTable.labels.get(selectedSeries)?.text ??
+              'default series'
+          ),
+          startTime,
+          endTime,
+          timezoneOffsetNs,
+          timezoneName,
+        },
+        signal
+      )
     )
-    return () => controller.abort()
+    return () => read.cancel()
   })
 
   type SeriesDatapointsRequest = {
@@ -717,7 +702,6 @@
     endTime: QueryTimeBound
     timezoneOffsetNs: number
     timezoneName: string | undefined
-    cacheKey: string
   }
 
   async function fetchSeriesDatapoints(
@@ -732,45 +716,34 @@
       endTime,
       timezoneOffsetNs,
       timezoneName,
-      cacheKey,
     } = request
-    seriesDatapointErrors.delete(seriesKey)
-    try {
-      const result = await telemetryAPI.getMetricView(
-        metricRef,
-        startTime,
-        endTime,
-        0,
-        [seriesKey],
-        [],
-        timezoneOffsetNs,
-        undefined,
-        undefined,
-        undefined,
-        timezoneName,
-        undefined,
-        undefined,
-        signal
-      )
-      // Do not publish a response into a different metric or window scope.
-      if (signal.aborted || cacheKey !== seriesDatapointsKey) return
-      const series = result?.timeseries.find(t => t.seriesRef === seriesKey)
-      // Cache terminal empty results so pending URL selections can resolve.
-      seriesDatapoints.set(seriesKey, {
-        metricRef,
-        seriesRef: seriesKey,
-        metricName: result?.name ?? '',
-        seriesLabel,
-        metricType: result?.metricType ?? 'Empty',
-        unit: result?.unit ?? '',
-        count: series?.datapointCount ?? 0,
-        datapoints: series?.datapoints ?? [],
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      if (cacheKey === seriesDatapointsKey)
-        seriesDatapointErrors.set(seriesKey, 'Could not load datapoints.')
-      console.error('Failed to fetch series datapoints:', err)
+    const result = await telemetryAPI.getMetricView(
+      metricRef,
+      startTime,
+      endTime,
+      0,
+      [seriesKey],
+      [],
+      timezoneOffsetNs,
+      undefined,
+      undefined,
+      undefined,
+      timezoneName,
+      undefined,
+      undefined,
+      signal
+    )
+    const series = result?.timeseries.find(t => t.seriesRef === seriesKey)
+    // Cache terminal empty results so pending URL selections can resolve.
+    return {
+      metricRef,
+      seriesRef: seriesKey,
+      metricName: result?.name ?? '',
+      seriesLabel,
+      metricType: result?.metricType ?? 'Empty',
+      unit: result?.unit ?? '',
+      count: series?.datapointCount ?? 0,
+      datapoints: series?.datapoints ?? [],
     }
   }
 
@@ -809,37 +782,32 @@
       return
     const bounds = effectiveMetricBounds(metric)
     if (!bounds) return
-    const controller = new AbortController()
-    void telemetryAPI
-      .getMetricAggregateView(
-        metric.metricRef,
-        bounds.startTime,
-        bounds.endTime,
-        wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
-        visibleKeys,
-        [],
-        offset,
-        0,
-        undefined,
-        zone,
-        datapointID,
-        controller.signal
-      )
-      .then(result => {
-        if (!controller.signal.aborted && result?.contribution !== undefined) {
+    void contributionRead.load(
+      signal =>
+        telemetryAPI.getMetricAggregateView(
+          metric.metricRef,
+          bounds.startTime,
+          bounds.endTime,
+          wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
+          visibleKeys,
+          [],
+          offset,
+          0,
+          undefined,
+          zone,
+          datapointID,
+          signal
+        ),
+      result => {
+        if (result?.contribution !== undefined) {
           histogramContribution = {
             datapointID,
             point: aggregateToSlices(result.contribution)[0] ?? null,
           }
         }
-      })
-      .catch(error => {
-        if (!controller.signal.aborted)
-          console.error('Failed to fetch histogram contribution:', error)
-      })
-    return () => {
-      controller.abort()
-    }
+      }
+    )
+    return () => contributionRead.cancel()
   })
 
   // Fetch one merged distribution per series for the selected heatmap column.
@@ -848,17 +816,15 @@
     const startNs = metricCtx.heatmapColumnStartNs
     const endNs = metricCtx.heatmapColumnEndNs
     const scope = aggregateScope
-    const token = ++columnToken
     if (startNs === null || endNs === null || !scope) {
       columnDistribution = undefined
       return
     }
     // Clear stale column data while the new request is in flight.
     columnDistribution = undefined
-    const controller = new AbortController()
-    void (async () => {
-      try {
-        const result = await telemetryAPI.getMetricView(
+    void columnRead.load(
+      signal =>
+        telemetryAPI.getMetricView(
           scope.metric.metricRef,
           // Preserve the inclusive nanosecond column boundary.
           startNs,
@@ -873,36 +839,45 @@
           scope.timezoneName,
           undefined,
           undefined,
-          controller.signal
-        )
-        if (controller.signal.aborted || token !== columnToken) return
+          signal
+        ),
+      result => {
         columnDistribution = result ?? undefined
-      } catch (err) {
-        if (controller.signal.aborted || token !== columnToken) return
-        console.error('Failed to fetch heatmap column distribution:', err)
-        columnDistribution = undefined
       }
-    })()
-    return () => controller.abort()
+    )
+    return () => columnRead.cancel()
   })
 
-  // Identifies the current detail request so stale responses cannot replace it.
-  let detailToken = 0
-  let detailController: AbortController | undefined
   let detailRevision = 0
+
+  // Aggregate publication may keep the same metric and query. Depend on those
+  // inputs so an arriving aggregate cannot cancel identical series work.
+  const chartSeriesScope = $derived(
+    metricCtx.chartMetric === aggregateMetric
+      ? aggregateScope?.datapointScope
+      : displayedDatapointScope
+  )
+  const chartSeriesPoints = $derived(
+    metricCtx.chartMetric === aggregateMetric
+      ? (aggregateScope?.chartDatapoints ?? chartDatapoints)
+      : chartDatapoints
+  )
+  const chartSeriesLoaded = $derived(
+    metricCtx.chartMetric === aggregateMetric
+      ? (aggregateScope?.loadedDatapointSeries ?? loadedDatapointSeries)
+      : loadedDatapointSeries
+  )
 
   // Chart enrichment belongs to the displayed response, independently of a
   // different requested metric. Each checkbox change supersedes only this work.
   $effect(() => {
     const metric = metricCtx.chartMetric
-    const retained = metric === aggregateMetric ? aggregateScope : undefined
-    const scope = retained?.datapointScope ?? displayedDatapointScope
-    const points = retained?.chartDatapoints ?? chartDatapoints
-    const loaded = retained?.loadedDatapointSeries ?? loadedDatapointSeries
+    const scope = chartSeriesScope
+    const points = chartSeriesPoints
+    const loaded = chartSeriesLoaded
     const checked = metricCtx.visibleSeries
     const visible = [...checked].sort()
-    chartSeriesLoading = false
-    chartSeriesError = ''
+    chartSeriesRead.clearError()
     if (!metric || !scope || visible.length === 0) return
 
     const missing = metric.timeseries.some(
@@ -913,82 +888,71 @@
     )
     if (!missing) return
 
-    const controller = new AbortController()
-    chartSeriesLoading = true
-    chartSeriesRequestKey = controller.signal
-    void enrichChartSeries(metric, scope, points, visible, controller.signal)
-    return () => controller.abort()
+    void enrichChartSeries(metric, scope, points, visible)
+    return () => chartSeriesRead.cancel()
   })
 
   async function enrichChartSeries(
     metric: MetricViewData,
     scope: NonNullable<typeof displayedDatapointScope>,
     points: SvelteMap<string, DataPoint[]>,
-    visible: string[],
-    signal: AbortSignal
+    visible: string[]
   ) {
-    try {
-      const histogram =
-        metric.metricType === 'Histogram' ||
-        metric.metricType === 'ExponentialHistogram'
-      const result = await telemetryAPI.getMetricView(
-        metric.metricRef,
-        metric.window.requested.startNs,
-        metric.window.requested.endNs,
-        histogram ? HEATMAP_BUCKET_TARGET : METRIC_BUCKET_TARGET,
-        undefined,
-        histogram ? DEFAULT_HISTOGRAM_QUANTILES : undefined,
-        scope.timezoneOffsetNs,
-        SCALAR_VIEW_BUCKETS,
-        SPARKLINE_BUCKETS,
-        undefined,
-        scope.timezoneName,
-        visible,
-        DEFAULT_VISIBLE_TIMESERIES,
-        signal
-      )
-      if (signal.aborted || metricCtx.chartMetric !== metric) return
-      // Only missing chart points were requested. Do not replace metadata,
-      // invalidate raw/context requests, or erase independently loaded aggregates.
-      for (const series of metric.timeseries) {
-        if (!visible.includes(series.seriesRef)) continue
-        const received = result?.timeseries.find(
-          candidate => candidate.seriesRef === series.seriesRef
-        )
-        if (received) points.set(series.seriesRef, received.datapoints)
-      }
-      if (aggregateScope?.metric === metric) {
-        aggregateScope = {
-          ...aggregateScope,
-          loadedDatapointSeries: new Set([
-            ...aggregateScope.loadedDatapointSeries,
-            ...visible,
-          ]),
+    const histogram =
+      metric.metricType === 'Histogram' ||
+      metric.metricType === 'ExponentialHistogram'
+    await chartSeriesRead.load(
+      signal =>
+        telemetryAPI.getMetricView(
+          metric.metricRef,
+          metric.window.requested.startNs,
+          metric.window.requested.endNs,
+          histogram ? HEATMAP_BUCKET_TARGET : METRIC_BUCKET_TARGET,
+          undefined,
+          histogram ? DEFAULT_HISTOGRAM_QUANTILES : undefined,
+          scope.timezoneOffsetNs,
+          SCALAR_VIEW_BUCKETS,
+          SPARKLINE_BUCKETS,
+          undefined,
+          scope.timezoneName,
+          visible,
+          DEFAULT_VISIBLE_TIMESERIES,
+          signal
+        ),
+      result => {
+        // Only missing chart points were requested. Do not replace metadata,
+        // invalidate raw/context requests, or erase independently loaded aggregates.
+        for (const series of metric.timeseries) {
+          if (!visible.includes(series.seriesRef)) continue
+          const received = result?.timeseries.find(
+            candidate => candidate.seriesRef === series.seriesRef
+          )
+          if (received) points.set(series.seriesRef, received.datapoints)
         }
+        if (aggregateScope?.metric === metric) {
+          aggregateScope = {
+            ...aggregateScope,
+            loadedDatapointSeries: new Set([
+              ...aggregateScope.loadedDatapointSeries,
+              ...visible,
+            ]),
+          }
+        }
+        if (selectedMetric === metric)
+          loadedDatapointSeries = new Set([
+            ...loadedDatapointSeries,
+            ...visible,
+          ])
       }
-      if (selectedMetric === metric)
-        loadedDatapointSeries = new Set([...loadedDatapointSeries, ...visible])
-    } catch (error) {
-      if (signal.aborted || metricCtx.chartMetric !== metric) return
-      console.error('Failed to fetch chart series:', error)
-      chartSeriesError = 'Could not load the selected chart series.'
-    } finally {
-      if (!signal.aborted && metricCtx.chartMetric === metric)
-        chartSeriesLoading = false
-    }
+    )
   }
 
   async function fetchMetricDetail(summary: MetricSelection) {
-    const token = ++detailToken
-    detailRequestKey = token
-    detailController?.abort()
-    const controller = new AbortController()
-    detailController = controller
     const requestedDatapointSeries =
-      persistedVisibleKeys(summary.metricRef) ?? undefined
-    try {
-      detailLoading = true
-      detailError = ''
+      parseMetricVisibleSeries(readRoute().query) ??
+      persistedVisibleKeys(summary.metricRef) ??
+      undefined
+    await detailRead.load(async signal => {
       const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
@@ -1029,35 +993,18 @@
           // Include datapoints only for drawn series; keep all series metadata.
           requestedDatapointSeries,
           DEFAULT_VISIBLE_TIMESERIES,
-          controller.signal
+          signal
         )) ?? undefined
-      // A slower earlier request must not overwrite a newer answer.
-      if (
-        controller.signal.aborted ||
-        token !== detailToken ||
-        page.selectedID !== summary.metricRef
-      )
-        return
       if (!result) {
-        detailError = 'The selected metric was not found.'
-        return
+        throw new Error('The selected metric was not found.')
       }
-      const detail = {
+      return {
         metric: result,
         scope,
         summary,
         requestedDatapointSeries,
       }
-      publishMetricDetail(detail)
-    } catch (err) {
-      if (controller.signal.aborted || token !== detailToken) return
-      console.error('Failed to fetch metric detail:', err)
-      detailError = 'Could not load the selected metric.'
-    } finally {
-      // Only the current request owns the loading state.
-      if (!controller.signal.aborted && token === detailToken)
-        detailLoading = false
-    }
+    }, publishMetricDetail)
   }
 
   function publishMetricDetail({
@@ -1136,7 +1083,7 @@
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Metrics"
-  onRefresh={refreshMetrics}
+  onRefresh={() => void readGroup.refresh()}
   refreshPulse={freshness.pulse}
   refreshAsideTip={freshness.tip}
   loading={page.loading}
@@ -1152,8 +1099,6 @@
     <DrawerSearchPanel
       segment="search"
       signal="metrics"
-      sortValue={page.sortColumn}
-      sortDirection={page.sortDirection}
       onSearchReady={api => (page.searchEditorApi = api)}
       onQueryChange={(text, availableFields) => {
         query = text

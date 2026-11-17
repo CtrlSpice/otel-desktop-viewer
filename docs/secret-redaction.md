@@ -4,7 +4,7 @@ The viewer runs OpenTelemetry Contrib's `redactionprocessor` v0.165.1 before
 batching and storage in every OTLP pipeline. This covers HTTP, gRPC and browser
 telemetry imports. Queries and downloads see the processed values.
 
-[`collector_redaction.yaml`](../internal/collector/collector_redaction.yaml) defines the policy.
+[`internal/redaction/policy.yaml`](../internal/redaction/policy.yaml) defines the policy.
 It keeps ordinary attributes, masks matches with `****`, and adds no summary
 attributes (`allow_all_keys: true`, `redact_all_types: true`, `summary: silent`).
 Discussing credentials or authentication does not itself cause a record to be dropped.

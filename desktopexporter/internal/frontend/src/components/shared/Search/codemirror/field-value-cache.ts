@@ -1,3 +1,5 @@
+import type { ReadMap } from '@/services/reads/map.svelte'
+
 /** How many values to fetch per field. One request, then local filtering. */
 export const FETCH_LIMIT = 500
 
@@ -7,35 +9,30 @@ export type FieldValueCache = {
 }
 
 /**
- * One cached fetch per field and editor session. Concurrent callers share the
- * promise; failures are evicted. Values refresh when the editor is recreated.
+ * Keep received values only for this editor session. A later completion can
+ * retry a failed read. The editor owns the resources and their cancellation.
  */
 export function createFieldValueCache(
   fetchValues: (
     signal: string,
     field: string,
     term: string,
-    limit: number
+    limit: number,
+    abort: AbortSignal
   ) => Promise<string[]>,
-  signal: string
+  signal: string,
+  reads: ReadMap<string, string[]>
 ): FieldValueCache {
-  const inFlight = new Map<string, Promise<string[]>>()
-
   return {
-    values(field) {
-      const hit = inFlight.get(field)
-      if (hit) return hit
-
-      const fetched = fetchValues(signal, field, '', FETCH_LIMIT).catch(
-        error => {
-          // Evicted by identity: a later fetch may already have replaced this
-          // entry, and deleting unconditionally would drop that one instead.
-          if (inFlight.get(field) === fetched) inFlight.delete(field)
-          throw error
-        }
-      )
-      inFlight.set(field, fetched)
-      return fetched
+    async values(field) {
+      const read = reads.for(field)
+      if (!read.pending && read.data === undefined)
+        void read.load(abort =>
+          fetchValues(signal, field, '', FETCH_LIMIT, abort)
+        )
+      await read.completion
+      if (read.error) throw new Error(read.error)
+      return read.data ?? []
     },
   }
 }

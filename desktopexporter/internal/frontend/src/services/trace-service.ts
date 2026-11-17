@@ -29,9 +29,11 @@ import {
 } from './telemetry-request'
 
 export const traceAPI = {
-  getTraceAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+  getTraceAttributeDefinitions: async (
+    signal?: AbortSignal
+  ): Promise<FieldDefinition[]> => {
     return attributeDefinitions(
-      await callArrow('getTraceAttributeDefinitions', named({}))
+      await callArrow('getTraceAttributeDefinitions', named({}), signal)
     )
   },
 

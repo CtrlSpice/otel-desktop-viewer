@@ -415,6 +415,10 @@ function renderProbeView(url: string, options: ProbeOptions = {}) {
   if (!captured) throw new Error('probe did not report a metric view context')
   return {
     context: captured,
+    setMetric: (next: MetricViewData) =>
+      view.rerender({
+        componentProps: { metric: next, oncontext },
+      }),
     setSeriesDatapoints: (
       seriesDatapoints: Readonly<Record<string, SumDataPoint[]>>
     ) =>
@@ -494,7 +498,155 @@ function externalNavigationTo(url: string): void {
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
+describe('visible series URL state', () => {
+  it('restores the link after retained controls change during another metric request', async () => {
+    const ctx = renderProbe(
+      '/metrics/m1?visible=route%3D%2Fa&series=route%3D%2Fa&dp=dp-a1'
+    )
+    await tick()
+    const original = window.location.pathname + window.location.search
+    externalNavigationTo('/metrics/other?visible=other-series')
+    ctx.toggleTimeseriesVisible('route=/a', false)
+    await tick()
+    expect(ctx.visibleSeries.size).toBe(0)
+    expect(readRoute()).toEqual({
+      path: '/metrics/other',
+      query: { visible: 'other-series' },
+    })
+    externalNavigationTo(original)
+    await tick()
+    expect([...ctx.visibleSeries]).toEqual(['route=/a'])
+    expect(ctx.selectedSeriesKey).toBe('route=/a')
+    expect(ctx.selectedDatapointID).toBe('dp-a1')
+  })
+
+  it('overrides saved visibility without changing the saved preference or hidden inspection', async () => {
+    const key = metricViewStorageKey('m1')
+    const saved = JSON.stringify({ visibleKeys: ['route=/a'] })
+    localStorage.setItem(key, saved)
+    const ctx = renderProbe(
+      '/metrics/m1?time=all&q=checkout&visible=route%3D%2Fb&series=route%3D%2Fa&dp=dp-a1'
+    )
+    await tick()
+    expect([...ctx.visibleSeries]).toEqual(['route=/b'])
+    expect(ctx.selectedSeriesKey).toBe('route=/a')
+    expect(ctx.selectedDatapointID).toBe('dp-a1')
+    expect(localStorage.getItem(key)).toBe(saved)
+    const push = vi.spyOn(window.history, 'pushState')
+    try {
+      ctx.clearAllTimeseriesVisible()
+      await tick()
+      expect(ctx.visibleSeries.size).toBe(0)
+      expect(readRoute().query).toMatchObject({
+        visible: 'none',
+        time: 'all',
+        q: 'checkout',
+        series: 'route=/a',
+        dp: 'dp-a1',
+      })
+      expect(ctx.selectedDatapointID).toBe('dp-a1')
+      expect(push).not.toHaveBeenCalled()
+    } finally {
+      push.mockRestore()
+    }
+  })
+
+  it('captures defaults and restores explicit sets through external navigation', async () => {
+    localStorage.setItem(
+      metricViewStorageKey('m1'),
+      JSON.stringify({ visibleKeys: ['route=/b'] })
+    )
+    const ctx = renderProbe('/metrics/m1?time=all')
+    await tick()
+    expect(readRoute().query.visible).toBe('route=/b')
+    externalNavigationTo('/metrics/m1?time=all&visible=none')
+    await tick()
+    expect(ctx.visibleSeries.size).toBe(0)
+    externalNavigationTo('/metrics/m1?time=all&visible=route%3D%2Fa')
+    await tick()
+    expect([...ctx.visibleSeries]).toEqual(['route=/a'])
+  })
+
+  it('retains missing IDs across refresh without selecting substitute or newly arriving series', async () => {
+    const metric = makeCumulativeSumMetric()
+    const view = renderProbeView('/metrics/m1?visible=missing,route%3D%2Fa', {
+      metric,
+    })
+    await tick()
+    const url = window.location.href
+    const other = metric.timeseries[1]!
+    await view.setMetric({
+      ...metric,
+      timeseries: [other, { ...other, seriesRef: 'new-series' }],
+    })
+    await tick()
+    expect(view.context.visibleSeries.size).toBe(0)
+    expect(window.location.href).toBe(url)
+    view.context.setAggregationView('sum')
+    expect(readRoute().query.visible).toBe('missing,route=/a')
+    await view.setMetric(metric)
+    await tick()
+    expect([...view.context.visibleSeries]).toEqual(['route=/a'])
+  })
+
+  it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
+    'keeps the current selection limit for %s',
+    async metricType => {
+      const base = makeCumulativeSumMetric()
+      const timeseries = Array.from({ length: 35 }, (_, index) => ({
+        ...base.timeseries[0]!,
+        seriesRef: `series-${index.toString().padStart(2, '0')}`,
+        datapoints: [],
+      }))
+      const visible = timeseries.map(series => series.seriesRef)
+      const ctx = renderProbe(`/metrics/m1?visible=${visible.join(',')}`, {
+        metric: { ...base, metricType, timeseries },
+      })
+      await tick()
+      const expected = metricType === 'Gauge' || metricType === 'Sum' ? 22 : 35
+      expect(ctx.visibleSeries.size).toBe(expected)
+      expect(readRoute().query.visible).toBe(visible.join(','))
+    }
+  )
+})
+
 describe('metric view context aggregation URL sync', () => {
+  it('remembers percentile visibility across histogram kinds and reopening the view', () => {
+    const visits = [
+      { type: 'Histogram', expected: true, choose: false },
+      { type: 'ExponentialHistogram', expected: false },
+      { type: 'Gauge', expected: true },
+      { type: 'Histogram', expected: false, choose: true },
+      { type: 'ExponentialHistogram', expected: true },
+    ] as const
+    for (const [index, visit] of visits.entries()) {
+      const metric: MetricViewData = {
+        ...makeCumulativeSumMetric(),
+        metricRef: `percentiles-${index}`,
+        metricType: visit.type,
+        timeseries: [],
+        datapointCount: 0,
+      }
+      setTestUrl(`/metrics/${metric.metricRef}`)
+      let context: MetricViewContext | undefined
+      const view = renderWithContexts(MetricViewProbe, {
+        metric,
+        oncontext: (ctx: MetricViewContext) => (context = ctx),
+      })
+      if (!context)
+        throw new Error('probe did not report a metric view context')
+      expect(context.showSelectionStatOverlays).toBe(visit.expected)
+      if ('choose' in visit) {
+        const url = window.location.href
+        context.setShowSelectionStatOverlays(visit.choose)
+        context.seedForMetric(metric)
+        expect(context.showSelectionStatOverlays).toBe(visit.choose)
+        expect(window.location.href).toBe(url)
+      }
+      view.unmount()
+    }
+  })
+
   it('remembers histogram mode across both histogram kinds and intervening gauges without overriding links', () => {
     const storageKey = 'metrics:histogram-view'
     const previous = localStorage.getItem(storageKey)
@@ -646,7 +798,10 @@ describe('metric view context aggregation URL sync', () => {
     ctx.setAggregationView('sum')
     await tick()
 
-    expect(window.location.search).toBe('?agg=sum')
+    expect(readRoute().query).toEqual({
+      agg: 'sum',
+      visible: 'route=/a,route=/b',
+    })
     expect(reportedAggregationView()).toBe('sum')
   })
 
@@ -662,7 +817,10 @@ describe('metric view context aggregation URL sync', () => {
       ctx.setAggregationView('sum')
       await tick()
 
-      expect(window.location.search).toBe('?agg=sum')
+      expect(readRoute().query).toEqual({
+        agg: 'sum',
+        visible: 'route=/a,route=/b',
+      })
       expect(reportedAggregationView()).toBe('sum')
     } finally {
       setItem.mockRestore()
@@ -688,7 +846,10 @@ describe('metric view context aggregation URL sync', () => {
     ctx.setAggregationView('raw')
     await tick()
 
-    expect(window.location.search).toBe('?agg=raw')
+    expect(readRoute().query).toEqual({
+      agg: 'raw',
+      visible: 'route=/a,route=/b',
+    })
   })
 })
 
@@ -726,7 +887,7 @@ describe('metric view context visibility seeding', () => {
       scalarAggregate,
     })
 
-    ctx.visibleSeries.delete('route=/c')
+    ctx.toggleTimeseriesVisible('route=/c', false)
     await tick()
 
     expect(
@@ -756,7 +917,7 @@ describe('metric view context visibility seeding', () => {
     externalNavigationTo('/metrics/m1?agg=sum-avg')
     await tick()
     expect(ctx.transformedGaugeSumChartTimeseries.slice(2)).toEqual(combined)
-    ctx.visibleSeries.clear()
+    ctx.clearAllTimeseriesVisible()
     await tick()
     expect(ctx.transformedGaugeSumChartTimeseries).toEqual([])
   })
@@ -917,6 +1078,36 @@ describe('metric view context datapoint URL sync', () => {
       'route=/b'
     )
   })
+
+  it.each(['retained', 'removed'] as const)(
+    'keeps hidden inspection through a pending refresh until the datapoint is %s',
+    async outcome => {
+      const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+      const view = renderProbeView(
+        '/metrics/m1?visible=none&series=route%3D%2Fb&dp=dp-raw-b',
+        {
+          seriesDatapoints: { 'route=/b': [raw] },
+        }
+      )
+      await tick()
+      expect(view.context.selectedDatapointID).toBe(raw.id)
+      const url = window.location.href
+      await view.setSeriesDatapoints({})
+      await tick()
+      expect(view.context.selectedDatapointID).toBe(raw.id)
+      expect(view.context.visibleSeries.size).toBe(0)
+      expect(window.location.href).toBe(url)
+      await view.setSeriesDatapoints({
+        'route=/b': outcome === 'retained' ? [raw] : [],
+      })
+      await tick()
+      expect(view.context.selectedDatapointID).toBe(
+        outcome === 'retained' ? raw.id : null
+      )
+      expect(view.context.selectedSeriesKey).toBe('route=/b')
+      expect(window.location.href).toBe(url)
+    }
+  )
 
   it('resolves a cold-load raw datapoint only after its series loads', async () => {
     const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
@@ -1085,7 +1276,7 @@ describe('metric view context datapoint URL sync', () => {
     ctx.onRateChartPointClick('route=/a', selectedBucketStart)
     await tick()
     expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
-    ctx.visibleSeries.delete('route=/a')
+    ctx.toggleTimeseriesVisible('route=/a', false)
     await tick()
     expect(ctx.highlightedTimestamp).toBeNull()
     ctx.setAggregationView('raw')

@@ -52,6 +52,23 @@ func openAPIDocument() map[string]any {
 			}},
 		})},
 	}}
+	paths["/api/changes"] = map[string]any{"get": map[string]any{
+		"operationId": "committedChanges", "summary": "Watch committed database changes", "tags": []string{"Browser datasets"},
+		"description": "SSE change events carry a decimal, process-local revision. Every connection starts with the current revision; reconnecting clients must resynchronise their queries. Write bursts may be combined into one event. Events do not identify imports or confirm whole-file completion.",
+		"responses":   map[string]any{"200": apiResponse("SSE snapshots and keepalive comments until disconnect or server shutdown.", "text/event-stream", text)},
+	}}
+	paths["/api/import-target/{signal}"] = map[string]any{"post": map[string]any{
+		"operationId": "findImportTarget", "summary": "Find one imported record for navigation", "tags": []string{"Browser datasets"},
+		"description": "Read-only lookup of one OTLP span, log or metric with its resource and scope. The body is limited to 20 MiB. Logs and metrics use the embedded ingestion redaction policy before matching. An identical existing log can match. A null result means the record is not currently stored; retry after a change event. This does not establish whole-file completion.",
+		"parameters":  []any{parameter("signal", "path", "Signal to look up.", map[string]any{"type": "string", "enum": []string{"traces", "logs", "metrics"}})},
+		"requestBody": map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": object}}},
+		"responses": map[string]any{
+			"200": apiResponse("Stored navigation identity, or null when absent.", "application/json", map[string]any{"type": []string{"object", "null"}, "required": []string{"id"}, "properties": map[string]any{"id": text, "spanID": text}}),
+			"400": apiResponse("Invalid target or unsupported signal.", "text/plain", text),
+			"413": apiResponse("Target exceeds 20 MiB.", "text/plain", text),
+			"500": apiResponse("Lookup failed.", "text/plain", text),
+		},
+	}}
 	arrowSuccess := apiResponse("Native Arrow IPC stream; Cache-Control: no-store. An interrupted stream is incomplete and must be discarded.", arrowStreamContentType, map[string]any{"type": "string", "format": "binary"})
 	arrowSuccess["headers"] = map[string]any{"X-Arrow-Rows": map[string]any{"description": "Expected total row count; validate the complete stream.", "schema": map[string]any{"type": "integer", "minimum": 0}}}
 	paths["/api/data/{method}"] = map[string]any{"post": map[string]any{

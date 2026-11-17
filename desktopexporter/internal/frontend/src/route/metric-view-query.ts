@@ -16,14 +16,16 @@ export type TimeseriesMetricViewQuery = {
   agg: AggregationView | null
   dp: string | null
   series: string | null
+  /** Requested chart series, including IDs absent from the current response. */
+  visible: string[] | null
 }
 
 export type HistogramMetricViewQuery = {
   kind: 'histogram'
-  htab: 'heatmap' | 'quantiles' | 'histogram'
-  hscope: 'window'
+  htab: 'heatmap' | 'histogram'
   dp: string | null
   series: string | null
+  visible: string[] | null
 }
 
 export type MetricViewQuery =
@@ -39,7 +41,25 @@ export type MetricViewParseContext = {
   defaultHistogramTab?: 'heatmap' | 'histogram'
 }
 
-const HTAB_VALUES = ['heatmap', 'quantiles', 'histogram'] as const
+const HTAB_VALUES = ['heatmap', 'histogram'] as const
+
+/** Null uses local defaults; an explicit empty set must stay empty. */
+export function parseMetricVisibleSeries(query: RouteQuery): string[] | null {
+  if (query.visible === undefined) return null
+  if (query.visible === 'none') return []
+  return [
+    ...new Set(
+      query.visible
+        .split(',')
+        .map(key => key.trim())
+        .filter(Boolean)
+    ),
+  ].sort()
+}
+
+export function metricVisibleSeriesToParam(keys: Iterable<string>): string {
+  return [...new Set(keys)].sort().join(',') || 'none'
+}
 
 /**
  * Validates the `dp` query param against known datapoint ids.
@@ -138,15 +158,18 @@ function parseHistogramMetricViewQuery(
   query: RouteQuery,
   dp: string | null,
   series: string | null,
+  visible: string[] | null,
   defaultTab: 'heatmap' | 'histogram' = 'heatmap'
 ): HistogramMetricViewQuery {
   return {
     kind: 'histogram',
-    htab: parseEnumMember(query.htab, HTAB_VALUES, defaultTab),
-    // Older snapshot links retain their datapoint selection in the details pane.
-    hscope: 'window',
+    htab:
+      query.htab === 'quantiles'
+        ? 'heatmap'
+        : parseEnumMember(query.htab, HTAB_VALUES, defaultTab),
     dp,
     series,
+    visible,
   }
 }
 
@@ -164,13 +187,15 @@ function parseTimeseriesMetricViewQuery(
   query: RouteQuery,
   allowedAggs: readonly AggregationView[],
   dp: string | null,
-  series: string | null
+  series: string | null,
+  visible: string[] | null
 ): TimeseriesMetricViewQuery {
   return {
     kind: 'timeseries',
     agg: parseOptionalMember(query.agg, allowedAggs),
     dp,
     series,
+    visible,
   }
 }
 
@@ -189,9 +214,22 @@ export function parseMetricViewQuery(
 ): MetricViewQuery {
   const dp = parseDatapointParam(query, ctx.datapointIDs)
   const series = parseSeriesParam(query, ctx.seriesKeys)
+  const visible = parseMetricVisibleSeries(query)
   return ctx.isHistogramKind
-    ? parseHistogramMetricViewQuery(query, dp, series, ctx.defaultHistogramTab)
-    : parseTimeseriesMetricViewQuery(query, ctx.allowedAggs, dp, series)
+    ? parseHistogramMetricViewQuery(
+        query,
+        dp,
+        series,
+        visible,
+        ctx.defaultHistogramTab
+      )
+    : parseTimeseriesMetricViewQuery(
+        query,
+        ctx.allowedAggs,
+        dp,
+        series,
+        visible
+      )
 }
 
 /**
@@ -210,8 +248,16 @@ export function metricViewQueriesEqual(
 ): boolean {
   if (a.dp !== b.dp) return false
   if (a.series !== b.series) return false
+  if (a.visible === null || b.visible === null) {
+    if (a.visible !== b.visible) return false
+  } else {
+    const left = new Set(a.visible)
+    const right = new Set(b.visible)
+    if (left.size !== right.size || [...left].some(key => !right.has(key)))
+      return false
+  }
   if (a.kind === 'histogram') {
-    return b.kind === 'histogram' && a.htab === b.htab && a.hscope === b.hscope
+    return b.kind === 'histogram' && a.htab === b.htab
   }
   return b.kind === 'timeseries' && a.agg === b.agg
 }
@@ -235,10 +281,10 @@ export function metricViewQueryToParams(
     if (q.agg !== null) params.agg = q.agg
   } else {
     params.htab = q.htab
-    params.hscope = q.hscope
   }
   if (q.dp !== null) params.dp = q.dp
   if (q.series !== null) params.series = q.series
+  if (q.visible !== null) params.visible = metricVisibleSeriesToParam(q.visible)
 
   return params
 }

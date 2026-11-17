@@ -28,6 +28,7 @@ export type FileRange = { start: number; end: number }
 export type ResourceRange = FileRange & { collections: CollectionRange[] }
 type CollectionRange = FileRange & {
   items: ResourceRange[]
+  firstItemStart?: number
   splittable: boolean
 }
 
@@ -175,6 +176,7 @@ export async function scanOTLPFile(
           })
         }
       } else if (parent.type === 'array' && parent.collection) {
+        parent.collection.firstItemStart ??= position
         if (object) {
           role =
             parent.role === 'scopes'
@@ -245,6 +247,73 @@ export async function scanOTLPFile(
 }
 
 export type ImportBatch = { body: Blob } | { issue: ScanIssue }
+
+export type FirstOTLPRecord = { signal: ImportSignal; body: Blob }
+
+/** Keep the first record's exact bytes and enclosing resource/scope metadata. */
+export function firstOTLPRecord(
+  file: Blob,
+  plan: ImportPlan
+): FirstOTLPRecord | undefined {
+  let first:
+    | {
+        signal: ImportSignal
+        resource: ResourceRange
+        scope: ResourceRange
+        records: CollectionRange
+        start: number
+      }
+    | undefined
+  for (const signal of ['traces', 'logs', 'metrics'] as const) {
+    for (const resource of plan[signal]) {
+      for (const scopes of resource.collections) {
+        for (const scope of scopes.items) {
+          for (const records of scope.collections) {
+            const start = records.firstItemStart
+            if (start !== undefined && (!first || start < first.start))
+              first = {
+                signal,
+                resource,
+                scope,
+                records,
+                start,
+              }
+          }
+        }
+      }
+    }
+  }
+  if (!first) return
+  const record = first.records.items[0]
+  if (!record || record.start !== first.start) return
+  const path = [first.resource, first.scope, record]
+  // Metric identity excludes points. Retain only its first point so a large
+  // metric does not require materialising its complete payload for navigation.
+  const points = record.collections[0]
+  const point = points?.items[0]
+  if (
+    points?.firstItemStart !== undefined &&
+    point?.start !== points.firstItemStart
+  )
+    return
+  if (point) path.push(point)
+  let body = file.slice(path.at(-1)!.start, path.at(-1)!.end)
+  for (let index = path.length - 2; index >= 0; index--) {
+    const parent = path[index]
+    if (parent.collections.length !== 1) return
+    const collection = parent.collections[0]
+    body = new Blob([
+      file.slice(parent.start, collection.start + 1),
+      body,
+      file.slice(collection.end - 1, parent.end),
+    ])
+  }
+  body = new Blob([`{"${resourceKeys[first.signal]}":[`, body, ']}'], {
+    type: 'application/json',
+  })
+  if (body.size > OTLP_REQUEST_BYTES) return
+  return { signal: first.signal, body }
+}
 
 /** Split only known collection boundaries, copying all surrounding metadata bytes. */
 function* splitResource(

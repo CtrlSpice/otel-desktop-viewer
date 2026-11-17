@@ -430,8 +430,37 @@ export function formatDateTimeRangeLabel(
   start: number,
   end: number,
   timezone: Timezone,
-  options: { includeTimezone?: boolean } = {}
+  options:
+    | { style?: 'full'; includeTimezone?: boolean }
+    | { style: 'compact'; now?: number } = {}
 ): string {
+  if (options.style === 'compact') {
+    const now = options.now ?? Date.now()
+    const timeZone = resolveTimezoneName(timezone)
+    const currentYear = wallClockAt(now, timeZone).year
+    const date = new Intl.DateTimeFormat('en', {
+      timeZone,
+      month: 'short',
+      day: 'numeric',
+      year: [start, end].some(
+        timestamp => wallClockAt(timestamp, timeZone).year !== currentYear
+      )
+        ? 'numeric'
+        : undefined,
+    })
+    const startDate = date.format(start)
+    if (startDate !== date.format(end)) return date.formatRange(start, end)
+
+    const day = startDate === date.format(now) ? 'Today' : startDate
+    const time = new Intl.DateTimeFormat('en', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+    return `${day}, ${time.formatRange(start, end)}`
+  }
+
   const { includeTimezone = false } = options
   const endTimezone = formatTimezoneLabel(timezone, new Date(end))
   const startLabel = formatDateTimeMs(start, timezone).dateTime

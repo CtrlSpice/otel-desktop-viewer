@@ -10,6 +10,7 @@
 
 <script lang="ts" generics="T">
   import { untrack } from 'svelte'
+  import { createRead } from '@/services/reads'
   import JsonEditor from './JsonEditor.svelte'
   import LoadingStatus from '../LoadingStatus.svelte'
   import RawJsonStatus, { type RawJsonStatusData } from './RawJsonStatus.svelte'
@@ -58,16 +59,23 @@
       : formatDescription
   )
   let bytes = $state<number | null>(null)
-  let error = $state('')
-  let inspectingSize = $state(false)
-  let loadingPreview = $state(false)
-  let loading = $derived(inspectingSize || loadingPreview)
+  const sizeRead = createRead<number | null>({
+    errorMessage: 'Could not inspect export size',
+  })
+  const previewRead = createRead<{ text: string; partial: boolean }>({
+    errorMessage: 'Could not load JSON',
+  })
+  const error = $derived(sizeRead.error ?? previewRead.error ?? '')
+  const inspectingSize = $derived(sizeRead.pending)
+  const loading = $derived(sizeRead.pending || previewRead.pending)
   let partial = $state(false)
   let requestedURL = $state('')
   let currentURL = $state('')
   let currentRefreshKey: unknown
   let retry = $state(0)
-  let requestKey = $state.raw<AbortSignal>()
+  const requestKey = $derived(
+    `${sizeRead.requestKey}:${previewRead.requestKey}`
+  )
   let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
   const sizeLabel = (size: number) =>
     size < 1024
@@ -100,9 +108,9 @@
     currentURL = url ?? ''
     requestedURL = ''
     completedURL = ''
-    error = ''
+    sizeRead.clearError()
+    previewRead.clearError()
     bytes = null
-    inspectingSize = false
     if (!url) {
       formatted = ''
       displayedRecord = undefined
@@ -112,20 +120,20 @@
     // Capture presentation context; only URL/revision changes invalidate the
     // source. Independently arriving activity must not cancel this preview.
     const selectedRecord = untrack(() => record)
-    const controller = new AbortController()
-    requestKey = controller.signal
     let inspected = false
-    inspectingSize = true
-    void fetch(url, { method: 'HEAD', signal: controller.signal })
-      .then(async response => {
-        if (controller.signal.aborted) return
+    void sizeRead.load(
+      async signal => {
+        const response = await fetch(url, { method: 'HEAD', signal })
         if (!response.ok)
           throw new Error(
             (await response.text()).trim() ||
               `Download unavailable (${response.status})`
           )
         const length = response.headers.get('Content-Length')
-        bytes = length === null ? null : Number(length)
+        return length === null ? null : Number(length)
+      },
+      size => {
+        bytes = size
         // Metric metadata always loads a bounded preview without a manual gate.
         if (selectedScope?.id === 'metric') {
           requestedURL = url
@@ -142,18 +150,10 @@
           displayedRecord = selectedRecord
         }
         inspected = true
-      })
-      .catch(err => {
-        if (!controller.signal.aborted)
-          error =
-            err instanceof Error ? err.message : 'Could not inspect export size'
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) inspectingSize = false
-      })
+      }
+    )
     return () => {
-      controller.abort()
-      inspectingSize = false
+      sizeRead.cancel()
       if (!inspected) currentURL = ''
     }
   })
@@ -167,15 +167,12 @@
     const selectedBytes = bytes
     if (!active || !url || url !== previewURL) return
     if (untrack(() => formatted && completedURL === url)) return
-    const controller = new AbortController()
-    let worker: Worker | undefined
-    loadingPreview = true
-    error = ''
-    void fetch(url, {
-      signal: controller.signal,
-      headers: { Range: `bytes=0-${PREVIEW_BYTES - 1}` },
-    })
-      .then(async response => {
+    void previewRead.load(
+      async signal => {
+        const response = await fetch(url, {
+          signal,
+          headers: { Range: `bytes=0-${PREVIEW_BYTES - 1}` },
+        })
         if (!response.ok)
           throw new Error(
             (await response.text()).trim() ||
@@ -188,9 +185,9 @@
             'This OTLP JSON cannot be previewed safely. Download the full OTLP JSON instead.'
           )
         const blob = await response.blob()
-        if (controller.signal.aborted) return
+        signal.throwIfAborted()
         const buffer = await blob.arrayBuffer()
-        if (controller.signal.aborted) return
+        signal.throwIfAborted()
         const previewPartial =
           response.status === 206 &&
           !!response.headers.get('Content-Range') &&
@@ -198,43 +195,41 @@
         const raw = new TextDecoder().decode(buffer, {
           stream: previewPartial,
         })
-        worker = new Worker(new URL('./raw-json.worker.ts', import.meta.url), {
-          type: 'module',
-        })
-        worker.onmessage = (event: MessageEvent<string>) => {
-          if (!controller.signal.aborted) {
-            formatted = event.data
-            partial = previewPartial
-            completedURL = url
-            displayedScope = selectedScope
-            displayedRecord = selectedRecord
-            displayedBytes = selectedBytes
-            displayedWholeURL = selectedWholeURL
-            loadingPreview = false
-          }
-          worker?.terminate()
+        const worker = new Worker(
+          new URL('./raw-json.worker.ts', import.meta.url),
+          { type: 'module' }
+        )
+        try {
+          const text = await new Promise<string>((resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), {
+              once: true,
+            })
+            worker.onmessage = (event: MessageEvent<string>) =>
+              resolve(event.data)
+            worker.onerror = () =>
+              reject(
+                new Error(
+                  'Could not format JSON. Download the exact OTLP JSON instead.'
+                )
+              )
+            worker.postMessage(raw)
+          })
+          return { text, partial: previewPartial }
+        } finally {
+          worker.terminate()
         }
-        worker.onerror = () => {
-          if (!controller.signal.aborted) {
-            error =
-              'Could not format JSON. Download the exact OTLP JSON instead.'
-            loadingPreview = false
-          }
-          worker?.terminate()
-        }
-        worker.postMessage(raw)
-      })
-      .catch(err => {
-        if (!controller.signal.aborted) {
-          error = err instanceof Error ? err.message : 'Could not load JSON'
-          loadingPreview = false
-        }
-      })
-    return () => {
-      controller.abort()
-      worker?.terminate()
-      loadingPreview = false
-    }
+      },
+      result => {
+        formatted = result.text
+        partial = result.partial
+        completedURL = url
+        displayedScope = selectedScope
+        displayedRecord = selectedRecord
+        displayedBytes = selectedBytes
+        displayedWholeURL = selectedWholeURL
+      }
+    )
+    return () => previewRead.cancel()
   })
 </script>
 

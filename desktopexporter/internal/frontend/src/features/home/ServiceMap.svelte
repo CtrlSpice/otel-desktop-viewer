@@ -1,8 +1,8 @@
 <script lang="ts">
   import LoadingStatus from '@/components/shared/LoadingStatus.svelte'
   import type { LoadingRequestKey } from '@/components/shared/utils/loading-notice.svelte'
-  import { onDestroy, untrack } from 'svelte'
-  import { SvelteMap } from 'svelte/reactivity'
+  import { untrack } from 'svelte'
+  import { createReadMap } from '@/services/reads'
   import { Chart, Svg, type ChartState } from 'layerchart'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -85,18 +85,23 @@
     kind: 'replacement' | 'page'
   }
   let pages = $state<Record<string, ConnectionPage>>({})
-  const requests = new SvelteMap<
+  const requests = createReadMap<
     string,
-    {
-      reading: ConnectionRequest
-      controller: AbortController
-    }
-  >()
-  const busy = $derived(requests.size > 0)
-  let connectionRequestKey = $state(0)
-  let failures = $state<
-    Record<string, ConnectionRequest & { message: string }>
-  >({})
+    Awaited<ReturnType<typeof telemetryAPI.discoverServiceConnections>>
+  >({ formatError: String })
+  const readings = new Map<string, ConnectionRequest>()
+  const busy = $derived(requests.pending)
+  const connectionRequestKey = $derived(requests.requestKey)
+  const failures = $derived(
+    Object.fromEntries(
+      [...requests].flatMap(([key, read]) => {
+        const reading = readings.get(key)
+        return reading && read.error
+          ? [[key, { ...reading, message: read.error }]]
+          : []
+      })
+    )
+  )
   let chart = $state<ChartState>()
   let layoutController = $state<ServiceMapLayout>()
   function constrainView(view: { scale: number; translate: ServicePoint }) {
@@ -240,105 +245,90 @@
     } = reading
     const identity = serviceIdentity(node)
     const key = requestIdentity(identity, kind)
-    if (requests.has(key)) return
-    const controller = new AbortController()
-    requests.set(key, { reading, controller })
-    connectionRequestKey++
-    const remaining = { ...failures }
-    delete remaining[key]
-    failures = remaining
-    try {
-      const page = await telemetryAPI.discoverServiceConnections(
-        { ...scope, serviceIdentity: identity, offset, limit: 100 },
-        controller.signal
-      )
-      if (controller.signal.aborted) return
-      if (kind === 'replacement') {
-        const pageKey = requestIdentity(identity, 'page')
-        requests.get(pageKey)?.controller.abort()
-        requests.delete(pageKey)
-        const remaining = { ...failures }
-        delete remaining[pageKey]
-        failures = remaining
-      }
-      const merged = new Map(
-        (offset ? (received.get(identity)?.items ?? []) : []).map(edge => [
-          connectionIdentity(edge),
-          edge,
-        ])
-      )
-      for (const edge of page.items) merged.set(connectionIdentity(edge), edge)
-      received = new Map(received).set(identity, {
-        service: node,
-        items: [...merged.values()],
-      })
-      const retained = new Set(
-        [...received.values()].flatMap(page =>
-          page.items.map(connectionIdentity)
+    const request = requests.for(key)
+    if (request.pending) return
+    readings.set(key, reading)
+    await request.load(
+      signal =>
+        telemetryAPI.discoverServiceConnections(
+          { ...scope, serviceIdentity: identity, offset, limit: 100 },
+          signal
+        ),
+      page => {
+        if (kind === 'replacement') {
+          const pageKey = requestIdentity(identity, 'page')
+          requests.delete(pageKey)
+          readings.delete(pageKey)
+        }
+        const merged = new Map(
+          (offset ? (received.get(identity)?.items ?? []) : []).map(edge => [
+            connectionIdentity(edge),
+            edge,
+          ])
         )
-      )
-      // Sibling pages retain membership, but older generations cannot replace
-      // a newer shared edge's value or inspection context.
-      const next = new Map(connectionReadings)
-      for (const edge of page.items) {
-        const key = connectionIdentity(edge)
-        if ((next.get(key)?.graphRevision ?? -1) > reading.graphRevision)
-          continue
-        next.set(key, {
-          connection: edge,
-          options: scope,
-          revision: readingRevision,
-          graphRevision: reading.graphRevision,
+        for (const edge of page.items)
+          merged.set(connectionIdentity(edge), edge)
+        received = new Map(received).set(identity, {
+          service: node,
+          items: [...merged.values()],
         })
-      }
-      connectionReadings = new Map(
-        [...next].filter(([identity]) => retained.has(identity))
-      )
-      if (selection?.kind === 'connection') {
-        const reading = connectionReadings.get(
-          connectionIdentity(selection.connection)
-        )
-        if (!reading) {
-          const sourceID = serviceIdentity(selection.connection.source)
-          const source =
-            nodes.find(node => serviceIdentity(node) === sourceID) ?? nodes[0]
-          onUpdateSelection?.(
-            source ? { kind: 'service', service: source } : null
+        const retained = new Set(
+          [...received.values()].flatMap(page =>
+            page.items.map(connectionIdentity)
           )
-        } else if (
-          reading.connection !== selection.connection ||
-          reading.options !== selection.options ||
-          reading.revision !== selection.revision
         )
-          onUpdateSelection?.({
-            kind: 'connection',
-            connection: reading.connection,
-            options: reading.options,
-            revision: reading.revision,
+        // Sibling pages retain membership, but older generations cannot replace
+        // a newer shared edge's value or inspection context.
+        const next = new Map(connectionReadings)
+        for (const edge of page.items) {
+          const key = connectionIdentity(edge)
+          if ((next.get(key)?.graphRevision ?? -1) > reading.graphRevision)
+            continue
+          next.set(key, {
+            connection: edge,
+            options: scope,
+            revision: readingRevision,
+            graphRevision: reading.graphRevision,
           })
-      }
-      pages = {
-        ...pages,
-        [identity]: {
-          offset: offset + page.items.length,
-          more: page.truncated,
-          options: scope,
-          revision: readingRevision,
-          graphRevision: reading.graphRevision,
-        },
-      }
-    } catch (reason) {
-      if (!controller.signal.aborted) {
-        failures = {
-          ...failures,
-          [key]: { ...reading, message: String(reason) },
+        }
+        connectionReadings = new Map(
+          [...next].filter(([identity]) => retained.has(identity))
+        )
+        if (selection?.kind === 'connection') {
+          const reading = connectionReadings.get(
+            connectionIdentity(selection.connection)
+          )
+          if (!reading) {
+            const sourceID = serviceIdentity(selection.connection.source)
+            const source =
+              nodes.find(node => serviceIdentity(node) === sourceID) ?? nodes[0]
+            onUpdateSelection?.(
+              source ? { kind: 'service', service: source } : null
+            )
+          } else if (
+            reading.connection !== selection.connection ||
+            reading.options !== selection.options ||
+            reading.revision !== selection.revision
+          )
+            onUpdateSelection?.({
+              kind: 'connection',
+              connection: reading.connection,
+              options: reading.options,
+              revision: reading.revision,
+            })
+        }
+        pages = {
+          ...pages,
+          [identity]: {
+            offset: offset + page.items.length,
+            more: page.truncated,
+            options: scope,
+            revision: readingRevision,
+            graphRevision: reading.graphRevision,
+          },
         }
       }
-    } finally {
-      if (requests.get(key)?.controller === controller) {
-        requests.delete(key)
-      }
-    }
+    )
   }
   function inspectConnection(edge: ServiceConnection) {
     const reading = connectionReadings.get(connectionIdentity(edge))
@@ -361,12 +351,12 @@
       previousRevision = reading
       if (!sameScope) {
         for (const [key, work] of requests) {
-          if (work.reading.kind === 'replacement') {
-            work.controller.abort()
+          work.clearError()
+          if (readings.get(key)?.kind === 'replacement') {
             requests.delete(key)
+            readings.delete(key)
           }
         }
-        failures = {}
         graphRevision++
         attempted.clear()
         for (const page of received.values()) void expand(page.service)
@@ -375,9 +365,6 @@
         if (!attempted.has(serviceIdentity(node))) void expand(node)
       }
     })
-  })
-  onDestroy(() => {
-    for (const work of requests.values()) work.controller.abort()
   })
 </script>
 
@@ -399,7 +386,7 @@
     {#if inspected}<ServiceLabelsPopover service={inspected} />{/if}
     {#if inspectedPage?.more}<button
         class="btn btn-ghost btn-sm"
-        disabled={requests.has(requestIdentity(inspectedID, 'page'))}
+        disabled={requests.get(requestIdentity(inspectedID, 'page'))?.pending}
         onclick={() => inspected && moreConnections(inspected)}
         >More connections</button
       >{/if}
