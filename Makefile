@@ -133,6 +133,10 @@ validate-playwright:
 test-ts:
 	cd desktopexporter/internal/frontend && npm test
 
+.PHONY: test-variant
+test-variant:
+	cd $(FRONTEND) && npm run test:variant
+
 .PHONY: test-a11y
 test-a11y:
 	cd desktopexporter/internal/frontend && npm run test:a11y
@@ -146,7 +150,7 @@ run: build-ts
 
 # Run cheap formatting checks before the test suites.
 .PHONY: test
-test: format-go-check format-ts-check lint-ts validate-ts validate-playwright build-ts-check test-go test-ts test-a11y
+test: format-go-check format-ts-check lint-ts validate-ts validate-playwright build-ts-check test-go test-ts test-variant test-a11y
 
 .PHONY: release-dry-run
 release-dry-run:
@@ -168,6 +172,7 @@ help:
 	@echo "  validate-ts       - Type check frontend"
 	@echo "  validate-playwright - Type check Playwright tests"
 	@echo "  test-ts           - Run frontend unit tests (Vitest)"
+	@echo "  test-variant      - Check fresh Go/DuckDB Arrow values in both frontend modes"
 	@echo "  test-a11y         - Run browser accessibility tests (Playwright + axe)"
 	@echo "  dev-ts            - Start frontend dev server (Vite)"
 	@echo ""

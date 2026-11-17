@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { Int64, Table, vectorFromArray } from 'apache-arrow'
 import { arrowResponse } from '@/test/arrow-fixtures'
+import { variantTable } from '@/test/variant-fixtures'
 import { telemetryAPI } from './telemetry-service'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -50,9 +50,7 @@ it('requests one cross-signal Home page with the full scope and cancellation sig
 
 it('loads received native integers only when explicitly resolving the representative', async () => {
   const fetch = vi.fn(async () =>
-    arrowResponse(
-      new Table({ value: vectorFromArray([9007199254740993n], new Int64()) })
-    )
+    arrowResponse(variantTable([{ kind: 'int64', value: 9007199254740993n }]))
   )
   vi.stubGlobal('fetch', fetch)
   const signal = new AbortController().signal

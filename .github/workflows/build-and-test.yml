@@ -225,6 +225,9 @@ jobs:
         cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
     - run: npm ci
       working-directory: desktopexporter/internal/frontend
+    - name: Native Variant compatibility in both Evals modes
+      run: npm run test:variant
+      working-directory: desktopexporter/internal/frontend
     - name: Install Chromium
       timeout-minutes: 15
       run: npx playwright install --with-deps chromium

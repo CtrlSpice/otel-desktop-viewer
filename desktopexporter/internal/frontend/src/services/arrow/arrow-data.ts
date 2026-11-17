@@ -1,10 +1,15 @@
 import { DataType, Table, Vector, makeVector, tableFromIPC } from 'apache-arrow'
+import type { Field } from 'apache-arrow'
 
 export const arrowStreamContentType = 'application/vnd.apache.arrow.stream'
+const noFieldMetadata: ReadonlyMap<string, string> = new Map()
 
 /** A retained Arrow dataset. Views keep columns and row locations, not row copies. */
 export class ArrowFrame {
-  private readonly resolvedColumns = new Map<string, Vector>()
+  private readonly resolvedColumns = new Map<
+    string,
+    { vector: Vector; field: Field }
+  >()
   constructor(readonly columns: Table | Vector) {
     // A branch returning only [] has Arrow List<Null>, with no row fields to
     // infer. It is a valid empty dataset; nonempty values still require Struct.
@@ -23,12 +28,23 @@ export class ArrowFrame {
   }
 
   column(name: string): Vector {
+    return this.columnEntry(name).vector
+  }
+
+  private columnEntry(name: string) {
     const resolved = this.resolvedColumns.get(name)
     if (resolved) return resolved
-    const column = this.columns.getChild(name)
-    if (!column) throw new Error(`Arrow response is missing column ${name}`)
-    this.resolvedColumns.set(name, column)
-    return column
+    const vector = this.columns.getChild(name)
+    const fields: readonly Field[] =
+      this.columns instanceof Table
+        ? this.columns.schema.fields
+        : this.columns.type.children
+    const field = fields.find(field => field.name === name)
+    if (!vector || !field)
+      throw new Error(`Arrow response is missing column ${name}`)
+    const entry = { vector, field }
+    this.resolvedColumns.set(name, entry)
+    return entry
   }
 
   has(name: string): boolean {
@@ -36,13 +52,14 @@ export class ArrowFrame {
   }
 
   cell(name: string, row: number): ArrowCell {
-    return new ArrowCell(this.column(name), row)
+    const { vector, field } = this.columnEntry(name)
+    return new ArrowCell(vector, row, field.metadata)
   }
 
   /** Resolve the column once when supplying a chart/table accessor. */
   accessor(name: string): (row: number) => ArrowCell {
-    const column = this.column(name)
-    return row => new ArrowCell(column, row)
+    const { vector, field } = this.columnEntry(name)
+    return row => new ArrowCell(vector, row, field.metadata)
   }
 }
 
@@ -50,10 +67,12 @@ export class ArrowFrame {
 export class ArrowCell {
   readonly vector: Vector
   readonly row: number
+  readonly fieldMetadata: ReadonlyMap<string, string>
 
-  constructor(vector: Vector, row: number) {
+  constructor(vector: Vector, row: number, fieldMetadata = noFieldMetadata) {
     if (!Number.isInteger(row) || row < 0 || row >= vector.length)
       throw new RangeError(`Arrow row ${row} is outside the vector`)
+    this.fieldMetadata = fieldMetadata
     if (!DataType.isUnion(vector.type) && !DataType.isDictionary(vector.type)) {
       this.vector = vector
       this.row = row
@@ -65,13 +84,23 @@ export class ArrowCell {
     if (DataType.isUnion(data.type)) {
       const child = data.type.typeIdToChildIndex[data.typeIds[0]!]!
       const index = DataType.isDenseUnion(data.type) ? data.valueOffsets[0]! : 0
-      const resolved = new ArrowCell(makeVector(data.children[child]!), index)
+      const resolved = new ArrowCell(
+        makeVector(data.children[child]!),
+        index,
+        data.type.children[child]!.metadata
+      )
       this.vector = resolved.vector
       this.row = resolved.row
+      this.fieldMetadata = resolved.fieldMetadata
     } else if (DataType.isDictionary(data.type) && vector.isValid(row)) {
-      const resolved = new ArrowCell(data.dictionary!, Number(data.values[0]))
+      const resolved = new ArrowCell(
+        data.dictionary!,
+        Number(data.values[0]),
+        fieldMetadata
+      )
       this.vector = resolved.vector
       this.row = resolved.row
+      this.fieldMetadata = resolved.fieldMetadata
     } else {
       this.vector = vector
       this.row = row
@@ -80,6 +109,10 @@ export class ArrowCell {
 
   get type(): DataType {
     return this.vector.type
+  }
+
+  get extensionName(): string | undefined {
+    return this.fieldMetadata.get('ARROW:extension:name')
   }
 
   get isNull(): boolean {
