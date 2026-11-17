@@ -2,6 +2,14 @@ import { expect, it, vi } from 'vitest'
 import { Read } from './read.svelte'
 import { ReadGroup } from './group.svelte'
 import { ReadMap } from './map.svelte'
+import { tableToIPC } from 'apache-arrow'
+import { decodeArrow } from '../arrow/arrow-data'
+import { attributeValue } from '../arrow/arrow-values'
+import { variantTable } from '@/test/variant-fixtures'
+import type { AttributeValue } from '@/types/api-types'
+import type { AttributeFixture } from '@/test/telemetry-fixture-types'
+import { attributeValueCopy } from '@/components/shared/Detail/detail-value'
+import { tableValuePreview } from '@/components/shared/Tables/table-value-preview'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -71,6 +79,71 @@ it('tracks dependent reads automatically and coalesces refresh requests', async 
   expect(refresh).toHaveBeenCalledTimes(1)
   expect(group.pending).toBe(false)
   group.dispose()
+})
+
+it('retains lazy Variant values and unread children through failed and superseded replacements', async () => {
+  const nan = new DataView(new ArrayBuffer(8))
+  nan.setBigUint64(0, 0x7ff8000000000042n, true)
+  const children: AttributeFixture[] = Array.from({ length: 205 }, (_, i) => ({
+    kind: 'int64',
+    value: 9007199254740993n + BigInt(i),
+  }))
+  children[201] = { kind: 'double', value: -0 }
+  children[202] = { kind: 'double', value: nan.getFloat64(0, true) }
+  children[203] = { kind: 'bytes', value: 'AP8=' }
+  const frame = decodeArrow(
+    tableToIPC(variantTable([{ kind: 'array', value: children }])),
+    1n
+  )
+  const value = attributeValue(frame.cell('value', 0))
+  const read = new Read<AttributeValue>()
+  await read.load(async () => value)
+  expect(read.data).toBe(value)
+  expect(tableValuePreview(read.data!)).toBe(
+    '[9007199254740993, 9007199254740994, 9007199254740995, … (+202 items)]'
+  )
+  const failed = deferred<AttributeValue>()
+  const loading = read.load(() => failed.promise)
+  expect(read.data).toBe(value)
+  failed.reject(new Error('replacement failed'))
+  await loading
+  expect(read.data).toBe(value)
+  const retained = read.data!
+  if (retained.kind !== 'array') throw new Error('Expected an array')
+  expect(retained.previewChildren).toHaveLength(3)
+  expect(retained.childCount).toBe(205)
+  expect(retained.childAt!(200)).toEqual({
+    kind: 'int64',
+    value: 9007199254741193n,
+  })
+  expect(retained.childAt!(201)).toEqual({ kind: 'double', value: -0 })
+  const receivedNaN = retained.childAt!(202)
+  if (receivedNaN.kind !== 'double') throw new Error('Expected a double')
+  nan.setFloat64(0, receivedNaN.value, true)
+  expect(nan.getBigUint64(0, true)).toBe(0x7ff8000000000042n)
+  expect(retained.childAt!(203)).toEqual({ kind: 'bytes', value: 'AP8=' })
+  const fullCopy = attributeValueCopy(retained)
+  expect(fullCopy).toContain('9007199254741197')
+  expect(fullCopy).toContain('AP8=')
+  expect(retained.value).toHaveLength(205)
+
+  const stale = deferred<AttributeValue>()
+  const obsolete = read.load(() => stale.promise)
+  const nextFrame = decodeArrow(
+    tableToIPC(
+      variantTable([{ kind: 'int64', value: '-9223372036854775808' }])
+    ),
+    1n
+  )
+  const next = attributeValue(nextFrame.cell('value', 0))
+  await read.load(async () => next)
+  await obsolete
+  stale.resolve(value)
+  await Promise.resolve()
+  expect(read.data).toBe(next)
+  expect(read.data).toEqual({ kind: 'int64', value: -9223372036854775808n })
+  expect(attributeValueCopy(retained)).toBe(fullCopy)
+  read.dispose()
 })
 
 it('releases group completion on teardown even when a transport ignores abort', async () => {

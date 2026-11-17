@@ -44,11 +44,11 @@ func (o *Observer) Init(conn driver.ExecerContext) error {
 	if registration != 0 {
 		return fmt.Errorf("register otel_commits: %d", registration)
 	}
-	_, err := conn.ExecContext(context.Background(), "LOAD otel_commits", nil)
+	_, err := conn.ExecContext(context.Background(), "load otel_commits", nil)
 	if err != nil {
 		return err
 	}
-	_, err = conn.ExecContext(context.Background(), "SET SESSION otel_commit_observer = "+strconv.FormatUint(o.id, 10), nil)
+	_, err = conn.ExecContext(context.Background(), "set session otel_commit_observer = "+strconv.FormatUint(o.id, 10), nil)
 	return err
 }
 

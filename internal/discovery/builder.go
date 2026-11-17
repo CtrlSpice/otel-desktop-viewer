@@ -18,7 +18,7 @@ func (b *Builder) Bind(value string) string {
 }
 
 func (b *Builder) parameter(index int) string {
-	return "$" + strconv.Itoa(b.Offset+index+1) + "::VARCHAR"
+	return "$" + strconv.Itoa(b.Offset+index+1) + "::varchar"
 }
 
 func (b *Builder) Args() []any {

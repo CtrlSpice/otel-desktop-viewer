@@ -72,7 +72,7 @@ func TestHomeDiscoveryGlobalPageAndExactReference(t *testing.T) {
 	require.Empty(t, homePage(t, h, options).Values)
 
 	// Copy resolves the retained received value after its source was removed.
-	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error { _, err := db.ExecContext(t.Context(), "DELETE FROM spans"); return err }))
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error { _, err := db.ExecContext(t.Context(), "delete from spans"); return err }))
 	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
 	require.NoError(t, err)
 	// The HTTP server has its own handler/cache; use the discovery owner here.

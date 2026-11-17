@@ -251,7 +251,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
       if (child.exitCode !== null || child.signalCode !== null)
         throw new Error('Owned viewer exited; inspect viewer.stderr')
       try {
-        await query(endpoint, 'SELECT 1')
+        await query(endpoint, 'select 1')
         ready = true
         break
       } catch {
@@ -287,7 +287,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
       signal?.throwIfAborted()
       counts = await query(
         endpoint,
-        'SELECT (SELECT count(*) FROM spans), (SELECT count(*) FROM logs), (SELECT count(*) FROM metric_datapoints)'
+        'select (select count(*) from spans), (select count(*) from logs), (select count(*) from metric_datapoints)'
       )
       fs.writeFileSync(
         path.join(runtime, 'counts.json'),

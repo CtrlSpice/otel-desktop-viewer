@@ -1,3 +1,6 @@
+// Package arrowread retains native DuckDB Arrow batches for browser responses.
+// Variant values keep their metadata and value bytes instead of expanding into
+// nested Arrow types. Value nesting therefore does not deepen the Arrow schema.
 package arrowread
 
 import (
@@ -9,16 +12,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-// Result owns native query batches and an inferred response schema. It must be
-// closed. Schema inference visits dynamic values across every batch; IPC cannot
-// change a field type when a later batch contains a new attribute shape.
-// Native buffers, rather than row objects or JSON, back this bounded response.
+// Result owns native query batches and their schema. It must be closed to release
+// the retained buffers. Variant's schema is independent of the values in a batch.
 type Result struct {
 	schema  *arrow.Schema
-	columns []*projection
 	records []arrow.RecordBatch
 	rows    int64
 }
@@ -27,16 +26,8 @@ func Read(ctx context.Context, db arrowbridge.QueryExecer, query string, args ..
 	r := &Result{}
 	err := arrowbridge.Query(ctx, db, query, args, func(schema *arrow.Schema) error {
 		r.schema = schema
-		for _, f := range schema.Fields() {
-			r.columns = append(r.columns, newProjection(f))
-		}
 		return nil
 	}, func(record arrow.RecordBatch) error {
-		for i, p := range r.columns {
-			if err := p.observe(ctx, record.Column(i)); err != nil {
-				return err
-			}
-		}
 		record.Retain()
 		r.records = append(r.records, record)
 		r.rows += record.NumRows()
@@ -46,12 +37,6 @@ func Read(ctx context.Context, db arrowbridge.QueryExecer, query string, args ..
 		r.Close()
 		return nil, err
 	}
-	fields := r.schema.Fields()
-	for i := range fields {
-		fields[i] = r.columns[i].field(fields[i])
-	}
-	metadata := r.schema.Metadata()
-	r.schema = arrow.NewSchema(fields, &metadata)
 	return r, nil
 }
 
@@ -93,7 +78,7 @@ func (r *Result) Write(ctx context.Context, dst io.Writer) (err error) {
 	defer func() {
 		if err != nil {
 			// Close releases IPC dictionaries even after a failure, but must not
-			// send a success end marker after cancellation or a projection error.
+			// send a success end marker after cancellation or a write error.
 			sink.aborted = true
 			_ = writer.Close()
 		} else {
@@ -104,13 +89,7 @@ func (r *Result) Write(ctx context.Context, dst io.Writer) (err error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		out, err := r.project(ctx, record)
-		if err != nil {
-			return err
-		}
-		err = writer.Write(out)
-		out.Release()
-		if err != nil {
+		if err := writer.Write(record); err != nil {
 			return err
 		}
 	}
@@ -130,23 +109,4 @@ func (s *responseSink) Write(p []byte) (int, error) {
 		return 0, io.ErrClosedPipe
 	}
 	return s.dst.Write(p)
-}
-
-func (r *Result) project(ctx context.Context, record arrow.RecordBatch) (arrow.RecordBatch, error) {
-	columns := make([]arrow.Array, len(r.columns))
-	defer func() {
-		for _, c := range columns {
-			if c != nil {
-				c.Release()
-			}
-		}
-	}()
-	for i, p := range r.columns {
-		var err error
-		columns[i], err = p.apply(ctx, memory.DefaultAllocator, record.Column(i))
-		if err != nil {
-			return nil, err
-		}
-	}
-	return array.NewRecordBatch(r.schema, columns, record.NumRows()), nil
 }

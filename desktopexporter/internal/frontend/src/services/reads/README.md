@@ -121,7 +121,7 @@ the toolbar's Live toggle is enabled. The page disposes its group and removes th
 Live subscription on unmount.
 Both Live notifications and the page's Refresh action call `group.refresh()`.
 Pass `onRefresh={() => void group.refresh()}` to
-[`PageLayout`](../../components/shared/PageLayout.svelte) to render that action.
+[`PageLayout`](../../components/shared/Layout/PageLayout.svelte) to render that action.
 Use `createRead({ group: null })` or `createReadMap({ group: null })`
 for independently scheduled work, such as navigation counts, freshness statistics
 or an explicit Copy/Download action. Reads created this way still dispose on

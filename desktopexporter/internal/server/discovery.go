@@ -163,12 +163,12 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 	switch options.Kind {
 	case "connections":
 		statement = builder.ServiceConnections(query)
-		search = "entry::VARCHAR"
+		search = "entry::varchar"
 		order = "json_extract_string(entry, '$.source.serviceIdentity'), json_extract_string(entry, '$.target.serviceIdentity')"
 	case "connection-spans":
 		statement = builder.ServiceConnectionSpans(query, *options.TargetIdentity)
 		search = "json_extract_string(entry, '$.name')"
-		order = "json_extract_string(entry, '$.startTime')::UBIGINT, json_extract_string(entry, '$.traceID'), json_extract_string(entry, '$.spanID')"
+		order = "json_extract_string(entry, '$.startTime')::ubigint, json_extract_string(entry, '$.traceID'), json_extract_string(entry, '$.spanID')"
 	case "services":
 		statement = builder.Services(query)
 		search = "concat(json_extract_string(entry, '$.serviceNamespace'), ' ', json_extract_string(entry, '$.serviceName'))"
@@ -188,18 +188,18 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 				return nil, jsonrpc2.ErrInvalidParams
 			}
 			statement = builder.Values(query, location, records, *options.Key)
-			search = "json_extract(entry, '$.value')::VARCHAR"
-			order = "json_extract(entry, '$.count')::UBIGINT DESC, json_extract(entry, '$.value')::VARCHAR"
+			search = "json_extract(entry, '$.value')::varchar"
+			order = "json_extract(entry, '$.count')::ubigint desc, json_extract(entry, '$.value')::varchar"
 			if options.SortBy != "" || options.SortDirection != "" {
-				direction := "DESC"
+				direction := "desc"
 				if options.SortDirection == "asc" || (options.SortDirection == "" && options.SortBy == "name") {
-					direction = "ASC"
+					direction = "asc"
 				}
-				field := "json_extract(entry, '$.count')::UBIGINT"
+				field := "json_extract(entry, '$.count')::ubigint"
 				if options.SortBy == "name" {
-					field = "coalesce(json_extract_string(entry, '$.value.value'), json_extract(entry, '$.value')::VARCHAR)"
+					field = "coalesce(json_extract_string(entry, '$.value.value'), json_extract(entry, '$.value')::varchar)"
 				}
-				order = field + " " + direction + ", json_extract(entry, '$.value')::VARCHAR"
+				order = field + " " + direction + ", json_extract(entry, '$.value')::varchar"
 			}
 		}
 	default:
@@ -214,12 +214,12 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 			// Text filtering retains the established searchable representation,
 			// including quoted nanosecond timestamps; output stays native.
 			search = `to_json(struct_update(entry,
-                source := struct_update(entry.source, lastSeen := entry.source.lastSeen::VARCHAR,
+                source := struct_update(entry.source, lastSeen := entry.source.lastSeen::varchar,
                     serviceName := (select name from search_services where ref=entry.source.serviceIdentity),
                     serviceNamespace := (select namespace from search_services where ref=entry.source.serviceIdentity)),
-                target := struct_update(entry.target, lastSeen := entry.target.lastSeen::VARCHAR,
+                target := struct_update(entry.target, lastSeen := entry.target.lastSeen::varchar,
                     serviceName := (select name from search_services where ref=entry.target.serviceIdentity),
-                    serviceNamespace := (select namespace from search_services where ref=entry.target.serviceIdentity))))::VARCHAR`
+                    serviceNamespace := (select namespace from search_services where ref=entry.target.serviceIdentity))))::varchar`
 			order = "entry.source.serviceIdentity,entry.target.serviceIdentity"
 		case "connection-spans":
 			search = "entry.name"
@@ -229,11 +229,11 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 			order = "entry.key,entry.kind"
 		case "values":
 			search = "entry.identity"
-			order = "entry.count DESC,entry.identity"
+			order = "entry.count desc,entry.identity"
 			if options.SortBy != "" || options.SortDirection != "" {
-				direction := "DESC"
+				direction := "desc"
 				if options.SortDirection == "asc" || (options.SortDirection == "" && options.SortBy == "name") {
-					direction = "ASC"
+					direction = "asc"
 				}
 				field := "entry.count"
 				if options.SortBy == "name" {
@@ -244,27 +244,27 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 		}
 	}
 	if prefix == "" {
-		prefix = "WITH "
+		prefix = "with "
 	} else {
 		prefix += ", "
 	}
-	filtered := "SELECT entry FROM discovered"
+	filtered := "select entry from discovered"
 	if options.Term != "" {
-		filtered += " WHERE contains(lower(" + search + "), lower(" + builder.Bind(options.Term) + "))"
+		filtered += " where contains(lower(" + search + "), lower(" + builder.Bind(options.Term) + "))"
 	}
-	statement = prefix + "discovered AS (" + statement + "), filtered AS (" + filtered + "), ordered AS (SELECT entry, row_number() over(ORDER BY " + order + ") AS ordinal FROM filtered ORDER BY " + order + " OFFSET " + strconv.FormatUint(options.Offset, 10) + " LIMIT " + strconv.FormatUint(limit+1, 10) + "), page AS (SELECT * FROM ordered ORDER BY ordinal LIMIT " + strconv.FormatUint(limit, 10) + ") "
+	statement = prefix + "discovered as (" + statement + "), filtered as (" + filtered + "), ordered as (select entry, row_number() over(order by " + order + ") as ordinal from filtered order by " + order + " offset " + strconv.FormatUint(options.Offset, 10) + " limit " + strconv.FormatUint(limit+1, 10) + "), page as (select * from ordered order by ordinal limit " + strconv.FormatUint(limit, 10) + ") "
 	totals := options.Queries != nil && options.Kind == "services"
 	if native {
-		statement += "SELECT coalesce((SELECT list(entry ORDER BY ordinal) FROM page), []) AS items, (SELECT count(*) FROM ordered)>" + strconv.FormatUint(limit, 10) + " AS truncated"
+		statement += "select coalesce((select list(entry order by ordinal) from page), []) as items, (select count(*) from ordered)>" + strconv.FormatUint(limit, 10) + " as truncated"
 		if totals {
-			statement += ", struct_pack(home := (SELECT count(*) FROM filtered), traces := (SELECT count(DISTINCT trace_id) FROM home_spans), logs := (SELECT count(*) FROM home_logs), metrics := (SELECT count(*) FROM home_metrics)) AS totals"
+			statement += ", struct_pack(home := (select count(*) from filtered), traces := (select count(distinct trace_id) from home_spans), logs := (select count(*) from home_logs), metrics := (select count(*) from home_metrics)) as totals"
 		}
 	} else {
-		statement += "SELECT json_object('rows', coalesce((SELECT list(json_array(entry) ORDER BY ordinal) FROM page), []), 'truncated', (SELECT count(*) FROM ordered)>" + strconv.FormatUint(limit, 10)
+		statement += "select json_object('rows', coalesce((select list(json_array(entry) order by ordinal) from page), []), 'truncated', (select count(*) from ordered)>" + strconv.FormatUint(limit, 10)
 		if totals {
-			statement += ", 'totals', json_object('home', (SELECT count(*) FROM filtered), 'traces', (SELECT count(DISTINCT trace_id) FROM home_spans), 'logs', (SELECT count(*) FROM home_logs), 'metrics', (SELECT count(*) FROM home_metrics))"
+			statement += ", 'totals', json_object('home', (select count(*) from filtered), 'traces', (select count(distinct trace_id) from home_spans), 'logs', (select count(*) from home_logs), 'metrics', (select count(*) from home_metrics))"
 		}
-		statement += ", 'columns', json_array(json_object('name', 'entry', 'type', 'JSON')))::VARCHAR"
+		statement += ", 'columns', json_array(json_object('name', 'entry', 'type', 'JSON')))::varchar"
 	}
 	return &discoveryPlan{statement: statement, args: append(args, builder.Args()...)}, nil
 }
@@ -299,7 +299,7 @@ func discoverySearchSources(options discoveryOptions) (string, []any, error) {
 	var args []any
 	for _, signal := range signals {
 		if bytes.Equal(bytes.TrimSpace(signal.query), []byte("false")) {
-			ctes = append(ctes, signal.name+" AS (SELECT * FROM "+signal.table+" WHERE false)")
+			ctes = append(ctes, signal.name+" as (select * from "+signal.table+" where false)")
 			continue
 		}
 		var tree *search.QueryNode
@@ -312,8 +312,8 @@ func discoverySearchSources(options discoveryOptions) (string, []any, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		ctes = append(ctes, signal.name+" AS ("+search.RebaseParameters(statement, len(args))+")")
+		ctes = append(ctes, signal.name+" as ("+search.RebaseParameters(statement, len(args))+")")
 		args = append(args, params...)
 	}
-	return "WITH " + strings.Join(ctes, ", "), args, nil
+	return "with " + strings.Join(ctes, ", "), args, nil
 }

@@ -8,7 +8,7 @@ import {
 import { telemetryAPI } from './telemetry-service'
 import type { ImportFailure } from '@/types/import-types'
 import { detectImportFile } from './import-file'
-import { evalAPI } from './eval-service'
+import { evalAPI } from '../features/evals/services/eval-service'
 
 const signals: readonly ImportSignal[] = ['traces', 'logs', 'metrics']
 const evalRunListeners = new Set<() => void>()

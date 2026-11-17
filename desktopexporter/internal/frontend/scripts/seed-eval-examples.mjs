@@ -1,5 +1,5 @@
 // Add synthetic telemetry for the Evals UI examples to an explicit OTLP endpoint.
-import { exampleExperiments } from '../src/components/evals/examples.ts'
+import { exampleExperiments } from '../src/features/evals/examples.ts'
 
 const endpoint = process.argv[2]
 if (!endpoint)

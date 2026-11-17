@@ -6,7 +6,7 @@
   logs: false;
   themes: false;
 }
-@config "../tailwind.config.js";
+@config "../config/tailwind.config.js";
 @plugin "./themes/plugin.ts";
 
 /* Tailwind 4.3.4+ drops daisyUI's relative selectors inside @scope.

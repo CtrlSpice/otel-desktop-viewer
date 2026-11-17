@@ -1,7 +1,8 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import { readFile } from 'node:fs/promises'
-import { expect, test, type Route } from '@playwright/test'
+import type { Route } from '@playwright/test'
 import { mockDataChanges, notifyDataChanged } from './data-changes'
+import { expect, test } from './test-fixtures'
 import type { LogFixture } from '../src/test/telemetry-fixture-types'
 
 const logRef = '00000000-0000-0000-0000-000000000001'

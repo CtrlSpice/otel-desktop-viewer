@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	pv "github.com/apache/arrow-go/v18/parquet/variant"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.uber.org/zap/zaptest"
@@ -117,7 +118,7 @@ func TestArrowDiscoveryReceivedValues(t *testing.T) {
 	identities := items.Field(index).(*array.String)
 	index, ok = items.DataType().(*arrow.StructType).FieldIdx("value")
 	require.True(t, ok)
-	union := items.Field(index).(*array.DenseUnion)
+	variants := items.Field(index)
 	for row := range items.Len() {
 		require.JSONEq(t, string(page.Rows[row][0].Value), identities.Value(row))
 		var identity struct {
@@ -125,10 +126,10 @@ func TestArrowDiscoveryReceivedValues(t *testing.T) {
 			Value json.RawMessage `json:"value"`
 		}
 		require.NoError(t, json.Unmarshal([]byte(identities.Value(row)), &identity))
-		child, offset := union.Field(union.ChildID(row)), int(union.ValueOffset(row))
+		value := readArrowVariant(t, variants, row)
 		switch identity.Kind {
 		case "int64":
-			require.Equal(t, int64(9007199254740993), child.(*array.Int64).Value(offset))
+			require.Equal(t, int64(9007199254740993), value.Value())
 		case "double":
 			var expected float64
 			if string(identity.Value) == "0" {
@@ -143,11 +144,13 @@ func TestArrowDiscoveryReceivedValues(t *testing.T) {
 			if math.IsNaN(expected) {
 				expected = math.Float64frombits(0x7ff8000000000001)
 			}
-			require.Equal(t, math.Float64bits(expected), math.Float64bits(child.(*array.Float64).Value(offset)))
+			require.Equal(t, math.Float64bits(expected), math.Float64bits(value.Value().(float64)))
 		case "array":
-			require.Equal(t, int64(9007199254740993), child.(*array.List).ListValues().(*array.Int64).Value(0))
+			child, err := value.Value().(pv.ArrayValue).Value(0)
+			require.NoError(t, err)
+			require.Equal(t, int64(9007199254740993), child.Value())
 		case "empty":
-			require.Equal(t, arrow.NULL, child.DataType().ID())
+			require.Equal(t, pv.Null, value.Type())
 		default:
 			t.Fatalf("unexpected received kind %s", identity.Kind)
 		}

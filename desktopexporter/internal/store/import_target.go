@@ -45,7 +45,7 @@ func (s *Store) FindImportTarget(ctx context.Context, signal string, body []byte
 						return nil, fmt.Errorf("%w: missing trace or span ID", ErrInvalidImportTarget)
 					}
 					target.ID, target.SpanID = span.TraceID().String(), span.SpanID().String()
-					query = "SELECT EXISTS(SELECT 1 FROM spans WHERE trace_id = ?::UUID AND span_id = ?::UBIGINT)"
+					query = "select exists(select 1 from spans where trace_id = ?::uuid and span_id = ?::ubigint)"
 					args = []any{target.ID, strconv.FormatUint(util.SpanIDUint64(span.SpanID()), 10)}
 				}
 			}
@@ -76,7 +76,7 @@ func (s *Store) FindImportTarget(ctx context.Context, signal string, body []byte
 					}
 					id, _, _ := nested.MetricIdentity(metric, resource, scope)
 					target.ID = ingest.FormatUUID(id)
-					query = "SELECT EXISTS(SELECT 1 FROM metrics WHERE id = ?::UUID)"
+					query = "select exists(select 1 from metrics where id = ?::uuid)"
 					args = []any{target.ID}
 				}
 			}
@@ -115,14 +115,14 @@ func (s *Store) FindImportTarget(ctx context.Context, signal string, body []byte
 					if !log.SpanID().IsEmpty() {
 						spanID = strconv.FormatUint(util.SpanIDUint64(log.SpanID()), 10)
 					}
-					query = `SELECT id::VARCHAR FROM logs
-						WHERE timestamp = ?::UBIGINT AND observed_timestamp = ?::UBIGINT
-						AND trace_id IS NOT DISTINCT FROM ?::UUID AND span_id IS NOT DISTINCT FROM ?::UBIGINT
-						AND severity_number = ? AND severity_text = ? AND event_name = ?
-						AND resource.id = ?::UUID AND scope.id = ?::UUID
-						AND body IS NOT DISTINCT FROM variant_bytes_to_variant(?)
-						AND attributes = variant_bytes_to_variant(?)
-						AND dropped_attributes_count = ? AND flags = ? ORDER BY id LIMIT 1`
+					query = `select id::varchar from logs
+						where timestamp = ?::ubigint and observed_timestamp = ?::ubigint
+						and trace_id is not distinct from ?::uuid and span_id is not distinct from ?::ubigint
+						and severity_number = ? and severity_text = ? and event_name = ?
+						and resource.id = ?::uuid and scope.id = ?::uuid
+						and body is not distinct from variant_bytes_to_variant(?)
+						and attributes = variant_bytes_to_variant(?)
+						and dropped_attributes_count = ? and flags = ? order by id limit 1`
 					args = []any{strconv.FormatUint(uint64(log.Timestamp()), 10), strconv.FormatUint(uint64(log.ObservedTimestamp()), 10), traceID, spanID,
 						int32(log.SeverityNumber()), log.SeverityText(), log.EventName(),
 						ingest.FormatUUID(resource["id"].(duckdb.UUID)), ingest.FormatUUID(scope["id"].(duckdb.UUID)),

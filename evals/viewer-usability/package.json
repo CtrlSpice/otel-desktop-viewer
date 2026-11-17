@@ -6,7 +6,7 @@
     "node": ">=22.22.0"
   },
   "scripts": {
-    "test": "node --test *.test.ts presentation/*.test.ts",
+    "test": "node --test --test-concurrency=2 *.test.ts *.test.mjs presentation/*.test.ts",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:presentation": "node ../../desktopexporter/internal/frontend/node_modules/svelte-check/bin/svelte-check --tsconfig presentation/tsconfig.json",
     "stage": "node stage-dataset.ts",
@@ -14,10 +14,6 @@
     "verify": "node verify.ts",
     "pilot": "node pi-evaluate.ts --task checkout-failure",
     "evaluate": "node pi-evaluate.ts",
-    "pilot:legacy": "node run-pilot.ts",
-    "overnight:legacy": "node run-overnight.ts",
-    "verify:isolation": "node verify-isolation.ts",
-    "verify:loader:legacy": "node verify-loader.ts",
     "verify:integration": "node verify-integration.ts"
   },
   "dependencies": {
@@ -35,7 +31,8 @@
     "typescript": "6.0.3"
   },
   "overrides": {
-    "basic-ftp": "6.2.1",
+    "@hono/node-server": "2.1.6",
+    "basic-ftp": "6.2.4",
     "glob": "14.0.2",
     "minimatch": "11.0.1"
   }

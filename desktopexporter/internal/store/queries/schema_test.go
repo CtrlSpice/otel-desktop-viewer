@@ -697,14 +697,14 @@ func TestMacros_SumBucketVectorDomains(t *testing.T) {
 		input string
 		want  sql.NullString
 	}{
-		{"NULL", sql.NullString{}},
+		{"null", sql.NullString{}},
 		{"[]", sql.NullString{}},
-		{"[NULL]", sql.NullString{}},
+		{"[null]", sql.NullString{}},
 		{"[[]]", sql.NullString{String: "[]", Valid: true}},
-		{"[NULL, NULL]", sql.NullString{String: "[]", Valid: true}},
-		{"[[NULL]]", sql.NullString{String: "[NULL]", Valid: true}},
-		{"[[NULL], [NULL]]", sql.NullString{String: "[0]", Valid: true}},
-		{"[[1, NULL, 3], NULL, [], [4, 5]]", sql.NullString{String: "[5, 5, 3]", Valid: true}},
+		{"[null, null]", sql.NullString{String: "[]", Valid: true}},
+		{"[[null]]", sql.NullString{String: "[NULL]", Valid: true}},
+		{"[[null], [null]]", sql.NullString{String: "[0]", Valid: true}},
+		{"[[1, null, 3], null, [], [4, 5]]", sql.NullString{String: "[5, 5, 3]", Valid: true}},
 		{"[[18446744073709551615], [18446744073709551615]]", sql.NullString{String: "[36893488147419103230]", Valid: true}},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
@@ -878,10 +878,10 @@ func TestMacros_DiffBucketVectorsBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name, current, previous, want string
 	}{
-		{"absent current", "NULL", "[1]", ""},
-		{"absent previous preserves slots", "[NULL, 5]", "NULL", "[NULL, 5]"},
+		{"absent current", "null", "[1]", ""},
+		{"absent previous preserves slots", "[null, 5]", "null", "[NULL, 5]"},
 		{"empty vectors", "[]", "[]", "[]"},
-		{"missing slots are zero", "[NULL, 5, 9]", "[NULL, 2]", "[0, 3, 9]"},
+		{"missing slots are zero", "[null, 5, 9]", "[null, 2]", "[0, 3, 9]"},
 		{"removed nonzero tail is reset", "[5]", "[2, 1]", ""},
 		{"removed zero tail", "[5]", "[2, 0]", "[3, 0]"},
 		{"uint64 boundary", "[18446744073709551615]", "[18446744073709551614]", "[1]"},

@@ -21,7 +21,12 @@ import {
   type Data,
 } from 'apache-arrow'
 import type { AttributeFixture, TraceFixture } from './telemetry-fixture-types'
-import { serviceColorIdentity } from '../utils/service-color-identity'
+import { serviceColorIdentity } from '../utils/colours/service-color-identity'
+import {
+  variantColumn,
+  variantField,
+  variantStorageType,
+} from './variant-fixtures'
 
 type Value =
   | null
@@ -32,19 +37,26 @@ type Value =
   | Uint8Array
   | Value[]
   | Map<string, Value>
-  | MapEntries
+  | VariantFixture
   | { [key: string]: Value }
 
-class MapEntries {
-  constructor(readonly entries: [string, Value][]) {}
+class VariantFixture {
+  constructor(readonly value: AttributeFixture) {}
 }
 
 function kind(value: Value): string {
   if (value === null) return 'null'
   if (value instanceof Uint8Array) return 'bytes'
-  if (value instanceof Map || value instanceof MapEntries) return 'map'
+  if (value instanceof VariantFixture) return 'variant'
+  if (value instanceof Map) return 'map'
   if (Array.isArray(value)) return 'list'
   return typeof value
+}
+
+function dataField(name: string, data: Data, nullable = true): Field {
+  return data.type === variantStorageType
+    ? variantField(name, nullable)
+    : new Field(name, data.type, nullable)
 }
 
 /** Fixture writer only. Browser production reads native Arrow, never these objects. */
@@ -65,7 +77,7 @@ function column(values: Value[]): Data {
     const ids = values.map(v => kinds.indexOf(kind(v)))
     const type = new DenseUnion(
       kinds.map((_, i) => i),
-      children.map((c, i) => new Field(kinds[i], c.type, true))
+      children.map((c, i) => dataField(kinds[i]!, c))
     )
     return makeData({
       type,
@@ -76,6 +88,10 @@ function column(values: Value[]): Data {
     })
   }
   const category = kinds[0] ?? 'null'
+  if (category === 'variant')
+    return variantColumn(
+      values.map(v => (v instanceof VariantFixture ? v.value : null))
+    )
   const nullCount = values.filter(v => v === null).length
   const nullBitmap = new Uint8Array(Math.ceil(values.length / 8))
   values.forEach((v, i) => {
@@ -112,7 +128,7 @@ function column(values: Value[]): Data {
     const keys = [...new Set(objects.flatMap(v => Object.keys(v ?? {})))]
     const children = keys.map(key => column(objects.map(v => v?.[key] ?? null)))
     const type = new Struct(
-      children.map((child, i) => new Field(keys[i], child.type, true))
+      children.map((child, i) => dataField(keys[i]!, child))
     )
     return makeData({
       type,
@@ -126,11 +142,9 @@ function column(values: Value[]): Data {
     const lists = values.map(v =>
       v === null
         ? []
-        : v instanceof MapEntries
-          ? v.entries.map(([key, value]) => ({ key, value }))
-          : v instanceof Map
-            ? [...v].map(([key, value]) => ({ key, value }))
-            : (v as Value[])
+        : v instanceof Map
+          ? [...v].map(([key, value]) => ({ key, value }))
+          : (v as Value[])
     )
     let size = 0
     const offsets = [0, ...lists.map(v => (size += v.length))]
@@ -155,7 +169,7 @@ function column(values: Value[]): Data {
       })
     }
     return makeData({
-      type: new List(new Field('item', child.type, true)),
+      type: new List(dataField('item', child)),
       length: values.length,
       child,
       valueOffsets: Int32Array.from(offsets),
@@ -181,29 +195,14 @@ function column(values: Value[]): Data {
 }
 
 function value(v: AttributeFixture): Value {
-  switch (v.kind) {
-    case 'empty':
-      return null
-    case 'int64':
-      return BigInt(v.value)
-    case 'double':
-      return v.value
-    case 'array':
-      return v.value.map(value)
-    case 'map':
-      return new MapEntries(v.value.map(e => [e.key, value(e.value)]))
-    case 'bytes':
-      return new Uint8Array(Buffer.from(v.value, 'base64'))
-    default:
-      return v.value
-  }
+  return new VariantFixture(v)
 }
 
 type RecordFixture = Record<string, any>
 function attrs(
   list: { key: string; value: AttributeFixture }[] = []
-): MapEntries {
-  return new MapEntries(list.map(a => [a.key, value(a.value)]))
+): VariantFixture {
+  return new VariantFixture({ kind: 'map', value: list })
 }
 function resource(r: RecordFixture = {}): Value {
   return {
@@ -440,10 +439,7 @@ export function telemetryDataset(method: string, result: any): Table {
         lastSeen: r.lastSeen == null ? null : BigInt(r.lastSeen),
         aggregationTemporalityCode: r.aggregationTemporalityCode ?? null,
         isMonotonic: r.isMonotonic ?? null,
-        lastValue:
-          r.lastValue == null
-            ? null
-            : value({ kind: 'double', value: r.lastValue }),
+        lastValue: r.lastValue == null ? null : double(r.lastValue),
       }))
       break
     case 'searchLogSummaries':

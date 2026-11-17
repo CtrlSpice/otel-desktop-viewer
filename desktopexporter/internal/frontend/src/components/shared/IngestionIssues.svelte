@@ -3,11 +3,13 @@
 </script>
 
 <script lang="ts">
+  import DisclosureSignalCard from './DisclosureSignalCard.svelte'
   import Identifier from './Identifier.svelte'
-  import LogField from '@/components/shared/DetailField.svelte'
+  import LogField from '@/components/shared/Detail/DetailField.svelte'
   import { itemHref, SPAN_PARAM } from '@/route'
   import type { Rejection } from '@/types/api-types'
   import type { ImportFailure } from '@/types/import-types'
+  import { groupRejections, latestIssueTime } from './ingestion-issues'
 
   let {
     rejections,
@@ -21,28 +23,33 @@
     formatRelativeTime: (timestamp: bigint | null | undefined) => string
   } = $props()
 
-  const rejectedTotal = $derived(
-    rejections.reduce((sum, rejection) => sum + rejection.occurrences, 0)
+  const rejectionGroups = $derived(groupRejections(rejections))
+  const lastImportFailure = $derived(
+    latestIssueTime(importFailures.map(failure => failure.occurredAt))
   )
 </script>
 
 {#if importFailures.length > 0 || rejections.length > 0}
   <section
     id={INGESTION_ISSUES_ID}
-    class="ingestion-issues p-3"
+    class="ingestion-issues"
     aria-label="Ingestion issues"
     tabindex="-1"
   >
     {#if importFailures.length > 0}
-      <div class="issues-section">
-        <h3 class="issues-heading">
-          File import issues
-          <span class="text-subtle">
-            {importFailures.length}
+      <DisclosureSignalCard title="File import issues" wrapTitle>
+        {#snippet badge()}
+          <span class="issues-count">
+            {importFailures.length.toLocaleString()}
             {importFailures.length === 1 ? 'file' : 'files'}
           </span>
-        </h3>
-        <ul class="issues-list" aria-label="File import issues">
+        {/snippet}
+        {#snippet date()}
+          <span class="issues-time"
+            >Last seen {formatRelativeTime(lastImportFailure)}</span
+          >
+        {/snippet}
+        <ul class="issues-list issues-details" aria-label="File import issues">
           {#each importFailures as failure}
             <li class="issues-file">
               <p class="issues-file__message">
@@ -50,38 +57,39 @@
                 <span aria-hidden="true"> — </span>
                 {failure.reason}
               </p>
-              <p class="issues-time">
-                {formatRelativeTime(failure.occurredAt)}
-              </p>
             </li>
           {/each}
         </ul>
-      </div>
+      </DisclosureSignalCard>
     {/if}
-    {#if rejections.length > 0}
-      <div class="issues-section">
-        <h3 class="issues-heading">
-          Rejected telemetry
-          <span class="text-subtle">
-            {rejectedTotal} records
+    {#each rejectionGroups as group (group.kind)}
+      {@const requests = group.kind === 'receiver_recursion_depth'}
+      {@const unit = requests ? 'request' : 'record'}
+      <DisclosureSignalCard title={rejectionLabel(group.kind)} wrapTitle>
+        {#snippet badge()}
+          <span class="issues-count">
+            {group.occurrences.toLocaleString()}
+            {unit}{group.occurrences === 1 ? '' : 's'}
           </span>
-        </h3>
-        <table class="detail-fields w-full" aria-label="Rejected telemetry">
-          <tbody>
-            {#each rejections as rejection (rejection.signal + rejection.kind)}
+        {/snippet}
+        {#snippet date()}
+          <span class="issues-time"
+            >Last seen {formatRelativeTime(group.lastSeen)}</span
+          >
+        {/snippet}
+        <div class="issues-details">
+          <table
+            class="detail-fields w-full"
+            aria-label={rejectionLabel(group.kind)}
+          >
+            <tbody>
               <LogField
-                fieldName={rejectionLabel(rejection.kind)}
-                fieldType={rejection.signal}
-                showType={true}
-                fieldValue={String(rejection.occurrences)}
-              />
-              <LogField
-                fieldName="last seen"
+                fieldName={group.signals.length === 1 ? 'signal' : 'signals'}
                 fieldType="string"
                 showType={false}
-                fieldValue={formatRelativeTime(rejection.lastSeen)}
+                fieldValue={group.signals.join(', ')}
               />
-              {#if rejection.samples.length > 0}
+              {#if group.samples.length > 0}
                 <LogField
                   fieldName="samples"
                   fieldType="string"
@@ -90,7 +98,7 @@
                 >
                   {#snippet value()}
                     <span class="issues-samples">
-                      {#each rejection.samples as sample (sample.traceID + sample.spanID)}
+                      {#each group.samples as sample (sample.traceID + sample.spanID)}
                         <a
                           class="issues-sample-link link text-sm"
                           href={itemHref('traces', sample.traceID, {
@@ -104,11 +112,23 @@
                   {/snippet}
                 </LogField>
               {/if}
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
+            </tbody>
+          </table>
+          {#if requests}
+            <p class="mb-0 mt-2 text-sm leading-relaxed text-base-content">
+              The receiver rejected these requests because their data is nested
+              too deeply.
+            </p>
+            <a
+              class="issues-help-link link text-sm"
+              href="https://github.com/CtrlSpice/otel-desktop-viewer/blob/main/docs/sdk-configuration.md#deeply-nested-telemetry"
+              target="_blank"
+              rel="noopener noreferrer">Learn more</a
+            >
+          {/if}
+        </div>
+      </DisclosureSignalCard>
+    {/each}
   </section>
 {/if}
 
@@ -119,21 +139,21 @@
     @apply rounded-lg outline-2 outline-offset-2 outline-primary;
   }
 
-  .issues-heading,
+  .ingestion-issues :global(.detail-cell__key),
   .issues-time {
-    color: var(--color-subtle);
+    color: var(--color-base-content);
   }
 
-  .issues-section + .issues-section {
-    @apply mt-3 border-t border-(--color-border) pt-3;
+  .issues-count {
+    @apply text-sm tabular-nums text-base-content;
   }
 
-  .issues-heading {
-    @apply mb-2 flex items-center justify-between gap-2 text-sm font-normal;
+  .issues-details {
+    padding: 0 var(--pane-inline-inset) 0.75rem;
   }
 
   .issues-list {
-    @apply m-0 list-none p-0;
+    @apply m-0 list-none;
   }
 
   .issues-file + .issues-file {
@@ -145,15 +165,16 @@
     overflow-wrap: anywhere;
   }
 
-  .issues-time {
-    @apply mb-0 mt-0.5 text-sm;
-  }
-
   .issues-samples {
     @apply inline-flex flex-wrap gap-x-2 gap-y-0.5;
   }
 
   .issues-sample-link {
     color: var(--color-primary);
+  }
+
+  .issues-sample-link,
+  .issues-help-link {
+    @apply inline-flex min-h-6 min-w-6 items-center;
   }
 </style>

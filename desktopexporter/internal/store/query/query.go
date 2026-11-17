@@ -38,7 +38,7 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 	if strings.TrimSpace(statement) == "" {
 		return nil, fmt.Errorf("empty SQL: %w", ErrReadOnly)
 	}
-	if _, err := conn.ExecContext(ctx, "BEGIN TRANSACTION READ ONLY"); err != nil {
+	if _, err := conn.ExecContext(ctx, "begin transaction read only"); err != nil {
 		return nil, fmt.Errorf("begin read-only transaction: %w", err)
 	}
 	transactionOpen := true
@@ -98,7 +98,7 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 func describeQuery(ctx context.Context, conn *sql.Conn, statement string) (names, types []string, err error) {
 	literal := "'" + strings.ReplaceAll(statement, "'", "''") + "'"
 	rows, err := conn.QueryContext(ctx,
-		"SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM query("+literal+"))")
+		"select column_name, column_type from (describe select * from query("+literal+"))")
 	if err != nil {
 		return nil, nil, fmt.Errorf("inspect query result: %w", err)
 	}
@@ -164,23 +164,23 @@ func responseQuery(names, databaseTypes []string, statement string, columnsJSON 
 		}
 	}
 	rowJSON := "json_array(" + strings.Join(values, ", ") + ")"
-	limited := "SELECT " + rowJSON + " AS row_json, row_number() OVER () AS row_number FROM query(?)"
-	rowsJSON := "coalesce(to_json(list(row_json ORDER BY row_number)), json('[]'))"
+	limited := "select " + rowJSON + " as row_json, row_number() over () as row_number from query(?)"
+	rowsJSON := "coalesce(to_json(list(row_json order by row_number)), json('[]'))"
 	truncated := "false"
 	args := []any{string(columnsJSON)}
 	if limit < math.MaxUint64 {
-		limited += " LIMIT ?"
-		rowsJSON = "coalesce(to_json(list(row_json ORDER BY row_number) FILTER (WHERE row_number <= ?)), json('[]'))"
+		limited += " limit ?"
+		rowsJSON = "coalesce(to_json(list(row_json order by row_number) filter (where row_number <= ?)), json('[]'))"
 		truncated = "count(*) > ?"
 		args = append(args, limit, limit, statement, limit+1)
 	} else {
 		args = append(args, statement)
 	}
-	querySQL := "SELECT CAST(json_object(" +
-		"'columns', ?::JSON, " +
+	querySQL := "select cast(json_object(" +
+		"'columns', ?::json, " +
 		"'rows', " + rowsJSON + ", " +
 		"'truncated', " + truncated +
-		") AS VARCHAR) FROM (" + limited + ") AS limited"
+		") as varchar) from (" + limited + ") as limited"
 	return querySQL, args
 }
 
@@ -228,7 +228,7 @@ func requireReadOnly(ctx context.Context, conn *sql.Conn, statement string) ([]s
 }
 
 func rollback(conn *sql.Conn, requestCtx context.Context) error {
-	_, err := conn.ExecContext(context.WithoutCancel(requestCtx), "ROLLBACK")
+	_, err := conn.ExecContext(context.WithoutCancel(requestCtx), "rollback")
 	if err != nil {
 		return fmt.Errorf("rollback read-only transaction: %w", err)
 	}

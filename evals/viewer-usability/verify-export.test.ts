@@ -258,7 +258,7 @@ const rpc = http.createServer(async (req,res) => {
   let body = ''; for await (const chunk of req) body += chunk;
   const request = JSON.parse(body);
    const result = request.method === 'getStats' ? {rejections:[{signal:'traces',kind:'span_already_stored',occurrences:1}]} :
-    {columns:[{name:'count'}],rows:request.params.sql === 'SELECT 1' ? [[1]] : [[6,0,0]],truncated:false};
+    {columns:[{name:'count'}],rows:request.params.sql === 'select 1' ? [[1]] : [[6,0,0]],truncated:false};
   res.end(JSON.stringify({jsonrpc:'2.0',id:1,result}));
 });
 const receiver = http.createServer(async (req,res) => {

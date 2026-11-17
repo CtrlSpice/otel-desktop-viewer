@@ -8,7 +8,7 @@
     parseDate,
     type DateValue,
   } from '@internationalized/date'
-  import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import FieldErrorMessage from '@/components/shared/Detail/FieldErrorMessage.svelte'
   import DateCalendar from '@/components/shared/DateCalendar.svelte'
   import IconButton from '@/components/shared/IconButton.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'

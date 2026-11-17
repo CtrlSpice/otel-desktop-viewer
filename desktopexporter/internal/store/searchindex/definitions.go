@@ -42,7 +42,7 @@ func DefinitionsJSON(ctx context.Context, db *sql.DB, signal, traceID string) (j
 	}
 	var raw []byte
 	err = db.QueryRowContext(ctx, `select coalesce(to_json(list(json_object(
- 'name',key,'attributeScope',attribute_scope,'owner',owner,'path',path::JSON,'type',kind)
+ 'name',key,'attributeScope',attribute_scope,'owner',owner,'path',path::json,'type',kind)
  order by ordinal)),json('[]'))::varchar from (`+q+`) definitions`, args...).Scan(&raw)
 	return json.RawMessage(raw), err
 }

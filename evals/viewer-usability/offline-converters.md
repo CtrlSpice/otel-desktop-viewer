@@ -75,7 +75,7 @@ Tests construct tiny synthetic records in memory, **not real model outputs**.
 They follow the shapes established by these pinned sources without copying a
 large fixture or accessing private saved results:
 
-- Kit `native-evaluate.ts:78-99`, `run-overnight.ts:30-48`, existing
+- Historical Kit producer [snapshot at 902c0bd5](https://github.com/CtrlSpice/otel-desktop-viewer/tree/902c0bd5d4b932ac02679fb43d299446de4ee77b/evals/viewer-usability),
   `presentation/aggregate.test.ts`, and `presentation/telemetry-links.ts`.
   The kit pins Promptfoo 0.125.1; this is not assumed identical to current upstream.
 - `promptfoo/promptfoo@ea8b3d073a63769f7be243ac3c3460f72881a930`:

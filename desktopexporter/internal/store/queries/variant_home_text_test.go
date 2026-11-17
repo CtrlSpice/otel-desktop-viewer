@@ -37,9 +37,9 @@ func TestHomeNameSortUsesExactCopySpelling(t *testing.T) {
 			encoded, err := ingest.ValueBytes(value)
 			require.NoError(t, err)
 			var text string
-			err = db.QueryRowContext(t.Context(), `WITH native AS (
-                SELECT variant_to_parquet_variant(variant_bytes_to_variant($1::BLOB))::struct(metadata BLOB, value BLOB) AS parts)
-                SELECT otel_home_value_text(parts.metadata, parts.value) FROM native`, encoded).Scan(&text)
+			err = db.QueryRowContext(t.Context(), `with native as (
+                select variant_to_parquet_variant(variant_bytes_to_variant($1::blob))::struct(metadata blob, value blob) as parts)
+                select otel_home_value_text(parts.metadata, parts.value) from native`, encoded).Scan(&text)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, text)
 		})

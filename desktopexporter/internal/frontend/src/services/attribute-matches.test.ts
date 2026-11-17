@@ -15,7 +15,7 @@ it('matches stored JSON escapes without changing the received shell command', ()
   )
   const stored = String.raw`{"kind":"string","value":"echo 'exact' 2\u003e\u00261 \u003c input\u2028next\u2029line"}`
   expect(sql).toContain(
-    `AND otel_value_json(e.attributes['bash_command']) = '${stored.replaceAll("'", "''")}'::JSON`
+    `and otel_value_json(e.attributes['bash_command']) = '${stored.replaceAll("'", "''")}'::json`
   )
   expect(JSON.parse(stored).value).toBe(value)
 })
@@ -37,9 +37,9 @@ it('retains typed array order, exact int64s, and negative-zero double bits', () 
   )
   expect(sql).toContain(`variant_exists(e.attributes, 'quote''key')`)
   expect(sql).toContain(
-    `AND otel_value_json(e.attributes['quote''key']) = '${identity}'::JSON`
+    `and otel_value_json(e.attributes['quote''key']) = '${identity}'::json`
   )
-  expect(sql).toContain(`e.timestamp >= '9007199254740993'::UBIGINT`)
-  expect(sql).toContain(`s.start_time <= '9007199254740994'::UBIGINT`)
-  expect(sql).toContain('ORDER BY item_ref OFFSET 500')
+  expect(sql).toContain(`e.timestamp >= '9007199254740993'::ubigint`)
+  expect(sql).toContain(`s.start_time <= '9007199254740994'::ubigint`)
+  expect(sql).toContain('order by item_ref offset 500')
 })

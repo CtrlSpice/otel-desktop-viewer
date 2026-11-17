@@ -6,7 +6,7 @@ import {
   type RouteQuery,
 } from './router'
 import { METRIC_VIEW_PARAMS, type MetricViewParam } from './query-params'
-import type { AggregationView } from '@/components/metrics/utils/aggregation'
+import type { AggregationView } from '@/features/metrics/Charts/aggregation'
 
 export type { MetricViewParam }
 export { METRIC_VIEW_PARAMS }

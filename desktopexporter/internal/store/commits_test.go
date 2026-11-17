@@ -13,7 +13,7 @@ func TestCommitNotificationSurvivesPartialIngestFailure(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		_, err := db.Exec("CREATE TABLE commit_records (id INTEGER CHECK (id > 0))")
+		_, err := db.Exec("create table commit_records (id integer check (id > 0))")
 		return err
 	}))
 	before, changed, _ := s.CommitSnapshot()
@@ -29,7 +29,7 @@ func TestCommitNotificationSurvivesPartialIngestFailure(t *testing.T) {
 			return ingest.InTransaction(ctx, conn, func() error {
 				values := []int64{1, 2, -1, 4}
 				for _, value := range values[lo:hi] {
-					_, err := conn.(driver.ExecerContext).ExecContext(ctx, "INSERT INTO commit_records VALUES (?)", []driver.NamedValue{{Ordinal: 1, Value: value}})
+					_, err := conn.(driver.ExecerContext).ExecContext(ctx, "insert into commit_records values (?)", []driver.NamedValue{{Ordinal: 1, Value: value}})
 					if err != nil {
 						return err
 					}
@@ -50,7 +50,7 @@ func TestCommitNotificationSurvivesPartialIngestFailure(t *testing.T) {
 	}
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		var count int
-		err := db.QueryRow("SELECT count(*) FROM commit_records").Scan(&count)
+		err := db.QueryRow("select count(*) from commit_records").Scan(&count)
 		require.Equal(t, 2, count)
 		return err
 	}))

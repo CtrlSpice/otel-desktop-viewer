@@ -4,12 +4,15 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { tableFromIPC } from 'apache-arrow'
+import { DataType, tableFromIPC } from 'apache-arrow'
 import { chromium, expect } from '@playwright/test'
 
-// Exercise the shipped public executable, with fresh in-memory storage and no
+// Exercise the embedded executable, with fresh in-memory storage and no
 // Vite server or API mocks. Reserve separate ports from interactive previews.
 assert.ok(process.argv[2], 'Usage: node scripts/smoke-binary.mjs <executable>')
+const mode = process.env.EVALS ?? '0'
+assert.ok(mode === '0' || mode === '1', 'EVALS must be 0 or 1')
+const evals = mode === '1'
 const reservations = []
 for (let index = 0; index < 3; index++) {
   const server = createServer()
@@ -49,6 +52,7 @@ child.stderr.on('data', chunk => {
   output += chunk
 })
 let browser
+const errors = []
 
 function assertRunning() {
   if (spawnError) throw spawnError
@@ -116,15 +120,31 @@ try {
       { timeout: 30000 }
     )
     .toBe(200)
+  // Evals is disabled by default even when its implementation is included.
   assert.equal((await json(`${baseURL}/api/features`)).evals.enabled, false)
   assert.deepEqual(await json(`${baseURL}/build-features.json`), {
-    evals: false,
+    evals,
   })
 
   const traceId = '0123456789abcdef0123456789abcdef'
   const spanId = '0123456789abcdef'
   const timestamp = String(BigInt(Date.now()) * 1000000n + 123n)
   const exactInteger = '9007199254740993'
+  let deep = {
+    kvlistValue: {
+      values: [
+        { key: 'bytes', value: { bytesValue: 'AP8=' } },
+        { key: 'exact', value: { intValue: exactInteger } },
+        { key: 'marker', value: { stringValue: 'native-deep-leaf' } },
+        { key: 'text', value: { stringValue: exactInteger } },
+      ],
+    },
+  }
+  for (let level = 0; level < 200; level++)
+    deep =
+      level % 2
+        ? { kvlistValue: { values: [{ key: 'child', value: deep }] } }
+        : { arrayValue: { values: [deep] } }
   const resource = {
     attributes: [{ key: 'service.name', value: { stringValue: 'ci-smoke' } }],
   }
@@ -169,7 +189,33 @@ try {
                   spanId,
                   timeUnixNano: timestamp,
                   severityNumber: 9,
-                  body: { stringValue: 'ci-smoke-log' },
+                  body: {
+                    kvlistValue: {
+                      values: [
+                        { key: 'deep', value: deep },
+                        {
+                          key: 'items',
+                          value: {
+                            arrayValue: {
+                              values: Array.from(
+                                { length: 250 },
+                                (_, index) => ({
+                                  stringValue:
+                                    index === 249
+                                      ? 'last-hidden-value'
+                                      : `item-${index}`,
+                                })
+                              ),
+                            },
+                          },
+                        },
+                        {
+                          key: 'message',
+                          value: { stringValue: 'ci-smoke-log' },
+                        },
+                      ],
+                    },
+                  },
                 },
               ],
             },
@@ -257,9 +303,16 @@ try {
 
   // Exercise the shipped browser transport with an integer that JSON.parse
   // would round. The numeric and string attributes must remain distinct.
+  const integerBytes = new Uint8Array(9)
+  integerBytes[0] = 0x18
+  new DataView(integerBytes.buffer).setBigInt64(1, BigInt(exactInteger), true)
+  const stringBytes = Uint8Array.of(
+    (exactInteger.length << 2) | 1,
+    ...new TextEncoder().encode(exactInteger)
+  )
   for (const [key, type, expected] of [
-    ['smoke.exact', 'int64', BigInt(exactInteger)],
-    ['smoke.text', 'string', exactInteger],
+    ['smoke.exact', 'int64', integerBytes],
+    ['smoke.text', 'string', stringBytes],
   ]) {
     const matches = await arrow('searchAttributeMatches', {
       term: '',
@@ -269,14 +322,24 @@ try {
       type,
     })
     assert.equal(matches.numRows, 1)
+    const sampleType = matches.schema.fields.find(
+      field => field.name === 'sampleValues'
+    ).type
+    assert.ok(DataType.isList(sampleType))
+    assert.equal(
+      sampleType.children[0].metadata.get('ARROW:extension:name'),
+      'arrow.parquet.variant'
+    )
     const samples = matches.getChild('sampleValues').get(0)
     assert.equal(samples.length, 1)
-    assert.equal(samples.get(0), expected)
+    assert.equal(samples.get(0).metadata[0] & 0x0f, 1)
+    assert.deepEqual(samples.get(0).value, expected)
   }
 
   browser = await chromium.launch()
-  const page = await browser.newPage()
-  const errors = []
+  const page = await browser.newPage({
+    permissions: ['clipboard-read', 'clipboard-write'],
+  })
   page.on('pageerror', error => errors.push(error.message))
   page.on('response', response => {
     if (response.url().startsWith(baseURL) && response.status() >= 400)
@@ -287,13 +350,183 @@ try {
     page.getByRole('button', { name: /ci-smoke/ }).first()
   ).toBeVisible({ timeout: 15000 })
   await expect(page.getByRole('link', { name: /Evals/ })).toHaveCount(0)
+
+  const logRows = await rpc('query', { sql: 'SELECT id::varchar FROM logs' })
+  assert.equal(logRows.rows.length, 1)
+  await page.addInitScript(() => {
+    localStorage.setItem('signal-detail:open', 'true')
+    localStorage.setItem('signal-drawer:open', 'false')
+  })
+  await page.goto(`${baseURL}/logs/${logRows.rows[0][0]}?time=all`)
+  const body = page
+    .getByRole('table', { name: 'Log fields' })
+    .locator('[data-field="body"]')
+  await expect(
+    body.getByRole('button', { name: 'Expand deep', exact: true })
+  ).toBeVisible()
+  await expect(body.locator('.cm-editor')).toHaveCount(0)
+  await body.getByRole('button', { name: 'Expand items', exact: true }).click()
+  await expect(body).toContainText('item-99')
+  await expect(body).not.toContainText('item-100')
+  await body.getByRole('button', { name: 'Show next 100 of 250' }).click()
+  await expect(body).toContainText('item-199')
+  await expect(body).not.toContainText('last-hidden-value')
+  await body
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain('last-hidden-value')
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  assert.equal(copied.match(/"child":/g).length, 100)
+  assert.ok(copied.includes(`"exact": ${exactInteger}`))
+  assert.ok(copied.includes(`"text": "${exactInteger}"`))
+  assert.ok(copied.includes('"bytes": "AP8="'))
+  assert.ok(copied.includes('native-deep-leaf'))
+  await body.getByRole('button', { name: 'Full document / Find' }).click()
+  const search = body.locator('.cm-search input[name="search"]')
+  await expect(search).toBeFocused()
+  await search.pressSequentially('native-deep-leaf')
+  await search.press('Enter')
+  await expect(body.locator('.cm-searchMatch-selected')).toHaveText(
+    'native-deep-leaf'
+  )
+  await body
+    .getByRole('button', { name: 'Expand all body JSON', exact: true })
+    .click()
+  await body
+    .getByRole('button', { name: 'Collapse all body JSON', exact: true })
+    .click()
+  await body
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(copied)
+
+  const selectedURL = page.url()
+  let detailRequests = 0
+  page.on('request', request => {
+    if (request.url() === `${baseURL}/api/data/getLog`) detailRequests++
+  })
+  const live = page.getByRole('button', { name: 'Live', exact: true })
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  const receivedLogCount = count =>
+    page.waitForResponse(async response => {
+      if (
+        response.url() !== `${baseURL}/rpc` ||
+        response.request().postDataJSON()?.method !== 'getStats'
+      )
+        return false
+      return (await response.json()).result?.logs?.logCount === count
+    })
+  const appendLog = async marker => {
+    const response = await fetch(`http://127.0.0.1:${httpPort}/v1/logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: marker },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    })
+    assert.equal(response.status, 200)
+  }
+  const offCommit = receivedLogCount(2)
+  await appendLog('live-off-arrival')
+  await offCommit
+  assert.equal(detailRequests, 0)
+  assert.equal(page.url(), selectedURL)
+
+  const enabled = page.waitForResponse(`${baseURL}/api/data/getLog`)
+  await live.click()
+  await enabled
+  await expect(live).toHaveAttribute('aria-pressed', 'true')
+  const onCommit = receivedLogCount(3)
+  const refreshed = page.waitForResponse(`${baseURL}/api/data/getLog`)
+  await appendLog('live-on-arrival')
+  await Promise.all([onCommit, refreshed])
+  assert.equal(page.url(), selectedURL)
+  await body
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(copied)
+
+  await live.click()
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  await page.goto(baseURL)
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles({
+    name: 'redacted-first-log.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({
+        resourceLogs: [
+          {
+            resource,
+            scopeLogs: [
+              {
+                scope,
+                logRecords: [
+                  {
+                    timeUnixNano: timestamp,
+                    body: { stringValue: 'browser-import-destination' },
+                    attributes: [
+                      {
+                        key: 'password',
+                        value: { stringValue: 'synthetic-import-secret' },
+                      },
+                      {
+                        key: 'exact',
+                        value: { intValue: exactInteger },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ),
+  })
+  await expect(page).not.toHaveURL(selectedURL, { timeout: 15000 })
+  await expect(page).toHaveURL(/\/logs\/[a-f0-9-]+\?time=all$/)
+  await expect(body).toContainText('browser-import-destination')
+  const importedID = new URL(page.url()).pathname.split('/').at(-1)
+  const imported = await json(`${baseURL}/export/logs/${importedID}`)
+  const importedLog = imported.resourceLogs[0].scopeLogs[0].logRecords[0]
+  assert.match(
+    importedLog.attributes.find(attribute => attribute.key === 'password').value
+      .stringValue,
+    /\*{4}/
+  )
+  assert.deepEqual(
+    importedLog.attributes.find(attribute => attribute.key === 'exact').value,
+    { intValue: exactInteger }
+  )
   assert.deepEqual(errors, [])
   assertRunning()
   console.log(
-    'Embedded public smoke passed: UI, feature exclusion, all-signal ingestion, schema 27, native VARIANT, exact Arrow values, service identity and trace export'
+    `Embedded smoke passed (EVALS=${mode}): UI, feature flag, all-signal ingestion, schema 27, native Variant, 200-level display/Find/Copy, bounded children, exact Arrow values, service identity, trace export, Live off/on selection and redacted browser import`
   )
 } catch (error) {
   console.error(output)
+  if (errors.length) console.error('Browser errors:', errors)
   throw error
 } finally {
   try {

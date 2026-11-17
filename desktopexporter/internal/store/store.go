@@ -123,7 +123,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}
 	// Viewer captures are often smaller than DuckDB's default 30,000-row
 	// shredding threshold. Make every row group eligible at checkpoint.
-	if _, err := db.ExecContext(ctx, "SET variant_minimum_shredding_size = 0"); err != nil {
+	if _, err := db.ExecContext(ctx, "set variant_minimum_shredding_size = 0"); err != nil {
 		return nil, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
 	}
 	schemaCompat, err := initializeSchema(ctx, db, dbPath, logger, schema.Version, migrations)

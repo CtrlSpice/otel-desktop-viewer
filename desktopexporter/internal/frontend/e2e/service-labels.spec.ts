@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 import { routeTelemetry } from './telemetry-fixtures'
 
 test('bounded service labels keep exact references and load complete text only for inspection or Copy', async ({

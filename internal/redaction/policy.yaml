@@ -35,7 +35,7 @@ processors:
       # The processor masks the whole matched assignment, not only its value.
       # Structured secret values cannot be safely delimited by a regex: mask the
       # containing string. Matching composite attributes also become strings in
-      # the upstream processor (see docs/redaction.md).
+      # the upstream processor (see docs/secret-redaction.md).
       - >-
         (?is)^.*(?:^|[^A-Za-z0-9])(?:authorization|proxy[_-]?authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|password|passwd|secret|private[_-]?key|cookie|set[_-]?cookie|access|refresh|token)["']?\s*[:=]\s*[\[{].*$
       - >-

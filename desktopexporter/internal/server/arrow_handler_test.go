@@ -16,6 +16,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	pv "github.com/apache/arrow-go/v18/parquet/variant"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -40,6 +41,20 @@ func readArrowDataset(t *testing.T, s *Server, method, params string) arrow.Reco
 	record.Retain()
 	t.Cleanup(record.Release)
 	return record
+}
+
+func readArrowVariant(t *testing.T, values arrow.Array, row int) pv.Value {
+	t.Helper()
+	if values.IsNull(row) {
+		return pv.NullValue
+	}
+	if extension, ok := values.(array.ExtensionArray); ok {
+		values = extension.Storage()
+	}
+	storage := values.(*array.Struct)
+	value, err := pv.New(storage.Field(0).(*array.Binary).Value(row), storage.Field(1).(*array.Binary).Value(row))
+	require.NoError(t, err)
+	return value
 }
 
 func TestArrowAttributeDiscovery(t *testing.T) {
@@ -152,11 +167,12 @@ func TestArrowAttributeDiscovery(t *testing.T) {
 			require.Equal(t, matches[0].MatchCount, record.Column(5).(*array.Int64).Value(0))
 			samples := record.Column(6).(*array.List).ListValues()
 			require.Equal(t, 1, samples.Len())
+			sample := readArrowVariant(t, samples, 0)
 			if tc.kind == "int64" {
-				require.Equal(t, int64(tc.bits), samples.(*array.Int64).Value(0))
+				require.Equal(t, int64(tc.bits), sample.Value())
 			} else {
 				// NaN is preserved semantically; storage may canonicalize its payload.
-				require.True(t, math.IsNaN(samples.(*array.Float64).Value(0)))
+				require.True(t, math.IsNaN(sample.Value().(float64)))
 			}
 		})
 	}
@@ -248,7 +264,7 @@ func TestArrowDatasetReads(t *testing.T) {
 	valueType := valueRows.DataType().(*arrow.StructType)
 	valueIndex, ok := valueType.FieldIdx("value")
 	require.True(t, ok)
-	require.Equal(t, arrow.STRING, valueRows.Field(valueIndex).DataType().ID())
+	require.Equal(t, pv.String, readArrowVariant(t, valueRows.Field(valueIndex), 0).Type())
 	require.Equal(t, int64(1), trace.NumRows())
 	require.Positive(t, trace.Column(trace.Schema().FieldIndices("spans")[0]).(*array.List).ListValues().Len())
 	metricRows := read("searchMetricSummaries", `{"startTime":null,"endTime":null}`)

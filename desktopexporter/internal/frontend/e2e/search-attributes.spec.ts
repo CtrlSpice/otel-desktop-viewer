@@ -1,5 +1,5 @@
 import { routeTelemetry } from './telemetry-fixtures'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test-fixtures'
 
 for (const [signal, scope, method] of [
   ['logs', 'log', 'getLogAttributeDefinitions'],
@@ -12,9 +12,7 @@ for (const [signal, scope, method] of [
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     const requests: unknown[] = []
-    await page.route('**/api/features', route =>
-      route.fulfill({ json: { evals: { enabled: false } } })
-    )
+
     await routeTelemetry(page, async route => {
       const { id, method: rpcMethod, params } = route.request().postDataJSON()
       if (params?.query) requests.push(params.query)

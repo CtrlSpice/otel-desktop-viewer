@@ -24,7 +24,7 @@ export default defineConfig({
             for (const [id, module] of Object.entries(output.modules)) {
               if (module.renderedLength === 0) continue
               if (
-                /\/src\/(components\/evals\/|pages\/Evals|services\/(eval-|import-file\.ts))/.test(
+                /\/src\/(features\/evals\/|services\/import-file\.ts)/.test(
                   id.replaceAll('\\', '/')
                 )
               )

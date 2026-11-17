@@ -45,7 +45,7 @@ func TestChangesSnapshotsReconnectAndShutdown(t *testing.T) {
 	response, scanner := connect()
 	first := read(scanner)
 	require.NoError(t, db.WithDBWrite(func(db *sql.DB) error {
-		_, err := db.Exec("CREATE TABLE notification_test (id INTEGER)")
+		_, err := db.Exec("create table notification_test (id integer)")
 		return err
 	}))
 	second := read(scanner)

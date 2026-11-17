@@ -1,6 +1,6 @@
 <script lang="ts">
-  import DetailStack from '@/components/shared/DetailStack.svelte'
-  import DetailBubble from '@/components/shared/DetailBubble.svelte'
+  import DetailStack from '@/components/shared/Detail/DetailStack.svelte'
+  import DetailBubble from '@/components/shared/Detail/DetailBubble.svelte'
 
   let {
     storageKey,

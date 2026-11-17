@@ -6,7 +6,7 @@ import "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/
 // numeric indices and string keys remain distinct without browser JSON parsing.
 const nativePath = `list_transform(from_json(path, '["JSON"]'), lambda segment: struct_pack(
     key := case when json_type(segment)='VARCHAR' then json_extract_string(segment,'$') end,
-    index := case when json_type(segment)!='VARCHAR' then segment::UBIGINT end))`
+    index := case when json_type(segment)!='VARCHAR' then segment::ubigint end))`
 
 const discoveryOrder = `match_count desc,key,attribute_scope,kind,path`
 
@@ -17,7 +17,7 @@ func DiscoverArrowSQL(options DiscoveryOptions) (string, []any, error) {
 	}
 	projection := `select key as name,attribute_scope as attributeScope,owner,` + nativePath + ` as path,kind as type,match_count as matchCount,`
 	if len(options.Path) == 0 {
-		return `with matches as (` + q + `) ` + projection + `[]::VARIANT[] as sampleValues from matches order by ` + discoveryOrder, args, nil
+		return `with matches as (` + q + `) ` + projection + `[]::variant[] as sampleValues from matches order by ` + discoveryOrder, args, nil
 	}
 	signal, _ := NormalizeSignal(options.Signal)
 	document, from, identity, err := nativeSampleSource(options.Owner, options.Path, signal)
@@ -50,7 +50,7 @@ func DiscoverArrowSQL(options DiscoveryOptions) (string, []any, error) {
  qualify row_number() over(partition by r.path_id,r.ordinal)=1
 ), samples as (
  select path_id,list(value order by ordinal) as sampleValues from native_samples group by path_id
-) ` + projection + `coalesce(sampleValues,[]::VARIANT[]) as sampleValues
+) ` + projection + `coalesce(sampleValues,[]::variant[]) as sampleValues
  from matches left join samples on samples.path_id=matches.id order by ` + discoveryOrder
 	return query, args, nil
 }

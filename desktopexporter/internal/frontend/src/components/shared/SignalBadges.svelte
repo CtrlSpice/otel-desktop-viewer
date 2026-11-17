@@ -1,8 +1,8 @@
 <script module lang="ts">
   /* Shared drawer-card and detail-header badges from primitive signal facts. */
   import type { MetricType } from '@/types/api-types'
-  import { metricTypeSummary } from '@/components/metrics/utils/metric-type'
-  import LogSeverity from '@/components/logs/LogSeverity.svelte'
+  import { metricTypeSummary } from '@/features/metrics/metric-type'
+  import LogSeverity from '@/features/logs/LogSeverity.svelte'
 
   type MetricProps = {
     signal: 'metric'

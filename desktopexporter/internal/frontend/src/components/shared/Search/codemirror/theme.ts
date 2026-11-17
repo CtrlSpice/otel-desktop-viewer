@@ -1,9 +1,9 @@
 import { EditorView } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
-import { editorHighlightStyle } from '@/components/shared/utils/editor-highlighting'
-import { stringSyntaxHighlighting } from '@/components/shared/utils/string-syntax-highlighting'
+import { editorHighlightStyle } from '@/components/shared/Code/editor-highlighting'
+import { stringSyntaxHighlighting } from '@/components/shared/Code/string-syntax-highlighting'
 
-import { editorColors as qc } from '@/components/shared/utils/editor-colors'
+import { editorColors as qc } from '@/components/shared/Code/editor-colors'
 
 export const queryEditorTheme = EditorView.theme({
   '&': {
