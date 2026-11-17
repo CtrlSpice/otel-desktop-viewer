@@ -5,10 +5,12 @@ investigations and each separate grading session. Official Claude Code 2.1.307
 executes Opus investigations using its own subscription login. Dependencies are pinned;
 credentials, evidence and datasets live outside the repository.
 
-The lockfile includes patched transitive dependencies. Overrides pin `basic-ftp`
-6.2.1, `glob` 14.0.2 and `minimatch` 11.0.1 because Promptfoo's dependency ranges
-still select affected versions. Run `npm audit`, the type checks and the local
-integration tests when updating these pins.
+The lockfile includes patched transitive dependencies. Overrides pin
+`@hono/node-server` 2.1.6, `basic-ftp` 6.2.4, `glob` 14.0.2 and `minimatch` 11.0.1
+because Promptfoo's dependency constraints still select affected versions. When
+updating these pins, run `npm audit`, `npm run typecheck`,
+`npm run typecheck:presentation` and `npm test` from `evals/viewer-usability`
+after installing the runner and frontend dependencies.
 
 ## Configuration
 
