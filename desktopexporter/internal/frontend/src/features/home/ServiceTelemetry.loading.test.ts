@@ -72,6 +72,7 @@ const props = {
   service: service('A'),
   options: {},
   revision: 0,
+  selection: 'all',
 }
 
 function metrics(prefix: string): MetricSummary[] {
@@ -413,6 +414,72 @@ it.each(['success', 'failure', 'abort'] as const)(
     expect(view.queryByRole('button', { name: 'Retry' })).toBeNull()
   }
 )
+
+it('keeps empty Metrics disabled and trace cards in place during a background refresh', async () => {
+  vi.useFakeTimers()
+  const nextMetrics = deferred<MetricSummary[]>()
+  const nextTraces = deferred<TraceSummary[]>()
+  vi.mocked(telemetryAPI.searchMetricSummaries)
+    .mockResolvedValueOnce([])
+    .mockReturnValueOnce(nextMetrics.promise)
+  vi.spyOn(telemetryAPI, 'searchTraceSummaries')
+    .mockResolvedValueOnce(traces('first'))
+    .mockReturnValueOnce(nextTraces.promise)
+  const view = renderWithContexts(ServiceTelemetry, props)
+  await vi.advanceTimersByTimeAsync(0)
+  const metricTab = view.getByRole('tab', { name: /^Metrics/ })
+  expect(metricTab).toBeDisabled()
+  await view.rerender({ componentProps: { ...props, revision: 1 } })
+  await vi.advanceTimersByTimeAsync(250)
+  expect(metricTab).toBeDisabled()
+  expect(view.getByRole('region', { name: 'Matching traces' })).toHaveAttribute(
+    'aria-busy',
+    'true'
+  )
+  expect(view.queryByText('Loading matching traces…')).toBeNull()
+  expect(view.getByRole('link', { name: /first trace 0/ })).toBeInTheDocument()
+  nextMetrics.resolve(metrics('new'))
+  nextTraces.resolve(traces('updated'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(metricTab).toBeEnabled()
+  expect(
+    view.getByRole('link', { name: /updated trace 0/ })
+  ).toBeInTheDocument()
+})
+
+it('shows loading when switching away from a service with no telemetry', async () => {
+  vi.useFakeTimers()
+  vi.spyOn(telemetryAPI, 'searchTraceSummaries')
+    .mockResolvedValueOnce([])
+    .mockReturnValueOnce(deferred<TraceSummary[]>().promise)
+  vi.mocked(telemetryAPI.searchLogSummaries).mockResolvedValue([])
+  vi.mocked(telemetryAPI.searchMetricSummaries).mockResolvedValue([])
+  const view = renderWithContexts(ServiceTelemetry, props)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(view.getByText(/No matching telemetry/)).toBeInTheDocument()
+  await view.rerender({ componentProps: { ...props, service: service('B') } })
+  await vi.advanceTimersByTimeAsync(250)
+  expect(view.getByText('Loading matching traces…')).toBeInTheDocument()
+  expect(view.queryByText(/No matching telemetry/)).toBeNull()
+})
+
+it('waits for pending logs before reporting no matching telemetry', async () => {
+  const nextLogs = deferred<LogSummary[]>()
+  vi.spyOn(telemetryAPI, 'searchTraceSummaries')
+    .mockResolvedValueOnce(traces('first'))
+    .mockResolvedValueOnce([])
+  vi.mocked(telemetryAPI.searchMetricSummaries).mockResolvedValue([])
+  vi.mocked(telemetryAPI.searchLogSummaries)
+    .mockResolvedValueOnce([])
+    .mockReturnValueOnce(nextLogs.promise)
+  const view = renderWithContexts(ServiceTelemetry, props)
+  await view.findByRole('link', { name: /first trace 0/ })
+  await view.rerender({ componentProps: { ...props, revision: 1 } })
+  await waitFor(() => expect(view.queryByRole('link')).toBeNull())
+  expect(view.queryByText(/No matching telemetry/)).toBeNull()
+  nextLogs.resolve(logs('new'))
+  await view.findByRole('link', { name: /new log 0/ })
+})
 
 it('resets delayed feedback on request identity and ends it when the active signal completes', async () => {
   vi.useFakeTimers()

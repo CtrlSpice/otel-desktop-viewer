@@ -111,6 +111,8 @@
     endTime: null,
   })
   const discoveryScope = $derived({ ...range, queries })
+  // A relative time window moves on every Live refresh; the selection doesn't.
+  const telemetrySelection = $derived(JSON.stringify([time.selection, term]))
   let displayedListRequest:
     | { range: typeof range; queries: typeof queries; searchActive: boolean }
     | undefined
@@ -320,6 +322,7 @@
   <ServiceTelemetry
     service={inspectedService}
     options={discoveryScope}
+    selection={telemetrySelection}
     {revision}
   />
 {/snippet}
