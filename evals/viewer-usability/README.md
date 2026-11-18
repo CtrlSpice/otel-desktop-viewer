@@ -1,6 +1,6 @@
 # Viewer usability evaluation
 
-Promptfoo schedules providers, questions and repetitions. Pi 1.5.0 executes OpenAI
+Promptfoo schedules providers, questions and repetitions. Pi 1.5.2 executes OpenAI
 investigations and each separate grading session. Official Claude Code 2.1.307
 executes Opus investigations using its own subscription login. Dependencies are pinned;
 credentials, evidence and datasets live outside the repository.
