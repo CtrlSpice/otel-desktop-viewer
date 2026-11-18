@@ -64,6 +64,34 @@ describe('ExpandableValue', () => {
     expect(clamped()).toBe(true)
   })
 
+  it('keeps expanded when a refresh supplies a new object with the same content', async () => {
+    setClipped(true)
+    const value = 'a'.repeat(500)
+    const identity = () => ({ kind: 'string', value })
+    const { container, rerender } = render(ExpandableValueHarness, {
+      value,
+      identity: identity(),
+    })
+    await tick()
+    const clamped = () =>
+      !!container.querySelector('.detail-pair__value--clamped')
+
+    screen.getByRole('button', { name: 'Show more' }).click()
+    await tick()
+    expect(clamped()).toBe(false)
+
+    await rerender({ value, identity: identity() })
+    await tick()
+    expect(clamped()).toBe(false)
+
+    await rerender({
+      value,
+      identity: { kind: 'string', value: 'b'.repeat(500) },
+    })
+    await tick()
+    expect(clamped()).toBe(true)
+  })
+
   // Clicking between spans should not leave a field open from the previous one:
   // the same field on the next span is a different question.
   it('collapses again when the value changes', async () => {

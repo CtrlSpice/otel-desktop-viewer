@@ -24,11 +24,20 @@
   let clipped = $state(false)
   let el = $state<HTMLElement | null>(null)
   let content = $state<HTMLElement | null>(null)
+  const identityKey = $derived.by(() => {
+    const source = identity ?? value
+    if (typeof source === 'string') return source
+    try {
+      return JSON.stringify(source)
+    } catch {
+      return String(source)
+    }
+  })
 
   // Clicking between spans should not leave a field open from the previous
   // one: the same field on the next span is a different question.
   $effect(() => {
-    void (identity ?? value)
+    void identityKey
     expanded = false
   })
 
