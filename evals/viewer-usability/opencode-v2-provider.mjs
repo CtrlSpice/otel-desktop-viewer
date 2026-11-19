@@ -405,6 +405,8 @@ export default class OpenCodeV2Provider {
     const tools = assistants.flatMap(message => message.content.filter(part => part.type === 'tool').map(part => ({ messageID: message.id, sessionID, ...part })))
     save('tools.json', tools)
     const errors = history.flatMap(message => message.error ? [{ messageID: message.id, ...message.error }] : [])
+    const executionErrors = errors.filter(error => !(modelTimeout &&
+      error.type === 'aborted' && error.message === 'Step interrupted'))
     // The shared host can deny a shell command and still complete the turn.
     // Keep that denial in tool evidence; grade the completed answer.
     const harnessBlocker = !this.config.sharedHost && tools.some(tool => tool.name === 'shell' && tool.state.error?.type === 'permission.rejected')
@@ -424,11 +426,11 @@ export default class OpenCodeV2Provider {
       role: 'investigator', task: context.vars?.task_id, evidence, workspace, sessionID, repeatIndex: context.repeatIndex, usage, usageAvailability, evidenceErrors,
       elapsedSeconds: (performance.now() - started) / 1000, toolCalls: tools.length, failedToolCalls: tools.filter(tool => tool.state.status === 'error').length,
       exit: idle?.outcome ?? 'incomplete', errors, harnessBlocker,
-      ...(modelTimeout && !modelMismatch && !evidenceErrors.length && !errors.length ? { caseOutcome: 'investigator-timeout' } : {}),
+      ...(modelTimeout && !modelMismatch && !evidenceErrors.length && !executionErrors.length ? { caseOutcome: 'investigator-timeout' } : {}),
     }
     const failed = receivedError || timedOut || errors.length || evidenceErrors.length || harnessBlocker || modelMismatch || final?.finish !== 'stop' || idle?.outcome !== 'succeeded' || !output || tools.some(tool => !['completed', 'error'].includes(tool.state.status))
     const response = { ...(output ? { output } : {}), metadata, ...(tokenUsage ? { tokenUsage } : {}),
-      ...(failed ? { error: (modelTimeout && errors.length ? JSON.stringify(errors) : receivedError) || JSON.stringify(errors.length ? errors : evidenceErrors.length ? { reason: 'Malformed V2 tool evidence', evidenceErrors } : { reason: harnessBlocker ? 'Viewer shell permission blocker' : modelMismatch ? 'Unexpected V2 model identity' : 'Incomplete V2 session', finish: final?.finish, idle: idle?.outcome, timedOut }) } : {}),
+      ...(failed ? { error: (modelTimeout && executionErrors.length ? JSON.stringify(executionErrors) : receivedError) || JSON.stringify(errors.length ? errors : evidenceErrors.length ? { reason: 'Malformed V2 tool evidence', evidenceErrors } : { reason: harnessBlocker ? 'Viewer shell permission blocker' : modelMismatch ? 'Unexpected V2 model identity' : 'Incomplete V2 session', finish: final?.finish, idle: idle?.outcome, timedOut }) } : {}),
     }
     if (output) save('answer.txt', output)
     save('response.json', response)

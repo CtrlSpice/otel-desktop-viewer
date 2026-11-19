@@ -18,7 +18,8 @@ function fixture(t) {
   return { root, binary, registry }
 }
 
-for (const outcome of ['success', 'error', 'timeout', 'timeout-provider-error', 'cancellation', 'shutdown-failure']) {
+for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 'timeout-provider-error',
+  'timeout-mixed-errors', 'timeout-unknown-abort', 'cancellation', 'host-cancellation', 'nondeadline-abort', 'shutdown-failure']) {
   test(`shared V2 harness teardown handles ${outcome} without stopping the shared host`, { timeout: 10000 }, async t => {
     const { root, binary, registry } = fixture(t)
     const receiver = http.createServer((_req, res) => res.end('{}'))
@@ -38,6 +39,14 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-provider-error', 
       history[0].error = { type: 'provider', status: 402 }
       history[1].outcome = 'failed'
     }
+    if (['timeout-expected-abort', 'timeout-mixed-errors', 'nondeadline-abort', 'timeout-unknown-abort'].includes(outcome)) {
+      history[0].error = { type: 'aborted', message: outcome === 'timeout-unknown-abort' ? 'Upstream canceled' : 'Step interrupted' }
+      history[1].outcome = 'interrupted'
+    }
+    if (outcome === 'timeout-mixed-errors') history.unshift({
+      type: 'assistant', content: [], finish: 'error', model: { providerID: 'openai', id: 'fixture-model' },
+      error: { type: 'provider', status: 402 },
+    })
     const host = {
       root, registry, signal: hostController.signal,
       telemetry: { receipts: [], async flush() {} },
@@ -53,10 +62,11 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-provider-error', 
         if (route.endsWith('/prompt')) {
           if (outcome === 'error' || outcome === 'shutdown-failure') throw new Error('fixture prompt failed')
           if (outcome === 'cancellation') cancellation.abort(new Error('fixture cancellation'))
+          if (outcome === 'host-cancellation') hostController.abort(new Error('fixture host cancellation'))
           return {}
         }
         if (route.endsWith('/wait')) {
-          if (outcome.startsWith('timeout') || outcome === 'cancellation') {
+          if (outcome.startsWith('timeout') || outcome === 'cancellation' || outcome === 'host-cancellation') {
             if (!interrupted) {
               if (signal.aborted) throw signal.reason
               // Keep the process alive while AbortSignal.timeout's unref'd timer runs.
@@ -84,21 +94,31 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-provider-error', 
       const response = await attempt
       if (outcome === 'success') assert.equal(response.output, 'fixture answer')
       else assert.ok(response.error)
-      if (outcome === 'timeout') assert.equal(response.metadata.caseOutcome, 'investigator-timeout')
-      if (outcome === 'timeout-provider-error') {
-        assert.equal(response.metadata.caseOutcome, undefined)
+      const ordinaryTimeout = ['timeout', 'timeout-expected-abort'].includes(outcome)
+      if (ordinaryTimeout) {
+        assert.equal(response.metadata.caseOutcome, 'investigator-timeout')
+        assert.equal(response.error, 'No answer: investigator reached its time limit')
+        assert.equal(response.output, undefined)
+      } else assert.equal(response.metadata.caseOutcome, undefined)
+      if (outcome.startsWith('timeout') || outcome === 'nondeadline-abort') {
+        assert.deepEqual(response.metadata.errors.map(({ messageID, ...error }) => error),
+          history.filter(item => item.error).map(item => item.error), 'Keep every raw context error')
+      }
+      if (['timeout-provider-error', 'timeout-mixed-errors'].includes(outcome))
         assert.match(response.error, /"type":"provider","status":402/)
-        assert.equal(response.metadata.errors[0].status, 402)
+      {
         let stopped = false
         onFailure(() => { stopped = true })
         try {
-          executionStop({ result: { failureReason: 2, response } })
-          assert.equal(stopped, true)
-          stopped = false
-          executionStop({ result: { failureReason: 2, response: { ...response,
-            error: 'No answer: investigator reached its time limit',
-            metadata: { ...response.metadata, caseOutcome: 'investigator-timeout' } } } })
-          assert.equal(stopped, true)
+          executionStop({ result: { failureReason: response.error ? 2 : 0, response } })
+          assert.equal(stopped, outcome !== 'success' && !ordinaryTimeout)
+          if (['timeout-provider-error', 'timeout-mixed-errors', 'timeout-unknown-abort'].includes(outcome)) {
+            stopped = false
+            executionStop({ result: { failureReason: 2, response: { ...response,
+              error: 'No answer: investigator reached its time limit',
+              metadata: { ...response.metadata, caseOutcome: 'investigator-timeout' } } } })
+            assert.equal(stopped, true)
+          }
         } finally { onFailure(undefined) }
       }
       assert.ok(drained, 'The session must finish before deletion')
@@ -109,7 +129,7 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-provider-error', 
     assert.equal(fs.existsSync(path.join(evidence, 'workspace/bin/otel-desktop-viewer')), outcome === 'shutdown-failure')
     assert.equal(JSON.parse(fs.readFileSync(path.join(evidence, 'teardown.json'))).status, outcome === 'shutdown-failure' ? 'failed' : 'removed')
     assert.equal(fs.readFileSync(binary, 'utf8'), 'fixture viewer')
-    assert.equal(hostController.signal.aborted, false)
+    assert.equal(hostController.signal.aborted, outcome === 'host-cancellation')
   })
 }
 
