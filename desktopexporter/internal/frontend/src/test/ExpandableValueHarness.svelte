@@ -3,11 +3,11 @@
   // directly; this stands in for a field component.
   import ExpandableValue from '@/components/shared/Detail/ExpandableValue.svelte'
 
-  let { value }: { value: string } = $props()
+  let { value, identity }: { value: string; identity?: unknown } = $props()
 </script>
 
 {#snippet keyLabel()}
   <span class="detail-cell__key">field:</span>
 {/snippet}
 
-<ExpandableValue {keyLabel} {value} />
+<ExpandableValue {keyLabel} {value} {identity} />
