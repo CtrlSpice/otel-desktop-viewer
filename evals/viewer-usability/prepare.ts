@@ -177,7 +177,8 @@ export async function query(endpoint: string, sql: string) {
   }
 }
 
-export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: string, signal?: AbortSignal) {
+export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: string, signal?: AbortSignal,
+  registerShutdown?: (stop: () => Promise<void>) => void) {
   signal?.throwIfAborted()
   const manifest = datasetManifest(
     readManifest(path.join(root, 'fixture/manifest.json'))
@@ -233,6 +234,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
   )
   let stopping: Promise<void> | undefined
   const stop = () => stopping ??= (child.pid ? stopOwnedGroup(child.pid, child) : closed.then(() => {}))
+  registerShutdown?.(stop)
   const cancel = () => { void stop().catch(() => {}) }
   signal?.addEventListener('abort', cancel, { once: true })
   try {

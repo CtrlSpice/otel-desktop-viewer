@@ -8,6 +8,7 @@ import { PiToolLogs } from './pi-tool-logs.ts'
 import { exportToolLogs } from './tool-logs.ts'
 import { record, saveJson, SUITE } from './runtime.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
+import { withBinaryTeardown, type RegisterShutdown } from './attempt-teardown.ts'
 
 export type PiConfig = {
   root: string
@@ -43,12 +44,19 @@ export default class PiProvider {
 
   async callApi(prompt: string, context: PiContext = {}) {
     if (process.platform !== 'darwin') throw new Error('Pi evaluation currently requires the tested macOS sandbox')
-    const { provider, model, role } = this.config
+    const { role } = this.config
     const root = fs.realpathSync(this.config.root)
     const runs = path.join(root, 'runs')
     fs.mkdirSync(runs, { recursive: true, mode: 0o700 })
     const evidence = fs.mkdtempSync(path.join(runs, role + '-'))
     fs.chmodSync(evidence, 0o700)
+    return withBinaryTeardown({ directory: evidence, canonicalBinary: this.config.binary, kind: 'attempt' },
+      register => this.runAttempt(prompt, context, evidence, register))
+  }
+
+  async runAttempt(prompt: string, context: PiContext, evidence: string, register: RegisterShutdown) {
+    const { provider, model, role } = this.config
+    const root = fs.realpathSync(this.config.root)
     for (const name of ['home', 'profile', 'workspace', 'sessions', 'tmp'])
       fs.mkdirSync(path.join(evidence, name), { mode: 0o700 })
     const workspace = path.join(evidence, 'workspace')
@@ -127,6 +135,11 @@ export default class PiProvider {
     const started = performance.now()
     const child = spawn('/usr/bin/sandbox-exec', args, { cwd: workspace, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     children.add(child)
+    register(async () => {
+      if (child.pid) await stopOwnedGroup(child.pid, child)
+      children.delete(child)
+      saveJson(path.join(evidence, 'owned-shutdown.json'), { pid: child.pid, exit: child.exitCode, signal: child.signalCode })
+    })
     child.stdout.on('data', (chunk: Buffer) => {
       fs.appendFileSync(path.join(evidence, 'events.jsonl'), chunk, { mode: 0o600 })
       consume(decoder.write(chunk))
@@ -139,7 +152,7 @@ export default class PiProvider {
     }, this.config.timeoutMs ?? 600_000)
     let exit: number | null
     try { exit = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve) }) }
-    finally { clearTimeout(timer); children.delete(child) }
+    finally { clearTimeout(timer) }
     consume(decoder.end())
     const toolLogs = toolEvents.drain()
     saveJson(path.join(evidence, 'tool-logs.json'), toolLogs)

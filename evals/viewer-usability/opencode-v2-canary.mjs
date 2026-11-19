@@ -4,13 +4,19 @@ import http from 'node:http'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { randomBytes } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import Provider from './opencode-v2-provider.mjs'
 import { nativeTelemetryReceiver, readNativeTelemetry, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 
 if (process.argv.slice(2).some(arg => !['--error', '--telemetry', '--forward-observer'].includes(arg))) throw new Error('Usage: opencode-v2-canary.mjs [--error] [--telemetry [--forward-observer]]')
 if (process.argv.includes('--forward-observer') && !process.argv.includes('--telemetry')) throw new Error('--forward-observer requires --telemetry')
 process.umask(0o077)
-const root = fs.mkdtempSync('/Users/moya/.local/share/otel-desktop-viewer/evals/opencode-v2-canary-')
+const root = fs.mkdtempSync(path.join(tmpdir(), 'opencode/opencode-v2-canary-'))
+const binary = process.env.OTEL_EVAL_VIEWER_BINARY
+assert.ok(binary && path.isAbsolute(binary), 'Set OTEL_EVAL_VIEWER_BINARY to the prebuilt viewer')
+const protectedFile = path.join(root, 'protected.txt')
+const protectedText = 'protected-canary-' + randomBytes(16).toString('hex')
+fs.writeFileSync(protectedFile, protectedText)
 const errorMode = process.argv.includes('--error')
 const telemetry = process.argv.includes('--telemetry') ? await nativeTelemetryReceiver(root, process.argv.includes('--forward-observer') ? 'http://127.0.0.1:56010' : undefined) : undefined
 const traceparent = `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`
@@ -26,9 +32,16 @@ const server = http.createServer(async (req, res) => {
   }
   const shell = body.tools?.find(tool => tool.name === 'shell')
   const read = body.tools?.find(tool => tool.name === 'read')
+  assert.ok(!raw.includes(protectedText), 'Protected source content must not reach the model')
   let tool
-  if (requests.length === 1 && shell) tool = { name: 'shell', arguments: JSON.stringify({ command: './bin/otel-desktop-viewer --help', description: 'Synthetic viewer discovery check' }) }
-  if (requests.length === 2 && read) tool = { name: 'read', arguments: JSON.stringify({ path: '/Users/moya/.local/share/otel-desktop-viewer/evals/native-otel-six-gLWzRd/promptfoo.json' }) }
+  if (requests.length === 1 && shell) {
+    const attempts = fs.readdirSync(path.join(root, 'runs'))
+    assert.equal(attempts.length, 1)
+    fs.symlinkSync(protectedFile, path.join(root, 'runs', attempts[0], 'workspace/protected-link'))
+    tool = { name: 'shell', arguments: JSON.stringify({ command: './bin/otel-desktop-viewer --help', description: 'Synthetic viewer discovery check' }) }
+  }
+  if (requests.length === 2 && read) tool = { name: 'read', arguments: JSON.stringify({ path: protectedFile }) }
+  if (requests.length === 3 && read) tool = { name: 'read', arguments: JSON.stringify({ path: 'protected-link' }) }
   const item = tool
     ? { id: 'fc_fixture_' + requests.length, call_id: 'call_fixture_' + requests.length, type: 'function_call', ...tool, status: 'completed' }
     : { id: 'msg_fixture_' + requests.length, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic V2 complete.', annotations: [] }] }
@@ -57,25 +70,27 @@ const server = http.createServer(async (req, res) => {
 server.listen(0, '127.0.0.1'); await once(server, 'listening')
 try {
   const provider = new Provider({ config: { root, model: 'gpt-6.1-sol', baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
-    binary: '/Users/moya/.local/share/otel-desktop-viewer/evals/native-otel-six-gLWzRd/otel-desktop-viewer', timeoutMs: 90000, telemetryEndpoint: telemetry?.endpoint } })
+    binary, timeoutMs: 90000, telemetryEndpoint: telemetry?.endpoint } })
   const response = await provider.callApi('Synthetic local-only V2 canary. Follow the scripted tool responses and finish.', { vars: { task_id: 'checkout-failure' }, traceparent })
   fs.writeFileSync(path.join(root, 'response.json'), JSON.stringify(response, null, 2))
   console.log(JSON.stringify({ root, error: response.error, toolCalls: response.metadata?.toolCalls, failedToolCalls: response.metadata?.failedToolCalls, requests: requests.length }))
+  assert.equal(Object.hasOwn(response, 'cost'), false, 'Cost reporting remains disabled')
   if (errorMode) {
     assert.ok(response.error?.includes('Synthetic V2 error detail must survive intact'))
     assert.equal(requests.length, 1, 'V2 must not retry a failed model request')
   } else {
     assert.equal(response.error, undefined)
     assert.equal(response.output, 'Synthetic V2 complete.')
-    assert.equal(response.metadata.toolCalls, 2)
-    assert.equal(response.metadata.failedToolCalls, 1)
-    assert.equal(requests.length, 3)
+    assert.equal(response.metadata.toolCalls, 3)
+    assert.equal(response.metadata.failedToolCalls, 2)
+    assert.equal(requests.length, 4)
     const tools = JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'tools.json')))
     assert.equal(tools[0].state.status, 'completed')
     assert.equal(tools[1].state.status, 'error')
+    assert.equal(tools[2].state.status, 'error')
     assert.ok(JSON.stringify(tools[0]).includes('USAGE'))
     assert.equal(tools[0].state.metadata.exit, 0)
-    assert.ok(!JSON.stringify(tools[1]).includes('evalId'), 'Protected source content must not reach the model')
+    assert.ok(!JSON.stringify(tools).includes(protectedText), 'Protected source content must not reach the model')
   }
 } finally {
   server.closeAllConnections()

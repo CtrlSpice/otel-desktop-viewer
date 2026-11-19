@@ -6,18 +6,29 @@ import { prepare } from './prepare.ts'
 import { verify } from './verify.ts'
 import { stopOwnedGroup, runCancellation } from './run-cancellation.ts'
 import { observerEnvironment } from './clean-environment.ts'
-import { cancelOpenCodeV2 } from './opencode-v2-provider.mjs'
+import { cancelOpenCodeV2, V2_VERSION, withSharedHost } from './opencode-v2-provider.mjs'
+import { checkConnections } from './opencode-v2-connect.mjs'
+import { importOriginal } from './opencode-v2-verify.mjs'
 import { cancelPiAttempts } from './pi-provider.ts'
 import { nativeTelemetryReceiver, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
-import { runMode, runSettings, assertFreshRoot, evaluationConfig, validateSchedule } from './opencode-v2-run-plan.mjs'
+import { runMode, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, fullRunPlan } from './opencode-v2-run-plan.mjs'
 import { readJSON, sha256, observerTotals, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
+import { onFailure as onTeardownFailure } from './attempt-teardown-stop.mjs'
 
-const spec = runMode(process.argv.slice(2))
+const args = process.argv.slice(2)
+if (args.length === 1 && args[0] === '--plan-full') {
+  const plan = fullRunPlan()
+  console.log(JSON.stringify({ ...plan, version: V2_VERSION, investigators: plan.models.length * plan.taskIDs.length * plan.repeat,
+    grader: 'pi:openai-codex/gpt-6.1-sol' }, null, 2))
+  process.exit(0)
+}
+const spec = runMode(args)
+const scheduled = spec.models.length * (spec.taskIDs?.length ?? 1) * spec.repeat
 process.umask(0o077)
 const suite = import.meta.dirname
 const parent = '/Users/moya/.local/share/otel-desktop-viewer/evals'
 if (process.env.OTEL_EVAL_RUN_DIR && !path.isAbsolute(process.env.OTEL_EVAL_RUN_DIR)) throw new Error('Run root must be absolute')
-if (spec.mode === 'sol-luna' && !process.env.OTEL_EVAL_RUN_DIR) throw new Error('--run-sol-luna requires the precreated OTEL_EVAL_RUN_DIR')
+if (spec.mode !== 'one' && !process.env.OTEL_EVAL_RUN_DIR) throw new Error('Batch runs require the precreated OTEL_EVAL_RUN_DIR')
 const root = process.env.OTEL_EVAL_RUN_DIR ? fs.realpathSync(process.env.OTEL_EVAL_RUN_DIR) : fs.mkdtempSync(path.join(parent, 'opencode-v2-native-'))
 assertFreshRoot(root)
 if (!process.env.OTEL_EVAL_RUN_DIR && !process.env.OTEL_EVAL_VIEWER_BINARY) {
@@ -52,6 +63,7 @@ process.env.OTEL_EVAL_RUN_DIR = root
 process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'promptfoo-state')
 process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
 const cancellation = runCancellation()
+onTeardownFailure(error => cancellation.cancel(error))
 let fixture, collector, failure, rows = []
 const cancel = () => { void Promise.all([cancelOpenCodeV2(), cancelPiAttempts()]) }
 cancellation.signal.addEventListener('abort', cancel, { once: true })
@@ -69,15 +81,26 @@ try {
   assert.notEqual(connection.endpoint, settings.observerAPI, 'Fixture must be independent from observer')
   const task = readJSON(path.join(suite, 'tasks.json')).find(task => task.id === 'checkout-failure')
   const config = evaluationConfig({ suite, root, spec, task, connection, binary: settings.binary, authFile, authEntry, piAuthFile, observerHTTP: settings.observerHTTP })
-  save('run-plan.json', { ...spec, task, investigators: spec.models.length * spec.repeat, maxGraders: spec.models.length * spec.repeat,
-    retry: false, version: '2.0.29', grader: 'pi:openai-codex/gpt-6.1-sol', observer: settings.observerAPI, observerHTTP: settings.observerHTTP, config })
-  console.log(JSON.stringify({ root, state: 'evaluating', mode: spec.mode, investigators: spec.models.length * spec.repeat }))
+  config.extensions = ['file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':beforeAll',
+    'file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':afterEach',
+    ...(spec.mode === 'full' ? ['file://' + path.join(suite, 'opencode-v2-execution-stop.mjs') + ':afterEach'] : [])]
+  save('run-plan.json', { ...spec, ...(spec.mode === 'full' ? {} : { task }), investigators: scheduled, maxGraders: scheduled,
+    retry: false, version: V2_VERSION, grader: 'pi:openai-codex/gpt-6.1-sol', observer: settings.observerAPI, observerHTTP: settings.observerHTTP, config })
+  console.log(JSON.stringify({ root, state: 'evaluating', mode: spec.mode, investigators: scheduled }))
   const { evaluate } = await import('promptfoo')
-  await evaluate(config, { ...config.evaluateOptions, share: false, abortSignal: cancellation.signal })
+  const execute = () => evaluate(config, { ...config.evaluateOptions, share: false, abortSignal: cancellation.signal })
+  if (spec.mode === 'full') {
+    const { onFailure } = await import('./opencode-v2-execution-stop.mjs')
+    onFailure(error => cancellation.cancel(error))
+    await checkConnections({ root, runtime: path.join(parent, 'runtime'), catalogue: process.env.OPENCODE_MODELS_PATH,
+      files: { 'opencode-go': process.env.OTEL_EVAL_GO_AUTH_FILE, 'kimi-code-plan-global': process.env.OTEL_EVAL_KIMI_AUTH_FILE },
+      signal: cancellation.signal, refs: spec.models, telemetryForward: settings.observerHTTP, evaluateOnHost: host => withSharedHost(host, execute) })
+  } else await execute()
   const exported = readJSON(path.join(root, 'promptfoo.json'))
   save('original-export-hashes.json', Object.fromEntries(['promptfoo.json', 'promptfoo-rows.jsonl'].map(name => [name, sha256(fs.readFileSync(path.join(root, name)))])))
   assert.ok(exported.evalId && exported.config)
   rows = exported.results.results
+  if (spec.mode === 'full' && rows.length) await importOriginal(root, settings.observerAPI, fs.readFileSync(path.join(root, 'promptfoo.json')), rows)
   const identities = new Map(rows.map(row => [row.response?.metadata?.evidence, readJSON(path.join(row.response.metadata.evidence, 'identity.json'))]))
   validateSchedule(rows, spec, identities)
   // Execution errors and Fail/Partial assessments remain rows; no fail-fast,
@@ -109,9 +132,10 @@ try {
   const unchanged = JSON.stringify(before) === JSON.stringify(after) && sourcesUnchanged
   save('source-preservation.json', { unchanged, sourcesUnchanged, files: after })
   if (!unchanged) { failure ??= 'Source preservation check failed'; process.exitCode = 1 }
-  save('run-completed.json', { mode: spec.mode, scheduled: spec.models.length * spec.repeat, results: rows.length, failure,
+  save('run-completed.json', { mode: spec.mode, scheduled, results: rows.length, failure,
     executionErrors: rows.filter(row => row.failureReason === 2).length, completedAt: new Date().toISOString() })
   fs.writeFileSync(path.join(root, 'handoff.md'), `# OpenCode V2 ${spec.mode} evaluation\n\nRoot: ${root}\n\nStatus: ${failure ?? 'Scheduling completed; inspect each native result outcome'}\n\n${spec.models.join(', ')}; ${spec.repeat} repetitions; ${rows.length} rows; ${rows.filter(row => row.failureReason === 2).length} execution errors. Separate approved Pi Sol graders after valid investigator outputs. No retries.\n\nObserver API: ${settings.observerAPI}\nOTLP destination: ${settings.observerHTTP}\nMain owns observer process/database; runner stops only its own fixture, V2 servers and relays.\n\nOriginal Promptfoo exports are at root. Wrapper raw batches: otlp/. Per-investigator native batches: runs/investigator-opencode-v2-*/native-otlp/. Full source snapshot and hashes: sources/, source-snapshot.json. Native outcomes, IDs and grader evidence: result-summary.json. Flush verification: observer-convergence.json. Sources/credentials: source-preservation.json.\n\nRun opencode-v2-verify.mjs ${root} --import once to verify and import original bytes. Never replay OTLP.\n`, { flag: 'wx', mode: 0o600 })
   cancellation.dispose()
+  onTeardownFailure(undefined)
   console.log(JSON.stringify({ root, status: failure ? 'blocked' : 'completed', results: rows.length, handoff: path.join(root, 'handoff.md') }))
 }

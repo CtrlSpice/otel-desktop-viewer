@@ -22,7 +22,8 @@ const ownedEvidence = (root, file) => {
 export function verifyInvestigator(root, row, wrapper, rubric, question, nativeSpans = []) {
   const metadata = row.response.metadata
   assert.equal(metadata.runtime, 'opencode-v2')
-  assert.equal(metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion, '2.0.29')
+  const runtimeVersion = metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion
+  assert.ok(['2.0.29', '2.3.0'].includes(runtimeVersion), 'Unsupported OpenCode runtime version')
   const evidence = ownedEvidence(root, metadata.evidence)
   const identity = read(path.join(evidence, 'identity.json'))
   const raw = read(path.join(evidence, fs.existsSync(path.join(evidence, 'provider-exception.json')) ? 'provider-exception.json' : 'response.json'))
@@ -39,7 +40,7 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
     const assistants = (context ?? []).filter(message => message.type === 'assistant')
     assert.deepEqual(tools, assistants.flatMap(message => message.content.filter(part => part.type === 'tool')
       .map(part => ({ messageID: message.id, sessionID: metadata.sessionID, ...part }))))
-    const usage = aggregateUsage(assistants)
+    const usage = aggregateUsage(assistants, runtimeVersion)
     assert.deepEqual(metadata.usage, usage.usage); assert.deepEqual(metadata.usageAvailability, usage.usageAvailability)
     assert.deepEqual(raw.tokenUsage, usage.tokenUsage, 'No invented provider token totals')
     assert.equal(metadata.toolCalls, tools.length)
@@ -67,10 +68,10 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
     const matches = records.filter(({ event }) => attr(event.attributes, 'gen_ai.tool.call.id')?.stringValue === tool.id)
     assert.equal(matches.length, 1)
     if (matches[0].native) {
-      const evidence = toolEvidence(tool)
+      const evidence = toolEvidence(tool, runtimeVersion)
       assert.equal(missingToolLogs([{ eventName: 'tool.execution', attributes: evidence.attributes, timestamp: evidence.timestamp, observedTimestamp: 0 }], row.traceId, [matches[0].span]).length, 0)
     } else {
-      verifyToolEvent(tool, matches[0].event)
+      verifyToolEvent(tool, matches[0].event, runtimeVersion)
       assert.equal(matches[0].span.spanId, identity.promptfoo.traceparent.split('-')[2])
     }
   }
@@ -201,7 +202,7 @@ export async function importOriginal(root, endpoint, bytes, rows, request = fetc
 export async function verifyRun(root, { importSource = false, env = process.env } = {}) {
   root = fs.realpathSync(root)
   const plan = read(path.join(root, 'run-plan.json'))
-  assert.equal(plan.version, '2.0.29')
+  assert.ok(['2.0.29', '2.3.0'].includes(plan.version), 'Unsupported OpenCode run version')
   const spec = { ...plan, models: plan.models ?? plan.config.providers.map(provider => provider.config.model) }
   const target = fs.existsSync(path.join(root, 'observer-target.json')) ? read(path.join(root, 'observer-target.json')) : { observerAPI: plan.observer }
   const endpoint = observerURL(env.OTEL_EVAL_OBSERVER_API ?? target.observerAPI)
@@ -230,10 +231,14 @@ export async function verifyRun(root, { importSource = false, env = process.env 
     const evidence = path.join(root, 'runs', name)
     return { evidence, identity: read(path.join(evidence, 'identity.json')) }
   })
-  const rubric = read(path.join(sourceDir, 'rubrics.json'))['checkout-failure']
-  const question = read(path.join(sourceDir, 'tasks.json')).find(task => task.id === 'checkout-failure').goal
+  const rubrics = read(path.join(sourceDir, 'rubrics.json'))
+  const tasks = read(path.join(sourceDir, 'tasks.json'))
   const reports = [], nativeSessions = new Set(), nativeTools = new Set(), graderSessions = new Set()
   for (const row of rows) {
+    const rubric = rubrics[row.vars.task_id], question = tasks.find(task => task.id === row.vars.task_id)?.goal
+    assert.ok(rubric && question, 'Missing reference for scheduled question')
+    const metadata = row.response.metadata
+    assert.equal(metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion, plan.version, 'Investigator version differs from run plan')
     const investigator = verifyInvestigator(root, row, telemetry.wrapper, rubric, question, [...telemetry.attempts.values()].flatMap(data => data.spans))
     assert.equal(investigator.identity.promptfoo.evaluationId, source.evalId)
     if (row.response.metadata.sessionID) {

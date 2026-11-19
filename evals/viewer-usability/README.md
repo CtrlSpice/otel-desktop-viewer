@@ -66,14 +66,49 @@ question, run `node pi-evaluate.ts --task <task-id>` from this directory. Add
 `--model gpt-5.6-luna` to run only that configured provider with native repetitions.
 Existing result files or Rep evidence cause the runner to refuse a rerun in that directory.
 
-The same config can be loaded with the normal Promptfoo CLI:
+Use the evaluation launcher so cleanup failures stop the batch. Direct
+Promptfoo CLI launches are rejected before any attempts.
 
 ```sh
-cd evals/viewer-usability
-PROMPTFOO_DISABLE_TELEMETRY=1 \
-  PROMPTFOO_CONFIG_DIR="$OTEL_EVAL_RUN_DIR/promptfoo-state" \
-  npx promptfoo eval --config config.ts --no-cache
+npm run evaluate --prefix evals/viewer-usability
 ```
+
+## Additional Opus grading of saved GPT answers
+
+`opencode-v2-regrade.mjs` grades the Astra and Sol answers from a completed
+`opencode-v2-evaluate.mjs --run-full` run with Claude Opus 5.5. The preceding
+Pi `npm run evaluate` path is not a supported source. The original OpenCode run
+must finish first. It reads the saved answers,
+tool evidence and rendered rubric; it does not repeat investigations or change
+the original grades. Recorded artifact checks are reused, not executed again.
+Promptfoo parses the new judgments and combines their scores.
+
+This grading mode uses the installed official Claude Code 2.1.326 and an existing
+subscription profile. It supplies no tools and rejects a different model or any
+recorded tool call. The existing Claude investigation mode still requires 2.1.307.
+Grading prompts go through stdin rather than command-line arguments, retaining
+large saved tool packets in full. Credentials remain managed by Claude Code.
+
+After explicit approval for the additional grading, set
+`OTEL_EVAL_CLAUDE_BINARY` and `OTEL_EVAL_CLAUDE_CONFIG_DIR` to that executable and
+profile. Set `OTEL_EVAL_SOURCE_RUN` to the completed original OpenCode run and
+`OTEL_EVAL_RUN_DIR` to an already-created, empty external comparison directory.
+Keep that run's observer API and OTLP receiver running throughout grading and
+import. Their URLs come from the original `run-plan.json`; this command does not
+start or stop the observer.
+
+```sh
+node evals/viewer-usability/opencode-v2-regrade.mjs --plan "$OTEL_EVAL_SOURCE_RUN"
+caffeinate -i node evals/viewer-usability/opencode-v2-regrade.mjs \
+  --run "$OTEL_EVAL_SOURCE_RUN" "$OTEL_EVAL_RUN_DIR"
+```
+
+The comparison directory retains each grading session, raw telemetry, judgments,
+original evidence hashes and a derived `promptfoo.json` report. Its investigator
+responses and result IDs are unchanged, but its evaluation ID and grades are new.
+The report is imported separately into the original run's observer; investigation
+telemetry is not replayed. Execution errors stop grading without a retry. A valid
+Fail or Partial judgment does not stop grading.
 
 ## Evidence and identities
 
@@ -92,6 +127,23 @@ Pi's sandbox blocks reads of the development tree, other Reps and reference file
 Claude Code uses safe/restricted modes, workspace-confined file tools and a Bash
 allow rule for the supplied viewer. These are different runtime boundaries;
 neither provides VM or network-service isolation.
+
+The harness runs per-test teardown for OpenCode V2, Pi and Claude Code attempts,
+including errors, timeouts and cancellation. It stops the attempt's owned process
+group. On a shared OpenCode host, it waits until the session stops, interrupting
+the session if needed; the host stays running. Export-verification viewers use
+the same teardown. After shutdown, the harness removes an executable copy only
+if its SHA-256 hash matches the retained binary supplied in the provider
+configuration, or in the run's `connection.json` for export replay. Answers, tool
+records, telemetry, exported files and replay databases stay.
+
+Each attempt's evidence directory, or export replay directory, contains the
+teardown records. `teardown-started.json` records the verified hashes before
+deletion. `teardown.json` records removal, a missing executable, or failure.
+Changed executables and paths containing symlinks are retained as failures.
+A teardown failure stops scheduling further tests; it does not discard the saved
+answer. Teardown does not depend on model instructions. Killing the harness with
+SIGKILL, or loss of power, can prevent teardown from running.
 
 The stable question key is `vars.task_id`. Provider identity comes from the normal
 provider configuration. Promptfoo 0.125.1 sends `evaluationId`, `testIdx` and
@@ -131,8 +183,10 @@ Receiving spans in the trace store does not by itself update Evals result rows.
 Row-only JSONL is not a full import envelope.
 
 Investigator and grader execution errors remain errors. Grades are provisional;
-Fail/Partial/Pass remain 0/0.5/1 under the approved rubrics. Native scheduling
-continues after individual errors.
+Fail/Partial/Pass remain 0/0.5/1 under the approved rubrics. The default Pi/Claude
+runner continues after individual errors, except teardown failures. The full
+OpenCode runner stops on execution errors; error-free investigator deadlines
+remain no-answer outcomes.
 
 ## Checks
 
@@ -161,6 +215,29 @@ loopback model service. It checks native exports, received repetition indices,
 fresh conversations, successful viewer-tool execution and blocked protected reads.
 It makes no paid model requests.
 
-The separate OpenCode V2 integration uses `opencode-v2-evaluate.mjs` and its
-matching evidence and verification helpers. It is independent of the default
-Pi/Claude Code workflow. Local tests do not require an OpenCode executable.
+The separate OpenCode V2 runner uses the private OpenCode 2.3.0 executable at
+`~/.local/share/otel-desktop-viewer/evals/runtime/opencode/2.3.0/opencode`.
+It calls the native API directly; Promptfoo does not need a package patch.
+Saved 2.0.29 runs remain readable by the verification helpers.
+
+`node evals/viewer-usability/opencode-v2-evaluate.mjs --plan-full` prints the
+ten investigator model IDs, eleven questions, grader and repetition count without
+starting a run. `--run-full` executes that plan through a shared host and requires
+an explicit fresh run directory, prebuilt viewer, separate observer and private
+membership references.
+
+For `checkout-failure`, `--run-one` selects
+Sol once; `--run-sol-luna` selects Sol and Luna three times each. This is separate
+from the default Pi/Claude Code workflow.
+
+The normal tests do not require an OpenCode executable. To check the installed
+2.3.0 runtime with a scripted model and synthetic protected files:
+
+```sh
+OTEL_EVAL_VIEWER_BINARY=/absolute/path/to/otel-desktop-viewer \
+  node evals/viewer-usability/opencode-v2-canary.mjs --telemetry
+```
+
+Add `--error` to check that a failed model request is retained without retrying.
+These checks use fresh private servers and allow outbound network access only
+to their scripted model and telemetry receiver. They require no model credentials.

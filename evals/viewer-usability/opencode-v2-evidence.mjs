@@ -2,14 +2,14 @@
 // require input in every state; Assistant.tokens itself is optional.
 const present = (value, key) => Object.hasOwn(value, key) && value[key] !== undefined
 
-export function toolEvidence(tool) {
+export function toolEvidence(tool, runtimeVersion = '2.0.29') {
   const state = tool.state
   const errors = []
   if (!present(state, 'input')) errors.push({ toolID: tool.id, field: 'state.input', reason: 'Missing required V2 tool input' })
   const attributes = {
     'gen_ai.tool.name': tool.name, 'gen_ai.tool.call.id': tool.id,
     'opencode.session.id': tool.sessionID, 'opencode.message.id': tool.messageID,
-    'opencode.runtime.version': '2.0.29', 'opencode.tool.raw': JSON.stringify(tool),
+    'opencode.runtime.version': runtimeVersion, 'opencode.tool.raw': JSON.stringify(tool),
     'tool.status': state.status,
     ...(present(state, 'input') ? { 'tool.input': JSON.stringify(state.input) } : {}),
     ...(present(state, 'content') ? { 'tool.output': JSON.stringify(state.content) }
@@ -21,7 +21,7 @@ export function toolEvidence(tool) {
   return { attributes, timestamp: tool.time.completed ?? tool.time.created, errors }
 }
 
-export function aggregateUsage(assistants) {
+export function aggregateUsage(assistants, runtimeVersion = '2.0.29') {
   const usage = {}, recorded = {}
   for (const field of ['input', 'output', 'reasoning', 'cache.read', 'cache.write']) {
     const values = assistants.map(message => field.split('.').reduce((value, key) => value?.[key], message.tokens))
@@ -41,7 +41,7 @@ export function aggregateUsage(assistants) {
     assistants: assistants.length, recorded,
     // TokenUsage.Info defines separate numeric cache.read/write fields, but
     // does not specify overlap with input/output/reasoning or define a total.
-    total: 'unavailable: V2 2.0.29 schema does not define additive token accounting',
+    total: 'unavailable: V2 ' + runtimeVersion + ' schema does not define additive token accounting',
   }
   const tokenUsage = {}, completionDetails = {}
   if (usage.input !== undefined) tokenUsage.prompt = usage.input

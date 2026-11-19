@@ -4,7 +4,7 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { runMode, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
+import { runMode, fullRunPlan, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
 import { aggregateUsage } from './opencode-v2-evidence.mjs'
 import { verifyInvestigator, verifyGrader, importOriginal } from './opencode-v2-verify.mjs'
 import { telemetryExpectation } from './opencode-v2-observer.mjs'
@@ -21,7 +21,7 @@ const spanID = n => n.toString(16).padStart(16, '0')
 const rubric = { reference: 'fixture reference', criteria: { pass: 'fixture criterion' } }
 const question = 'fixture question'
 
-function sixRows(root) {
+function sixRows(root, runtimeVersion = '2.0.29') {
   fs.mkdirSync(path.join(root, 'runs'))
   const rows = [], identities = new Map(), graders = [], wrapper = { spans: [], spanReceipts: {} }
   const outcomes = ['pass', 'partial', 'investigator-error', 'fail', 'grader-error', 'pass']
@@ -33,8 +33,8 @@ function sixRows(root) {
     const identity = { provider: 'opencode-v2:openai/' + model, promptfoo: { repeatIndex, evaluationId: 'eval_fixture', traceparent: `00-${trace}-${parent}-01` } }
     identities.set(evidence, identity); write(evidence, 'identity.json', identity)
     const assistants = outcome === 'investigator-error' ? [] : [{ type: 'assistant', id: 'message-' + index, content: [], tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }]
-    const usage = aggregateUsage(assistants)
-    const metadata = { runtime: 'opencode-v2', runtimeVersion: '2.0.29', model: 'openai/' + model, repeatIndex, evidence,
+    const usage = aggregateUsage(assistants, runtimeVersion)
+    const metadata = { runtime: 'opencode-v2', runtimeVersion, model: 'openai/' + model, repeatIndex, evidence,
       sessionID: 'ses_' + index, usage: usage.usage, usageAvailability: usage.usageAvailability, toolCalls: 0, failedToolCalls: 0, evidenceErrors: [] }
     const response = { metadata, ...(usage.tokenUsage ? { tokenUsage: usage.tokenUsage } : {}),
       ...(outcome === 'investigator-error' ? { error: 'fixture 401 intact' } : { output: 'fixture answer' }) }
@@ -97,8 +97,28 @@ test('new mode requires explicit observer/binary and preserves main-owned root f
   write(root, 'run-started.json', {}); assert.throws(() => assertFreshRoot(root), /reuse/)
 })
 
-test('six rows accept mixed pass/partial/fail/investigator and grader errors, preserving repeat identities', t => {
-  const root = temporary(t), data = sixRows(root), spec = runMode(['--run-sol-luna'])
+test('full plan distinguishes 330 model/question/repetition slots and rejects a duplicate', () => {
+  const spec = fullRunPlan()
+  const config = evaluationConfig({ suite: '/suite', root: '/fresh', spec })
+  const rows = [], identities = new Map()
+  for (const provider of config.providers) for (const task of config.tests) for (let repeatIndex = 0; repeatIndex < config.evaluateOptions.repeat; repeatIndex++) {
+    const index = rows.length + 1, evidence = '/fresh/runs/case-' + index
+    const model = provider.config.providerID + '/' + provider.config.model, id = new Provider(provider).id()
+    const taskID = task.vars.task_id
+    identities.set(evidence, { provider: id, task: taskID, promptfoo: { repeatIndex, traceparent: `00-${traceID(index)}-${spanID(index)}-01` } })
+    rows.push({ id: 'row-' + index, traceId: traceID(index), provider: { id, label: provider.label }, vars: task.vars,
+      response: { metadata: { evidence, model, task: taskID, repeatIndex, sessionID: 'ses_' + index } }, failureReason: 0 })
+  }
+  assert.ok(config.providers.some(p => p.config.providerID === 'kimi-code-plan-global' && p.config.model === 'k3.1-pro'))
+  assert.ok(config.tests.find(t => t.vars.task_id === 'trace-export').assert.some(a => a.metric === 'export-file'))
+  assert.equal(validateSchedule(rows, spec, identities).length, 330)
+  const last = rows.at(-1).response.metadata
+  last.repeatIndex = identities.get(last.evidence).promptfoo.repeatIndex = 1
+  assert.throws(() => validateSchedule(rows, spec, identities), /Duplicate model/)
+})
+
+for (const runtimeVersion of ['2.0.29', '2.3.0']) test(`${runtimeVersion} rows preserve outcomes and repeat identities`, t => {
+  const root = temporary(t), data = sixRows(root, runtimeVersion), spec = runMode(['--run-sol-luna'])
   const before = JSON.stringify(data.rows)
   assert.equal(validateSchedule(data.rows, spec, data.identities).length, 6)
   const results = data.rows.map(row => {
@@ -125,6 +145,7 @@ test('offline preflight exceptions retain separate slot evidence and do not prev
   for (const [index, result] of results.entries()) {
     assert.equal(result.error, 'offline preflight failure'); assert.equal(result.metadata.repeatIndex, index)
     assert.equal(result.metadata.captureUnavailable, true)
+    assert.equal(result.metadata.expectedRuntimeVersion, '2.3.0')
     assert.equal(result.metadata.runtimeVersion, undefined, 'Do not claim a started runtime on preflight failure')
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.metadata.evidence, 'response.json'))), result)
   }

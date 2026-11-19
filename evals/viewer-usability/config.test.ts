@@ -21,7 +21,8 @@ test('actual suite config defines four ordinary providers, eleven questions once
   assert.equal(config.evaluateOptions.cache, false)
   assert.equal(config.tracing.enabled, true)
   assert.equal(config.providers[3].config.telemetryEndpoint, 'http://127.0.0.1:4318')
-  assert.equal(config.extensions, undefined)
+  assert.deepEqual(config.extensions, ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll',
+    'file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':afterEach'])
   assert.equal(config.defaultTest.vars.binary, './bin/otel-desktop-viewer')
   assert.equal(config.defaultTest.assert[0].type, 'llm-rubric')
   assert.equal(config.defaultTest.assert[0].threshold, 1)

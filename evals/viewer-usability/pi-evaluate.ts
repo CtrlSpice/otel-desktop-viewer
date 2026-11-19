@@ -20,6 +20,9 @@ if (!providers.length) throw new Error('Unknown configured model: ' + values.mod
 const promptfooPackage = 'promptfoo'
 const { evaluate } = await import(promptfooPackage)
 const cancellation = runCancellation()
+const teardownStop = './attempt-teardown-stop.mjs'
+const { onFailure } = await import(teardownStop)
+onFailure((error: Error) => cancellation.cancel(error))
 let cleanup: Promise<unknown> | undefined
 const cancel = () => {
   cleanup ??= Promise.all([cancelPiAttempts(), cancelClaudeAttempts()])
@@ -32,6 +35,7 @@ try {
 } finally {
   await (cleanup ?? Promise.all([cancelPiAttempts(), cancelClaudeAttempts()]))
   cancellation.signal.removeEventListener('abort', cancel)
+  onFailure(undefined)
   cancellation.dispose()
 }
 console.log('Native Promptfoo export: ' + path.join(root, 'promptfoo.json'))

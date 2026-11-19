@@ -99,6 +99,6 @@ export function nativeTelemetryBoundaries(data, traceparent) {
     propagation: { traceparent, matchingSpans: matching.length, directChildren: matching.filter(span => span.parentSpanId === parentID).length,
       sessionOrToolWork: matching.filter(span => /^(Session|Tool\.)/.test(span.name)).length },
     toolCounting: 'Native Tool.execute names alone do not establish call identity. Count correlated tool.execution logs by recorded call ID; use native spans only when a received call ID supports deduplication. Do not infer matches from timing or order.',
-    metricsBoundary: 'No metric exporter is wired by the inspected V2 2.0.29 startup layer. Zero received metrics is not a zero-usage measurement.',
+    metricsBoundary: 'Metric counts describe received telemetry only. Zero received metrics is not a zero-usage measurement.',
   }
 }

@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import http from 'node:http'
 import { once } from 'node:events'
+import PiProvider, { cancelPiAttempts } from './pi-provider.ts'
 import { SUITE, TEMPORARY } from './runtime.ts'
 import { observerEnvironment } from './clean-environment.ts'
 
@@ -107,14 +108,56 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
     assert.equal(requests.filter(request => request.messages.every(message => message.role !== 'assistant')).length, 6)
     assert.ok(!JSON.stringify(requests).includes('CANARY_MUST_NOT_REACH_MODEL'))
     for (const row of rows) {
+      assert.equal(fs.existsSync(path.join(row.response.metadata.workspace, 'bin/otel-desktop-viewer')), false)
+      const teardown = JSON.parse(fs.readFileSync(path.join(row.response.metadata.evidence, 'teardown.json'), 'utf8'))
+      assert.equal(teardown.status, 'removed')
+      assert.ok(fs.existsSync(path.join(row.response.metadata.evidence, 'owned-shutdown.json')))
       const events = fs.readFileSync(path.join(row.response.metadata.evidence, 'events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
       const tools = events.filter(event => event.type === 'tool_execution_end')
       assert.equal(tools[0].isError, false)
       assert.match(JSON.stringify(tools[0].result), /PI_TOOL_OK/)
       assert.equal(tools[1].isError, true)
     }
+    assert.equal(fs.readFileSync(binary, 'utf8'), '#!/bin/sh\nprintf PI_TOOL_OK\n')
   } finally {
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
 })
+
+for (const outcome of ['preflight-error', 'timeout', 'cancellation']) {
+  test(`Pi investigator teardown retains evidence after ${outcome}`, { skip: process.platform !== 'darwin', timeout: 20000 }, async t => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(TEMPORARY, 'pi-teardown-test-')))
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+    const binary = path.join(root, 'viewer')
+    fs.writeFileSync(binary, 'fixture viewer')
+    const server = http.createServer(() => {})
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    t.after(() => { server.closeAllConnections(); server.close() })
+    const address = server.address()
+    assert.ok(address && typeof address === 'object')
+    const provider = new PiProvider({ config: { root, binary, provider: 'fixture', model: 'fixture-model', role: 'investigator',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`, timeoutMs: outcome === 'timeout' ? 1000 : 15000,
+      ...(outcome === 'preflight-error' ? { authFile: path.join(root, 'not-to-be-read') } : {}) } })
+    const requested = outcome === 'cancellation' ? once(server, 'request') : undefined
+    const pending = provider.callApi('fixture prompt')
+    if (outcome === 'cancellation') {
+      await requested
+      await cancelPiAttempts()
+    }
+    if (outcome === 'preflight-error') await assert.rejects(pending, /cannot receive saved credentials/)
+    else {
+      const response = await pending
+      assert.match(response.error!, outcome === 'timeout' ? /timeout/ : /execution failed/)
+      assert.ok(fs.existsSync(path.join(response.metadata.evidence, 'response.json')))
+      const shutdown = JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'owned-shutdown.json'), 'utf8'))
+      assert.throws(() => process.kill(shutdown.pid, 0), /ESRCH/)
+    }
+    const evidence = path.join(root, 'runs', fs.readdirSync(path.join(root, 'runs'))[0])
+    assert.equal(fs.existsSync(path.join(evidence, 'workspace/bin/otel-desktop-viewer')), false)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(evidence, 'teardown.json'), 'utf8')).status, 'removed')
+    assert.equal(fs.readFileSync(path.join(evidence, 'prompt.txt'), 'utf8'), 'fixture prompt')
+    assert.equal(fs.readFileSync(binary, 'utf8'), 'fixture viewer')
+  })
+}

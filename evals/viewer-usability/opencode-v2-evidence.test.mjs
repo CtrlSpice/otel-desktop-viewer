@@ -66,6 +66,15 @@ test('verifier checks normalized identity, status, empty fields, duration and OT
   assert.throws(() => verifyToolEvent(tool, event), /Duplicate/)
 })
 
+for (const runtimeVersion of ['2.0.29', '2.3.0']) test(`tool evidence retains runtime ${runtimeVersion}`, () => {
+  const tool = makeTool({ status: 'completed', input: {}, content: [] })
+  const { attributes } = toolEvidence(tool, runtimeVersion)
+  assert.equal(attributes['opencode.runtime.version'], runtimeVersion)
+  verifyToolEvent(tool, otlpEvent(attributes), runtimeVersion)
+  const wrongVersion = runtimeVersion === '2.3.0' ? '2.0.29' : '2.3.0'
+  assert.throws(() => verifyToolEvent(tool, otlpEvent(attributes), wrongVersion), /opencode.runtime.version/)
+})
+
 // Loopback only: no OpenCode executable, credentials, model, or observer backend.
 // With the old stop-only signal, the watchdog ends the fetch and assertions fail.
 for (const stage of ['headers', 'body']) for (const source of ['deadline', 'cancellation', 'stop']) {

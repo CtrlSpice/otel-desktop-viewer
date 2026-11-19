@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 // Check normalized attributes independently of the producer projection. Equality
 // of opencode.tool.raw alone cannot detect invented success or empty output.
-export function verifyToolEvent(tool, event) {
+export function verifyToolEvent(tool, event, runtimeVersion = '2.0.29') {
   assert.equal(event.eventName ?? event.name, 'tool.execution')
   if (event.eventName) {
     assert.equal(event.timeUnixNano, String(BigInt(tool.time.completed ?? tool.time.created) * 1000000n))
@@ -15,7 +15,7 @@ export function verifyToolEvent(tool, event) {
   text('gen_ai.tool.call.id', tool.id)
   text('opencode.session.id', tool.sessionID)
   text('opencode.message.id', tool.messageID)
-  text('opencode.runtime.version', '2.0.29')
+  text('opencode.runtime.version', runtimeVersion)
   text('opencode.tool.raw', JSON.stringify(tool))
   text('tool.status', tool.state.status)
   if (Object.hasOwn(tool.state, 'input')) text('tool.input', JSON.stringify(tool.state.input))

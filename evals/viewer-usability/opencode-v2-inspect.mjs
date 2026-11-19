@@ -2,8 +2,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
 import { once } from 'node:events'
+import { V2_BINARY, V2_VERSION } from './opencode-v2-provider.mjs'
 
-const binary = '/Users/moya/Library/Application Support/ai.opencode.desktop/cli/2.0.29-arm64/opencode-cli'
+const binary = V2_BINARY
 const parent = '/Users/moya/.local/share/otel-desktop-viewer/evals'
 process.umask(0o077)
 const root = fs.mkdtempSync(path.join(parent, 'opencode-v2-discovery-'))
@@ -20,7 +21,7 @@ fs.writeFileSync(path.join(env.XDG_CONFIG_HOME, 'opencode/opencode.json'), JSON.
   permissions: [{ action: '*', resource: '*', effect: 'deny' }],
 }), { mode: 0o600 })
 const version = execFileSync(binary, ['--version'], { env, cwd: workspace, encoding: 'utf8' }).trim()
-if (version !== 'opencode v2.0.29') throw new Error('Unexpected V2 binary')
+if (version !== 'opencode v' + V2_VERSION) throw new Error('Unexpected V2 binary')
 const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0'], { env, cwd: workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
 const closed = once(child, 'close')
 let stdout = '', stderr = ''
