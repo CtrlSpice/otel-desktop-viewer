@@ -32,11 +32,13 @@
   let {
     service,
     options,
+    selection,
     revision,
   }: {
     service: ServiceSummary | null
     options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>
     revision: number
+    selection: string
   } = $props()
   type Group = {
     signal: DiscoverySignal
@@ -45,6 +47,7 @@
     pageIndex: number
     scrollTop: number
     loaded: boolean
+    loadedSelection?: string
     query: ReturnType<typeof parseRoute>['query']
   }
   const PAGE_SIZE_KEY = 'home-telemetry-page-size'
@@ -56,19 +59,25 @@
   })
   const requestKey = $derived(reads.requestKey)
   const serviceKey = $derived(service ? serviceIdentity(service) : null)
+  const currentSelection = $derived(JSON.stringify([serviceKey, selection]))
   let selectedSignal = $state<DiscoverySignal>('traces')
   let viewport = $state<HTMLDivElement>()
   const panelID = $props.id()
   const labels = { traces: 'Traces', logs: 'Logs', metrics: 'Metrics' }
   const available = $derived(
     groups.filter(
-      group => group.read.pending || group.read.error || group.cards.length
+      group =>
+        group.cards.length ||
+        group.read.error ||
+        (group.loadedSelection !== currentSelection && group.read.pending)
     )
   )
   const active = $derived(
     available.find(group => group.signal === selectedSignal) ?? available[0]
   )
-  const loading = $derived(active?.read.pending ?? false)
+  const loading = $derived(
+    active?.read.pending ?? groups.some(group => group.read.pending)
+  )
   const tabs = $derived(
     SIGNAL_ORDER.map(signal => {
       const group = groups.find(group => group.signal === signal)
@@ -120,7 +129,7 @@
   })
   $effect(() => {
     void revision
-    void serviceKey
+    const requestedSelection = currentSelection
     const selection = {
       service: untrack(() => service),
       options,
@@ -143,6 +152,7 @@
           pageIndex: previous?.pageIndex ?? 0,
           scrollTop: previous?.scrollTop ?? 0,
           loaded: previous?.loaded ?? false,
+          loadedSelection: previous?.loadedSelection,
           // Native item links keep the displayed range and clear Home search.
           query:
             previous?.query ??
@@ -165,6 +175,7 @@
               discoverySignalHref(group.signal, selection.options, '')
             ).query
             group.loaded = true
+            group.loadedSelection = requestedSelection
             group.pageIndex = 0
             group.scrollTop = 0
           }
@@ -228,7 +239,7 @@
       }}
     >
       <LoadingStatus
-        pending={loading}
+        pending={loading && active?.loadedSelection !== currentSelection}
         label={`Loading matching ${active?.signal ?? 'telemetry'}…`}
         requestKey={`${requestKey}:${active?.signal ?? ''}`}
       />
