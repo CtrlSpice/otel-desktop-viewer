@@ -27,8 +27,6 @@ var metricSummaryFields = []string{
 	"lastSeen",
 }
 
-var metricTableFields = append([]string(nil), metricSummaryFields[1:]...)
-
 func newMetricsCommand(client *http.Client, now func() time.Time) *cobra.Command {
 	options := telemetrySearchOptions{}
 	var jsonOutput bool
@@ -37,7 +35,7 @@ func newMetricsCommand(client *http.Client, now func() time.Time) *cobra.Command
 		Short: "📈 Search metrics in a running viewer",
 		Long: "📈 Search existing metric summaries in the running viewer. " +
 			"The default window is the last hour; output uses aligned columns unless --json is set. " +
-			"JSON identifies a viewer-assigned Metric with the opaque metricRef field.",
+			"Use metricRef to inspect or export a Metric.",
 		Example: "  otel-desktop-viewer metrics\n" +
 			"  otel-desktop-viewer metrics --service checkout --since 30m\n" +
 			"  otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json",
@@ -49,7 +47,7 @@ func newMetricsCommand(client *http.Client, now func() time.Time) *cobra.Command
 			if err != nil {
 				return err
 			}
-			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchMetricSummaries", query, metricTableFields)
+			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchMetricSummaries", query, metricSummaryFields)
 			if err != nil {
 				return err
 			}
@@ -62,14 +60,14 @@ func newMetricsCommand(client *http.Client, now func() time.Time) *cobra.Command
 
 func writeMetricSearchResult(writer io.Writer, result telemetrySearchResult, jsonOutput bool) error {
 	if !jsonOutput {
-		return writeTelemetrySearchResult(writer, result, metricTableFields, false)
+		return writeTelemetrySearchResult(writer, result, metricSummaryFields, false)
 	}
 	summaries, err := metricSummariesForCLI(result.Summaries)
 	if err != nil {
 		return fmt.Errorf("prepare metric JSON output: %w", err)
 	}
 	result.Summaries = summaries
-	return writeTelemetrySearchResult(writer, result, metricTableFields, true)
+	return writeTelemetrySearchResult(writer, result, metricSummaryFields, true)
 }
 
 func metricSummariesForCLI(summaries []json.RawMessage) ([]json.RawMessage, error) {
