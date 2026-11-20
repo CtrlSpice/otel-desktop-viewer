@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.22.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "test": "node --test --test-concurrency=2 *.test.ts *.test.mjs presentation/*.test.ts",
@@ -18,12 +18,11 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.2",
-    "@opentelemetry/api": "1.9.1",
-    "@opentelemetry/api-logs": "0.222.0",
-    "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
-    "@opentelemetry/resources": "2.12.0",
-    "@opentelemetry/sdk-logs": "0.222.0",
-    "promptfoo": "0.125.1",
+    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/exporter-logs-otlp-http": "0.301.2",
+    "@opentelemetry/resources": "3.1.1",
+    "@opentelemetry/sdk-logs": "3.1.1",
+    "promptfoo": "0.126.0",
     "tar": "7.5.23"
   },
   "devDependencies": {
@@ -31,9 +30,9 @@
     "typescript": "7.0.2"
   },
   "overrides": {
-    "@hono/node-server": "2.1.6",
-    "basic-ftp": "6.2.4",
-    "glob": "14.0.2",
-    "minimatch": "11.0.1"
+    "@hono/node-server": "2.1.9",
+    "basic-ftp": "6.2.6",
+    "glob": "14.0.6",
+    "minimatch": "11.0.9"
   }
 }

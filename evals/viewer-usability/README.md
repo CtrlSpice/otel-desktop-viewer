@@ -6,7 +6,7 @@ executes Opus investigations using its own subscription login. Dependencies are 
 credentials, evidence and datasets live outside the repository.
 
 The lockfile includes patched transitive dependencies. Overrides pin
-`@hono/node-server` 2.1.6, `basic-ftp` 6.2.4, `glob` 14.0.2 and `minimatch` 11.0.1
+`@hono/node-server` 2.1.9, `basic-ftp` 6.2.6, `glob` 14.0.6 and `minimatch` 11.0.9
 because Promptfoo's dependency constraints still select affected versions. When
 updating these pins, run `npm audit`, `npm run typecheck`,
 `npm run typecheck:presentation` and `npm test` from `evals/viewer-usability`
@@ -33,7 +33,8 @@ native repetitions, or twelve investigations plus twelve graders.
 
 ## Run
 
-Requirements: macOS (the tested filesystem sandbox), Node >=22.22.0, an externally
+Requirements: macOS (the tested filesystem sandbox), Node 22.22.2 or later in the
+22.x series, 24.15.0 or later in the 24.x series, or 26.0.0 and later; an externally
 built viewer, and the selected Pi credential in a private `auth.json` file.
 
 ```sh
@@ -94,7 +95,7 @@ allow rule for the supplied viewer. These are different runtime boundaries;
 neither provides VM or network-service isolation.
 
 The stable question key is `vars.task_id`. Provider identity comes from the normal
-provider configuration. Promptfoo 0.125.1 sends `evaluationId`, `testIdx` and
+provider configuration. Promptfoo 0.126.0 sends `evaluationId`, `testIdx` and
 `repeatIndex` to the provider; these remain in local `identity.json` diagnostics.
 They are not copied into response metadata for the viewer.
 Native exports expand `testIdx` across repetitions and include a top-level
