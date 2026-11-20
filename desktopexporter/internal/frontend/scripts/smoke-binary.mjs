@@ -123,8 +123,7 @@ try {
       { timeout: 30000 }
     )
     .toBe(200)
-  // Evals is disabled by default even when its implementation is included.
-  assert.equal((await json(`${baseURL}/api/features`)).evals.enabled, false)
+  assert.equal((await json(`${baseURL}/api/features`)).evals.enabled, evals)
   assert.deepEqual(await json(`${baseURL}/build-features.json`), {
     evals,
   })
@@ -352,7 +351,9 @@ try {
   await expect(
     page.getByRole('button', { name: /ci-smoke/ }).first()
   ).toBeVisible({ timeout: 15000 })
-  await expect(page.getByRole('link', { name: /Evals/ })).toHaveCount(0)
+  const evalsLink = page.getByRole('link', { name: /Evals/ })
+  if (evals) await expect(evalsLink).toBeVisible()
+  else await expect(evalsLink).toHaveCount(0)
 
   const logRows = await rpc('query', { sql: 'SELECT id::varchar FROM logs' })
   assert.equal(logRows.rows.length, 1)

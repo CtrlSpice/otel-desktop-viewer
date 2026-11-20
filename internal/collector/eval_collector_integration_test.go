@@ -22,13 +22,13 @@ import (
 	"go.opentelemetry.io/collector/receiver/receivertest"
 )
 
-func startEvalCollectorIntegration(t *testing.T, db, flags string) (string, func()) {
+func startEvalCollectorIntegration(t *testing.T, db string) (string, func()) {
 	t.Helper()
 	o := testOptions()
 	o.Host = "127.0.0.1"
 	ports := redactionTestPorts(t, 3)
 	o.BrowserPort, o.HTTPPort, o.GRPCPort = ports[0], ports[1], ports[2]
-	o.DB, o.DBMaxSize, o.FeatureFlagsFile = db, "0", flags
+	o.DB, o.DBMaxSize = db, "0"
 	cfg, err := resolveConfig(t, o)
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
@@ -73,10 +73,8 @@ func startEvalCollectorIntegration(t *testing.T, db, flags string) (string, func
 
 func TestEvalCollectorBatchQueuePersistenceAndReopen(t *testing.T) {
 	dir := t.TempDir()
-	flags := filepath.Join(dir, "flags.json")
-	require.NoError(t, os.WriteFile(flags, []byte(`{"flags":{"evals.enabled":{"state":"ENABLED","variants":{"on":true},"defaultVariant":"on"}}}`), 0600))
 	db := filepath.Join(dir, "evals.duckdb")
-	viewer, stop := startEvalCollectorIntegration(t, db, flags)
+	viewer, stop := startEvalCollectorIntegration(t, db)
 	input, err := os.ReadFile("../../desktopexporter/internal/evaldecode/testdata/promptfoo-v3.json")
 	require.NoError(t, err)
 	post := func(endpoint string) []byte {
@@ -94,7 +92,7 @@ func TestEvalCollectorBatchQueuePersistenceAndReopen(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []any{"3", "1", "0", "0"}, result.Rows[0])
 	stop()
-	viewer, _ = startEvalCollectorIntegration(t, db, flags)
+	viewer, _ = startEvalCollectorIntegration(t, db)
 	second := post(viewer)
 	require.Contains(t, string(second), `"created":false`)
 	var a, b struct {

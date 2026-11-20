@@ -47,12 +47,9 @@ describe('OTLP file sender', () => {
     )
   })
   it.skipIf(!__EVALS_BUILT__)(
-    'uses the shared queue for evals and reports the feature gate without receiver discovery',
+    'reports a missing Evals endpoint without receiver discovery',
     async () => {
-      const send = receiver(
-        async () =>
-          new Response('Evaluation import is disabled', { status: 403 })
-      )
+      const send = receiver(async () => new Response(null, { status: 404 }))
       const failure = vi.fn()
       const importer = createFileImporter(
         'https://viewer.example/evals',
@@ -70,7 +67,7 @@ describe('OTLP file sender', () => {
       )
       expect(failure).toHaveBeenCalledWith(
         expect.objectContaining({
-          reason: expect.stringContaining('evals.enabled'),
+          reason: expect.stringContaining('EVALS=1'),
         })
       )
     }

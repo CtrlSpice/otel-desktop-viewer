@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/features"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/rs/cors"
@@ -23,13 +22,14 @@ type Server struct {
 	jsonrpcHandler *JSONRPCHandler
 	logger         *zap.Logger
 	tel            *telemetry.Telemetry
-	features       *features.Flags
 
 	serveDone   chan struct{}
 	startMu     sync.Mutex
 	streamDone  chan struct{}
 	stopStreams sync.Once
 }
+
+type Option func(*Server)
 
 // WithOTLPGRPCPort supplies the receiver port advertised by the setup guide.
 func WithOTLPGRPCPort(port int) Option {

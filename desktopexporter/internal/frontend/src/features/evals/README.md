@@ -1,8 +1,7 @@
 # Evals workspace
 
-Evals is experimental and unsupported. It requires an `EVALS=1` build and an
-enabled local `evals.enabled` flag. Public `EVALS=0` builds omit the workspace and
-its HTTP handlers; a runtime flag cannot add omitted code.
+Evals is experimental and unsupported. An `EVALS=1` build enables the workspace
+and its HTTP handlers. The default `EVALS=0` build omits both.
 
 ## Data and navigation
 
@@ -72,11 +71,11 @@ From the repository root:
 
 ```sh
 make build EVALS=1
-./otel-desktop-viewer --feature-flags-file ./feature-flags.json
+./otel-desktop-viewer
 ```
 
-Set the local `evals.enabled` flag's `defaultVariant` to `"on"`; the repository
-configuration defaults it to off. Then open `/evals` and import supported results.
+Open `http://localhost:8000/evals`. To try an import, drag
+`desktopexporter/internal/evaldecode/testdata/promptfoo-v3.json` onto the page.
 
 For hot-reload development, run this from `desktopexporter/internal/frontend`
 against that enabled backend:

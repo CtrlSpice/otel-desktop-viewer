@@ -45,7 +45,6 @@ type DuckDBExtension struct {
 
 	store  *store.Store
 	server *server.Server
-	flags  *features.Flags
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
@@ -72,22 +71,12 @@ func (e *DuckDBExtension) Store() *store.Store {
 }
 
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	flags, err := features.New(ctx, e.cfg.FeatureFlagsFile)
-	if err != nil {
-		return err
-	}
-	started := false
-	defer func() {
-		if !started {
-			_ = flags.Shutdown(context.Background())
-		}
-	}()
 	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
 	if err != nil {
 		return err
 	}
 
-	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithFeatures(flags), server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort))
+	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort))
 	if err != nil {
 		str.Close()
 		return err
@@ -117,9 +106,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 
 	e.store = str
 	e.server = srv
-	e.flags = flags
-	started = true
-	if flags.EvalsEnabled(ctx) {
+	if features.EvalsBuilt {
 		e.logger.Warn("Evals: " + features.ExperimentalLabel)
 	}
 
@@ -149,13 +136,6 @@ func (e *DuckDBExtension) Shutdown(ctx context.Context) error {
 			return err
 		}
 		e.server = nil
-	}
-
-	if e.flags != nil {
-		if err := e.flags.Shutdown(ctx); err != nil {
-			return err
-		}
-		e.flags = nil
 	}
 
 	// Then close the store. The collector shuts extensions down after every

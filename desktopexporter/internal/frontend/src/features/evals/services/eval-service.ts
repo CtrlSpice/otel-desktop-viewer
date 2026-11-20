@@ -76,9 +76,9 @@ export const evalAPI = {
         signal,
       }
     )
-    if (response.status === 404 || response.status === 403)
+    if (response.status === 404)
       return [
-        'Evaluation import is unavailable. Use an Evals build and enable evals.enabled on the viewer server.',
+        'Evaluation import is unavailable. Use a viewer built with EVALS=1.',
       ]
     if (!response.ok)
       return [(await response.text()).trim() || `HTTP ${response.status}`]
