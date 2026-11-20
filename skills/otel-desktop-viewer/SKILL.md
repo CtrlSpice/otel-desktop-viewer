@@ -5,25 +5,8 @@ description: "Use when a user asks to inspect traces, spans, logs, Metrics, or s
 
 # Inspect OTel Desktop Viewer telemetry
 
-## Discover the HTTP API
-
-For direct HTTP use, `GET /openrpc.json` returns the OpenRPC description of the
-JSON-RPC methods at `POST /rpc`. The same document is available through
-`{"jsonrpc":"2.0","id":1,"method":"rpc.discover"}`. The HTTP root advertises
-the description and this guide in its `Link` header.
-
-Read each method's parameter and result descriptions before calling it. UI chart
-and trace-view payloads contain computed display fields and compact references;
-they are not received OTLP objects. Exact timestamps and 64-bit values require a
-precision-preserving JSON parser. Prefer decimal strings for time inputs, and
-use `query` with `SHOW TABLES` and `DESCRIBE <table>` to inspect stored columns.
-OpenRPC describes JSON-RPC, not the viewer's other HTTP routes or OpenAPI.
-`GET /openapi.json` describes HTTP routes, including exports and browser-oriented
-Arrow datasets, and links back to OpenRPC and this guide. For agent inspection,
-prefer the CLI or JSON-RPC summaries and exact detail methods. Use methods ending
-in `View` only when computed viewer/chart projections are the intended result.
-The CLI uses JSON-RPC and keeps its table/JSON output formats. The browser's
-native Arrow transport does not change these agent-facing formats.
+Use the CLI to inspect telemetry. If you need to call the viewer over HTTP, see
+`/openrpc.json` for JSON-RPC methods and `/openapi.json` for HTTP routes.
 
 ## Connect to one viewer
 

@@ -97,8 +97,8 @@ func TestOpenRPCHTTPAndRPCDiscovery(t *testing.T) {
 	guide, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	require.NoError(t, err)
-	assert.Contains(t, string(guide), "GET /openrpc.json")
-	assert.Contains(t, string(guide), "rpc.discover")
+	assert.Contains(t, string(guide), "/openrpc.json")
+	assert.Contains(t, string(guide), "/openapi.json")
 }
 
 func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
