@@ -3,7 +3,7 @@ name: otel-desktop-viewer
 description: "Use the OTel Desktop Viewer CLI to inspect stored traces, logs, and Metrics, query telemetry with SQL, or export and import OTLP JSON."
 ---
 
-# Inspect OTel Desktop Viewer telemetry
+# Inspect telemetry using OTel Desktop Viewer
 
 Use the CLI to inspect telemetry. If you need to call the viewer over HTTP, see
 `/openrpc.json` for JSON-RPC methods and `/openapi.json` for HTTP routes.
