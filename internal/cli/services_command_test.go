@@ -428,3 +428,52 @@ func TestServicesTransportPreservesLargeCounts(t *testing.T) {
 	assert.Contains(t, output, "9007199254740993")
 	assert.Contains(t, output, "18446744073709551615")
 }
+
+func TestServicesTableIdentityFindsServiceMapConnections(t *testing.T) {
+	endpoint, te, _, _ := startAttributeIntegration(t)
+	traces := ptrace.NewTraces()
+	for i, name := range []string{"checkout", "payments"} {
+		rs := traces.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", name)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(8000000000000)
+		span.SetEndTimestamp(8000000000001)
+		if i == 1 {
+			span.SetParentSpanID(pcommon.SpanID{7: 1})
+			span.Status().SetCode(ptrace.StatusCodeError)
+		}
+	}
+	require.NoError(t, te.ConsumeTraces(t.Context(), traces))
+	services := servicesTestResult(t, endpoint)
+	require.Len(t, services.Services, 2)
+	source, target := services.Services[0], services.Services[1]
+	require.Equal(t, "checkout", source.ServiceName)
+	catalogue, err := servicesTestRun(t, endpoint)
+	require.NoError(t, err)
+	require.Contains(t, catalogue, source.ServiceIdentity)
+	for _, ref := range []string{source.ServiceIdentity, target.ServiceIdentity} {
+		output, err := servicesTestRun(t, endpoint, "connections", ref, "--json")
+		require.NoError(t, err)
+		var result struct {
+			Connections []struct {
+				Source, Target                        serviceSummary
+				SpanCount, TraceCount, ErrorSpanCount uint64
+			}
+			Truncated bool
+		}
+		require.NoError(t, json.Unmarshal([]byte(output), &result))
+		require.Len(t, result.Connections, 1)
+		edge := result.Connections[0]
+		require.Equal(t, source.ServiceIdentity, edge.Source.ServiceIdentity)
+		require.Equal(t, target.ServiceIdentity, edge.Target.ServiceIdentity)
+		require.Equal(t, [3]uint64{1, 1, 1}, [3]uint64{edge.SpanCount, edge.TraceCount, edge.ErrorSpanCount})
+		require.False(t, result.Truncated)
+	}
+	table, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity)
+	require.NoError(t, err)
+	require.Contains(t, table, "checkout")
+	require.Contains(t, table, "payments")
+	require.Contains(t, table, "errorSpanCount")
+}

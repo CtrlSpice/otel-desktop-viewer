@@ -19,8 +19,8 @@ type attributeLocation struct {
 
 type attributeSearchQuery struct {
 	telemetrySearchQuery
-	location attributeLocation
-	records  string
+	builder discovery.Builder
+	records string
 }
 
 type attributeKey struct {
@@ -67,8 +67,8 @@ func newAttributeKeysCommand(client *http.Client, now func() time.Time) *cobra.C
 	cmd := &cobra.Command{
 		Use:   "keys",
 		Short: "🔑 List distinct attribute keys and kinds",
-		Long: "🔑 List each distinct attribute key and received kind once, with its owner location. " +
-			"Defaults to direct span attributes, the last hour and 25 key/kind pairs. Select the signal and owner explicitly for other locations.",
+		Long: "🔑 List each distinct attribute key and received kind once, with the locations where it occurs. " +
+			"Searches all signals and owners in the last hour and returns up to 25 key/kind pairs. Narrow by signal, owner or both.",
 		Example: "  otel-desktop-viewer attributes keys\n" +
 			"  otel-desktop-viewer attributes keys --signal logs --owner-type log --service checkout --since 30m --json\n" +
 			"  otel-desktop-viewer attributes keys --signal metrics --owner-type scope --json",
@@ -116,11 +116,11 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 	cmd := &cobra.Command{
 		Use:   "values <key>",
 		Short: "🏷️ Count exact typed values for one attribute key",
-		Long: "🏷️ Rank attribute values by distinct telemetry-record count: spans, logs or Metric datapoints for the selected signal. " +
+		Long: "🏷️ Rank attribute values by distinct telemetry-record count: spans, logs and Metric datapoints across the selected locations. " +
 			"Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Events and exemplars use their own timestamps; other owners use the counted record's time. Service filters follow the associated record. " +
 			"Resource/scope values count referencing records, not distinct resources/scopes. The denominator is matching records whose selected owner carries the key, before the result limit. " +
-			"A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Defaults to direct span attributes, the last hour and 25 values. " +
-			"Columns show value, kind, count and percentage; --json retains the tagged value, owner location, count, denominator and relative frequency. " +
+			"A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Searches all signals and owners in the last hour and returns up to 25 values. " +
+			"Columns show value, kind, count, percentage and owner locations; --json retains the tagged value, owner location, count, denominator and relative frequency. " +
 			"A record with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%. " +
 			"Use query to find records carrying a selected typed value, then trace or span to inspect them; skills includes a checked SQL example.",
 		Example: "  otel-desktop-viewer attributes values http.method\n" +
@@ -157,10 +157,10 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 				if err := json.Unmarshal(value.Value, &tagged); err != nil {
 					return fmt.Errorf("decode attribute value: %w", err)
 				}
-				rows = append(rows, []any{tagged.Value, tagged.Kind, value.Count, strconv.FormatFloat(value.RelativeFrequency*100, 'f', 2, 64) + "%"})
+				rows = append(rows, []any{tagged.Value, tagged.Kind, value.Count, strconv.FormatFloat(value.RelativeFrequency*100, 'f', 2, 64) + "%", value.FoundOn})
 			}
 			_, err = io.WriteString(cmd.OutOrStdout(), formatQueryColumns(queryResult{
-				Columns: []queryColumn{{Name: "value"}, {Name: "kind"}, {Name: "count"}, {Name: "percentage"}},
+				Columns: []queryColumn{{Name: "value"}, {Name: "kind"}, {Name: "count"}, {Name: "percentage"}, {Name: "foundOn"}},
 				Rows:    rows, Truncated: result.Truncated,
 			}))
 			return err
@@ -175,17 +175,18 @@ func addAttributeFlags(cmd *cobra.Command, options *telemetrySearchOptions, sign
 	cmd.Flags().Lookup("limit").Usage = "Maximum rows to return"
 	cmd.Flags().Lookup("service").Usage = "Only records for this service"
 	cmd.Flags().Lookup("json").Usage = "Emit exact JSON with truncation instead of columns"
-	cmd.Flags().StringVar(signal, "signal", "traces", "Telemetry signal: traces, logs or metrics")
-	cmd.Flags().StringVar(ownerType, "owner-type", "span", "Attribute owner: span/event/link (traces), log (logs), datapoint/exemplar/metadata (metrics), resource or scope")
+	cmd.Flags().StringVar(signal, "signal", "", "Limit to one signal: traces, logs or metrics")
+	cmd.Flags().StringVar(ownerType, "owner-type", "", "Limit to one owner: span/event/link (traces), log (logs), datapoint/exemplar/metadata (metrics), resource or scope")
 }
 
 func resolveAttributeSearch(cmd *cobra.Command, options telemetrySearchOptions, signal, ownerType string, now time.Time) (attributeSearchQuery, error) {
-	records, err := attributeRecordsSQL(signal, ownerType)
+	query, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), now)
 	if err != nil {
 		return attributeSearchQuery{}, err
 	}
-	query, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), now)
-	return attributeSearchQuery{telemetrySearchQuery: query, location: attributeLocation{Signal: signal, OwnerType: ownerType}, records: records}, err
+	var b discovery.Builder
+	records, err := b.AttributeRecords(discoveryQuery(query), signal, ownerType)
+	return attributeSearchQuery{telemetrySearchQuery: query, builder: b, records: records}, err
 }
 
 func decodeAttributeEntry(row []any, entry any) error {
@@ -202,27 +203,14 @@ func decodeAttributeEntry(row []any, entry any) error {
 	return nil
 }
 
-// SQL text is sent through the existing read-only query method. Every caller-
-// supplied string is a quoted SQL literal; identifiers are fixed here.
-func attributeSQLLiteral(value string) string { return discovery.Literal(value) }
-
-// These projections keep the counted record identity separate from the owner
-// of the attributes. Resource/scope joins do not deduplicate referencing records.
-func attributeRecordsSQL(signal, ownerType string) (string, error) {
-	var builder discovery.Builder
-	return builder.Records(signal, ownerType)
-}
-
 func discoveryQuery(query telemetrySearchQuery) discovery.Query {
 	return discovery.Query{StartTime: query.StartTime, EndTime: query.EndTime, Service: query.Service}
 }
 
 func attributeKeysSQL(query attributeSearchQuery) string {
-	var builder discovery.Builder
-	return builder.Inline(builder.Keys(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records))
+	return query.builder.Inline(query.builder.AttributeKeys(discoveryQuery(query.telemetrySearchQuery), query.records))
 }
 
 func attributeValuesSQL(query attributeSearchQuery, key string) string {
-	var builder discovery.Builder
-	return builder.Inline(builder.Values(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records, key))
+	return query.builder.Inline(query.builder.AttributeValues(discoveryQuery(query.telemetrySearchQuery), query.records, key))
 }

@@ -115,7 +115,7 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
  ('00000000-0000-0000-0000-000000000002', 8, 7000000000000, 'checkout', '{"method":{"kind":"string","value":"9007199254740993"}}'::json::variant)`)
 	require.NoError(t, err)
 	var keys attributeKeysResult
-	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "keys", "--json", "--service", "checkout")), &keys))
+	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "keys", "--owner-type", "span", "--json", "--service", "checkout")), &keys))
 	assert.Equal(t, []attributeKey{
 		{Key: "method", Kind: "int64", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "span"}}},
 		{Key: "method", Kind: "string", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "span"}}},
@@ -123,7 +123,7 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 	assert.False(t, keys.Truncated)
 
 	var values attributeValuesResult
-	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--json")), &values))
+	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--json")), &values))
 	require.Len(t, values.Values, 4)
 	assert.False(t, values.Truncated)
 	assert.JSONEq(t, `{"kind":"string","value":"GET"}`, string(values.Values[0].Value))
@@ -142,19 +142,19 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 		truncated bool
 	}{{"1", 1, true}, {"4", 4, false}, {"5", 4, false}} {
 		var limited attributeValuesResult
-		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--json", "--limit", test.limit)), &limited))
+		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--json", "--limit", test.limit)), &limited))
 		require.Len(t, limited.Values, test.count)
 		assert.Equal(t, test.truncated, limited.Truncated)
 		assert.Equal(t, uint64(5), limited.Values[0].Denominator, "limit must not change the denominator")
 	}
-	output := attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--limit", "1")
+	output := attributeTestRun(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--limit", "1")
 	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "40.00%", "more rows available"} {
 		assert.Contains(t, output, text)
 	}
 	assert.NotContains(t, output, "█")
 	assert.NotContains(t, output, "▇")
 	assert.NotContains(t, output, "POST")
-	assert.JSONEq(t, `{"key":"missing","values":[],"truncated":false}`, attributeTestRun(t, viewer.URL, "values", "missing", "--json"))
+	assert.JSONEq(t, `{"key":"missing","values":[],"truncated":false}`, attributeTestRun(t, viewer.URL, "values", "missing", "--owner-type", "span", "--json"))
 }
 
 func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testing.T) {
@@ -176,7 +176,7 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 		require.NoError(t, err)
 	}
 	var result attributeValuesResult
-	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", key, "--service", service, "--json")), &result))
+	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", key, "--owner-type", "span", "--service", service, "--json")), &result))
 	require.Len(t, result.Values, len(values))
 	actual := make([]any, 0, len(result.Values))
 	for _, value := range result.Values {
@@ -192,7 +192,7 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 		expected = append(expected, decoded)
 	}
 	assert.ElementsMatch(t, expected, actual)
-	assert.JSONEq(t, `{"keys":[],"truncated":false}`, attributeTestRun(t, viewer.URL, "keys", "--service", "absent", "--json"))
+	assert.JSONEq(t, `{"keys":[],"truncated":false}`, attributeTestRun(t, viewer.URL, "keys", "--owner-type", "span", "--service", "absent", "--json"))
 }
 
 func TestAttributesOfflineHelpAndValidation(t *testing.T) {
@@ -221,7 +221,7 @@ func TestAttributesOfflineHelpAndValidation(t *testing.T) {
 			}
 		})
 	}
-	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", "logs"}, {"values", "key", "--owner-type", "datapoint"}, {"keys", "--signal", "unknown"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
+	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", "logs", "--owner-type", "span"}, {"values", "key", "--owner-type", "unknown"}, {"keys", "--signal", "unknown"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
 		cmd := newAttributesCommand(&http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			t.Fatal("invalid input made an HTTP request")
 			return nil, nil
@@ -252,7 +252,7 @@ insert into spans (trace_id, span_id, start_time, service_name, attributes) valu
 	require.NoError(t, err)
 	guide, err := os.ReadFile("../../skills/otel-desktop-viewer/SKILL.md")
 	require.NoError(t, err)
-	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "## Discover attributes and inspect matching records")
+	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "### Record lookup by attribute value")
 	require.True(t, ok)
 	_, statement, ok := strings.Cut(section, "otel-desktop-viewer query --json \"\n")
 	require.True(t, ok)

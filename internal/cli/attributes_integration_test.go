@@ -112,6 +112,7 @@ func TestAttributesThroughProductionQueryHandler(t *testing.T) {
 	assert.Equal(t, []attributeKey{
 		{Key: "integer", Kind: "int64", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "span"}}},
 		{Key: "number", Kind: "double", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "span"}}},
+		{Key: "resource.only", Kind: "string", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "resource"}}},
 	}, keys.Keys)
 	assert.False(t, keys.Truncated)
 
@@ -428,6 +429,46 @@ func TestAttributeKindsSurviveEveryOwnerPath(t *testing.T) {
 		"array":    `{"kind":"array","value":[{"kind":"int64","value":"-9223372036854775808"},{"kind":"double","value":5e-324}]}`,
 		"map":      `{"kind":"map","value":[{"key":"nested","value":{"kind":"int64","value":"9007199254740993"}}]}`,
 	}
+	for _, filter := range []struct {
+		args      []string
+		records   uint64
+		locations int
+	}{
+		{nil, 3, 13},
+		{[]string{"--signal", "logs"}, 1, 3},
+		{[]string{"--owner-type", "resource"}, 3, 3},
+	} {
+		var shared, distinct attributeValuesResult
+		run := func(key string, result *attributeValuesResult) {
+			args := append([]string{"values", key, "--json"}, filter.args...)
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, args...)), result))
+		}
+		run("int64", &shared)
+		require.Len(t, shared.Values, 1)
+		assert.Equal(t, filter.records, shared.Values[0].Count)
+		assert.Equal(t, filter.records, shared.Values[0].Denominator)
+		assert.Len(t, shared.Values[0].FoundOn, filter.locations)
+		run("location", &distinct)
+		require.Len(t, distinct.Values, filter.locations)
+		for _, v := range distinct.Values {
+			require.Len(t, v.FoundOn, 1)
+			assert.JSONEq(t, fmt.Sprintf(`{"kind":"string","value":%q}`, v.FoundOn[0].Signal+"/"+v.FoundOn[0].OwnerType), string(v.Value))
+			assert.Equal(t, uint64(1), v.Count)
+			assert.Equal(t, filter.records, v.Denominator)
+		}
+		var keys attributeKeysResult
+		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"keys", "--json"}, filter.args...)...)), &keys))
+		var locations []attributeLocation
+		for _, k := range keys.Keys {
+			if k.Key == "int64" && k.Kind == "int64" {
+				locations = append(locations, k.FoundOn...)
+			}
+		}
+		assert.ElementsMatch(t, shared.Values[0].FoundOn, locations)
+	}
+	table := attributeTestRun(t, endpoint, "values", "int64", "--signal", "logs")
+	assert.Contains(t, table, "foundOn")
+	assert.Contains(t, table, "resource")
 	for _, owner := range owners {
 		pair := owner.location
 		t.Run(pair.Signal+"/"+pair.OwnerType, func(t *testing.T) {
