@@ -33,7 +33,8 @@ native repetitions, or twelve investigations plus twelve graders.
 
 ## Run
 
-Requirements: macOS (the tested filesystem sandbox), Node >=22.22.0, an externally
+Requirements: macOS (the tested filesystem sandbox), Node 22.22.2 or later in the
+22.x series, 24.15.0 or later in the 24.x series, or 26.0.0 and later; an externally
 built viewer, and the selected Pi credential in a private `auth.json` file.
 
 ```sh
