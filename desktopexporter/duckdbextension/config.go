@@ -19,10 +19,6 @@ type Config struct {
 	// Zero means no gRPC receiver port was supplied.
 	OTLPGRPCPort int `mapstructure:"otlp_grpc_port"`
 
-	// FeatureFlagsFile opts into local experimental flags. Empty disables all
-	// experiments without starting a provider. Paths are relative to the cwd.
-	FeatureFlagsFile string `mapstructure:"feature_flags_file"`
-
 	// Db defines the path of your database file. Setting an empty string opens
 	// DuckDB in in-memory mode.
 	Db string `mapstructure:"db"`

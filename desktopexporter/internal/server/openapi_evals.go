@@ -16,7 +16,6 @@ func addEvalsOpenAPI(paths map[string]any) {
 		"responses": map[string]any{
 			"200": apiResponse("Completed import.", "application/json", map[string]any{"type": "object", "required": []string{"ids", "created", "complete"}, "properties": map[string]any{"ids": map[string]any{"type": "array", "items": text}, "created": map[string]any{"type": "boolean"}, "complete": map[string]any{"const": true}}}),
 			"400": apiResponse("Invalid name or source input.", "text/plain", text),
-			"403": apiResponse("Evaluation import disabled.", "text/plain", text),
 			"409": apiResponse("Identical import already in progress.", "text/plain", text),
 			"422": apiResponse("Retained evidence is incomplete or conflicting.", "text/plain", text),
 			"500": apiResponse("Staging, persistence lookup or projection failed.", "text/plain", text),

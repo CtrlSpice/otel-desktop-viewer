@@ -27,11 +27,11 @@ func newEvalServer(host string, port int) evalServer {
 func (s *Server) closeEvals() { s.evalReceiverClient.CloseIdleConnections() }
 
 func (s *Server) registerEvals(mux *http.ServeMux, spa http.Handler) {
-	mux.Handle("/evals", s.requireEvals(spa))
-	mux.Handle("/evals/", s.requireEvals(spa))
-	mux.Handle("/api/evals", s.requireEvals(http.NotFoundHandler()))
-	mux.Handle("/api/evals/", s.requireEvals(http.NotFoundHandler()))
+	mux.Handle("/evals", spa)
+	mux.Handle("/evals/", spa)
+	mux.HandleFunc("/api/evals", http.NotFound)
+	mux.HandleFunc("/api/evals/", http.NotFound)
 	mux.HandleFunc("POST /api/evals/ingest", s.ingestEvals)
-	mux.Handle("GET /api/evals/experiments", s.requireEvals(http.HandlerFunc(s.searchEvalExperiments)))
-	mux.Handle("GET /api/evals/experiments/{id}/rows", s.requireEvals(http.HandlerFunc(s.getEvalExperimentPage)))
+	mux.HandleFunc("GET /api/evals/experiments", s.searchEvalExperiments)
+	mux.HandleFunc("GET /api/evals/experiments/{id}/rows", s.getEvalExperimentPage)
 }

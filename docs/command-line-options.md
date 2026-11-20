@@ -72,9 +72,3 @@ otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
 The monitoring UI is at `http://localhost:8001`; the observed viewer's UI is at
 `http://localhost:8000`. Stop the observed viewer and wait for it to exit before
 stopping the monitoring viewer.
-
-## Build-specific option
-
-`--feature-flags-file <path>` reads local feature settings from a flagd JSON
-file in `EVALS=1` builds. It is omitted by default and can configure only
-features included in the build. Public builds reject a supplied file.

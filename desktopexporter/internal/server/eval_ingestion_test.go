@@ -31,7 +31,7 @@ func (r *evalUploadReader) Read(p []byte) (int, error) {
 
 func TestEvalIngestionHandlesLargeNativePayload(t *testing.T) {
 	h := setupHandler(t)
-	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
 	require.NoError(t, err)
 	startEvalReceiver(t, s)
 	row := `{"answer":"` + strings.Repeat("x", 3<<20) + `","exact":9007199254740993}`
@@ -65,18 +65,9 @@ func TestEvalIngestionHandlesLargeNativePayload(t *testing.T) {
 	}))
 }
 
-func TestEvalIngestionGateBeforeBodyOrStore(t *testing.T) {
-	s, err := NewServer("localhost:0", 0, nil, zap.NewNop(), nil)
-	require.NoError(t, err)
-	r := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(r, httptest.NewRequest("POST", "/api/evals/ingest", strings.NewReader("bad")))
-	require.Equal(t, 403, r.Code)
-	require.Contains(t, r.Body.String(), "evals.enabled")
-}
-
 func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 	h := setupHandler(t)
-	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
 	require.NoError(t, err)
 	startEvalReceiver(t, s)
 	row := `{"id":"source-id","future":9007199254740993,"value":-0,"missingIsNotNull":null,"unicode":"雪😀"}`

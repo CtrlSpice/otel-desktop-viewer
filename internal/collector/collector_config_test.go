@@ -94,16 +94,6 @@ func validateServiceTelemetry(t *testing.T, o ConfigOptions) error {
 }
 
 func TestCollectorURIsResolve(t *testing.T) {
-	t.Run("local feature flag paths round trip", func(t *testing.T) {
-		for _, file := range []string{"", "local flags.json", `C:\viewer\flags.json`, `flags #1 "local".json`} {
-			o := testOptions()
-			o.FeatureFlagsFile = file
-			cfg, err := resolveConfig(t, o)
-			require.NoError(t, err)
-			ext := cfg.Extensions[component.NewID(duckdbextension.Type)].(*duckdbextension.Config)
-			require.Equal(t, file, ext.FeatureFlagsFile)
-		}
-	})
 	t.Run("imports advertise the configured HTTP receiver port", func(t *testing.T) {
 		o := testOptions()
 		o.HTTPPort = 54318

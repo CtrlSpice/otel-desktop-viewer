@@ -27,7 +27,7 @@ import (
 
 func TestCollectorEvalRedactionFidelityAndCacheRebuild(t *testing.T) {
 	h := setupHandler(t)
-	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
 	require.NoError(t, err)
 	startEvalReceiver(t, s)
 	input, err := os.ReadFile("../evaldecode/testdata/promptfoo-v3.json")
@@ -136,7 +136,7 @@ func TestCollectorEvalRedactionFidelityAndCacheRebuild(t *testing.T) {
 
 func TestEvalManifestCoverageDuplicatesConflictsAndDeletionGeneration(t *testing.T) {
 	h := setupHandler(t)
-	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
 	require.NoError(t, err)
 	startEvalReceiver(t, s)
 	input := `{"evalId":"synthetic","config":{},"results":{"version":3,"results":[{"value":-0}]}}`
@@ -206,7 +206,7 @@ func TestEvalManifestCoverageDuplicatesConflictsAndDeletionGeneration(t *testing
 
 func TestEvalAcceptedIsNotPersistedCancellationConcurrentRetryAndLateArrival(t *testing.T) {
 	h := setupHandler(t)
-	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
 	require.NoError(t, err)
 	startEvalReceiver(t, s)
 	realURL := s.evalReceiverURL

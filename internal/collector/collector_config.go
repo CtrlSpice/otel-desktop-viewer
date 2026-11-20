@@ -10,13 +10,12 @@ import (
 
 // ConfigOptions contains the viewer and receiver settings parsed by the CLI.
 type ConfigOptions struct {
-	Host             string
-	HTTPPort         int
-	GRPCPort         int
-	BrowserPort      int
-	DB               string
-	DBMaxSize        string
-	FeatureFlagsFile string
+	Host        string
+	HTTPPort    int
+	GRPCPort    int
+	BrowserPort int
+	DB          string
+	DBMaxSize   string
 
 	// SelfTelemetryEndpoint turns on the viewer's own instrumentation and sends
 	// its traces and metrics to an external OTLP gRPC endpoint. An empty value
@@ -42,7 +41,6 @@ func URIs(o ConfigOptions) []string {
 		`yaml:extensions::duckdb::otlp_grpc_port: ` + strconv.Itoa(o.GRPCPort),
 		`yaml:extensions::duckdb::db: ` + o.DB,
 		`yaml:extensions::duckdb::db_max_size: "` + o.DBMaxSize + `"`,
-		`yaml:extensions::duckdb::feature_flags_file: ` + strconv.Quote(o.FeatureFlagsFile),
 		`yaml:service::extensions: [duckdb]`,
 		// Batching happens here rather than in the exporter's sending queue.
 		// send_batch_max_size bounds each write; timeout limits display latency

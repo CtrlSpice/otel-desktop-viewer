@@ -63,7 +63,7 @@
       <div class="p-8">
         <h1 class="text-xl">Evals is not enabled</h1>
         <p class="mt-3 text-sm">
-          Enable Evals in your local feature flags to open this experiment.
+          Use a viewer built with EVALS=1 to open this experiment.
         </p>
       </div>
     {/snippet}

@@ -27,10 +27,6 @@ import (
 // Persistent source data travels exclusively through the configured receiver.
 func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	if !s.features.EvalsEnabled(r.Context()) {
-		http.Error(w, "Evaluation import is disabled. Enable evals.enabled on the viewer server.", 403)
-		return
-	}
 	_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
 	name := r.URL.Query().Get("name")
 	if name == "" {
