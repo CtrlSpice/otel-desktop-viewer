@@ -829,10 +829,10 @@
                       stroke-dasharray={quantile.dash}
                       data-quantile={quantile.key}
                     >
-                      <title
-                        >{quantile.label}: bucket-derived estimate of the
-                        combined checked series</title
-                      >
+                      <title>
+                        {quantile.label}: bucket-derived estimate of the
+                        combined checked series
+                      </title>
                     </path>
                   </g>
                 {/each}
@@ -849,9 +849,9 @@
             </Layer>
             <Tooltip.Root class="chart-hover-card">
               {#snippet children({ data }: { data: HeatmapDatum })}
-                <Tooltip.Header
-                  >{formatTooltipTime(data.timestampMs)}</Tooltip.Header
-                >
+                <Tooltip.Header>
+                  {formatTooltipTime(data.timestampMs)}
+                </Tooltip.Header>
                 <dl class="heatmap-hover-cell">
                   <dt>bucket</dt>
                   <dd>

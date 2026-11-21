@@ -235,16 +235,16 @@
 
 <section class="raw-inspector" aria-label="Raw JSON inspector">
   <div class="raw-inspector__controls">
-    {#if scopes.length > 1}<label class="flex items-center gap-2 text-sm"
-        >Scope
+    {#if scopes.length > 1}<label class="flex items-center gap-2 text-sm">
+        Scope
         <select
           class="select select-sm text-sm"
           aria-label="Raw JSON scope"
           bind:value={scopeID}
         >
-          {#each scopes as item (item.id)}<option value={item.id}
-              >{item.label}</option
-            >{/each}
+          {#each scopes as item (item.id)}<option value={item.id}>
+              {item.label}
+            </option>{/each}
         </select>
       </label>{/if}
     {#if showStatus && status}<RawJsonStatus {status} />{/if}
@@ -292,13 +292,14 @@
         aria-label="Download {visibleScope.label.toLowerCase()}"
         data-tip="Download {visibleScope.label.toLowerCase()}"
         download
-        ><HugeiconsIcon
+      >
+        <HugeiconsIcon
           icon={Download01Icon}
           size={16}
           strokeWidth={1.5}
           aria-hidden="true"
-        /></a
-      >{/if}
+        />
+      </a>{/if}
   </div>
   {#if !scope?.url}<p class="p-3 text-sm">
       {scope?.unavailable ?? 'Select a record to inspect its raw JSON.'}
@@ -311,8 +312,10 @@
         currentURL = ''
         requestedURL = ''
         retry++
-      }}>Retry</button
+      }}
     >
+      Retry
+    </button>
   {:else if loading}<LoadingStatus
       pending
       label="Loading JSON…"
@@ -324,10 +327,11 @@
         type="button"
         class="btn btn-soft btn-sm text-sm"
         onclick={() => (requestedURL = previewURL!)}
-        >{bytes !== null && bytes > PREVIEW_BYTES
-          ? 'Load 2 MiB preview'
-          : `Load ${scope.label.toLowerCase()} JSON`}</button
       >
+        {bytes !== null && bytes > PREVIEW_BYTES
+          ? 'Load 2 MiB preview'
+          : `Load ${scope.label.toLowerCase()} JSON`}
+      </button>
     </div>{/if}
   {#if formatted}
     {#if partial}<p class="raw-inspector__notice" role="status">

@@ -43,10 +43,10 @@
     : `${label}: ${unavailable}`}
 >
   <span class="signal-date__label">{label}:</span>
-  <span class="min-w-0 truncate text-base-content"
-    >{value}{#if suffix}
-      <span class="text-subtle">{' '}{suffix}</span>{/if}</span
-  >
+  <span class="min-w-0 truncate text-base-content">
+    {value}{#if suffix}
+      <span class="text-subtle">{' '}{suffix}</span>{/if}
+  </span>
 </div>
 
 <style lang="postcss">

@@ -134,8 +134,9 @@
             style:flex={part.count}
             style:--part-color={part.color}
             aria-hidden="true"
-            ><span class="breakdown-segment__fill"></span></span
           >
+            <span class="breakdown-segment__fill"></span>
+          </span>
         {:else}
           <button
             type="button"
@@ -155,9 +156,9 @@
               hoveredKey = null
               pinnedKey = part.key
             }}
-            ><span class="breakdown-segment__fill" aria-hidden="true"
-            ></span></button
           >
+            <span class="breakdown-segment__fill" aria-hidden="true"></span>
+          </button>
         {/if}
       {/each}
     </div>
@@ -172,12 +173,12 @@
     <span class="breakdown-label__text">
       <span class="breakdown-label__name">{part.label}</span>
       {#if showSingleCount || colouredParts.length > 1}
-        <span class="breakdown-label__count"
-          >{#if countFormat === 'compact'}({part.count.toLocaleString()}){:else if countFormat === 'bracketed'}[{part.count.toLocaleString()}]{:else}({countLabel(
+        <span class="breakdown-label__count">
+          {#if countFormat === 'compact'}({part.count.toLocaleString()}){:else if countFormat === 'bracketed'}[{part.count.toLocaleString()}]{:else}({countLabel(
               part
             )}{#if colouredParts.length > 1},
-              {percent.format(part.count / total)}{/if}){/if}</span
-        >
+              {percent.format(part.count / total)}{/if}){/if}
+        </span>
       {/if}
     </span>
   {/snippet}

@@ -21,13 +21,14 @@
     aria-expanded={expanded}
     aria-controls={contentID}
     onclick={() => (expanded = !expanded)}
-    ><HugeiconsIcon
+  >
+    <HugeiconsIcon
       icon={ArrowRight01Icon}
       size={16}
       strokeWidth={1.5}
       aria-hidden="true"
-    /></button
-  >
+    />
+  </button>
   <div id={contentID} class="min-w-0 flex-1">
     <div class="truncate" hidden={expanded}><ShellSyntax {text} /></div>
     <div hidden={!expanded}>

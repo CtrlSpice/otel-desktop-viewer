@@ -365,8 +365,9 @@
           >
             {#snippet value()}<span
                 title={`${stored.sizeBytes.toLocaleString()} bytes`}
-                >{bytes(stored.sizeBytes)}</span
-              >{/snippet}
+              >
+                {bytes(stored.sizeBytes)}
+              </span>{/snippet}
           </DetailProperty>
           <DetailProperty
             fieldName="Retention limit"
@@ -376,10 +377,11 @@
           >
             {#snippet value()}<span
                 title={`${stored.maxSizeBytes.toLocaleString()} bytes`}
-                >{stored.maxSizeBytes === 0
+              >
+                {stored.maxSizeBytes === 0
                   ? 'No size limit'
-                  : bytes(stored.maxSizeBytes)}</span
-              >{/snippet}
+                  : bytes(stored.maxSizeBytes)}
+              </span>{/snippet}
           </DetailProperty>
         </tbody>
       </table>{:else if !statsLoading && !statsError}<p class="p-3 text-subtle">
@@ -456,13 +458,14 @@
           draft = ''
           submit()
         }}
-        ><HugeiconsIcon
+      >
+        <HugeiconsIcon
           icon={Cancel01Icon}
           size={17}
           strokeWidth={1.5}
           aria-hidden="true"
-        /></button
-      >
+        />
+      </button>
     </form>
   {/snippet}
   {#snippet drawerContent()}

@@ -1192,9 +1192,9 @@
                         valueAlign="right"
                       >
                         {#snippet label()}
-                          <span class="chart-series-label" title={s.label}
-                            >{s.label}</span
-                          >
+                          <span class="chart-series-label" title={s.label}>
+                            {s.label}
+                          </span>
                         {/snippet}
                       </Tooltip.Item>
                     {/if}
@@ -1440,18 +1440,19 @@
                     style:--color={mark.color}
                     aria-hidden="true"
                   ></span>
-                  <span class="chart-selection-legend__label"
-                    >{#if mark.placement === 'right'}<ChartOverlayLabel
+                  <span class="chart-selection-legend__label">
+                    {#if mark.placement === 'right'}<ChartOverlayLabel
                         label={mark.statLabel}
                         description={mark.title}
                         active={emphasis.has(mark.kind)}
                         onclick={() => emphasis.toggle(mark.kind)}
-                      />{:else}{mark.statLabel}{/if}</span
-                  >
+                      />{:else}{mark.statLabel}{/if}
+                  </span>
                   {#if mark.placement !== 'right'}<span
                       class="chart-selection-legend__value"
-                      >{mark.valueText}</span
-                    >{/if}
+                    >
+                      {mark.valueText}
+                    </span>{/if}
                 </li>
               </ul>
             </div>

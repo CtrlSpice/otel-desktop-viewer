@@ -103,8 +103,10 @@
         class="text-secondary underline"
         href="https://github.com/equinix-labs/otel-cli#readme"
         target="_blank"
-        rel="noreferrer">otel-cli</a
-      > installed.
+        rel="noreferrer"
+      >
+        otel-cli
+      </a> installed.
     </p>
     <div
       class="overflow-hidden rounded-xl border border-(--color-highlight-high) bg-base-100"

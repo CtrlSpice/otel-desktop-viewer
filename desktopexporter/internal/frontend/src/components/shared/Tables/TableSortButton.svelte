@@ -33,9 +33,9 @@
   {onclick}
 >
   {@render children()}
-  {#if direction}<span class="table-sort__direction" aria-hidden="true"
-      >{direction === 'asc' ? '↑' : '↓'}</span
-    >{/if}
+  {#if direction}<span class="table-sort__direction" aria-hidden="true">
+      {direction === 'asc' ? '↑' : '↓'}
+    </span>{/if}
 </button>
 
 <style lang="postcss">

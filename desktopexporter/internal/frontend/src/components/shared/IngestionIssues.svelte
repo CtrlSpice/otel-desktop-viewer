@@ -45,9 +45,9 @@
           </span>
         {/snippet}
         {#snippet date()}
-          <span class="issues-time"
-            >Last seen {formatRelativeTime(lastImportFailure)}</span
-          >
+          <span class="issues-time">
+            Last seen {formatRelativeTime(lastImportFailure)}
+          </span>
         {/snippet}
         <ul class="issues-list issues-details" aria-label="File import issues">
           {#each importFailures as failure}
@@ -73,9 +73,9 @@
           </span>
         {/snippet}
         {#snippet date()}
-          <span class="issues-time"
-            >Last seen {formatRelativeTime(group.lastSeen)}</span
-          >
+          <span class="issues-time">
+            Last seen {formatRelativeTime(group.lastSeen)}
+          </span>
         {/snippet}
         <div class="issues-details">
           <table
@@ -123,8 +123,10 @@
               class="issues-help-link link text-sm"
               href="https://github.com/CtrlSpice/otel-desktop-viewer/blob/main/docs/sdk-configuration.md#deeply-nested-telemetry"
               target="_blank"
-              rel="noopener noreferrer">Learn more</a
+              rel="noopener noreferrer"
             >
+              Learn more
+            </a>
           {/if}
         </div>
       </DisclosureSignalCard>

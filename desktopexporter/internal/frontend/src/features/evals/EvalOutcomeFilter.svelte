@@ -44,8 +44,10 @@
       class="btn btn-ghost btn-sm"
       aria-label="Clear outcomes filter"
       disabled={draft.length === 0}
-      onclick={() => (draft = [])}>Clear</button
+      onclick={() => (draft = [])}
     >
+      Clear
+    </button>
     <button
       type="button"
       class="btn btn-ghost btn-sm text-sm font-normal text-primary"
@@ -53,8 +55,10 @@
       onclick={() => {
         onchange(draft)
         close()
-      }}>Apply</button
+      }}
     >
+      Apply
+    </button>
   {/snippet}
   <div class="filter-options">
     {#each options as option (option.key)}
@@ -68,9 +72,9 @@
             : [...draft, option.key])}
       >
         <EvalStatus label={option.label} tone={option.tone} />
-        <span class="ml-auto shrink-0 text-subtle tabular-nums"
-          >[{option.count}]</span
-        >
+        <span class="ml-auto shrink-0 text-subtle tabular-nums">
+          [{option.count}]
+        </span>
       </FilterOption>
     {:else}
       <p class="text-sm text-subtle">No outcomes in this source.</p>

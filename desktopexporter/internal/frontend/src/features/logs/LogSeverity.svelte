@@ -16,9 +16,9 @@
     style:background-color={severityColor(number)}
     aria-hidden="true"
   ></span>
-  <span class="log-severity__label"
-    >{#if children}{@render children()}{:else}{label} ({number}){/if}</span
-  >
+  <span class="log-severity__label">
+    {#if children}{@render children()}{:else}{label} ({number}){/if}
+  </span>
 </span>
 
 <style lang="postcss">

@@ -12,8 +12,8 @@
   })
 </script>
 
-<span class="font-mono text-sm"
-  >{#each tokens as token, index (index)}<span class={token.classes}
-      >{token.text}</span
-    >{/each}</span
->
+<span class="font-mono text-sm">
+  {#each tokens as token, index (index)}<span class={token.classes}>
+      {token.text}
+    </span>{/each}
+</span>

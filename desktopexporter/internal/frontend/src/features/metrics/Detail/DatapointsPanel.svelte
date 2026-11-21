@@ -73,8 +73,10 @@
         {#if onretry}<button
             type="button"
             class="btn btn-ghost mx-3"
-            onclick={onretry}>Retry datapoints</button
-          >{/if}
+            onclick={onretry}
+          >
+            Retry datapoints
+          </button>{/if}
       {/if}
       {#if !response && !error}
         <LoadingStatus

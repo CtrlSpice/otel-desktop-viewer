@@ -98,8 +98,10 @@
         ? 'sr-only'
         : showCount
           ? 'tabular-nums text-subtle'
-          : 'tabular-nums'}>{showCount ? `[${count}]` : `(${count})`}</span
-    >{:else if custom}<span class="sr-only">: custom query</span>{/if}
+          : 'tabular-nums'}
+    >
+      {showCount ? `[${count}]` : `(${count})`}
+    </span>{:else if custom}<span class="sr-only">: custom query</span>{/if}
   {#if !compact}<svg
       class="popover-indicator size-3"
       class:popover-indicator--open={open}
@@ -107,8 +109,10 @@
       fill="none"
       stroke="currentColor"
       stroke-width="1.5"
-      aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg
-    >{/if}
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>{/if}
 </button>
 <div
   bind:this={popover}
@@ -126,13 +130,14 @@
           aria-label={`Clear ${label.toLowerCase()} filter`}
           data-tip={`Clear ${label.toLowerCase()}`}
           onclick={onClear}
-          ><HugeiconsIcon
+        >
+          <HugeiconsIcon
             icon={Cancel01Icon}
             size={16}
             strokeWidth={1.5}
             aria-hidden="true"
-          /></button
-        >{/if}
+          />
+        </button>{/if}
     </div>{/if}
   {@render children(close)}
   {#if footer}<div class="filter-popover__footer filter-actions">

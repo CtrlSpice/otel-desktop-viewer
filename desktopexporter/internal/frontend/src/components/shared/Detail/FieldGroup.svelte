@@ -67,9 +67,10 @@
     <span class="field-group__badges">
       {#if badge}<span class="badge-count">{badge}</span>{/if}
       {#if count !== undefined}
-        <span class="badge-count shrink-0"
-          >{count} {countLabel ?? label.toLowerCase()}</span
-        >
+        <span class="badge-count shrink-0">
+          {count}
+          {countLabel ?? label.toLowerCase()}
+        </span>
       {/if}
     </span>
   {/if}

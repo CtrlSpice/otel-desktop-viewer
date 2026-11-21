@@ -31,9 +31,9 @@
   {title}
   {onclick}
 >
-  <span class="flex min-w-0 flex-1 items-center gap-2"
-    >{@render children()}</span
-  >
+  <span class="flex min-w-0 flex-1 items-center gap-2">
+    {@render children()}
+  </span>
   <span
     class="flex size-4 shrink-0 items-center justify-center"
     class:invisible={!selected}

@@ -103,11 +103,11 @@
       <SignalDate label="Start" timestamp={startedAt} />
     {/snippet}
     {#snippet durationSummary()}
-      {#if span && span.endTime >= span.startTime}<span class="shrink-0"
-          >Duration: <span class="text-base-content tabular-nums"
-            >{formatDuration(span.endTime - span.startTime)}</span
-          ></span
-        >{/if}
+      {#if span && span.endTime >= span.startTime}<span class="shrink-0">
+          Duration: <span class="text-base-content tabular-nums">
+            {formatDuration(span.endTime - span.startTime)}
+          </span>
+        </span>{/if}
     {/snippet}
     {#snippet identifiers()}
       <span
@@ -116,17 +116,17 @@
         aria-label={`${entry.label} identifiers`}
       >
         <span class="text-subtle">Traces:</span>
-        <span
-          ><span class="sr-only">Trace ID </span><Identifier
+        <span>
+          <span class="sr-only">Trace ID </span><Identifier
             value={entry.reference.traceID}
-          /></span
-        >
+          />
+        </span>
         {#if entry.reference.spanID !== undefined}
-          <span
-            ><span class="sr-only">Span ID </span><Identifier
+          <span>
+            <span class="sr-only">Span ID </span><Identifier
               value={entry.reference.spanID}
-            /></span
-          >
+            />
+          </span>
         {/if}
         {#if unavailable}<span class="text-subtle">(unavailable)</span>{/if}
         <LoadingStatus
@@ -180,9 +180,9 @@
               : 'var(--color-muted)'}
             aria-hidden="true"
           ></span>
-          {#if unavailable}{@render identifiers()}{:else}<span class="truncate"
-              >{title}</span
-            >{/if}
+          {#if unavailable}{@render identifiers()}{:else}<span class="truncate">
+              {title}
+            </span>{/if}
         </span>
       {/snippet}
       {#snippet badge()}

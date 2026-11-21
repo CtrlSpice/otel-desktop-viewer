@@ -76,9 +76,9 @@
       aria-hidden="true"
     ></span>
     <span class="breakdown-tooltip__label">{part.label}</span>
-    <span class="shrink-0 text-subtle tabular-nums"
-      >[{part.count.toLocaleString()}]</span
-    >
+    <span class="shrink-0 text-subtle tabular-nums">
+      [{part.count.toLocaleString()}]
+    </span>
   </span>
 </div>
 

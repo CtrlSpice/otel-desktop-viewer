@@ -25,9 +25,9 @@
     <strong>Unsafe aggregation temporality</strong>
     <span>{temporalityLabel}</span>
     <span>Received numeric code: {temporalityCode}</span>
-    <span
-      >Derived chart modes are unavailable because this code is unknown.</span
-    >
+    <span>
+      Derived chart modes are unavailable because this code is unknown.
+    </span>
   </div>
 {:else if size === 'mini'}
   <span

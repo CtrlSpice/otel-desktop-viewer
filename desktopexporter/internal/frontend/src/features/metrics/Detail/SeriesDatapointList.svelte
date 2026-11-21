@@ -431,17 +431,17 @@
             <div class="dp-list__exemplar">
               <span class="dp-list__detail-label">exemplar {i + 1}</span>
               <div class="dp-list__exemplar-fields">
-                <span class="dp-list__detail-value"
-                  >value: {exemplarValue(ex)}</span
-                >
+                <span class="dp-list__detail-value">
+                  value: {exemplarValue(ex)}
+                </span>
                 <span class="dp-list__detail-value tabular-nums">
                   time: {formatDatapointTime(ex.timestamp)}
                 </span>
                 <ExemplarTraceReference exemplar={ex} />
                 {#each dedupeAttributes(ex.filteredAttributes) as attr, attributeIndex (`exemplar:${i}:${attr.id ?? 'unidentified'}:${attributeIndex}`)}
-                  <span class="dp-list__detail-value"
-                    >{attr.key}: {attributeValueLabel(attr.value)}</span
-                  >
+                  <span class="dp-list__detail-value">
+                    {attr.key}: {attributeValueLabel(attr.value)}
+                  </span>
                 {/each}
               </div>
             </div>
@@ -463,8 +463,9 @@
             <tr class="dp-list__header-row">
               <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
               {#if isHistogramKind}
-                <th scope="col" class="dp-list__th dp-list__th--value">Count</th
-                >
+                <th scope="col" class="dp-list__th dp-list__th--value">
+                  Count
+                </th>
               {/if}
               <th scope="col" class="dp-list__th dp-list__th--value">
                 {isHistogramKind ? 'Sum' : 'Value'}{#if valueUnit}
@@ -481,11 +482,11 @@
               {@render datapointRows(dp, rangeStart + offset)}
             {/each}
           {:else}
-            <tr
-              ><td colspan={columnCount} class="dp-list__empty"
-                >No datapoints</td
-              ></tr
-            >
+            <tr>
+              <td colspan={columnCount} class="dp-list__empty">
+                No datapoints
+              </td>
+            </tr>
           {/if}
         </tbody>
       </table>

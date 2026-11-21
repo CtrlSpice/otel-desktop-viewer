@@ -31,23 +31,23 @@
   if (header) onDestroy(header.register(() => current))
 </script>
 
-{#snippet leading()}<WorkspaceContent {contexts}
-    >{@render props.leading?.()}</WorkspaceContent
-  >{/snippet}
-{#snippet right()}<WorkspaceContent {contexts}
-    >{@render props.right?.()}</WorkspaceContent
-  >{/snippet}
-{#snippet badge()}<WorkspaceContent {contexts}
-    >{@render props.badge?.()}</WorkspaceContent
-  >{/snippet}
-{#snippet metaLeft()}<WorkspaceContent {contexts}
-    >{@render props.metaLeft?.()}</WorkspaceContent
-  >{/snippet}
-{#snippet metaCenter()}<WorkspaceContent {contexts}
-    >{@render props.metaCenter?.()}</WorkspaceContent
-  >{/snippet}
-{#snippet metaRight()}<WorkspaceContent {contexts}
-    >{@render props.metaRight?.()}</WorkspaceContent
-  >{/snippet}
+{#snippet leading()}<WorkspaceContent {contexts}>
+    {@render props.leading?.()}
+  </WorkspaceContent>{/snippet}
+{#snippet right()}<WorkspaceContent {contexts}>
+    {@render props.right?.()}
+  </WorkspaceContent>{/snippet}
+{#snippet badge()}<WorkspaceContent {contexts}>
+    {@render props.badge?.()}
+  </WorkspaceContent>{/snippet}
+{#snippet metaLeft()}<WorkspaceContent {contexts}>
+    {@render props.metaLeft?.()}
+  </WorkspaceContent>{/snippet}
+{#snippet metaCenter()}<WorkspaceContent {contexts}>
+    {@render props.metaCenter?.()}
+  </WorkspaceContent>{/snippet}
+{#snippet metaRight()}<WorkspaceContent {contexts}>
+    {@render props.metaRight?.()}
+  </WorkspaceContent>{/snippet}
 
 {#if !header}<PaneHeader {...props} />{/if}

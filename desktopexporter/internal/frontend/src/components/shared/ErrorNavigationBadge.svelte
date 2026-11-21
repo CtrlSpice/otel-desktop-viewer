@@ -61,17 +61,18 @@
       onclick={onPrevious}
       aria-label="Previous error"
       title="Previous error"
-      ><HugeiconsIcon
+    >
+      <HugeiconsIcon
         icon={ChevronLeftIcon}
         size={16}
         strokeWidth={1.5}
         aria-hidden="true"
-      /></button
-    >
+      />
+    </button>
     <span class="error-nav__dot" aria-hidden="true"></span>
-    <span aria-live="polite" class="error-nav__position"
-      >[{index === null ? count : `${index}/${count}`} err]</span
-    >
+    <span aria-live="polite" class="error-nav__position">
+      [{index === null ? count : `${index}/${count}`} err]
+    </span>
     <button
       type="button"
       class="error-nav__button"
@@ -79,13 +80,14 @@
       onclick={onNext}
       aria-label="Next error"
       title="Next error"
-      ><HugeiconsIcon
+    >
+      <HugeiconsIcon
         icon={ChevronRightIcon}
         size={16}
         strokeWidth={1.5}
         aria-hidden="true"
-      /></button
-    >
+      />
+    </button>
   </span>
 {/if}
 

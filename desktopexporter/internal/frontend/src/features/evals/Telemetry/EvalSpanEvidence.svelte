@@ -38,7 +38,8 @@
     <caption
       title={record.sourceDescription}
       class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-secondary"
-      >{#if owner}<span class="text-base-content">{owner}</span>
+    >
+      {#if owner}<span class="text-base-content">{owner}</span>
         {#if reference?.traceID}
           · <Identifier value={reference.traceID} />
         {/if}
@@ -48,8 +49,8 @@
         ·
       {/if}{record.source}{#if record.toolError}<span class="text-subtle">
           ·
-        </span><span class="text-base-content">Tool error</span>{/if}</caption
-    >
+        </span><span class="text-base-content">Tool error</span>{/if}
+    </caption>
     <tbody>
       {#each record.fields as attribute, index (`${attribute.key}/${index}`)}
         <DetailField
