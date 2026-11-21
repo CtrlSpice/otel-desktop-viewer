@@ -107,7 +107,7 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
     if ((await api('/api/info')).version !== V2_VERSION) throw Error('Incorrect eval runtime version')
     const selected = await connectRunModels(api, refs, files)
     if (evaluateOnHost) {
-      if (!selected.every(m => m.enabled)) throw Error('Not all selected models enabled')
+      results.push(...selected)
       const checkPolicy = async location => {
         const route = '/api/plugin' + (location ? '?location[directory]=' + encodeURIComponent(location) : '')
         const deadline = Date.now() + 15000
@@ -121,7 +121,7 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
         }
       }
       await checkPolicy()
-      return await evaluateOnHost({ root, work, api, checkPolicy, telemetry, registry: env.OTEL_EVAL_V2_SESSION_REGISTRY, signal: owner.signal })
+      return await evaluateOnHost({ root, work, api, checkPolicy, telemetry, registry: env.OTEL_EVAL_V2_SESSION_REGISTRY, signal: owner.signal }, selected)
     }
     for (const { providerID, id, enabled } of selected) {
       const result = { model: providerID + '/' + id, enabled, answered: false }

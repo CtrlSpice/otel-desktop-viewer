@@ -10,7 +10,7 @@ import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
 import { claudeEvidence } from './claude-provider.ts'
 import { judgeFor } from './opencode-v2-judge.mjs'
 import { nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
-import { observerURL, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
+import { observerURL, validateSchedule, converge, scheduleForAvailability } from './opencode-v2-run-plan.mjs'
 import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
 
 const jsonLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : []
@@ -228,17 +228,55 @@ export async function importOriginal(root, endpoint, bytes, rows, request = fetc
   return { experiments, nativeRowsPreserved: true, resultIDs: imported.map(row => row.id), otlpResent: false }
 }
 
+function sharedHostCapture(spec) {
+  return spec.mode === 'full' && spec.config.providers.every(provider => provider.config.sharedHost === true)
+}
+
+export function attemptNativeReport(root, telemetry, spec, investigator) {
+  const traceparent = investigator.identity.promptfoo.traceparent
+  const dedicated = telemetry.attempts.get(investigator.evidence)
+  const shared = sharedHostCapture(spec)
+  if (shared) assert.ok(!dedicated, 'Unexpected dedicated capture for shared host')
+  const data = dedicated ?? telemetry.runNative
+  if (!data) {
+    assert.ok(!spec.nativeTelemetry, 'Missing native capture for scheduled attempt')
+    return {}
+  }
+  if (shared) {
+    const traceID = traceparent.split('-')[1]
+    const spans = data.spans.filter(span => span.traceId === traceID)
+    if (spec.nativeTelemetry && !investigator.raw.error) assert.ok(spans.length, 'Missing shared-host spans for investigator trace')
+    const receipts = new Set(spans.flatMap(span => data.spanReceipts[traceID + '/' + span.spanId]))
+    return { native: { ...nativeTelemetryBoundaries({ spans }, traceparent), spans: spans.length },
+      rawNativeUploads: [...receipts].map(name => path.join(root, 'native-otlp', name)) }
+  }
+  for (const resource of data.summary.resources) {
+    assert.equal(attr(resource?.attributes, 'eval.evidence.id')?.stringValue, path.basename(investigator.evidence),
+      'Received native resource must identify its owned attempt')
+  }
+  if (spec.nativeTelemetry && !investigator.raw.error) assert.ok(data.spans.length)
+  return { native: nativeTelemetryBoundaries(data, traceparent), rawNativeUploads: data.receipts.map(receipt =>
+    path.join(dedicated ? investigator.evidence : root, 'native-otlp', receipt.name)) }
+}
+
 export async function verifyRun(root, { importSource = false, env = process.env } = {}) {
   root = fs.realpathSync(root)
   const plan = read(path.join(root, 'run-plan.json'))
   assert.ok(['2.0.29', '2.3.0'].includes(plan.version), 'Unsupported OpenCode run version')
   const spec = { ...plan, models: plan.models ?? plan.config.providers.map(provider => provider.config.model) }
+  if (plan.availability) {
+    const original = read(path.join(root, 'run-started.json')).spec
+    for (const field of ['models', 'taskIDs', 'repeat']) assert.deepEqual(plan[field], original[field])
+    const selection = scheduleForAvailability(original, plan.availability)
+    assert.deepEqual(plan.notStarted, selection.notStarted)
+    assert.deepEqual(plan.config.providers.map(p => `${p.config.providerID}/${p.config.model}`), selection.models)
+    assert.equal(plan.investigators, selection.models.length * plan.taskIDs.length * plan.repeat)
+    spec.models = selection.models
+  }
   const target = fs.existsSync(path.join(root, 'observer-target.json')) ? read(path.join(root, 'observer-target.json')) : { observerAPI: plan.observer }
   const endpoint = observerURL(env.OTEL_EVAL_OBSERVER_API ?? target.observerAPI)
   assert.equal(endpoint, observerURL(target.observerAPI), 'Verifier must use the recorded observer')
-  const exportFile = path.join(root, 'promptfoo.json'), bytes = fs.readFileSync(exportFile), digest = sha(bytes)
-  const source = JSON.parse(bytes), rows = source.results.results
-  assert.ok(source.evalId && source.config)
+  const exportFile = path.join(root, 'promptfoo.json')
   if (fs.existsSync(path.join(root, 'original-export-hashes.json'))) for (const [name, hash] of Object.entries(read(path.join(root, 'original-export-hashes.json')))) {
     assert.ok(['promptfoo.json', 'promptfoo-rows.jsonl'].includes(name))
     assert.equal(sha(fs.readFileSync(path.join(root, name))), hash, 'Original native export integrity')
@@ -249,6 +287,20 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   const sourceDir = fs.existsSync(snapshotFile) ? path.join(root, 'sources') : import.meta.dirname
   if (fs.existsSync(snapshotFile)) for (const [file, hash] of Object.entries(read(snapshotFile).files))
     assert.equal(sha(fs.readFileSync(path.join(sourceDir, file))), hash, 'Source snapshot integrity')
+  if (plan.availability && !spec.models.length) {
+    assert.equal(fs.existsSync(exportFile), false, 'Unavailable models must not produce native results')
+    assert.deepEqual(read(path.join(root, 'result-summary.json')), { mode: plan.mode, notStarted: plan.notStarted, results: [] })
+    const completed = read(path.join(root, 'run-completed.json'))
+    assert.ok(!completed.failure && completed.scheduled === 0 && completed.results === 0)
+    return { root, resultCount: 0, slots: [], notStarted: plan.notStarted, imported: false }
+  }
+  const bytes = fs.readFileSync(exportFile), digest = sha(bytes)
+  const source = JSON.parse(bytes), rows = source.results.results
+  assert.ok(source.evalId && source.config)
+  if (plan.availability) {
+    assert.deepEqual(source.config.metadata?.notStarted, plan.notStarted)
+    assert.deepEqual(source.config.metadata?.plannedModels, plan.models)
+  }
   const identities = new Map(rows.map(row => {
     const evidence = ownedEvidence(root, row.response.metadata.evidence)
     return [evidence, read(path.join(evidence, 'identity.json'))]
@@ -268,7 +320,7 @@ export async function verifyRun(root, { importSource = false, env = process.env 
     assert.ok(rubric && question, 'Missing reference for scheduled question')
     const metadata = row.response.metadata
     assert.equal(metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion, plan.version, 'Investigator version differs from run plan')
-    const native = telemetry.attempts.get(metadata.evidence) ?? telemetry.legacy
+    const native = telemetry.attempts.get(metadata.evidence) ?? telemetry.runNative
     const investigator = verifyInvestigator(root, row, telemetry.wrapper, rubric, question, native?.spans ?? [])
     assert.equal(investigator.identity.promptfoo.evaluationId, source.evalId)
     if (row.response.metadata.sessionID) {
@@ -282,17 +334,8 @@ export async function verifyRun(root, { importSource = false, env = process.env 
     if (plan.graders) assert.equal(plan.graders[spec.mode === 'full' ? metadata.model : metadata.model.split('/')[1]], expected)
     const grader = verifyGrader(root, row, investigator, graders, expected)
     if (grader.sessionID) { assert.ok(!graderSessions.has(grader.sessionID)); graderSessions.add(grader.sessionID) }
-    if (spec.nativeTelemetry && !native) throw new Error('Missing native capture for scheduled attempt')
-    if (native) {
-      for (const resource of native.summary.resources) {
-        const id = attr(resource?.attributes, 'eval.evidence.id')?.stringValue
-        assert.equal(id, path.basename(investigator.evidence), 'Received native resource must identify its owned attempt')
-      }
-      if (!investigator.raw.error && spec.nativeTelemetry) assert.ok(native.spans.length)
-    }
     reports.push({ ...investigator.report, evidence: investigator.evidence, grader,
-      native: native ? nativeTelemetryBoundaries(native, investigator.identity.promptfoo.traceparent) : undefined,
-      rawNativeUploads: native?.receipts?.map(receipt => path.join(investigator.evidence, 'native-otlp', receipt.name)),
+      ...attemptNativeReport(root, telemetry, spec, investigator),
     })
   }
   assert.equal(graders.length, reports.filter(report => report.grader.invoked).length, 'Unexpected orphan grader attempt')
@@ -302,6 +345,7 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   const observed = await awaitTelemetry(endpoint, telemetry, { fresh: spec.mode === 'sol-luna' })
   const reportDirectory = fs.mkdtempSync(path.join(root, 'verification-'))
   const report = { evalId: source.evalId, mode: spec.mode ?? 'one', slots, resultCount: rows.length,
+    ...(plan.availability ? { planned: plan.planned, notStarted: plan.notStarted } : {}),
     nativeOutcomes: rows.map(row => ({ id: row.id, success: row.success, score: row.score, failureReason: row.failureReason })),
     originalNativeExportSHA256: digest, observerAPI: endpoint, attempts: reports, observer: observed,
     wrapperScopes: telemetry.wrapper.summary.scopes, wrapperSpans: telemetry.wrapper.spans.length,

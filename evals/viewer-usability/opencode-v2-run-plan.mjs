@@ -26,6 +26,16 @@ export function runMode(args) {
     repeat: multi ? 3 : 1, nativeTelemetry: multi || args.includes('--native-telemetry'), maxConcurrency: 1, cache: false }
 }
 
+export function scheduleForAvailability(plan, availability) {
+  assert.deepEqual(availability.map(m => `${m.providerID}/${m.id}`), plan.models, 'Availability must cover the planned roster')
+  assert.ok(availability.every(m => typeof m.enabled === 'boolean'), 'Missing model availability')
+  const models = plan.models.filter((_, i) => availability[i].enabled)
+  const notStarted = plan.models.filter((_, i) => !availability[i].enabled).flatMap(model =>
+    plan.taskIDs.flatMap(task => Array.from({ length: plan.repeat }, (_, repeatIndex) =>
+      ({ model, task, repeatIndex, status: 'not started', reason: 'model unavailable' }))))
+  return { models, notStarted }
+}
+
 export function observerURL(value) {
   const url = new URL(value)
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/')
@@ -83,7 +93,10 @@ export function evaluationConfig({ suite, root, spec, task, connection, binary, 
         value: 'file://' + path.join(suite, 'opencode-v2-grading-evidence.mjs') }],
     },
     tests: tasks.map(task => ({ description: task.id, vars: { task_id: task.id, goal: task.goal },
-      ...(task.id === 'trace-export' ? { assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(suite, 'grading-evidence.ts') + ':verifyArtifact' }] } : {}),
+      ...(task.id === 'trace-export' ? {
+        assertScoringFunction: 'file://' + path.join(suite, 'score-export.mjs'),
+        assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(suite, 'grading-evidence.ts') + ':verifyArtifact' }],
+      } : {}),
     })),
     evaluateOptions: { repeat: spec.repeat, maxConcurrency: 1, cache: false },
     outputPath: [path.join(root, 'promptfoo.json'), path.join(root, 'promptfoo-rows.jsonl')], writeLatestResults: true,
@@ -122,6 +135,14 @@ export function validateSchedule(rows, spec, identities) {
     assert.ok([0, 1, 2].includes(row.failureReason), 'Keep native execution/assessment outcomes')
   }
   return [...slots].sort()
+}
+
+function hasGraderError(result) {
+  return result?.metadata?.graderError === true || result?.componentResults?.some(hasGraderError) === true
+}
+
+export function isExecutionError(row) {
+  return row.failureReason === 2 || hasGraderError(row.gradingResult)
 }
 
 // Only observations are repeated. This function never submits or retries uploads.

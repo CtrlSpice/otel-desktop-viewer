@@ -4,9 +4,9 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { runMode, fullRunPlan, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
+import { runMode, fullRunPlan, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge, scheduleForAvailability, isExecutionError } from './opencode-v2-run-plan.mjs'
 import { aggregateUsage } from './opencode-v2-evidence.mjs'
-import { verifyInvestigator, verifyGrader, verifyNoRetry, importOriginal } from './opencode-v2-verify.mjs'
+import { verifyInvestigator, verifyGrader, verifyNoRetry, importOriginal, verifyRun, attemptNativeReport } from './opencode-v2-verify.mjs'
 import { afterEach as checkEvidence, checkEvidenceError, onFailure } from './opencode-v2-execution-stop.mjs'
 import { telemetryExpectation } from './opencode-v2-observer.mjs'
 import Provider from './opencode-v2-provider.mjs'
@@ -118,6 +118,40 @@ test('full plan distinguishes 180 model/question/repetition slots and rejects a 
   assert.throws(() => validateSchedule(rows, spec, identities), /Duplicate model/)
 })
 
+const availabilityFor = (plan, enabled) => plan.models.map(model => {
+  const [providerID, id] = model.split('/')
+  return { providerID, id, enabled: enabled(model) }
+})
+
+test('one unavailable model has 15 unstarted slots and never reaches the native provider list', () => {
+  const plan = fullRunPlan(), disabled = plan.models[3]
+  const availability = availabilityFor(plan, model => model !== disabled)
+  const { models, notStarted } = scheduleForAvailability(plan, availability)
+  const config = evaluationConfig({ suite: '/suite', root: '/fresh', spec: { ...plan, models } })
+  assert.equal(config.providers.length * config.tests.length * config.evaluateOptions.repeat, 165)
+  assert.deepEqual(config.providers.map(p => new Provider(p).id()), plan.models.filter(m => m !== disabled).map(m => 'opencode-v2:' + m))
+  assert.equal(notStarted.length, 15)
+  for (const task of plan.taskIDs) assert.deepEqual(notStarted.filter(r => r.task === task),
+    [0,1,2].map(repeatIndex => ({ model: disabled, task, repeatIndex, status: 'not started', reason: 'model unavailable' })))
+  assert.throws(() => scheduleForAvailability(plan, availability.slice(1)), /planned roster/)
+})
+
+test('all unavailable verifies zero results without an export or viewer import', async t => {
+  const root = temporary(t), plan = fullRunPlan(), availability = availabilityFor(plan, () => false)
+  const selection = scheduleForAvailability(plan, availability)
+  assert.equal(selection.notStarted.length, 180)
+  write(root, 'run-started.json', { spec: plan })
+  write(root, 'run-plan.json', { ...plan, version: '2.3.0', availability, planned: 180, investigators: 0, notStarted: selection.notStarted,
+    config: { providers: [] }, observer: 'http://127.0.0.1:1' })
+  write(root, 'owned-shutdown.json', {})
+  write(root, 'source-preservation.json', { unchanged: true })
+  write(root, 'result-summary.json', { mode: 'full', notStarted: selection.notStarted, results: [] })
+  write(root, 'run-completed.json', { scheduled: 0, results: 0 })
+  assert.deepEqual(await verifyRun(root, { importSource: true, env: {} }), { root, resultCount: 0, slots: [], notStarted: selection.notStarted, imported: false })
+  write(root, 'promptfoo.json', {})
+  await assert.rejects(verifyRun(root, { env: {} }), /must not produce native results/)
+})
+
 test('a veto is not a retry; demand matching session HTTP evidence', () => {
   const sessionID = 'ses_test'
   const policy = [{ type: 'model.context', sessionID }, { type: 'retry.veto', sessionID, attempt: 2, observedAt: 12 }]
@@ -126,6 +160,61 @@ test('a veto is not a retry; demand matching session HTTP evidence', () => {
   verifyNoRetry(policy, sessionID, [span])
   assert.throws(() => verifyNoRetry(policy, sessionID, []), /request evidence/)
   assert.throws(() => verifyNoRetry(policy, sessionID, [span, { ...span, startTimeUnixNano: '13000000' }]), /repeated model request/)
+})
+
+test('native export score requires both the written handoff and the reload check', async t => {
+  const root = temporary(t)
+  process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'state')
+  process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
+  const { evaluate } = await import('promptfoo')
+  const config = evaluationConfig({ suite: import.meta.dirname, root, spec: fullRunPlan() })
+  const task = config.tests.find(t => t.vars.task_id === 'trace-export')
+  const cases = ['both', 'file-only', 'handoff-only', 'neither', 'grader-error']
+  await evaluate({
+    providers: ['echo'], prompts: ['{{scenario}}'],
+    defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture', threshold: 1 }],
+      options: { provider: { id: () => 'fixture-grader', async callApi(prompt) {
+        if (prompt.includes('grader-error')) return { error: 'Grader unavailable' }
+        const pass = prompt.includes('both') || prompt.includes('handoff-only')
+        return { output: JSON.stringify({ pass, score: Number(pass), reason: 'Handoff judgment' }) }
+      } } } },
+    tests: cases.map(scenario => ({ ...task, vars: { ...task.vars, scenario },
+      assert: [{ ...task.assert[0], value: () => ['both', 'file-only', 'grader-error'].includes(scenario) }] })),
+    outputPath: path.join(root, 'scores.json'),
+  }, { maxConcurrency: 1, cache: false, share: false })
+  const rows = JSON.parse(fs.readFileSync(path.join(root, 'scores.json'))).results.results
+  assert.equal(rows.length, cases.length)
+  for (const row of rows) {
+    const { scenario } = row.vars
+    assert.equal(row.score, Number(scenario === 'both'), scenario)
+    assert.equal(row.success, scenario === 'both', scenario)
+    assert.equal(row.gradingResult.componentResults.length, 2)
+    const judge = row.gradingResult.componentResults.find(c => c.assertion.type === 'llm-rubric')
+    assert.equal(Boolean(judge.metadata?.graderError), scenario === 'grader-error')
+    assert.equal(isExecutionError(row), scenario === 'grader-error', scenario)
+  }
+})
+
+test('shared native evidence must match the investigator trace; dedicated evidence must carry its own resource ID', t => {
+  const root = temporary(t), evidence = path.join(root, 'runs/investigator-opencode-v2-first')
+  const investigator = { evidence, raw: {}, identity: { promptfoo: { traceparent: `00-${traceID(1)}-${spanID(8)}-01` } } }
+  const spec = { mode: 'full', nativeTelemetry: true, config: { providers: [{ config: { sharedHost: true } }] } }
+  const spans = [1, 2].map(i => ({ traceId: traceID(i), spanId: spanID(i), name: 'Session.prompt' }))
+  const data = { spans, summary: { resources: [{}] }, receipts: [], spanReceipts: Object.fromEntries(spans.map((s, i) =>
+    [s.traceId + '/' + s.spanId, [`batch-${i}.otlp`]])) }
+  const telemetry = { runNative: data, attempts: new Map() }
+  const report = attemptNativeReport(root, telemetry, spec, investigator)
+  assert.equal(report.native.spans, 1)
+  assert.deepEqual(report.rawNativeUploads, [path.join(root, 'native-otlp/batch-0.otlp')])
+  data.spans = [spans[1]]
+  assert.throws(() => attemptNativeReport(root, telemetry, spec, investigator), /Missing shared-host spans/)
+  const dedicated = { attempts: new Map([[evidence, data]]) }
+  for (const id of [undefined, 'another-investigator', path.basename(evidence)]) {
+    data.summary.resources = [{ attributes: id ? [{ key: 'eval.evidence.id', value: { stringValue: id } }] : [] }]
+    const check = () => attemptNativeReport(root, dedicated, { mode: 'one', nativeTelemetry: true }, investigator)
+    if (id === path.basename(evidence)) assert.doesNotThrow(check)
+    else assert.throws(check, /must identify its owned attempt/)
+  }
 })
 
 test('recorded provider and grader errors continue; missing evidence and shared harness failures cancel', t => {

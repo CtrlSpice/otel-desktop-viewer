@@ -13,7 +13,7 @@ import { cancelPiAttempts } from './pi-provider.ts'
 import { cancelClaudeAttempts } from './claude-provider.ts'
 import { judgeFor } from './opencode-v2-judge.mjs'
 import { nativeTelemetryReceiver, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
-import { runMode, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, fullRunPlan } from './opencode-v2-run-plan.mjs'
+import { runMode, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, fullRunPlan, scheduleForAvailability, isExecutionError } from './opencode-v2-run-plan.mjs'
 import { readJSON, sha256, observerTotals, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
 import { onFailure as onTeardownFailure } from './attempt-teardown-stop.mjs'
 
@@ -26,7 +26,8 @@ if (args.length === 1 && args[0] === '--plan-full') {
   process.exit(0)
 }
 const spec = runMode(args)
-const scheduled = spec.models.length * (spec.taskIDs?.length ?? 1) * spec.repeat
+const planned = spec.models.length * (spec.taskIDs?.length ?? 1) * spec.repeat
+let selection = { models: spec.models, notStarted: [] }, scheduled = 0
 process.umask(0o077)
 const suite = import.meta.dirname
 const parent = '/Users/moya/.local/share/otel-desktop-viewer/evals'
@@ -84,34 +85,42 @@ try {
   const connection = readJSON(path.join(root, 'connection.json'))
   assert.notEqual(connection.endpoint, settings.observerAPI, 'Fixture must be independent from observer')
   const task = readJSON(path.join(suite, 'tasks.json')).find(task => task.id === 'checkout-failure')
-  const config = evaluationConfig({ suite, root, spec, task, connection, binary: settings.binary, authFile, authEntry, piAuthFile,
-    observerHTTP: settings.observerHTTP, graderHTTP: judgeCollector.endpoint,
-    cliBinary: process.env.OTEL_EVAL_CLAUDE_BINARY ?? path.join(parent, 'runtime/claude-plugin/node_modules/@anthropic-ai/claude-code-darwin-arm64/claude'),
-    configDir: process.env.OTEL_EVAL_CLAUDE_CONFIG_DIR ?? path.join(parent, 'runtime/claude-profile') })
-  config.extensions = ['file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':beforeAll',
-    ...(spec.mode === 'full' ? ['file://' + path.join(suite, 'opencode-v2-execution-stop.mjs') + ':afterEach'] : [])]
-  save('run-plan.json', { ...spec, ...(spec.mode === 'full' ? {} : { task }), investigators: scheduled, maxGraders: scheduled,
-    retry: false, version: V2_VERSION, graders: graderMap(spec), observer: settings.observerAPI, observerHTTP: settings.observerHTTP, config })
-  console.log(JSON.stringify({ root, state: 'evaluating', mode: spec.mode, investigators: scheduled }))
-  const { evaluate } = await import('promptfoo')
-  const execute = () => evaluate(config, { ...config.evaluateOptions, share: false, abortSignal: cancellation.signal })
+  const execute = async availability => {
+    if (availability) selection = scheduleForAvailability(spec, availability)
+    scheduled = planned - selection.notStarted.length
+    const config = evaluationConfig({ suite, root, spec: { ...spec, models: selection.models }, task, connection, binary: settings.binary, authFile, authEntry, piAuthFile,
+      observerHTTP: settings.observerHTTP, graderHTTP: judgeCollector.endpoint,
+      cliBinary: process.env.OTEL_EVAL_CLAUDE_BINARY ?? path.join(parent, 'runtime/claude-plugin/node_modules/@anthropic-ai/claude-code-darwin-arm64/claude'),
+      configDir: process.env.OTEL_EVAL_CLAUDE_CONFIG_DIR ?? path.join(parent, 'runtime/claude-profile') })
+    config.extensions = ['file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':beforeAll',
+      ...(spec.mode === 'full' ? ['file://' + path.join(suite, 'opencode-v2-execution-stop.mjs') + ':afterEach'] : [])]
+    if (availability) config.metadata = { plannedModels: spec.models, notStarted: selection.notStarted }
+    save('run-plan.json', { ...spec, ...(availability ? { availability, notStarted: selection.notStarted } : { task }), planned, investigators: scheduled, maxGraders: scheduled,
+      retry: false, version: V2_VERSION, graders: graderMap(spec), observer: settings.observerAPI, observerHTTP: settings.observerHTTP, config })
+    console.log(JSON.stringify({ root, state: scheduled ? 'evaluating' : 'not started', mode: spec.mode, planned, scheduled, unavailable: selection.notStarted.length }))
+    if (!scheduled) return
+    const { evaluate } = await import('promptfoo')
+    await evaluate(config, { ...config.evaluateOptions, share: false, abortSignal: cancellation.signal })
+  }
   if (spec.mode === 'full') {
     const { onFailure } = await import('./opencode-v2-execution-stop.mjs')
     onFailure(error => cancellation.cancel(error))
     await checkConnections({ root, runtime: path.join(parent, 'runtime'), catalogue: process.env.OPENCODE_MODELS_PATH,
       files: { 'opencode-go': process.env.OTEL_EVAL_GO_AUTH_FILE, 'kimi-code-plan-global': process.env.OTEL_EVAL_KIMI_AUTH_FILE },
-      signal: cancellation.signal, refs: spec.models, telemetryForward: settings.observerHTTP, evaluateOnHost: host => withSharedHost(host, execute) })
+      signal: cancellation.signal, refs: spec.models, telemetryForward: settings.observerHTTP, evaluateOnHost: (host, availability) => withSharedHost(host, () => execute(availability)) })
   } else await execute()
-  const exported = readJSON(path.join(root, 'promptfoo.json'))
-  save('original-export-hashes.json', Object.fromEntries(['promptfoo.json', 'promptfoo-rows.jsonl'].map(name => [name, sha256(fs.readFileSync(path.join(root, name)))])))
-  assert.ok(exported.evalId && exported.config)
-  rows = exported.results.results
-  if (spec.mode === 'full' && rows.length) await importOriginal(root, settings.observerAPI, fs.readFileSync(path.join(root, 'promptfoo.json')), rows)
-  const identities = new Map(rows.map(row => [row.response?.metadata?.evidence, readJSON(path.join(row.response.metadata.evidence, 'identity.json'))]))
-  validateSchedule(rows, spec, identities)
-  // Execution errors and Fail/Partial assessments remain rows; no fail-fast,
-  // replacement, extra attempt or score rewriting occurs here.
-  save('result-summary.json', { evalId: exported.evalId, mode: spec.mode, results: rows.map(row => ({ id: row.id, provider: row.provider,
+  let evalId
+  if (scheduled) {
+    const exported = readJSON(path.join(root, 'promptfoo.json'))
+    save('original-export-hashes.json', Object.fromEntries(['promptfoo.json', 'promptfoo-rows.jsonl'].map(name => [name, sha256(fs.readFileSync(path.join(root, name)))])))
+    assert.ok(exported.evalId && exported.config)
+    evalId = exported.evalId
+    rows = exported.results.results
+    if (spec.mode === 'full' && rows.length) await importOriginal(root, settings.observerAPI, fs.readFileSync(path.join(root, 'promptfoo.json')), rows)
+    const identities = new Map(rows.map(row => [row.response?.metadata?.evidence, readJSON(path.join(row.response.metadata.evidence, 'identity.json'))]))
+    validateSchedule(rows, { ...spec, models: selection.models }, identities)
+  }
+  save('result-summary.json', { evalId, mode: spec.mode, notStarted: selection.notStarted, results: rows.map(row => ({ id: row.id, provider: row.provider,
     repeatIndex: row.response.metadata.repeatIndex, success: row.success, score: row.score, failureReason: row.failureReason,
     error: row.error, traceId: row.traceId, gradingResult: row.gradingResult })) })
 } catch (error) {
@@ -129,7 +138,9 @@ try {
     const telemetry = loadRunTelemetry(root)
     const native = [...telemetry.attempts].map(([evidence, data]) => ({ evidence,
       ...nativeTelemetryBoundaries(data, readJSON(path.join(evidence, 'identity.json')).promptfoo.traceparent) }))
-    save('native-telemetry-summary.json', { attempts: native, spans: native.reduce((sum, item) => sum + item.spans, 0), logs: native.reduce((sum, item) => sum + item.logs, 0) })
+    const runNative = telemetry.runNative?.summary
+    save('native-telemetry-summary.json', { attempts: native, runNative, spans: native.reduce((sum, item) => sum + item.spans, runNative?.spans ?? 0),
+      logs: native.reduce((sum, item) => sum + item.logs, runNative?.logs ?? 0) })
     save('observer-convergence.json', await awaitTelemetry(settings.observerAPI, telemetry, { fresh: spec.mode === 'sol-luna' }))
   })
   if (cleanupErrors.length && !failure) { failure = cleanupErrors.join('\n'); process.exitCode = 1 }
@@ -139,10 +150,12 @@ try {
   const unchanged = JSON.stringify(before) === JSON.stringify(after) && sourcesUnchanged
   save('source-preservation.json', { unchanged, sourcesUnchanged, files: after })
   if (!unchanged) { failure ??= 'Source preservation check failed'; process.exitCode = 1 }
-  save('run-completed.json', { mode: spec.mode, scheduled, results: rows.length, failure,
-    executionErrors: rows.filter(row => row.failureReason === 2).length, completedAt: new Date().toISOString() })
-  fs.writeFileSync(path.join(root, 'handoff.md'), `# OpenCode V2 ${spec.mode} evaluation\n\nRoot: ${root}\n\nStatus: ${failure ?? 'Scheduling completed; inspect each native result outcome'}\n\n${spec.models.join(', ')}; ${spec.repeat} repetitions; ${rows.length} rows; ${rows.filter(row => row.failureReason === 2).length} execution errors. Opus grades GPT answers; Sol grades the rest. No retries.\n\nObserver API: ${settings.observerAPI}\nOTLP destination: ${settings.observerHTTP}\nMain owns observer process/database; runner stops only its own fixture, V2 servers and relays.\n\nOriginal Promptfoo exports are at root. Wrapper raw batches: otlp/. Opus grader batches: otlp-opus/. Per-investigator native batches: runs/investigator-opencode-v2-*/native-otlp/. Full source snapshot and hashes: sources/, source-snapshot.json. Native outcomes, IDs and grader evidence: result-summary.json. Flush verification: observer-convergence.json. Sources/credentials: source-preservation.json.\n\nRun opencode-v2-verify.mjs ${root} --import once to verify and import original bytes. Never replay OTLP.\n`, { flag: 'wx', mode: 0o600 })
+  const executionErrors = rows.filter(isExecutionError).length
+  save('run-completed.json', { mode: spec.mode, planned, scheduled, notStartedUnavailable: selection.notStarted.length, results: rows.length, failure,
+    executionErrors, completedAt: new Date().toISOString() })
+  const coverage = `${planned} planned; ${scheduled} scheduled; ${selection.notStarted.length} not started: model unavailable.`
+  fs.writeFileSync(path.join(root, 'handoff.md'), `# OpenCode V2 ${spec.mode} evaluation\n\nRoot: ${root}\n\nStatus: ${failure ?? coverage}\n\n${spec.models.join(', ')}; ${spec.repeat} repetitions; ${rows.length} rows; ${executionErrors} execution errors. Opus grades GPT answers; Sol grades the rest. No retries.\n\nObserver API: ${settings.observerAPI}\nOTLP destination: ${settings.observerHTTP}\nMain owns observer process/database; runner stops only its own fixture, V2 servers and relays.\n\nUnavailable slots and native outcomes: result-summary.json. Wrapper raw batches: otlp/. Opus grader batches: otlp-opus/. Per-investigator native batches: runs/investigator-opencode-v2-*/native-otlp/. Full source snapshot and hashes: sources/, source-snapshot.json. Flush verification: observer-convergence.json. Sources/credentials: source-preservation.json.\n\n${scheduled ? `Run opencode-v2-verify.mjs ${root} to verify the native results.` : 'No Promptfoo evaluation was scheduled.'} Never replay OTLP.\n`, { flag: 'wx', mode: 0o600 })
   cancellation.dispose()
   onTeardownFailure(undefined)
-  console.log(JSON.stringify({ root, status: failure ? 'blocked' : 'completed', results: rows.length, handoff: path.join(root, 'handoff.md') }))
+  console.log(JSON.stringify({ root, status: failure ? 'blocked' : scheduled ? 'completed' : 'not started', planned, scheduled, unavailable: selection.notStarted.length, results: rows.length, handoff: path.join(root, 'handoff.md') }))
 }

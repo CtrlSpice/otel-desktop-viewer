@@ -232,6 +232,12 @@ starting a run. `--run-full` executes that plan through a shared host and requir
 an explicit fresh run directory, prebuilt viewer, separate observer and private
 membership references.
 
+The full run keeps all twelve models in its plan and schedules only those
+enabled in the host catalogue. `result-summary.json` lists each unavailable
+model, question and repetition as “not started: model unavailable”.
+These slots have no judge calls, scores or Promptfoo result rows. If no model
+is enabled, the launcher records coverage without starting Promptfoo.
+
 Claude Opus 5.5 grades GPT investigations, including both Sol versions. Pi Sol
 6.1 grades the other investigations, including Opus. Promptfoo routes the
 blind prompt using the original investigator provider ID. An unavailable

@@ -54,7 +54,10 @@ export default {
   tests: cases.map(task => ({
     description: task.id,
     vars: { task_id: task.id, goal: task.goal },
-    ...(task.id === 'trace-export' ? { assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(SUITE, 'grading-evidence.ts') + ':verifyArtifact' }] } : {}),
+    ...(task.id === 'trace-export' ? {
+      assertScoringFunction: 'file://' + path.join(SUITE, 'score-export.mjs'),
+      assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(SUITE, 'grading-evidence.ts') + ':verifyArtifact' }],
+    } : {}),
   })),
   outputPath: [path.join(root, 'promptfoo.json'), path.join(root, 'promptfoo-rows.jsonl')],
   writeLatestResults: true,
