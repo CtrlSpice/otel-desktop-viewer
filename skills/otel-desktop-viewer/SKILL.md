@@ -43,7 +43,7 @@ Keep the service, time window, owner, and type from discovery:
 
 ```sh
 otel-desktop-viewer attributes values http.request.method --owner-type span --service checkout --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z
-otel-desktop-viewer query --json "
+otel-desktop-viewer query "
 select trace_id_wire(s.trace_id) as trace_id,
        span_id_wire(s.span_id) as span_id, s.service_name, s.name
 from spans s
