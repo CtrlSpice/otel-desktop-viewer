@@ -240,14 +240,15 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(context.Background(), conn, buildTestMetrics())
 	}))
-	result, err := handler.Handle(context.Background(), createRequest("query", []any{`SELECT m.id::varchar, s.id::varchar, l.id::varchar FROM metrics m JOIN metric_series s ON s.metric_id = m.id CROSS JOIN logs l LIMIT 1`}))
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{`select m.id::varchar, s.id::varchar, l.id::varchar, (select ref from search_services limit 1)
+		from metrics m join metric_series s on s.metric_id = m.id cross join logs l limit 1`}))
 	require.NoError(t, err)
 	var refs struct {
 		Rows [][]string `json:"rows"`
 	}
 	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &refs))
 	require.Len(t, refs.Rows, 1)
-	require.Len(t, refs.Rows[0], 3)
+	require.Len(t, refs.Rows[0], 4)
 	metricRef, seriesRef, logRef := refs.Rows[0][0], refs.Rows[0][1], refs.Rows[0][2]
 	document := openRPCDocument()
 	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
@@ -273,7 +274,8 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"getMetricAttributeDefinitions", []any{}},
 		{"getTraceAttributeDefinitionsByTraceID", []any{testTraceIDHex}},
 		{"getFieldValueCompletions", []any{"traces", "name", "", 10}},
-		{"searchAttributeMatches", []any{"pumpkin"}},
+		{"searchAttributeMatches", []any{"pumpkin", "traces", "resource", []string{"attributes", "service.name"}, "string"}},
+		{"getServiceLabels", []any{refs.Rows[0][3]}},
 		{"getStats", []any{}},
 		{"getTraceSpanCount", []any{testTraceIDHex}},
 		{"getImportConfig", []any{}},
@@ -292,6 +294,9 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 			require.NoError(t, err)
 			var value any
 			require.NoError(t, decodeParams(encoded, &value))
+			if tc.method == "searchAttributeMatches" {
+				require.NotEmpty(t, value)
+			}
 			for _, method := range document["methods"].([]rpcMethodDescription) {
 				if method.Name == tc.method {
 					require.NoError(t, checkRPCWireSchema(method.Result.Schema, value, schemas))
