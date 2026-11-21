@@ -51,7 +51,7 @@ func newServicesCommand(client *http.Client, now func() time.Time) *cobra.Comman
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "services",
-		Short: "Discover services and their telemetry counts",
+		Short: "🛎️ Discover services and their telemetry counts",
 		Long: "Discover services with spans, logs or Metric datapoints in a running viewer. " +
 			"Group by exact typed service.namespace and service.name values, ordered by namespace then name and typed identity. " +
 			"Show distinct trace, span/error-span, log/error-log and Metric/datapoint/exemplar counts, plus lastSeen in Unix nanoseconds. " +

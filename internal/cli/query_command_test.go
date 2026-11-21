@@ -91,7 +91,7 @@ func TestQueryCommandDefaultLimitAndHelpAreOffline(t *testing.T) {
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--help"})
 	require.NoError(t, cmd.Execute())
-	assert.Contains(t, output.String(), "query     🦆 Run SQL against a running viewer")
+	assert.Contains(t, output.String(), "query       🦆 Run SQL against a running viewer")
 }
 
 func TestQueryCommandReturnsRPCAndHTTPFailuresWithoutUsage(t *testing.T) {
