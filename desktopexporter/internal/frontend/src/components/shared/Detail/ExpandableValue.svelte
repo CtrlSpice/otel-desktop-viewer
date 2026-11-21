@@ -93,8 +93,10 @@
         class="detail-pair__toggle"
         onclick={() => (expanded = !expanded)}
         aria-controls={contentID}
-        aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
+        aria-expanded={expanded}
       >
+        {expanded ? 'Show less' : 'Show more'}
+      </button>
     </div>
   {/if}
 </div>

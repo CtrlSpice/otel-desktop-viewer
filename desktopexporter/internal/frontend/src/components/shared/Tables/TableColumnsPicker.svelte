@@ -153,8 +153,10 @@
                 class="shrink-0 text-sm {option.count
                   ? 'text-base-content'
                   : 'text-muted'}"
-                title={option.countTitle}>{option.count}</span
-              >{/if}
+                title={option.countTitle}
+              >
+                {option.count}
+              </span>{/if}
           </label>
         {/each}
       </fieldset>

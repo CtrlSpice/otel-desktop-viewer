@@ -567,19 +567,20 @@
             class="btn btn-ghost btn-sm w-full font-normal"
             disabled={experimentListLoadingMore}
             onclick={loadMoreExperiments}
-            >{loadingMoreNotice.visible
+          >
+            {loadingMoreNotice.visible
               ? 'Loading experiments…'
-              : 'Load more experiments'}</button
-          >{/if}
+              : 'Load more experiments'}
+          </button>{/if}
       </div>
     {/if}
   {/snippet}
   {#snippet main()}
     {#if importFailure}<div class="alert alert-error">
         Import issue in {importFailure.fileName}.
-        <a class="link" href={`/#${INGESTION_ISSUES_ID}`} onclick={onViewIssue}
-          >View issue</a
-        >
+        <a class="link" href={`/#${INGESTION_ISSUES_ID}`} onclick={onViewIssue}>
+          View issue
+        </a>
       </div>{/if}
     {#if experiment}
       <div

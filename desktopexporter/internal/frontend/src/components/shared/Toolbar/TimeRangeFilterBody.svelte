@@ -131,8 +131,10 @@
             <span
               class="timezone-summary"
               title={selectedTimezoneLabel}
-              aria-live="polite">{selectedTimezoneLabel}</span
+              aria-live="polite"
             >
+              {selectedTimezoneLabel}
+            </span>
             <HugeiconsIcon
               icon={Globe02Icon}
               size={14}

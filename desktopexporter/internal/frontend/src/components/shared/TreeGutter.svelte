@@ -97,9 +97,9 @@
         ></span>{/if}
     </span>
     {#if hasChildren}
-      <span class="gutter__count"
-        ><TreeChildCount count={tree.childrenCount} /></span
-      >
+      <span class="gutter__count">
+        <TreeChildCount count={tree.childrenCount} />
+      </span>
     {/if}
   </span>
 </span>

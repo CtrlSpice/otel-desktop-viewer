@@ -31,14 +31,17 @@
       role="img"
       aria-label={`Source: ${sourceLabel}`}
       title={sourceLabel}
-      ><span>{sourceLabel.slice(0, 1)}</span><span
-        class="table-column-heading__source-rest">{sourceLabel.slice(1)}</span
-      ></span
     >
+      <span>{sourceLabel.slice(0, 1)}</span><span
+        class="table-column-heading__source-rest"
+      >
+        {sourceLabel.slice(1)}
+      </span>
+    </span>
   {/if}
-  {#if description}<span class="table-column-heading__description"
-      >{description}</span
-    >{/if}
+  {#if description}<span class="table-column-heading__description">
+      {description}
+    </span>{/if}
 </span>
 
 <style lang="postcss">

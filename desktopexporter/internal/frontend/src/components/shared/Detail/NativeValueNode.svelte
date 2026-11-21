@@ -94,13 +94,13 @@
         aria-hidden="true"
       />
       <span class="native-value-key">{label}</span>
-      <span class="text-subtle"
-        >{value.kind === 'map' ? '{' : '['}{open ? '' : `… ${count}`}{open
+      <span class="text-subtle">
+        {value.kind === 'map' ? '{' : '['}{open ? '' : `… ${count}`}{open
           ? ''
           : value.kind === 'map'
             ? '}'
-            : ']'}</span
-      >
+            : ']'}
+      </span>
     </button>
     {#if mounted}
       <div class="native-value-children" hidden={!open}>
@@ -120,12 +120,13 @@
             type="button"
             class="btn btn-ghost btn-sm font-sans font-normal"
             onclick={() => (limit += 100)}
-            >Show next {Math.min(100, count - limit)} of {count}</button
-          >{/if}
+          >
+            Show next {Math.min(100, count - limit)} of {count}
+          </button>{/if}
       </div>
-      <span class="text-subtle" hidden={!open}
-        >{value.kind === 'map' ? '}' : ']'}</span
-      >
+      <span class="text-subtle" hidden={!open}>
+        {value.kind === 'map' ? '}' : ']'}
+      </span>
     {/if}
   </div>
 {:else}
@@ -136,8 +137,10 @@
       <button
         type="button"
         class="btn btn-ghost btn-sm font-sans font-normal"
-        onclick={() => (fullText = true)}>Show full value of {label}</button
+        onclick={() => (fullText = true)}
       >
+        Show full value of {label}
+      </button>
     {:else}<AttributeValueView {value} path={label} />{/if}
   </div>
 {/if}

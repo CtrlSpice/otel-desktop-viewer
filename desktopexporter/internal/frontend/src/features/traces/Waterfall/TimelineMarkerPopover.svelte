@@ -279,8 +279,8 @@
                   · {severityLabel(
                     record.log.severityText,
                     record.log.severityNumber
-                  )} ({record.log.severityNumber})</span
-                >
+                  )} ({record.log.severityNumber})
+                </span>
               </LogSeverity>
             {:else}
               <LogSeverity
@@ -297,13 +297,16 @@
           >
             {#if record.kind === 'event'}
               {@const provenance = toolEventProvenance(record.event)}
-              <span
-                >Span event{#if provenance}<span aria-hidden="true"
-                    >{' · '}</span
-                  ><span class="text-secondary" title={provenance.description}
-                    >{provenance.source}</span
-                  >{/if}</span
-              >
+              <span>
+                Span event{#if provenance}<span aria-hidden="true">
+                    {' · '}
+                  </span><span
+                    class="text-secondary"
+                    title={provenance.description}
+                  >
+                    {provenance.source}
+                  </span>{/if}
+              </span>
             {:else}
               <span>Log</span>
             {/if}

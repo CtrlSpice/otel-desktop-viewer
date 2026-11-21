@@ -16,9 +16,9 @@
 </script>
 
 <div class="metric-chart-view dense-chart-fixture">
-  <button type="button" onclick={() => selections++}
-    >Plot selections: {selections}</button
-  >
+  <button type="button" onclick={() => selections++}>
+    Plot selections: {selections}
+  </button>
   <ChartSticky anchor={{ x: 300, y: 140 }}>
     <ChartSelectionLegend timestamp="2023-11-14, 14:13:20.000" {rows} />
   </ChartSticky>

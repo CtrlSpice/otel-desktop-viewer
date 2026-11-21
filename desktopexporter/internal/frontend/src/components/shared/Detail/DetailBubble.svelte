@@ -161,18 +161,22 @@
     {@render icon?.()}
     <span
       class={hideLabel ? 'sr-only' : 'truncate'}
-      title={hideLabel ? undefined : label}>{label}</span
+      title={hideLabel ? undefined : label}
     >
+      {label}
+    </span>
     {@render labelSuffix?.()}
     {#if count !== undefined}
       <span
         class="badge-count ml-auto shrink-0"
         aria-label={`${count.toLocaleString()} ${countLabel}`}
-        >[{count.toLocaleString()}]</span
       >
+        [{count.toLocaleString()}]
+      </span>
     {/if}
-    {#if trailing}<span class="ml-auto shrink-0">{@render trailing()}</span
-      >{/if}
+    {#if trailing}<span class="ml-auto shrink-0">
+        {@render trailing()}
+      </span>{/if}
   </span>
 {/snippet}
 
@@ -264,11 +268,11 @@
     use:register
   >
     {@render bubble()}
-    {#if resizable}<span class="sr-only" id={`${sectionID}-resize-help`}
-        >Drag to resize open sections. Up and Down arrows resize; Shift
-        increases the step. Home and End shrink either side to its minimum.
-        Resizing keeps sections open. Press 0 to reset sizes.</span
-      >{/if}
+    {#if resizable}<span class="sr-only" id={`${sectionID}-resize-help`}>
+        Drag to resize open sections. Up and Down arrows resize; Shift increases
+        the step. Home and End shrink either side to its minimum. Resizing keeps
+        sections open. Press 0 to reset sizes.
+      </span>{/if}
     {#if action && !unavailable}<div
         class="detail-bubble__action"
         bind:clientWidth={actionWidth}

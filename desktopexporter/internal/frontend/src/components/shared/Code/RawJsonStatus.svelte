@@ -15,6 +15,8 @@
   class="cursor-help whitespace-nowrap text-sm font-normal text-subtle"
   role="status"
   title={status.description}
-  aria-describedby={hintID}>{status.label}</span
+  aria-describedby={hintID}
 >
+  {status.label}
+</span>
 <span id={hintID} class="sr-only">{status.description}</span>

@@ -22,8 +22,10 @@
   onclick={event => {
     event.stopPropagation()
     onclick()
-  }}>{label}</button
+  }}
 >
+  {label}
+</button>
 
 <style lang="postcss">
   @reference "../../../app.css";

@@ -123,17 +123,18 @@
                           class="chart-selection-legend__glyph"
                           title={row.glyphTitle ?? undefined}
                           aria-label={row.glyphTitle ?? undefined}
-                          >{row.glyph}</span
                         >
+                          {row.glyph}
+                        </span>
                       {/if}{#if row.emphasis}<ChartOverlayLabel
                           label={row.label}
                           active={row.emphasis.active}
                           onclick={row.emphasis.toggle}
                         />{:else}{row.label}{/if}
                     </span>
-                    <span class="chart-selection-legend__value"
-                      >{row.valueText}</span
-                    >
+                    <span class="chart-selection-legend__value">
+                      {row.valueText}
+                    </span>
                   </li>
                 {/each}
               </ul>
@@ -154,8 +155,10 @@
               {#if row.glyph}<span
                   class="chart-selection-legend__glyph"
                   title={row.glyphTitle ?? undefined}
-                  aria-label={row.glyphTitle ?? undefined}>{row.glyph}</span
+                  aria-label={row.glyphTitle ?? undefined}
                 >
+                  {row.glyph}
+                </span>
               {/if}{#if row.emphasis}<ChartOverlayLabel
                   label={row.label}
                   active={row.emphasis.active}

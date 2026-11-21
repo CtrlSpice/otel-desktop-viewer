@@ -129,16 +129,20 @@
   <div class="detail-property__header">
     {#if defectLabel}<ConflictMarker label={defectLabel} />{/if}
     <div class="detail-property__heading">
-      <span class="detail-property__key"
-        >{fieldName}{#if qualifier}<span class="text-subtle">{' · '}</span><span
-            class="detail-property__qualifier">{qualifier}</span
-          >{/if}{#if showType}<span class="text-subtle">{' · '}</span><span
-            class="detail-property__type">{fieldType}</span
-          >{/if}</span
-      >
+      <span class="detail-property__key">
+        {fieldName}{#if qualifier}<span class="text-subtle">{' · '}</span><span
+            class="detail-property__qualifier"
+          >
+            {qualifier}
+          </span>{/if}{#if showType}<span class="text-subtle">
+            {' · '}
+          </span><span class="detail-property__type">{fieldType}</span>{/if}
+      </span>
       {#if origin}<span class="text-subtle">{' · '}</span><span
-          class="detail-property__origin">{origin}</span
-        >{/if}
+          class="detail-property__origin"
+        >
+          {origin}
+        </span>{/if}
     </div>
     {#if (nativeContainer || structuredText !== undefined) && !showShell}
       <div
@@ -253,10 +257,9 @@
                         class="detail-property__annotation"
                         class:detail-property__annotation--enum={fieldType ===
                           'enum'}
-                        >{fieldType === 'enum'
-                          ? ` (${valueLabel})`
-                          : valueLabel}</span
-                      >{/if}{/if}
+                      >
+                        {fieldType === 'enum' ? ` (${valueLabel})` : valueLabel}
+                      </span>{/if}{/if}
                 </div>
               {:else}
                 <div class="detail-property__value">{fieldValue}</div>

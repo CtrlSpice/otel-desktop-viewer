@@ -736,9 +736,9 @@
               {#snippet tooltip()}
                 <Tooltip.Root class="chart-hover-card">
                   {#snippet children({ data }: { data: Bucket })}
-                    <Tooltip.Header class="text-center"
-                      >{formatBucketRange(data)}</Tooltip.Header
-                    >
+                    <Tooltip.Header class="text-center">
+                      {formatBucketRange(data)}
+                    </Tooltip.Header>
                     <Tooltip.List>
                       <Tooltip.Item
                         label="count"
@@ -798,9 +798,11 @@
                     style:--marker-color={m.color}
                     style:--quantile-color={m.color}
                   >
-                    <title
-                      >{m.label} {formatMetricHoverValue(m.value)} {unit}</title
-                    >
+                    <title>
+                      {m.label}
+                      {formatMetricHoverValue(m.value)}
+                      {unit}
+                    </title>
                     <Line
                       x1={px}
                       x2={px}
@@ -876,16 +878,16 @@
                         style:--color={mark.color}
                         aria-hidden="true"
                       ></span>
-                      <span class="chart-selection-legend__label"
-                        ><ChartOverlayLabel
+                      <span class="chart-selection-legend__label">
+                        <ChartOverlayLabel
                           label={mark.statLabel}
                           active={emphasis.has(mark.key)}
                           onclick={() => emphasis.toggle(mark.key)}
-                        /></span
-                      >
-                      <span class="chart-selection-legend__value"
-                        >{mark.valueText}</span
-                      >
+                        />
+                      </span>
+                      <span class="chart-selection-legend__value">
+                        {mark.valueText}
+                      </span>
                     </li>
                   </ul>
                 </div>

@@ -835,12 +835,13 @@
         style:--bar-color={spanError
           ? 'var(--color-error)'
           : 'var(--color-primary)'}
-        ><DurationBar
+      >
+        <DurationBar
           duration={window.endTime - window.startTime}
           maximum={maximumDuration}
           offset={window.startTime - (origin ?? window.startTime)}
-        /></button
-      >
+        />
+      </button>
     {:else if span && span.endTime - span.startTime > 1n}<button
         type="button"
         onclick={selectBar}
@@ -851,12 +852,13 @@
           ? 'var(--color-error)'
           : (spanColors[referenceKey(span)] ??
             spanTimingColor(span, themeSignal.value))}
-        ><DurationBar
+      >
+        <DurationBar
           duration={span.endTime - span.startTime}
           maximum={maximumDuration}
           offset={span.startTime - (origin ?? span.startTime)}
-        /></button
-      >
+        />
+      </button>
     {:else if duration !== undefined && duration > 1n}
       <button
         type="button"
@@ -875,10 +877,11 @@
         class="block min-h-[var(--signal-card-row-h)]"
         title={planned ? 'Not started' : missingTiming(reference)}
         aria-busy={!!reference?.spanID && timingsLoading}
-        ><span class="sr-only"
-          >{planned ? 'Not started' : missingTiming(reference)}</span
-        ></span
       >
+        <span class="sr-only">
+          {planned ? 'Not started' : missingTiming(reference)}
+        </span>
+      </span>
     {/if}
     {#if span && origin !== undefined && maximumDuration > 1n}
       {@const node = traceIndex.nodes.get(referenceKey(span))}
@@ -914,8 +917,9 @@
     <span
       class="text-sm text-subtle tabular-nums"
       title="Shown results / total results"
-      >{results.length}/{experiment.results.length} results</span
     >
+      {results.length}/{experiment.results.length} results
+    </span>
   {/snippet}
   {#snippet metaRight()}
     {@render headerActions?.()}
@@ -949,12 +953,13 @@
               aria-hidden="true"
             />
           </span>
-          <span class="header-tab__label"
-            >{item.label}{#if item.id === 'cost'}<span
+          <span class="header-tab__label">
+            {item.label}{#if item.id === 'cost'}<span
                 class:text-subtle={availableViews[item.id]}
-                >{' · CAD est.'}</span
-              >{/if}</span
-          >
+              >
+                {' · CAD est.'}
+              </span>{/if}
+          </span>
         </button>
       {/each}
     </div>
@@ -968,9 +973,9 @@
       class="text-sm text-subtle"
     />
     {#if activityFailed || timingsFailed}
-      <span class="truncate text-sm text-subtle" role="status"
-        >Tool evidence could not be loaded.</span
-      >
+      <span class="truncate text-sm text-subtle" role="status">
+        Tool evidence could not be loaded.
+      </span>
     {/if}
   {/snippet}
 </PaneHeader>
@@ -1031,8 +1036,9 @@
                       ? activeSort.direction
                       : undefined}
                     onclick={() => toggleSort('name')}
-                    ><TableColumnHeading label="Test case" /></TableSortButton
                   >
+                    <TableColumnHeading label="Test case" />
+                  </TableSortButton>
                   <span aria-hidden="true">·</span>
                 </span>
                 <span
@@ -1047,8 +1053,9 @@
                       ? activeSort.direction
                       : undefined}
                     onclick={() => toggleSort('started')}
-                    ><TableColumnHeading label="Result" /></TableSortButton
                   >
+                    <TableColumnHeading label="Result" />
+                  </TableSortButton>
                 </span>
               </span>
             </th>
@@ -1159,11 +1166,13 @@
                 title={row.state === 'Unknown'
                   ? row.name
                   : `${row.name} · ${completionLabel(row.state, row.internalFault)}`}
-                >{row.name}{#if row.kind === 'result' && item?.sourceID}<span
-                    class="ml-2 text-subtle"
-                    ><Identifier value={item.sourceID} /></span
-                  >{/if}</button
               >
+                {row.name}{#if row.kind === 'result' && item?.sourceID}<span
+                    class="ml-2 text-subtle"
+                  >
+                    <Identifier value={item.sourceID} />
+                  </span>{/if}
+              </button>
             </TreeRowIdentity>
           </th>
           {#if row.kind === 'experiment'}
@@ -1226,11 +1235,12 @@
                     />
                     {#if assessment?.value != null}<span
                         class="shrink-0 text-sm text-subtle tabular-nums"
-                        >({assessment.value}{column.assessment.maximum ===
+                      >
+                        ({assessment.value}{column.assessment.maximum ===
                         undefined
                           ? ''
-                          : `/${column.assessment.maximum}`})</span
-                      >{/if}
+                          : `/${column.assessment.maximum}`})
+                      </span>{/if}
                   </div>
                 {:else if column.key === 'tools'}
                   {@render ownedToolCount(row)}
@@ -1304,8 +1314,10 @@
                 style:left={layout.pinned[column.key] === undefined
                   ? undefined
                   : `${layout.pinned[column.key]}px`}
-                title={`${results.length} shown results`}>Total</th
+                title={`${results.length} shown results`}
               >
+                Total
+              </th>
             {:else}
               <td
                 class="table-cell text-left text-sm font-normal tabular-nums"

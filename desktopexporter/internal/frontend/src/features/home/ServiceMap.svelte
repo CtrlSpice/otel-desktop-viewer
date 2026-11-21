@@ -388,8 +388,9 @@
         class="btn btn-ghost btn-sm"
         disabled={requests.get(requestIdentity(inspectedID, 'page'))?.pending}
         onclick={() => inspected && moreConnections(inspected)}
-        >More connections</button
-      >{/if}
+      >
+        More connections
+      </button>{/if}
     <div
       class="header-icon-controls"
       role="group"
@@ -401,24 +402,27 @@
         data-tip="Zoom out"
         disabled={nodes.length === 0}
         onclick={() => transform?.zoomOut()}
-        ><HugeiconsIcon icon={MinusSignIcon} size={16} /></button
       >
+        <HugeiconsIcon icon={MinusSignIcon} size={16} />
+      </button>
       <button
         class="header-icon-button tooltip tooltip-left"
         aria-label="Zoom in service map"
         data-tip="Zoom in"
         disabled={nodes.length === 0}
         onclick={() => transform?.zoomIn()}
-        ><HugeiconsIcon icon={Add01Icon} size={16} /></button
       >
+        <HugeiconsIcon icon={Add01Icon} size={16} />
+      </button>
       <button
         class="header-icon-button tooltip tooltip-left"
         aria-label="Reset service map view"
         data-tip="Fit graph"
         disabled={nodes.length === 0}
         onclick={() => viewRevision++}
-        ><HugeiconsIcon icon={RefreshIcon} size={16} /></button
       >
+        <HugeiconsIcon icon={RefreshIcon} size={16} />
+      </button>
     </div>
   {/snippet}
 </WorkspaceHeader>
@@ -434,8 +438,10 @@
       </p>
       <button
         class="btn btn-ghost btn-sm"
-        onclick={() => loadConnections(failure)}>Retry</button
+        onclick={() => loadConnections(failure)}
       >
+        Retry
+      </button>
     </div>{/each}
   <LoadingStatus
     pending={loadingServices || busy}
@@ -446,10 +452,10 @@
   {#if nodes.length}
     <p class="px-[var(--pane-inline-inset)] py-3 text-subtle">
       Scroll to move. Pinch to zoom.
-      <span class="sr-only"
-        >You can also drag empty space to move the map, or use arrow keys with a
-        service or connection focused. Control and scroll zooms.</span
-      >
+      <span class="sr-only">
+        You can also drag empty space to move the map, or use arrow keys with a
+        service or connection focused. Control and scroll zooms.
+      </span>
     </p>
     <div class="service-map__canvas">
       <Chart
@@ -472,8 +478,9 @@
               markerWidth="6"
               markerHeight="6"
               orient="auto-start-reverse"
-              ><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker
-            >{/snippet}
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+            </marker>{/snippet}
           <ServiceMapLayout
             bind:this={layoutController}
             services={nodes}
@@ -518,10 +525,10 @@
                       }
                     }}
                   >
-                    <title
-                      >{edge.spanCount} parent-child connections · {edge.traceCount}
-                      traces</title
-                    >
+                    <title>
+                      {edge.spanCount} parent-child connections · {edge.traceCount}
+                      traces
+                    </title>
                   </path>
                 </g>
               {/each}
@@ -568,16 +575,17 @@
       No services match this search and time range.
     </p>{/if}
   {#if moreServices}<SignalFooter label="services" compact>
-      {#snippet leading()}<span class="text-subtle"
-          >{services.length}{totalServices == null
-            ? ''
-            : ` of ${totalServices}`} services loaded</span
-        >{/snippet}
+      {#snippet leading()}<span class="text-subtle">
+          {services.length}{totalServices == null ? '' : ` of ${totalServices}`} services
+          loaded
+        </span>{/snippet}
       {#snippet trailing()}<button
           class="btn btn-ghost btn-sm"
           disabled={loadingMoreServices}
-          onclick={onMoreServices}>More services</button
-        >{/snippet}
+          onclick={onMoreServices}
+        >
+          More services
+        </button>{/snippet}
     </SignalFooter>{/if}
 </div>
 

@@ -73,23 +73,25 @@
               aria-hidden="true"
             ></span>{/if}
           <span class="truncate">{name}</span>
-          <span class="shrink-0 text-sm text-secondary"
-            ><span class="text-subtle" aria-hidden="true">{'· '}</span><span
-              >Span event</span
-            ></span
-          >
+          <span class="shrink-0 text-sm text-secondary">
+            <span class="text-subtle" aria-hidden="true">{'· '}</span><span>
+              Span event
+            </span>
+          </span>
           {#if provenance}
-            <span class="shrink-0 text-sm text-subtle" aria-hidden="true"
-              >·</span
-            >
+            <span class="shrink-0 text-sm text-subtle" aria-hidden="true">
+              ·
+            </span>
             <span
               class="shrink-0 text-sm text-secondary"
-              title={provenance.description}>{provenance.source}</span
+              title={provenance.description}
             >
+              {provenance.source}
+            </span>
           {/if}
-          {#if toolEventError(event)}<span class="shrink-0 text-sm"
-              >· Tool error</span
-            >{/if}
+          {#if toolEventError(event)}<span class="shrink-0 text-sm">
+              · Tool error
+            </span>{/if}
         </span>
       {/snippet}
       {#snippet date()}<SignalDate

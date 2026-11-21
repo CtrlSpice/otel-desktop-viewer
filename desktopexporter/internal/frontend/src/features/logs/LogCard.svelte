@@ -58,20 +58,23 @@
     >
       <ServiceDot service={log.serviceName ?? ''} />
       <span class="truncate">{displayTitle}</span>
-      {#if showLogBadge}<span class="shrink-0 text-sm text-secondary"
-          ><span class="text-subtle" aria-hidden="true">{'· '}</span><span
-            >{activity && log.eventName ? 'Log event' : 'Log'}</span
-          ></span
-        >{/if}
+      {#if showLogBadge}<span class="shrink-0 text-sm text-secondary">
+          <span class="text-subtle" aria-hidden="true">{'· '}</span><span>
+            {activity && log.eventName ? 'Log event' : 'Log'}
+          </span>
+        </span>{/if}
       {#if activity?.source}
         <span class="shrink-0 text-sm text-subtle" aria-hidden="true">·</span>
         <span
           class="shrink-0 text-sm text-secondary"
-          title={activity.description}>{activity.source}</span
+          title={activity.description}
         >
+          {activity.source}
+        </span>
       {/if}
-      {#if activity?.toolError}<span class="shrink-0 text-sm">· Tool error</span
-        >{/if}
+      {#if activity?.toolError}<span class="shrink-0 text-sm">
+          · Tool error
+        </span>{/if}
     </span>
   {/snippet}
   {#snippet badge()}

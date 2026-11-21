@@ -311,9 +311,13 @@
     class="block px-3 py-2 text-subtle"
   />
   {#if sortError}<p role="alert" class="px-3 py-2 text-papaya">{sortError}</p>
-    <button type="button" class="btn btn-ghost mx-3" onclick={() => sortRetry++}
-      >Retry sort</button
+    <button
+      type="button"
+      class="btn btn-ghost mx-3"
+      onclick={() => sortRetry++}
     >
+      Retry sort
+    </button>
   {/if}
   <ResizableTable
     {columns}
@@ -329,15 +333,17 @@
           class="table-cell"
           class:table-cell--pinned={layout.pinned.controls !== undefined}
           style:left="{layout.pinned.controls}px"
-          ><span class="sr-only">Attributes</span></th
         >
+          <span class="sr-only">Attributes</span>
+        </th>
         {#if !ctx.isHistogramKind}<th
             scope="col"
             class="table-cell ts-row__colour"
             class:table-cell--pinned={layout.pinned.colour !== undefined}
             style:left="{layout.pinned.colour}px"
-            ><span class="sr-only">Colour</span></th
-          >{/if}
+          >
+            <span class="sr-only">Colour</span>
+          </th>{/if}
         {#each table.columns as column (column.key)}
           <th
             scope="col"
@@ -370,8 +376,10 @@
         {#if identityColumn}<th
             scope="col"
             class:ts-row__first-value={!ctx.isHistogramKind &&
-              table.columns.length === 0}>Series identity</th
-          >{/if}
+              table.columns.length === 0}
+          >
+            Series identity
+          </th>{/if}
         {#if previewColumn}<th scope="col">Preview</th>{/if}
         <th scope="col" class="text-right">Show</th>
       </tr>
@@ -434,8 +442,9 @@
               class="table-cell ts-row__colour"
               class:table-cell--pinned={layout.pinned.colour !== undefined}
               style:left="{layout.pinned.colour}px"
-              >{@render colour(ts.key, headerLabel)}</td
-            >{/if}
+            >
+              {@render colour(ts.key, headerLabel)}
+            </td>{/if}
           {#each table.columns as column (column.key)}
             <td
               class="table-cell ts-row__attrs"
@@ -447,21 +456,20 @@
               title={series?.labelPreviews !== undefined
                 ? headerLabel
                 : attrsTooltip(ts.attributes)}
-              >{#if column === table.columns[0]}<button
+            >
+              {#if column === table.columns[0]}<button
                   type="button"
                   class="block max-w-full text-left"
                   aria-label={`Select ${headerLabel}`}
                   onclick={() => ctx.selectSeries(ts.key)}
-                  >{@render cellContent(
-                    column.key,
-                    column.cells.get(ts.key)!
-                  )}</button
                 >
+                  {@render cellContent(column.key, column.cells.get(ts.key)!)}
+                </button>
               {:else}{@render cellContent(
                   column.key,
                   column.cells.get(ts.key)!
-                )}{/if}</td
-            >
+                )}{/if}
+            </td>
           {/each}
           {#if identityColumn}<td
               class="table-cell"
@@ -476,20 +484,21 @@
                 class="max-w-full text-left"
                 aria-label={`Select ${headerLabel}`}
                 onclick={() => ctx.selectSeries(ts.key)}
-                >{#if label.needsIdentity}<Identifier
-                    value={ts.key}
-                  />{:else}{label.text}{/if}</button
               >
+                {#if label.needsIdentity}<Identifier
+                    value={ts.key}
+                  />{:else}{label.text}{/if}
+              </button>
             </td>{/if}
-          {#if previewColumn}<td
-              ><span class="ts-row__sparkline">
+          {#if previewColumn}<td>
+              <span class="ts-row__sparkline">
                 <Sparkline
                   points={ctx.sparklineByKey.get(ts.key) ?? []}
                   {color}
                   width={SPARKLINE_WIDTH_PX}
                 />
-              </span></td
-            >{/if}
+              </span>
+            </td>{/if}
           <td class="table-cell text-right">
             <input
               type="checkbox"
@@ -524,29 +533,30 @@
                   type="button"
                   class="btn btn-ghost mx-3"
                   onclick={() => loadAttributes(ts.key)}
-                  >Retry attributes</button
                 >
+                  Retry attributes
+                </button>
               {/if}
               {#if receivedAttributes.has(ts.key) || series?.attributesComplete !== false}
                 <table
                   class="detail-fields w-full"
                   aria-label={`Attributes for ${headerLabel}`}
                 >
-                  <tbody
-                    ><AttributeRows
+                  <tbody>
+                    <AttributeRows
                       {attributes}
                       owner={`timeseries ${ts.key}`}
-                    /></tbody
-                  >
+                    />
+                  </tbody>
                 </table>
               {/if}
             </td>
           </tr>
         {/if}
       {/each}
-      {#if rows.length === 0}<tr
-          ><td colspan={columns.length} class="text-subtle">No series.</td></tr
-        >{/if}
+      {#if rows.length === 0}<tr>
+          <td colspan={columns.length} class="text-subtle">No series.</td>
+        </tr>{/if}
     {/snippet}
   </ResizableTable>
   {#if capReached}

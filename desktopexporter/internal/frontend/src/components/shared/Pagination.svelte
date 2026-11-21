@@ -67,19 +67,20 @@
             aria-label="Delete all logs"
             data-tip="Delete all logs"
             onclick={onDeleteAll}
-            ><HugeiconsIcon
+          >
+            <HugeiconsIcon
               icon={Delete02Icon}
               size="1em"
               strokeWidth={1.5}
               class="h-3.5 w-3.5"
               aria-hidden="true"
-            /></button
-          >{/if}
-        <span role="status" aria-label="Log count" class="tabular-nums"
-          >{total === null
+            />
+          </button>{/if}
+        <span role="status" aria-label="Log count" class="tabular-nums">
+          {total === null
             ? ''
-            : `${total.toLocaleString()} ${total === 1 ? 'log' : 'logs'}`}</span
-        >
+            : `${total.toLocaleString()} ${total === 1 ? 'log' : 'logs'}`}
+        </span>
       </div>
     {/snippet}
     {#snippet navigation()}
@@ -107,18 +108,21 @@
           aria-label="Previous page"
           disabled={total === null || page <= 1}
           onclick={() => onPage(page - 1)}
-          ><HugeiconsIcon
+        >
+          <HugeiconsIcon
             icon={ChevronLeftIcon}
             size="1em"
             strokeWidth={1.5}
             class="h-3.5 w-3.5"
             aria-hidden="true"
-          /></button
-        >
+          />
+        </button>
         {#each visible as number, index (number)}
           {#if index > 0 && number > visible[index - 1]! + 1}<span
-              aria-hidden="true">…</span
-            >{/if}
+              aria-hidden="true"
+            >
+              …
+            </span>{/if}
           <button
             type="button"
             class="btn btn-ghost btn-sm btn-square text-sm font-normal tabular-nums"
@@ -126,8 +130,10 @@
             aria-label={`Page ${number}`}
             aria-current={number === page ? 'page' : undefined}
             disabled={total === null}
-            onclick={() => onPage(number)}>{number}</button
+            onclick={() => onPage(number)}
           >
+            {number}
+          </button>
         {/each}
         <button
           type="button"
@@ -136,14 +142,15 @@
           aria-label="Next page"
           disabled={total === null || page >= pages}
           onclick={() => onPage(page + 1)}
-          ><HugeiconsIcon
+        >
+          <HugeiconsIcon
             icon={ChevronRightIcon}
             size="1em"
             strokeWidth={1.5}
             class="h-3.5 w-3.5"
             aria-hidden="true"
-          /></button
-        >
+          />
+        </button>
         <button
           type="button"
           class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
@@ -174,8 +181,8 @@
         </button>
       {/if}
       <div class="pagination__size">
-        <label class="flex items-center gap-2 text-xs text-subtle"
-          >Rows
+        <label class="flex items-center gap-2 text-xs text-subtle">
+          Rows
           <select
             class="select page-size-select"
             aria-label="Logs per page"
@@ -188,9 +195,9 @@
               onPageSize(size)
             }}
           >
-            {#each [25, 50, 100, 250] as size}<option value={size}
-                >{size}</option
-              >{/each}
+            {#each [25, 50, 100, 250] as size}<option value={size}>
+                {size}
+              </option>{/each}
           </select>
         </label>
       </div>

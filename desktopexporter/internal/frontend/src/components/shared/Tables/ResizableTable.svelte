@@ -296,11 +296,11 @@
       bind:offsetHeight={tableHeight}
     >
       <caption class="sr-only">{caption}</caption>
-      <colgroup
-        >{#each columns as column (column.id)}<col
+      <colgroup>
+        {#each columns as column (column.id)}<col
             style:width="{widths[column.id]}px"
-          />{/each}</colgroup
-      >
+          />{/each}
+      </colgroup>
       <thead>{@render header(layout)}</thead>
       <tbody>{@render children(layout)}</tbody>
       {#if footer}<tfoot>{@render footer(layout)}</tfoot>{/if}

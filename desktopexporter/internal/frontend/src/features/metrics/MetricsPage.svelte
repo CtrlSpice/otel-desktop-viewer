@@ -1259,8 +1259,10 @@
         <button
           type="button"
           class="btn btn-ghost btn-sm"
-          onclick={() => summaryRetry++}>Retry</button
+          onclick={() => summaryRetry++}
         >
+          Retry
+        </button>
       </div>
     {/if}
     {#if displayError || importFailure}
@@ -1269,9 +1271,9 @@
           <span>Error: {displayError}</span>
         {:else if importFailure}
           <span>Import issue in {importFailure.fileName}.</span>
-          <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
-            >View issue</a
-          >
+          <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}>
+            View issue
+          </a>
         {/if}
       </div>
     {/if}

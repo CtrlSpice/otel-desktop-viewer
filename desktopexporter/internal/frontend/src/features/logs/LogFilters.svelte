@@ -98,8 +98,10 @@
       disabled={filters.service.values.length +
         filters.severity.values.length ===
         0}
-      onclick={clearFilters}>Clear</button
+      onclick={clearFilters}
     >
+      Clear
+    </button>
     <button
       type="button"
       class="btn btn-ghost btn-sm text-sm font-normal text-primary"
@@ -107,8 +109,10 @@
       onclick={() => {
         editor?.setQuery?.(draftQuery)
         close()
-      }}>Apply</button
+      }}
     >
+      Apply
+    </button>
   {/snippet}
   {#if !filters.editable}<p class="log-filters__hint mb-2" role="status">
       Edit query in search

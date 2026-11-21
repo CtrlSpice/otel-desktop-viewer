@@ -51,11 +51,11 @@
 {/snippet}
 
 {#snippet matchingSummary()}
-  <span class="text-subtle"
-    >[{matchingSpanCount?.toLocaleString()} matching {matchingSpanCount === 1
+  <span class="text-subtle">
+    [{matchingSpanCount?.toLocaleString()} matching {matchingSpanCount === 1
       ? 'span'
-      : 'spans'}]</span
-  >
+      : 'spans'}]
+  </span>
 {/snippet}
 
 {#snippet durationSummary()}

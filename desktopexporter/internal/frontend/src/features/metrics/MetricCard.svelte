@@ -57,15 +57,15 @@
     <div class="metric-card__classification">
       {#if metric.serviceName?.trim()}
         <ServiceDot service={metric.serviceName} />
-        <span class="min-w-0 truncate text-subtle" title={metric.serviceName}
-          >{metric.serviceName.trim()}</span
-        >
+        <span class="min-w-0 truncate text-subtle" title={metric.serviceName}>
+          {metric.serviceName.trim()}
+        </span>
       {/if}
-      <span class="ml-auto shrink-0 text-secondary" title={typeSummary.title}
-        >{metric.metricType === 'ExponentialHistogram'
+      <span class="ml-auto shrink-0 text-secondary" title={typeSummary.title}>
+        {metric.metricType === 'ExponentialHistogram'
           ? 'Exp. Histogram'
-          : metric.metricType}</span
-      >
+          : metric.metricType}
+      </span>
     </div>
   {/snippet}
   {#snippet badge()}
@@ -87,11 +87,11 @@
 </SignalCard>
 
 {#snippet matchingSummary()}
-  <span class="text-subtle"
-    >[{matchingPointCount?.toLocaleString()} matching {matchingPointCount === 1
+  <span class="text-subtle">
+    [{matchingPointCount?.toLocaleString()} matching {matchingPointCount === 1
       ? 'datapoint'
-      : 'datapoints'}]</span
-  >
+      : 'datapoints'}]
+  </span>
 {/snippet}
 
 {#snippet reading()}
