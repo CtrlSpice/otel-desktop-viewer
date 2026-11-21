@@ -7,7 +7,7 @@ description: Inspect stored OpenTelemetry traces, logs, and Metrics with the OTe
 
 Use the CLI. Run `otel-desktop-viewer --help` first.
 
-Reuse the running viewer for follow-up commands and leave it running. If the user asks you to start a viewer, keep its process handle. When finished, stop only that process and wait for it to exit.
+Reuse the user's viewer and leave it running. Start a viewer only if asked. Keep its process handle, then stop it and wait for it to exit when you're done so it doesn't keep running in the background.
 
 If you need HTTP, send JSON-RPC requests to `POST /rpc`. See `/openrpc.json` for methods and `/openapi.json` for HTTP routes.
 
