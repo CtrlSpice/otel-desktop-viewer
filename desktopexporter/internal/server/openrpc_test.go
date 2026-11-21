@@ -189,6 +189,11 @@ func TestDiscoverySignalPredicateContract(t *testing.T) {
 		valid     bool
 	}{
 		{`{}`, false}, {`{"type":"unknown"}`, false},
+		{`{"type":"condition","query":{"fieldOperator":"="}}`, false},
+		{`{"type":"condition","query":{"field":null,"fieldOperator":"="}}`, false},
+		{`{"type":"condition","query":{"field":{"searchScope":"global"},"fieldOperator":"CONTAINS","value":"test"}}`, true},
+		{`{"type":"text","query":{"fieldOperator":"CONTAINS","field":{}}}`, false},
+		{`{"type":"group","group":{"logicalOperator":"AND","children":[{}]}}`, false},
 		{`null`, true}, {`false`, true},
 		{`{"type":"text","query":{"fieldOperator":"CONTAINS","value":"test"}}`, true},
 	} {

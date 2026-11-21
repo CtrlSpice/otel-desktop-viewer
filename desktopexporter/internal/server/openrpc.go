@@ -146,16 +146,12 @@ func openRPCDocument() map[string]any {
 			"lastValue": map[string]any{"anyOf": []any{rpcSchemaRef("Double"), map[string]any{"type": "null"}}}, "lastSeen": nullableText,
 		}, "metricRef", "name", "metricType", "seriesCount", "seriesCardinality", "dataPointCount", "lastValue", "lastSeen")),
 
-		"SearchQuery": map[string]any{
-			"type": []string{"object", "null"}, "required": []string{"type"},
-			"description": "Condition fields and operators depend on the signal. Path strings are owner-relative keys; numbers are array indices. Legacy field references remain valid.",
-			"properties": map[string]any{"type": map[string]any{"enum": []string{"text", "condition", "group"}},
-				"query": rpcObject(map[string]any{"fieldOperator": text, "field": nullableObject, "value": text}, "fieldOperator"),
-				"group": map[string]any{"type": "object", "properties": map[string]any{"logicalOperator": text, "children": rpcArray(rpcSchemaRef("SearchQuery"))}},
-			},
-			"if":   map[string]any{"properties": map[string]any{"type": map[string]any{"const": "group"}}},
-			"then": map[string]any{"required": []string{"group"}}, "else": map[string]any{"required": []string{"query"}},
-		},
+		"SearchQuery": map[string]any{"anyOf": []any{map[string]any{"type": "null"}, rpcSchemaRef("SearchNode")}},
+		"SearchNode": map[string]any{"description": "Signal-specific fields/operators. Path: owner-relative keys or array indices.", "oneOf": []any{
+			rpcRecord(map[string]any{"type": map[string]any{"const": "condition"}, "query": rpcObject(map[string]any{"fieldOperator": map[string]any{"type": "string", "minLength": 1}, "field": object, "value": text}, "field", "fieldOperator")}),
+			rpcRecord(map[string]any{"type": map[string]any{"const": "text"}, "query": rpcObject(map[string]any{"fieldOperator": map[string]any{"enum": []string{"CONTAINS", "NOT CONTAINS"}}, "field": map[string]any{"type": "null"}, "value": text}, "fieldOperator")}),
+			rpcRecord(map[string]any{"type": map[string]any{"const": "group"}, "group": map[string]any{"type": "object", "properties": map[string]any{"logicalOperator": text, "children": rpcArray(rpcSchemaRef("SearchNode"))}}}),
+		}},
 		"Sort": map[string]any{"anyOf": []any{map[string]any{"type": "null"}, map[string]any{"type": "object", "required": []string{"field", "direction"}, "additionalProperties": false, "properties": map[string]any{"field": text, "direction": map[string]any{"enum": []string{"asc", "desc"}}}}}},
 		"QueryResult": rpcObject(map[string]any{
 			"columns": rpcArray(rpcObject(map[string]any{"name": text, "type": text}, "name", "type")),
