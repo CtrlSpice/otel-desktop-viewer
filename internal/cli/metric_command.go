@@ -16,7 +16,7 @@ func newMetricCommand(client *http.Client) *cobra.Command {
 		Use:   "metric <metric-ref>",
 		Short: "📈 Inspect one Metric or its series datapoints",
 		Long: "📈 Inspect a Metric descriptor, metadata, resource, scope and series catalogue. " +
-			"Use metricRef from metrics --json. Select --series to retrieve its exact retained datapoints, optionally bounded by --start/--end. " +
+			"Use metricRef from metrics. Select --series to retrieve its exact retained datapoints, optionally bounded by --start/--end. " +
 			"Unspecified bounds include all retained times; all selected datapoints are returned. " +
 			"metricRef, seriesRef and datapointRef are viewer-generated database references. " +
 			"Catalogue counts and first/last timestamps are computed from stored datapoints. " +

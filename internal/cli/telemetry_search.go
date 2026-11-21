@@ -42,8 +42,12 @@ type telemetrySearchResult struct {
 }
 
 func addTelemetrySearchFlags(cmd *cobra.Command, options *telemetrySearchOptions, jsonOutput *bool) {
-	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "http://localhost:8000", "Running viewer HTTP endpoint")
 	cmd.Flags().StringVar(&options.Service, "service", "", "Only summaries for this service")
+	addTelemetryWindowFlags(cmd, options, jsonOutput)
+}
+
+func addTelemetryWindowFlags(cmd *cobra.Command, options *telemetrySearchOptions, jsonOutput *bool) {
+	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "http://localhost:8000", "Running viewer HTTP endpoint")
 	cmd.Flags().DurationVar(&options.Since, "since", telemetryDefaultSince, "Relative lookback window (for example 30m, 6h, or 24h)")
 	cmd.Flags().StringVar(&options.Start, "start", "", "Inclusive RFC3339 start time (nanoseconds supported)")
 	cmd.Flags().StringVar(&options.End, "end", "", "Inclusive RFC3339 end time (nanoseconds supported)")
