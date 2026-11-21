@@ -134,6 +134,18 @@ func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
 			require.Len(t, single.Methods, 1)
 			require.Equal(t, method, single.Methods[0])
 			for name, schema := range single.Components.Schemas {
+				if name == "DiscoveryRows" {
+					var link struct {
+						Ref string `json:"$ref"`
+					}
+					require.NoError(t, json.Unmarshal(schema, &link))
+					path, target, ok := strings.Cut(link.Ref, "#/components/schemas/")
+					require.True(t, ok)
+					var linked document
+					require.NoError(t, json.Unmarshal(read("GET", path).Body.Bytes(), &linked))
+					require.Equal(t, full.Components.Schemas["DiscoveryRows"], linked.Components.Schemas[target])
+					continue
+				}
 				require.Equal(t, full.Components.Schemas[name], schema)
 			}
 			for _, ref := range regexp.MustCompile(`"#/components/schemas/([^"]+)"`).FindAllStringSubmatch(w.Body.String(), -1) {
@@ -150,6 +162,23 @@ func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
 		})
 	}
 	require.Equal(t, http.StatusNotFound, read("GET", "/openrpc/unknown.json").Code)
+}
+
+func checkDiscoveryRows(t *testing.T, raw json.RawMessage, kind string) {
+	t.Helper()
+	var result map[string]any
+	require.NoError(t, decodeParams(raw, &result))
+	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	require.NoError(t, checkRPCWireSchema(rpcSchemaRef("DiscoveryRows"), result, schemas))
+	rows := schemas["DiscoveryRows"].(map[string]any)["properties"].(map[string]any)["rows"].(map[string]any)
+	for _, alternative := range rows["anyOf"].([]any) {
+		page := alternative.(map[string]any)
+		if page["title"] == kind {
+			require.NoError(t, checkRPCWireSchema(page, result["rows"], schemas))
+			return
+		}
+	}
+	t.Fatalf("missing result schema for %s", kind)
 }
 
 func TestDiscoverySignalPredicateContract(t *testing.T) {

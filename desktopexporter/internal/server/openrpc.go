@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -43,6 +44,31 @@ func rpcObject(properties map[string]any, required ...string) map[string]any {
 
 func rpcArray(items map[string]any) map[string]any {
 	return map[string]any{"type": "array", "items": items}
+}
+
+func rpcRecord(fields map[string]any) map[string]any {
+	return rpcObject(fields, slices.Sorted(maps.Keys(fields))...)
+}
+
+func rpcDiscoveryRows(service, location, text, count, timestamp map[string]any) map[string]any {
+	number := map[string]any{"type": "number"}
+	page := func(kind string, entry map[string]any) map[string]any {
+		return map[string]any{"title": kind, "type": "array", "items": map[string]any{"type": "array", "minItems": 1, "maxItems": 1, "items": entry}}
+	}
+	services := page("services", service)
+	rows := map[string]any{"anyOf": []any{
+		services,
+		page("connections", rpcRecord(map[string]any{"source": service, "target": service, "spanCount": count, "traceCount": count, "errorSpanCount": count})),
+		page("connection-spans", rpcRecord(map[string]any{"traceID": rpcSchemaRef("EntityID"), "spanID": map[string]any{"type": "string", "pattern": "^[0-9a-f]{16}$"},
+			"name": text, "startTime": timestamp, "endTime": timestamp, "statusCode": map[string]any{"type": "integer"}})),
+		page("keys", rpcRecord(map[string]any{"key": text, "kind": text, "foundOn": rpcArray(location)})),
+		page("values", rpcRecord(map[string]any{"value": rpcSchemaRef("Value"), "count": count, "kindCount": count, "denominator": count, "relativeFrequency": number, "foundOn": rpcArray(location)})),
+	}}
+	column := rpcRecord(map[string]any{"name": map[string]any{"const": "entry"}, "type": map[string]any{"const": "JSON"}})
+	result := rpcObject(map[string]any{"rows": rows, "columns": map[string]any{"type": "array", "minItems": 1, "maxItems": 1, "items": column}, "truncated": map[string]any{"type": "boolean"},
+		"totals": rpcRecord(map[string]any{"home": count, "traces": count, "logs": count, "metrics": count})}, "rows", "columns", "truncated")
+	result["dependencies"] = map[string]any{"totals": map[string]any{"properties": map[string]any{"rows": services}}}
+	return result
 }
 
 func openRPCDocument() map[string]any {
@@ -174,7 +200,7 @@ func openRPCDocument() map[string]any {
 			"relativeFrequency": map[string]any{"type": "number"}, "foundOn": rpcArray(rpcObject(map[string]any{"signal": text, "ownerType": text}, "signal", "ownerType")),
 		}, "preview", "identity", "valueRef", "kind", "colorHash", "counts", "count", "kindCount", "denominator", "relativeFrequency", "foundOn"),
 		"DiscoveryResult": map[string]any{"oneOf": []any{
-			rpcSchemaRef("QueryResult"),
+			rpcSchemaRef("DiscoveryRows"),
 			rpcObject(map[string]any{
 				"values": rpcArray(rpcSchemaRef("HomeValue")), "kinds": rpcArray(rpcObject(map[string]any{"kind": text, "count": integer, "counts": rpcSchemaRef("HomeCounts")}, "kind", "count", "counts")),
 				"denominators": rpcSchemaRef("HomeCounts"), "denominator": integer, "total": integer, "truncated": boolean,
@@ -186,6 +212,14 @@ func openRPCDocument() map[string]any {
 		"ImportConfig": rpcObject(map[string]any{"otlpHttpPort": integer, "otlpGrpcPort": integer}, "otlpHttpPort"),
 		"Integer":      integer, "String": text,
 	}
+	count := map[string]any{"type": "integer", "minimum": 0}
+	schemas["DiscoveryService"] = rpcRecord(map[string]any{
+		"serviceIdentity": text, "serviceColorKey": text, "serviceName": text, "serviceNamespace": text, "serviceNameKind": text, "serviceNamespaceKind": text,
+		"labelsComplete": boolean, "traceCount": count, "spanCount": count, "errorSpanCount": count, "logCount": count, "errorLogCount": count,
+		"metricCount": count, "dataPointCount": count, "exemplarCount": count, "lastSeen": seriesTime,
+		"logSeverityCounts": rpcRecord(map[string]any{"trace": count, "debug": count, "info": count, "warn": count, "error": count, "fatal": count, "other": count}),
+	})
+	schemas["DiscoveryRows"] = rpcDiscoveryRows(rpcSchemaRef("DiscoveryService"), rpcRecord(map[string]any{"signal": text, "ownerType": text}), text, count, uintText)
 	specs := []struct {
 		name, result, summary, description string
 		required                           int
@@ -486,7 +520,8 @@ func registerOpenRPC(mux *http.ServeMux) error {
 		return err
 	}
 	mux.Handle("GET /openrpc.json", full)
-	all := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	all := maps.Clone(doc["components"].(map[string]any)["schemas"].(map[string]any))
+	all["DiscoveryRows"] = map[string]any{"$ref": "/openrpc.json#/components/schemas/DiscoveryRows"}
 	var index []map[string]string
 	for _, method := range doc["methods"].([]rpcMethodDescription) {
 		index = append(index, map[string]string{"name": method.Name, "summary": method.Summary})

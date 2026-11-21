@@ -266,6 +266,7 @@ func TestHomeSearchCountsBeforePaginationAndFiltersAttributes(t *testing.T) {
 		t.Helper()
 		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
 		require.NoError(t, err)
+		checkDiscoveryRows(t, result.(json.RawMessage), options["kind"].(string))
 		var page map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
 		return page

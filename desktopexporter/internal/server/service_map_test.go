@@ -53,6 +53,7 @@ func TestServiceMapConnections(t *testing.T) {
 		t.Helper()
 		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
 		require.NoError(t, err)
+		checkDiscoveryRows(t, result.(json.RawMessage), options["kind"].(string))
 		var page struct {
 			Rows      [][]json.RawMessage `json:"rows"`
 			Truncated bool                `json:"truncated"`
