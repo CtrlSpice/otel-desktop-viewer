@@ -10,7 +10,8 @@ import { context as otelContext, propagation } from '@opentelemetry/api'
 import { exportToolLogs, missingToolLogs } from './tool-logs.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
 import { withBinaryTeardown } from './attempt-teardown.ts'
-import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
+import { readBinarySkill } from './grade.ts'
+import { aggregateUsage, skillFetched, toolEvidence } from './opencode-v2-evidence.mjs'
 import { openV2EventStream } from './opencode-v2-stream.mjs'
 import { nativeTelemetryReceiver, readNativeTelemetry, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 
@@ -118,7 +119,8 @@ export default class OpenCodeV2Provider {
       const response = { error: error instanceof Error ? error.message : String(error), metadata: {
         runtime: 'opencode-v2', expectedRuntimeVersion: V2_VERSION, role: 'investigator', model: this.id().slice('opencode-v2:'.length),
         task: context.vars?.task_id, evidence, workspace: path.join(evidence, 'workspace'), repeatIndex: context.repeatIndex,
-        exit: 'provider-exception', captureUnavailable: true,
+        exit: 'provider-exception', captureUnavailable: true, skillFetched: 'unknown',
+        ...(this.config.sharedHost ? { harnessFailure: true } : {}),
       } }
       fs.writeFileSync(path.join(evidence, 'provider-exception.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
       if (!fs.existsSync(path.join(evidence, 'response.json'))) fs.writeFileSync(path.join(evidence, 'response.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
@@ -187,6 +189,7 @@ export default class OpenCodeV2Provider {
       history = (await api(`/api/session/${sessionID}/context`, 'GET', undefined, 'context.json')).data
       await api(`/api/experimental/session/${sessionID}/export`, 'GET', undefined, 'session-export.json')
     } catch (e) {
+      if (e.syscall || e.path?.startsWith(evidence + '/')) throw e
       receivedError = e.message
       await host.api(`/api/session/${sessionID}/interrupt`, 'POST', undefined, traceparent, AbortSignal.timeout(10000))
       await host.api(`/api/experimental/session/${sessionID}/wait`, 'POST', undefined, traceparent, AbortSignal.timeout(30000))
@@ -422,7 +425,9 @@ export default class OpenCodeV2Provider {
     save('tool-logs.json', toolLogs)
     const enrichment = traceparent ? missingToolLogs(toolLogs, traceparent.split('-')[1], nativeSpans) : toolLogs
     await exportToolLogs(enrichment, invocation, 'OpenCode', path.basename(evidence))
+    const skill = tools.length ? await (this.viewerSkill ??= readBinarySkill(this.config.binary).catch(() => undefined)) : undefined
     const metadata = { runtime: 'opencode-v2', runtimeVersion: V2_VERSION, model: this.id().slice('opencode-v2:'.length),
+      skillFetched: skillFetched(tools, Boolean(idle) && !modelMismatch, skill),
       role: 'investigator', task: context.vars?.task_id, evidence, workspace, sessionID, repeatIndex: context.repeatIndex, usage, usageAvailability, evidenceErrors,
       elapsedSeconds: (performance.now() - started) / 1000, toolCalls: tools.length, failedToolCalls: tools.filter(tool => tool.state.status === 'error').length,
       exit: idle?.outcome ?? 'incomplete', errors, harnessBlocker,

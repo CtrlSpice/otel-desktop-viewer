@@ -6,6 +6,7 @@ import { once } from 'node:events'
 import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import Provider from './opencode-v2-provider.mjs'
+import { verifyNoRetry } from './opencode-v2-verify.mjs'
 import { nativeTelemetryReceiver, readNativeTelemetry, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 
 if (process.argv.slice(2).some(arg => !['--error', '--telemetry', '--forward-observer'].includes(arg))) throw new Error('Usage: opencode-v2-canary.mjs [--error] [--telemetry [--forward-observer]]')
@@ -98,6 +99,12 @@ try {
   if (telemetry) {
     await telemetry.close()
     const data = readNativeTelemetry(root, telemetry.receipts)
+    if (errorMode) {
+      const { metadata } = JSON.parse(fs.readFileSync(path.join(root, 'response.json')))
+      const policy = fs.readFileSync(path.join(metadata.evidence, 'policy.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+      assert.ok(policy.some(event => event.type === 'retry.veto'))
+      verifyNoRetry(policy, metadata.sessionID, data.spans)
+    }
     const propagated = data.spans.filter(span => span.traceId === traceparent.split('-')[1])
     fs.writeFileSync(path.join(root, 'native-telemetry-summary.json'), JSON.stringify(nativeTelemetryBoundaries(data, traceparent), null, 2) + '\n', { flag: 'wx', mode: 0o600 })
     console.log(JSON.stringify({ root, nativeSpans: data.spans.length, nativeLogs: data.logs.length, nativeMetrics: data.metrics.length, propagatedSpans: propagated.length, scopes: data.summary.scopes }))

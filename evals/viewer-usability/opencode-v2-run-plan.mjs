@@ -6,13 +6,13 @@ import cases from './tasks.json' with { type: 'json' }
 
 export function fullRunPlan() {
   const models = [
-    'openai/gpt-6.2-astra', 'openai/gpt-6.2-sol',
-    'opencode-go/qwen4-max', 'kimi-code-plan-global/k3.1-pro',
     'opencode-go/minimax-m3.1-flash', 'opencode-go/deepseek-v4.1-flash',
-    'opencode-go/gemini-4-argon', 'anthropic/claude-sonnet-5-5',
-    'anthropic/claude-opus-5-5', 'opencode-go/glm-5.3',
+    'opencode-go/glm-5.3-flash', 'opencode-go/mimo-v2.6-flash',
+    'kimi-code-plan-global/k3', 'kimi-code-plan-global/k3.1-pro',
+    'openai/gpt-6.2-sol', 'openai/gpt-6.1-sol', 'openai/gpt-6.1-terra',
+    'anthropic/claude-haiku-5-5', 'anthropic/claude-sonnet-5-5', 'anthropic/claude-opus-5-5',
   ]
-  return { mode: 'full', models, taskIDs: cases.map(task => task.id),
+  return { mode: 'full', models, taskIDs: ['checkout-failure', 'trace-logs', 'customer-count', 'request-count', 'trace-export'],
     repeat: 3, nativeTelemetry: true, maxConcurrency: 1, cache: false }
 }
 
@@ -67,7 +67,7 @@ export function assertFreshRoot(root) {
 
 export function evaluationConfig({ suite, root, spec, task, connection, binary, authFile, authEntry, piAuthFile, observerHTTP }) {
   const full = spec.mode === 'full'
-  const tasks = full ? cases : [task]
+  const tasks = full ? spec.taskIDs.map(id => cases.find(c => c.id === id)) : [task]
   return {
     description: full ? 'OpenCode 2.3 viewer usability' : spec.mode === 'sol-luna' ? 'Actual OpenCode V2 checkout-failure; Sol and Luna, three repetitions each' : 'Actual OpenCode V2 checkout-failure; one investigator and separate native rubric grader',
     prompts: ['file://' + path.join(suite, 'prompt.txt')], tracing: { enabled: true },
@@ -79,7 +79,8 @@ export function evaluationConfig({ suite, root, spec, task, connection, binary, 
     }),
     defaultTest: { vars: { ...connection, binary: './bin/otel-desktop-viewer' },
       options: { provider: { id: 'file://' + path.join(suite, 'pi-provider.ts'), config: { root, role: 'grader', provider: 'openai-codex', model: 'gpt-6.1-sol', authFile: piAuthFile, timeoutMs: 180000 } } },
-      assert: [{ type: 'llm-rubric', threshold: 1, value: 'file://' + path.join(suite, 'opencode-v2-grading-evidence.mjs') }],
+      assert: [{ type: 'llm-rubric', threshold: 1, rubricPrompt: JSON.stringify([{ role: 'user', content: '{{rubric}}' }]),
+        value: 'file://' + path.join(suite, 'opencode-v2-grading-evidence.mjs') }],
     },
     tests: tasks.map(task => ({ description: task.id, vars: { task_id: task.id, goal: task.goal },
       ...(task.id === 'trace-export' ? { assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(suite, 'grading-evidence.ts') + ':verifyArtifact' }] } : {}),

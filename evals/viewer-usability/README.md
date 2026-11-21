@@ -184,9 +184,13 @@ Row-only JSONL is not a full import envelope.
 
 Investigator and grader execution errors remain errors. Grades are provisional;
 Fail/Partial/Pass remain 0/0.5/1 under the approved rubrics. The default Pi/Claude
-runner continues after individual errors, except teardown failures. The full
-OpenCode runner stops on execution errors; error-free investigator deadlines
-remain no-answer outcomes.
+and OpenCode runners continue to the next scheduled case after a model or
+grader error. An investigator error leaves the case ungraded. A grader error
+preserves the answer without a grade. Neither triggers a repeat. An investigator
+deadline without a provider error remains a no-answer outcome. The full OpenCode
+run stops on shared harness failure or missing investigator evidence. Both
+runners stop when cleanup fails. Before a full run, check each selected judge
+with one synthetic answer using the same login and grading path.
 
 ## Checks
 
@@ -221,7 +225,7 @@ It calls the native API directly; Promptfoo does not need a package patch.
 Saved 2.0.29 runs remain readable by the verification helpers.
 
 `node evals/viewer-usability/opencode-v2-evaluate.mjs --plan-full` prints the
-ten investigator model IDs, eleven questions, grader and repetition count without
+twelve investigator model IDs, five selected questions, grader and repetition count without
 starting a run. `--run-full` executes that plan through a shared host and requires
 an explicit fresh run directory, prebuilt viewer, separate observer and private
 membership references.

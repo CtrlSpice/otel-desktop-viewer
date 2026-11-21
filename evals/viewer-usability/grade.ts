@@ -30,6 +30,10 @@ export async function readViewerSkill(root = runtimeRoot()) {
   const { binary } = record(readJson(path.join(root, 'connection.json')))
   if (typeof binary !== 'string' || !path.isAbsolute(binary))
     throw new Error('Grader requires the evaluated viewer binary')
+  return readBinarySkill(binary)
+}
+
+export async function readBinarySkill(binary: string) {
   const { stdout } = await promisify(execFile)(binary, ['skills'], {
     encoding: 'utf8',
   })

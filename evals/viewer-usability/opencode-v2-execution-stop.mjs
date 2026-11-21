@@ -1,11 +1,17 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 let stop
 export function onFailure(callback) { stop = callback }
+export function checkEvidenceError(error, root) {
+  if (['ENOSPC', 'EDQUOT', 'EIO', 'EROFS'].includes(error?.code) ||
+      (error?.path?.startsWith(root + '/') && error.syscall))
+    stop?.(new Error('Stopped because run evidence is unavailable', { cause: error }))
+}
 export function afterEach({ result }) {
-  if (result.response?.metadata?.caseOutcome === 'investigator-timeout' &&
-      result.response.error === 'No answer: investigator reached its time limit' &&
-      !result.response.metadata.errors?.some(error =>
-        error.type !== 'aborted' || error.message !== 'Step interrupted') &&
-      !result.gradingResult?.componentResults?.some(c => c.metadata?.graderError)) return
-  if (result.failureReason === 2 || result.response?.error || result.gradingResult?.componentResults?.some(c => c.metadata?.graderError))
-    stop?.(new Error('Stopped on execution error; original result retained'))
+  const metadata = result.response?.metadata
+  if (metadata?.harnessFailure) return stop?.(new Error('Stopped on shared investigator harness failure'))
+  if (!metadata?.evidence ||
+      !fs.existsSync(path.join(metadata.evidence, 'response.json')))
+    stop?.(new Error('Stopped because investigator evidence could not be saved'))
 }

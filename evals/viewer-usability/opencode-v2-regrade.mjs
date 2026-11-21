@@ -75,7 +75,7 @@ export function savedGradingInput(root, sourceID, row) {
   assert.ok(tools.every(tool => tool.sessionID === metadata.sessionID))
   for (const [name, hash] of Object.entries(packet.evidence.sources))
     assert.equal(hashes[path.join(evidence, name)], hash, 'Saved grading evidence changed')
-  const criterion = v2GradingPrompt(packet)
+  const criterion = v2GradingPrompt(packet, response.output)
   const components = row.gradingResult?.componentResults ?? []
   const rubric = components.find(component => component.assertion?.type === 'llm-rubric')
   assert.ok(rubric, 'Original rubric assessment is required before comparison grading')

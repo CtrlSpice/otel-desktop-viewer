@@ -43,6 +43,18 @@ export default class PiProvider {
   id() { return `pi:${this.config.provider}/${this.config.model}` }
 
   async callApi(prompt: string, context: PiContext = {}) {
+    try { return await this.attempt(prompt, context) }
+    catch (error) {
+      if (this.config.role === 'grader') {
+        const hook = './opencode-v2-execution-stop.mjs'
+        const { checkEvidenceError } = await import(hook)
+        checkEvidenceError(error, this.config.root)
+      }
+      throw error
+    }
+  }
+
+  private async attempt(prompt: string, context: PiContext) {
     if (process.platform !== 'darwin') throw new Error('Pi evaluation currently requires the tested macOS sandbox')
     const { role } = this.config
     const root = fs.realpathSync(this.config.root)

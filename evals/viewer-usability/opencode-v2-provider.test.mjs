@@ -35,6 +35,14 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 
         model: { providerID: 'openai', id: 'fixture-model' } },
       { type: 'idle', outcome: 'succeeded' },
     ]
+    const guide = '---\nname: otel-desktop-viewer\n---\nFixture skill.'
+    if (outcome === 'success') {
+      fs.writeFileSync(binary, `#!/bin/sh\n[ "$1" = skills ] || exit 1\ncat <<'EOF'\n${guide}\nEOF\n`)
+      fs.chmodSync(binary, 0o700)
+      history[0].content.unshift({ type: 'tool', name: 'shell', id: 'call_fixture', time: { created: 1, ran: 1, completed: 2 },
+        state: { status: 'completed', input: { command: './bin/otel-desktop-viewer skills' }, content: [{ type: 'text', text: guide }] } })
+    }
+    const originalBinary = fs.readFileSync(binary)
     if (outcome === 'timeout-provider-error') {
       history[0].error = { type: 'provider', status: 402 }
       history[1].outcome = 'failed'
@@ -92,6 +100,8 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 
     if (outcome === 'shutdown-failure') await assert.rejects(attempt, /Harness binary teardown failed/)
     else {
       const response = await attempt
+      assert.equal(response.metadata.skillFetched, outcome === 'success' ? 'yes' : outcome.startsWith('timeout') || outcome === 'nondeadline-abort' ? 'no' : 'unknown')
+      assert.equal(JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'response.json'))).metadata.skillFetched, response.metadata.skillFetched)
       if (outcome === 'success') assert.equal(response.output, 'fixture answer')
       else assert.ok(response.error)
       const ordinaryTimeout = ['timeout', 'timeout-expected-abort'].includes(outcome)
@@ -111,14 +121,7 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 
         onFailure(() => { stopped = true })
         try {
           executionStop({ result: { failureReason: response.error ? 2 : 0, response } })
-          assert.equal(stopped, outcome !== 'success' && !ordinaryTimeout)
-          if (['timeout-provider-error', 'timeout-mixed-errors', 'timeout-unknown-abort'].includes(outcome)) {
-            stopped = false
-            executionStop({ result: { failureReason: 2, response: { ...response,
-              error: 'No answer: investigator reached its time limit',
-              metadata: { ...response.metadata, caseOutcome: 'investigator-timeout' } } } })
-            assert.equal(stopped, true)
-          }
+          assert.equal(stopped, false, 'Saved outcomes do not cancel other scheduled cases')
         } finally { onFailure(undefined) }
       }
       assert.ok(drained, 'The session must finish before deletion')
@@ -128,7 +131,7 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 
     assert.ok(fs.existsSync(path.join(evidence, 'response.json')))
     assert.equal(fs.existsSync(path.join(evidence, 'workspace/bin/otel-desktop-viewer')), outcome === 'shutdown-failure')
     assert.equal(JSON.parse(fs.readFileSync(path.join(evidence, 'teardown.json'))).status, outcome === 'shutdown-failure' ? 'failed' : 'removed')
-    assert.equal(fs.readFileSync(binary, 'utf8'), 'fixture viewer')
+    assert.deepEqual(fs.readFileSync(binary), originalBinary)
     assert.equal(hostController.signal.aborted, outcome === 'host-cancellation')
   })
 }
@@ -139,6 +142,7 @@ test('non-shared V2 preflight errors still remove the owned executable copy', as
   fs.writeFileSync(cli, '#!/bin/sh\necho wrong-version\n', { mode: 0o700 })
   const provider = new OpenCodeV2Provider({ config: { root, binary, model: 'fixture-model', opencodeBinary: cli } })
   const response = await provider.callApi('fixture prompt')
+  assert.equal(response.metadata.skillFetched, 'unknown')
   assert.match(response.error, /Only OpenCode/)
   assert.equal(fs.existsSync(path.join(response.metadata.workspace, 'bin/otel-desktop-viewer')), false)
   assert.equal(JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'teardown.json'))).status, 'removed')

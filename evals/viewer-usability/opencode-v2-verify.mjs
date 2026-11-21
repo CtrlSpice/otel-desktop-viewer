@@ -6,6 +6,7 @@ import { evalEventTools } from '../../desktopexporter/internal/frontend/src/feat
 import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
 import { missingToolLogs } from './tool-logs.ts'
 import { verifyToolEvent } from './opencode-v2-verify-evidence.mjs'
+import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
 import { nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 import { observerURL, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
 import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
@@ -13,6 +14,21 @@ import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } fro
 const jsonLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : []
 const attr = (attributes, key) => attributes?.find(attribute => attribute.key === key)?.value
 const save = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
+export function verifyNoRetry(policy, sessionID, nativeSpans) {
+  const records = policy.filter(event => event.sessionID === sessionID)
+  const vetoes = records.filter(event => event.type === 'retry.veto')
+  if (!vetoes.length) return
+  assert.equal(vetoes.length, 1, 'Repeated retry veto')
+  assert.equal(vetoes[0].attempt, 2, 'Retry beyond the first veto')
+  const requests = nativeSpans.filter(span => span.name === 'http.client POST' &&
+    span.attributes?.some(a => ['http.request.header.x-opencode-session', 'http.request.header.x-opencode-session-id'].includes(a.key) && a.value?.stringValue === sessionID))
+  const turns = records.slice(0, records.indexOf(vetoes[0])).filter(event => event.type === 'model.context').length
+  const streams = nativeSpans.filter(span => span.name === 'LLM.stream' &&
+    attr(span.attributes, 'session.id')?.stringValue === sessionID)
+  const observed = [requests, streams].filter(group => group.length)
+  assert.ok(turns && observed.length && observed.every(group => group.length === turns && group.every(span =>
+    BigInt(span.startTimeUnixNano) / 1000000n <= BigInt(vetoes[0].observedAt))), 'Missing request evidence or repeated model request after retry veto')
+}
 const ownedEvidence = (root, file) => {
   const evidence = fs.realpathSync(file)
   assert.equal(path.dirname(evidence), path.join(root, 'runs'), 'Evidence must belong to this run')
@@ -50,7 +66,7 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
     if (malformed.length) assert.ok(raw.error)
   } else assert.ok(raw.error, 'Capture unavailable must be an explicit execution error')
   const policy = jsonLines(path.join(evidence, 'policy.jsonl'))
-  assert.equal(policy.filter(event => event.type === 'retry.veto').length, 0, 'No model retry attempts')
+  verifyNoRetry([...policy, ...jsonLines(path.join(evidence, 'requests.jsonl'))], metadata.sessionID, nativeSpans)
   const spans = wrapper.spans.filter(span => span.traceId === row.traceId)
   assert.ok(spans.length, 'Missing wrapper trace for result')
   const rootSpans = spans.filter(span => span.name === 'promptfoo.test_case')
@@ -118,7 +134,10 @@ export function verifyGrader(root, row, investigator, graders) {
   assert.ok(investigator.packet, 'Captured grading packet required for invoked graders')
   const prompt = fs.readFileSync(path.join(grader.evidence, 'prompt.txt'), 'utf8')
   const content = JSON.parse(prompt).map(message => message.content).join('\n')
-  assert.ok(content.includes(JSON.stringify(investigator.packet)), 'Grader must receive the exact approved evidence packet')
+  if (investigator.packet.blindGrading) {
+    assert.deepEqual(JSON.parse(prompt), [{ role: 'user', content: v2GradingPrompt(investigator.packet, investigator.raw.output) }],
+      'Grader must receive only the blind grading prompt')
+  } else assert.ok(content.includes(JSON.stringify(investigator.packet)), 'Grader must receive the exact approved evidence packet')
   const responseFile = path.join(grader.evidence, 'response.json')
   if (!fs.existsSync(responseFile)) {
     // Approved Pi provider can throw before saving a response (for example,
@@ -239,7 +258,8 @@ export async function verifyRun(root, { importSource = false, env = process.env 
     assert.ok(rubric && question, 'Missing reference for scheduled question')
     const metadata = row.response.metadata
     assert.equal(metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion, plan.version, 'Investigator version differs from run plan')
-    const investigator = verifyInvestigator(root, row, telemetry.wrapper, rubric, question, [...telemetry.attempts.values()].flatMap(data => data.spans))
+    const native = telemetry.attempts.get(metadata.evidence) ?? telemetry.legacy
+    const investigator = verifyInvestigator(root, row, telemetry.wrapper, rubric, question, native?.spans ?? [])
     assert.equal(investigator.identity.promptfoo.evaluationId, source.evalId)
     if (row.response.metadata.sessionID) {
       assert.ok(!nativeSessions.has(row.response.metadata.sessionID)); nativeSessions.add(row.response.metadata.sessionID)
@@ -250,7 +270,6 @@ export async function verifyRun(root, { importSource = false, env = process.env 
     }
     const grader = verifyGrader(root, row, investigator, graders)
     if (grader.sessionID) { assert.ok(!graderSessions.has(grader.sessionID)); graderSessions.add(grader.sessionID) }
-    const native = telemetry.attempts.get(investigator.evidence) ?? telemetry.legacy
     if (spec.nativeTelemetry && !native) throw new Error('Missing native capture for scheduled attempt')
     if (native) {
       for (const resource of native.summary.resources) {

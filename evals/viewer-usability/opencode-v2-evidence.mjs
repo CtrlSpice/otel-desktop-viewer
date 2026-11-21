@@ -21,6 +21,27 @@ export function toolEvidence(tool, runtimeVersion = '2.0.29') {
   return { attributes, timestamp: tool.time.completed ?? tool.time.created, errors }
 }
 
+export function skillFetched(tools, complete, skill) {
+  let known = complete
+  const guide = skill?.replaceAll('\r\n', '\n').trimEnd()
+  for (const { name, state } of tools) {
+    if (state.status === 'error' || (name === 'shell' && typeof state.metadata?.exit === 'number' && state.metadata.exit !== 0)) continue
+    if (state.status !== 'completed' || !Array.isArray(state.content)) {
+      known = false
+      continue
+    }
+    for (const part of state.content) {
+      if (part.type !== 'text' || typeof part.text !== 'string') continue
+      const text = part.text.replaceAll('\r\n', '\n')
+      const output = name === 'read' ? text.replace(/^\d+: /gm, '') : text
+      if (guide && (text.includes(guide) || output.includes(guide))) return 'yes'
+      if (!guide) known = false
+    }
+    if (state.metadata?.truncated) known = false
+  }
+  return known ? 'no' : 'unknown'
+}
+
 export function aggregateUsage(assistants, runtimeVersion = '2.0.29') {
   const usage = {}, recorded = {}
   for (const field of ['input', 'output', 'reasoning', 'cache.read', 'cache.write']) {
