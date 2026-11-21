@@ -14,7 +14,7 @@ Reuse the user's viewer and leave it running. Start a viewer only if asked. Keep
 
 ## Find telemetry
 
-`services` lists services and telemetry counts. Pass `serviceIdentity` to `services connections <service-identity>` to see incoming and outgoing connections from recorded parent and child spans.
+`services` lists counts and `serviceIdentity`. `services connections <service-identity>` lists recorded parent–child connections. Follow its next-page hint.
 
 Use `traces`, `logs`, or `metrics` to find records. Searches default to the last hour and 25 rows:
 
