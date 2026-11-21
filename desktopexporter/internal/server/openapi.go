@@ -1,7 +1,6 @@
 package server
 
 import (
-	"maps"
 	"net/http"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/features"
@@ -166,21 +165,23 @@ func registerOpenAPI(mux *http.ServeMux) error {
 		return err
 	}
 	mux.Handle("GET /openapi.json", full)
-	for _, value := range doc["paths"].(map[string]any) {
+	for path, value := range doc["paths"].(map[string]any) {
 		item := value.(map[string]any)
-		sharedParams, _ := item["parameters"].([]any)
 		for verb, value := range item {
 			if verb == "parameters" {
 				continue
 			}
-			op := maps.Clone(value.(map[string]any))
-			params, _ := op["parameters"].([]any)
-			if len(sharedParams) > 0 {
-				op["parameters"] = append(append([]any(nil), sharedParams...), params...)
+			op := value.(map[string]any)
+			single := map[string]any{verb: op}
+			if params, ok := item["parameters"]; ok {
+				single["parameters"] = params
 			}
 			id := op["operationId"].(string)
 			url := "/openapi/" + id + ".json"
-			handler, err := apiDocumentHandler(id+".json", op)
+			handler, err := apiDocumentHandler(id+".json", map[string]any{
+				"openapi": doc["openapi"], "info": doc["info"], "servers": doc["servers"],
+				"paths": map[string]any{path: single},
+			})
 			if err != nil {
 				return err
 			}

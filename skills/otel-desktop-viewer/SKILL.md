@@ -58,4 +58,4 @@ order by s.start_time desc, s.trace_id, s.span_id"
 
 ## Transfer OTLP JSON
 
-Redirect `export trace <trace-id>`, `export log <log-ref>`, or `export metric <metric-ref>` to a file. Trace exports contain spans; export logs separately. When asked to import, use `import <file> --endpoint <viewer-url>`. Check accepted requests before retrying a partial import.
+Redirect `export trace <trace-id>`, `export log <log-ref>`, or `export metric <metric-ref>` to a file. Trace exports contain spans; export logs separately. When asked to import, use `import <file> --endpoint <viewer-url>`. Receiver acceptance does not confirm storage. Retrying the whole file can duplicate records.

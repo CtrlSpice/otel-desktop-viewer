@@ -432,7 +432,7 @@ func TestServicesTransportPreservesLargeCounts(t *testing.T) {
 func TestServicesTableIdentityFindsServiceMapConnections(t *testing.T) {
 	endpoint, te, _, _ := startAttributeIntegration(t)
 	traces := ptrace.NewTraces()
-	for i, name := range []string{"checkout", "payments"} {
+	for i, name := range []string{"checkout", "payments", "shipping"} {
 		rs := traces.ResourceSpans().AppendEmpty()
 		rs.Resource().Attributes().PutStr("service.name", name)
 		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
@@ -440,21 +440,21 @@ func TestServicesTableIdentityFindsServiceMapConnections(t *testing.T) {
 		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
 		span.SetStartTimestamp(8000000000000)
 		span.SetEndTimestamp(8000000000001)
-		if i == 1 {
+		if i > 0 {
 			span.SetParentSpanID(pcommon.SpanID{7: 1})
 			span.Status().SetCode(ptrace.StatusCodeError)
 		}
 	}
 	require.NoError(t, te.ConsumeTraces(t.Context(), traces))
 	services := servicesTestResult(t, endpoint)
-	require.Len(t, services.Services, 2)
+	require.Len(t, services.Services, 3)
 	source, target := services.Services[0], services.Services[1]
 	require.Equal(t, "checkout", source.ServiceName)
 	catalogue, err := servicesTestRun(t, endpoint)
 	require.NoError(t, err)
 	require.Contains(t, catalogue, source.ServiceIdentity)
 	for _, ref := range []string{source.ServiceIdentity, target.ServiceIdentity} {
-		output, err := servicesTestRun(t, endpoint, "connections", ref, "--json")
+		output, err := servicesTestRun(t, endpoint, "connections", ref, "--json", "--limit", "1")
 		require.NoError(t, err)
 		var result struct {
 			Connections []struct {
@@ -467,13 +467,38 @@ func TestServicesTableIdentityFindsServiceMapConnections(t *testing.T) {
 		require.Len(t, result.Connections, 1)
 		edge := result.Connections[0]
 		require.Equal(t, source.ServiceIdentity, edge.Source.ServiceIdentity)
-		require.Equal(t, target.ServiceIdentity, edge.Target.ServiceIdentity)
+		if ref == target.ServiceIdentity {
+			require.Equal(t, target.ServiceIdentity, edge.Target.ServiceIdentity)
+		}
 		require.Equal(t, [3]uint64{1, 1, 1}, [3]uint64{edge.SpanCount, edge.TraceCount, edge.ErrorSpanCount})
-		require.False(t, result.Truncated)
+		require.Equal(t, ref == source.ServiceIdentity, result.Truncated)
 	}
-	table, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity)
+	table, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity, "--limit", "1")
 	require.NoError(t, err)
 	require.Contains(t, table, "checkout")
-	require.Contains(t, table, "payments")
+	require.Contains(t, table, "--offset 1")
 	require.Contains(t, table, "errorSpanCount")
+	next, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity, "--limit", "1", "--offset", "1")
+	require.NoError(t, err)
+	require.NotContains(t, next, "more connections")
+	for _, name := range []string{"payments", "shipping"} {
+		require.NotEqual(t, strings.Contains(table, name), strings.Contains(next, name))
+	}
+}
+
+func TestDecodeConnectionPage(t *testing.T) {
+	endpoint := `{"serviceIdentity":"id","serviceNamespace":"","serviceName":""}`
+	edge := `{"source":` + endpoint + `,"target":` + endpoint + `,"spanCount":1,"traceCount":1,"errorSpanCount":0}`
+	page := func(edge string) string { return `{"rows":[[` + edge + `]],"truncated":false}` }
+	for _, invalid := range []string{"null", "{}", `{"rows":[]}`, `{"rows":null,"truncated":false}`,
+		page(`1`), page(`{}`), page(strings.Replace(edge, `"source":`, `"ignored":`, 1)),
+		page(strings.Replace(edge, `"serviceIdentity":"id"`, `"serviceIdentity":null`, 1)),
+		page(strings.Replace(edge, `"errorSpanCount":0`, `"errorSpanCount":null`, 1))} {
+		_, _, _, err := decodeConnectionPage(json.RawMessage(invalid))
+		require.Error(t, err, invalid)
+	}
+	entries, _, truncated, err := decodeConnectionPage(json.RawMessage(`{"rows":[],"truncated":false}`))
+	require.NoError(t, err)
+	require.Equal(t, []json.RawMessage{}, entries)
+	require.False(t, truncated)
 }

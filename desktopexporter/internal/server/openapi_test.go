@@ -110,11 +110,15 @@ func TestOpenAPIBundleAndIndividualOperations(t *testing.T) {
 			id := op["operationId"].(string)
 			t.Run(id, func(t *testing.T) {
 				require.NotEmpty(t, op["responses"], "%s %s", verb, path)
-				if shared, ok := item["parameters"].([]any); ok {
-					params, _ := op["parameters"].([]any)
-					op["parameters"] = append(append([]any(nil), shared...), params...)
+				want := map[string]any{verb: op}
+				if shared, ok := item["parameters"]; ok {
+					want["parameters"] = shared
 				}
-				require.Equal(t, op, read("/openapi/"+id+".json"))
+				single := read("/openapi/" + id + ".json")
+				for _, key := range []string{"openapi", "info", "servers"} {
+					require.Equal(t, bundle[key], single[key])
+				}
+				require.Equal(t, map[string]any{path: want}, single["paths"])
 			})
 		}
 	}

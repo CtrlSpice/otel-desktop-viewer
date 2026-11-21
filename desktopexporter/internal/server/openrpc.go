@@ -361,25 +361,67 @@ func openRPCDocument() map[string]any {
 }
 
 func rpcDiscoveryOptions() map[string]any {
+	text := map[string]any{"type": "string"}
+	nullableText := map[string]any{"type": []string{"string", "null"}}
+	bound := map[string]any{"type": []string{"string", "null"}, "pattern": "^[0-9]+$"}
+	choice := func(values ...string) map[string]any { return map[string]any{"enum": values} }
+	limit := func(min, max, fallback int) map[string]any {
+		return map[string]any{"type": []string{"integer", "null"}, "minimum": min, "maximum": max, "default": fallback}
+	}
 	mode := func(kind, description string, fields ...string) map[string]any {
 		props := map[string]any{"kind": map[string]any{"const": kind}}
-		for _, field := range fields {
-			props[field] = map[string]any{"type": "string"}
+		names := append([]string{"kind"}, fields...)
+		s := map[string]any{"properties": props, "description": description}
+		if len(fields) > 0 {
+			s["required"] = fields
 		}
-		s := rpcObject(props, append([]string{"kind"}, fields...)...)
-		s["description"] = description
+		if kind != "home-value" {
+			names = append(names, "startTime", "endTime", "offset", "limit", "term", "queries")
+			if kind != "connections" && kind != "connection-spans" {
+				names = append(names, "serviceName", "namespace", "serviceIdentity")
+			}
+		}
+		if kind == "home-values" || kind == "values" {
+			names = append(names, "sortBy", "sortDirection")
+		}
+		if kind == "home-values" {
+			names = append(names, "valueKind", "locale")
+		}
+		if kind == "connections" || kind == "connection-spans" {
+			props["serviceIdentity"] = text
+		}
+		s["propertyNames"] = choice(names...)
 		return s
 	}
 	return map[string]any{
-		"description": "Filters apply before paging:\n- Time: startTime and endTime are inclusive unsigned decimal Unix nanoseconds. Pass null for no bound.\n- Service: match serviceName or namespace exactly, or pass serviceIdentity. An empty string differs from omission.\n- Search: term matches a literal substring without regard to case. In queries, each signal takes a predicate: null selects all in the window, false selects none.\n\nPaging: offset defaults to 0 (maximum 1000000000). For row results, limit defaults to 100 (1–500). Each row contains one entry. truncated indicates more results.",
+		"type": "object", "required": []string{"kind"},
+		"description": "Time bounds: inclusive uint64 Unix nanoseconds as decimal strings, or null. Service filters match exactly; empty differs from omitted. term matches a case-insensitive substring. In queries, null selects all and false selects none. Filters precede paging. Each row contains one entry; truncated means more results.",
+		"if":          map[string]any{"properties": map[string]any{"kind": map[string]any{"const": "home-values"}}},
+		"then":        map[string]any{"properties": map[string]any{"limit": limit(0, 100, 25)}},
+		"else":        map[string]any{"properties": map[string]any{"limit": limit(1, 500, 100)}},
+		"properties": map[string]any{
+			"startTime": bound, "endTime": bound, "offset": limit(0, 1_000_000_000, 0),
+			"key": text, "targetIdentity": text,
+			"term": nullableText, "serviceName": nullableText, "namespace": nullableText, "serviceIdentity": nullableText,
+			"valueKind": nullableText, "locale": nullableText, "valueRef": map[string]any{"type": "string", "minLength": 1},
+			"sortBy": map[string]any{"enum": []any{nil, "", "name", "frequency"}}, "sortDirection": map[string]any{"enum": []any{nil, "", "asc", "desc"}},
+			"ownerType": choice("span", "event", "link", "log", "datapoint", "exemplar", "metadata", "resource", "scope"),
+			"queries": map[string]any{"type": []string{"object", "null"}, "propertyNames": choice("traces", "logs", "metrics"),
+				"additionalProperties": map[string]any{"anyOf": []any{map[string]any{"type": []string{"object", "null"}}, map[string]any{"const": false}}}},
+		},
+		"dependencies": map[string]any{"signal": map[string]any{"oneOf": []any{
+			map[string]any{"properties": map[string]any{"signal": choice("traces"), "ownerType": choice("span", "event", "link", "resource", "scope")}},
+			map[string]any{"properties": map[string]any{"signal": choice("logs"), "ownerType": choice("log", "resource", "scope")}},
+			map[string]any{"properties": map[string]any{"signal": choice("metrics"), "ownerType": choice("datapoint", "exemplar", "metadata", "resource", "scope")}},
+		}}},
 		"oneOf": []any{
-			mode("services", "List services grouped by typed namespace and name; absent and empty-string namespaces group together. Each row includes the database-local serviceIdentity. With queries, totals count matching services, traces, Metrics and logs across all pages."),
-			mode("connections", "List incoming and outgoing connections with source, target, spanCount, traceCount and errorSpanCount. Both parent and child spans must match in the same trace and time window.", "serviceIdentity"),
-			mode("connection-spans", "List the child spans from serviceIdentity to targetIdentity, including traceID, spanID, name, startTime, endTime and statusCode.", "serviceIdentity", "targetIdentity"),
-			mode("keys", "List attribute keys and types on the selected owner. Use traces, logs or metrics as the signal and an owner supported by that signal.", "signal", "ownerType"),
-			mode("values", "Count distinct records per typed attribute value on the selected owner. The denominator counts records carrying the key before pagination. An empty key is valid.", "signal", "ownerType", "key"),
-			mode("home-values", "Count values for one owner and key across signals. Returns previews, valueRef, counts by signal, denominators and total.\n\n- Filter: valueKind.\n- Sort: use sortBy for name or frequency, sortDirection for direction and locale for collation.\n- Page: limit defaults to 25 (0–100). Use 0 for counts only. If truncated, increase offset by the number of returned values.", "ownerType", "key"),
-			mode("home-value", "Read the exact identity string for a valueRef returned by home-values. References belong to this viewer and database. Repeat home-values if a reference expires or the viewer restarts.", "valueRef"),
+			mode("services", "List serviceIdentity by typed namespace and name. Missing and empty namespaces group together. With queries, totals count services, traces, Metrics and logs across pages."),
+			mode("connections", "List incoming and outgoing edges with span, trace and error-span counts. Parent and child must match in the same trace and window. Filter by identity, not name or namespace.", "serviceIdentity"),
+			mode("connection-spans", "List child span IDs, trace IDs, names, times and status codes for this source and target.", "serviceIdentity", "targetIdentity"),
+			mode("keys", "List attribute keys and types.", "signal", "ownerType"),
+			mode("values", "Count distinct records per typed value. The denominator counts records carrying the key before paging. Empty keys are valid.", "signal", "ownerType", "key"),
+			mode("home-values", "List previews, valueRefs, counts and denominators across signals. A zero limit returns counts only. To continue, advance offset by the number of values returned.", "ownerType", "key"),
+			mode("home-value", "Resolve a valueRef to its exact identity string. Repeat home-values if the reference expires or the viewer restarts.", "valueRef"),
 		},
 	}
 }
