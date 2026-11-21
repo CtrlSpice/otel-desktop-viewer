@@ -182,7 +182,7 @@ export async function verify(name = 'verification', root = runtimeRoot()) {
   })
   const logs = await sql(
     'trace-logs',
-    "select json_extract_string(l.body,'$.value') as body, case when l.span_id is null then 'trace-only' when s.span_id is null then 'missing-span' else 'matching-span' end as association from logs l left join spans s on l.trace_id=s.trace_id and l.span_id=s.span_id where l.trace_id='00000000-0000-0000-0000-000000000011'::uuid order by body"
+    "select l.body::varchar as body, case when l.span_id is null then 'trace-only' when s.span_id is null then 'missing-span' else 'matching-span' end as association from logs l left join spans s on l.trace_id=s.trace_id and l.span_id=s.span_id where l.trace_id='00000000-0000-0000-0000-000000000011'::uuid order by body"
   )
   assert.deepEqual(logs, [
     {

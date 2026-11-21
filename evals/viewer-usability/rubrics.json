@@ -4,11 +4,11 @@
     "criteria": [
       {
         "id": "reported-cause",
-        "text": "Identifies the reported payment decline for insufficient funds with relevant telemetry support.",
+        "text": "Distinguishes the causes of the two payment failures and recommends a next step for each based on its trace or logs. For checkout-020, the gateway root returned 504; payment/charge and stripe/create-charge report “Payment provider timed out.” The fixture does not establish team ownership.",
         "scoring": {
-          "Fail": "Gives the wrong cause, or does not identify a cause supported by telemetry.",
-          "Partial": "Correctly identifies that payment was declined, but does not identify insufficient funds as the reason.",
-          "Pass": "Identifies the payment decline due to insufficient funds, supported by recorded telemetry."
+          "Fail": "Does not correctly diagnose either checkout from its telemetry, or reverses the two causes.",
+          "Partial": "Correctly diagnoses at least one checkout from its telemetry, but does not support both diagnoses and their next steps.",
+          "Pass": "Uses evidence for each checkout to distinguish 017’s insufficient-funds decline from 020’s payment-provider timeout. Recommends different follow-up appropriate to each cause, such as handling the card decline with the customer and investigating the provider timeout. Do not require different owners or specific team names."
         }
       }
     ]
@@ -46,24 +46,24 @@
     "criteria": [
       {
         "id": "complete-logs",
-        "text": "Shows all five logs associated with checkout-017. Explaining stored-span associations is optional.",
+        "text": "Reconstructs checkout-017 around the gateway response and distinguishes request-level evidence from logs linked to a stored operation.",
         "scoring": {
-          "Fail": "Does not show any correct logs for this checkout.",
-          "Partial": "Shows some associated logs, but the returned set is incomplete or includes unrelated logs.",
-          "Pass": "Shows the complete, correct set of five associated log entries, including the log without a span ID and the log with an unmatched span ID. No particular presentation format is required."
+          "Fail": "Gives no supported timeline for checkout-017.",
+          "Partial": "Reports some correct log evidence for checkout-017 but misses or misorders events, includes unrelated evidence, or does not distinguish both audit records’ span associations.",
+          "Pass": "Places the successful low-stock reservation and insufficient-funds decline before the gateway’s 402 response. Places the request audit and then the delayed payment audit after it. Both audits belong to the trace: the first has no span ID, and the second names a span absent from the trace. Equivalent wording and relative ordering suffice."
         }
       }
     ]
   },
   "customer-count": {
-    "reference": "attributes referenced by recorded api-gateway root spans\n\nkey          kind    distinct_customer_count\n-----------  ------  -----------------------\ncustomer.id  string  32\n\nkind comes from the stored typed attribute value. distinct_customer_count is computed as the count of distinct customer.id string values in the manifest window.",
+    "reference": "In the manifest window, 32 distinct customer.id strings occur on recorded api-gateway checkout root spans. Four distinct customers have a failed root: customer-017 (HTTP 402), customer-020 (504), customer-021 (503) and customer-022 (503). The numerator counts customers with at least one failed checkout; the denominator counts customers with any observed checkout, including failures.",
     "criteria": [
       {
         "id": "complete-observed-count",
-        "text": "Reports 32 distinct customers supported by recorded customer IDs. Request count alone is not evidence of distinct customer count.",
+        "text": "Estimates the affected share of observed checkout customers using distinct customer identities and recorded checkout outcomes.",
         "scoring": {
-          "Fail": "Gives an incorrect count, or does not answer the count question.",
-          "Pass": "Reports 32 distinct customers, supported by the recorded customer IDs."
+          "Fail": "Misses either count, substitutes requests or failed child spans for distinct customers, or claims the result covers customers outside the observed population.",
+          "Pass": "Reports 4 affected out of 32 distinct customers seen attempting checkout in the requested window. Supports both numbers with recorded customer IDs and checkout outcomes. Listing all IDs or computing a percentage is optional."
         }
       }
     ]
@@ -87,10 +87,10 @@
     "criteria": [
       {
         "id": "usable-export",
-        "text": "Produces a complete, reloadable export of checkout-017 and reports its location.",
+        "text": "Hands Payments a verified, reloadable trace and an evidence-based starting point for investigating the failed charge.",
         "scoring": {
-          "Fail": "Does not provide a complete, reloadable export of the requested checkout with its location: the file is missing, invalid, incomplete, contains the wrong checkout, or the reported location does not identify the verified file. Running a command or claiming success is insufficient.",
-          "Pass": "Produces a complete, reloadable export of checkout-017, verified by code, and reports a location identifying that file."
+          "Fail": "The answer does not identify a file that passes the reload check, or it gives no evidence-based operation to inspect.",
+          "Pass": "Reports the location of a checkout-017 export that passes the reload check. Identifies stripe/create-charge and its recorded insufficient-funds decline, or another defensible starting operation such as payment/charge with its failed child charge as the reason."
         }
       }
     ]
@@ -114,10 +114,10 @@
     "criteria": [
       {
         "id": "full-window-total",
-        "text": "Reports 104 requests for the full window with counter support.",
+        "text": "Reconciles the cumulative gateway request count with the count of recorded checkout traces in the same window without assuming a tracing loss rate. The fixture contains 32 distinct traces with an api-gateway checkout root (POST /api/v2/orders).",
         "scoring": {
-          "Fail": "Gives an incorrect count, or does not answer the count question.",
-          "Pass": "Reports 104 requests, supported by the counter over the full requested period."
+          "Fail": "Misses either total or what it counts, sums cumulative samples, counts child spans as checkouts, or treats the numerical difference as proof of missing traces.",
+          "Pass": "Supports 104 gateway requests with the cumulative counter and 32 observed checkouts with distinct checkout traces or gateway checkout root spans. Explains that the metric counts gateway traffic while the trace query counts recorded checkouts. The totals alone do not establish lost traces or the reason for the difference."
         }
       }
     ]

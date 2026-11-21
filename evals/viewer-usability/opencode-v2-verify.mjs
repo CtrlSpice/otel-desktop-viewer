@@ -6,13 +6,31 @@ import { evalEventTools } from '../../desktopexporter/internal/frontend/src/feat
 import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
 import { missingToolLogs } from './tool-logs.ts'
 import { verifyToolEvent } from './opencode-v2-verify-evidence.mjs'
+import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
+import { claudeEvidence } from './claude-provider.ts'
+import { judgeFor } from './opencode-v2-judge.mjs'
 import { nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
-import { observerURL, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
+import { observerURL, validateSchedule, converge, scheduleForAvailability } from './opencode-v2-run-plan.mjs'
 import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
 
 const jsonLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : []
 const attr = (attributes, key) => attributes?.find(attribute => attribute.key === key)?.value
 const save = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
+export function verifyNoRetry(policy, sessionID, nativeSpans) {
+  const records = policy.filter(event => event.sessionID === sessionID)
+  const vetoes = records.filter(event => event.type === 'retry.veto')
+  if (!vetoes.length) return
+  assert.equal(vetoes.length, 1, 'Repeated retry veto')
+  assert.equal(vetoes[0].attempt, 2, 'Retry beyond the first veto')
+  const requests = nativeSpans.filter(span => span.name === 'http.client POST' &&
+    span.attributes?.some(a => ['http.request.header.x-opencode-session', 'http.request.header.x-opencode-session-id'].includes(a.key) && a.value?.stringValue === sessionID))
+  const turns = records.slice(0, records.indexOf(vetoes[0])).filter(event => event.type === 'model.context').length
+  const streams = nativeSpans.filter(span => span.name === 'LLM.stream' &&
+    attr(span.attributes, 'session.id')?.stringValue === sessionID)
+  const observed = [requests, streams].filter(group => group.length)
+  assert.ok(turns && observed.length && observed.every(group => group.length === turns && group.every(span =>
+    BigInt(span.startTimeUnixNano) / 1000000n <= BigInt(vetoes[0].observedAt))), 'Missing request evidence or repeated model request after retry veto')
+}
 const ownedEvidence = (root, file) => {
   const evidence = fs.realpathSync(file)
   assert.equal(path.dirname(evidence), path.join(root, 'runs'), 'Evidence must belong to this run')
@@ -22,7 +40,8 @@ const ownedEvidence = (root, file) => {
 export function verifyInvestigator(root, row, wrapper, rubric, question, nativeSpans = []) {
   const metadata = row.response.metadata
   assert.equal(metadata.runtime, 'opencode-v2')
-  assert.equal(metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion, '2.0.29')
+  const runtimeVersion = metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion
+  assert.ok(['2.0.29', '2.3.0'].includes(runtimeVersion), 'Unsupported OpenCode runtime version')
   const evidence = ownedEvidence(root, metadata.evidence)
   const identity = read(path.join(evidence, 'identity.json'))
   const raw = read(path.join(evidence, fs.existsSync(path.join(evidence, 'provider-exception.json')) ? 'provider-exception.json' : 'response.json'))
@@ -39,7 +58,7 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
     const assistants = (context ?? []).filter(message => message.type === 'assistant')
     assert.deepEqual(tools, assistants.flatMap(message => message.content.filter(part => part.type === 'tool')
       .map(part => ({ messageID: message.id, sessionID: metadata.sessionID, ...part }))))
-    const usage = aggregateUsage(assistants)
+    const usage = aggregateUsage(assistants, runtimeVersion)
     assert.deepEqual(metadata.usage, usage.usage); assert.deepEqual(metadata.usageAvailability, usage.usageAvailability)
     assert.deepEqual(raw.tokenUsage, usage.tokenUsage, 'No invented provider token totals')
     assert.equal(metadata.toolCalls, tools.length)
@@ -49,7 +68,7 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
     if (malformed.length) assert.ok(raw.error)
   } else assert.ok(raw.error, 'Capture unavailable must be an explicit execution error')
   const policy = jsonLines(path.join(evidence, 'policy.jsonl'))
-  assert.equal(policy.filter(event => event.type === 'retry.veto').length, 0, 'No model retry attempts')
+  verifyNoRetry([...policy, ...jsonLines(path.join(evidence, 'requests.jsonl'))], metadata.sessionID, nativeSpans)
   const spans = wrapper.spans.filter(span => span.traceId === row.traceId)
   assert.ok(spans.length, 'Missing wrapper trace for result')
   const rootSpans = spans.filter(span => span.name === 'promptfoo.test_case')
@@ -67,10 +86,10 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
     const matches = records.filter(({ event }) => attr(event.attributes, 'gen_ai.tool.call.id')?.stringValue === tool.id)
     assert.equal(matches.length, 1)
     if (matches[0].native) {
-      const evidence = toolEvidence(tool)
+      const evidence = toolEvidence(tool, runtimeVersion)
       assert.equal(missingToolLogs([{ eventName: 'tool.execution', attributes: evidence.attributes, timestamp: evidence.timestamp, observedTimestamp: 0 }], row.traceId, [matches[0].span]).length, 0)
     } else {
-      verifyToolEvent(tool, matches[0].event)
+      verifyToolEvent(tool, matches[0].event, runtimeVersion)
       assert.equal(matches[0].span.spanId, identity.promptfoo.traceparent.split('-')[2])
     }
   }
@@ -103,7 +122,7 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
   } }
 }
 
-export function verifyGrader(root, row, investigator, graders) {
+export function verifyGrader(root, row, investigator, graders, expected = 'pi:openai-codex/gpt-6.1-sol') {
   const matches = graders.filter(item => item.identity.promptfoo.traceparent?.split('-')[1] === row.traceId)
   assert.ok(matches.length <= 1, 'Repeated grader invocation for result')
   const components = row.gradingResult?.componentResults ?? []
@@ -117,7 +136,10 @@ export function verifyGrader(root, row, investigator, graders) {
   assert.ok(investigator.packet, 'Captured grading packet required for invoked graders')
   const prompt = fs.readFileSync(path.join(grader.evidence, 'prompt.txt'), 'utf8')
   const content = JSON.parse(prompt).map(message => message.content).join('\n')
-  assert.ok(content.includes(JSON.stringify(investigator.packet)), 'Grader must receive the exact approved evidence packet')
+  if (investigator.packet.blindGrading) {
+    assert.deepEqual(JSON.parse(prompt), [{ role: 'user', content: v2GradingPrompt(investigator.packet, investigator.raw.output) }],
+      'Grader must receive only the blind grading prompt')
+  } else assert.ok(content.includes(JSON.stringify(investigator.packet)), 'Grader must receive the exact approved evidence packet')
   const responseFile = path.join(grader.evidence, 'response.json')
   if (!fs.existsSync(responseFile)) {
     // Approved Pi provider can throw before saving a response (for example,
@@ -128,8 +150,9 @@ export function verifyGrader(root, row, investigator, graders) {
     return { invoked: true, evidence: grader.evidence, captureUnavailable: true, error: row.error, gradingResult: row.gradingResult }
   }
   const raw = read(responseFile)
-  assert.equal(raw.metadata.runtime, 'pi'); assert.equal(raw.metadata.role, 'grader')
-  assert.equal(raw.metadata.model, 'openai-codex/gpt-6.1-sol')
+  const [runtime, model] = expected.split(':')
+  assert.equal(raw.metadata.runtime, runtime); assert.equal(raw.metadata.role, 'grader')
+  assert.equal(raw.metadata.model, model)
   assert.equal(raw.metadata.toolCalls, 0)
   if (raw.metadata.sessionID) assert.notEqual(raw.metadata.sessionID, row.response.metadata.sessionID)
   const events = jsonLines(path.join(grader.evidence, 'events.jsonl'))
@@ -137,18 +160,25 @@ export function verifyGrader(root, row, investigator, graders) {
   assert.equal(events.filter(event => event.type === 'tool_execution_start').length, 0)
   const messages = events.filter(event => event.type === 'message_end' && event.message.role === 'assistant')
   assert.ok(messages.length <= 1, 'Grader must be a single response, without tools/retries')
-  if (!raw.error) assert.equal(messages.length, 1)
-  assert.equal(components.length, 1)
-  assert.equal(components[0].assertion.type, 'llm-rubric')
-  if (components[0].metadata?.evidence) {
-    assert.equal(ownedEvidence(root, components[0].metadata.evidence), grader.evidence)
-    assert.equal(components[0].metadata.sessionID, raw.metadata.sessionID)
+  if (runtime === 'claude-code') {
+    const stats = claudeEvidence(events)
+    if (!raw.error) {
+      assert.equal(stats.toolCalls, 0)
+      assert.deepEqual(stats.actualModels, [model])
+      assert.equal(events.filter(event => event.type === 'result').length, 1)
+    }
+  } else if (!raw.error) assert.equal(messages.length, 1)
+  const rubric = components.filter(component => component.assertion.type === 'llm-rubric')
+  assert.equal(rubric.length, 1)
+  if (rubric[0].metadata?.evidence) {
+    assert.equal(ownedEvidence(root, rubric[0].metadata.evidence), grader.evidence)
+    assert.equal(rubric[0].metadata.sessionID, raw.metadata.sessionID)
   }
   // Native failed/partial judgments and grader execution/JSON failures are valid
   // observed outcomes. Keep their recorded failureReason, score and explanation.
   if (raw.error) assert.equal(row.success, false)
   return { invoked: true, evidence: grader.evidence, sessionID: raw.metadata.sessionID, error: raw.error, exit: raw.metadata.exit,
-    usage: messages[0]?.message.usage, gradingResult: row.gradingResult }
+    model, usage: runtime === 'claude-code' ? raw.metadata.usage : messages[0]?.message.usage, gradingResult: row.gradingResult }
 }
 
 export async function importOriginal(root, endpoint, bytes, rows, request = fetch) {
@@ -198,17 +228,55 @@ export async function importOriginal(root, endpoint, bytes, rows, request = fetc
   return { experiments, nativeRowsPreserved: true, resultIDs: imported.map(row => row.id), otlpResent: false }
 }
 
+function sharedHostCapture(spec) {
+  return spec.mode === 'full' && spec.config.providers.every(provider => provider.config.sharedHost === true)
+}
+
+export function attemptNativeReport(root, telemetry, spec, investigator) {
+  const traceparent = investigator.identity.promptfoo.traceparent
+  const dedicated = telemetry.attempts.get(investigator.evidence)
+  const shared = sharedHostCapture(spec)
+  if (shared) assert.ok(!dedicated, 'Unexpected dedicated capture for shared host')
+  const data = dedicated ?? telemetry.runNative
+  if (!data) {
+    assert.ok(!spec.nativeTelemetry, 'Missing native capture for scheduled attempt')
+    return {}
+  }
+  if (shared) {
+    const traceID = traceparent.split('-')[1]
+    const spans = data.spans.filter(span => span.traceId === traceID)
+    if (spec.nativeTelemetry && !investigator.raw.error) assert.ok(spans.length, 'Missing shared-host spans for investigator trace')
+    const receipts = new Set(spans.flatMap(span => data.spanReceipts[traceID + '/' + span.spanId]))
+    return { native: { ...nativeTelemetryBoundaries({ spans }, traceparent), spans: spans.length },
+      rawNativeUploads: [...receipts].map(name => path.join(root, 'native-otlp', name)) }
+  }
+  for (const resource of data.summary.resources) {
+    assert.equal(attr(resource?.attributes, 'eval.evidence.id')?.stringValue, path.basename(investigator.evidence),
+      'Received native resource must identify its owned attempt')
+  }
+  if (spec.nativeTelemetry && !investigator.raw.error) assert.ok(data.spans.length)
+  return { native: nativeTelemetryBoundaries(data, traceparent), rawNativeUploads: data.receipts.map(receipt =>
+    path.join(dedicated ? investigator.evidence : root, 'native-otlp', receipt.name)) }
+}
+
 export async function verifyRun(root, { importSource = false, env = process.env } = {}) {
   root = fs.realpathSync(root)
   const plan = read(path.join(root, 'run-plan.json'))
-  assert.equal(plan.version, '2.0.29')
+  assert.ok(['2.0.29', '2.3.0'].includes(plan.version), 'Unsupported OpenCode run version')
   const spec = { ...plan, models: plan.models ?? plan.config.providers.map(provider => provider.config.model) }
+  if (plan.availability) {
+    const original = read(path.join(root, 'run-started.json')).spec
+    for (const field of ['models', 'taskIDs', 'repeat']) assert.deepEqual(plan[field], original[field])
+    const selection = scheduleForAvailability(original, plan.availability)
+    assert.deepEqual(plan.notStarted, selection.notStarted)
+    assert.deepEqual(plan.config.providers.map(p => `${p.config.providerID}/${p.config.model}`), selection.models)
+    assert.equal(plan.investigators, selection.models.length * plan.taskIDs.length * plan.repeat)
+    spec.models = selection.models
+  }
   const target = fs.existsSync(path.join(root, 'observer-target.json')) ? read(path.join(root, 'observer-target.json')) : { observerAPI: plan.observer }
   const endpoint = observerURL(env.OTEL_EVAL_OBSERVER_API ?? target.observerAPI)
   assert.equal(endpoint, observerURL(target.observerAPI), 'Verifier must use the recorded observer')
-  const exportFile = path.join(root, 'promptfoo.json'), bytes = fs.readFileSync(exportFile), digest = sha(bytes)
-  const source = JSON.parse(bytes), rows = source.results.results
-  assert.ok(source.evalId && source.config)
+  const exportFile = path.join(root, 'promptfoo.json')
   if (fs.existsSync(path.join(root, 'original-export-hashes.json'))) for (const [name, hash] of Object.entries(read(path.join(root, 'original-export-hashes.json')))) {
     assert.ok(['promptfoo.json', 'promptfoo-rows.jsonl'].includes(name))
     assert.equal(sha(fs.readFileSync(path.join(root, name))), hash, 'Original native export integrity')
@@ -219,6 +287,20 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   const sourceDir = fs.existsSync(snapshotFile) ? path.join(root, 'sources') : import.meta.dirname
   if (fs.existsSync(snapshotFile)) for (const [file, hash] of Object.entries(read(snapshotFile).files))
     assert.equal(sha(fs.readFileSync(path.join(sourceDir, file))), hash, 'Source snapshot integrity')
+  if (plan.availability && !spec.models.length) {
+    assert.equal(fs.existsSync(exportFile), false, 'Unavailable models must not produce native results')
+    assert.deepEqual(read(path.join(root, 'result-summary.json')), { mode: plan.mode, notStarted: plan.notStarted, results: [] })
+    const completed = read(path.join(root, 'run-completed.json'))
+    assert.ok(!completed.failure && completed.scheduled === 0 && completed.results === 0)
+    return { root, resultCount: 0, slots: [], notStarted: plan.notStarted, imported: false }
+  }
+  const bytes = fs.readFileSync(exportFile), digest = sha(bytes)
+  const source = JSON.parse(bytes), rows = source.results.results
+  assert.ok(source.evalId && source.config)
+  if (plan.availability) {
+    assert.deepEqual(source.config.metadata?.notStarted, plan.notStarted)
+    assert.deepEqual(source.config.metadata?.plannedModels, plan.models)
+  }
   const identities = new Map(rows.map(row => {
     const evidence = ownedEvidence(root, row.response.metadata.evidence)
     return [evidence, read(path.join(evidence, 'identity.json'))]
@@ -230,11 +312,16 @@ export async function verifyRun(root, { importSource = false, env = process.env 
     const evidence = path.join(root, 'runs', name)
     return { evidence, identity: read(path.join(evidence, 'identity.json')) }
   })
-  const rubric = read(path.join(sourceDir, 'rubrics.json'))['checkout-failure']
-  const question = read(path.join(sourceDir, 'tasks.json')).find(task => task.id === 'checkout-failure').goal
+  const rubrics = read(path.join(sourceDir, 'rubrics.json'))
+  const tasks = read(path.join(sourceDir, 'tasks.json'))
   const reports = [], nativeSessions = new Set(), nativeTools = new Set(), graderSessions = new Set()
   for (const row of rows) {
-    const investigator = verifyInvestigator(root, row, telemetry.wrapper, rubric, question, [...telemetry.attempts.values()].flatMap(data => data.spans))
+    const rubric = rubrics[row.vars.task_id], question = tasks.find(task => task.id === row.vars.task_id)?.goal
+    assert.ok(rubric && question, 'Missing reference for scheduled question')
+    const metadata = row.response.metadata
+    assert.equal(metadata.captureUnavailable ? metadata.expectedRuntimeVersion : metadata.runtimeVersion, plan.version, 'Investigator version differs from run plan')
+    const native = telemetry.attempts.get(metadata.evidence) ?? telemetry.runNative
+    const investigator = verifyInvestigator(root, row, telemetry.wrapper, rubric, question, native?.spans ?? [])
     assert.equal(investigator.identity.promptfoo.evaluationId, source.evalId)
     if (row.response.metadata.sessionID) {
       assert.ok(!nativeSessions.has(row.response.metadata.sessionID)); nativeSessions.add(row.response.metadata.sessionID)
@@ -243,20 +330,12 @@ export async function verifyRun(root, { importSource = false, env = process.env 
       const key = tool.sessionID + '/' + tool.id
       assert.ok(!nativeTools.has(key), 'Duplicate original session/tool identity'); nativeTools.add(key)
     }
-    const grader = verifyGrader(root, row, investigator, graders)
+    const expected = plan.graders ? judgeFor(row.provider.id) : plan.grader
+    if (plan.graders) assert.equal(plan.graders[spec.mode === 'full' ? metadata.model : metadata.model.split('/')[1]], expected)
+    const grader = verifyGrader(root, row, investigator, graders, expected)
     if (grader.sessionID) { assert.ok(!graderSessions.has(grader.sessionID)); graderSessions.add(grader.sessionID) }
-    const native = telemetry.attempts.get(investigator.evidence) ?? telemetry.legacy
-    if (spec.nativeTelemetry && !native) throw new Error('Missing native capture for scheduled attempt')
-    if (native) {
-      for (const resource of native.summary.resources) {
-        const id = attr(resource?.attributes, 'eval.evidence.id')?.stringValue
-        assert.equal(id, path.basename(investigator.evidence), 'Received native resource must identify its owned attempt')
-      }
-      if (!investigator.raw.error && spec.nativeTelemetry) assert.ok(native.spans.length)
-    }
     reports.push({ ...investigator.report, evidence: investigator.evidence, grader,
-      native: native ? nativeTelemetryBoundaries(native, investigator.identity.promptfoo.traceparent) : undefined,
-      rawNativeUploads: native?.receipts?.map(receipt => path.join(investigator.evidence, 'native-otlp', receipt.name)),
+      ...attemptNativeReport(root, telemetry, spec, investigator),
     })
   }
   assert.equal(graders.length, reports.filter(report => report.grader.invoked).length, 'Unexpected orphan grader attempt')
@@ -266,6 +345,7 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   const observed = await awaitTelemetry(endpoint, telemetry, { fresh: spec.mode === 'sol-luna' })
   const reportDirectory = fs.mkdtempSync(path.join(root, 'verification-'))
   const report = { evalId: source.evalId, mode: spec.mode ?? 'one', slots, resultCount: rows.length,
+    ...(plan.availability ? { planned: plan.planned, notStarted: plan.notStarted } : {}),
     nativeOutcomes: rows.map(row => ({ id: row.id, success: row.success, score: row.score, failureReason: row.failureReason })),
     originalNativeExportSHA256: digest, observerAPI: endpoint, attempts: reports, observer: observed,
     wrapperScopes: telemetry.wrapper.summary.scopes, wrapperSpans: telemetry.wrapper.spans.length,

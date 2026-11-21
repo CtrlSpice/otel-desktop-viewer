@@ -3,28 +3,121 @@ import path from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { spawn, execFileSync } from 'node:child_process'
 import { once } from 'node:events'
+import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { context as otelContext, propagation } from '@opentelemetry/api'
 import { exportToolLogs, missingToolLogs } from './tool-logs.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
-import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
+import { withBinaryTeardown } from './attempt-teardown.ts'
+import { isEvidenceError, stopRun } from './opencode-v2-execution-stop.mjs'
+import { readBinarySkill } from './grade.ts'
+import { aggregateUsage, skillFetched, toolEvidence } from './opencode-v2-evidence.mjs'
 import { openV2EventStream } from './opencode-v2-stream.mjs'
 import { nativeTelemetryReceiver, readNativeTelemetry, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 
-export const V2_BINARY = '/Users/moya/Library/Application Support/ai.opencode.desktop/cli/2.0.29-arm64/opencode-cli'
+export const V2_VERSION = '2.3.0'
+export const V2_BINARY = '/Users/moya/.local/share/otel-desktop-viewer/evals/runtime/opencode/2.3.0/opencode'
 const children = new Set()
 export async function cancelOpenCodeV2() {
   await Promise.all([...children].map(child => stopOwnedGroup(child.pid, child)))
 }
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'))
+const hosts = new Map()
+class SharedRunFailure extends Error {}
+
+async function checkFixture(endpoint) {
+  try {
+    const response = await fetch(endpoint + '/api/features', { signal: AbortSignal.timeout(3000), redirect: 'error' })
+    await response.body?.cancel()
+    if (!response.ok) throw Error(`HTTP ${response.status}`)
+  } catch (cause) {
+    throw new SharedRunFailure(`Shared viewer fixture unavailable: ${cause.message}`, { cause })
+  }
+}
+export async function withSharedHost(host, evaluate) {
+  if (hosts.has(host.root)) throw Error('Duplicate evaluation host')
+  hosts.set(host.root, host)
+  try { return await evaluate() } finally { hosts.delete(host.root) }
+}
+
+// Import only the membership selected for this provider. The caller owns the
+// private local service; neither the source file nor its contents are returned.
+export async function connectMembership(api, providerID, file, entry = providerID) {
+  let auth
+  if (!file && providerID === 'openai' && entry === 'openai') {
+    const cli = process.env.OTEL_EVAL_CURRENT_OPENCODE_CLI
+    if (!cli || !path.isAbsolute(cli)) throw new Error('Missing current OpenCode CLI path')
+    const records = JSON.parse(execFileSync(cli, ['auth', 'export', 'openai'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 }))
+    auth = records.find(row => row.integrationID === 'openai' && row.active)?.value
+  } else {
+    if (!file || !path.isAbsolute(file) || !fs.statSync(file).isFile() || fs.statSync(file).mode & 0o077)
+      throw new Error('V2 auth source must be private and absolute')
+    auth = json(file)[entry]
+  }
+  let value
+  if (providerID === 'openai' && ['openai', 'openai-codex'].includes(entry) &&
+      auth?.type === 'oauth' && auth.access && auth.refresh && Number.isFinite(auth.expires)) {
+    value = { type: 'oauth', methodID: 'chatgpt-browser', access: auth.access, refresh: auth.refresh,
+      expires: auth.expires, metadata: auth.metadata ?? { accountId: auth.accountId } }
+  } else if (entry === providerID && ['kimi-code-plan-global', 'opencode-go'].includes(entry) &&
+      ['key', 'api'].includes(auth?.type) && auth.key) {
+    value = { type: 'key', key: auth.key }
+  } else throw new Error('Missing selected membership for ' + providerID)
+  await api('/api/credential', 'POST', { integrationID: providerID, label: 'isolated-eval', value })
+}
+
+export async function connectRunModels(api, models, files) {
+  for (const provider of new Set(models.map(ref => ref.split('/')[0]))) {
+    if (provider === 'anthropic') {
+      const deadline = Date.now() + 20000
+      for (;;) {
+        const plugins = await api('/api/plugin')
+        const plugin = plugins.data.find(plugin => plugin.id === 'opencode-with-claude')
+        if (plugin?.state.status === 'active') break
+        if (Date.now() >= deadline) throw new Error('Claude membership plugin: ' + (plugin?.state.status ?? 'missing'))
+        await delay(200)
+      }
+    } else {
+      const source = files[provider]
+      await connectMembership(api, provider, typeof source === 'string' ? source : source?.file, source?.entry ?? provider)
+    }
+  }
+  const { data } = await api('/api/model')
+  return models.map(ref => {
+    const [providerID, id] = ref.split('/')
+    const model = data.find(m => m.providerID === providerID && m.id === id)
+    return { providerID, id, enabled: model?.enabled === true && model.modelID === id }
+  })
+}
 
 export default class OpenCodeV2Provider {
   constructor({ config, label }) { this.config = config; this.label = label }
-  id() { return 'opencode-v2:openai/' + this.config.model }
+  id() { return `opencode-v2:${this.config.providerID ?? 'openai'}/${this.config.model}` }
+
+  async createSession(api, workspace, permissions, title) {
+    return api('/api/session', 'POST', { title, location: { directory: workspace }, agent: 'build',
+      model: { providerID: this.config.providerID ?? 'openai', id: this.config.model }, permissions }, 'session-created.json')
+  }
 
   async callApi(prompt, context = {}, options = {}) {
+    try {
+      const response = await this.ownedAttempt(prompt, context, options)
+      // Promptfoo can defer afterEach until grading. Stop before the next
+      // provider call, after this attempt's evidence and teardown are recorded.
+      if (response.metadata.harnessFailure) stopRun(new Error(response.error))
+      return response
+    } catch (error) {
+      // No saved response: setup, evidence recording or teardown did not finish.
+      if (this.config.sharedHost) stopRun(error)
+      throw error
+    }
+  }
+
+  async ownedAttempt(prompt, context, options) {
     const root = fs.realpathSync(this.config.root)
+    if (this.config.sharedHost && !hosts.has(root)) throw Error('Missing owned shared eval server')
+    if (!this.config.sharedHost && (this.config.providerID ?? 'openai') !== 'openai') throw Error('Multiple providers require the shared eval server')
     for (let dir = root; ; dir = path.dirname(dir)) {
       if (fs.existsSync(path.join(dir, '.git'))) throw new Error('V2 evidence must be outside repositories')
       if (dir === path.dirname(dir)) break
@@ -32,10 +125,16 @@ export default class OpenCodeV2Provider {
     fs.mkdirSync(path.join(root, 'runs'), { recursive: true, mode: 0o700 })
     const evidence = fs.mkdtempSync(path.join(root, 'runs/investigator-opencode-v2-'))
     fs.chmodSync(evidence, 0o700)
+    return withBinaryTeardown({ directory: evidence, canonicalBinary: this.config.binary, kind: 'attempt' },
+      register => this.runAttempt(prompt, context, options, root, evidence, register))
+  }
+
+  async runAttempt(prompt, context, options, root, evidence, register) {
     let telemetry
     try {
+      if (this.config.sharedHost) return await this.sharedAttempt(hosts.get(root), evidence, prompt, context, options, register)
       if (this.config.telemetryForward) telemetry = await nativeTelemetryReceiver(evidence, this.config.telemetryForward)
-      return await this.callAttempt(prompt, context, options, root, evidence, telemetry?.endpoint ?? this.config.telemetryEndpoint, telemetry)
+      return await this.callAttempt(prompt, context, options, root, evidence, telemetry?.endpoint ?? this.config.telemetryEndpoint, telemetry, register)
     } catch (error) {
       // Preflight/lifecycle failures must remain ordinary error rows, retaining
       // slot identity so subsequent scheduled repetitions can run normally.
@@ -44,9 +143,11 @@ export default class OpenCodeV2Provider {
       if (!fs.existsSync(identityFile)) fs.writeFileSync(identityFile, JSON.stringify({ task: context.vars?.task_id, provider: this.id(), role: 'investigator',
         promptfoo: { evaluationId: context.evaluationId, testIdx: context.testIdx, repeatIndex: context.repeatIndex, traceparent: carrier.traceparent ?? context.traceparent } }), { flag: 'wx', mode: 0o600 })
       const response = { error: error instanceof Error ? error.message : String(error), metadata: {
-        runtime: 'opencode-v2', expectedRuntimeVersion: '2.0.29', role: 'investigator', model: 'openai/' + this.config.model,
+        runtime: 'opencode-v2', expectedRuntimeVersion: V2_VERSION, role: 'investigator', model: this.id().slice('opencode-v2:'.length),
         task: context.vars?.task_id, evidence, workspace: path.join(evidence, 'workspace'), repeatIndex: context.repeatIndex,
-        exit: 'provider-exception', captureUnavailable: true,
+        exit: 'provider-exception', captureUnavailable: true, skillFetched: 'unknown',
+        ...(error instanceof SharedRunFailure || isEvidenceError(error, root) ||
+          error.path === this.config.binary ? { harnessFailure: true } : {}),
       } }
       fs.writeFileSync(path.join(evidence, 'provider-exception.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
       if (!fs.existsSync(path.join(evidence, 'response.json'))) fs.writeFileSync(path.join(evidence, 'response.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
@@ -64,7 +165,92 @@ export default class OpenCodeV2Provider {
     }
   }
 
-  async callAttempt(prompt, context, options, root, evidence, telemetryEndpoint, telemetry) {
+  async sharedAttempt(host, evidence, prompt, context, options, register) {
+    const workspace = path.join(evidence, 'workspace')
+    fs.mkdirSync(path.join(workspace, 'bin'), { recursive: true, mode: 0o700 })
+    const binary = path.join(workspace, 'bin/otel-desktop-viewer')
+    fs.copyFileSync(this.config.binary, binary, fs.constants.COPYFILE_FICLONE)
+    const save = (name, value) => fs.writeFileSync(path.join(evidence, name), typeof value === 'string' ? value : JSON.stringify(value), {flag:'wx', mode:0o600})
+    const invocation = otelContext.active(), carrier = {}
+    propagation.inject(invocation, carrier)
+    const traceparent = carrier.traceparent ?? context.traceparent
+    if (!/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test(traceparent ?? '')) throw new SharedRunFailure('Missing eval trace')
+    const deadline = AbortSignal.timeout(this.config.timeoutMs)
+    const signal = AbortSignal.any([host.signal, deadline, options.abortSignal].filter(Boolean))
+    const api = async (route, method, body, name) => {
+      const value = await host.api(route, method, body, traceparent, signal)
+      if (name) save(name, value)
+      return value
+    }
+    save('identity.json', {task:context.vars.task_id, role:'investigator', provider:this.id(), promptfoo:{
+      evaluationId:context.evaluationId, testIdx:context.testIdx, repeatIndex:context.repeatIndex, traceparent }})
+    save('prompt.txt', prompt)
+    const permissions = [{action:'*', resource:'*', effect:'deny'},
+      ...['read','edit','glob','grep'].map(action => ({action,resource:'*',effect:'allow'})),
+      {action:'external_directory',resource:'*',effect:'deny'},
+      {action:'shell',resource:'curl *',effect:'allow'},
+      ...[binary,'./bin/otel-desktop-viewer'].flatMap(exe => ['--help','--version','-h','-v','skills','logs','log','metrics','metric','traces','trace','span','attributes','services','query','export'].map(cmd=>({action:'shell',resource:`${exe} ${cmd} *`,effect:'allow'})))]
+    await checkFixture(this.config.fixtureEndpoint)
+    try { await host.checkPolicy(workspace) }
+    catch (cause) { throw new SharedRunFailure(`Cannot verify shared workspace protection: ${cause.message}`, { cause }) }
+    const started = performance.now(), firstReceipt = host.telemetry.receipts.length
+    const sessionID = (await this.createSession(api, workspace, permissions, 'Viewer ' + context.vars.task_id))?.data?.id
+    if (!/^ses_[a-zA-Z0-9]+$/.test(sessionID)) throw new SharedRunFailure('Cannot identify the created session for cleanup')
+    const registration = path.join(host.registry, sessionID + '.json')
+    let registered = false
+    let history = [], receivedError, waiting = false, modelTimeout = false, settled = false, stopping
+    const stop = () => stopping ??= (async () => {
+      if (!settled) {
+        await host.api(`/api/session/${sessionID}/interrupt`, 'POST', undefined, traceparent, AbortSignal.timeout(10000))
+        await host.api(`/api/experimental/session/${sessionID}/wait`, 'POST', undefined, traceparent, AbortSignal.timeout(30000))
+      }
+      if (registered) fs.unlinkSync(registration)
+      save('owned-shutdown.json', { sessionID, waited: true, sharedHostRetained: true })
+    })()
+    register(stop)
+    fs.writeFileSync(registration, JSON.stringify({ sessionID, workspace, fixtureEndpoint:this.config.fixtureEndpoint, binarySHA256: createHash('sha256').update(fs.readFileSync(binary)).digest('hex') }), { flag:'wx', mode:0o600 })
+    registered = true
+    const capture = async () => {
+      try {
+        const read = route => host.api(route, 'GET', undefined, traceparent,
+          AbortSignal.any([host.signal, options.abortSignal, AbortSignal.timeout(30000)].filter(Boolean)))
+        const context = await read(`/api/session/${sessionID}/context`)
+        save('context.json', context)
+        if (!Array.isArray(context.data)) throw Error('Missing session history')
+        save('session-export.json', await read(`/api/experimental/session/${sessionID}/export`))
+        return context.data
+      } catch (cause) { throw new SharedRunFailure(`Cannot capture investigator evidence: ${cause.message}`, { cause }) }
+    }
+    try {
+      let initial
+      try { initial = await api(`/api/session/${sessionID}/context`) }
+      catch (cause) { throw new SharedRunFailure(`Cannot verify fresh conversation: ${cause.message}`, { cause }) }
+      if (!Array.isArray(initial?.data) || initial.data.length) throw new SharedRunFailure('Expected fresh conversation')
+      try {
+        // A lost POST response does not tell us whether the prompt was accepted.
+        await api(`/api/session/${sessionID}/prompt`, 'POST', { text: prompt }, 'admitted-prompt.json')
+        waiting = true
+        await api(`/api/experimental/session/${sessionID}/wait`, 'POST')
+        settled = true
+      } catch (cause) {
+        if (isEvidenceError(cause, host.root)) throw cause
+        receivedError = cause.message
+        await stop()
+        modelTimeout = waiting && deadline.aborted && signal.reason === deadline.reason && !host.signal.aborted && !options.abortSignal?.aborted
+        if (modelTimeout) await checkFixture(this.config.fixtureEndpoint)
+        if (modelTimeout) receivedError = 'No answer: investigator reached its time limit'
+      }
+      if (!host.signal.aborted && !options.abortSignal?.aborted) history = await capture()
+    } finally { await stop() }
+    let nativeSpans
+    try {
+      await host.telemetry.flush()
+      nativeSpans = readNativeTelemetry(host.root, host.telemetry.receipts.slice(firstReceipt)).spans
+    } catch (cause) { throw new SharedRunFailure(`Cannot verify recorded telemetry: ${cause.message}`, { cause }) }
+    return this.recordResponse({ history, sessionID, save, receivedError, timedOut: signal.aborted, modelTimeout, traceparent, invocation, context, workspace, evidence, started, nativeSpans })
+  }
+
+  async callAttempt(prompt, context, options, root, evidence, telemetryEndpoint, telemetry, register) {
     const save = (name, value) => fs.writeFileSync(path.join(evidence, name), typeof value === 'string' ? value : JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
     const env = { PATH: '/opt/homebrew/bin:/usr/bin:/bin', SHELL: '/bin/sh', LANG: 'en_US.UTF-8',
       OPENCODE_CONFIG_PROJECT_DISABLE: '1', OPENCODE_FILEWATCHER_DISABLE: '1' }
@@ -79,7 +265,7 @@ export default class OpenCodeV2Provider {
     fs.chmodSync(path.join(workspace, 'bin/otel-desktop-viewer'), 0o700)
     const binary = this.config.opencodeBinary ?? V2_BINARY
     const version = execFileSync(binary, ['--version'], { env, cwd: workspace, encoding: 'utf8', timeout: 10000 }).trim()
-    if (version !== 'opencode v2.0.29') throw new Error('Only inspected OpenCode v2.0.29 is supported')
+    if (version !== 'opencode v' + V2_VERSION) throw new Error('Only OpenCode v' + V2_VERSION + ' is supported')
     const permissions = [
       { action: '*', resource: '*', effect: 'deny' },
       ...['read', 'edit', 'glob', 'grep'].map(action => ({ action, resource: '*', effect: 'allow' })),
@@ -96,7 +282,7 @@ export default class OpenCodeV2Provider {
     fs.mkdirSync(path.join(env.XDG_CONFIG_HOME, 'opencode'), { recursive: true, mode: 0o700 })
     const config = {
       $schema: 'https://opencode.ai/config.json', update: 'disable', snapshots: false,
-      model: 'openai/' + this.config.model, permissions, plugins: [pathToFileURL(plugin).href],
+      model: 'openai/' + this.config.model, permissions, plugins: ['-opencode.browser', pathToFileURL(plugin).href],
       warming: false, compaction: { auto: false },
       agents: { build: { permissions }, title: { disabled: true } },
       providers: { openai: { settings: { transport: 'http', ...(this.config.baseUrl ? { baseURL: this.config.baseUrl, apiKey: 'synthetic-only' } : {}) } } },
@@ -104,16 +290,26 @@ export default class OpenCodeV2Provider {
     if (this.config.baseUrl) {
       if (new URL(this.config.baseUrl).hostname !== '127.0.0.1' || this.config.authFile) throw new Error('Synthetic service must be loopback without real auth')
       env.OPENAI_API_KEY = 'synthetic-only'
+      env.OPENCODE_DISABLE_MODELS_FETCH = '1'
     }
     save('config/opencode/opencode.json', config)
     // OS boundary supplements native tool permissions. Runtime data is private
     // to this attempt; the model's narrow shell rule exposes only the viewer.
     const repo = fs.realpathSync(path.join(import.meta.dirname, '../..'))
     const boundaries = [...new Set([fs.realpathSync(homedir()), fs.realpathSync(tmpdir()), repo, root])]
-    const policy = '(version 1)\n(allow default)\n' + boundaries.map(boundary =>
+    let policy = '(version 1)\n(allow default)\n' + boundaries.map(boundary =>
       `(deny file-read-data (require-all (subpath ${JSON.stringify(boundary)}) (require-not (subpath ${JSON.stringify(evidence)})) (require-not (literal ${JSON.stringify(binary)}))))\n` +
       `(deny file-write* (require-all (subpath ${JSON.stringify(boundary)}) (require-not (subpath ${JSON.stringify(evidence)}))))\n`
     ).join('')
+    if (this.config.baseUrl) {
+      const targets = [this.config.baseUrl, telemetryEndpoint].filter(Boolean).map(value => {
+        const target = new URL(value)
+        if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || !target.port)
+          throw new Error('Synthetic services require explicit owned loopback ports')
+        return `(remote ip ${JSON.stringify('localhost:' + target.port)})`
+      })
+      policy += '(deny network-outbound)\n(allow network-outbound ' + targets.join(' ') + ')\n'
+    }
     save('sandbox.sb', policy)
     const invocation = otelContext.active()
     const carrier = {}; propagation.inject(otelContext.active(), carrier)
@@ -127,7 +323,7 @@ export default class OpenCodeV2Provider {
       env.OTEL_RESOURCE_ATTRIBUTES = 'eval.runtime=opencode-v2,eval.evidence.id=' + path.basename(evidence)
       save('native-telemetry.json', { endpoint: endpoint.origin, environment: { OTEL_EXPORTER_OTLP_ENDPOINT: endpoint.origin,
         OPENCODE_CLIENT: env.OPENCODE_CLIENT, OTEL_RESOURCE_ATTRIBUTES: env.OTEL_RESOURCE_ATTRIBUTES },
-        traceparent, source: 'OpenCode 2.0.29 built-in observability layer; no plugin-generated spans' })
+        traceparent, source: 'OpenCode ' + V2_VERSION + ' built-in observability layer; no plugin-generated spans' })
     }
     save('identity.json', { task: context.vars?.task_id, provider: this.id(), role: 'investigator', promptfoo: {
       evaluationId: context.evaluationId, testIdx: context.testIdx, repeatIndex: context.repeatIndex,
@@ -136,6 +332,15 @@ export default class OpenCodeV2Provider {
     save('prompt.txt', prompt)
     const started = performance.now()
     let child, closed, url, password, sessionID, stream, consume, history = [], receivedError, timedOut = false
+    let stopping
+    const stop = () => stopping ??= (async () => {
+      if (child?.pid) await stopOwnedGroup(child.pid, child)
+      if (child) {
+        children.delete(child)
+        save('owned-shutdown.json', { pid: child.pid, exit: await closed })
+      }
+    })()
+    register(stop)
     const secrets = []
     const redact = text => { for (const value of secrets) if (value) text = text.split(value).join('[REDACTED]'); return text }
     const streamController = new AbortController()
@@ -173,7 +378,7 @@ export default class OpenCodeV2Provider {
       })
       save('server.stdout.log', redact(stdout))
       const info = await api('/api/info', 'GET', undefined, 'server-info.json')
-      if (info.version !== '2.0.29') throw new Error('Wrong private server version')
+      if (info.version !== V2_VERSION) throw new Error('Wrong private server version')
       const entries = await api('/api/config', 'GET', undefined, 'effective-config.json')
       if (entries.some(entry => typeof entry.path !== 'string' || !entry.path.startsWith(evidence + '/'))) throw new Error('Ambient configuration leaked into V2')
       await api('/api/plugin')
@@ -196,15 +401,12 @@ export default class OpenCodeV2Provider {
         secrets.push(auth.access, auth.refresh)
         // Import the selected existing login into this server's private database.
         // Never persist the credential response or write to the original auth file.
-        await api('/api/credential', 'POST', { integrationID: 'openai', label: 'isolated-eval', value: {
-          type: 'oauth', methodID: 'chatgpt-browser', access: auth.access, refresh: auth.refresh, expires: auth.expires,
-          metadata: { accountId: auth.accountId },
-        } })
+        await connectMembership(api, 'openai', file, authEntry)
       }
       const models = await api('/api/model', 'GET', undefined, 'models.json')
       const catalogue = models.data ?? models
       if (!Array.isArray(catalogue) || !catalogue.some(model => model.providerID === 'openai' && model.id === this.config.model)) throw new Error('Requested model absent in isolated V2 catalogue')
-      const created = await api('/api/session', 'POST', { title: 'Viewer checkout-failure evaluation', location: { directory: workspace }, agent: 'build', model: { providerID: 'openai', id: this.config.model }, permissions }, 'session-created.json')
+      const created = await this.createSession(api, workspace, permissions, 'Viewer checkout-failure evaluation')
       sessionID = created.data.id
       stream = await openV2EventStream(url, { headers: { Authorization: 'Basic ' + Buffer.from('opencode:' + password).toString('base64') },
         deadlineSignal: deadline.signal, cancellationSignal: options.abortSignal, stopSignal: streamController.signal })
@@ -231,43 +433,49 @@ export default class OpenCodeV2Provider {
       options.abortSignal?.removeEventListener('abort', abort)
       streamController.abort()
       await consume
-      if (child) {
-        await stopOwnedGroup(child.pid, child)
-        children.delete(child)
-        save('owned-shutdown.json', { pid: child.pid, exit: await closed })
-      }
+      await stop()
     }
+    await telemetry?.flush()
+    const nativeSpans = telemetry ? readNativeTelemetry(evidence, telemetry.receipts).spans : []
+    return this.recordResponse({ history, sessionID, save, receivedError, timedOut, traceparent, invocation, context, workspace, evidence, started, nativeSpans })
+  }
+
+  async recordResponse({ history, sessionID, save, receivedError, timedOut, modelTimeout, traceparent, invocation, context, workspace, evidence, started, nativeSpans }) {
     const assistants = history.filter(message => message.type === 'assistant')
     const final = assistants.at(-1)
     const idle = history.findLast(message => message.type === 'idle')
-    const output = final?.content.filter(part => part.type === 'text').map(part => part.text).join('\n') ?? ''
+    const output = modelTimeout ? '' : final?.content.filter(part => part.type === 'text').map(part => part.text).join('\n') ?? ''
     const tools = assistants.flatMap(message => message.content.filter(part => part.type === 'tool').map(part => ({ messageID: message.id, sessionID, ...part })))
     save('tools.json', tools)
     const errors = history.flatMap(message => message.error ? [{ messageID: message.id, ...message.error }] : [])
-    const harnessBlocker = tools.some(tool => tool.name === 'shell' && tool.state.error?.type === 'permission.rejected')
-    const modelMismatch = assistants.some(message => message.model.providerID !== 'openai' || message.model.id !== this.config.model)
-    const { usage, usageAvailability, tokenUsage } = aggregateUsage(assistants)
+    const executionErrors = errors.filter(error => !(modelTimeout &&
+      error.type === 'aborted' && error.message === 'Step interrupted'))
+    // The shared host can deny a shell command and still complete the turn.
+    // Keep that denial in tool evidence; grade the completed answer.
+    const harnessBlocker = !this.config.sharedHost && tools.some(tool => tool.name === 'shell' && tool.state.error?.type === 'permission.rejected')
+    const modelMismatch = assistants.some(message => message.model.providerID !== (this.config.providerID ?? 'openai') || message.model.id !== this.config.model)
+    const { usage, usageAvailability, tokenUsage } = aggregateUsage(assistants, V2_VERSION)
     const evidenceErrors = []
     const observedTimestamp = Date.now()
     const toolLogs = tools.map(tool => {
-      const event = toolEvidence(tool)
+      const event = toolEvidence(tool, V2_VERSION)
       evidenceErrors.push(...event.errors)
       return { eventName: 'tool.execution', attributes: event.attributes, timestamp: event.timestamp, observedTimestamp }
     })
     save('tool-logs.json', toolLogs)
-    await telemetry?.flush()
-    const nativeSpans = telemetry ? readNativeTelemetry(evidence, telemetry.receipts).spans : []
     const enrichment = traceparent ? missingToolLogs(toolLogs, traceparent.split('-')[1], nativeSpans) : toolLogs
     await exportToolLogs(enrichment, invocation, 'OpenCode', path.basename(evidence))
-    const metadata = { runtime: 'opencode-v2', runtimeVersion: '2.0.29', model: 'openai/' + this.config.model,
+    const skill = tools.length ? await (this.viewerSkill ??= readBinarySkill(this.config.binary).catch(() => undefined)) : undefined
+    const metadata = { runtime: 'opencode-v2', runtimeVersion: V2_VERSION, model: this.id().slice('opencode-v2:'.length),
+      skillFetched: skillFetched(tools, Boolean(idle) && !modelMismatch, skill),
       role: 'investigator', task: context.vars?.task_id, evidence, workspace, sessionID, repeatIndex: context.repeatIndex, usage, usageAvailability, evidenceErrors,
       elapsedSeconds: (performance.now() - started) / 1000, toolCalls: tools.length, failedToolCalls: tools.filter(tool => tool.state.status === 'error').length,
       exit: idle?.outcome ?? 'incomplete', errors, harnessBlocker,
+      ...(modelTimeout && !modelMismatch && !evidenceErrors.length && !executionErrors.length ? { caseOutcome: 'investigator-timeout' } : {}),
     }
     const failed = receivedError || timedOut || errors.length || evidenceErrors.length || harnessBlocker || modelMismatch || final?.finish !== 'stop' || idle?.outcome !== 'succeeded' || !output || tools.some(tool => !['completed', 'error'].includes(tool.state.status))
     const response = { ...(output ? { output } : {}), metadata, ...(tokenUsage ? { tokenUsage } : {}),
-      ...(assistants.length && assistants.every(message => typeof message.cost === 'number') ? { cost: assistants.reduce((total, message) => total + message.cost, 0) } : {}),
-      ...(failed ? { error: receivedError || JSON.stringify(errors.length ? errors : evidenceErrors.length ? { reason: 'Malformed V2 tool evidence', evidenceErrors } : { reason: harnessBlocker ? 'Viewer shell permission blocker' : modelMismatch ? 'Unexpected V2 model identity' : 'Incomplete V2 session', finish: final?.finish, idle: idle?.outcome, timedOut }) } : {}),
+      ...(failed ? { error: (modelTimeout && executionErrors.length ? JSON.stringify(executionErrors) : receivedError) || JSON.stringify(errors.length ? errors : evidenceErrors.length ? { reason: 'Malformed V2 tool evidence', evidenceErrors } : { reason: harnessBlocker ? 'Viewer shell permission blocker' : modelMismatch ? 'Unexpected V2 model identity' : 'Incomplete V2 session', finish: final?.finish, idle: idle?.outcome, timedOut }) } : {}),
     }
     if (output) save('answer.txt', output)
     save('response.json', response)

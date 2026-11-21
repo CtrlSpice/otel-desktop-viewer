@@ -8,6 +8,7 @@ import { PiToolLogs } from './pi-tool-logs.ts'
 import { exportToolLogs } from './tool-logs.ts'
 import { record, saveJson, SUITE } from './runtime.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
+import { withBinaryTeardown, type RegisterShutdown } from './attempt-teardown.ts'
 
 export type PiConfig = {
   root: string
@@ -42,13 +43,35 @@ export default class PiProvider {
   id() { return `pi:${this.config.provider}/${this.config.model}` }
 
   async callApi(prompt: string, context: PiContext = {}) {
+    try { return await this.attempt(prompt, context) }
+    catch (error) {
+      if (this.config.role === 'grader') {
+        const hook = './opencode-v2-execution-stop.mjs'
+        const { checkEvidenceError } = await import(hook)
+        checkEvidenceError(error, this.config.root)
+      }
+      throw error
+    }
+  }
+
+  private async attempt(prompt: string, context: PiContext) {
     if (process.platform !== 'darwin') throw new Error('Pi evaluation currently requires the tested macOS sandbox')
-    const { provider, model, role } = this.config
+    const { role } = this.config
     const root = fs.realpathSync(this.config.root)
     const runs = path.join(root, 'runs')
     fs.mkdirSync(runs, { recursive: true, mode: 0o700 })
     const evidence = fs.mkdtempSync(path.join(runs, role + '-'))
     fs.chmodSync(evidence, 0o700)
+    return withBinaryTeardown({ directory: evidence, canonicalBinary: this.config.binary, kind: 'attempt' },
+      register => this.runAttempt(prompt, context, evidence, register))
+  }
+
+  async runAttempt(prompt: string, context: PiContext, evidence: string, register: RegisterShutdown) {
+    const { provider, model, role } = this.config
+    // Pi trims stdin. Native JSON grading prompts need no trimming; other
+    // inputs keep their existing argument transport if stdin would change them.
+    const usePromptFile = role === 'grader' && prompt.length > 0 && prompt === prompt.trim()
+    const root = fs.realpathSync(this.config.root)
     for (const name of ['home', 'profile', 'workspace', 'sessions', 'tmp'])
       fs.mkdirSync(path.join(evidence, name), { mode: 0o700 })
     const workspace = path.join(evidence, 'workspace')
@@ -107,7 +130,7 @@ export default class PiProvider {
       '--mode', 'json', '--provider', provider, '--model', model, '--thinking', 'low',
       '--session-dir', path.join(evidence, 'sessions'), '--no-context-files', '--no-extensions',
       '--no-mcp', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve',
-      ...(role === 'grader' ? ['--no-tools'] : ['--tools', 'read,bash,edit,write']), '--', prompt]
+      ...(role === 'grader' ? ['--no-tools'] : ['--tools', 'read,bash,edit,write']), ...(usePromptFile ? [] : ['--', prompt])]
     const events: Record<string, unknown>[] = []
     const decoder = new StringDecoder('utf8')
     let pending = '', malformed = false
@@ -125,13 +148,25 @@ export default class PiProvider {
       }
     }
     const started = performance.now()
-    const child = spawn('/usr/bin/sandbox-exec', args, { cwd: workspace, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = (() => {
+      const input = usePromptFile ? fs.openSync(path.join(evidence, 'prompt.txt'), 'r') : undefined
+      try {
+        return spawn('/usr/bin/sandbox-exec', args, { cwd: workspace, env, detached: true, stdio: [input ?? 'ignore', 'pipe', 'pipe'] })
+      } finally {
+        if (input !== undefined) fs.closeSync(input)
+      }
+    })()
     children.add(child)
-    child.stdout.on('data', (chunk: Buffer) => {
+    register(async () => {
+      if (child.pid) await stopOwnedGroup(child.pid, child)
+      children.delete(child)
+      saveJson(path.join(evidence, 'owned-shutdown.json'), { pid: child.pid, exit: child.exitCode, signal: child.signalCode })
+    })
+    child.stdout!.on('data', (chunk: Buffer) => {
       fs.appendFileSync(path.join(evidence, 'events.jsonl'), chunk, { mode: 0o600 })
       consume(decoder.write(chunk))
     })
-    child.stderr.on('data', (chunk: Buffer) => fs.appendFileSync(path.join(evidence, 'stderr.log'), chunk, { mode: 0o600 }))
+    child.stderr!.on('data', (chunk: Buffer) => fs.appendFileSync(path.join(evidence, 'stderr.log'), chunk, { mode: 0o600 }))
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
@@ -139,7 +174,7 @@ export default class PiProvider {
     }, this.config.timeoutMs ?? 600_000)
     let exit: number | null
     try { exit = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve) }) }
-    finally { clearTimeout(timer); children.delete(child) }
+    finally { clearTimeout(timer) }
     consume(decoder.end())
     const toolLogs = toolEvents.drain()
     saveJson(path.join(evidence, 'tool-logs.json'), toolLogs)

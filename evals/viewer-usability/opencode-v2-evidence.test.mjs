@@ -3,7 +3,7 @@ import http from 'node:http'
 import { once } from 'node:events'
 import { test } from 'node:test'
 import fixtures from './opencode-v2-fixtures.json' with { type: 'json' }
-import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
+import { aggregateUsage, skillFetched, toolEvidence } from './opencode-v2-evidence.mjs'
 import { openV2EventStream } from './opencode-v2-stream.mjs'
 import { verifyToolEvent } from './opencode-v2-verify-evidence.mjs'
 
@@ -12,6 +12,21 @@ const makeTool = state => ({ type: 'tool', id: 'call_fixture', name: 'shell', me
 const otlpEvent = attributes => ({ name: 'tool.execution', attributes: Object.entries(attributes).map(([key, value]) => ({ key,
   value: typeof value === 'boolean' ? { boolValue: value } : typeof value === 'number' ? { doubleValue: value } : { stringValue: value },
 })) })
+
+test('skill discovery uses returned guide text, not commands or help', () => {
+  const skill = '---\nname: otel-desktop-viewer\n---\nCurrent guide.\n'
+  const result = (text, metadata) => makeTool({ status: 'completed', input: { command: './bin/otel-desktop-viewer skills' },
+    content: [{ type: 'text', text }], metadata })
+  assert.equal(skillFetched([result('Commands: skills')], true, skill), 'no')
+  assert.equal(skillFetched([result(skill.replace('Current', 'Older'))], true, skill), 'no')
+  assert.equal(skillFetched([result(skill, { exit: 1 })], true, skill), 'no')
+  assert.equal(skillFetched([result('cut off', { truncated: true })], true, skill), 'unknown')
+  assert.equal(skillFetched([], false, skill), 'unknown')
+  assert.equal(skillFetched([result(skill)], true, undefined), 'unknown')
+  assert.equal(skillFetched([result('HTTP discovery document:\n' + skill)], false, skill), 'yes')
+  const read = { ...result(skill.trimEnd().split('\n').map((line, i) => `${i + 1}: ${line}`).join('\r\n')), name: 'read' }
+  assert.equal(skillFetched([read], true, skill), 'yes')
+})
 
 for (const fixture of fixtures.tools) test(`tool evidence: ${fixture.name}`, () => {
   const tool = makeTool(fixture.state)
@@ -64,6 +79,15 @@ test('verifier checks normalized identity, status, empty fields, duration and OT
   const event = otlpEvent(attributes)
   event.attributes.push(event.attributes[0])
   assert.throws(() => verifyToolEvent(tool, event), /Duplicate/)
+})
+
+for (const runtimeVersion of ['2.0.29', '2.3.0']) test(`tool evidence retains runtime ${runtimeVersion}`, () => {
+  const tool = makeTool({ status: 'completed', input: {}, content: [] })
+  const { attributes } = toolEvidence(tool, runtimeVersion)
+  assert.equal(attributes['opencode.runtime.version'], runtimeVersion)
+  verifyToolEvent(tool, otlpEvent(attributes), runtimeVersion)
+  const wrongVersion = runtimeVersion === '2.3.0' ? '2.0.29' : '2.3.0'
+  assert.throws(() => verifyToolEvent(tool, otlpEvent(attributes), wrongVersion), /opencode.runtime.version/)
 })
 
 // Loopback only: no OpenCode executable, credentials, model, or observer backend.

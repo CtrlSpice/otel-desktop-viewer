@@ -4,9 +4,10 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { runMode, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
+import { runMode, fullRunPlan, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge, scheduleForAvailability, isExecutionError } from './opencode-v2-run-plan.mjs'
 import { aggregateUsage } from './opencode-v2-evidence.mjs'
-import { verifyInvestigator, verifyGrader, importOriginal } from './opencode-v2-verify.mjs'
+import { verifyInvestigator, verifyGrader, verifyNoRetry, importOriginal, verifyRun, attemptNativeReport } from './opencode-v2-verify.mjs'
+import { afterEach as checkEvidence, checkEvidenceError, onFailure } from './opencode-v2-execution-stop.mjs'
 import { telemetryExpectation } from './opencode-v2-observer.mjs'
 import Provider from './opencode-v2-provider.mjs'
 
@@ -21,7 +22,7 @@ const spanID = n => n.toString(16).padStart(16, '0')
 const rubric = { reference: 'fixture reference', criteria: { pass: 'fixture criterion' } }
 const question = 'fixture question'
 
-function sixRows(root) {
+function sixRows(root, runtimeVersion = '2.0.29') {
   fs.mkdirSync(path.join(root, 'runs'))
   const rows = [], identities = new Map(), graders = [], wrapper = { spans: [], spanReceipts: {} }
   const outcomes = ['pass', 'partial', 'investigator-error', 'fail', 'grader-error', 'pass']
@@ -33,8 +34,8 @@ function sixRows(root) {
     const identity = { provider: 'opencode-v2:openai/' + model, promptfoo: { repeatIndex, evaluationId: 'eval_fixture', traceparent: `00-${trace}-${parent}-01` } }
     identities.set(evidence, identity); write(evidence, 'identity.json', identity)
     const assistants = outcome === 'investigator-error' ? [] : [{ type: 'assistant', id: 'message-' + index, content: [], tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }]
-    const usage = aggregateUsage(assistants)
-    const metadata = { runtime: 'opencode-v2', runtimeVersion: '2.0.29', model: 'openai/' + model, repeatIndex, evidence,
+    const usage = aggregateUsage(assistants, runtimeVersion)
+    const metadata = { runtime: 'opencode-v2', runtimeVersion, model: 'openai/' + model, repeatIndex, evidence,
       sessionID: 'ses_' + index, usage: usage.usage, usageAvailability: usage.usageAvailability, toolCalls: 0, failedToolCalls: 0, evidenceErrors: [] }
     const response = { metadata, ...(usage.tokenUsage ? { tokenUsage: usage.tokenUsage } : {}),
       ...(outcome === 'investigator-error' ? { error: 'fixture 401 intact' } : { output: 'fixture answer' }) }
@@ -74,7 +75,7 @@ test('specific six-run plan uses real catalogue IDs and ordinary repeat scheduli
   assert.equal(config.tests.length, 1); assert.equal(config.providers.length, 2)
   assert.equal(new Set(config.providers.map(provider => provider.label)).size, 2)
   assert.ok(config.providers.every(provider => provider.config.telemetryForward === 'http://127.0.0.1:61002'))
-  assert.equal(config.defaultTest.options.provider.config.model, 'gpt-6.1-sol')
+  assert.match(config.defaultTest.options.provider.id, /opencode-v2-judge\.mjs$/)
   assert.equal(config.defaultTest.assert[0].threshold, 1)
   assert.ok(!JSON.stringify(config).includes('gpt-6.1-luna'))
   assert.ok(!JSON.stringify(config).includes('56010'))
@@ -97,8 +98,183 @@ test('new mode requires explicit observer/binary and preserves main-owned root f
   write(root, 'run-started.json', {}); assert.throws(() => assertFreshRoot(root), /reuse/)
 })
 
-test('six rows accept mixed pass/partial/fail/investigator and grader errors, preserving repeat identities', t => {
-  const root = temporary(t), data = sixRows(root), spec = runMode(['--run-sol-luna'])
+test('full plan distinguishes 180 model/question/repetition slots and rejects a duplicate', () => {
+  const spec = fullRunPlan()
+  const config = evaluationConfig({ suite: '/suite', root: '/fresh', spec })
+  const rows = [], identities = new Map()
+  for (const provider of config.providers) for (const task of config.tests) for (let repeatIndex = 0; repeatIndex < config.evaluateOptions.repeat; repeatIndex++) {
+    const index = rows.length + 1, evidence = '/fresh/runs/case-' + index
+    const model = provider.config.providerID + '/' + provider.config.model, id = new Provider(provider).id()
+    const taskID = task.vars.task_id
+    identities.set(evidence, { provider: id, task: taskID, promptfoo: { repeatIndex, traceparent: `00-${traceID(index)}-${spanID(index)}-01` } })
+    rows.push({ id: 'row-' + index, traceId: traceID(index), provider: { id, label: provider.label }, vars: task.vars,
+      response: { metadata: { evidence, model, task: taskID, repeatIndex, sessionID: 'ses_' + index } }, failureReason: 0 })
+  }
+  assert.ok(config.providers.some(p => p.config.providerID === 'kimi-code-plan-global' && p.config.model === 'k3.1-pro'))
+  assert.ok(config.tests.find(t => t.vars.task_id === 'trace-export').assert.some(a => a.metric === 'export-file'))
+  assert.equal(validateSchedule(rows, spec, identities).length, 180)
+  const last = rows.at(-1).response.metadata
+  last.repeatIndex = identities.get(last.evidence).promptfoo.repeatIndex = 1
+  assert.throws(() => validateSchedule(rows, spec, identities), /Duplicate model/)
+})
+
+const availabilityFor = (plan, enabled) => plan.models.map(model => {
+  const [providerID, id] = model.split('/')
+  return { providerID, id, enabled: enabled(model) }
+})
+
+test('one unavailable model has 15 unstarted slots and never reaches the native provider list', () => {
+  const plan = fullRunPlan(), disabled = plan.models[3]
+  const availability = availabilityFor(plan, model => model !== disabled)
+  const { models, notStarted } = scheduleForAvailability(plan, availability)
+  const config = evaluationConfig({ suite: '/suite', root: '/fresh', spec: { ...plan, models } })
+  assert.equal(config.providers.length * config.tests.length * config.evaluateOptions.repeat, 165)
+  assert.deepEqual(config.providers.map(p => new Provider(p).id()), plan.models.filter(m => m !== disabled).map(m => 'opencode-v2:' + m))
+  assert.equal(notStarted.length, 15)
+  for (const task of plan.taskIDs) assert.deepEqual(notStarted.filter(r => r.task === task),
+    [0,1,2].map(repeatIndex => ({ model: disabled, task, repeatIndex, status: 'not started', reason: 'model unavailable' })))
+  assert.throws(() => scheduleForAvailability(plan, availability.slice(1)), /planned roster/)
+})
+
+test('all unavailable verifies zero results without an export or viewer import', async t => {
+  const root = temporary(t), plan = fullRunPlan(), availability = availabilityFor(plan, () => false)
+  const selection = scheduleForAvailability(plan, availability)
+  assert.equal(selection.notStarted.length, 180)
+  write(root, 'run-started.json', { spec: plan })
+  write(root, 'run-plan.json', { ...plan, version: '2.3.0', availability, planned: 180, investigators: 0, notStarted: selection.notStarted,
+    config: { providers: [] }, observer: 'http://127.0.0.1:1' })
+  write(root, 'owned-shutdown.json', {})
+  write(root, 'source-preservation.json', { unchanged: true })
+  write(root, 'result-summary.json', { mode: 'full', notStarted: selection.notStarted, results: [] })
+  write(root, 'run-completed.json', { scheduled: 0, results: 0 })
+  assert.deepEqual(await verifyRun(root, { importSource: true, env: {} }), { root, resultCount: 0, slots: [], notStarted: selection.notStarted, imported: false })
+  write(root, 'promptfoo.json', {})
+  await assert.rejects(verifyRun(root, { env: {} }), /must not produce native results/)
+})
+
+test('a veto is not a retry; demand matching session HTTP evidence', () => {
+  const sessionID = 'ses_test'
+  const policy = [{ type: 'model.context', sessionID }, { type: 'retry.veto', sessionID, attempt: 2, observedAt: 12 }]
+  const span = { name: 'http.client POST', startTimeUnixNano: '11000000',
+    attributes: [{ key: 'http.request.header.x-opencode-session', value: { stringValue: sessionID } }] }
+  verifyNoRetry(policy, sessionID, [span])
+  assert.throws(() => verifyNoRetry(policy, sessionID, []), /request evidence/)
+  assert.throws(() => verifyNoRetry(policy, sessionID, [span, { ...span, startTimeUnixNano: '13000000' }]), /repeated model request/)
+})
+
+test('native export score requires both the written handoff and the reload check', async t => {
+  const root = temporary(t)
+  process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'state')
+  process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
+  const { evaluate } = await import('promptfoo')
+  const config = evaluationConfig({ suite: import.meta.dirname, root, spec: fullRunPlan() })
+  const task = config.tests.find(t => t.vars.task_id === 'trace-export')
+  const cases = ['both', 'file-only', 'handoff-only', 'neither', 'grader-error']
+  await evaluate({
+    providers: ['echo'], prompts: ['{{scenario}}'],
+    defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture', threshold: 1 }],
+      options: { provider: { id: () => 'fixture-grader', async callApi(prompt) {
+        if (prompt.includes('grader-error')) return { error: 'Grader unavailable' }
+        const pass = prompt.includes('both') || prompt.includes('handoff-only')
+        return { output: JSON.stringify({ pass, score: Number(pass), reason: 'Handoff judgment' }) }
+      } } } },
+    tests: cases.map(scenario => ({ ...task, vars: { ...task.vars, scenario },
+      assert: [{ ...task.assert[0], value: () => ['both', 'file-only', 'grader-error'].includes(scenario) }] })),
+    outputPath: path.join(root, 'scores.json'),
+  }, { maxConcurrency: 1, cache: false, share: false })
+  const rows = JSON.parse(fs.readFileSync(path.join(root, 'scores.json'))).results.results
+  assert.equal(rows.length, cases.length)
+  for (const row of rows) {
+    const { scenario } = row.vars
+    assert.equal(row.score, Number(scenario === 'both'), scenario)
+    assert.equal(row.success, scenario === 'both', scenario)
+    assert.equal(row.gradingResult.componentResults.length, 2)
+    const judge = row.gradingResult.componentResults.find(c => c.assertion.type === 'llm-rubric')
+    assert.equal(Boolean(judge.metadata?.graderError), scenario === 'grader-error')
+    assert.equal(isExecutionError(row), scenario === 'grader-error', scenario)
+  }
+})
+
+test('shared native evidence must match the investigator trace; dedicated evidence must carry its own resource ID', t => {
+  const root = temporary(t), evidence = path.join(root, 'runs/investigator-opencode-v2-first')
+  const investigator = { evidence, raw: {}, identity: { promptfoo: { traceparent: `00-${traceID(1)}-${spanID(8)}-01` } } }
+  const spec = { mode: 'full', nativeTelemetry: true, config: { providers: [{ config: { sharedHost: true } }] } }
+  const spans = [1, 2].map(i => ({ traceId: traceID(i), spanId: spanID(i), name: 'Session.prompt' }))
+  const data = { spans, summary: { resources: [{}] }, receipts: [], spanReceipts: Object.fromEntries(spans.map((s, i) =>
+    [s.traceId + '/' + s.spanId, [`batch-${i}.otlp`]])) }
+  const telemetry = { runNative: data, attempts: new Map() }
+  const report = attemptNativeReport(root, telemetry, spec, investigator)
+  assert.equal(report.native.spans, 1)
+  assert.deepEqual(report.rawNativeUploads, [path.join(root, 'native-otlp/batch-0.otlp')])
+  data.spans = [spans[1]]
+  assert.throws(() => attemptNativeReport(root, telemetry, spec, investigator), /Missing shared-host spans/)
+  const dedicated = { attempts: new Map([[evidence, data]]) }
+  for (const id of [undefined, 'another-investigator', path.basename(evidence)]) {
+    data.summary.resources = [{ attributes: id ? [{ key: 'eval.evidence.id', value: { stringValue: id } }] : [] }]
+    const check = () => attemptNativeReport(root, dedicated, { mode: 'one', nativeTelemetry: true }, investigator)
+    if (id === path.basename(evidence)) assert.doesNotThrow(check)
+    else assert.throws(check, /must identify its owned attempt/)
+  }
+})
+
+test('recorded provider and grader errors continue; missing evidence and shared harness failures cancel', t => {
+  const evidence = temporary(t), errors = []
+  onFailure(error => errors.push(error))
+  t.after(() => onFailure(undefined))
+  const metadata = { evidence }
+  write(evidence, 'response.json', { output: 'Saved answer', metadata })
+  checkEvidence({ result: { response: { metadata, error: 'HTTP 401' }, failureReason: 2 } })
+  checkEvidence({ result: { response: { metadata, output: 'Saved answer' }, failureReason: 2,
+    gradingResult: { componentResults: [{ metadata: { graderError: true } }] } } })
+  checkEvidenceError(Object.assign(new Error('Expired credential'), { status: 401 }), evidence)
+  assert.equal(errors.length, 0)
+  checkEvidence({ result: { response: { metadata: { ...metadata, harnessFailure: true } } } })
+  fs.unlinkSync(path.join(evidence, 'response.json'))
+  checkEvidence({ result: { response: { metadata } } })
+  checkEvidenceError(Object.assign(new Error('Disk full saving grader evidence'), { code: 'ENOSPC' }), evidence)
+  assert.equal(errors.length, 3)
+})
+
+test('full-run hooks preserve an ungraded answer and let the following grade finish', async t => {
+  const root = temporary(t), controller = new AbortController()
+  process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'state')
+  process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
+  const { evaluate } = await import('promptfoo')
+  const teardown = await import('./attempt-teardown-stop.mjs')
+  onFailure(error => controller.abort(error))
+  teardown.onFailure(error => controller.abort(error))
+  t.after(() => { onFailure(undefined); teardown.onFailure(undefined) })
+  const configured = evaluationConfig({suite: import.meta.dirname, root, spec: fullRunPlan()})
+  const attempted = []
+  let calls = 0
+  const grader = { id: () => 'offline-judge', config: configured.defaultTest.options.provider.config,
+    callApi: async () => ++calls === 1 ? { error: 'HTTP 429; provider error quoting “Harness binary teardown failed”' } :
+    { output: '{"pass":true,"score":1,"reason":"fixture"}' } }
+  await evaluate({ prompts: ['{{id}}'], tests: ['0','1','2'].map(id => ({ vars: { id } })),
+    providers: [{ id: () => 'offline-investigator', config: configured.providers[0].config, async callApi(prompt) {
+      attempted.push(prompt)
+      const evidence = path.join(root, prompt)
+      fs.mkdirSync(evidence)
+      const response = prompt === '0' ? { error: 'HTTP 429', metadata: { evidence } } : { output: `answer ${prompt}`, metadata: { evidence } }
+      write(evidence, 'response.json', response)
+      return response
+    } }], defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture criterion' }], options: { provider: grader } },
+    extensions: ['attempt-teardown-stop.mjs:beforeAll','opencode-v2-execution-stop.mjs:afterEach']
+      .map(name => 'file://' + path.join(import.meta.dirname, name)),
+    outputPath: path.join(root, 'result.json') }, { maxConcurrency: 1, cache: false, share: false, abortSignal: controller.signal })
+  const rows = JSON.parse(fs.readFileSync(path.join(root, 'result.json'))).results.results
+  assert.equal(controller.signal.aborted, false)
+  assert.equal(calls, 2)
+  assert.deepEqual(attempted, ['0','1','2'])
+  assert.equal(rows.length, 3)
+  assert.equal(rows.find(row => row.vars.id === '0').response.error, 'HTTP 429')
+  const ungraded = rows.find(row => row.gradingResult?.componentResults?.[0]?.metadata?.graderError)
+  assert.equal(ungraded.response.output, 'answer ' + ungraded.vars.id)
+  assert.equal(rows.filter(row => row.success).length, 1)
+})
+
+for (const runtimeVersion of ['2.0.29', '2.3.0']) test(`${runtimeVersion} rows preserve outcomes and repeat identities`, t => {
+  const root = temporary(t), data = sixRows(root, runtimeVersion), spec = runMode(['--run-sol-luna'])
   const before = JSON.stringify(data.rows)
   assert.equal(validateSchedule(data.rows, spec, data.identities).length, 6)
   const results = data.rows.map(row => {
@@ -115,6 +291,24 @@ test('six rows accept mixed pass/partial/fail/investigator and grader errors, pr
   assert.throws(() => validateSchedule(duplicate, spec, data.identities), /Distinct/)
 })
 
+test('grader verification rejects a Sol self-grade and checks the recorded Opus response', t => {
+  const root = temporary(t), data = sixRows(root), row = data.rows[0]
+  const investigator = verifyInvestigator(root, row, data.wrapper, rubric, question)
+  const expected = 'claude-code:claude-opus-5-5'
+  assert.throws(() => verifyGrader(root, row, investigator, data.graders, expected))
+  const dir = data.graders[0].evidence
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, 'response.json')))
+  raw.metadata.runtime = 'claude-code'; raw.metadata.model = 'claude-opus-5-5'
+  write(dir, 'response.json', raw)
+  const events = [{ type: 'assistant', message: { model: raw.metadata.model, content: [{ type: 'text', text: raw.output }] } },
+    { type: 'result', result: raw.output }]
+  fs.writeFileSync(path.join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n'))
+  assert.equal(verifyGrader(root, row, investigator, data.graders, expected).model, raw.metadata.model)
+  events[0].message.model = 'claude-sonnet-5-5'
+  fs.writeFileSync(path.join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n'))
+  assert.throws(() => verifyGrader(root, row, investigator, data.graders, expected))
+})
+
 test('offline preflight exceptions retain separate slot evidence and do not prevent following calls', async t => {
   const root = temporary(t)
   class OfflineFailure extends Provider { async callAttempt() { throw new Error('offline preflight failure') } }
@@ -125,6 +319,7 @@ test('offline preflight exceptions retain separate slot evidence and do not prev
   for (const [index, result] of results.entries()) {
     assert.equal(result.error, 'offline preflight failure'); assert.equal(result.metadata.repeatIndex, index)
     assert.equal(result.metadata.captureUnavailable, true)
+    assert.equal(result.metadata.expectedRuntimeVersion, '2.3.0')
     assert.equal(result.metadata.runtimeVersion, undefined, 'Do not claim a started runtime on preflight failure')
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(result.metadata.evidence, 'response.json'))), result)
   }

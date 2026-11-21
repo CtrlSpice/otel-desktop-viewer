@@ -32,14 +32,20 @@ export function loadRunTelemetry(root) {
     assert.ok(receipts.every(receipt => receipt.forwarded), 'Native uploads must have been forwarded live')
     attempts.set(evidence, { ...readNativeTelemetry(evidence, receipts), receipts })
   }
-  // Preserve verification of the original single-run capture layout.
-  let legacy
+  // The shared host and the original single-run receiver both write at the run root.
+  let runNative
   if (fs.existsSync(path.join(root, 'native-otlp/summary.json'))) {
     const receipts = readJSON(path.join(root, 'native-otlp/summary.json')).receipts
-    acceptedReceipts(receipts); legacy = readNativeTelemetry(root, receipts)
+    acceptedReceipts(receipts); runNative = { ...readNativeTelemetry(root, receipts), receipts }
   }
-  const native = [...attempts.values(), ...(legacy ? [legacy] : [])]
-  return { wrapper, wrapperReceipts, attempts, legacy,
+  const native = [...attempts.values(), ...(runNative ? [runNative] : [])]
+  const judgeFile = path.join(root, 'otlp-opus/summary.json')
+  if (fs.existsSync(judgeFile)) {
+    const { receipts } = readJSON(judgeFile)
+    acceptedReceipts(receipts)
+    native.push(readNativeTelemetry(root, receipts, 'otlp-opus'))
+  }
+  return { wrapper, wrapperReceipts, attempts, runNative,
     spans: [...wrapper.spans, ...native.flatMap(data => data.spans)],
     logs: [...wrapper.logs, ...native.flatMap(data => data.logs)],
     metrics: [...wrapper.metrics, ...native.flatMap(data => data.metrics)],

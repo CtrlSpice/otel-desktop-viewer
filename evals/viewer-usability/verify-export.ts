@@ -6,6 +6,7 @@ import { prepare, IngestionRejectedError, expectedStoredCounts } from './prepare
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 import { ownedPath } from './evidence.ts'
+import { withBinaryTeardown } from './attempt-teardown.ts'
 
 export const CHECKOUT_TRACE = '00000000000000000000000000000011'
 
@@ -154,7 +155,7 @@ export function exportWorkspace(
   metadata: Record<string, unknown>,
   root = runtimeRoot()
 ) {
-  if (metadata.runtime === 'pi' || metadata.runtime === 'claude-code') {
+  if (metadata.runtime === 'pi' || metadata.runtime === 'claude-code' || metadata.runtime === 'opencode-v2') {
     const evidence = ownedPath(root, metadata.evidence)
     const workspace = ownedPath(evidence, metadata.workspace)
     if (metadata.role !== 'investigator' ||
@@ -249,68 +250,70 @@ export async function verifyExport(
   const connection = record(readJson(path.join(root, 'connection.json')))
   if (typeof connection.binary !== 'string')
     throw new Error('Missing replay binary')
+  const canonicalBinary = connection.binary
   const files = new Set<string>()
   for (const candidate of candidates) {
     const replay = fs.mkdtempSync(path.join(root, 'export-replay-'))
     fs.chmodSync(replay, 0o700)
-    fs.mkdirSync(path.join(replay, 'fixture'))
-    fs.copyFileSync(
-      connection.binary,
-      path.join(replay, 'otel-desktop-viewer'),
-      fs.constants.COPYFILE_EXCL
-    )
-    fs.writeFileSync(path.join(replay, 'fixture/trace.json'), candidate.bytes, {
-      mode: 0o600,
-    })
-    saveJson(path.join(replay, 'fixture/manifest.json'), {
-      startTimeUnixNano: manifest.start.toString(),
-      endTimeUnixNano: manifest.end.toString(),
-      requests: [{ signal: 'traces', file: 'trace.json' }],
-      storedCounts: { spans: candidate.spanCount, logs: 0, datapoints: 0 },
-    })
-    let ready: Awaited<ReturnType<typeof prepare>>
-    try {
-      ready = await prepare(replay)
-    } catch (error) {
-      if (!(error instanceof IngestionRejectedError)) throw error
-      saveJson(path.join(replay, 'export-proof.json'), {
-        file: candidate.file,
-        member: candidate.member,
-        pass: false,
-        reason: error.message,
+    await withBinaryTeardown({ directory: replay, canonicalBinary, kind: 'export-replay' }, async register => {
+      fs.mkdirSync(path.join(replay, 'fixture'))
+      fs.copyFileSync(
+        canonicalBinary,
+        path.join(replay, 'otel-desktop-viewer'),
+        fs.constants.COPYFILE_EXCL
+      )
+      fs.writeFileSync(path.join(replay, 'fixture/trace.json'), candidate.bytes, {
+        mode: 0o600,
       })
-      continue
-    }
-    try {
-      assert.deepEqual(traceRows(await exportedTrace(ready.endpoint)), expected)
-      files.add(candidate.file)
-      saveJson(path.join(replay, 'export-proof.json'), {
-        file: candidate.file,
-        member: candidate.member,
-        retainedSpans: 6,
-        pass: true,
+      saveJson(path.join(replay, 'fixture/manifest.json'), {
+        startTimeUnixNano: manifest.start.toString(),
+        endTimeUnixNano: manifest.end.toString(),
+        requests: [{ signal: 'traces', file: 'trace.json' }],
+        storedCounts: { spans: candidate.spanCount, logs: 0, datapoints: 0 },
       })
-    } catch (error) {
-      if (!(error instanceof assert.AssertionError)) throw error
-      saveJson(path.join(replay, 'export-proof.json'), {
-        file: candidate.file,
-        member: candidate.member,
-        pass: false,
-        reason: 'Replayed trace does not retain the expected contents.',
-      })
-    } finally {
-      ready.process.kill('SIGTERM')
-      const timer = setTimeout(() => ready.process.kill('SIGKILL'), 30000)
+      let ready: Awaited<ReturnType<typeof prepare>>
+      let stop = async () => {}
       try {
+        ready = await prepare(replay, undefined, undefined, shutdown => {
+          stop = shutdown
+          register(shutdown)
+        })
+      } catch (error) {
+        if (!(error instanceof IngestionRejectedError)) throw error
+        saveJson(path.join(replay, 'export-proof.json'), {
+          file: candidate.file,
+          member: candidate.member,
+          pass: false,
+          reason: error.message,
+        })
+        return
+      }
+      try {
+        assert.deepEqual(traceRows(await exportedTrace(ready.endpoint)), expected)
+        files.add(candidate.file)
+        saveJson(path.join(replay, 'export-proof.json'), {
+          file: candidate.file,
+          member: candidate.member,
+          retainedSpans: 6,
+          pass: true,
+        })
+      } catch (error) {
+        if (!(error instanceof assert.AssertionError)) throw error
+        saveJson(path.join(replay, 'export-proof.json'), {
+          file: candidate.file,
+          member: candidate.member,
+          pass: false,
+          reason: 'Replayed trace does not retain the expected contents.',
+        })
+      } finally {
+        await stop()
         saveJson(path.join(replay, 'owned-shutdown.json'), {
           pid: ready.pid,
           waited: true,
           exit: await ready.closed,
         })
-      } finally {
-        clearTimeout(timer)
       }
-    }
+    })
   }
   return {
     pass: files.size > 0,

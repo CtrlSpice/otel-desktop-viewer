@@ -236,16 +236,17 @@ test('wrong one-span export is a content failure, not an ingestion timeout', asy
   assert.ok(!fs.readdirSync(root).some(name => name.startsWith('export-replay-')))
 })
 
-test('dedup-only diagnostics allow matching contents but matching counts do not hide changed data or IDs', async t => {
-  for (const changedField of ['unchanged', 'name', 'spanId']) {
+test('replay teardown covers matching, changed and rejected data without hiding verification failures', async t => {
+  for (const changedField of ['unchanged', 'name', 'spanId', 'rejected']) {
     const { root, workspace, metadata, document } = fixture()
     t.diagnostic(`${changedField} dedup replay evidence: ${root}`)
     const file = path.join(workspace, 'trace.json')
     fs.writeFileSync(file, JSON.stringify(document))
     const changed = structuredClone(document)
-    if (changedField !== 'unchanged')
+    if (changedField === 'name' || changedField === 'spanId')
       changed.resourceSpans[0].scopeSpans[0].spans[0][changedField] =
         changedField === 'name' ? 'wrong retained name' : 'ffffffffffffffff'
+    const rejections = [{ signal: 'traces', kind: changedField === 'rejected' ? 'invalid_span' : 'span_already_stored', occurrences: 1 }]
     const binary = path.join(root, 'stub-viewer')
     fs.writeFileSync(binary, `#!${process.execPath}
 const http = require('node:http');
@@ -257,7 +258,7 @@ const rpc = http.createServer(async (req,res) => {
   }
   let body = ''; for await (const chunk of req) body += chunk;
   const request = JSON.parse(body);
-   const result = request.method === 'getStats' ? {rejections:[{signal:'traces',kind:'span_already_stored',occurrences:1}]} :
+   const result = request.method === 'getStats' ? {rejections:${JSON.stringify(rejections)}} :
     {columns:[{name:'count'}],rows:request.params.sql === 'select 1' ? [[1]] : [[6,0,0]],truncated:false};
   res.end(JSON.stringify({jsonrpc:'2.0',id:1,result}));
 });
@@ -274,12 +275,18 @@ process.on('SIGTERM',()=>{rpc.close();receiver.close();rpc.closeAllConnections()
     const replay = fs.readdirSync(root).find(name => name.startsWith('export-replay-'))!
     const proof = record(readJson(path.join(root, replay, 'export-proof.json')))
     assert.equal(proof.pass, changedField === 'unchanged')
-    if (changedField !== 'unchanged')
+    if (changedField === 'name' || changedField === 'spanId')
       assert.match(String(proof.reason), /does not retain the expected contents/)
+    if (changedField === 'rejected') assert.match(String(proof.reason), /rejected records/)
     assert.deepEqual(record(record(readJson(path.join(root, replay, 'runtime/stats.json'))).result).rejections,
-      [{ signal: 'traces', kind: 'span_already_stored', occurrences: 1 }])
+      rejections)
     assert.deepEqual(record(readJson(path.join(root, replay, 'runtime/counts.json'))).rows, [[6, 0, 0]])
-    assert.equal(record(readJson(path.join(root, replay, 'owned-shutdown.json'))).waited, true)
+    if (changedField !== 'rejected') assert.equal(record(readJson(path.join(root, replay, 'owned-shutdown.json'))).waited, true)
+    const processInfo = record(readJson(path.join(root, replay, 'runtime/process.json')))
+    assert.throws(() => process.kill(Number(processInfo.pid), 0), /ESRCH/)
+    assert.equal(fs.existsSync(path.join(root, replay, 'otel-desktop-viewer')), false)
+    assert.equal(record(readJson(path.join(root, replay, 'teardown.json'))).status, 'removed')
+    assert.ok(fs.existsSync(binary))
   }
 })
 
@@ -305,6 +312,8 @@ test('fresh real dedup-only export retains matching target IDs and contents',
     assert.ok(rejections.length)
     assert.ok(rejections.every(rejection => rejection.signal === 'traces' && rejection.kind === 'span_already_stored'))
     assert.equal(record(readJson(path.join(root, replay, 'export-proof.json'))).pass, true)
+    assert.equal(fs.existsSync(path.join(root, replay, 'otel-desktop-viewer')), false)
+    assert.equal(record(readJson(path.join(root, replay, 'teardown.json'))).status, 'removed')
     const shutdown = record(readJson(path.join(root, replay, 'owned-shutdown.json')))
     assert.equal(shutdown.waited, true)
     assert.equal(record(shutdown.exit).code, 0)
@@ -333,6 +342,8 @@ test(
       fs.readFileSync(path.join(root, replay, 'fixture/trace.json')),
       bytes
     )
+    assert.equal(fs.existsSync(path.join(root, replay, 'otel-desktop-viewer')), false)
+    assert.equal(record(readJson(path.join(root, replay, 'teardown.json'))).status, 'removed')
     const shutdown = record(
       readJson(path.join(root, replay, 'owned-shutdown.json'))
     )
@@ -380,6 +391,8 @@ test(
       const proof = record(
         readJson(path.join(root, directory, 'export-proof.json'))
       )
+      assert.equal(fs.existsSync(path.join(root, directory, 'otel-desktop-viewer')), false)
+      assert.equal(record(readJson(path.join(root, directory, 'teardown.json'))).status, 'removed')
       assert.equal(proof.pass, proof.file === good)
       const processInfo = record(
         readJson(path.join(root, directory, 'runtime/process.json'))
@@ -434,6 +447,8 @@ test(
     assert.equal(replays.length, 2)
     const members: string[] = []
     for (const replay of replays) {
+      assert.equal(fs.existsSync(path.join(root, replay, 'otel-desktop-viewer')), false)
+      assert.equal(record(readJson(path.join(root, replay, 'teardown.json'))).status, 'removed')
       assert.deepEqual(
         fs.readFileSync(path.join(root, replay, 'fixture/trace.json')),
         bytes
