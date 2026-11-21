@@ -54,11 +54,11 @@ func openRPCDocument() map[string]any {
 	uintInput := map[string]any{"oneOf": []any{
 		map[string]any{"type": "string", "pattern": "^[0-9]+$"},
 		map[string]any{"type": "integer", "minimum": 0, "maximum": json.Number("18446744073709551615")},
-	}, "description": "Unsigned 64-bit whole number, 0 through 18446744073709551615. Decimal strings are recommended; numeric tokens must be emitted without prior floating-point rounding. Fractional/exponent notation is rejected by the server."}
+	}, "description": "Unsigned 64-bit integer. Prefer a decimal string to avoid floating-point rounding. The server rejects fractions and exponent notation."}
 	intInput := map[string]any{"oneOf": []any{
 		map[string]any{"type": "string", "pattern": "^[+-]?[0-9]+$"},
 		map[string]any{"type": "integer", "minimum": json.Number("-9223372036854775808"), "maximum": json.Number("9223372036854775807")},
-	}, "description": "Signed 64-bit whole number; decimal strings recommended. String values must also fit int64. Fractional/exponent notation is rejected."}
+	}, "description": "Signed 64-bit integer. Prefer a decimal string to avoid floating-point rounding. The same range applies to strings and numbers. The server rejects fractions and exponent notation."}
 	id := map[string]any{"type": "string", "pattern": "^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"}
 	attributes := rpcArray(rpcObject(map[string]any{"id": text, "key": text, "value": rpcSchemaRef("Value")}, "id", "key", "value"))
 	nullableText := map[string]any{"type": []string{"string", "null"}}
@@ -67,7 +67,7 @@ func openRPCDocument() map[string]any {
 	attributePath := rpcArray(map[string]any{"oneOf": []any{text, map[string]any{"type": "integer", "minimum": 0, "maximum": 4294967294}}})
 	schemas := map[string]any{
 		"Decimal": decimal, "UintInput": uintInput, "IntInput": intInput, "EntityID": id,
-		"TimeBound": map[string]any{"anyOf": []any{rpcSchemaRef("UintInput"), map[string]any{"type": "null"}}, "description": "Inclusive received Unix nanoseconds. null means unbounded, not zero; 0 is a present bound."},
+		"TimeBound": map[string]any{"anyOf": []any{rpcSchemaRef("UintInput"), map[string]any{"type": "null"}}, "description": "Inclusive bound in Unix nanoseconds. Null means unbounded. Zero means the Unix epoch."},
 		"Value": map[string]any{"oneOf": []any{
 			rpcObject(map[string]any{"kind": map[string]any{"const": "empty"}, "value": map[string]any{"type": "null"}}, "kind", "value"),
 			rpcObject(map[string]any{"kind": map[string]any{"const": "string"}, "value": text}, "kind", "value"),
@@ -77,7 +77,7 @@ func openRPCDocument() map[string]any {
 			rpcObject(map[string]any{"kind": map[string]any{"const": "bytes"}, "value": map[string]any{"type": "string", "contentEncoding": "base64"}}, "kind", "value"),
 			rpcObject(map[string]any{"kind": map[string]any{"const": "array"}, "value": rpcArray(rpcSchemaRef("Value"))}, "kind", "value"),
 			rpcObject(map[string]any{"kind": map[string]any{"const": "map"}, "value": rpcArray(rpcObject(map[string]any{"key": text, "value": rpcSchemaRef("Value")}, "key", "value"))}, "kind", "value"),
-		}, "description": "Recursive received typed value. int64 uses exact signed decimal text; doubles use numbers or 0x followed by 16 IEEE-754 hex digits for negative zero/non-finite values. Arrays retain order/repetition. Maps select the last received occurrence per key within this map, then sort surviving keys. Owner collections are never combined."},
+		}, "description": "Numeric values:\n- int64: exact signed decimal string.\n- double: JSON number, except for negative zero and non-finite values. Those use 0x followed by 16 IEEE-754 hex digits.\n\nCollections: arrays keep order and duplicates. Each map keeps the last received value for each key, then sorts the keys. Each owner keeps its own attributes."},
 		"Double":               map[string]any{"oneOf": []any{map[string]any{"type": "number"}, map[string]any{"type": "string", "pattern": "^0x[0-9a-f]{16}$"}}},
 		"Attributes":           attributes,
 		"Resource":             rpcObject(map[string]any{"attributes": attributes, "droppedAttributesCount": integer, "schemaUrl": text}, "attributes", "droppedAttributesCount"),
@@ -92,8 +92,8 @@ func openRPCDocument() map[string]any {
 		"TraceSummaries": rpcArray(rpcObject(map[string]any{"traceID": text, "hasRootSpan": boolean, "rootSpan": nullableObject,
 			"startTime": decimal, "durationNs": nullableText, "spanCount": integer, "errorCount": integer, "matchedSpans": rpcArray(object),
 		}, "traceID", "hasRootSpan", "rootSpan", "startTime", "durationNs", "spanCount", "errorCount")),
-		"LogSummaries": rpcArray(rpcObject(map[string]any{"logRef": text, "timestamp": decimal, "severityText": text, "severityNumber": integer,
-			"serviceName": text, "bodyPreview": text, "bodyType": text, "spanID": nullableText, "eventName": text,
+		"LogSummaries": rpcArray(rpcObject(map[string]any{"logRef": text, "timestamp": map[string]any{"type": "string", "pattern": decimal["pattern"], "description": "Received timestamp in exact unsigned decimal Unix nanoseconds. If zero, uses observedTimestamp."}, "severityText": text, "severityNumber": integer,
+			"serviceName": text, "bodyPreview": map[string]any{"type": "string", "description": "Display text. Use getLog for the full typed body."}, "bodyType": text, "spanID": nullableText, "eventName": text,
 			"columnValues": rpcArray(rpcObject(map[string]any{
 				"source": text, "kind": text, "key": text, "valueType": text,
 				"present": map[string]any{"type": "boolean", "description": "False for a missing value; true for a received empty value."},
@@ -111,7 +111,7 @@ func openRPCDocument() map[string]any {
 			"serviceName": text, "seriesCount": nullableInteger, "seriesCardinality": integer, "dataPointCount": nullableInteger,
 			"lastValue": map[string]any{"anyOf": []any{rpcSchemaRef("Double"), map[string]any{"type": "null"}}}, "lastSeen": nullableText,
 		}, "metricRef", "name", "metricType", "seriesCount", "seriesCardinality", "dataPointCount", "lastValue", "lastSeen")),
-		"SearchQuery": map[string]any{"type": []string{"object", "null"}, "description": "null selects all. A condition is {id,type:'condition',query:{field:{owner,path,type},fieldOperator,value}}. Path strings are exact owner-relative keys; numbers are zero-based array indices. Free text is {id,type:'text',query:{fieldOperator:'CONTAINS',value}}. Groups combine nodes. Previous name/searchScope/attributeScope field references remain accepted. The signal store validates addresses and operators. See /llms.txt for search examples."},
+		"SearchQuery": map[string]any{"type": []string{"object", "null"}, "description": "Pass null to select all records. Use groups to combine conditions and text searches.\n\n- Condition: `{id,type:'condition',query:{field:{owner,path,type},fieldOperator,value}}`. In path, strings are exact keys relative to the owner. Numbers are zero-based array indices.\n- Text search: `{id,type:'text',query:{fieldOperator:'CONTAINS',value}}`.\n\nAllowed fields and operators depend on the signal. Legacy field references using name, searchScope and attributeScope are also accepted. See /llms.txt for examples."},
 		"Sort":        map[string]any{"anyOf": []any{map[string]any{"type": "null"}, map[string]any{"type": "object", "required": []string{"field", "direction"}, "additionalProperties": false, "properties": map[string]any{"field": text, "direction": map[string]any{"enum": []string{"asc", "desc"}}}}}},
 		"QueryResult": rpcObject(map[string]any{
 			"columns": rpcArray(rpcObject(map[string]any{"name": text, "type": text}, "name", "type")),
@@ -163,46 +163,49 @@ func openRPCDocument() map[string]any {
 		name, result, summary, description string
 		required                           int
 	}{
-		{"rpc.discover", "", "Retrieve the full OpenRPC document over JSON-RPC.", "Returns the same OpenRPC document as GET /openrpc.json. No store access is needed.", 0},
-		{"getImportConfig", "ImportConfig", "Find the OTLP HTTP port used for import.", "Returns the configured OTLP HTTP import port for the UI. Fails with -32603 when HTTP import is not configured.", 0},
-		{"query", "QueryResult", "Run read-only DuckDB SQL against stored telemetry.", "Runs one read-only SQL SELECT or supported introspection statement, including SHOW TABLES and DESCRIBE. Defaults to 25 rows; limit 0 returns no rows. A look-ahead row determines truncated. Rows are arrays aligned with columns; SQL NULL is JSON null. Native integer/decimal JSON tokens and JSON columns retain their exact text, not decimal-string conversion: use a precision-preserving parser or SQL VARCHAR casts. Top-level FLOAT/DOUBLE uses finite numbers or OTLP non-finite strings.", 1},
+		{"rpc.discover", "", "Retrieve the full OpenRPC document over JSON-RPC.", "Equivalent to GET /openrpc.json. Does not require database access.", 0},
+		{"getImportConfig", "ImportConfig", "Find the OTLP HTTP port used for import.", "If HTTP import is not configured, the server returns -32603.", 0},
+		{"query", "QueryResult", "Run read-only DuckDB SQL against stored telemetry.", "Each row follows column order. SQL null becomes JSON null. truncated is true if another row exists. For exact integers, decimals and numbers inside JSON columns, use a parser that preserves precision or cast to varchar in SQL. Top-level float and double values use JSON numbers when finite and OTLP strings otherwise.", 1},
 
-		{"discoverTelemetry", "DiscoveryResult", "Find services, connections, spans behind a connection, and attribute keys and value counts.", "Choose a search with options.kind. To follow a service: request services, take serviceIdentity from a returned row, then request connections with that identity. For spans behind one connection, use its source.serviceIdentity and target.serviceIdentity as serviceIdentity and targetIdentity.", 1},
-		{"searchTraceSummaries", "TraceSummaries", "Find matching traces and their IDs.", "Returns trace summaries, not complete spans. Time/query select matching spans; summary counts and bounds describe each whole retained trace. durationNs = max(end_time)-min(start_time), exact decimal nanoseconds. matchedSpans identifies matches. No truncation flag: request a look-ahead row if needed. Omitted/null limit is unbounded.", 2},
-		{"getTraceView", "TraceView", "UI view: Read the waterfall hierarchy and search highlights.", "Returns a trace with hierarchy and search-match information. resources/scopes are maps indexed by spanData.r/s database-local sequence keys. traceStart = minimum span start; spanData.start = received start-traceStart and dur = received end-start, exact decimal nanoseconds. depth/matched and kind/status labels are computed display fields; kindCode/statusCodeValue are received signed codes. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export. Optional query marks matches without changing received data. Replace each response as a unit, since offsets depend on its baseline.", 1},
-		{"getTraceOverview", "TraceOverview", "List a trace’s spans and log previews.", "Returns compact spans and trace-linked log previews. trace.startTime = minimum received span start; durationNs = maximum end-minimum start. startOffsetNs = span start-trace start; span durationNs = end-start. All are exact decimal nanoseconds. spanCount/logCount count retained records. logs.body is a display preview, not the received typed body; severity uses received text or a computed number-range label. Use getSpan/getLog for full data.", 1},
-		{"getSpan", "SpanResult", "Read a span, its events, links, and matching logs by trace ID and span ID.", "Use traceID and spanID together to look up a span. If the trace ID is unknown, supply only the 16-hex spanID. status=found has traceID, span and logs; status=notFound has spanID and nullable traceID; status=ambiguous has spanID, matchCount, summaries and truncated. Without traceID, repeated span IDs across traces are ambiguous, never silently selected. limit defaults to 25 and bounds ambiguity summaries only. Full span startTime/endTime use exact decimal Unix nanoseconds; associated logs preserve typed bodies. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export.", 1},
-		{"searchLogSummaries", "LogSummaries", "Find matching logs and their logRef values.", "Returns logRef, timestamp, severityText/Number, serviceName and bodyPreview. timestamp is received timestamp unless zero, then observedTimestamp; exact unsigned decimal Unix nanoseconds. bodyPreview is computed display text, not the complete typed body. No truncation flag; omitted/null limit is unbounded.", 2},
+		{"discoverTelemetry", "DiscoveryResult", "Find services, connections, spans behind a connection, and attribute keys and value counts.", "Choose a search with options.kind. For connections, pass serviceIdentity from a services row. For connection-spans, pass the connection’s source.serviceIdentity as serviceIdentity and target.serviceIdentity as targetIdentity.", 1},
+		{"searchTraceSummaries", "TraceSummaries", "Find matching traces and their IDs.", "Time and query filters select spans. matchedSpans identifies the matches. Counts and time bounds cover the whole retained trace. durationNs is the latest end minus the earliest start, in exact decimal nanoseconds. There is no truncation flag. Request one extra row to detect more matches.", 2},
+		{"getTraceView", "TraceView", "UI view: Read the waterfall hierarchy and search highlights.", "Use spanData.r and spanData.s as keys into resources and scopes. traceStart is the earliest span start. spanData.start is relative to traceStart. dur is end minus start. Both use exact decimal nanoseconds. Replace the whole response when refreshing: offsets share one baseline.\n\nThe viewer computes depth, matched and the kind and status labels. kindCode and statusCodeValue preserve the received signed codes. query highlights matches.", 1},
+		{"getTraceOverview", "TraceOverview", "List a trace’s spans and log previews.", "trace.startTime is the earliest span start. Trace durationNs is the latest end minus that start. Each span’s startOffsetNs is relative to trace.startTime. Its durationNs is end minus start. All times use exact decimal nanoseconds. Counts cover retained records.\n\nlogs.body is a preview. Severity uses received text or a label derived from the severity number. Use getSpan or getLog for the full record.", 1},
+		{"getSpan", "SpanResult", "Read a span, its events, links, and matching logs by trace ID and span ID.", "Supply traceID when known. A spanID alone can match more than one trace. Check status:\n\n- found: traceID, span and logs. Span times are exact decimal Unix nanoseconds. Logs include typed bodies.\n- notFound: spanID and nullable traceID.\n- ambiguous: spanID, matchCount, summaries and truncated.", 1},
+		{"searchLogSummaries", "LogSummaries", "Find matching logs and their logRef values.", "There is no truncation flag. Use getLog for the full typed body.", 2},
 		{"searchLogPage", "LogPage", "Read a page of matching logs and the total match count.", "The page and total come from the same read. Later requests can see newly received or deleted logs.", 2},
-		{"getLogErrorNavigation", "LogErrorNavigation", "Find the previous or next error in a log search.", "Returns the count and neighbouring error logs (severityNumber >= 17) across the full time/query/sort result, capped by optional limit before navigation. Each target has logRef and zero-based result offset. index is the selected error's one-based position, or null for a missing/non-error selection. Previous/next do not wrap; a missing selection has no previous target and next points to the first error. Counts and targets come from one database statement.", 2},
-		{"getTraceLogSummaries", "LogSummaries", "Find logs carrying a given trace ID.", "Returns log summaries carrying the received trace ID, including eventName and nullable spanID. Effective timestamp uses observedTimestamp when received timestamp is zero. bodyPreview is display text.", 1},
-		{"getLog", "Log", "Read the full typed body and context for one logRef.", "Returns one complete normalized log. logRef is a generated database-local ID, not an OTel log ID. timestamp/observedTimestamp are separate received uint64 Unix nanoseconds as decimal strings. Absent trace/span IDs are null. body and attributes retain recursive tagged values. Resource/Scope and schema URLs remain associated with this log.", 1},
-		{"searchMetricSummaries", "MetricSummaries", "Find matching Metrics and their metricRef values.", "Returns compact Metric summaries without description, metadata, resource/scope payloads or datapoints. Uses the same search, sorting and limit builder as native Arrow summaries, with JSON output. seriesCount/dataPointCount are window-scoped computed counts; seriesCardinality covers retained datapoints. lastSeen is the maximum window-scoped datapoint timestamp, decimal Unix nanoseconds. lastValue selects the latest scalar value, a computed numeric display projection that may coerce int64 to double. aggregationTemporalityCode is received; its label is computed. Use getMetric for description, metadata and the series catalogue; use getMetricSeries for exact datapoints. Omitted/null limit is unbounded; no truncation flag.", 2},
-		{"getMetric", "Metric", "Read a Metric descriptor and find its series references.", "Returns received Metric identity and a series catalogue. metricRef/seriesRef are generated database-local IDs. Metadata and attributes are typed. Catalogue datapointCount is exact decimal text; first/lastDatapointTimestamp are min/max received timestamps, nullable when no datapoints. Temporality/isMonotonic fields appear only for applicable kinds; unknown received signed temporality codes remain intact.", 1},
-		{"getMetricSeries", "MetricSeries", "Read exact datapoints and exemplars for one Metric series.", "Returns exact retained received datapoints for one database-local Metric/series pair and inclusive timestamp window. timestamps/startTime, signed intValue, unsigned count/bucketCounts/zeroCount use decimal strings. doubleValue uses finite numbers or IEEE-754 bit text for negative zero/non-finite values. Inactive intValue/doubleValue is null; absent histogram sum/min/max are omitted, not zero. Exemplars and typed attributes stay associated with their datapoints. Empty matching window returns datapoints:[]. Optional includeDatapoints=false returns complete received context with datapoints:[] and skips datapoint reconstruction; omitted/null defaults to true.", 4},
-		{"getMetricView", "MetricView", "UI view: Read Metric charts, statistics, and sparklines.", "Returns SQL-computed chart data: Metric metadata, series, statistics, sparklines, histogram/time buckets and aggregate data. Series attributes are empty with attributesComplete=false; labelPreviews contains bounded distinguishing-column text. Use getMetricSeriesOrder for database-side sorting and getMetricSeries for complete received context. Not an exact retained datapoint export; chart calculations can use floating-point display values. See docs/metric-charts.md for bucket/aggregation formulas and precision. Received numeric payload fields retain exact decimal/typed wire encoding. Optional bucket counts control resolution; 0 uses store defaults. seriesRefs narrows series; selectedSeriesRefs controls aggregate selection; datapointSeriesRefs/Limit bounds datapoint payloads. tzOffsetNs is signed nanoseconds; tzName is the timezone name.", 3},
-		{"getMetricAggregateView", "MetricAggregateView", "UI view: Read the combined chart across Metric series.", "Returns only the SQL-computed cross-series aggregate chart envelope. Shares metric/window/resolution parameters with getMetricView but has no sparkline/datapoint parameters. selectedSeriesRefs chooses aggregate membership. Not received OTel data; see docs/metric-charts.md for formulas, units and precision.", 3},
-		{"getMetricSeriesOrder", "StringList", "Get series references sorted by an attribute.", "Returns database-local series references ordered by the exact literal attribute key. Metric ownership, inclusive timestamp bounds and the explicit series cohort are applied before comparison-key preparation and sorting. Only series with points in that window are returned, once each. Empty cohorts return []. Numbers precede nonnumeric values in both directions; integer/double comparisons are exact, with NaN after +Infinity in ascending order. Remaining comparisons use English natural text and typed signatures. Equal values use ascending series-ID ties in both directions. Missing attributes remain distinct from empty values. No attribute values or datapoints are transferred. Reject an incomplete cohort as stale.", 6},
-		{"clearTraces", "String", "Delete all retained traces and their spans.", "Deletes all retained traces/spans and sweeps unused shared dictionary rows. Destructive operation.", 0},
-		{"clearLogs", "String", "Delete all retained logs.", "Deletes all retained logs and sweeps unused shared dictionary rows. Destructive operation.", 0},
-		{"clearMetrics", "String", "Delete all retained Metrics.", "Deletes all retained Metrics and sweeps unused shared dictionary rows. Destructive operation.", 0},
-		{"deleteMetric", "String", "Delete one Metric and its dependent records.", "Deletes one database-local Metric and dependent rows. Destructive operation.", 1},
-		{"deleteSpansByTraceID", "DeleteResult", "Delete all spans in the specified traces.", "Deletes spans for one or more received trace IDs. Variadic positional params: [id1,id2,...], NOT [[id1,id2]]. Nonempty named params are rejected. The documented traceID slot repeats for every supplied ID. count is the number of supplied IDs, not deleted spans. Destructive operation.", 1},
-		{"deleteLogsByRefs", "DeleteResult", "Delete the logs identified by the supplied logRef values.", "Deletes logs by database-local references. Variadic positional params: [ref1,ref2,...], NOT [[ref1,ref2]]. Nonempty named params are rejected. The documented logRef slot repeats. count is supplied references, not deleted rows. Destructive operation.", 1},
-		{"getTraceAttributeDefinitions", "AttributeDefinitions", "List attribute keys, types, and scopes available to trace filters.", "Returns attribute key/type/scope definitions used by trace filters. No time bounds.", 0},
-		{"getLogAttributeDefinitions", "AttributeDefinitions", "List attribute keys, types, and scopes available to log filters.", "Returns attribute key/type/scope definitions used by log filters. No time bounds.", 0},
-		{"getMetricAttributeDefinitions", "AttributeDefinitions", "List attribute keys, types, and scopes available to Metric filters.", "Returns attribute key/type/scope definitions used by Metric filters. No time bounds.", 0},
-		{"getTraceAttributeDefinitionsByTraceID", "AttributeDefinitions", "List filter attributes for one trace.", "Returns attribute definitions for one received trace ID.", 1},
-		{"getFieldValueCompletions", "StringList", "Suggest text completions for a search field.", "Returns distinct text completion values from an allowlisted signal field. signal is traces/logs/metrics. term is a case-insensitive literal substring; empty matches all values. limit is clamped to 1..500; unknown signal returns -32602 and unsupported field returns -32007. Values are display/search text, not typed received attributes.", 4},
+		{"getLogErrorNavigation", "LogErrorNavigation", "Find the previous or next error in a log search.", "Filters, sort and limit apply before navigation. Errors have severityNumber >= 17. Targets use zero-based result offsets. index is the selected error’s one-based position, or null for a missing or non-error selection. Navigation does not wrap. For a missing selection, previous is null and next points to the first error, if any. Counts and targets come from the same read.", 2},
+		{"getTraceLogSummaries", "LogSummaries", "Find logs carrying a given trace ID.", "Includes logs with no spanID.", 1},
+		{"getLog", "Log", "Read the full typed body and context for one logRef.", "timestamp and observedTimestamp are separate received times in unsigned decimal Unix nanoseconds. Missing trace and span IDs are null. The log includes its resource, scope, schema URLs, typed body and typed attributes.", 1},
+		{"searchMetricSummaries", "MetricSummaries", "Find matching Metrics and their metricRef values.", "Counts: seriesCount and dataPointCount cover the search window. seriesCardinality covers all retained datapoints. There is no truncation flag.\n\nValues: lastSeen is the latest datapoint timestamp in the window, in decimal Unix nanoseconds. lastValue is the latest scalar for display and can round int64 to double. aggregationTemporalityCode is received. Its label is computed.\n\nUse getMetric for metadata and series references. Use getMetricSeries for exact datapoints.", 2},
+		{"getMetric", "Metric", "Read a Metric descriptor and find its series references.", "The catalogue uses database-local series references. Metadata and attributes retain their types. datapointCount is an exact decimal string. firstDatapointTimestamp and lastDatapointTimestamp are the earliest and latest received timestamps, or null for an empty series.\n\nTemporality and isMonotonic appear only for applicable Metric kinds. Unknown signed temporality codes retain their received values.", 1},
+		{"getMetricSeries", "MetricSeries", "Read exact datapoints and exemplars for one Metric series.", "Each datapoint includes its own exemplars and typed attributes. An empty window returns datapoints: [].\n\n- Decimal strings: timestamps, startTime, signed intValue and unsigned count, bucketCounts and zeroCount.\n- Doubles: JSON numbers except for negative zero and non-finite values, which use IEEE-754 bit strings.\n- Missing values: the inactive intValue or doubleValue is null. Absent histogram sum, min and max are omitted.", 4},
+		{"getMetricView", "MetricView", "UI view: Read Metric charts, statistics, and sparklines.", "Chart calculations can use floating point. Received numeric fields keep their exact encoding. See docs/metric-charts.md for bucket and aggregation formulas, units and precision.\n\nSeries have empty attributes and attributesComplete=false. labelPreviews contains short display labels. Use getMetricSeriesOrder to sort series by attribute. Use getMetricSeries for full attributes and exact datapoints.", 3},
+		{"getMetricAggregateView", "MetricAggregateView", "UI view: Read the combined chart across Metric series.", "Returns only the computed aggregate chart. Use getMetricView for per-series data. See docs/metric-charts.md for formulas, units and precision.", 3},
+		{"getMetricSeriesOrder", "StringList", "Get series references sorted by an attribute.", "Returns each requested series once if it belongs to the Metric and has datapoints in the window. Treat an incomplete list as stale.\n\nSort order:\n- Numbers precede other values in both directions. Integer and double comparisons are exact. In ascending order, NaN follows +Infinity.\n- Other values use English natural text order and typed signatures. A missing attribute differs from an empty value.\n- Ties use ascending series ID in both directions.", 6},
+		{"clearTraces", "String", "Delete all retained traces and their spans.", "Also removes unused shared dictionary entries.", 0},
+		{"clearLogs", "String", "Delete all retained logs.", "Also removes unused shared dictionary entries.", 0},
+		{"clearMetrics", "String", "Delete all retained Metrics.", "Also removes unused shared dictionary entries.", 0},
+		{"deleteMetric", "String", "Delete one Metric and its dependent records.", "On success, returns the text 'Metric deleted successfully'.", 1},
+		{"deleteSpansByTraceID", "DeleteResult", "Delete all spans in the specified traces.", "Variadic positional parameters: pass one trace ID per position, as [id1, id2]. Named parameters and nested arrays are invalid. count measures supplied IDs, not deleted spans.", 1},
+		{"deleteLogsByRefs", "DeleteResult", "Delete the logs identified by the supplied logRef values.", "Variadic positional parameters: pass one log reference per position, as [ref1, ref2]. Named parameters and nested arrays are invalid. count measures supplied references, not deleted logs.", 1},
+		{"getTraceAttributeDefinitions", "AttributeDefinitions", "List attribute keys, types, and scopes available to trace filters.", "Includes all retained times.", 0},
+		{"getLogAttributeDefinitions", "AttributeDefinitions", "List attribute keys, types, and scopes available to log filters.", "Includes all retained times.", 0},
+		{"getMetricAttributeDefinitions", "AttributeDefinitions", "List attribute keys, types, and scopes available to Metric filters.", "Includes all retained times.", 0},
+		{"getTraceAttributeDefinitionsByTraceID", "AttributeDefinitions", "List filter attributes for one trace.", "Use getTraceAttributeDefinitions for attributes across all retained traces.", 1},
+		{"getFieldValueCompletions", "StringList", "Suggest text completions for a search field.", "Returns distinct display strings. An unknown signal returns -32602. An unsupported field returns -32007.", 4},
 		{"searchAttributeMatches", "AttributeMatches", "Find attribute keys or sample typed values at a selected path, without time bounds.", "Search by key name first. Supply owner and path to search values and receive typed samples. Without a path, sampleValues is empty.", 1},
-		{"getStats", "Stats", "Check retained record counts, storage use, and ingestion rejections.", "Returns computed signal counts, source recency, storage byte size/retention cap and ingestion rejections. Counts are retained records, not request volume. traces.lastReceived = max(start_time); logs.lastReceived = max(nonzero timestamp), falling back to max(observed_timestamp) only when no nonzero timestamp exists; metrics.lastReceived = max(datapoint timestamp). These are nullable decimal Unix nanoseconds, not wall-clock arrival times. maxSizeBytes=0 disables retention.", 0},
-		{"getTraceSpanCount", "Integer", "Count stored spans in one trace.", "Returns computed retained span count for a received trace ID as a JSON integer token. A trace with no spans has count 0.", 1},
-		{"getServiceCount", "Integer", "Count distinct services across the database.", "Returns the database-wide distinct typed service identity count across retained spans, logs and metric points. No parameters. Missing namespace is equivalent to an empty string; missing service name remains distinct. Returns only an integer, without constructing or paging service summaries.", 0},
+		{"getStats", "Stats", "Check retained record counts, storage use, and ingestion rejections.", "Counts measure retained records. maxSizeBytes=0 disables the retention cap.\n\nlastReceived uses source timestamps in decimal Unix nanoseconds, or null. It does not measure arrival time:\n- Traces: latest span start.\n- Logs: latest nonzero timestamp. Uses the latest observed timestamp only if all timestamps are zero.\n- Metrics: latest datapoint timestamp.", 0},
+		{"getTraceSpanCount", "Integer", "Count stored spans in one trace.", "Returns 0 if the trace has no stored spans.", 1},
+		{"getServiceCount", "Integer", "Count distinct services across the database.", "Counts typed service identities across retained spans, logs and Metric datapoints. A missing namespace counts as an empty namespace. A missing service name stays distinct.", 0},
 		{"getServiceLabels", "ServiceLabels", "Resolve a service reference to its full name and namespace.", "Pass the serviceIdentity from a service summary as serviceRef to get unabridged labels.", 1},
 	}
 	methods := make([]rpcMethodDescription, 0, len(specs))
 	for _, spec := range specs {
 		method := rpcMethodDescription{Name: spec.name, Summary: spec.summary, Description: spec.description, ParamStructure: "either", Params: []rpcDescriptor{}, Result: rpcDescriptor{Name: "result", Required: true, Schema: rpcSchemaRef(spec.result)}}
+		if spec.name == "getSpan" || spec.name == "getTraceView" {
+			method.Result.Description = "link.summary.target contains the stored target’s name and serviceName, or null if the traceID and spanID pair is missing. OTLP export excludes this computed summary."
+		}
 		if spec.name == "rpc.discover" {
 			method.Result.Schema = map[string]any{"$ref": openRPCMetaSchema}
 		} else if spec.name != "getImportConfig" {
@@ -235,7 +238,7 @@ func openRPCDocument() map[string]any {
 				schema = map[string]any{"type": "string", "pattern": "^[0-9a-fA-F]{16}$"}
 			case "startTime", "endTime":
 				schema = rpcSchemaRef("TimeBound")
-				description = "Required positional slot; null means unbounded. Named omission becomes null when a later named argument supplies the positional gap. Trailing omissions can still fail the method's minimum parameter count."
+				description = "Pass null for no bound."
 			case "query":
 				schema = rpcSchemaRef("SearchQuery")
 			case "sort":
@@ -245,44 +248,70 @@ func openRPCDocument() map[string]any {
 				}
 			case "pageSize":
 				schema = rpcSchemaRef("IntInput")
-				description = "Whole number from 1 through 250; omitted/null defaults to 100."
+				description = "Rows per page: 1 through 250. Omit or pass null for 100."
 			case "offset":
 				schema = rpcSchemaRef("IntInput")
-				description = "Number of matches to skip, at least 0. Omitted or null defaults to 0. At or beyond total, logs is empty and total is unchanged."
+				description = "Number of matches to skip. Minimum: 0. Omit or pass null for 0. At or beyond total, logs is empty and total stays the same."
 			case "columns":
 				schema = rpcArray(rpcSchemaRef("LogColumn"))
-				description = "Select each source/kind/key once. Each returned row includes columnValues in request order. Omit columns or pass [] for summaries alone. Attribute keys may be empty. Log fields: timeUnixNano, observedTimeUnixNano, severityText, severityNumber, traceId, spanId, eventName, body, flags, droppedAttributesCount. Resource fields: schemaUrl, droppedAttributesCount. Scope fields: name, version, schemaUrl, droppedAttributesCount."
+				description = "Select each source/kind/key once. columnValues follows request order. Omit columns or pass [] for summaries alone. Attribute keys may be empty.\n\nAllowed fields by source:\n- log: timeUnixNano, observedTimeUnixNano, severityText, severityNumber, traceId, spanId, eventName, body, flags, droppedAttributesCount.\n- resource: schemaUrl, droppedAttributesCount.\n- scope: name, version, schemaUrl, droppedAttributesCount."
 			case "limit":
 				schema = rpcSchemaRef("IntInput")
-				description = "Positive int64 whole number; omitted/null search limit is unbounded."
+				description = "Positive int64. Omit or pass null for no limit."
 				if spec.name == "query" {
 					schema = map[string]any{"type": "integer", "minimum": 0, "maximum": json.Number("18446744073709551615"), "default": 25}
-					description = "Unsigned uint64 JSON number only, not a string or null; default 25."
+					description = "Maximum rows. Default: 25. Use a uint64 JSON number. Zero returns no rows. Strings and null are invalid."
 				} else if spec.name == "searchLogPage" {
-					description = "Cap the matching rows and total before paging. Use a positive int64; omitted or null leaves the result uncapped."
+					description = "Maximum matches before paging. Also caps total. Use a positive int64. Omit or pass null for no limit."
 				} else if spec.name == "getSpan" {
-					description = "Default 25 when omitted/null; 1 through 9223372036854775806. Bounds ambiguity summaries only."
+					description = "Maximum summaries for an ambiguous span ID: 1 through 9223372036854775806. Omit or pass null for 25."
 				} else if spec.name == "getFieldValueCompletions" {
-					description = "Signed int64 whole number, clamped to 1..500. Required and non-null."
+					description = "Signed int64. Values below 1 use 1. Values above 500 use 500. Null is invalid."
 				}
 			case "targetBuckets", "viewBuckets", "sparklineBuckets", "datapointSeriesLimit", "tzOffsetNs":
 				schema = rpcSchemaRef("IntInput")
-				description = "Omitted/null becomes 0. Must be non-negative except tzOffsetNs, which is signed nanoseconds."
+				switch name {
+				case "targetBuckets":
+					description = "Number of time buckets for datapoint reduction. Omit, pass null or use 0 for no reduction."
+				case "viewBuckets":
+					description = "Number of time buckets for chart calculations. Minimum: 0. Omit or pass null for 0."
+				case "sparklineBuckets":
+					description = "Number of buckets per sparkline. Omit, pass null or use 0 to skip sparklines."
+				case "datapointSeriesLimit":
+					description = "Maximum series that include datapoints, in response order. Omit, pass null or use 0 for no cap."
+				case "tzOffsetNs":
+					description = "Time zone offset in signed nanoseconds. Omit or pass null for 0."
+				}
+			case "tzName":
+				description = "Time zone name for chart calculations."
 			case "seriesRefs", "selectedSeriesRefs", "datapointSeriesRefs":
 				schema = rpcArray(text)
-				description = "Database-local series references. Omitted/null uses store defaults."
-				if spec.name == "getMetricSeriesOrder" {
-					description = "Required explicit cohort of database-local UUID references; null is invalid. Empty returns no rows."
+				switch {
+				case spec.name == "getMetricSeriesOrder":
+					description = "List the database-local series references to sort. An empty list returns []. Null is invalid."
+				case name == "selectedSeriesRefs":
+					description = "Series to combine in the selected aggregate. Omit or pass null for no selection."
+				case name == "datapointSeriesRefs":
+					description = "Series whose datapoints to return. An empty list returns no datapoints. Omit or pass null to use datapointSeriesLimit. Other series keep their statistics and chart summaries."
+				default:
+					description = "Series to include. Omit or pass null for all series. An empty list selects none."
 				}
+			case "key":
+				description = "Exact attribute key to sort by."
 			case "direction":
 				schema = map[string]any{"type": "string", "enum": []string{"asc", "desc"}}
 			case "quantiles":
 				schema = rpcArray(map[string]any{"type": "number", "minimum": 0, "maximum": 1})
 			case "includeDatapoints":
 				schema = map[string]any{"type": []string{"boolean", "null"}, "default": true}
+				description = "Pass false for full series context with datapoints: []. Omit or pass null to include datapoints."
+			case "term":
+				if spec.name == "getFieldValueCompletions" {
+					description = "Case-insensitive literal substring. An empty string matches all values."
+				}
 			case "spanIDs":
 				schema = map[string]any{"type": "array", "minItems": 1, "maxItems": 256, "items": map[string]any{"type": "string", "pattern": "^[0-9a-fA-F]{16}$"}}
-				description = "Optional exact span selection within this trace. Returns only these stored spans, with depth compressed through available ancestry. Received parentSpanID is unchanged. Attributes, events, links, resources and scopes are enriched only for the selected spans. Omitted or null returns the whole trace; an empty list is invalid."
+				description = "Return only the selected stored spans and their attributes, events, links, resources and scopes. Depth uses available ancestors. parentSpanID keeps its received value. Omit or pass null for the whole trace. An empty list is invalid."
 			case "signal":
 				schema = map[string]any{"enum": []string{"traces", "logs", "metrics"}}
 			case "owner":
@@ -295,7 +324,7 @@ func openRPCDocument() map[string]any {
 				schema = map[string]any{"enum": []string{"name", "eventName", "unit"}}
 				description = "Allowed pairs: traces/name, logs/eventName, metrics/name or metrics/unit."
 			case "sql":
-				description = "One read-only SQL statement. Discover tables with SHOW TABLES and columns with DESCRIBE <table>."
+				description = "One read-only select or supported inspection statement. Use show tables to list tables and describe <table> to list columns."
 			}
 			if i >= spec.required && spec.name != "query" && name != "query" && name != "sort" {
 				schema = map[string]any{"anyOf": []any{schema, map[string]any{"type": "null"}}}
@@ -325,7 +354,7 @@ func openRPCDocument() map[string]any {
 	}
 	return map[string]any{
 		"openrpc": "1.3.2", "$schema": openRPCMetaSchema,
-		"info":    map[string]any{"title": "OTel Desktop Viewer JSON-RPC", "version": "1.0.0", "description": "POST JSON-RPC 2.0 requests to /rpc. Named params and positional params share validation; unknown named keys fail. Required flags describe positional slots. Named interior gaps become null, including nullable time bounds; trailing omissions can still fail minimum arity. null time bounds are unbounded, not zero. Schemas describe values; descriptions also explain lexical and store-specific validation. Standard errors: -32700 parse error, -32600 invalid request, -32601 unknown method, -32602 invalid params, -32603 internal error. HTTP RPC responses use application/json and preserve the request id. Methods ending in View return UI-shaped data intended for rendering in the viewer. Wire values are JSON, not devalue; see each method's description before treating display projections as received OTel data."},
+		"info":    map[string]any{"title": "OTel Desktop Viewer JSON-RPC", "version": "1.0.0", "description": "POST JSON-RPC 2.0 requests to /rpc. Responses use application/json and preserve the request id.\n\nParameters: required marks positional slots. With named parameters, skipped slots before the last supplied parameter become null. Required trailing slots must still be supplied. Unknown names are invalid.\n\nStandard errors: -32700 parse error, -32600 invalid request, -32601 unknown method, -32602 invalid params, -32603 internal error.\n\nMethods ending in View return UI-shaped data intended for rendering in the viewer."},
 		"servers": []map[string]any{{"name": "viewer", "url": "/rpc"}},
 		"methods": methods, "components": map[string]any{"schemas": schemas},
 	}
@@ -342,14 +371,14 @@ func rpcDiscoveryOptions() map[string]any {
 		return s
 	}
 	return map[string]any{
-		"description": "For paged searches, startTime and endTime are inclusive unsigned decimal nanoseconds or null. Filter by exact serviceName or namespace (empty differs from omitted), or by serviceIdentity. term matches a literal substring without case sensitivity. queries accepts a predicate per signal: null selects all in the window; false selects none. Filters apply before pagination. offset defaults to 0 (maximum 1000000000). Unless specified below, limit defaults to 100 (1–500); rows contain one entry each and truncated indicates more rows.",
+		"description": "Filters apply before paging:\n- Time: startTime and endTime are inclusive unsigned decimal Unix nanoseconds. Pass null for no bound.\n- Service: match serviceName or namespace exactly, or pass serviceIdentity. An empty string differs from omission.\n- Search: term matches a literal substring without regard to case. In queries, each signal takes a predicate: null selects all in the window, false selects none.\n\nPaging: offset defaults to 0 (maximum 1000000000). For row results, limit defaults to 100 (1–500). Each row contains one entry. truncated indicates more results.",
 		"oneOf": []any{
 			mode("services", "List services grouped by typed namespace and name; absent and empty-string namespaces group together. Each row includes the database-local serviceIdentity. With queries, totals count matching services, traces, Metrics and logs across all pages."),
 			mode("connections", "List incoming and outgoing connections with source, target, spanCount, traceCount and errorSpanCount. Both parent and child spans must match in the same trace and time window.", "serviceIdentity"),
 			mode("connection-spans", "List the child spans from serviceIdentity to targetIdentity, including traceID, spanID, name, startTime, endTime and statusCode.", "serviceIdentity", "targetIdentity"),
 			mode("keys", "List attribute keys and types on the selected owner. Use traces, logs or metrics as the signal and an owner supported by that signal.", "signal", "ownerType"),
 			mode("values", "Count distinct records per typed attribute value on the selected owner. The denominator counts records carrying the key before pagination. An empty key is valid.", "signal", "ownerType", "key"),
-			mode("home-values", "Count values for one owner and key across signals. Returns display previews, valueRef, counts by signal, denominators and total. Filter by valueKind; sort by name or frequency with sortBy, sortDirection and locale. limit defaults to 25 (0–100); 0 requests counts only. If truncated, advance offset by the number of returned values.", "ownerType", "key"),
+			mode("home-values", "Count values for one owner and key across signals. Returns previews, valueRef, counts by signal, denominators and total.\n\n- Filter: valueKind.\n- Sort: use sortBy for name or frequency, sortDirection for direction and locale for collation.\n- Page: limit defaults to 25 (0–100). Use 0 for counts only. If truncated, increase offset by the number of returned values.", "ownerType", "key"),
 			mode("home-value", "Read the exact identity string for a valueRef returned by home-values. References belong to this viewer and database. Repeat home-values if a reference expires or the viewer restarts.", "valueRef"),
 		},
 	}
