@@ -262,6 +262,10 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"query", []any{"select 9007199254740993::bigint as exact"}},
 		{"searchTraceSummaries", []any{nil, nil}},
 		{"searchLogSummaries", []any{nil, nil}},
+		{"searchLogPage", []any{nil, nil, nil, nil, nil, 1, 0, []any{
+			map[string]string{"source": "log", "kind": "field", "key": "timeUnixNano"},
+			map[string]string{"source": "log", "kind": "attribute", "key": "missing.attribute"},
+		}}},
 		{"searchMetricSummaries", []any{nil, nil}},
 		{"getTraceLogSummaries", []any{testTraceIDHex}},
 		{"getLog", []any{logRef}},
@@ -296,6 +300,13 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 			require.NoError(t, decodeParams(encoded, &value))
 			if tc.method == "searchAttributeMatches" {
 				require.NotEmpty(t, value)
+			}
+			if tc.method == "searchLogPage" {
+				page := value.(map[string]any)["logs"].([]any)
+				require.Len(t, page, 1)
+				columns := page[0].(map[string]any)["columnValues"].([]any)
+				require.Len(t, columns, 2)
+				require.Equal(t, false, columns[1].(map[string]any)["present"])
 			}
 			for _, method := range document["methods"].([]rpcMethodDescription) {
 				if method.Name == tc.method {

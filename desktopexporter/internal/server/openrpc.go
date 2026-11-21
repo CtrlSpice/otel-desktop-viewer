@@ -94,7 +94,11 @@ func openRPCDocument() map[string]any {
 		}, "traceID", "hasRootSpan", "rootSpan", "startTime", "durationNs", "spanCount", "errorCount")),
 		"LogSummaries": rpcArray(rpcObject(map[string]any{"logRef": text, "timestamp": decimal, "severityText": text, "severityNumber": integer,
 			"serviceName": text, "bodyPreview": text, "bodyType": text, "spanID": nullableText, "eventName": text,
-			"columnValues": rpcArray(rpcObject(map[string]any{"source": text, "kind": text, "key": text, "values": rpcArray(rpcSchemaRef("Value"))}, "source", "kind", "key", "values")),
+			"columnValues": rpcArray(rpcObject(map[string]any{
+				"source": text, "kind": text, "key": text, "valueType": text,
+				"present": map[string]any{"type": "boolean", "description": "False for a missing value; true for a received empty value."},
+				"preview": map[string]any{"type": "string", "description": "Display text. Timestamp fields use decimal Unix nanoseconds; trace and span IDs use hex."},
+			}, "source", "kind", "key", "present", "valueType", "preview")),
 		}, "logRef", "timestamp", "severityText", "severityNumber", "serviceName", "bodyPreview")),
 		"LogPage": rpcObject(map[string]any{"logs": rpcSchemaRef("LogSummaries"), "total": integer}, "logs", "total"),
 		"LogColumn": rpcObject(map[string]any{
@@ -169,7 +173,7 @@ func openRPCDocument() map[string]any {
 		{"getTraceOverview", "TraceOverview", "List a trace’s spans and log previews.", "Returns compact spans and trace-linked log previews. trace.startTime = minimum received span start; durationNs = maximum end-minimum start. startOffsetNs = span start-trace start; span durationNs = end-start. All are exact decimal nanoseconds. spanCount/logCount count retained records. logs.body is a display preview, not the received typed body; severity uses received text or a computed number-range label. Use getSpan/getLog for full data.", 1},
 		{"getSpan", "SpanResult", "Read a span, its events, links, and matching logs by trace ID and span ID.", "Use traceID and spanID together to look up a span. If the trace ID is unknown, supply only the 16-hex spanID. status=found has traceID, span and logs; status=notFound has spanID and nullable traceID; status=ambiguous has spanID, matchCount, summaries and truncated. Without traceID, repeated span IDs across traces are ambiguous, never silently selected. limit defaults to 25 and bounds ambiguity summaries only. Full span startTime/endTime use exact decimal Unix nanoseconds; associated logs preserve typed bodies. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export.", 1},
 		{"searchLogSummaries", "LogSummaries", "Find matching logs and their logRef values.", "Returns logRef, timestamp, severityText/Number, serviceName and bodyPreview. timestamp is received timestamp unless zero, then observedTimestamp; exact unsigned decimal Unix nanoseconds. bodyPreview is computed display text, not the complete typed body. No truncation flag; omitted/null limit is unbounded.", 2},
-		{"searchLogPage", "LogPage", "Read a page of matching logs and the total match count.", "Returns one bounded page of LogSummaries and total matching logs, computed in the same database statement. Time/query and sort apply before pagination; ties sort by logRef ascending. Optional limit caps the full result and total before pageSize/offset. Default pageSize is 100 (1..250); offset defaults to 0. Optional columns project received fields/attributes only for page rows. Each row's columnValues echoes source/kind/key in request order with typed values; [] means absent, distinct from a received empty value. Attribute occurrences retain owner-array order. Timestamp field values are unsigned decimal strings; IDs are hex strings. Omitted/empty columns leave summaries unchanged. An offset past the result returns logs:[] with total intact. Each request reads current retained data; this is not a cross-request snapshot.", 2},
+		{"searchLogPage", "LogPage", "Read a page of matching logs and the total match count.", "The page and total come from the same read. Later requests can see newly received or deleted logs.", 2},
 		{"getLogErrorNavigation", "LogErrorNavigation", "Find the previous or next error in a log search.", "Returns the count and neighbouring error logs (severityNumber >= 17) across the full time/query/sort result, capped by optional limit before navigation. Each target has logRef and zero-based result offset. index is the selected error's one-based position, or null for a missing/non-error selection. Previous/next do not wrap; a missing selection has no previous target and next points to the first error. Counts and targets come from one database statement.", 2},
 		{"getTraceLogSummaries", "LogSummaries", "Find logs carrying a given trace ID.", "Returns log summaries carrying the received trace ID, including eventName and nullable spanID. Effective timestamp uses observedTimestamp when received timestamp is zero. bodyPreview is display text.", 1},
 		{"getLog", "Log", "Read the full typed body and context for one logRef.", "Returns one complete normalized log. logRef is a generated database-local ID, not an OTel log ID. timestamp/observedTimestamp are separate received uint64 Unix nanoseconds as decimal strings. Absent trace/span IDs are null. body and attributes retain recursive tagged values. Resource/Scope and schema URLs remain associated with this log.", 1},
@@ -236,21 +240,26 @@ func openRPCDocument() map[string]any {
 				schema = rpcSchemaRef("SearchQuery")
 			case "sort":
 				schema = rpcSchemaRef("Sort")
+				if spec.name == "searchLogPage" {
+					description = "Sort matches before paging. Ties use logRef in ascending order."
+				}
 			case "pageSize":
 				schema = rpcSchemaRef("IntInput")
 				description = "Whole number from 1 through 250; omitted/null defaults to 100."
 			case "offset":
 				schema = rpcSchemaRef("IntInput")
-				description = "Non-negative whole number of matching rows to skip; omitted/null defaults to 0."
+				description = "Number of matches to skip, at least 0. Omitted or null defaults to 0. At or beyond total, logs is empty and total is unchanged."
 			case "columns":
 				schema = rpcArray(rpcSchemaRef("LogColumn"))
-				description = "Unique source/kind/key selections. Attributes accept exact keys, including empty keys. Log fields: timeUnixNano, observedTimeUnixNano, severityText, severityNumber, traceId, spanId, eventName, body, flags, droppedAttributesCount. Resource fields: schemaUrl, droppedAttributesCount. Scope fields: name, version, schemaUrl, droppedAttributesCount. Field and attribute identities are distinct."
+				description = "Select each source/kind/key once. Each returned row includes columnValues in request order. Omit columns or pass [] for summaries alone. Attribute keys may be empty. Log fields: timeUnixNano, observedTimeUnixNano, severityText, severityNumber, traceId, spanId, eventName, body, flags, droppedAttributesCount. Resource fields: schemaUrl, droppedAttributesCount. Scope fields: name, version, schemaUrl, droppedAttributesCount."
 			case "limit":
 				schema = rpcSchemaRef("IntInput")
 				description = "Positive int64 whole number; omitted/null search limit is unbounded."
 				if spec.name == "query" {
 					schema = map[string]any{"type": "integer", "minimum": 0, "maximum": json.Number("18446744073709551615"), "default": 25}
 					description = "Unsigned uint64 JSON number only, not a string or null; default 25."
+				} else if spec.name == "searchLogPage" {
+					description = "Cap the matching rows and total before paging. Use a positive int64; omitted or null leaves the result uncapped."
 				} else if spec.name == "getSpan" {
 					description = "Default 25 when omitted/null; 1 through 9223372036854775806. Bounds ambiguity summaries only."
 				} else if spec.name == "getFieldValueCompletions" {
