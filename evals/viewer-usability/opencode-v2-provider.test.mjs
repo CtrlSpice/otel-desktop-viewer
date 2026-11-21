@@ -5,6 +5,7 @@ import path from 'node:path'
 import http from 'node:http'
 import { once } from 'node:events'
 import OpenCodeV2Provider, { withSharedHost } from './opencode-v2-provider.mjs'
+import { hostApi } from './opencode-v2-connect.mjs'
 import { TEMPORARY } from './runtime.ts'
 import { afterEach as executionStop, onFailure } from './opencode-v2-execution-stop.mjs'
 
@@ -17,6 +18,24 @@ function fixture(t) {
   fs.mkdirSync(registry)
   return { root, binary, registry }
 }
+
+test('shared host accepts interrupt and wait after cancelling ordinary requests', { timeout: 5000 }, async t => {
+  const controller = new AbortController(), received = []
+  const server = http.createServer((req, res) => {
+    received.push(req.url)
+    if (req.url === '/api/info') controller.abort(new Error('run cancelled'))
+    else res.writeHead(204).end()
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const api = hostApi('http://127.0.0.1:' + server.address().port, {}, controller.signal)
+  await assert.rejects(api('/api/info'), /run cancelled/)
+  await assert.rejects(api('/api/plugin'), /run cancelled/)
+  for (const route of ['/api/session/ses_fixture/interrupt', '/api/experimental/session/ses_fixture/wait'])
+    await api(route, 'POST', undefined, undefined, AbortSignal.timeout(2000))
+  assert.deepEqual(received, ['/api/info', '/api/session/ses_fixture/interrupt', '/api/experimental/session/ses_fixture/wait'])
+})
 
 for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 'timeout-provider-error',
   'timeout-mixed-errors', 'timeout-unknown-abort', 'cancellation', 'host-cancellation', 'nondeadline-abort', 'shutdown-failure']) {
@@ -100,7 +119,7 @@ for (const outcome of ['success', 'error', 'timeout', 'timeout-expected-abort', 
     if (outcome === 'shutdown-failure') await assert.rejects(attempt, /Harness binary teardown failed/)
     else {
       const response = await attempt
-      assert.equal(response.metadata.skillFetched, outcome === 'success' ? 'yes' : outcome.startsWith('timeout') || outcome === 'nondeadline-abort' ? 'no' : 'unknown')
+      assert.equal(response.metadata.skillFetched, outcome === 'success' ? 'yes' : outcome.startsWith('timeout') || ['error','nondeadline-abort'].includes(outcome) ? 'no' : 'unknown')
       assert.equal(JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'response.json'))).metadata.skillFetched, response.metadata.skillFetched)
       if (outcome === 'success') assert.equal(response.output, 'fixture answer')
       else assert.ok(response.error)
@@ -149,7 +168,7 @@ test('non-shared V2 preflight errors still remove the owned executable copy', as
   assert.equal(fs.readFileSync(binary, 'utf8'), 'fixture viewer')
 })
 
-for (const fault of ['session-start', 'disk-full', 'cleanup', 'unavailable-fixture', 'missing-policy']) {
+for (const fault of ['session-start', 'prompt-response', 'wait-response', 'prompt-response-and-context', 'disk-full', 'cleanup', 'unavailable-fixture', 'missing-policy', 'context-read', 'export-read']) {
   test(`full benchmark scheduling after ${fault}`, async t => {
     const { root, binary, registry } = fixture(t)
     const controller = new AbortController()
@@ -159,7 +178,7 @@ for (const fault of ['session-start', 'disk-full', 'cleanup', 'unavailable-fixtu
     receiver.listen(0, '127.0.0.1')
     await once(receiver, 'listening')
     t.after(() => { receiver.closeAllConnections(); receiver.close() })
-    let attempted = 0, admitted = false
+    let attempted = 0, admitted = false, interrupted = false, prompts = 0
     const host = { root, registry, signal: controller.signal, telemetry: { receipts: [], async flush() {} },
       async checkPolicy() { if (fault === 'missing-policy') throw Error('isolation unavailable') },
       async api(route) {
@@ -167,11 +186,19 @@ for (const fault of ['session-start', 'disk-full', 'cleanup', 'unavailable-fixtu
           if (fault === 'session-start' && attempted === 1) throw Error('One session refused')
           return { data: { id: 'ses_' + attempted } }
         }
+        if (admitted && ['context-read', 'prompt-response-and-context'].includes(fault) && route.endsWith('/context')) throw Error('lost context response')
+        if (admitted && fault === 'export-read' && route.endsWith('/export')) throw Error('lost session export')
         if (route.endsWith('/context')) return { data: admitted ? [
           { type: 'assistant', model: { providerID: 'openai', id: 'fixture' }, content: [{ type: 'text', text: 'answer' }], finish: 'stop' },
           { type: 'idle', outcome: 'succeeded' },
         ] : [] }
-        if (route.endsWith('/prompt')) admitted = true
+        if (route.endsWith('/prompt')) {
+          admitted = true
+          prompts++
+          if (attempted === 1 && fault.startsWith('prompt-response')) throw Object.assign(Error('lost admission response'), {syscall: 'read', code: 'ECONNRESET'})
+        }
+        if (route.endsWith('/interrupt')) interrupted = true
+        if (route.endsWith('/wait') && attempted === 1 && !interrupted && fault === 'wait-response') throw Object.assign(Error('lost wait response'), {syscall: 'read', code: 'ECONNRESET'})
         if (route.endsWith('/wait') && fault === 'cleanup') throw Error('cannot drain owned session')
         return {}
       } }
@@ -193,13 +220,14 @@ for (const fault of ['session-start', 'disk-full', 'cleanup', 'unavailable-fixtu
       providers: [{ id: () => provider.id(), callApi(prompt, context) {
         attempted++
         admitted = false
+        interrupted = false
         return provider.callApi(prompt, { ...context, traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01` })
       } }], defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture' }],
         options: { provider: { id: () => 'offline-judge', callApi: async () => ({ output: '{"pass":true,"score":1,"reason":"fixture"}' }) } } },
       extensions: ['file://' + path.join(import.meta.dirname, 'opencode-v2-execution-stop.mjs') + ':afterEach'],
       outputPath: rowsFile,
     }, { maxConcurrency: 1, cache: false, share: false, abortSignal: controller.signal }))
-    const recoverable = fault === 'session-start'
+    const recoverable = ['session-start','prompt-response','wait-response'].includes(fault)
     assert.equal(attempted, recoverable ? 2 : 1)
     assert.equal(controller.signal.aborted, !recoverable)
     const receipts = fs.readdirSync(path.join(root, 'runs')).map(name =>
@@ -208,10 +236,24 @@ for (const fault of ['session-start', 'disk-full', 'cleanup', 'unavailable-fixtu
     if (recoverable) {
       const rows = JSON.parse(fs.readFileSync(rowsFile)).results.results
       assert.equal(rows.length, 2)
-      assert.equal(rows.find(row => row.vars.task_id === 'one').response.error, 'One session refused')
+      const first = rows.find(row => row.vars.task_id === 'one').response
+      assert.equal(first.error, { 'session-start': 'One session refused', 'wait-response': 'lost wait response', 'prompt-response': 'lost admission response' }[fault])
+      if (fault !== 'session-start') {
+        assert.equal(first.output, 'answer')
+        assert.equal(fs.readFileSync(path.join(first.metadata.evidence, 'answer.txt'), 'utf8'), 'answer')
+        assert.ok(fs.existsSync(path.join(first.metadata.evidence, 'session-export.json')))
+        assert.equal(prompts, 2, 'Exactly one submission per case')
+      }
       assert.equal(rows.find(row => row.vars.task_id === 'two').success, true)
     } else assert.match(controller.signal.reason.message, {
       'disk-full': /ENOSPC/, cleanup: /teardown failed/, 'unavailable-fixture': /503/, 'missing-policy': /isolation unavailable/,
+      'context-read': /Cannot capture investigator evidence: lost context response/, 'export-read': /Cannot capture investigator evidence: lost session export/,
+      'prompt-response-and-context': /Cannot capture investigator evidence: lost context response/,
     }[fault])
+    if (fault === 'export-read') {
+      const dir = fs.readdirSync(path.join(root, 'runs'))[0]
+      const saved = JSON.parse(fs.readFileSync(path.join(root, 'runs', dir, 'context.json')))
+      assert.equal(saved.data[0].content[0].text, 'answer')
+    }
   })
 }

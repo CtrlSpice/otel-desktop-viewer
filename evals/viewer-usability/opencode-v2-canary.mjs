@@ -5,14 +5,17 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import Provider from './opencode-v2-provider.mjs'
+import Provider, { withSharedHost } from './opencode-v2-provider.mjs'
+import { checkConnections } from './opencode-v2-connect.mjs'
 import { verifyNoRetry } from './opencode-v2-verify.mjs'
 import { nativeTelemetryReceiver, readNativeTelemetry, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 
-if (process.argv.slice(2).some(arg => !['--error', '--telemetry', '--forward-observer'].includes(arg))) throw new Error('Usage: opencode-v2-canary.mjs [--error] [--telemetry [--forward-observer]]')
+const shared = process.argv.includes('--shared-network')
+if (process.argv.slice(2).some(arg => !['--shared-network', '--error', '--telemetry', '--forward-observer'].includes(arg)) || shared && process.argv.length !== 3)
+  throw new Error('Usage: opencode-v2-canary.mjs --shared-network | [--error] [--telemetry [--forward-observer]]')
 if (process.argv.includes('--forward-observer') && !process.argv.includes('--telemetry')) throw new Error('--forward-observer requires --telemetry')
 process.umask(0o077)
-const root = fs.mkdtempSync(path.join(tmpdir(), 'opencode/opencode-v2-canary-'))
+const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'opencode/opencode-v2-canary-')))
 const binary = process.env.OTEL_EVAL_VIEWER_BINARY
 assert.ok(binary && path.isAbsolute(binary), 'Set OTEL_EVAL_VIEWER_BINARY to the prebuilt viewer')
 const protectedFile = path.join(root, 'protected.txt')
@@ -22,6 +25,24 @@ const errorMode = process.argv.includes('--error')
 const telemetry = process.argv.includes('--telemetry') ? await nativeTelemetryReceiver(root, process.argv.includes('--forward-observer') ? 'http://127.0.0.1:56010' : undefined) : undefined
 const traceparent = `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`
 const requests = []
+const destinations = [], hits = [[], []]
+const exportID = '1'.repeat(32)
+const exportBytes = JSON.stringify({resourceSpans: []}) + '\n'
+if (shared) {
+  assert.ok(process.env.OPENCODE_MODELS_PATH, 'Set OPENCODE_MODELS_PATH to the benchmark catalogue')
+  for (const routes of hits) {
+    const listener = http.createServer((req, res) => {
+      routes.push(req.url)
+      res.setHeader('Content-Type', 'application/json')
+      if (req.url === '/export/traces/' + exportID) { res.end(exportBytes); return }
+      res.end(JSON.stringify(req.url === '/rpc' ? { jsonrpc: '2.0', id: 1,
+        result: { columns: [{name: 'n', type: 'INTEGER'}], rows: [[1]], truncated: false } } : {}))
+    })
+    listener.listen(0, '127.0.0.1'); await once(listener, 'listening')
+    destinations.push(listener)
+  }
+}
+const origin = server => `http://127.0.0.1:${server.address().port}`
 const server = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk
   const body = JSON.parse(raw)
@@ -35,14 +56,29 @@ const server = http.createServer(async (req, res) => {
   const read = body.tools?.find(tool => tool.name === 'read')
   assert.ok(!raw.includes(protectedText), 'Protected source content must not reach the model')
   let tool
-  if (requests.length === 1 && shell) {
+  if (shared && requests.length <= 2 && shell) {
+    const endpoint = origin(destinations[requests.length - 1])
+    tool = { name: 'shell', arguments: JSON.stringify({ command: `./bin/otel-desktop-viewer query 'select 1' --endpoint ${endpoint} --json`,
+      description: 'Check shared investigator viewer connection' }) }
+  } else if (shared && requests.length === 3 && shell) {
+    tool = { name: 'shell', arguments: JSON.stringify({ command: `curl --silent ${origin(destinations[0])}/llms.txt`,
+      description: 'Read guidance from the assigned viewer' }) }
+  } else if (shared && requests.length <= 7 && shell) {
+    const [command, description] = [
+      [`./bin/otel-desktop-viewer export trace ${exportID} --endpoint ${origin(destinations[0])} > handoff.json`, 'Save the fixture export'],
+      [`./bin/otel-desktop-viewer skills < '${protectedFile}'`, 'Verify protected input is denied'],
+      [`./bin/otel-desktop-viewer skills > '${protectedFile}'`, 'Verify protected output is denied'],
+      ['./bin/otel-desktop-viewer skills > bin/canary-output', 'Verify the executable directory is read-only'],
+    ][requests.length - 4]
+    tool = { name: 'shell', arguments: JSON.stringify({ command, description }) }
+  } else if (!shared && requests.length === 1 && shell) {
     const attempts = fs.readdirSync(path.join(root, 'runs'))
     assert.equal(attempts.length, 1)
     fs.symlinkSync(protectedFile, path.join(root, 'runs', attempts[0], 'workspace/protected-link'))
     tool = { name: 'shell', arguments: JSON.stringify({ command: './bin/otel-desktop-viewer --help', description: 'Synthetic viewer discovery check' }) }
   }
-  if (requests.length === 2 && read) tool = { name: 'read', arguments: JSON.stringify({ path: protectedFile }) }
-  if (requests.length === 3 && read) tool = { name: 'read', arguments: JSON.stringify({ path: 'protected-link' }) }
+  if (!shared && requests.length === 2 && read) tool = { name: 'read', arguments: JSON.stringify({ path: protectedFile }) }
+  if (!shared && requests.length === 3 && read) tool = { name: 'read', arguments: JSON.stringify({ path: 'protected-link' }) }
   const item = tool
     ? { id: 'fc_fixture_' + requests.length, call_id: 'call_fixture_' + requests.length, type: 'function_call', ...tool, status: 'completed' }
     : { id: 'msg_fixture_' + requests.length, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic V2 complete.', annotations: [] }] }
@@ -70,15 +106,40 @@ const server = http.createServer(async (req, res) => {
 })
 server.listen(0, '127.0.0.1'); await once(server, 'listening')
 try {
-  const provider = new Provider({ config: { root, model: 'gpt-6.1-sol', baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+  const provider = new Provider({ config: { root, model: 'gpt-6.1-sol', baseUrl: origin(server) + '/v1',
+    ...(shared ? { sharedHost: true, fixtureEndpoint: origin(destinations[0]) } : {}),
     binary, timeoutMs: 90000, telemetryEndpoint: telemetry?.endpoint } })
-  const response = await provider.callApi('Synthetic local-only V2 canary. Follow the scripted tool responses and finish.', { vars: { task_id: 'checkout-failure' }, traceparent })
+  const investigate = () => provider.callApi('Synthetic local-only V2 canary. Follow the scripted tool responses and finish.', { vars: { task_id: 'checkout-failure' }, traceparent })
+  const response = shared ? await checkConnections({ root, catalogue: process.env.OPENCODE_MODELS_PATH, runtime: root,
+    refs: [], scriptedModelEndpoint: origin(server) + '/v1', evaluateOnHost: host => withSharedHost(host, investigate) }) : await investigate()
   fs.writeFileSync(path.join(root, 'response.json'), JSON.stringify(response, null, 2))
   console.log(JSON.stringify({ root, error: response.error, toolCalls: response.metadata?.toolCalls, failedToolCalls: response.metadata?.failedToolCalls, requests: requests.length }))
   assert.equal(Object.hasOwn(response, 'cost'), false, 'Cost reporting remains disabled')
   if (errorMode) {
     assert.ok(response.error?.includes('Synthetic V2 error detail must survive intact'))
     assert.equal(requests.length, 1, 'V2 must not retry a failed model request')
+  } else if (shared) {
+    assert.equal(response.error, undefined)
+    const tools = JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'tools.json')))
+    assert.equal(tools.length, 7)
+    assert.equal(tools[0].state.metadata.exit, 0)
+    assert.ok(hits[0].includes('/rpc'))
+    assert.ok(tools[1].state.metadata?.exit > 0)
+    assert.match(tools[1].state.content.map(item => item.text).join(''), /connect: operation not permitted/i)
+    assert.deepEqual(hits[1], [])
+    assert.equal(tools[2].state.metadata.exit, 0)
+    assert.ok(hits[0].includes('/llms.txt'))
+    assert.equal(tools[3].state.metadata.exit, 0)
+    assert.equal(fs.readFileSync(path.join(response.metadata.workspace, 'handoff.json'), 'utf8'), exportBytes)
+    for (const tool of tools.slice(4)) {
+      assert.ok(tool.state.metadata?.exit > 0)
+      assert.match(tool.state.content.map(item => item.text).join(''), /operation not permitted/i)
+    }
+    assert.equal(fs.readFileSync(protectedFile, 'utf8'), protectedText)
+    assert.equal(fs.existsSync(path.join(response.metadata.workspace, 'bin/canary-output')), false)
+    assert.equal(requests.length, 8)
+    const { receipts } = JSON.parse(fs.readFileSync(path.join(root, 'native-otlp/summary.json')))
+    assert.ok(receipts.some(receipt => receipt.route === '/v1/traces' && receipt.status === 200))
   } else {
     assert.equal(response.error, undefined)
     assert.equal(response.output, 'Synthetic V2 complete.')
@@ -94,6 +155,7 @@ try {
     assert.ok(!JSON.stringify(tools).includes(protectedText), 'Protected source content must not reach the model')
   }
 } finally {
+  for (const listener of destinations) { listener.closeAllConnections(); await new Promise(resolve => listener.close(resolve)) }
   server.closeAllConnections()
   await new Promise(resolve => server.close(resolve))
   if (telemetry) {

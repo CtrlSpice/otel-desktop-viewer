@@ -84,11 +84,11 @@ export function evaluationConfig({ suite, root, spec, task, connection, binary, 
     providers: spec.models.map(ref => {
       const [providerID, model] = full ? ref.split('/') : ['openai', ref]
       return { id: 'file://' + path.join(suite, 'opencode-v2-provider.mjs'), label: 'OpenCode V2 ' + ref,
-        config: { root, providerID, model, ...(full ? { sharedHost: true, fixtureEndpoint: connection?.endpoint } : { authFile, authEntry }), binary,
+        config: { root, providerID, model, maxRetries: 0, ...(full ? { sharedHost: true, fixtureEndpoint: connection?.endpoint } : { authFile, authEntry }), binary,
           timeoutMs: 600000, ...(spec.nativeTelemetry ? { telemetryForward: observerHTTP } : {}) } }
     }),
     defaultTest: { vars: { ...connection, binary: './bin/otel-desktop-viewer' },
-      options: { provider: { id: 'file://' + path.join(suite, 'opencode-v2-judge.mjs'), config: { root, authFile: piAuthFile, cliBinary, configDir, telemetryEndpoint: graderHTTP } } },
+      options: { provider: { id: 'file://' + path.join(suite, 'opencode-v2-judge.mjs'), config: { root, maxRetries: 0, authFile: piAuthFile, cliBinary, configDir, telemetryEndpoint: graderHTTP } } },
       assert: [{ type: 'llm-rubric', threshold: 1, rubricPrompt: JSON.stringify([{ role: 'user', content: '{{rubric}}' }]),
         value: 'file://' + path.join(suite, 'opencode-v2-grading-evidence.mjs') }],
     },

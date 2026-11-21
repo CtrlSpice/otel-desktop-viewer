@@ -75,10 +75,13 @@ npm run evaluate --prefix evals/viewer-usability
 
 ## Additional Opus grading of saved GPT answers
 
-`opencode-v2-regrade.mjs` grades the Astra and Sol answers from a completed
-`opencode-v2-evaluate.mjs --run-full` run with Claude Opus 5.5. The preceding
-Pi `npm run evaluate` path is not a supported source. The original OpenCode run
-must finish first. It reads the saved answers,
+`opencode-v2-regrade.mjs` uses Claude Opus 5.5 to grade saved GPT‑6.2 Astra
+and GPT‑6.2 Sol answers from the historical eleven-question OpenCode run
+(three repetitions per question). The current five-question OpenCode benchmark
+grades GPT answers with Opus during the run. Neither that benchmark nor the
+Pi `npm run evaluate` run is a source for this command.
+
+The comparison reads the saved answers,
 tool evidence and rendered rubric; it does not repeat investigations or change
 the original grades. Recorded artifact checks are reused, not executed again.
 Promptfoo parses the new judgments and combines their scores.
@@ -260,3 +263,11 @@ OTEL_EVAL_VIEWER_BINARY=/absolute/path/to/otel-desktop-viewer \
 Add `--error` to check that a failed model request is retained without retrying.
 These checks use fresh private servers and allow outbound network access only
 to their scripted model and telemetry receiver. They require no model credentials.
+
+To check network isolation on the shared host, set `OPENCODE_MODELS_PATH` to
+the benchmark catalogue and run the canary with `--shared-network` instead of
+`--telemetry`. It checks that the investigator can query its assigned viewer
+and fetch its guide, while macOS blocks a CLI connection to a second listener.
+It also saves an export in the investigator’s workspace and checks that the
+shell cannot read or overwrite a protected file or write to the viewer’s
+executable directory. The host continues to call its scripted model and emit traces.

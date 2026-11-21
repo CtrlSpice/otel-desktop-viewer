@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url'
 import ClaudeProvider, { cancelClaudeAttempts } from './claude-provider.ts'
 import { ownedPath } from './evidence.ts'
 import { saveJson } from './runtime.ts'
-import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
 import { nativeTelemetryReceiver } from './opencode-v2-telemetry.mjs'
 import { importOriginal } from './opencode-v2-verify.mjs'
 import { runCancellation } from './run-cancellation.ts'
@@ -15,7 +14,6 @@ export const GPT_MODELS = ['openai/gpt-6.2-astra', 'openai/gpt-6.2-sol']
 export const OPUS_MODEL = 'claude-opus-5-5'
 const sha = value => createHash('sha256').update(value).digest('hex')
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'))
-const here = import.meta.dirname
 
 function externalRoot(directory) {
   assert.ok(path.isAbsolute(directory), 'Use an absolute external run directory')
@@ -75,11 +73,14 @@ export function savedGradingInput(root, sourceID, row) {
   assert.ok(tools.every(tool => tool.sessionID === metadata.sessionID))
   for (const [name, hash] of Object.entries(packet.evidence.sources))
     assert.equal(hashes[path.join(evidence, name)], hash, 'Saved grading evidence changed')
-  const criterion = v2GradingPrompt(packet, response.output)
   const components = row.gradingResult?.componentResults ?? []
   const rubric = components.find(component => component.assertion?.type === 'llm-rubric')
   assert.ok(rubric, 'Original rubric assessment is required before comparison grading')
-  assert.equal(rubric.metadata?.renderedAssertionValue, criterion, 'Use the identical original rubric and evidence')
+  // The export hash authenticates the complete rendered text. Historical
+  // renderers differ in whitespace, so do not regenerate it with current code.
+  const criterion = rubric.metadata?.renderedAssertionValue
+  assert.ok(typeof criterion === 'string' && criterion.endsWith('\n' + JSON.stringify(packet)),
+    'Original rendered criterion must contain the saved evidence packet')
   return { row, hashes, criterion, components, identity }
 }
 
@@ -151,7 +152,7 @@ export function loadCompletedSource(directory) {
   for (const [name, hash] of Object.entries(snapshot.files))
     assert.equal(check(ownedPath(root, path.join(root, 'sources', name))), hash, 'Original source snapshot changed')
   for (const name of ['grade.ts', 'tasks.json', 'rubrics.json'])
-    assert.equal(sha(fs.readFileSync(path.join(here, name))), snapshot.files[name], 'Comparison must use the original grading instructions')
+    assert.ok(Object.hasOwn(snapshot.files, name), 'Missing original grading source: ' + name)
   const selected = selectGPTResponses(source, plan)
   const inputs = selected.map(row => savedGradingInput(root, source.evalId, row))
   for (const input of inputs) Object.assign(hashes, input.hashes)

@@ -68,6 +68,9 @@ export default class PiProvider {
 
   async runAttempt(prompt: string, context: PiContext, evidence: string, register: RegisterShutdown) {
     const { provider, model, role } = this.config
+    // Pi trims stdin. Native JSON grading prompts need no trimming; other
+    // inputs keep their existing argument transport if stdin would change them.
+    const usePromptFile = role === 'grader' && prompt.length > 0 && prompt === prompt.trim()
     const root = fs.realpathSync(this.config.root)
     for (const name of ['home', 'profile', 'workspace', 'sessions', 'tmp'])
       fs.mkdirSync(path.join(evidence, name), { mode: 0o700 })
@@ -127,7 +130,7 @@ export default class PiProvider {
       '--mode', 'json', '--provider', provider, '--model', model, '--thinking', 'low',
       '--session-dir', path.join(evidence, 'sessions'), '--no-context-files', '--no-extensions',
       '--no-mcp', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve',
-      ...(role === 'grader' ? ['--no-tools'] : ['--tools', 'read,bash,edit,write']), '--', prompt]
+      ...(role === 'grader' ? ['--no-tools'] : ['--tools', 'read,bash,edit,write']), ...(usePromptFile ? [] : ['--', prompt])]
     const events: Record<string, unknown>[] = []
     const decoder = new StringDecoder('utf8')
     let pending = '', malformed = false
@@ -145,18 +148,25 @@ export default class PiProvider {
       }
     }
     const started = performance.now()
-    const child = spawn('/usr/bin/sandbox-exec', args, { cwd: workspace, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = (() => {
+      const input = usePromptFile ? fs.openSync(path.join(evidence, 'prompt.txt'), 'r') : undefined
+      try {
+        return spawn('/usr/bin/sandbox-exec', args, { cwd: workspace, env, detached: true, stdio: [input ?? 'ignore', 'pipe', 'pipe'] })
+      } finally {
+        if (input !== undefined) fs.closeSync(input)
+      }
+    })()
     children.add(child)
     register(async () => {
       if (child.pid) await stopOwnedGroup(child.pid, child)
       children.delete(child)
       saveJson(path.join(evidence, 'owned-shutdown.json'), { pid: child.pid, exit: child.exitCode, signal: child.signalCode })
     })
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout!.on('data', (chunk: Buffer) => {
       fs.appendFileSync(path.join(evidence, 'events.jsonl'), chunk, { mode: 0o600 })
       consume(decoder.write(chunk))
     })
-    child.stderr.on('data', (chunk: Buffer) => fs.appendFileSync(path.join(evidence, 'stderr.log'), chunk, { mode: 0o600 }))
+    child.stderr!.on('data', (chunk: Buffer) => fs.appendFileSync(path.join(evidence, 'stderr.log'), chunk, { mode: 0o600 }))
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true

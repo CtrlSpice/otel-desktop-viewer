@@ -8,6 +8,79 @@ import PiProvider, { cancelPiAttempts } from './pi-provider.ts'
 import { SUITE, TEMPORARY } from './runtime.ts'
 import { observerEnvironment } from './clean-environment.ts'
 
+test('Pi grader delivers oversized rendered JSON unchanged over stdin with no tools', { skip: process.platform !== 'darwin', timeout: 30000 }, async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(TEMPORARY, 'pi-grader-stdin-')))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const criterion = `Use the recorded evidence only.\n${JSON.stringify({
+    question: 'Explain the checkout failure.',
+    criteria: [{ id: 'cause', description: 'Identify the failing service from recorded evidence.' }],
+    evidence: {
+      investigator: { taskID: 'checkout-failure', sessionIDs: ['fixture-session'] },
+      sessionExit: 0,
+      events: Array.from({ length: 4096 }, (_, index) => ({
+        line: index + 1,
+        raw: JSON.stringify({ type: 'tool_execution_end', toolName: 'bash', isError: false,
+          result: { content: [{ type: 'text', text: `record ${index}: checkout → payment; détail 漢字\n  duration = 125 ms  \n` }] } }),
+        failures: [],
+      })),
+      permissionDenials: [],
+    },
+    investigatorWorkingDirectory: '/fixture/workspace',
+  })}`
+  // Match the full native grader's rendered JSON chat prompt, not a plain
+  // repeated string. This exceeds macOS's total exec argument budget.
+  const prompt = JSON.stringify([
+    { role: 'system', content: 'Grade the answer using the criterion. Return JSON with pass, score, reason.' },
+    { role: 'user', content: `Criterion:\n${criterion}\nAnswer:\n  Payment failed.\n` },
+  ])
+  assert.ok(Buffer.byteLength(prompt) > 1024 * 1024)
+  const requests: { messages: { role: string; content: unknown }[]; tools?: unknown[] }[] = []
+  const answer = JSON.stringify({ pass: true, score: 1, reason: 'Offline fixture.' })
+  const server = http.createServer(async (req, res) => {
+    req.setEncoding('utf8')
+    let body = ''
+    for await (const chunk of req) body += chunk
+    const request = JSON.parse(body)
+    requests.push(request)
+    const chunk = (delta: unknown, finish_reason: string | null) => ({
+      id: 'grader-fixture', object: 'chat.completion.chunk', created: 1, model: request.model,
+      choices: [{ index: 0, delta, finish_reason }],
+    })
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    res.write('data: ' + JSON.stringify(chunk({ role: 'assistant', content: answer }, null)) + '\n\n')
+    res.end('data: ' + JSON.stringify(chunk({}, 'stop')) + '\n\ndata: [DONE]\n\n')
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const address = server.address()
+  assert.ok(address && typeof address === 'object')
+  const provider = new PiProvider({ config: {
+    root, provider: 'fixture', model: 'fixture-grader', role: 'grader',
+    baseUrl: `http://127.0.0.1:${address.port}/v1`, timeoutMs: 20000,
+  } })
+  const response = await provider.callApi(prompt)
+  assert.equal(response.error, undefined)
+  assert.equal(response.output, answer)
+  assert.equal(requests.length, 1)
+  assert.deepEqual(requests[0].messages.filter(message => message.role === 'user'), [
+    { role: 'user', content: [{ type: 'text', text: prompt }] },
+  ])
+  assert.deepEqual(requests[0].tools ?? [], [])
+  assert.equal(response.metadata.toolCalls, 0)
+  const evidence = response.metadata.evidence
+  assert.deepEqual(fs.readFileSync(path.join(evidence, 'prompt.txt')), Buffer.from(prompt))
+  const events = fs.readFileSync(path.join(evidence, 'events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(events.filter(event => event.type === 'tool_execution_start' || event.type === 'tool_execution_end').length, 0)
+  const shutdown = JSON.parse(fs.readFileSync(path.join(evidence, 'owned-shutdown.json'), 'utf8'))
+  assert.throws(() => process.kill(shutdown.pid, 0), /ESRCH/)
+  const padded = '  Preserve leading and trailing whitespace.\n'
+  assert.equal((await provider.callApi(padded)).output, answer)
+  assert.deepEqual(requests[1].messages.filter(message => message.role === 'user'), [
+    { role: 'user', content: [{ type: 'text', text: padded }] },
+  ])
+})
+
 test('native providers × repetitions retain six fresh Pi sessions and untouched export identities', { skip: process.platform !== 'darwin', timeout: 120000 }, async () => {
   const runtimeVersion = JSON.parse(fs.readFileSync(path.join(SUITE, 'node_modules/@earendil-works/pi-coding-agent/package.json'), 'utf8')).version
   const root = fs.mkdtempSync(path.join(TEMPORARY, 'pi-native-repetitions-'))

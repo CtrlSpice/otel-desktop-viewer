@@ -40,10 +40,24 @@ export default {
       const owned = fs.readdirSync(directory).filter(file => file.endsWith('.json')).map(file => JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8')))
         .find(value => value.workspace === cwd)
       if (!owned) throw new Error('Shell working directory is not an owned evaluation workspace')
+      const fixture = new URL(owned.fixtureEndpoint)
+      if (fixture.protocol !== 'http:' || fixture.hostname !== '127.0.0.1' || !fixture.port || fixture.origin !== owned.fixtureEndpoint)
+        throw new Error('Expected the assigned loopback fixture origin')
+      event.shell = path.join(path.dirname(directory), 'policy', 'fixture-shell')
+      const q = JSON.stringify
+      const profile = ['(version 1)', '(allow default)',
+        ...JSON.parse(process.env.OTEL_EVAL_SHELL_PROTECTED).map(file => `(deny file-read-data (subpath ${q(file)}))`),
+        `(allow file-read-data (subpath ${q(cwd)}) (literal ${q(path.join(process.env.OTEL_EVAL_CURL_BIN, 'curl'))}) (literal ${q(path.join(path.dirname(event.shell), 'opencode-v2-curl.mjs'))}))`,
+        '(deny file-write*)',
+        `(allow file-write* (subpath ${q(cwd)}) (literal "/dev/null"))`,
+        `(deny file-write* (subpath ${q(path.join(cwd, 'bin'))}))`,
+        '(deny network-outbound)', `(allow network-outbound (remote ip "localhost:${fixture.port}"))`,
+      ].join('\n')
       const temporary = path.join(cwd, '.tmp')
       fs.mkdirSync(temporary, { recursive: true, mode: 0o700 })
       event.env = { PATH: `${process.env.OTEL_EVAL_CURL_BIN}:/opt/homebrew/bin:/usr/bin:/bin`, HOME: cwd, TMPDIR: temporary, LANG: 'en_US.UTF-8',
-        OTEL_EVAL_CURL_ENDPOINT: owned.fixtureEndpoint }
+        OTEL_EVAL_CURL_ENDPOINT: owned.fixtureEndpoint,
+        OTEL_EVAL_SHELL_PROFILE: profile }
     }))
     return async () => { await Promise.all(hooks.map(hook => hook.dispose())); cleanup?.() }
   },

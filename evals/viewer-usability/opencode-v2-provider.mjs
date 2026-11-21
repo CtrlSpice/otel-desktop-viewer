@@ -210,31 +210,37 @@ export default class OpenCodeV2Provider {
     register(stop)
     fs.writeFileSync(registration, JSON.stringify({ sessionID, workspace, fixtureEndpoint:this.config.fixtureEndpoint, binarySHA256: createHash('sha256').update(fs.readFileSync(binary)).digest('hex') }), { flag:'wx', mode:0o600 })
     registered = true
-    try {
-      if ((await api(`/api/session/${sessionID}/context`)).data.length) throw new SharedRunFailure('Expected fresh conversation')
-      await api(`/api/session/${sessionID}/prompt`, 'POST', { text: prompt }, 'admitted-prompt.json')
-      waiting = true
-      await api(`/api/experimental/session/${sessionID}/wait`, 'POST')
-      settled = true
-      waiting = false
-      history = (await api(`/api/session/${sessionID}/context`, 'GET', undefined, 'context.json')).data
-      await api(`/api/experimental/session/${sessionID}/export`, 'GET', undefined, 'session-export.json')
-    } catch (e) {
-      if (e instanceof SharedRunFailure || e.syscall || isEvidenceError(e, host.root)) throw e
-      receivedError = e.message
-      await host.api(`/api/session/${sessionID}/interrupt`, 'POST', undefined, traceparent, AbortSignal.timeout(10000))
-      await host.api(`/api/experimental/session/${sessionID}/wait`, 'POST', undefined, traceparent, AbortSignal.timeout(30000))
-      settled = true
-      if (waiting && deadline.aborted && signal.reason === deadline.reason && !host.signal.aborted && !options.abortSignal?.aborted) {
-        const capture = async (route, method = 'GET') => host.api(route, method, undefined, traceparent, AbortSignal.timeout(30000))
-        await checkFixture(this.config.fixtureEndpoint)
-        const context = await capture(`/api/session/${sessionID}/context`)
+    const capture = async () => {
+      try {
+        const read = route => host.api(route, 'GET', undefined, traceparent,
+          AbortSignal.any([host.signal, options.abortSignal, AbortSignal.timeout(30000)].filter(Boolean)))
+        const context = await read(`/api/session/${sessionID}/context`)
         save('context.json', context)
-        save('session-export.json', await capture(`/api/experimental/session/${sessionID}/export`))
-        history = context.data
-        modelTimeout = true
-        receivedError = 'No answer: investigator reached its time limit'
+        if (!Array.isArray(context.data)) throw Error('Missing session history')
+        save('session-export.json', await read(`/api/experimental/session/${sessionID}/export`))
+        return context.data
+      } catch (cause) { throw new SharedRunFailure(`Cannot capture investigator evidence: ${cause.message}`, { cause }) }
+    }
+    try {
+      let initial
+      try { initial = await api(`/api/session/${sessionID}/context`) }
+      catch (cause) { throw new SharedRunFailure(`Cannot verify fresh conversation: ${cause.message}`, { cause }) }
+      if (!Array.isArray(initial?.data) || initial.data.length) throw new SharedRunFailure('Expected fresh conversation')
+      try {
+        // A lost POST response does not tell us whether the prompt was accepted.
+        await api(`/api/session/${sessionID}/prompt`, 'POST', { text: prompt }, 'admitted-prompt.json')
+        waiting = true
+        await api(`/api/experimental/session/${sessionID}/wait`, 'POST')
+        settled = true
+      } catch (cause) {
+        if (isEvidenceError(cause, host.root)) throw cause
+        receivedError = cause.message
+        await stop()
+        modelTimeout = waiting && deadline.aborted && signal.reason === deadline.reason && !host.signal.aborted && !options.abortSignal?.aborted
+        if (modelTimeout) await checkFixture(this.config.fixtureEndpoint)
+        if (modelTimeout) receivedError = 'No answer: investigator reached its time limit'
       }
+      if (!host.signal.aborted && !options.abortSignal?.aborted) history = await capture()
     } finally { await stop() }
     let nativeSpans
     try {

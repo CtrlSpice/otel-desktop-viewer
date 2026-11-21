@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { homedir, userInfo } from 'node:os'
+import { homedir, tmpdir, userInfo } from 'node:os'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { pathToFileURL } from 'node:url'
@@ -25,9 +25,26 @@ export function waitForIdle(url, headers, signal) {
   })
 }
 
+export function hostApi(url, headers, ownerSignal) {
+  return async (route, method = 'GET', body, traceparent, requestSignal) => {
+    const requestHeaders = { ...headers, ...(traceparent ? { traceparent } : {}) }
+    // Attempts supply their combined signal; teardown supplies its own deadline.
+    const signal = requestSignal ?? AbortSignal.any([ownerSignal, AbortSignal.timeout(90000)])
+    if (method === 'POST' && /^\/api\/experimental\/session\/ses_[A-Za-z0-9]+\/wait$/.test(route))
+      return waitForIdle(url + route, requestHeaders, signal)
+    const response = await fetch(url + route, { method, headers: requestHeaders, redirect: 'error', signal,
+      ...(body ? { body: JSON.stringify(body) } : {}) })
+    if (!response.ok) throw Error('OpenCode ' + method + ' ' + route + ': HTTP ' + response.status)
+    const raw = await response.text()
+    return raw ? JSON.parse(raw) : undefined
+  }
+}
+
 // A connection check uses no viewer fixture and grants no tools. It is not an
 // eval result. Credentials stay in the owned service's private profile.
-export async function checkConnections({ root, catalogue, files, runtime, probe, refs = fullRunPlan().models, evaluateOnHost, telemetryForward, signal }) {
+export async function checkConnections({ root, catalogue, files, runtime, probe, refs = fullRunPlan().models, evaluateOnHost, telemetryForward, signal, scriptedModelEndpoint }) {
+  if (scriptedModelEndpoint && (!/^http:\/\/127\.0\.0\.1:\d+\/v1$/.test(scriptedModelEndpoint) || refs.length || files || !evaluateOnHost))
+    throw Error('Scripted shared host requires a loopback model with no memberships')
   process.umask(0o077)
   const work = fs.mkdtempSync(path.join(root, 'connections-'))
   const plugin = path.join(runtime, 'claude-plugin/node_modules/opencode-with-claude')
@@ -55,7 +72,8 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
   fs.mkdirSync(entry)
   fs.writeFileSync(path.join(entry, 'package.json'), JSON.stringify({ name: 'opencode-with-claude', private: true, type: 'module', exports: { '.': './index.mjs' } }))
   fs.writeFileSync(path.join(entry, 'index.mjs'), `export { default } from ${JSON.stringify(pathToFileURL(path.join(plugin, 'dist/index.js')).href)}\n`)
-  const plugins = ['-opencode.browser', pathToFileURL(entry).href]
+  const plugins = ['-opencode.browser', ...(scriptedModelEndpoint ? [] : [pathToFileURL(entry).href])]
+  if (scriptedModelEndpoint) env.OPENAI_API_KEY = 'synthetic-only'
   let telemetry
   if (evaluateOnHost) {
     const policy = path.join(work, 'policy')
@@ -65,12 +83,17 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
     fs.writeFileSync(path.join(policy, 'package.json'), JSON.stringify({ name: 'viewer-eval-policy', private: true, type: 'module', exports: { '.': './index.mjs' } }))
     plugins.push(pathToFileURL(policy).href)
     env.OTEL_EVAL_V2_SESSION_REGISTRY = path.join(work, 'sessions')
+    env.OTEL_EVAL_SHELL_PROTECTED = JSON.stringify([...new Set([homedir(), tmpdir(), root, runtime, path.resolve(import.meta.dirname, '../..'),
+      ...Object.values(files ?? {}).map(source => typeof source === 'string' ? source : source?.file),
+      process.env.OTEL_EVAL_OPENCODE_AUTH_FILE, process.env.OTEL_EVAL_PI_AUTH_FILE, process.env.OTEL_EVAL_CLAUDE_CONFIG_DIR,
+    ].filter(Boolean).map(file => fs.realpathSync(file)))])
     fs.mkdirSync(env.OTEL_EVAL_V2_SESSION_REGISTRY)
     env.OTEL_EVAL_V2_POLICY_LOG = path.join(work, 'policy.jsonl')
     env.OTEL_EVAL_CURL_BIN = path.join(work, 'viewer-http-bin')
     fs.mkdirSync(env.OTEL_EVAL_CURL_BIN)
     fs.copyFileSync(path.join(import.meta.dirname, 'opencode-v2-curl.mjs'), path.join(policy, 'opencode-v2-curl.mjs'))
     fs.writeFileSync(path.join(env.OTEL_EVAL_CURL_BIN, 'curl'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(policy, 'opencode-v2-curl.mjs'))} "$@"\n`, { mode: 0o500 })
+    fs.writeFileSync(path.join(policy, 'fixture-shell'), '#!/bin/sh\nexec /usr/bin/sandbox-exec -p "${OTEL_EVAL_SHELL_PROFILE:?}" /bin/sh "$@"\n', { mode: 0o500 })
     telemetry = await nativeTelemetryReceiver(root, telemetryForward)
     env.OTEL_EXPORTER_OTLP_ENDPOINT = telemetry.endpoint
     env.OPENCODE_CLIENT = 'viewer-eval-v2'
@@ -79,7 +102,7 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
     permissions, agents: { title: { disabled: true }, build: { permissions } },
     plugins,
     providers: { anthropic: { settings: { baseURL: 'http://127.0.0.1:3456/v1', apiKey: 'dummy' } },
-      openai: { settings: { transport: 'http' } } } }))
+      openai: { settings: { transport: 'http', ...(scriptedModelEndpoint ? { baseURL: scriptedModelEndpoint, apiKey: 'synthetic-only' } : {}) } } } }))
   const owner = runCancellation(signal)
   const child = spawn(V2_BINARY, ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd: work, env, detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
   const closed = once(child, 'close')
@@ -93,17 +116,7 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
     }
     const url = stdout.match(/http:\/\/127\.0\.0\.1:\d+/)[0]
     const headers = { Authorization: 'Basic ' + Buffer.from('opencode:' + stdout.match(/server password\s+(\S+)/)[1]).toString('base64'), 'Content-Type': 'application/json' }
-    const api = async (route, method = 'GET', body, traceparent, requestSignal) => {
-      const requestHeaders = { ...headers, ...(traceparent ? { traceparent } : {}) }
-      const signal = AbortSignal.any([owner.signal, requestSignal ?? AbortSignal.timeout(90000)])
-      if (method === 'POST' && /^\/api\/experimental\/session\/ses_[A-Za-z0-9]+\/wait$/.test(route))
-        return waitForIdle(url + route, requestHeaders, signal)
-      const response = await fetch(url + route, { method, headers: requestHeaders, redirect: 'error', signal,
-        ...(body ? { body: JSON.stringify(body) } : {}) })
-      if (!response.ok) throw Error('OpenCode ' + method + ' ' + route + ': HTTP ' + response.status)
-      const raw = await response.text()
-      return raw ? JSON.parse(raw) : undefined
-    }
+    const api = hostApi(url, headers, owner.signal)
     if ((await api('/api/info')).version !== V2_VERSION) throw Error('Incorrect eval runtime version')
     const selected = await connectRunModels(api, refs, files)
     if (evaluateOnHost) {

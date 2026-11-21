@@ -244,14 +244,18 @@ test('full-run hooks preserve an ungraded answer and let the following grade fin
   onFailure(error => controller.abort(error))
   teardown.onFailure(error => controller.abort(error))
   t.after(() => { onFailure(undefined); teardown.onFailure(undefined) })
+  const configured = evaluationConfig({suite: import.meta.dirname, root, spec: fullRunPlan()})
+  const attempted = []
   let calls = 0
-  const grader = { id: () => 'offline-judge', callApi: async () => ++calls === 1 ? { error: 'provider error quoting “Harness binary teardown failed”' } :
+  const grader = { id: () => 'offline-judge', config: configured.defaultTest.options.provider.config,
+    callApi: async () => ++calls === 1 ? { error: 'HTTP 429; provider error quoting “Harness binary teardown failed”' } :
     { output: '{"pass":true,"score":1,"reason":"fixture"}' } }
-  await evaluate({ prompts: ['{{id}}'], tests: ['1','2'].map(id => ({ vars: { id } })),
-    providers: [{ id: () => 'offline-investigator', async callApi(prompt) {
+  await evaluate({ prompts: ['{{id}}'], tests: ['0','1','2'].map(id => ({ vars: { id } })),
+    providers: [{ id: () => 'offline-investigator', config: configured.providers[0].config, async callApi(prompt) {
+      attempted.push(prompt)
       const evidence = path.join(root, prompt)
       fs.mkdirSync(evidence)
-      const response = { output: `answer ${prompt}`, metadata: { evidence } }
+      const response = prompt === '0' ? { error: 'HTTP 429', metadata: { evidence } } : { output: `answer ${prompt}`, metadata: { evidence } }
       write(evidence, 'response.json', response)
       return response
     } }], defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture criterion' }], options: { provider: grader } },
@@ -261,8 +265,10 @@ test('full-run hooks preserve an ungraded answer and let the following grade fin
   const rows = JSON.parse(fs.readFileSync(path.join(root, 'result.json'))).results.results
   assert.equal(controller.signal.aborted, false)
   assert.equal(calls, 2)
-  assert.equal(rows.length, 2)
-  const ungraded = rows.find(row => row.gradingResult.componentResults[0].metadata?.graderError)
+  assert.deepEqual(attempted, ['0','1','2'])
+  assert.equal(rows.length, 3)
+  assert.equal(rows.find(row => row.vars.id === '0').response.error, 'HTTP 429')
+  const ungraded = rows.find(row => row.gradingResult?.componentResults?.[0]?.metadata?.graderError)
   assert.equal(ungraded.response.output, 'answer ' + ungraded.vars.id)
   assert.equal(rows.filter(row => row.success).length, 1)
 })

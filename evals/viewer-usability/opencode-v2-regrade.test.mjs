@@ -5,7 +5,6 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { GPT_MODELS, OPUS_MODEL, selectGPTResponses, savedGradingInput, comparisonExport, gradeSavedInput, loadCompletedSource } from './opencode-v2-regrade.mjs'
-import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
 
 const hash = value => createHash('sha256').update(value).digest('hex')
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value))
@@ -51,13 +50,45 @@ test('saved rubric, answer and tool records must match their received hashes', t
       answerSHA256: hash(row.response.output), events: tools.map(tool => ({ raw: JSON.stringify(tool) })),
       sources: Object.fromEntries(['context.json', 'tools.json'].map(name => [name, hash(fs.readFileSync(path.join(evidence, name)))])) } }
   write(path.join(evidence, 'grading-packet.json'), packet)
-  row.gradingResult = { componentResults: [{ assertion: { type: 'llm-rubric', threshold: 1 },
-    metadata: { renderedAssertionValue: v2GradingPrompt(packet) } }] }
-  const input = savedGradingInput(root, 'original', row)
-  assert.equal(input.criterion, v2GradingPrompt(packet))
-  assert.ok(input.criterion.includes('recorded tool failure'))
+  for (const separator of ['\n', '\n\n']) {
+    const original = 'Archived instructions, including {{ literal }}.' + separator + JSON.stringify(packet)
+    row.gradingResult = { componentResults: [{ assertion: { type: 'llm-rubric', threshold: 1 },
+      metadata: { renderedAssertionValue: original } }] }
+    assert.equal(savedGradingInput(root, 'original', row).criterion, original)
+  }
   write(path.join(evidence, 'tools.json'), [])
   assert.throws(() => savedGradingInput(root, 'original', row))
+})
+
+test('historical grading uses the verified snapshot even when current grading files differ', t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'opencode/historical-comparison-')))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  fs.mkdirSync(path.join(root, 'sources'))
+  const files = {}
+  for (const name of ['grade.ts', 'tasks.json', 'rubrics.json']) {
+    const content = 'historical source: ' + name
+    fs.writeFileSync(path.join(root, 'sources', name), content)
+    files[name] = hash(content)
+  }
+  write(path.join(root, 'source-snapshot.json'), { files })
+  write(path.join(root, 'source-preservation.json'), { unchanged: true })
+  write(path.join(root, 'run-completed.json'), {})
+  write(path.join(root, 'run-plan.json'), plan)
+  const saved = rows()
+  for (const [i, row] of saved.entries()) {
+    const evidence = path.join(root, 'runs', 'investigator-' + i)
+    fs.mkdirSync(evidence, { recursive: true })
+    row.response.metadata.evidence = evidence
+    delete row.response.output
+    row.response.error = 'recorded investigator failure'
+    write(path.join(evidence, 'response.json'), row.response)
+    write(path.join(evidence, 'identity.json'), {promptfoo: {evaluationId: 'original', repeatIndex: row.response.metadata.repeatIndex}})
+  }
+  write(path.join(root, 'promptfoo.json'), { evalId: 'original', results: { results: saved } })
+  write(path.join(root, 'original-export-hashes.json'), { 'promptfoo.json': hash(fs.readFileSync(path.join(root, 'promptfoo.json'))) })
+  assert.equal(loadCompletedSource(root).inputs.filter(input => input.skipped).length, 66)
+  write(path.join(root, 'sources/rubrics.json'), [])
+  assert.throws(() => loadCompletedSource(root), /Original source snapshot changed/)
 })
 
 test('comparison retains original answers and IDs without copying stale errors or scores', () => {
