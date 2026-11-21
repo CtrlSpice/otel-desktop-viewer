@@ -58,6 +58,14 @@ order by s.start_time desc, s.trace_id, s.span_id"
 
 ## Transfer OTLP JSON
 
-When asked to export a trace, save it with `export trace <trace-id> --endpoint <viewer-url> > trace.json`. Trace exports contain spans; export logs separately. For logs or metrics, redirect `export log <log-ref>` or `export metric <metric-ref>` to a file.
+Export a trace, log, or metric from the selected viewer by redirecting its OTLP JSON to a file:
+
+```sh
+otel-desktop-viewer export trace <trace-id> --endpoint <viewer-url> > trace.json
+otel-desktop-viewer export log <log-ref> --endpoint <viewer-url> > log.json
+otel-desktop-viewer export metric <metric-ref> --endpoint <viewer-url> > metric.json
+```
+
+Trace exports contain spans; export logs separately.
 
 When asked to import, use `import <file> --endpoint <viewer-url>`. Receiver acceptance does not confirm storage. Retrying the whole file can duplicate records.
