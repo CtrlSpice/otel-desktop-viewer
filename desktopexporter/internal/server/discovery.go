@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -72,13 +71,7 @@ type discoveryPlan struct {
 }
 
 func (h *JSONRPCHandler) getServiceLabels(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	ref, err := parseSingleIDParam(req.Params, jsonrpc2.ErrInvalidParams, func(value string) (string, error) {
-		decoded, err := hex.DecodeString(value)
-		if err != nil || len(decoded) != 32 {
-			return "", jsonrpc2.ErrInvalidParams
-		}
-		return strings.ToLower(value), nil
-	})
+	ref, err := parseSingleIDParam(req.Params, jsonrpc2.ErrInvalidParams, discovery.NormalizeServiceRef)
 	if err != nil {
 		return nil, err
 	}

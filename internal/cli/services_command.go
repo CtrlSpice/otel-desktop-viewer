@@ -57,7 +57,7 @@ func newServicesCommand(client *http.Client, now func() time.Time) *cobra.Comman
 			"Show distinct trace, span/error-span, log/error-log and Metric/datapoint/exemplar counts, plus lastSeen in Unix nanoseconds. " +
 			"JSON includes log severity bands; errorLogCount includes Error and Fatal. Exemplars belong to datapoints in the selected window. " +
 			"Counts describe stored telemetry, not requests or service health. Defaults to the last hour and 25 services. " +
-			"--service matches an exact name across namespaces. --json includes window bounds and truncation.",
+			"--service matches an exact name across namespaces. Pass serviceIdentity to services connections for incoming and outgoing connections. --json includes window bounds and truncation.",
 		Example: "  otel-desktop-viewer services\n" +
 			"  otel-desktop-viewer services --service checkout --since 30m\n" +
 			"  otel-desktop-viewer services --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json",
@@ -97,6 +97,7 @@ func newServicesCommand(client *http.Client, now func() time.Time) *cobra.Comman
 	cmd.Flags().Lookup("service").Usage = "Only services with this exact name, across namespaces"
 	cmd.Flags().Lookup("limit").Usage = "Maximum services to return"
 	cmd.Flags().Lookup("json").Usage = "Emit JSON with window bounds and truncation instead of columns"
+	cmd.AddCommand(newServiceConnectionsCommand(client, now))
 	return cmd
 }
 
@@ -106,13 +107,13 @@ func writeServicesResult(writer io.Writer, result servicesResult, jsonOutput boo
 	}
 	rows := make([][]any, 0, len(result.Services))
 	for _, service := range result.Services {
-		rows = append(rows, []any{service.ServiceNamespace, service.ServiceNamespaceKind, service.ServiceName, service.ServiceNameKind,
+		rows = append(rows, []any{service.ServiceIdentity, service.ServiceNamespace, service.ServiceNamespaceKind, service.ServiceName, service.ServiceNameKind,
 			service.TraceCount, service.SpanCount, service.ErrorSpanCount, service.LogCount, service.ErrorLogCount,
 			service.MetricCount, service.DataPointCount, service.ExemplarCount, service.LastSeen})
 	}
 	_, err := io.WriteString(writer, formatQueryColumns(queryResult{
 		Columns: []queryColumn{
-			{Name: "serviceNamespace"}, {Name: "namespaceKind"}, {Name: "serviceName"}, {Name: "nameKind"},
+			{Name: "serviceIdentity"}, {Name: "serviceNamespace"}, {Name: "namespaceKind"}, {Name: "serviceName"}, {Name: "nameKind"},
 			{Name: "traceCount"}, {Name: "spanCount"}, {Name: "errorSpanCount"}, {Name: "logCount"}, {Name: "errorLogCount"},
 			{Name: "metricCount"}, {Name: "dataPointCount"}, {Name: "exemplarCount"}, {Name: "lastSeen"},
 		},

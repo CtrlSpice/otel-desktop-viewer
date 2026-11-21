@@ -89,11 +89,11 @@ func TestMetricsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testi
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--limit", "25"})
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, 1, clockCalls)
-	for _, field := range metricTableFields {
+	for _, field := range metricSummaryFields {
 		assert.Contains(t, output.String(), field)
 	}
 	assert.NotContains(t, output.String(), "id")
-	assert.NotContains(t, output.String(), "018f0000-0000-7000-8000-000000000002")
+	assert.Contains(t, output.String(), "018f0000-0000-7000-8000-000000000002")
 	assert.Contains(t, output.String(), "9007199254740993")
 
 	request := <-requests

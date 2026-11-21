@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"testing"
@@ -47,10 +46,6 @@ func TestServiceMapConnections(t *testing.T) {
 	add("api", "one", 3, 1, 0, 90)
 	add("worker", "", 3, 2, 1, 95) // same edge in a second trace
 	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data) }))
-	var identity string
-	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRow(`select ref from search_services where name='api' and namespace='one'`).Scan(&identity)
-	}))
 	read := func(options map[string]any) struct {
 		Rows      [][]json.RawMessage `json:"rows"`
 		Truncated bool                `json:"truncated"`
@@ -58,6 +53,7 @@ func TestServiceMapConnections(t *testing.T) {
 		t.Helper()
 		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
 		require.NoError(t, err)
+		checkDiscoveryRows(t, result.(json.RawMessage), options["kind"].(string))
 		var page struct {
 			Rows      [][]json.RawMessage `json:"rows"`
 			Truncated bool                `json:"truncated"`
@@ -70,6 +66,14 @@ func TestServiceMapConnections(t *testing.T) {
 		require.Equal(t, page.Truncated, native.Column(1).(*array.Boolean).Value(0))
 		return page
 	}
+	// Follow the documented lookup: the service row supplies the identity
+	// for connections, even when another namespace has the same service name.
+	services := read(map[string]any{"kind": "services", "serviceName": "api", "namespace": "one"})
+	require.Len(t, services.Rows, 1)
+	var service struct{ ServiceIdentity string }
+	require.NoError(t, json.Unmarshal(services.Rows[0][0], &service))
+	identity := service.ServiceIdentity
+	require.NotEmpty(t, identity)
 	options := map[string]any{"kind": "connections", "serviceIdentity": identity, "limit": 1}
 	page := read(options)
 	require.Len(t, page.Rows, 1)

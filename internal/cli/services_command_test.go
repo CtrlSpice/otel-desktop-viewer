@@ -24,8 +24,13 @@ import (
 
 func servicesTestRun(t *testing.T, endpoint string, args ...string) (string, error) {
 	t.Helper()
+	return servicesTestRunAt(t, endpoint, time.Unix(10000, 0), args...)
+}
+
+func servicesTestRunAt(t *testing.T, endpoint string, at time.Time, args ...string) (string, error) {
+	t.Helper()
 	cmd := newRootCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}},
-		http.DefaultClient, func() time.Time { return time.Unix(10000, 0) },
+		http.DefaultClient, func() time.Time { return at },
 		func(context.Context, otelcol.CollectorSettings) error {
 			t.Fatal("services started a viewer")
 			return nil
@@ -427,4 +432,82 @@ func TestServicesTransportPreservesLargeCounts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output, "9007199254740993")
 	assert.Contains(t, output, "18446744073709551615")
+}
+
+func TestServicesTableIdentityFindsServiceMapConnections(t *testing.T) {
+	endpoint, te, _, _ := startAttributeIntegration(t)
+	traces := ptrace.NewTraces()
+	for i, name := range []string{"checkout", "payments", "shipping"} {
+		rs := traces.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", name)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(8000000000000)
+		span.SetEndTimestamp(8000000000001)
+		if i > 0 {
+			span.SetParentSpanID(pcommon.SpanID{7: 1})
+			span.Status().SetCode(ptrace.StatusCodeError)
+		}
+	}
+	require.NoError(t, te.ConsumeTraces(t.Context(), traces))
+	services := servicesTestResult(t, endpoint)
+	require.Len(t, services.Services, 3)
+	source, target := services.Services[0], services.Services[1]
+	require.Equal(t, "checkout", source.ServiceName)
+	catalogue, err := servicesTestRun(t, endpoint)
+	require.NoError(t, err)
+	require.Contains(t, catalogue, source.ServiceIdentity)
+	for _, ref := range []string{source.ServiceIdentity, target.ServiceIdentity} {
+		output, err := servicesTestRun(t, endpoint, "connections", ref, "--json", "--limit", "1")
+		require.NoError(t, err)
+		var result struct {
+			Connections []struct {
+				Source, Target                        serviceSummary
+				SpanCount, TraceCount, ErrorSpanCount uint64
+			}
+			Truncated bool
+		}
+		require.NoError(t, json.Unmarshal([]byte(output), &result))
+		require.Len(t, result.Connections, 1)
+		edge := result.Connections[0]
+		require.Equal(t, source.ServiceIdentity, edge.Source.ServiceIdentity)
+		if ref == target.ServiceIdentity {
+			require.Equal(t, target.ServiceIdentity, edge.Target.ServiceIdentity)
+		}
+		require.Equal(t, [3]uint64{1, 1, 1}, [3]uint64{edge.SpanCount, edge.TraceCount, edge.ErrorSpanCount})
+		require.Equal(t, ref == source.ServiceIdentity, result.Truncated)
+	}
+	table, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity, "--limit", "1")
+	require.NoError(t, err)
+	require.Contains(t, table, "checkout")
+	_, hint, ok := strings.Cut(table, "[next page: use ")
+	require.True(t, ok)
+	flags, _, ok := strings.Cut(hint, " instead of relative time]")
+	require.True(t, ok)
+	require.Equal(t, "--offset 1 --start 1970-01-01T01:46:40Z --end 1970-01-01T02:46:40Z", flags)
+	require.Contains(t, table, "errorSpanCount")
+	next, err := servicesTestRunAt(t, endpoint, time.Unix(20000, 0), append([]string{"connections", source.ServiceIdentity, "--limit", "1"}, strings.Fields(flags)...)...)
+	require.NoError(t, err)
+	require.NotContains(t, next, "next page")
+	for _, name := range []string{"payments", "shipping"} {
+		require.NotEqual(t, strings.Contains(table, name), strings.Contains(next, name))
+	}
+}
+
+func TestDecodeConnectionPage(t *testing.T) {
+	endpoint := `{"serviceIdentity":"id","serviceNamespace":"","serviceName":""}`
+	edge := `{"source":` + endpoint + `,"target":` + endpoint + `,"spanCount":1,"traceCount":1,"errorSpanCount":0}`
+	page := func(edge string) string { return `{"rows":[[` + edge + `]],"truncated":false}` }
+	for _, invalid := range []string{"null", "{}", `{"rows":[]}`, `{"rows":null,"truncated":false}`,
+		page(`1`), page(`{}`), page(strings.Replace(edge, `"source":`, `"ignored":`, 1)),
+		page(strings.Replace(edge, `"serviceIdentity":"id"`, `"serviceIdentity":null`, 1)),
+		page(strings.Replace(edge, `"errorSpanCount":0`, `"errorSpanCount":null`, 1))} {
+		_, _, _, err := decodeConnectionPage(json.RawMessage(invalid))
+		require.Error(t, err, invalid)
+	}
+	entries, _, truncated, err := decodeConnectionPage(json.RawMessage(`{"rows":[],"truncated":false}`))
+	require.NoError(t, err)
+	require.Equal(t, []json.RawMessage{}, entries)
+	require.False(t, truncated)
 }

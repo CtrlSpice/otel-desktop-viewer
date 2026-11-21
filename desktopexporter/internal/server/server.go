@@ -142,16 +142,12 @@ func (s *Server) initHandler() error {
 	mux.HandleFunc("GET /api/features", s.featureConfig)
 	mux.HandleFunc("GET /api/changes", s.changesHandler)
 	mux.HandleFunc("POST /api/import-target/{signal}", s.importTargetHandler)
-	discovery, err := openRPCHandler()
-	if err != nil {
+	if err := registerOpenRPC(mux); err != nil {
 		return err
 	}
-	mux.Handle("GET /openrpc.json", discovery)
-	httpDiscovery, err := openAPIHandler()
-	if err != nil {
+	if err := registerOpenAPI(mux); err != nil {
 		return err
 	}
-	mux.Handle("GET /openapi.json", httpDiscovery)
 	mux.Handle("GET /llms.txt", llmsTextHandler())
 	mux.HandleFunc("GET /export/{signal}/{id}", s.exportHandler)
 

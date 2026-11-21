@@ -54,6 +54,15 @@ func ServiceIdentity(resource string) string {
 	return "(select sr.service_ref from search_service_resources sr where sr.resource_id=" + resource + ".id)"
 }
 
+func NormalizeServiceRef(ref string) (string, error) {
+	if len(ref) == 64 {
+		if _, err := hex.DecodeString(ref); err == nil {
+			return strings.ToLower(ref), nil
+		}
+	}
+	return "", fmt.Errorf("expected a 64-digit hexadecimal serviceIdentity from services")
+}
+
 func (b *Builder) Predicate(query Query) string {
 	p := []string{"true"}
 	if query.StartTime != nil {
@@ -158,11 +167,45 @@ func (b *Builder) RecordsFrom(signal, ownerType string, query Query) (string, er
 	return "select " + identity + " as record_id, " + timestamp + " as time_ns, " + service + " as service_name, " + resource + " as resource, " + attributes + " as attributes from " + from, nil
 }
 
-func (b *Builder) foundOn(query Query, location Location) string {
-	if query.Native {
-		return "[struct_pack(signal := " + b.Bind(location.Signal) + ", ownerType := " + b.Bind(location.OwnerType) + ")]"
+func (b *Builder) locationSQL(location Location) string {
+	return "struct_pack(signal := " + b.Bind(location.Signal) + ", ownerType := " + b.Bind(location.OwnerType) + ")"
+}
+
+// AttributeRecords selects every supported location matching both optional filters.
+// The signal is part of record identity; several owners may refer to the same record.
+func (b *Builder) AttributeRecords(query Query, signal, ownerType string) (string, error) {
+	var branches []string
+	for _, group := range []struct {
+		signal string
+		owners []string
+	}{
+		{"traces", []string{"span", "event", "link", "resource", "scope"}},
+		{"logs", []string{"log", "resource", "scope"}},
+		{"metrics", []string{"datapoint", "exemplar", "metadata", "resource", "scope"}},
+	} {
+		if signal != "" && group.signal != signal {
+			continue
+		}
+		for _, owner := range group.owners {
+			if ownerType != "" && ownerType != owner {
+				continue
+			}
+			records, err := b.RecordsFrom(group.signal, owner, query)
+			if err != nil {
+				return "", err
+			}
+			id, spanID := "r.record_id", "null::ubigint"
+			if group.signal == "traces" {
+				id, spanID = "r.record_id.trace_id", "r.record_id.span_id"
+			}
+			branches = append(branches, "select struct_pack(signal := "+b.Bind(group.signal)+", id := "+id+", span_id := "+spanID+") as record_id, "+
+				b.locationSQL(Location{group.signal, owner})+" as location, r.attributes, r.time_ns, r.service_name from ("+records+") r")
+		}
 	}
-	return "json_array(json_object('signal', " + b.Bind(location.Signal) + ", 'ownerType', " + b.Bind(location.OwnerType) + "))"
+	if len(branches) == 0 {
+		return "", fmt.Errorf("no attribute locations match --signal %q and --owner-type %q", signal, ownerType)
+	}
+	return strings.Join(branches, " union all "), nil
 }
 
 // object changes only the output representation; selection and aggregation are shared.
@@ -182,26 +225,43 @@ func object(query Query, fields ...string) string {
 }
 
 func (b *Builder) Keys(query Query, location Location, records string) string {
+	return b.attributeKeys(query, records, b.locationSQL(location))
+}
+
+func (b *Builder) AttributeKeys(query Query, records string) string {
+	return b.attributeKeys(query, records, "s.location")
+}
+
+func (b *Builder) attributeKeys(query Query, records, location string) string {
 	// Keys need no record denominators. Enumerate each exact received attribute
 	// context once, rather than encode the entire context as JSON per record.
 	return `with scoped_records as (` + records + `), contexts as (
-    select distinct variant_to_parquet_variant(s.attributes)::struct(metadata blob, value blob) as parts
+    select distinct ` + location + ` as loc, variant_to_parquet_variant(s.attributes)::struct(metadata blob, value blob) as parts
     from scoped_records s where ` + b.Predicate(query) + `
 ), keys as (
-    select a.key, otel_value_kind(attribute_native_field(c.parts, a.key)) as kind
+    select a.key, otel_value_kind(attribute_native_field(c.parts, a.key)) as kind,
+        list(distinct c.loc order by c.loc) as found_on
     from contexts c, unnest(variant_keys(variant_bytes_to_variant(c.parts.metadata || c.parts.value))) a(key)
     group by a.key, kind
 )
-select ` + object(query, "key", "key", "kind", "kind", "foundOn", b.foundOn(query, location)) + ` as entry
+select ` + object(query, "key", "key", "kind", "kind", "foundOn", "found_on") + ` as entry
 from keys order by key, kind`
 }
 
 func (b *Builder) Values(query Query, location Location, records, key string) string {
+	return b.attributeValues(query, records, key, b.locationSQL(location))
+}
+
+func (b *Builder) AttributeValues(query Query, records, key string) string {
+	return b.attributeValues(query, records, key, "s.location")
+}
+
+func (b *Builder) attributeValues(query Query, records, key, location string) string {
 	value := "v.identity::json"
 	if query.Native {
 		value = "v.value"
 	}
-	fields := []string{"value", value, "foundOn", b.foundOn(query, location),
+	fields := []string{"value", value, "foundOn", "v.found_on",
 		"count", "v.count", "kindCount", "k.count", "denominator", "d.count",
 		"relativeFrequency", "v.count::double / nullif(d.count,0)::double"}
 	if query.Native {
@@ -211,7 +271,7 @@ func (b *Builder) Values(query Query, location Location, records, key string) st
 	// owner. Both transports retain the same grouping and record denominators.
 	// Native output also preserves a deterministic representative's received bits.
 	return `with records as (` + records + `), received_values as materialized (
-    select s.record_id,
+    select s.record_id, ` + location + ` as loc,
         variant_to_parquet_variant(s.attributes[` + b.Bind(key) + `])::struct(metadata blob, value blob) as parts
     from records s where ` + b.Predicate(query) + ` and variant_exists(s.attributes, ` + b.Bind(key) + `)
 ), distinct_values as materialized (
@@ -220,10 +280,10 @@ func (b *Builder) Values(query Query, location Location, records, key string) st
     select parts, variant_bytes_to_variant(parts.metadata || parts.value) as value,
         otel_value_json(value)::varchar as identity from distinct_values
 ), owned_values as (
-    select r.record_id, i.parts, i.value, i.identity
+    select r.record_id, r.loc, i.parts, i.value, i.identity
     from received_values r join identified_values i on r.parts is not distinct from i.parts
 ), value_counts as (
-    select identity, first(value order by record_id, parts) as value,
+    select identity, first(value order by record_id, parts) as value, list(distinct loc order by loc) as found_on,
         count(distinct record_id) as count from owned_values group by identity
 ), kind_counts as (
     select otel_value_kind(value) as kind, count(distinct record_id) as count from owned_values group by otel_value_kind(value)

@@ -97,8 +97,117 @@ func TestOpenRPCHTTPAndRPCDiscovery(t *testing.T) {
 	guide, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	require.NoError(t, err)
-	assert.Contains(t, string(guide), "GET /openrpc.json")
-	assert.Contains(t, string(guide), "rpc.discover")
+	assert.Contains(t, string(guide), "/openrpc.json")
+	assert.Contains(t, string(guide), "/openapi.json")
+}
+
+func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
+	s, err := NewServer("localhost:0", 0, nil, zap.NewNop(), nil)
+	require.NoError(t, err)
+	read := func(verb, path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		s.server.Handler.ServeHTTP(w, httptest.NewRequest(verb, path, nil))
+		return w
+	}
+	type document struct {
+		Methods    []json.RawMessage                            `json:"methods"`
+		Components struct{ Schemas map[string]json.RawMessage } `json:"components"`
+	}
+	var full document
+	require.NoError(t, json.Unmarshal(read("GET", "/openrpc.json").Body.Bytes(), &full))
+	w := read("GET", "/openrpc/index.json")
+	require.Equal(t, http.StatusOK, w.Code)
+	var index struct{ Methods []map[string]string }
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &index))
+	require.Len(t, index.Methods, len(full.Methods))
+	for i, method := range full.Methods {
+		var entry struct{ Name, Summary string }
+		require.NoError(t, json.Unmarshal(method, &entry))
+		require.NotEmpty(t, entry.Summary)
+		require.Equal(t, map[string]string{"name": entry.Name, "summary": entry.Summary}, index.Methods[i])
+		t.Run(entry.Name, func(t *testing.T) {
+			path := "/openrpc/" + entry.Name + ".json"
+			w := read("GET", path)
+			require.Equal(t, http.StatusOK, w.Code)
+			var single document
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &single))
+			require.Len(t, single.Methods, 1)
+			require.Equal(t, method, single.Methods[0])
+			for name, schema := range single.Components.Schemas {
+				if name == "DiscoveryRows" {
+					var link struct {
+						Ref string `json:"$ref"`
+					}
+					require.NoError(t, json.Unmarshal(schema, &link))
+					path, target, ok := strings.Cut(link.Ref, "#/components/schemas/")
+					require.True(t, ok)
+					var linked document
+					require.NoError(t, json.Unmarshal(read("GET", path).Body.Bytes(), &linked))
+					require.Equal(t, full.Components.Schemas["DiscoveryRows"], linked.Components.Schemas[target])
+					continue
+				}
+				require.Equal(t, full.Components.Schemas[name], schema)
+			}
+			for _, ref := range regexp.MustCompile(`"#/components/schemas/([^"]+)"`).FindAllStringSubmatch(w.Body.String(), -1) {
+				require.Contains(t, single.Components.Schemas, ref[1])
+			}
+			if entry.Name == "getLog" {
+				require.Contains(t, single.Components.Schemas, "Value")
+				require.NotContains(t, single.Components.Schemas, "Metric")
+				head := read("HEAD", path)
+				require.Equal(t, http.StatusOK, head.Code)
+				require.Empty(t, head.Body.Bytes())
+				require.Equal(t, w.Header().Get("ETag"), head.Header().Get("ETag"))
+			}
+		})
+	}
+	require.Equal(t, http.StatusNotFound, read("GET", "/openrpc/unknown.json").Code)
+}
+
+func checkDiscoveryRows(t *testing.T, raw json.RawMessage, kind string) {
+	t.Helper()
+	var result map[string]any
+	require.NoError(t, decodeParams(raw, &result))
+	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	require.NoError(t, checkRPCWireSchema(rpcSchemaRef("DiscoveryRows"), result, schemas))
+	rows := schemas["DiscoveryRows"].(map[string]any)["properties"].(map[string]any)["rows"].(map[string]any)
+	for _, alternative := range rows["anyOf"].([]any) {
+		page := alternative.(map[string]any)
+		if page["title"] == kind {
+			require.NoError(t, checkRPCWireSchema(page, result["rows"], schemas))
+			return
+		}
+	}
+	t.Fatalf("missing result schema for %s", kind)
+}
+
+func TestDiscoverySignalPredicateContract(t *testing.T) {
+	h := setupHandler(t)
+	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, tc := range []struct {
+		predicate string
+		valid     bool
+	}{
+		{`{}`, false}, {`{"type":"unknown"}`, false},
+		{`{"type":"condition","query":{"fieldOperator":"="}}`, false},
+		{`{"type":"condition","query":{"field":null,"fieldOperator":"="}}`, false},
+		{`{"type":"condition","query":{"field":{"searchScope":"global"},"fieldOperator":"CONTAINS","value":"test"}}`, true},
+		{`{"type":"text","query":{"fieldOperator":"CONTAINS","field":{}}}`, false},
+		{`{"type":"group","group":{"logicalOperator":"AND","children":[{}]}}`, false},
+		{`null`, true}, {`false`, true},
+		{`{"type":"text","query":{"fieldOperator":"CONTAINS","value":"test"}}`, true},
+	} {
+		t.Run(tc.predicate, func(t *testing.T) {
+			var predicate any
+			require.NoError(t, decodeParams([]byte(tc.predicate), &predicate))
+			queries := map[string]any{"traces": predicate}
+			options := map[string]any{"kind": "services", "queries": queries}
+			_, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": options}))
+			require.Equal(t, tc.valid, err == nil)
+			schema := rpcDiscoveryOptions()["properties"].(map[string]any)["queries"].(map[string]any)["additionalProperties"].(map[string]any)
+			require.Equal(t, tc.valid, checkRPCWireSchema(schema, predicate, schemas) == nil)
+		})
+	}
 }
 
 func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
@@ -196,14 +305,15 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(context.Background(), conn, buildTestMetrics())
 	}))
-	result, err := handler.Handle(context.Background(), createRequest("query", []any{`SELECT m.id::varchar, s.id::varchar, l.id::varchar FROM metrics m JOIN metric_series s ON s.metric_id = m.id CROSS JOIN logs l LIMIT 1`}))
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{`select m.id::varchar, s.id::varchar, l.id::varchar, (select ref from search_services limit 1)
+		from metrics m join metric_series s on s.metric_id = m.id cross join logs l limit 1`}))
 	require.NoError(t, err)
 	var refs struct {
 		Rows [][]string `json:"rows"`
 	}
 	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &refs))
 	require.Len(t, refs.Rows, 1)
-	require.Len(t, refs.Rows[0], 3)
+	require.Len(t, refs.Rows[0], 4)
 	metricRef, seriesRef, logRef := refs.Rows[0][0], refs.Rows[0][1], refs.Rows[0][2]
 	document := openRPCDocument()
 	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
@@ -217,6 +327,10 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"query", []any{"select 9007199254740993::bigint as exact"}},
 		{"searchTraceSummaries", []any{nil, nil}},
 		{"searchLogSummaries", []any{nil, nil}},
+		{"searchLogPage", []any{nil, nil, nil, nil, nil, 1, 0, []any{
+			map[string]string{"source": "log", "kind": "field", "key": "timeUnixNano"},
+			map[string]string{"source": "log", "kind": "attribute", "key": "missing.attribute"},
+		}}},
 		{"searchMetricSummaries", []any{nil, nil}},
 		{"getTraceLogSummaries", []any{testTraceIDHex}},
 		{"getLog", []any{logRef}},
@@ -229,7 +343,8 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"getMetricAttributeDefinitions", []any{}},
 		{"getTraceAttributeDefinitionsByTraceID", []any{testTraceIDHex}},
 		{"getFieldValueCompletions", []any{"traces", "name", "", 10}},
-		{"searchAttributeMatches", []any{"pumpkin"}},
+		{"searchAttributeMatches", []any{"pumpkin", "traces", "resource", []string{"attributes", "service.name"}, "string"}},
+		{"getServiceLabels", []any{refs.Rows[0][3]}},
 		{"getStats", []any{}},
 		{"getTraceSpanCount", []any{testTraceIDHex}},
 		{"getImportConfig", []any{}},
@@ -248,6 +363,16 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 			require.NoError(t, err)
 			var value any
 			require.NoError(t, decodeParams(encoded, &value))
+			if tc.method == "searchAttributeMatches" {
+				require.NotEmpty(t, value)
+			}
+			if tc.method == "searchLogPage" {
+				page := value.(map[string]any)["logs"].([]any)
+				require.Len(t, page, 1)
+				columns := page[0].(map[string]any)["columnValues"].([]any)
+				require.Len(t, columns, 2)
+				require.Equal(t, false, columns[1].(map[string]any)["present"])
+			}
 			for _, method := range document["methods"].([]rpcMethodDescription) {
 				if method.Name == tc.method {
 					require.NoError(t, checkRPCWireSchema(method.Result.Schema, value, schemas))
