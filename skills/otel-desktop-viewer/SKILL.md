@@ -7,23 +7,20 @@ description: "Use when a user asks to inspect traces, spans, logs, Metrics, or s
 
 ## Discover the HTTP API
 
-For direct HTTP use, `GET /openrpc.json` returns the OpenRPC description of the
-JSON-RPC methods at `POST /rpc`. The same document is available through
-`{"jsonrpc":"2.0","id":1,"method":"rpc.discover"}`. The HTTP root advertises
-the description and this guide in its `Link` header.
+`GET /openapi.json` returns the complete HTTP reference. To list just the routes
+as **verb, path, summary**, set `$viewer` to the viewer URL and run:
 
-Read each method's parameter and result descriptions before calling it. UI chart
-and trace-view payloads contain computed display fields and compact references;
-they are not received OTLP objects. Exact timestamps and 64-bit values require a
-precision-preserving JSON parser. Prefer decimal strings for time inputs, and
-use `query` with `SHOW TABLES` and `DESCRIBE <table>` to inspect stored columns.
-OpenRPC describes JSON-RPC, not the viewer's other HTTP routes or OpenAPI.
-`GET /openapi.json` describes HTTP routes, including exports and browser-oriented
-Arrow datasets, and links back to OpenRPC and this guide. For agent inspection,
-prefer the CLI or JSON-RPC summaries and exact detail methods. Use methods ending
-in `View` only when computed viewer/chart projections are the intended result.
-The CLI uses JSON-RPC and keeps its table/JSON output formats. The browser's
-native Arrow transport does not change these agent-facing formats.
+```sh
+curl -fsS "$viewer/openapi.json" | jq -r '
+  .paths | to_entries[] | .key as $path | .value | to_entries[]
+  | select(.value.operationId?) | [(.key | ascii_upcase), $path, .value.summary] | @tsv'
+```
+
+To read a single HTTP operation, use `GET /openapi/{operationId}.json`.
+For example, `/openapi/jsonRPC.json` describes `POST /rpc`.
+For JSON-RPC, `GET /openrpc.json` lists the methods;
+`rpc.discover` returns the same document. If you know the method name, fetch
+just its reference, for example `GET /openrpc/getLog.json`.
 
 ## Connect to one viewer
 
@@ -375,7 +372,7 @@ Histogram, and ExponentialHistogram. Gauge stores a non-applicable zero, so
 interpret it only with `metric_type`.
 
 ```sh
-otel-desktop-viewer query --json "
+otel-desktop-viewer query "
 SELECT
   m.id::VARCHAR AS metric_ref,
   ms.id::VARCHAR AS series_ref,
@@ -465,8 +462,8 @@ same across discovery and lookup. For example, this follows the string `POST`
 in `checkout` during one fixed hour:
 
 ```sh
-otel-desktop-viewer attributes values http.request.method --service checkout --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json
-otel-desktop-viewer query --json "
+otel-desktop-viewer attributes values http.request.method --service checkout --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z
+otel-desktop-viewer query "
 SELECT trace_id_wire(s.trace_id) AS trace_id,
        span_id_wire(s.span_id) AS span_id, s.service_name, s.name
 FROM spans s

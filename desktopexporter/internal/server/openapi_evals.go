@@ -9,8 +9,8 @@ func addEvalsOpenAPI(paths map[string]any) {
 		return map[string]any{"name": name, "in": "query", "description": description, "schema": schema}
 	}
 	paths["/api/evals/ingest"] = map[string]any{"post": map[string]any{
-		"operationId": "ingestEvals", "summary": "Import an evaluation source document", "tags": []string{"Evals"},
-		"description": "Available only in Evals builds. Upload raw source bytes: a full Promptfoo v3 envelope, or JSONL of complete independent envelopes; bare result rows are rejected. Do not wrap in JSON-RPC. Validated records pass through the configured OTLP receiver, redaction and batching. Success confirms retained evidence, not merely receiver acceptance. Cancellation or timeout may leave accepted records that arrive later; retry the same source to reconcile completion.",
+		"operationId": "ingestEvals", "summary": "Import a Promptfoo evaluation file", "tags": []string{"Evaluations"},
+		"description": "Upload raw source bytes: a full Promptfoo v3 envelope, or JSONL of complete independent envelopes; bare result rows are rejected. Do not wrap in JSON-RPC. Validated records pass through the configured OTLP receiver, redaction and batching. Success confirms retained evidence, not merely receiver acceptance. Cancellation or timeout may leave accepted records that arrive later; retry the same source to reconcile completion.",
 		"parameters":  []any{param("name", "Source filename/provenance, at most 256 UTF-8 bytes; defaults to Imported evaluation.", text)},
 		"requestBody": map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": object}, "application/octet-stream": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}}},
 		"responses": map[string]any{
@@ -27,8 +27,8 @@ func addEvalsOpenAPI(paths map[string]any) {
 		return map[string]any{"200": apiResponse(description, "application/json", schema), "400": apiResponse("Invalid query parameters.", "text/plain", text), "404": apiResponse("Evals unavailable or experiment not found.", "text/plain", text), "500": apiResponse("Read or evidence reconciliation failed.", "text/plain", text)}
 	}
 	paths["/api/evals/experiments"] = map[string]any{"get": map[string]any{
-		"operationId": "searchEvalExperiments", "summary": "Search retained evaluation experiments", "tags": []string{"Evals"},
-		"description": "Available only in Evals builds. Uses the shared search criteria tree; q is not supported. Returns computed experiment summaries and index status, not complete source rows.",
+		"operationId": "searchEvalExperiments", "summary": "Search retained evaluation experiments", "tags": []string{"Evaluations"},
+		"description": "Uses the shared search criteria tree; q is not supported. Returns computed experiment summaries and index status, not complete source rows.",
 		"parameters": []any{
 			param("criteria", "JSON-encoded search tree, at most 64 KiB UTF-8; URL-encode the value.", text),
 			param("outcome", "Repeat to select recorded outcome keys, at most five.", map[string]any{"type": "array", "maxItems": 5, "items": text}),
@@ -40,8 +40,8 @@ func addEvalsOpenAPI(paths map[string]any) {
 		"responses": responses("Experiment page; Cache-Control: no-store.", map[string]any{"type": "object", "required": []string{"experiments", "total", "hasMore", "facets", "indexing"}, "properties": map[string]any{"experiments": map[string]any{"type": "array", "items": object}, "total": map[string]any{"type": "integer"}, "hasMore": map[string]any{"type": "boolean"}, "facets": map[string]any{"type": "array", "items": object}, "indexing": object}}),
 	}}
 	paths["/api/evals/experiments/{id}/rows"] = map[string]any{"get": map[string]any{
-		"operationId": "evalExperimentRows", "summary": "Read a bounded page of received evaluation rows", "tags": []string{"Evals"},
-		"description": "Available only in Evals builds. contextJSON and each row's json are source JSON strings preserving numeric lexemes; use a precision-preserving parser if decoding them.",
+		"operationId": "evalExperimentRows", "summary": "Read one page of experiment rows", "tags": []string{"Evaluations"},
+		"description": "contextJSON and each row's json are source JSON strings preserving numeric lexemes; use a precision-preserving parser if decoding them.",
 		"parameters": []any{
 			map[string]any{"name": "id", "in": "path", "required": true, "schema": text, "description": "Viewer-local experiment ID."},
 			param("after", "Exclusive source-row ordinal cursor; -1 starts at the beginning.", map[string]any{"type": "integer", "minimum": -1, "default": -1}),

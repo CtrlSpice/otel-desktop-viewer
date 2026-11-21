@@ -5,7 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -150,7 +153,7 @@ func openRPCDocument() map[string]any {
 		{"searchTraceSummaries", "TraceSummaries", "Returns trace summaries, not complete spans. Time/query select matching spans; summary counts and bounds describe each whole retained trace. durationNs = max(end_time)-min(start_time), exact decimal nanoseconds. matchedSpans identifies matches. No truncation flag: request a look-ahead row if needed. Omitted/null limit is unbounded.", 2},
 		{"getTraceView", "TraceView", "Returns a trace with hierarchy and search-match information. resources/scopes are maps indexed by spanData.r/s database-local sequence keys. traceStart = minimum span start; spanData.start = received start-traceStart and dur = received end-start, exact decimal nanoseconds. depth/matched and kind/status labels are computed display fields; kindCode/statusCodeValue are received signed codes. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export. Optional query marks matches without changing received data. Replace each response as a unit, since offsets depend on its baseline.", 1},
 		{"getTraceOverview", "TraceOverview", "Returns compact spans and trace-linked log previews. trace.startTime = minimum received span start; durationNs = maximum end-minimum start. startOffsetNs = span start-trace start; span durationNs = end-start. All are exact decimal nanoseconds. spanCount/logCount count retained records. logs.body is a display preview, not the received typed body; severity uses received text or a computed number-range label. Use getSpan/getLog for full data.", 1},
-		{"getSpan", "SpanResult", "Looks up a received 16-hex span ID, optionally restricted to a trace. status=found has traceID, span and logs; status=notFound has spanID and nullable traceID; status=ambiguous has spanID, matchCount, summaries and truncated. Without traceID, repeated span IDs across traces are ambiguous, never silently selected. limit defaults to 25 and bounds ambiguity summaries only. Full span startTime/endTime use exact decimal Unix nanoseconds; associated logs preserve typed bodies. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export.", 1},
+		{"getSpan", "SpanResult", "Use traceID and spanID together to look up a span. If the trace ID is unknown, supply only the 16-hex spanID. status=found has traceID, span and logs; status=notFound has spanID and nullable traceID; status=ambiguous has spanID, matchCount, summaries and truncated. Without traceID, repeated span IDs across traces are ambiguous, never silently selected. limit defaults to 25 and bounds ambiguity summaries only. Full span startTime/endTime use exact decimal Unix nanoseconds; associated logs preserve typed bodies. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export.", 1},
 		{"searchLogSummaries", "LogSummaries", "Returns logRef, timestamp, severityText/Number, serviceName and bodyPreview. timestamp is received timestamp unless zero, then observedTimestamp; exact unsigned decimal Unix nanoseconds. bodyPreview is computed display text, not the complete typed body. No truncation flag; omitted/null limit is unbounded.", 2},
 		{"searchLogPage", "LogPage", "Returns one bounded page of LogSummaries and total matching logs, computed in the same database statement. Time/query and sort apply before pagination; ties sort by logRef ascending. Optional limit caps the full result and total before pageSize/offset. Default pageSize is 100 (1..250); offset defaults to 0. Optional columns project received fields/attributes only for page rows. Each row's columnValues echoes source/kind/key in request order with typed values; [] means absent, distinct from a received empty value. Attribute occurrences retain owner-array order. Timestamp field values are unsigned decimal strings; IDs are hex strings. Omitted/empty columns leave summaries unchanged. An offset past the result returns logs:[] with total intact. Each request reads current retained data; this is not a cross-request snapshot.", 2},
 		{"getLogErrorNavigation", "LogErrorNavigation", "Returns the count and neighbouring error logs (severityNumber >= 17) across the full time/query/sort result, capped by optional limit before navigation. Each target has logRef and zero-based result offset. index is the selected error's one-based position, or null for a missing/non-error selection. Previous/next do not wrap; a missing selection has no previous target and next points to the first error. Counts and targets come from one database statement.", 2},
@@ -329,8 +332,65 @@ func rpcExamples(method string) []map[string]any {
 	return []map[string]any{{"name": "empty-store", "description": "Executable example against an empty viewer store. Named params use these names as keys; positional params use the listed values in order.", "params": params, "result": map[string]any{"name": "result", "value": result}}}
 }
 
-func openRPCHandler() (http.Handler, error) {
-	return apiDocumentHandler("openrpc.json", openRPCDocument())
+func registerOpenRPC(mux *http.ServeMux) error {
+	doc := openRPCDocument()
+	full, err := apiDocumentHandler("openrpc.json", doc)
+	if err != nil {
+		return err
+	}
+	mux.Handle("GET /openrpc.json", full)
+	all := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, method := range doc["methods"].([]rpcMethodDescription) {
+		schemas := map[string]any{}
+		for _, descriptor := range append([]rpcDescriptor{method.Result}, method.Params...) {
+			if err := collectRPCSchemas(descriptor.Schema, all, schemas); err != nil {
+				return fmt.Errorf("%s: %w", method.Name, err)
+			}
+		}
+		single := maps.Clone(doc)
+		single["methods"] = []rpcMethodDescription{method}
+		single["components"] = map[string]any{"schemas": schemas}
+		filename := method.Name + ".json"
+		handler, err := apiDocumentHandler(filename, single)
+		if err != nil {
+			return err
+		}
+		mux.Handle("GET /openrpc/"+filename, handler)
+	}
+	return nil
+}
+
+// Copy local dependencies once, including schemas that reference themselves.
+func collectRPCSchemas(node any, all, selected map[string]any) error {
+	switch v := node.(type) {
+	case map[string]any:
+		if ref, ok := v["$ref"].(string); ok {
+			if name, local := strings.CutPrefix(ref, "#/components/schemas/"); local {
+				if _, visited := selected[name]; !visited {
+					schema, exists := all[name]
+					if !exists {
+						return fmt.Errorf("unknown OpenRPC schema %q", name)
+					}
+					selected[name] = schema
+					if err := collectRPCSchemas(schema, all, selected); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		for _, child := range v {
+			if err := collectRPCSchemas(child, all, selected); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if err := collectRPCSchemas(child, all, selected); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func apiDocumentHandler(name string, value map[string]any) (http.Handler, error) {

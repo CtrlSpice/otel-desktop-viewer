@@ -254,7 +254,7 @@ insert into spans (trace_id, span_id, start_time, service_name, attributes) valu
 	require.NoError(t, err)
 	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "## Discover attributes and inspect matching records")
 	require.True(t, ok)
-	_, statement, ok := strings.Cut(section, "otel-desktop-viewer query --json \"\n")
+	_, statement, ok := strings.Cut(section, "otel-desktop-viewer query \"\n")
 	require.True(t, ok)
 	statement, _, ok = strings.Cut(statement, "\"\n```")
 	require.True(t, ok)

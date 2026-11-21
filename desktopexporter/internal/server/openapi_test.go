@@ -35,14 +35,11 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 		OpenAPI string `json:"openapi"`
 		Paths   map[string]struct {
 			Post struct {
+				Tags        []string `json:"tags"`
 				RequestBody struct {
-					Content map[string]struct {
-						Example json.RawMessage `json:"example"`
-					} `json:"content"`
+					Content map[string]struct{ Example json.RawMessage }
 				} `json:"requestBody"`
-				Responses map[string]struct {
-					Content map[string]json.RawMessage `json:"content"`
-				} `json:"responses"`
+				Responses map[string]struct{ Content map[string]json.RawMessage } `json:"responses"`
 			} `json:"post"`
 		} `json:"paths"`
 	}
@@ -56,7 +53,8 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 		require.Equal(t, features.EvalsBuilt, exists, path)
 	}
 	require.Contains(t, doc.Paths["/api/data/{method}"].Post.Responses["200"].Content, arrowStreamContentType)
-	require.Contains(t, w.Body.String(), "browser-oriented")
+	require.Equal(t, []string{"Viewer UI"}, doc.Paths["/api/data/{method}"].Post.Tags)
+	require.Equal(t, []string{"JSON-RPC"}, doc.Paths["/rpc"].Post.Tags)
 	for _, path := range []string{"/openapi.json", "/openrpc.json"} {
 		head := request("HEAD", path, nil, nil)
 		require.Equal(t, http.StatusOK, head.Code)
@@ -83,4 +81,41 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 	require.NoError(t, json.Unmarshal(reply.Body.Bytes(), &envelope))
 	require.Empty(t, envelope.Error)
 	require.JSONEq(t, `[]`, string(envelope.Result))
+}
+
+func TestOpenAPIBundleAndIndividualOperations(t *testing.T) {
+	mux := http.NewServeMux()
+	require.NoError(t, registerOpenAPI(mux))
+	read := func(path string) map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		require.Equal(t, 200, w.Code, path)
+		var doc map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+		return doc
+	}
+	bundle := read("/openapi.json")
+	// A saved spec must describe the HTTP contract without fetching other documents.
+	wire, err := json.Marshal(bundle)
+	require.NoError(t, err)
+	require.NotContains(t, string(wire), `"$ref":"/openapi/`)
+	for path, value := range bundle["paths"].(map[string]any) {
+		item := value.(map[string]any)
+		for verb, entry := range item {
+			if verb == "parameters" {
+				continue
+			}
+			op := entry.(map[string]any)
+			id := op["operationId"].(string)
+			t.Run(id, func(t *testing.T) {
+				require.NotEmpty(t, op["responses"], "%s %s", verb, path)
+				if shared, ok := item["parameters"].([]any); ok {
+					params, _ := op["parameters"].([]any)
+					op["parameters"] = append(append([]any(nil), shared...), params...)
+				}
+				require.Equal(t, op, read("/openapi/"+id+".json"))
+			})
+		}
+	}
 }

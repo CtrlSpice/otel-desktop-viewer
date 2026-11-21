@@ -101,6 +101,50 @@ func TestOpenRPCHTTPAndRPCDiscovery(t *testing.T) {
 	assert.Contains(t, string(guide), "rpc.discover")
 }
 
+func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
+	s, err := NewServer("localhost:0", 0, nil, zap.NewNop(), nil)
+	require.NoError(t, err)
+	read := func(verb, path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		s.server.Handler.ServeHTTP(w, httptest.NewRequest(verb, path, nil))
+		return w
+	}
+	type document struct {
+		Methods    []json.RawMessage                            `json:"methods"`
+		Components struct{ Schemas map[string]json.RawMessage } `json:"components"`
+	}
+	var full document
+	require.NoError(t, json.Unmarshal(read("GET", "/openrpc.json").Body.Bytes(), &full))
+	for _, method := range full.Methods {
+		var entry struct{ Name string }
+		require.NoError(t, json.Unmarshal(method, &entry))
+		t.Run(entry.Name, func(t *testing.T) {
+			path := "/openrpc/" + entry.Name + ".json"
+			w := read("GET", path)
+			require.Equal(t, http.StatusOK, w.Code)
+			var single document
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &single))
+			require.Len(t, single.Methods, 1)
+			require.Equal(t, method, single.Methods[0])
+			for name, schema := range single.Components.Schemas {
+				require.Equal(t, full.Components.Schemas[name], schema)
+			}
+			for _, ref := range regexp.MustCompile(`"#/components/schemas/([^"]+)"`).FindAllStringSubmatch(w.Body.String(), -1) {
+				require.Contains(t, single.Components.Schemas, ref[1])
+			}
+			if entry.Name == "getLog" {
+				require.Contains(t, single.Components.Schemas, "Value")
+				require.NotContains(t, single.Components.Schemas, "Metric")
+				head := read("HEAD", path)
+				require.Equal(t, http.StatusOK, head.Code)
+				require.Empty(t, head.Body.Bytes())
+				require.Equal(t, w.Header().Get("ETag"), head.Header().Get("ETag"))
+			}
+		})
+	}
+	require.Equal(t, http.StatusNotFound, read("GET", "/openrpc/unknown.json").Code)
+}
+
 func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
 	document := openRPCDocument()
 	methods := document["methods"].([]rpcMethodDescription)
