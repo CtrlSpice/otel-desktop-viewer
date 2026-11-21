@@ -437,8 +437,8 @@ func rpcDiscoveryOptions() map[string]any {
 			mode("connection-spans", "List child span IDs, trace IDs, names, times and status codes for this source and target.", "serviceIdentity", "targetIdentity"),
 			mode("keys", "List attribute keys and types.", "signal", "ownerType"),
 			mode("values", "Count distinct records per typed value. The denominator counts records carrying the key before paging. Empty keys are valid.", "signal", "ownerType", "key"),
-			mode("home-values", "Display preview. Use identity as the opaque row ID and valueRef with home-value for the exact value. A zero limit returns counts only. Advance offset by the number of values returned.", "ownerType", "key"),
-			mode("home-value", "Resolve a valueRef to its exact identity string. Repeat home-values if the reference expires or the viewer restarts.", "valueRef"),
+			mode("home-values", "Display preview; identity is the opaque row ID. Limit 0 returns counts only. To page, use a positive limit and advance offset by the number of values returned.", "ownerType", "key"),
+			mode("home-value", "Resolve valueRef to its canonical identity string. Use Arrow for the exact received value. Repeat home-values if the reference expires.", "valueRef"),
 		},
 	}
 }

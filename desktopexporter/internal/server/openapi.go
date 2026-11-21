@@ -120,6 +120,15 @@ func openAPIDocument() map[string]any {
 		"422": apiResponse("Unsupported stored metric type.", "text/plain", text),
 		"500": apiResponse("Export reconstruction failed.", "text/plain", text),
 	}
+	exportHeaders := map[string]any{
+		"200": map[string]any{"description": "Content-Length gives the export size in bytes."},
+		"206": map[string]any{"description": "Headers for the requested byte range."},
+	}
+	for code, response := range exportResponses {
+		if _, ok := exportHeaders[code]; !ok {
+			exportHeaders[code] = map[string]any{"description": response.(map[string]any)["description"]}
+		}
+	}
 	paths["/export/{signal}/{id}"] = map[string]any{
 		"parameters": []any{
 			parameter("signal", "path", "Signal to export.", map[string]any{"type": "string", "enum": []string{"traces", "logs", "metrics"}}),
@@ -132,7 +141,7 @@ func openAPIDocument() map[string]any {
 			parameter("Range", "header", "Optional HTTP byte range for a bounded preview; omit for complete export.", text),
 		},
 		"get":  map[string]any{"operationId": "exportOTLP", "summary": "Download retained telemetry as OTLP JSON", "tags": []string{"Export"}, "description": "Rebuilds the payload from stored telemetry and its context. Search and time filters do not apply. Export trace-linked logs separately. Unknown or inapplicable parameters return 400.", "responses": exportResponses},
-		"head": map[string]any{"operationId": "exportOTLPHeaders", "summary": "Check the export size without downloading the payload", "tags": []string{"Export"}, "responses": map[string]any{"200": map[string]any{"description": "Content-Length gives the export size in bytes."}, "default": map[string]any{"description": "Same status codes as GET, without a response body."}}},
+		"head": map[string]any{"operationId": "exportOTLPHeaders", "summary": "Check the export size without downloading the payload", "tags": []string{"Export"}, "responses": exportHeaders},
 	}
 	addEvalsOpenAPI(paths)
 	tags := []map[string]string{{"name": "Discovery"}, {"name": "JSON-RPC"}, {"name": "Export"}}
