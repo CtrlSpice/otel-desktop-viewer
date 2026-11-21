@@ -60,7 +60,8 @@ func newServiceConnectionsCommand(client *http.Client, now func() time.Time) *co
 		Long: "Use serviceIdentity from services to list recorded cross-service parent and child spans grouped by source and target. Both spans must be in the selected window.",
 		Args: cobra.ExactArgs(1), SilenceUsage: true, SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			q, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), now())
+			at := now()
+			q, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), at)
 			if err != nil {
 				return err
 			}
@@ -85,7 +86,18 @@ func newServiceConnectionsCommand(client *http.Client, now func() time.Time) *co
 			if err == nil && truncated {
 				next := offset + uint64(len(rows))
 				if next <= 1_000_000_000 {
-					_, err = fmt.Fprintf(cmd.OutOrStdout(), "[more connections available; use --offset %d]\n", next)
+					start, end := options.Start, options.End
+					if start == "" && end == "" {
+						start, end = at.Add(-options.Since).UTC().Format(time.RFC3339Nano), at.UTC().Format(time.RFC3339Nano)
+					}
+					flags := fmt.Sprintf("--offset %d", next)
+					if start != "" {
+						flags += " --start " + start
+					}
+					if end != "" {
+						flags += " --end " + end
+					}
+					_, err = fmt.Fprintf(cmd.OutOrStdout(), "[next page: use %s instead of relative time]\n", flags)
 				} else {
 					_, err = fmt.Fprintln(cmd.OutOrStdout(), "[more connections available; narrow the time window to stay within the offset limit]")
 				}

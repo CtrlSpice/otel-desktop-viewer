@@ -180,6 +180,12 @@ func addAttributeFlags(cmd *cobra.Command, options *telemetrySearchOptions, sign
 }
 
 func resolveAttributeSearch(cmd *cobra.Command, options telemetrySearchOptions, signal, ownerType string, now time.Time) (attributeSearchQuery, error) {
+	if signal == "" && cmd.Flags().Changed("signal") {
+		return attributeSearchQuery{}, fmt.Errorf("--signal cannot be empty")
+	}
+	if ownerType == "" && cmd.Flags().Changed("owner-type") {
+		return attributeSearchQuery{}, fmt.Errorf("--owner-type cannot be empty")
+	}
 	query, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), now)
 	if err != nil {
 		return attributeSearchQuery{}, err

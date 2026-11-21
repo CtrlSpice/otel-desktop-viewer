@@ -24,8 +24,13 @@ import (
 
 func servicesTestRun(t *testing.T, endpoint string, args ...string) (string, error) {
 	t.Helper()
+	return servicesTestRunAt(t, endpoint, time.Unix(10000, 0), args...)
+}
+
+func servicesTestRunAt(t *testing.T, endpoint string, at time.Time, args ...string) (string, error) {
+	t.Helper()
 	cmd := newRootCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}},
-		http.DefaultClient, func() time.Time { return time.Unix(10000, 0) },
+		http.DefaultClient, func() time.Time { return at },
 		func(context.Context, otelcol.CollectorSettings) error {
 			t.Fatal("services started a viewer")
 			return nil
@@ -476,11 +481,15 @@ func TestServicesTableIdentityFindsServiceMapConnections(t *testing.T) {
 	table, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity, "--limit", "1")
 	require.NoError(t, err)
 	require.Contains(t, table, "checkout")
-	require.Contains(t, table, "--offset 1")
+	_, hint, ok := strings.Cut(table, "[next page: use ")
+	require.True(t, ok)
+	flags, _, ok := strings.Cut(hint, " instead of relative time]")
+	require.True(t, ok)
+	require.Equal(t, "--offset 1 --start 1970-01-01T01:46:40Z --end 1970-01-01T02:46:40Z", flags)
 	require.Contains(t, table, "errorSpanCount")
-	next, err := servicesTestRun(t, endpoint, "connections", source.ServiceIdentity, "--limit", "1", "--offset", "1")
+	next, err := servicesTestRunAt(t, endpoint, time.Unix(20000, 0), append([]string{"connections", source.ServiceIdentity, "--limit", "1"}, strings.Fields(flags)...)...)
 	require.NoError(t, err)
-	require.NotContains(t, next, "more connections")
+	require.NotContains(t, next, "next page")
 	for _, name := range []string{"payments", "shipping"} {
 		require.NotEqual(t, strings.Contains(table, name), strings.Contains(next, name))
 	}

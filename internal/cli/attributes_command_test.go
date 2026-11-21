@@ -221,7 +221,7 @@ func TestAttributesOfflineHelpAndValidation(t *testing.T) {
 			}
 		})
 	}
-	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", "logs", "--owner-type", "span"}, {"values", "key", "--owner-type", "unknown"}, {"keys", "--signal", "unknown"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
+	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", ""}, {"values", "key", "--owner-type", ""}, {"keys", "--signal", "logs", "--owner-type", "span"}, {"values", "key", "--owner-type", "unknown"}, {"keys", "--signal", "unknown"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
 		cmd := newAttributesCommand(&http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			t.Fatal("invalid input made an HTTP request")
 			return nil, nil

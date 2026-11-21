@@ -73,6 +73,23 @@ func TestHomeDiscoveryGlobalPageAndExactReference(t *testing.T) {
 
 	// Copy resolves the retained received value after its source was removed.
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error { _, err := db.ExecContext(t.Context(), "delete from spans"); return err }))
+	resolve := map[string]any{"kind": "home-value", "valueRef": page.Values[0].ValueRef}
+	exact, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": resolve}))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"identity": `{"kind":"int64","value":"0"}`}, exact)
+	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	check := func(schema map[string]any, data any) {
+		t.Helper()
+		raw, err := json.Marshal(data)
+		require.NoError(t, err)
+		var value any
+		require.NoError(t, decodeParams(raw, &value))
+		require.NoError(t, checkRPCWireSchema(schema, value, schemas))
+	}
+	check(rpcDiscoveryOptions(), options)
+	check(rpcDiscoveryOptions(), resolve)
+	check(rpcSchemaRef("DiscoveryResult"), page)
+	check(rpcSchemaRef("DiscoveryResult"), exact)
 	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
 	require.NoError(t, err)
 	// The HTTP server has its own handler/cache; use the discovery owner here.

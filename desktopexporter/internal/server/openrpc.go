@@ -65,6 +65,14 @@ func openRPCDocument() map[string]any {
 	nullableInteger := map[string]any{"type": []string{"integer", "null"}}
 	nullableObject := map[string]any{"type": []string{"object", "null"}}
 	attributePath := rpcArray(map[string]any{"oneOf": []any{text, map[string]any{"type": "integer", "minimum": 0, "maximum": 4294967294}}})
+	rootSpan := rpcObject(map[string]any{"name": text, "serviceName": nullableText}, "name", "serviceName")
+	rootSpan["type"] = []string{"object", "null"}
+	uintText := map[string]any{"type": "string", "pattern": "^[0-9]+$"}
+	seriesTime := map[string]any{"anyOf": []any{uintText, map[string]any{"type": "null"}}}
+	seriesEntry := rpcObject(map[string]any{
+		"seriesRef": rpcSchemaRef("EntityID"), "attributes": rpcSchemaRef("Attributes"), "datapointCount": uintText,
+		"firstDatapointTimestamp": seriesTime, "lastDatapointTimestamp": seriesTime,
+	}, "seriesRef", "attributes", "datapointCount", "firstDatapointTimestamp", "lastDatapointTimestamp")
 	schemas := map[string]any{
 		"Decimal": decimal, "UintInput": uintInput, "IntInput": intInput, "EntityID": id,
 		"TimeBound": map[string]any{"anyOf": []any{rpcSchemaRef("UintInput"), map[string]any{"type": "null"}}, "description": "Inclusive bound in Unix nanoseconds. Null means unbounded. Zero means the Unix epoch."},
@@ -89,7 +97,7 @@ func openRPCDocument() map[string]any {
 			"sampleValues": map[string]any{"type": "array", "items": rpcSchemaRef("Value"), "maxItems": 3},
 		}, "name", "type", "attributeScope", "owner", "path", "matchCount", "sampleValues")),
 		"ServiceLabels": rpcObject(map[string]any{"serviceName": text, "serviceNamespace": text}, "serviceName", "serviceNamespace"),
-		"TraceSummaries": rpcArray(rpcObject(map[string]any{"traceID": text, "hasRootSpan": boolean, "rootSpan": nullableObject,
+		"TraceSummaries": rpcArray(rpcObject(map[string]any{"traceID": text, "hasRootSpan": boolean, "rootSpan": rootSpan,
 			"startTime": decimal, "durationNs": nullableText, "spanCount": integer, "errorCount": integer, "matchedSpans": rpcArray(object),
 		}, "traceID", "hasRootSpan", "rootSpan", "startTime", "durationNs", "spanCount", "errorCount")),
 		"LogSummaries": rpcArray(rpcObject(map[string]any{"logRef": text, "timestamp": map[string]any{"type": "string", "pattern": decimal["pattern"], "description": "Received timestamp in exact unsigned decimal Unix nanoseconds. If zero, uses observedTimestamp."}, "severityText": text, "severityNumber": integer,
@@ -132,7 +140,7 @@ func openRPCDocument() map[string]any {
 			"traceID": map[string]any{"type": []string{"string", "null"}}, "spanID": text,
 			"span": object, "logs": rpcArray(rpcSchemaRef("Log")), "matchCount": integer, "summaries": rpcArray(object), "truncated": boolean,
 		}, "status"),
-		"Metric":       rpcObject(map[string]any{"metricRef": text, "name": text, "description": text, "unit": text, "metricType": text, "metadata": attributes, "resource": object, "scope": object, "series": rpcArray(object)}, "metricRef", "name", "description", "unit", "metricType", "metadata", "resource", "scope", "series"),
+		"Metric":       rpcObject(map[string]any{"metricRef": text, "name": text, "description": text, "unit": text, "metricType": text, "metadata": rpcSchemaRef("Attributes"), "resource": object, "scope": object, "series": rpcArray(seriesEntry)}, "metricRef", "name", "description", "unit", "metricType", "metadata", "resource", "scope", "series"),
 		"MetricSeries": rpcObject(map[string]any{"metricRef": text, "seriesRef": text, "name": text, "description": text, "unit": text, "metricType": text, "metadata": attributes, "resource": object, "scope": object, "attributes": attributes, "datapoints": rpcArray(object)}, "metricRef", "seriesRef", "metricType", "datapoints", "attributes"),
 		"MetricView": rpcObject(map[string]any{"metricRef": text, "name": text, "description": text, "unit": text, "metricType": text,
 			"metadata": attributes, "resource": rpcSchemaRef("Resource"), "scope": rpcSchemaRef("Scope"),
@@ -149,9 +157,18 @@ func openRPCDocument() map[string]any {
 			"metrics":    rpcObject(map[string]any{"metricCount": integer, "dataPointCount": integer, "lastReceived": nullableText}, "metricCount", "dataPointCount", "lastReceived"),
 			"rejections": rpcArray(object),
 		}, "storage", "traces", "logs", "metrics", "rejections"),
+		"HomeCounts": rpcObject(map[string]any{"traces": integer, "logs": integer, "metrics": integer}, "traces", "logs", "metrics"),
+		"HomeValue": rpcObject(map[string]any{
+			"preview": text, "identity": text, "valueRef": text, "kind": text, "colorHash": integer,
+			"counts": rpcSchemaRef("HomeCounts"), "count": integer, "kindCount": integer, "denominator": integer,
+			"relativeFrequency": map[string]any{"type": "number"}, "foundOn": rpcArray(rpcObject(map[string]any{"signal": text, "ownerType": text}, "signal", "ownerType")),
+		}, "preview", "identity", "valueRef", "kind", "colorHash", "counts", "count", "kindCount", "denominator", "relativeFrequency", "foundOn"),
 		"DiscoveryResult": map[string]any{"oneOf": []any{
 			rpcSchemaRef("QueryResult"),
-			rpcObject(map[string]any{"values": rpcArray(object), "kinds": rpcArray(object), "denominators": object, "denominator": integer, "total": integer, "truncated": boolean}, "values", "kinds", "denominators", "denominator", "total", "truncated"),
+			rpcObject(map[string]any{
+				"values": rpcArray(rpcSchemaRef("HomeValue")), "kinds": rpcArray(rpcObject(map[string]any{"kind": text, "count": integer, "counts": rpcSchemaRef("HomeCounts")}, "kind", "count", "counts")),
+				"denominators": rpcSchemaRef("HomeCounts"), "denominator": integer, "total": integer, "truncated": boolean,
+			}, "values", "kinds", "denominators", "denominator", "total", "truncated"),
 			rpcObject(map[string]any{"identity": text}, "identity"),
 		}},
 		"StringList":   rpcArray(text),
@@ -420,7 +437,7 @@ func rpcDiscoveryOptions() map[string]any {
 			mode("connection-spans", "List child span IDs, trace IDs, names, times and status codes for this source and target.", "serviceIdentity", "targetIdentity"),
 			mode("keys", "List attribute keys and types.", "signal", "ownerType"),
 			mode("values", "Count distinct records per typed value. The denominator counts records carrying the key before paging. Empty keys are valid.", "signal", "ownerType", "key"),
-			mode("home-values", "List previews, valueRefs, counts and denominators across signals. A zero limit returns counts only. To continue, advance offset by the number of values returned.", "ownerType", "key"),
+			mode("home-values", "Display preview. Use identity as the opaque row ID and valueRef with home-value for the exact value. A zero limit returns counts only. Advance offset by the number of values returned.", "ownerType", "key"),
 			mode("home-value", "Resolve a valueRef to its exact identity string. Repeat home-values if the reference expires or the viewer restarts.", "valueRef"),
 		},
 	}
