@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY otel-desktop-viewer /root/otel-desktop-viewer
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/otel-desktop-viewer /root/otel-desktop-viewer
 
 LABEL org.opencontainers.image.title="OpenTelemetry Desktop Viewer"
 LABEL org.opencontainers.image.description="A desktop application for viewing and analyzing OpenTelemetry traces, metrics, and logs locally"
