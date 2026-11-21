@@ -68,7 +68,8 @@ func homeDiscoveryOptions(raw json.RawMessage) (discoveryOptions, bool, error) {
 	if err := decoder.Decode(&options); err != nil {
 		return options, true, jsonrpc2.ErrInvalidParams
 	}
-	return options, true, nil
+	err := options.normalizeServiceRefs()
+	return options, true, err
 }
 
 // References retain exact native bytes independently of the representative's

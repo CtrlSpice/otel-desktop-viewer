@@ -54,6 +54,15 @@ func ServiceIdentity(resource string) string {
 	return "(select sr.service_ref from search_service_resources sr where sr.resource_id=" + resource + ".id)"
 }
 
+func NormalizeServiceRef(ref string) (string, error) {
+	if len(ref) == 64 {
+		if _, err := hex.DecodeString(ref); err == nil {
+			return strings.ToLower(ref), nil
+		}
+	}
+	return "", fmt.Errorf("expected a 64-digit hexadecimal serviceIdentity from services")
+}
+
 func (b *Builder) Predicate(query Query) string {
 	p := []string{"true"}
 	if query.StartTime != nil {

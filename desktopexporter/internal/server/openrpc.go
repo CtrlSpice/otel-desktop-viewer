@@ -184,7 +184,7 @@ func openRPCDocument() map[string]any {
 		{"getImportConfig", "ImportConfig", "Find the OTLP HTTP port used for import.", "If HTTP import is not configured, the server returns -32603.", 0},
 		{"query", "QueryResult", "Run read-only DuckDB SQL against stored telemetry.", "Each row follows column order. SQL null becomes JSON null. truncated is true if another row exists. For exact integers, decimals and numbers inside JSON columns, use a parser that preserves precision or cast to varchar in SQL. Top-level float and double values use JSON numbers when finite and OTLP strings otherwise.", 1},
 
-		{"discoverTelemetry", "DiscoveryResult", "Find services, connections, spans behind a connection, and attribute keys and value counts.", "Choose a search with options.kind. For connections, pass serviceIdentity from a services row. For connection-spans, pass the connection’s source.serviceIdentity as serviceIdentity and target.serviceIdentity as targetIdentity.", 1},
+		{"discoverTelemetry", "DiscoveryResult", "Find services, connections, spans and attribute values.", "services → connections: reuse serviceIdentity. connections → connection-spans: pass source.serviceIdentity and target.serviceIdentity.", 1},
 		{"searchTraceSummaries", "TraceSummaries", "Find matching traces and their IDs.", "Time and query filters select spans. matchedSpans identifies the matches. Counts and time bounds cover the whole retained trace. durationNs is the latest end minus the earliest start, in exact decimal nanoseconds. There is no truncation flag. Request one extra row to detect more matches.", 2},
 		{"getTraceView", "TraceView", "UI view: Read the waterfall hierarchy and search highlights.", "Use spanData.r and spanData.s as keys into resources and scopes. traceStart is the earliest span start. spanData.start is relative to traceStart. dur is end minus start. Both use exact decimal nanoseconds. Replace the whole response when refreshing: offsets share one baseline.\n\nThe viewer computes depth, matched and the kind and status labels. kindCode and statusCodeValue preserve the received signed codes. query highlights matches.", 1},
 		{"getTraceOverview", "TraceOverview", "List a trace’s spans and log previews.", "trace.startTime is the earliest span start. Trace durationNs is the latest end minus that start. Each span’s startOffsetNs is relative to trace.startTime. Its durationNs is end minus start. All times use exact decimal nanoseconds. Counts cover retained records.\n\nlogs.body is a preview. Severity uses received text or a label derived from the severity number. Use getSpan or getLog for the full record.", 1},
@@ -385,38 +385,38 @@ func rpcDiscoveryOptions() map[string]any {
 	limit := func(min, max, fallback int) map[string]any {
 		return map[string]any{"type": []string{"integer", "null"}, "minimum": min, "maximum": max, "default": fallback}
 	}
+	only := func(kind string) map[string]any {
+		return map[string]any{"properties": map[string]any{"kind": map[string]any{"const": kind}}}
+	}
 	mode := func(kind, description string, fields ...string) map[string]any {
 		props := map[string]any{"kind": map[string]any{"const": kind}}
-		names := append([]string{"kind"}, fields...)
 		s := map[string]any{"properties": props, "description": description}
 		if len(fields) > 0 {
 			s["required"] = fields
 		}
-		if kind != "home-value" {
-			names = append(names, "startTime", "endTime", "offset", "limit", "term", "queries")
-			if kind != "connections" && kind != "connection-spans" {
-				names = append(names, "serviceName", "namespace", "serviceIdentity")
-			}
-		}
-		if kind == "home-values" || kind == "values" {
-			names = append(names, "sortBy", "sortDirection")
-		}
-		if kind == "home-values" {
-			names = append(names, "valueKind", "locale")
-		}
-		if kind == "connections" || kind == "connection-spans" {
+		switch kind {
+		case "services":
+			s["propertyNames"] = map[string]any{"not": choice("ownerType", "key")}
+		case "connections", "connection-spans":
 			props["serviceIdentity"] = text
+			s["propertyNames"] = map[string]any{"not": choice("ownerType", "key", "serviceName", "namespace")}
+		case "keys":
+			s["propertyNames"] = map[string]any{"not": choice("key")}
+		case "home-values":
+			s["propertyNames"] = map[string]any{"not": choice("signal")}
+			props["limit"] = limit(0, 100, 25)
+		case "home-value":
+			s["maxProperties"] = 2 // Only kind and valueRef.
 		}
-		s["propertyNames"] = choice(names...)
 		return s
 	}
 	return map[string]any{
-		"type": "object", "required": []string{"kind"},
-		"description": "Time bounds: inclusive uint64 Unix nanoseconds as decimal strings, or null. Service filters match exactly; empty differs from omitted. term matches a case-insensitive substring. In queries, null selects all and false selects none. Filters precede paging. Each row contains one entry; truncated means more results.",
-		"if":          map[string]any{"properties": map[string]any{"kind": map[string]any{"const": "home-values"}}},
-		"then":        map[string]any{"properties": map[string]any{"limit": limit(0, 100, 25)}},
+		"type": "object", "required": []string{"kind"}, "additionalProperties": false,
+		"description": "Inclusive times: uint64 Unix nanoseconds as strings, or null. Service filters are exact; empty differs from omitted. term: case-insensitive substring. Signal queries: null selects all, false none. Filter before paging. One entry per row; truncated means more.",
+		"if":          only("home-values"),
 		"else":        map[string]any{"properties": map[string]any{"limit": limit(1, 500, 100)}},
 		"properties": map[string]any{
+			"kind": map[string]any{}, "signal": text, "limit": map[string]any{},
 			"startTime": bound, "endTime": bound, "offset": limit(0, 1_000_000_000, 0),
 			"key": text, "targetIdentity": text,
 			"term": nullableText, "serviceName": nullableText, "namespace": nullableText, "serviceIdentity": nullableText,
@@ -426,19 +426,23 @@ func rpcDiscoveryOptions() map[string]any {
 			"queries": map[string]any{"type": []string{"object", "null"}, "propertyNames": choice("traces", "logs", "metrics"),
 				"additionalProperties": map[string]any{"anyOf": []any{map[string]any{"type": []string{"object", "null"}}, map[string]any{"const": false}}}},
 		},
-		"dependencies": map[string]any{"signal": map[string]any{"oneOf": []any{
-			map[string]any{"properties": map[string]any{"signal": choice("traces"), "ownerType": choice("span", "event", "link", "resource", "scope")}},
-			map[string]any{"properties": map[string]any{"signal": choice("logs"), "ownerType": choice("log", "resource", "scope")}},
-			map[string]any{"properties": map[string]any{"signal": choice("metrics"), "ownerType": choice("datapoint", "exemplar", "metadata", "resource", "scope")}},
-		}}},
+		"dependencies": map[string]any{
+			"targetIdentity": only("connection-spans"), "valueRef": only("home-value"),
+			"locale": only("home-values"), "valueKind": only("home-values"),
+			"sortBy": []string{"key"}, "sortDirection": []string{"key"},
+			"signal": map[string]any{"required": []string{"ownerType"}, "oneOf": []any{
+				map[string]any{"properties": map[string]any{"signal": choice("traces"), "ownerType": choice("span", "event", "link", "resource", "scope")}},
+				map[string]any{"properties": map[string]any{"signal": choice("logs"), "ownerType": choice("log", "resource", "scope")}},
+				map[string]any{"properties": map[string]any{"signal": choice("metrics"), "ownerType": choice("datapoint", "exemplar", "metadata", "resource", "scope")}},
+			}}},
 		"oneOf": []any{
-			mode("services", "List serviceIdentity by typed namespace and name. Missing and empty namespaces group together. With queries, totals count services, traces, Metrics and logs across pages."),
-			mode("connections", "List incoming and outgoing edges with span, trace and error-span counts. Parent and child must match in the same trace and window. Filter by identity, not name or namespace.", "serviceIdentity"),
-			mode("connection-spans", "List child span IDs, trace IDs, names, times and status codes for this source and target.", "serviceIdentity", "targetIdentity"),
+			mode("services", "Group by typed namespace and name. Missing and empty namespaces group together. Only totals.home reflects service filters and term."),
+			mode("connections", "Incoming/outgoing edges and counts. Both spans must match in one trace and window.", "serviceIdentity"),
+			mode("connection-spans", "Child spans from source to target: IDs, names, times and status.", "serviceIdentity", "targetIdentity"),
 			mode("keys", "List attribute keys and types.", "signal", "ownerType"),
-			mode("values", "Count distinct records per typed value. The denominator counts records carrying the key before paging. Empty keys are valid.", "signal", "ownerType", "key"),
-			mode("home-values", "Display preview; identity is the opaque row ID. Limit 0 returns counts only. To page, use a positive limit and advance offset by the number of values returned.", "ownerType", "key"),
-			mode("home-value", "Resolve valueRef to its canonical identity string. Use Arrow for the exact received value. Repeat home-values if the reference expires.", "valueRef"),
+			mode("values", "Distinct records per typed value. Denominator: records with the key before paging. Empty keys allowed.", "signal", "ownerType", "key"),
+			mode("home-values", "Display preview; identity identifies the row. Limit 0: counts only. Otherwise advance offset by values returned.", "ownerType", "key"),
+			mode("home-value", "Resolve valueRef to canonical identity; Arrow returns the received value. Refresh expired refs with home-values.", "valueRef"),
 		},
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
@@ -60,6 +61,10 @@ func newServiceConnectionsCommand(client *http.Client, now func() time.Time) *co
 		Long: "Use serviceIdentity from services to list recorded cross-service parent and child spans grouped by source and target. Both spans must be in the selected window.",
 		Args: cobra.ExactArgs(1), SilenceUsage: true, SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ref, err := discovery.NormalizeServiceRef(args[0])
+			if err != nil {
+				return err
+			}
 			at := now()
 			q, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), at)
 			if err != nil {
@@ -71,7 +76,7 @@ func newServiceConnectionsCommand(client *http.Client, now func() time.Time) *co
 			if offset > 1_000_000_000 {
 				return fmt.Errorf("--offset must be at most 1000000000")
 			}
-			raw, err := requestViewerRPC(cmd.Context(), client, options.Endpoint, "discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connections", "serviceIdentity": args[0], "startTime": q.StartTime, "endTime": q.EndTime, "limit": q.Limit, "offset": offset}})
+			raw, err := requestViewerRPC(cmd.Context(), client, options.Endpoint, "discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connections", "serviceIdentity": ref, "startTime": q.StartTime, "endTime": q.EndTime, "limit": q.Limit, "offset": offset}})
 			if err != nil {
 				return err
 			}

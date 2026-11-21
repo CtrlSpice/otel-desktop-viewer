@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -71,14 +70,21 @@ type discoveryPlan struct {
 	args      []any
 }
 
-func (h *JSONRPCHandler) getServiceLabels(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	ref, err := parseSingleIDParam(req.Params, jsonrpc2.ErrInvalidParams, func(value string) (string, error) {
-		decoded, err := hex.DecodeString(value)
-		if err != nil || len(decoded) != 32 {
-			return "", jsonrpc2.ErrInvalidParams
+func (options *discoveryOptions) normalizeServiceRefs() error {
+	for _, ref := range []*string{options.ServiceIdentity, options.TargetIdentity} {
+		if ref != nil {
+			value, err := discovery.NormalizeServiceRef(*ref)
+			if err != nil {
+				return jsonrpc2.ErrInvalidParams
+			}
+			*ref = value
 		}
-		return strings.ToLower(value), nil
-	})
+	}
+	return nil
+}
+
+func (h *JSONRPCHandler) getServiceLabels(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	ref, err := parseSingleIDParam(req.Params, jsonrpc2.ErrInvalidParams, discovery.NormalizeServiceRef)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +119,9 @@ func discoveryPlanFor(raw json.RawMessage, native bool) (*discoveryPlan, error) 
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&options); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if err := options.normalizeServiceRefs(); err != nil {
+		return nil, err
 	}
 	if (options.SortBy != "" && options.SortBy != "name" && options.SortBy != "frequency") ||
 		(options.SortDirection != "" && options.SortDirection != "asc" && options.SortDirection != "desc") ||
