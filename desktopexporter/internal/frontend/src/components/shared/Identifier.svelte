@@ -11,8 +11,10 @@
 
 <span class="identifier" title={value}>
   {#if display === value}{value}{:else}<span class="sr-only">{value}</span><span
-      aria-hidden="true">{display}</span
-    >{/if}
+      aria-hidden="true"
+    >
+      {display}
+    </span>{/if}
 </span>
 
 <style lang="postcss">

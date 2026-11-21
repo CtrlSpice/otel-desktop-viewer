@@ -46,8 +46,10 @@
       <button
         type="button"
         class="btn btn-ghost btn-sm font-sans font-normal"
-        onclick={() => (document = false)}>Properties</button
+        onclick={() => (document = false)}
       >
+        Properties
+      </button>
       <JsonEditor
         {text}
         label={`JSON value of ${label}`}
@@ -60,8 +62,10 @@
     <button
       type="button"
       class="btn btn-ghost btn-sm font-sans font-normal"
-      onclick={find}>Full document / Find</button
+      onclick={find}
     >
+      Full document / Find
+    </button>
     {#key generation}<NativeValueNode {value} {label} {openDepth} />{/key}
   </div>
 </div>

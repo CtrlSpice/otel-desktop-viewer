@@ -34,8 +34,9 @@
         href={traceHref}
         aria-label={`Open trace ${traceID}`}
         onclick={event => onopen?.(event, false)}
-        ><Identifier value={traceID} /></a
       >
+        <Identifier value={traceID} />
+      </a>
     {:else}<span class="sr-only">Trace ID</span>{' '}<Identifier
         value={traceID}
       />{/if}
@@ -52,8 +53,9 @@
           href={spanHref}
           aria-label={`Open span ${spanID} in trace ${traceID}`}
           onclick={event => onopen?.(event, true)}
-          ><Identifier value={spanID} /></a
         >
+          <Identifier value={spanID} />
+        </a>
       {:else}<span class="sr-only">Span ID</span>{' '}<Identifier
           value={spanID}
         />{/if}

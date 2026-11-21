@@ -75,21 +75,21 @@
 {/if}
 
 <output data-testid="aggregation-view">{metricCtx.aggregationView}</output>
-<output data-testid="selected-datapoint-id"
-  >{metricCtx.selectedDatapointID ?? ''}</output
->
-<output data-testid="selected-datapoint-resolved-id"
-  >{metricCtx.selectedDatapoint?.id ?? ''}</output
->
-<output data-testid="selected-series-key"
-  >{metricCtx.selectedSeriesKey ?? ''}</output
->
-<output data-testid="available-aggregation-views"
-  >{metricCtx.availableAggregationViews.join(',')}</output
->
-<output data-testid="chart-time-start"
-  >{metricCtx.chartDataTimeRange?.startMs ?? ''}</output
->
-<output data-testid="chart-time-end"
-  >{metricCtx.chartDataTimeRange?.endMs ?? ''}</output
->
+<output data-testid="selected-datapoint-id">
+  {metricCtx.selectedDatapointID ?? ''}
+</output>
+<output data-testid="selected-datapoint-resolved-id">
+  {metricCtx.selectedDatapoint?.id ?? ''}
+</output>
+<output data-testid="selected-series-key">
+  {metricCtx.selectedSeriesKey ?? ''}
+</output>
+<output data-testid="available-aggregation-views">
+  {metricCtx.availableAggregationViews.join(',')}
+</output>
+<output data-testid="chart-time-start">
+  {metricCtx.chartDataTimeRange?.startMs ?? ''}
+</output>
+<output data-testid="chart-time-end">
+  {metricCtx.chartDataTimeRange?.endMs ?? ''}
+</output>

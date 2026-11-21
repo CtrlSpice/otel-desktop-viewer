@@ -581,8 +581,10 @@
       <button
         type="submit"
         class="btn btn-sm btn-ghost text-primary"
-        aria-label="Apply range">Apply</button
+        aria-label="Apply range"
       >
+        Apply
+      </button>
     </div>
     {#if customFieldIssue}
       <FieldErrorMessage

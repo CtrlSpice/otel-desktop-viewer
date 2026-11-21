@@ -27,9 +27,9 @@
   <DetailBubble label="Telemetry">Telemetry value</DetailBubble>
 {/snippet}
 {#snippet configurationSection()}
-  <DetailBubble label="Configuration" initialOpen={false}
-    >Configuration value</DetailBubble
-  >
+  <DetailBubble label="Configuration" initialOpen={false}>
+    Configuration value
+  </DetailBubble>
 {/snippet}
 {#snippet inactiveSection()}
   <DetailBubble label="Unavailable" disabled>Unavailable value</DetailBubble>

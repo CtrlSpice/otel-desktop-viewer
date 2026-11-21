@@ -57,17 +57,17 @@
   />
 {:else}
   {#if exemplar.traceID}
-    <a class="link font-sans text-sm text-base-content" {href} onclick={open}
-      >trace: <Identifier value={exemplar.traceID} /></a
-    >
+    <a class="link font-sans text-sm text-base-content" {href} onclick={open}>
+      trace: <Identifier value={exemplar.traceID} />
+    </a>
   {/if}
   {#if exemplar.spanID && exemplar.traceID}
-    <a class="link font-sans text-sm text-base-content" {href} onclick={open}
-      >span: <Identifier value={exemplar.spanID} /></a
-    >
+    <a class="link font-sans text-sm text-base-content" {href} onclick={open}>
+      span: <Identifier value={exemplar.spanID} />
+    </a>
   {:else if exemplar.spanID}
-    <span class="font-sans text-sm text-base-content"
-      >span: <Identifier value={exemplar.spanID} /></span
-    >
+    <span class="font-sans text-sm text-base-content">
+      span: <Identifier value={exemplar.spanID} />
+    </span>
   {/if}
 {/if}

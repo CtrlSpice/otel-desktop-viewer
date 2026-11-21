@@ -53,26 +53,27 @@
     {:else if token.type === 'table'}
       <div class="markdown-text__table">
         <table>
-          <thead
-            ><tr
-              >{#each token.header as cell}<th
-                  >{@render content(cell.tokens)}</th
-                >{/each}</tr
-            ></thead
-          >
-          <tbody
-            >{#each token.rows as cells}<tr
-                >{#each cells as cell}<td>{@render content(cell.tokens)}</td
-                  >{/each}</tr
-              >{/each}</tbody
-          >
+          <thead>
+            <tr>
+              {#each token.header as cell}<th>
+                  {@render content(cell.tokens)}
+                </th>{/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each token.rows as cells}<tr>
+                {#each cells as cell}<td>
+                    {@render content(cell.tokens)}
+                  </td>{/each}
+              </tr>{/each}
+          </tbody>
         </table>
       </div>
     {:else if token.type === 'link'}
       {@const href = linkTarget(token.href)}
-      {#if href}<a {href} rel="noopener noreferrer"
-          >{@render content(token.tokens ?? [])}</a
-        >
+      {#if href}<a {href} rel="noopener noreferrer">
+          {@render content(token.tokens ?? [])}
+        </a>
       {:else}{@render content(token.tokens ?? [])}{/if}
     {:else if token.type === 'br'}<br />
     {:else if token.type === 'hr'}<hr />

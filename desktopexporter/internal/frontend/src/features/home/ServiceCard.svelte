@@ -53,31 +53,31 @@
   {/snippet}
   {#snippet titleContent()}
     <span class="flex min-w-0 items-center gap-2 text-left font-normal">
-      <span
-        >{service.serviceName ||
+      <span>
+        {service.serviceName ||
           'Unnamed service'}{#if service.serviceNameKind && service.serviceNameKind !== 'string'}<span
             class="text-secondary text-sm"
           >
-            · {service.serviceNameKind}</span
-          >{/if}{#if service.serviceNamespace || (service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string')}<span
+            · {service.serviceNameKind}
+          </span>{/if}{#if service.serviceNamespace || (service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string')}<span
             class="text-subtle"
           >
             · {service.serviceNamespace}{#if service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string'}<span
                 class="text-secondary text-sm"
               >
-                · {service.serviceNamespaceKind}</span
-              >{/if}</span
-          >{/if}</span
-      >
+                · {service.serviceNamespaceKind}
+              </span>{/if}
+          </span>{/if}
+      </span>
     </span>
   {/snippet}
   {#snippet lead()}
-    <span class="badge-count pl-6"
-      >{service.traceCount.toLocaleString()}
+    <span class="badge-count pl-6">
+      {service.traceCount.toLocaleString()}
       {service.traceCount === 1 ? 'trace' : 'traces'} · {service.metricCount.toLocaleString()}
       {service.metricCount === 1 ? 'metric' : 'metrics'} · {service.logCount.toLocaleString()}
-      {service.logCount === 1 ? 'log' : 'logs'}</span
-    >
+      {service.logCount === 1 ? 'log' : 'logs'}
+    </span>
   {/snippet}
   {#snippet date()}
     <div class="pl-6">

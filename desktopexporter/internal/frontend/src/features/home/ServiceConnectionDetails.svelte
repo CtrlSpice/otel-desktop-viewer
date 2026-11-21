@@ -206,8 +206,10 @@
       </p>
       <button
         class="btn btn-ghost btn-sm"
-        onclick={() => load(failure.reading, failure.kind)}>Retry</button
+        onclick={() => load(failure.reading, failure.kind)}
       >
+        Retry
+      </button>
     {/each}
     {#each spans as span (`${span.traceID}:${span.spanID}`)}
       <SignalCard
@@ -220,8 +222,8 @@
           evidenceQuery
         )}
       >
-        {#snippet titleContent()}<span class="flex min-w-0 items-center gap-2"
-            ><span
+        {#snippet titleContent()}<span class="flex min-w-0 items-center gap-2">
+            <span
               class="size-2 shrink-0 rounded-full"
               style:background-color={traceServiceColor(
                 shownConnection.target.serviceName,
@@ -229,24 +231,23 @@
                 shownConnection.target.serviceColorKey
               )}
               aria-hidden="true"
-            ></span><span class="truncate">{span.name}</span></span
-          >{/snippet}
+            ></span><span class="truncate">{span.name}</span>
+          </span>{/snippet}
         {#snippet badge()}{#if span.statusCode === 2}<span
               class="flex items-center gap-2"
-              ><span class="size-2 rounded-full bg-error" aria-hidden="true"
-              ></span><span class="text-subtle">Error</span></span
-            >{/if}{/snippet}
+            >
+              <span class="size-2 rounded-full bg-error" aria-hidden="true"
+              ></span><span class="text-subtle">Error</span>
+            </span>{/if}{/snippet}
         {#snippet date()}<SignalDate
             label="Start"
             timestamp={BigInt(span.startTime)}
           />{/snippet}
-        {#snippet dateEnd()}<span
-            >Duration: <span class="text-base-content"
-              >{formatDuration(
-                BigInt(span.endTime) - BigInt(span.startTime)
-              )}</span
-            ></span
-          >{/snippet}
+        {#snippet dateEnd()}<span>
+            Duration: <span class="text-base-content">
+              {formatDuration(BigInt(span.endTime) - BigInt(span.startTime))}
+            </span>
+          </span>{/snippet}
       </SignalCard>
     {:else}{#if !loading && !failures.length}<p class="text-subtle">
           No connected spans match this search and time range.
@@ -259,14 +260,18 @@
           disabled={!displayed ||
             paginationRead.pending ||
             displayed.offset === 0}
-          onclick={() => paginate(-25)}>Previous</button
-        ><span class="text-subtle"
-          >Page {(displayed?.offset ?? 0) / 25 + 1}</span
-        ><button
+          onclick={() => paginate(-25)}
+        >
+          Previous
+        </button><span class="text-subtle">
+          Page {(displayed?.offset ?? 0) / 25 + 1}
+        </span><button
           class="btn btn-ghost btn-sm"
           disabled={!displayed || paginationRead.pending || !more}
-          onclick={() => paginate(25)}>Next</button
+          onclick={() => paginate(25)}
         >
+          Next
+        </button>
       </div>{/snippet}
   </SignalFooter>
 </DetailBubble>

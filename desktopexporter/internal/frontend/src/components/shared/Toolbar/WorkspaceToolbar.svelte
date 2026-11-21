@@ -94,9 +94,9 @@
               />
             </IconButton>
             {#if refreshPulse}
-              <span class="sr-only" role="status"
-                >{refreshAsideTip || 'New data'}</span
-              >
+              <span class="sr-only" role="status">
+                {refreshAsideTip || 'New data'}
+              </span>
             {/if}
           {/if}
           <div class="workspace-toolbar__search">

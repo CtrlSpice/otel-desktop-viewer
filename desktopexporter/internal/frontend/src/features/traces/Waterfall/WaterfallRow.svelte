@@ -186,9 +186,11 @@
       title={cell.title}
     >
       {#if cell.missing}
-        <span class="waterfall-row__missing block truncate text-base-content/50"
-          >{cell.text}</span
+        <span
+          class="waterfall-row__missing block truncate text-base-content/50"
         >
+          {cell.text}
+        </span>
       {:else}
         <TableValueCell
           label={columnLabel(column)}

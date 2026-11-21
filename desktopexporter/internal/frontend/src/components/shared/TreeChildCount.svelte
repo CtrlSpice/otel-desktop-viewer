@@ -9,8 +9,10 @@
 <span
   class="tree-child-count shrink-0 text-sm tabular-nums {className}"
   aria-hidden="true"
-  {title}>[{count}]</span
+  {title}
 >
+  [{count}]
+</span>
 
 <style lang="postcss">
   @reference "../../app.css";

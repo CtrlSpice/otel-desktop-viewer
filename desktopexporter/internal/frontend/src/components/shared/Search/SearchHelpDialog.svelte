@@ -72,107 +72,105 @@
       <table>
         <caption>Query reference</caption>
         <tbody>
-          <tr
-            ><th scope="row">Find text</th><td
-              ><code>checkout</code><span
-                >Case-insensitive tokens, not substrings. Full IDs, URLs and
+          <tr>
+            <th scope="row">Find text</th><td>
+              <code>checkout</code><span>
+                Case-insensitive tokens, not substrings. Full IDs, URLs and
                 dotted names, plus punctuation-separated words, are searchable.
-                Results keep their existing order.</span
-              ></td
-            ></tr
-          >
+                Results keep their existing order.
+              </span>
+            </td>
+          </tr>
           {#if !definition}
-            <tr
-              ><th scope="row">Attribute</th><td
-                >Type its name and select a suggestion.<span
-                  >Scope and type appear beside the name. You can also write
+            <tr>
+              <th scope="row">Attribute</th><td>
+                Type its name and select a suggestion.<span>
+                  Scope and type appear beside the name. You can also write
                   <code>attributes['key']</code> for any owner, or
                   <code>resource.attributes['key']::VARCHAR</code> for an exact owner
-                  and received type.</span
-                ></td
-              ></tr
-            >
+                  and received type.
+                </span>
+              </td>
+            </tr>
           {/if}
-          <tr
-            ><th scope="row">Equal</th><td><code>=</code>, <code>!=</code></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Compare</th><td
-              ><code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>,
-              <code>&lt;=</code></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Text</th><td
-              ><code>CONTAINS</code>, <code>NOT CONTAINS</code>,
-              <code>LIKE</code>, <code>NOT LIKE</code><span
-                >For a selected field or attribute, contains still matches
+          <tr>
+            <th scope="row">Equal</th><td><code>=</code>, <code>!=</code></td>
+          </tr>
+          <tr>
+            <th scope="row">Compare</th><td>
+              <code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>,
+              <code>&lt;=</code>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Text</th><td>
+              <code>CONTAINS</code>, <code>NOT CONTAINS</code>,
+              <code>LIKE</code>, <code>NOT LIKE</code><span>
+                For a selected field or attribute, contains still matches
                 substrings. LIKE uses <code>%</code> for any text and
-                <code>_</code> for one character.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Pattern</th><td
-              ><code>REGEXP</code>, <code>NOT REGEXP</code><span
-                >Matches the full value. Use <code>.*checkout.*</code> for a substring.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">List</th><td
-              ><code>in</code>, <code>not in</code><span
-                >Use parentheses: <code>('checkout', 'payments')</code>.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Missing</th><td
-              ><code>IS NULL</code>, <code>IS NOT NULL</code><span
-                >Checks absence. Quoted <code>'null'</code> matches literal text.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Combine</th><td
-              ><code>AND</code>, <code>OR</code><span
-                ><code>AND</code> is evaluated first. An initial
+                <code>_</code> for one character.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Pattern</th><td>
+              <code>REGEXP</code>, <code>NOT REGEXP</code><span>
+                Matches the full value. Use <code>.*checkout.*</code> for a substring.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">List</th><td>
+              <code>in</code>, <code>not in</code><span>
+                Use parentheses: <code>('checkout', 'payments')</code>.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Missing</th><td>
+              <code>IS NULL</code>, <code>IS NOT NULL</code><span>
+                Checks absence. Quoted <code>'null'</code> matches literal text.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Combine</th><td>
+              <code>AND</code>, <code>OR</code><span>
+                <code>AND</code> is evaluated first. An initial
                 <code>WHERE</code>
-                is optional.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Group</th><td
-              ><code>( … )</code><span
-                >Parentheses set the evaluation order.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Quotes</th><td
-              ><code>"checkout service"</code><span
-                >Quote values containing spaces. Free-text quotes match all
-                words, not an exact phrase.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Text with filters</th><td
-              ><code>search("checkout")</code><span
-                >Combine text search with a condition using <code>and</code> or
+                is optional.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Group</th><td>
+              <code>( … )</code><span>
+                Parentheses set the evaluation order.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Quotes</th><td>
+              <code>"checkout service"</code><span>
+                Quote values containing spaces. Free-text quotes match all
+                words, not an exact phrase.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Text with filters</th><td>
+              <code>search("checkout")</code><span>
+                Combine text search with a condition using <code>and</code> or
                 <code>or</code>. Text terms must match one record and its parent
-                context, not different events, datapoints or results.</span
-              ></td
-            ></tr
-          >
-          <tr
-            ><th scope="row">Limit</th><td
-              ><code>LIMIT 100</code><span>Add at the end of the query.</span
-              ></td
-            ></tr
-          >
+                context, not different events, datapoints or results.
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Limit</th><td>
+              <code>LIMIT 100</code><span>Add at the end of the query.</span>
+            </td>
+          </tr>
         </tbody>
       </table>
     </section>

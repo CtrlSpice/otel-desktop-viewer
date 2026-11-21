@@ -35,16 +35,17 @@
       tabindex={view === 'fields' ? 0 : -1}
       aria-controls={`${id}-fields`}
       onclick={() => (view = 'fields')}
-      ><span class="header-tab__icon shrink-0"
-        ><HugeiconsIcon
+    >
+      <span class="header-tab__icon shrink-0">
+        <HugeiconsIcon
           icon={Telescope01Icon}
           size={16}
           strokeWidth={1.5}
           class="shrink-0"
           aria-hidden="true"
-        /></span
-      ><span class="header-tab__label">Properties</span></button
-    >
+        />
+      </span><span class="header-tab__label">Properties</span>
+    </button>
     <button
       id={`${id}-raw-tab`}
       type="button"
@@ -56,16 +57,17 @@
       tabindex={view === 'raw' ? 0 : -1}
       aria-controls={`${id}-raw`}
       onclick={() => (view = 'raw')}
-      ><span class="header-tab__icon shrink-0"
-        ><HugeiconsIcon
+    >
+      <span class="header-tab__icon shrink-0">
+        <HugeiconsIcon
           icon={ThirdBracketIcon}
           size={16}
           strokeWidth={1.5}
           class="shrink-0"
           aria-hidden="true"
-        /></span
-      ><span class="header-tab__label">JSON</span></button
-    >
+        />
+      </span><span class="header-tab__label">JSON</span>
+    </button>
   </div>
   {#if action}{@render action()}{/if}
 </div>

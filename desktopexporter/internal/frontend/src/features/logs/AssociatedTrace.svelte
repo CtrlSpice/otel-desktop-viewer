@@ -137,9 +137,13 @@
   {#if error}
     <div class="flex items-center gap-2" role="alert">
       <span>{error}</span>
-      <button type="button" class="btn btn-ghost btn-xs" onclick={() => retry++}
-        >Retry</button
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        onclick={() => retry++}
       >
+        Retry
+      </button>
     </div>
   {/if}
   {#if span || trace}
@@ -147,9 +151,9 @@
       {#if spanID && !span}<div class="text-subtle">Trace summary</div>{/if}
       <div class="flex min-w-0 flex-wrap items-baseline gap-x-2">
         {#if title !== undefined}
-          <span class="break-words text-lg font-normal text-base-content"
-            >{title}</span
-          >
+          <span class="break-words text-lg font-normal text-base-content">
+            {title}
+          </span>
         {:else}
           <span class="inline-flex items-center gap-2 text-subtle">
             [<span
@@ -164,16 +168,18 @@
       <div class="flex flex-wrap items-baseline gap-x-2 text-base-content">
         {#if startParts}<span
             title={`Start: ${startParts.value} ${startParts.unit}`}
-            >{startParts.value}</span
-          >{/if}
-        {#if durationParts}
-          {#if startParts}<span class="text-subtle" aria-hidden="true">·</span
-            >{/if}
-          <span
-            ><span class="text-subtle">Duration:</span>
-            {durationParts.value}
-            {durationParts.unit}</span
           >
+            {startParts.value}
+          </span>{/if}
+        {#if durationParts}
+          {#if startParts}<span class="text-subtle" aria-hidden="true">
+              ·
+            </span>{/if}
+          <span>
+            <span class="text-subtle">Duration:</span>
+            {durationParts.value}
+            {durationParts.unit}
+          </span>
         {/if}
       </div>
     </div>
@@ -187,15 +193,21 @@
     {#if unavailable}
       <UnavailableTelemetryReference {traceID} {spanID} revealFields />
     {:else}
-      <span class="min-w-0 rounded" data-field="traceId" data-field-kind="field"
-        ><Identifier value={traceID} /></span
+      <span
+        class="min-w-0 rounded"
+        data-field="traceId"
+        data-field-kind="field"
       >
+        <Identifier value={traceID} />
+      </span>
       {#if spanID}
         <span
           class="min-w-0 rounded"
           data-field="spanId"
-          data-field-kind="field"><Identifier value={spanID} /></span
+          data-field-kind="field"
         >
+          <Identifier value={spanID} />
+        </span>
       {/if}
     {/if}
   </a>

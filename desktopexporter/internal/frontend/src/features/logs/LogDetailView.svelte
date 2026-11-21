@@ -186,10 +186,9 @@
                 {#snippet value()}<LogSeverity
                     number={log.severityNumber}
                     text={log.severityText}
-                    >{log.severityText === ''
-                      ? '""'
-                      : log.severityText}</LogSeverity
-                  >{/snippet}
+                  >
+                    {log.severityText === '' ? '""' : log.severityText}
+                  </LogSeverity>{/snippet}
               </LogField>
               <LogField
                 fieldName="severityNumber"
@@ -199,8 +198,9 @@
                 {#snippet value()}<LogSeverity
                     number={log.severityNumber}
                     text={log.severityText}
-                    >{log.severityNumber} ({severityLabel})</LogSeverity
-                  >{/snippet}
+                  >
+                    {log.severityNumber} ({severityLabel})
+                  </LogSeverity>{/snippet}
               </LogField>
               {#if log.spanID && !log.traceID}
                 <LogField

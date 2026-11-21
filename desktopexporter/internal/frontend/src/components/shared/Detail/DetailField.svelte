@@ -32,8 +32,10 @@
         <span class="detail-cell__key">
           {fieldName}{#if showType}
             <span class="text-subtle">{' · '}</span><span
-              class="detail-cell__type">{fieldType}</span
-            >{/if}
+              class="detail-cell__type"
+            >
+              {fieldType}
+            </span>{/if}
         </span>
       {/snippet}
       <ExpandableValue {keyLabel} value={fieldValue ?? ''}>
@@ -42,8 +44,10 @@
         {:else if multiline}
           <span
             class="detail-cell__value detail-field__value detail-field__value--multiline"
-            class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
+            class:tabular-nums={fieldType === 'timestamp'}
           >
+            {fieldValue}
+          </span>
         {:else}
           <div class:tabular-nums={fieldType === 'timestamp'}>
             {fieldValue ?? ''}

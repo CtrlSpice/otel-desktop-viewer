@@ -25,8 +25,9 @@
     <span
       class="duration-bar__label"
       style:left={`calc(${position + width}% + 1rem)`}
-      >{formatDuration(duration)}</span
     >
+      {formatDuration(duration)}
+    </span>
   </span>
 </span>
 

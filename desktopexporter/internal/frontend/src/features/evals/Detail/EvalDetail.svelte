@@ -75,8 +75,9 @@
 
 {#snippet experimentSection()}
   <DetailBubble label={experiment.name} layoutKey="Experiment">
-    {#snippet labelSuffix()}<span class="text-secondary">· experiment</span
-      >{/snippet}
+    {#snippet labelSuffix()}<span class="text-secondary">
+        · experiment
+      </span>{/snippet}
     {#snippet trailing()}<span
         class="inline-flex flex-wrap items-center justify-end gap-4"
       >
@@ -156,8 +157,10 @@
             {#snippet value()}<time
                 class="text-sm text-base-content tabular-nums"
                 datetime={startedAt}
-                title={startedAt}>{localTimestamp(startedAt)}</time
-              >{/snippet}
+                title={startedAt}
+              >
+                {localTimestamp(startedAt)}
+              </time>{/snippet}
           </DetailField>
         {/if}
         {#if showDuration}
@@ -190,13 +193,13 @@
     countLabel="fields"
   >
     <table class="detail-fields w-full" aria-label="Experiment configuration">
-      <tbody
-        >{#each experiment.configuration as field}<DetailField
+      <tbody>
+        {#each experiment.configuration as field}<DetailField
             fieldName={field.name}
             fieldType={field.value === null ? 'null' : typeof field.value}
             fieldValue={String(field.value)}
-          />{/each}</tbody
-      >
+          />{/each}
+      </tbody>
     </table>
   </DetailBubble>
 {/snippet}

@@ -236,9 +236,9 @@
 
 {#snippet spanSection()}
   <DetailBubble label="Span" icon={spanIcon}>
-    {#snippet labelSuffix()}{#if span && isRoot}<span class="text-secondary"
-          >· root</span
-        >{/if}{/snippet}
+    {#snippet labelSuffix()}{#if span && isRoot}<span class="text-secondary">
+          · root
+        </span>{/if}{/snippet}
     {#snippet action()}
       <DetailViewTabs id={detailViewID} bind:view={detailView}>
         {#snippet action()}{#if span}<ValueCopyButton
@@ -396,8 +396,10 @@
                             [SPAN_PARAM]: rootSpanID,
                           })
                         )
-                      }}><Identifier value={span.traceID} /></a
+                      }}
                     >
+                      <Identifier value={span.traceID} />
+                    </a>
                   {:else}<Identifier value={span.traceID} />{/if}
                 {/snippet}
               </SpanField>
@@ -417,8 +419,10 @@
                         itemHref('traces', span.traceID, {
                           [SPAN_PARAM]: span.parentSpanID!,
                         })
-                      )}><Identifier value={span.parentSpanID ?? ''} /></button
+                      )}
                   >
+                    <Identifier value={span.parentSpanID ?? ''} />
+                  </button>
                 {/snippet}
               </SpanField>
             {/if}
@@ -538,8 +542,10 @@
       {#if activity.onRetryLogs}<button
           type="button"
           class="btn btn-ghost mx-3"
-          onclick={activity.onRetryLogs}>Retry correlated logs</button
-        >{/if}
+          onclick={activity.onRetryLogs}
+        >
+          Retry correlated logs
+        </button>{/if}
     {/if}
     {#if actionSpan && activity.logsKnown && numCombinedEvents === 0}
       <p class="detail-view__section-empty">No events recorded for this span</p>

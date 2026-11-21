@@ -65,15 +65,16 @@
           ? `; ${props.dataPointCount} datapoints in range`
           : '')}
     >
-      <span
-        >[{partial
+      <span>
+        [{partial
           ? `${props.seriesCount} of ${total} series`
           : `${props.seriesCount} series`}{#if props.dataPointCount !== undefined}
           <span aria-hidden="true">{' | '}</span><span
             aria-label={`${props.dataPointCount} datapoints`}
-            >{props.dataPointCount.toLocaleString()} pts</span
-          >{/if}]</span
-      >
+          >
+            {props.dataPointCount.toLocaleString()} pts
+          </span>{/if}]
+      </span>
     </span>
   {/if}
 {:else if props.signal === 'trace'}
@@ -85,11 +86,11 @@
         class="size-2 shrink-0 rounded-full bg-error"
         aria-hidden="true"
       ></span>{/if}
-    <span
-      >[{props.errorCount > 0
+    <span>
+      [{props.errorCount > 0
         ? `${props.errorCount} err | `
-        : ''}{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}]</span
-    >
+        : ''}{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}]
+    </span>
   </span>
 {:else if props.signal === 'log'}
   <LogSeverity number={props.severityNumber} text={props.severityText} />

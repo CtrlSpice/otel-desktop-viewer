@@ -240,9 +240,9 @@
 
 {#snippet badgeStrip(badges: PaneBadge[])}
   {#each badges as badge (badge.label)}
-    <span class="{badge.class ?? DEFAULT_BADGE_CLASS} tabular-nums shrink-0"
-      >{badge.label}</span
-    >
+    <span class="{badge.class ?? DEFAULT_BADGE_CLASS} tabular-nums shrink-0">
+      {badge.label}
+    </span>
   {/each}
 {/snippet}
 
@@ -308,14 +308,15 @@
               <span
                 class="badge-count header-tab__count"
                 aria-hidden={tab.count === undefined}
-                >{#if tab.count !== undefined}{tab.countBrackets
+              >
+                {#if tab.count !== undefined}{tab.countBrackets
                     ? '['
                     : '('}{tab.count}{tab.countBrackets ? ']' : ')'}<span
                     class="sr-only"
                   >
-                    {tab.countLabel ?? tab.label.toLowerCase()}</span
-                  >{/if}</span
-              >
+                    {tab.countLabel ?? tab.label.toLowerCase()}
+                  </span>{/if}
+              </span>
             {/if}
           </a>
         {:else}
@@ -343,14 +344,15 @@
               <span
                 class="badge-count header-tab__count"
                 aria-hidden={tab.count === undefined}
-                >{#if tab.count !== undefined}{tab.countBrackets
+              >
+                {#if tab.count !== undefined}{tab.countBrackets
                     ? '['
                     : '('}{tab.count}{tab.countBrackets ? ']' : ')'}<span
                     class="sr-only"
                   >
-                    {tab.countLabel ?? tab.label.toLowerCase()}</span
-                  >{/if}</span
-              >
+                    {tab.countLabel ?? tab.label.toLowerCase()}
+                  </span>{/if}
+              </span>
             {/if}
           </button>
         {/if}
@@ -379,11 +381,14 @@
             class="tooltip tooltip-bottom inline-flex shrink-0"
             data-tip={service}
             role="img"
-            aria-label={service}><ServiceDot {service} /></span
+            aria-label={service}
           >
+            <ServiceDot {service} />
+          </span>
         {/if}
-        <span class="pane-header__title" title={props.title}>{props.title}</span
-        >
+        <span class="pane-header__title" title={props.title}>
+          {props.title}
+        </span>
         {#if props.subtitle?.trim()}
           <span class="pane-header__separator" aria-hidden="true">·</span>
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>

@@ -3,14 +3,12 @@
   import DetailBubble from '@/components/shared/Detail/DetailBubble.svelte'
 </script>
 
-{#snippet details()}<DetailBubble label="Details"
-    ><p class="p-3 text-subtle">
-      Select an experiment to view details
-    </p></DetailBubble
-  >{/snippet}
-{#snippet telemetry()}<DetailBubble label="Telemetry" disabled
-    ><span></span></DetailBubble
-  >{/snippet}
+{#snippet details()}<DetailBubble label="Details">
+    <p class="p-3 text-subtle">Select an experiment to view details</p>
+  </DetailBubble>{/snippet}
+{#snippet telemetry()}<DetailBubble label="Telemetry" disabled>
+    <span></span>
+  </DetailBubble>{/snippet}
 <DetailStack
   label="Evaluation details"
   storageKey="eval-detail-section-sizes"

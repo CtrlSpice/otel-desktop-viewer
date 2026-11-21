@@ -99,12 +99,13 @@
     >
       {#if action}<span class="size-6 shrink-0" aria-hidden="true"></span>{/if}
       <span class="signal-row__title-cluster" {title}>
-        <span class="signal-row__title"
-          >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
-        >
+        <span class="signal-row__title">
+          {#if titleContent}{@render titleContent()}{:else}{title}{/if}
+        </span>
         {#if badge && badgePlacement === 'inline'}
-          <span class="flex shrink-0 items-center gap-2">{@render badge()}</span
-          >
+          <span class="flex shrink-0 items-center gap-2">
+            {@render badge()}
+          </span>
         {/if}
       </span>
       {#if badge && badgePlacement === 'end'}
@@ -146,9 +147,9 @@
           <div class="signal-row__time signal-row__time--interval">
             <span class="signal-row__time-group">
               <span class="signal-row__time-label">Start:</span>
-              <span class="signal-row__time-value signal-row__timestamp"
-                >{timestamp}</span
-              >
+              <span class="signal-row__time-value signal-row__timestamp">
+                {timestamp}
+              </span>
               {#if timestampUnit}
                 <span class="signal-row__time-unit">{timestampUnit}</span>
               {/if}
@@ -159,9 +160,9 @@
           <div class="signal-row__time signal-row__time--interval">
             <span class="signal-row__time-group">
               <span class="signal-row__time-label">Duration:</span>
-              <span class="signal-row__time-value signal-row__duration"
-                >{duration}</span
-              >
+              <span class="signal-row__time-value signal-row__duration">
+                {duration}
+              </span>
               {#if durationUnit}
                 <span class="signal-row__time-unit">{durationUnit}</span>
               {/if}
@@ -175,9 +176,9 @@
               {#if timestampLabel}
                 <span class="signal-row__time-label">{timestampLabel}</span>
               {/if}
-              <span class="signal-row__time-value signal-row__timestamp"
-                >{timestamp}</span
-              >
+              <span class="signal-row__time-value signal-row__timestamp">
+                {timestamp}
+              </span>
               {#if timestampUnit}
                 <span class="signal-row__time-unit">{timestampUnit}</span>
               {/if}
@@ -226,8 +227,10 @@
       tabindex={disabled ? -1 : undefined}
       class="signal-row {selected ? 'signal-row--selected' : ''}"
       data-selected={selected || undefined}
-      class:item-state={!disabled}>{@render cardContent()}</a
+      class:item-state={!disabled}
     >
+      {@render cardContent()}
+    </a>
   {:else}
     <button
       type="button"
@@ -238,8 +241,10 @@
       {onkeydown}
       aria-pressed={expanded === undefined ? selected : undefined}
       aria-expanded={expanded}
-      aria-controls={controls}>{@render cardContent()}</button
+      aria-controls={controls}
     >
+      {@render cardContent()}
+    </button>
   {/if}
 {/snippet}
 

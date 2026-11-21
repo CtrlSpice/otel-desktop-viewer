@@ -53,8 +53,10 @@
   class="btn btn-ghost btn-sm font-normal"
   popovertarget={id}
   aria-expanded={open}
-  bind:this={trigger}>Service labels</button
+  bind:this={trigger}
 >
+  Service labels
+</button>
 <div
   {id}
   bind:this={popover}
@@ -70,10 +72,9 @@
         class="btn btn-ghost btn-sm font-normal"
         disabled={loading}
         onclick={inspect}
-        >{loadingNotice.visible
-          ? 'Loading labels…'
-          : 'Show full labels'}</button
       >
+        {loadingNotice.visible ? 'Loading labels…' : 'Show full labels'}
+      </button>
     {/if}
     {#if error}<p role="alert" class="text-papaya">{error}</p>{/if}
     <table class="detail-fields w-full" aria-label="Service labels">

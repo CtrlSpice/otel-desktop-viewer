@@ -506,25 +506,26 @@
         aria-pressed={selectionMode}
         disabled={selectionBusy}
         onclick={toggleSelection}
-        ><HugeiconsIcon
+      >
+        <HugeiconsIcon
           icon={CheckListIcon}
           size={16}
           strokeWidth={1.5}
           aria-hidden="true"
-        /></button
-      >
+        />
+      </button>
     {/snippet}
-    {#snippet badge()}<span class="badge-count"
-        >{#if logs.length}<span class="text-base-content"
-            >{((pageNumber - 1) * pageSize + 1).toLocaleString()}–{(
+    {#snippet badge()}<span class="badge-count">
+        {#if logs.length}<span class="text-base-content">
+            {((pageNumber - 1) * pageSize + 1).toLocaleString()}–{(
               (pageNumber - 1) * pageSize +
               logs.length
-            ).toLocaleString()}</span
-          >
+            ).toLocaleString()}
+          </span>
           of{' '}
         {/if}{total === null ? '' : total.toLocaleString()}
-        {total === null ? '' : total === 1 ? 'record' : 'records'}</span
-      >
+        {total === null ? '' : total === 1 ? 'record' : 'records'}
+      </span>
     {/snippet}
     {#snippet metaRight()}
       {#if errorNavigation}<ErrorNavigationBadge
@@ -544,8 +545,10 @@
       {#if errorNavigationError}<span
           class="badge badge-xs badge-error"
           role="status"
-          title={errorNavigationError}>Errors unavailable</span
-        >{/if}
+          title={errorNavigationError}
+        >
+          Errors unavailable
+        </span>{/if}
       {@render filters?.()}
       <TableColumnsPicker
         label="Log columns"

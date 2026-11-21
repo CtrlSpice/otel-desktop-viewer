@@ -121,8 +121,9 @@
                 class="detail-cell__value link link-primary"
                 {href}
                 onclick={e => goToLink(e, link)}
-                ><Identifier value={link.traceID!} /></a
               >
+                <Identifier value={link.traceID!} />
+              </a>
             {:else}
               <span class="detail-cell__value">null</span>
             {/if}
@@ -139,14 +140,15 @@
                 class="detail-cell__value link link-primary"
                 {href}
                 onclick={e => goToLink(e, link)}
-                ><Identifier value={link.spanID} /></a
               >
+                <Identifier value={link.spanID} />
+              </a>
             {:else}
-              <span class="detail-cell__value"
-                >{#if link.spanID}<Identifier
+              <span class="detail-cell__value">
+                {#if link.spanID}<Identifier
                     value={link.spanID}
-                  />{:else}null{/if}</span
-              >
+                  />{:else}null{/if}
+              </span>
             {/if}
           {/snippet}
         </SpanField>

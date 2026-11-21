@@ -428,14 +428,14 @@
       {#if prose !== undefined}
         {#if tool}
           <table class="detail-fields w-full" aria-label={`${row.name} output`}>
-            <tbody
-              ><DetailField
+            <tbody>
+              <DetailField
                 fieldName={tool.state === 'Error' ? 'error' : 'output'}
                 fieldType="string"
                 fieldValue={prose}
                 multiline
-              /></tbody
-            >
+              />
+            </tbody>
           </table>
         {:else}
           {@const fieldName =
@@ -472,16 +472,16 @@
 
       {#if (row.kind === 'case' || row.kind === 'result' || row.kind === 'execution') && result?.error !== undefined}
         <table class="detail-fields w-full" aria-label="Result fault">
-          <tbody
-            ><DetailField
+          <tbody>
+            <DetailField
               fieldName="internal fault"
               fieldType="string"
               fieldValue={result.error}
               loadText={sourceCopy?.(result.id, 'error')}
               sourceKey={copySource}
               multiline
-            /></tbody
-          >
+            />
+          </tbody>
         </table>
       {/if}
     {/if}

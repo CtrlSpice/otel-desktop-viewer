@@ -188,14 +188,15 @@
         class="primary-navigation__count shrink-0 text-sm"
         class:invisible={itemCount === undefined}
         aria-hidden={itemCount === undefined}
-        ><span class="sr-only"
-          >{item.id === 'evals'
+      >
+        <span class="sr-only">
+          {item.id === 'evals'
             ? 'Stored experiments:'
             : item.id === 'home'
               ? `${totals?.matching ? 'Matching' : 'Stored'} services:`
-              : `${totals?.matching ? 'Matching' : 'Stored'} ${item.id}:`}</span
-        >{' '}{itemCount === undefined ? '' : `[${itemCount}]`}</span
-      >
+              : `${totals?.matching ? 'Matching' : 'Stored'} ${item.id}:`}
+        </span>{' '}{itemCount === undefined ? '' : `[${itemCount}]`}
+      </span>
     </a>
   {/each}
 </nav>
