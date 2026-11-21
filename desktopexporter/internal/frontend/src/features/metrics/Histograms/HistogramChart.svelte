@@ -799,9 +799,7 @@
                     style:--quantile-color={m.color}
                   >
                     <title>
-                      {m.label}
-                      {formatMetricHoverValue(m.value)}
-                      {unit}
+                      {`${m.label} ${formatMetricHoverValue(m.value)} ${unit}`.trimEnd()}
                     </title>
                     <Line
                       x1={px}
