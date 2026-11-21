@@ -9,7 +9,7 @@ Use the CLI. Run `otel-desktop-viewer --help` first.
 
 Reuse the user's viewer and leave it running. Start a viewer only if asked. Keep its process handle, then stop it and wait for it to exit when you're done so it doesn't keep running in the background.
 
-If you need HTTP, send JSON-RPC requests to `POST /rpc`. See `/openrpc.json` for methods and `/openapi.json` for HTTP routes.
+If you need HTTP, send JSON-RPC requests to `POST /rpc`. Use `/openrpc/index.json` to choose a method, `/openrpc.json` for the full method reference, or `/openapi.json` to choose an HTTP route.
 If you already know the method name or HTTP operation ID, fetch only `/openrpc/{method}.json` or `/openapi/{operationId}.json`, respectively.
 
 ## Find telemetry

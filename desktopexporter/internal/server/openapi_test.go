@@ -45,7 +45,7 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	require.Equal(t, "3.1.0", doc.OpenAPI)
-	for _, path := range []string{"/openapi.json", "/openrpc.json", "/llms.txt", "/rpc", "/api/features", "/api/data/{method}", "/export/{signal}/{id}"} {
+	for _, path := range []string{"/openapi.json", "/openrpc.json", "/openrpc/index.json", "/llms.txt", "/rpc", "/api/features", "/api/data/{method}", "/export/{signal}/{id}"} {
 		require.Contains(t, doc.Paths, path)
 	}
 	for _, path := range []string{"/api/evals/ingest", "/api/evals/experiments", "/api/evals/experiments/{id}/rows"} {

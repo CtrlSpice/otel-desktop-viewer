@@ -115,9 +115,16 @@ func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
 	}
 	var full document
 	require.NoError(t, json.Unmarshal(read("GET", "/openrpc.json").Body.Bytes(), &full))
-	for _, method := range full.Methods {
-		var entry struct{ Name string }
+	w := read("GET", "/openrpc/index.json")
+	require.Equal(t, http.StatusOK, w.Code)
+	var index struct{ Methods []map[string]string }
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &index))
+	require.Len(t, index.Methods, len(full.Methods))
+	for i, method := range full.Methods {
+		var entry struct{ Name, Summary string }
 		require.NoError(t, json.Unmarshal(method, &entry))
+		require.NotEmpty(t, entry.Summary)
+		require.Equal(t, map[string]string{"name": entry.Name, "summary": entry.Summary}, index.Methods[i])
 		t.Run(entry.Name, func(t *testing.T) {
 			path := "/openrpc/" + entry.Name + ".json"
 			w := read("GET", path)

@@ -20,12 +20,17 @@ func openAPIDocument() map[string]any {
 		{"/openapi.json", "httpDescription", "HTTP route reference", "application/json"},
 		{"/openapi/{operationId}.json", "httpOperation", "One HTTP operation with its parameters and responses", "application/json"},
 		{"/openrpc.json", "rpcDescription", "Full JSON-RPC method reference", "application/json"},
+		{"/openrpc/index.json", "rpcMethodIndex", "List JSON-RPC method names and summaries", "application/json"},
 		{"/openrpc/{method}.json", "rpcMethodDescription", "Single method reference with schemas", "application/json"},
 		{"/llms.txt", "agentGuide", "CLI guide and SQL example", "text/plain"},
 	} {
+		schema := map[string]any{}
+		if doc.id == "rpcMethodIndex" {
+			schema = rpcObject(map[string]any{"methods": rpcArray(rpcObject(map[string]any{"name": text, "summary": text}, "name", "summary"))}, "methods")
+		}
 		paths[doc.path] = map[string]any{
 			"get": map[string]any{"operationId": doc.id, "summary": doc.summary, "tags": []string{"Discovery"}, "responses": map[string]any{
-				"200": apiResponse(doc.summary, doc.media, map[string]any{}),
+				"200": apiResponse(doc.summary, doc.media, schema),
 				"304": map[string]any{"description": "ETag matches If-None-Match."},
 			}},
 			"head": map[string]any{"operationId": doc.id + "Headers", "summary": doc.summary + " headers", "tags": []string{"Discovery"}, "responses": map[string]any{

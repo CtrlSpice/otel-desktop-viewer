@@ -414,7 +414,9 @@ func registerOpenRPC(mux *http.ServeMux) error {
 	}
 	mux.Handle("GET /openrpc.json", full)
 	all := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	var index []map[string]string
 	for _, method := range doc["methods"].([]rpcMethodDescription) {
+		index = append(index, map[string]string{"name": method.Name, "summary": method.Summary})
 		schemas := map[string]any{}
 		for _, descriptor := range append([]rpcDescriptor{method.Result}, method.Params...) {
 			if err := collectRPCSchemas(descriptor.Schema, all, schemas); err != nil {
@@ -431,6 +433,11 @@ func registerOpenRPC(mux *http.ServeMux) error {
 		}
 		mux.Handle("GET /openrpc/"+filename, handler)
 	}
+	menu, err := apiDocumentHandler("index.json", map[string]any{"methods": index})
+	if err != nil {
+		return err
+	}
+	mux.Handle("GET /openrpc/index.json", menu)
 	return nil
 }
 
