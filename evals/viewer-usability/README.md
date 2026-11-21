@@ -225,10 +225,17 @@ It calls the native API directly; Promptfoo does not need a package patch.
 Saved 2.0.29 runs remain readable by the verification helpers.
 
 `node evals/viewer-usability/opencode-v2-evaluate.mjs --plan-full` prints the
-twelve investigator model IDs, five selected questions, grader and repetition count without
+twelve investigator model IDs, five selected questions, the judge for each investigator and the repetition count without
 starting a run. `--run-full` executes that plan through a shared host and requires
 an explicit fresh run directory, prebuilt viewer, separate observer and private
 membership references.
+
+Claude Opus 5.5 grades GPT investigations, including both Sol versions. Pi Sol
+6.1 grades the other investigations, including Opus. Promptfoo routes the
+blind prompt using the original investigator provider ID. An unavailable
+judge leaves an execution error; the runner does not substitute another judge.
+The live Opus judge uses the eval runtime's Claude CLI and subscription profile;
+`OTEL_EVAL_CLAUDE_BINARY` and `OTEL_EVAL_CLAUDE_CONFIG_DIR` override those paths.
 
 For `checkout-failure`, `--run-one` selects
 Sol once; `--run-sol-luna` selects Sol and Luna three times each. This is separate

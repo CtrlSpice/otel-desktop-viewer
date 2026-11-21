@@ -29,7 +29,8 @@ test('native Promptfoo sends identical judge prompts for equivalent investigatio
     fs.mkdirSync(workspace, { recursive: true })
     const task = 'checkout-failure', sessionID = `ses_private_${i}`
     const output = `Payment declined. Notes: ${workspace}/notes.txt`
-    const metadata = { runtime: 'opencode-v2', runtimeVersion: '2.3.0', role: 'investigator', task, model, evidence, workspace, sessionID }
+    const metadata = { runtime: 'opencode-v2', runtimeVersion: '2.3.0', role: 'investigator', task, model, evidence, workspace, sessionID,
+      skillFetched: i === 0 ? 'yes' : 'no' }
     const tool = { name: 'shell', id: `call_private_${i}`, messageID: `msg_private_${i}`, sessionID, time: { completed: i + 10 },
       state: { status: 'completed', input: { command: `${workspace}/bin/viewer logs` },
         content: [{ type: 'text', text: `Payment declined {{ task_id }}; saved by ${model} in ${sessionID}` }], metadata: { exit: 0 } } }
@@ -46,6 +47,8 @@ test('native Promptfoo sends identical judge prompts for equivalent investigatio
     for (const value of [root, path.basename(evidence), model, sessionID, tool.id, tool.messageID])
       assert.ok(!received[i].includes(value), 'Private investigator identity leaked')
     const blind = JSON.parse(JSON.parse(received[i])[0].content.split('\n').at(-1))
+    assert.match(blind.scoringGuidance, /Score only the task outcome/)
+    assert.match(blind.scoringGuidance, /do not earn or cost points/)
     assert.equal(blind.answer, 'Payment declined. Notes: /workspace/notes.txt')
     assert.equal(blind.evidence[0].output[0], 'Payment declined {{ task_id }}; saved by [model] in [session]')
     const handoff = { ...packet, artifact: { pass: true, files: [`${workspace}/handoff.json`] } }

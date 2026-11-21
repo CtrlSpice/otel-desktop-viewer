@@ -70,8 +70,8 @@ export default class ClaudeProvider {
     const runtimeVersion = role === 'grader' ? '2.1.326' : '2.1.307'
     if (version !== `${runtimeVersion} (Claude Code)`) throw new Error(`Use the verified unmodified Claude Code ${runtimeVersion} binary`)
     const source = this.config.source
-    if (role === 'grader' && (!source || !/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test(source.traceparent)))
-      throw new Error('Claude grader requires its saved investigation identity')
+    if (role === 'grader' && !/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test((source ? source.traceparent : context.traceparent) ?? ''))
+      throw new Error('Claude grader requires the investigation trace identity')
     if (this.config.configDir && !path.isAbsolute(this.config.configDir)) throw new Error('Claude configuration directory must be absolute')
     const root = fs.realpathSync(this.config.root)
     fs.mkdirSync(path.join(root, 'runs'), { recursive: true, mode: 0o700 })
@@ -155,8 +155,9 @@ export default class ClaudeProvider {
     const result = events.findLast(event => event.type === 'result')
     const init = events.find(event => event.type === 'system' && event.subtype === 'init')
     const stats = claudeEvidence(events)
+    const sessionID = result?.session_id ?? init?.session_id
     const metadata = { ...identity, runtime: 'claude-code', runtimeVersion, model,
-      evidence, workspace, sessionID: result?.session_id ?? init?.session_id, exit,
+      evidence, workspace, ...(sessionID !== undefined ? { sessionID } : {}), exit,
       elapsedSeconds: (performance.now() - started) / 1000, ...stats,
       telemetryEndpoint, ...(result?.usage !== undefined ? { usage: result.usage } : {}),
       ...(result?.modelUsage !== undefined ? { modelUsage: result.modelUsage } : {}),

@@ -1,5 +1,5 @@
 [
-  { "id": "checkout-failure", "goal": "Why did checkout-017 fail?" },
+  { "id": "checkout-failure", "goal": "Support grouped checkout-017 and checkout-020 under “payment failed.” Should those tickets go to the same team for the same reason? Show what happened in each request and what the evidence supports doing next." },
   {
     "id": "checkout-latency",
     "goal": "Why was checkout-019 slower than checkout-018?"
@@ -10,11 +10,11 @@
   },
   {
     "id": "trace-logs",
-    "goal": "Show me all the logs for checkout-017."
+    "goal": "I’m writing the incident timeline for checkout-017. What happened before the customer got a response, and what was recorded afterward? Include the relevant logs and flag anything you can link to the request but not to a specific operation."
   },
   {
     "id": "customer-count",
-    "goal": "How many different customers appear in the checkout traffic during this period?"
+    "goal": "Support needs an impact estimate for this window. Of the distinct customers you can see attempting checkout, how many experienced a failed checkout? Give the numerator and denominator, and say what population those numbers cover."
   },
   {
     "id": "sequence-types",
@@ -22,7 +22,7 @@
   },
   {
     "id": "trace-export",
-    "goal": "Export checkout-017 so another engineer can load it into their viewer."
+    "goal": "Payments is taking over checkout-017. Leave them a file they can load into a fresh viewer, tell them where it is, and identify the operation they should inspect first and why."
   },
   {
     "id": "request-latency",
@@ -30,7 +30,7 @@
   },
   {
     "id": "request-count",
-    "goal": "How many requests does the request counter report during this period?"
+    "goal": "The gateway request counter and the checkout traces give me different totals for this window. What does each source actually count? Give both totals and tell me whether the difference, by itself, is evidence that we lost traces."
   },
   {
     "id": "cpu-evidence",

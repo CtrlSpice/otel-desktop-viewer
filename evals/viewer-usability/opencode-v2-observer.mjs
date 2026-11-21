@@ -39,6 +39,12 @@ export function loadRunTelemetry(root) {
     acceptedReceipts(receipts); legacy = readNativeTelemetry(root, receipts)
   }
   const native = [...attempts.values(), ...(legacy ? [legacy] : [])]
+  const judgeFile = path.join(root, 'otlp-opus/summary.json')
+  if (fs.existsSync(judgeFile)) {
+    const { receipts } = readJSON(judgeFile)
+    acceptedReceipts(receipts)
+    native.push(readNativeTelemetry(root, receipts, 'otlp-opus'))
+  }
   return { wrapper, wrapperReceipts, attempts, legacy,
     spans: [...wrapper.spans, ...native.flatMap(data => data.spans)],
     logs: [...wrapper.logs, ...native.flatMap(data => data.logs)],

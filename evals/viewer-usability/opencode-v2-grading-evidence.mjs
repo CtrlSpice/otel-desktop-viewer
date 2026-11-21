@@ -41,7 +41,9 @@ async function buildCriterion(output, context, root) {
     permissionDenials: tools.filter(tool => tool.state.error?.type === 'permission.rejected'),
   }
   const artifact = task === 'trace-export' ? await verifyExport(metadata) : undefined
-  const gradingPacket = { blindGrading: true, question, ...rubrics[task], viewerSkill: await readViewerSkill(), evidence: packet, investigatorWorkingDirectory: workspace,
+  const gradingPacket = { blindGrading: true, question, ...rubrics[task],
+    scoringGuidance: 'Score only the task outcome against the supplied criterion. Use tool results to check the evidence for the answer. Whether the investigator fetched the viewer skill, which commands it chose, and whether it appeared to understand the guide do not earn or cost points.',
+    viewerSkill: await readViewerSkill(), evidence: packet, investigatorWorkingDirectory: workspace,
     ...(artifact ? { artifact } : {}) }
   fs.writeFileSync(path.join(evidence, 'grading-packet.json'), JSON.stringify(gradingPacket) + '\n', { flag: 'wx', mode: 0o600 })
   return v2GradingPrompt(gradingPacket, output)
@@ -68,7 +70,7 @@ function blindPacket(packet, answer) {
     exit: state.metadata?.exit, truncated: state.metadata?.truncated,
   }))
   // Sanitize strings before serialization, including answer paths and tool arguments.
-  return JSON.stringify({ question: packet.question, reference: packet.reference, criteria: packet.criteria,
+  return JSON.stringify({ question: packet.question, reference: packet.reference, criteria: packet.criteria, scoringGuidance: packet.scoringGuidance,
     viewerSkill: packet.viewerSkill, answer, evidence, ...(packet.artifact ? { investigatorWorkingDirectory: '/workspace', artifact: packet.artifact } : {}) },
   (_key, value) => typeof value === 'string' ? sanitize(value) : value)
 }

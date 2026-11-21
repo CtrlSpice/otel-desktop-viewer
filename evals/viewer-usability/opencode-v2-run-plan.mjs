@@ -65,7 +65,7 @@ export function assertFreshRoot(root) {
     if (fs.existsSync(path.join(root, name))) throw new Error('Refusing to reuse run evidence: ' + name)
 }
 
-export function evaluationConfig({ suite, root, spec, task, connection, binary, authFile, authEntry, piAuthFile, observerHTTP }) {
+export function evaluationConfig({ suite, root, spec, task, connection, binary, authFile, authEntry, piAuthFile, observerHTTP, cliBinary, configDir, graderHTTP = observerHTTP }) {
   const full = spec.mode === 'full'
   const tasks = full ? spec.taskIDs.map(id => cases.find(c => c.id === id)) : [task]
   return {
@@ -78,7 +78,7 @@ export function evaluationConfig({ suite, root, spec, task, connection, binary, 
           timeoutMs: 600000, ...(spec.nativeTelemetry ? { telemetryForward: observerHTTP } : {}) } }
     }),
     defaultTest: { vars: { ...connection, binary: './bin/otel-desktop-viewer' },
-      options: { provider: { id: 'file://' + path.join(suite, 'pi-provider.ts'), config: { root, role: 'grader', provider: 'openai-codex', model: 'gpt-6.1-sol', authFile: piAuthFile, timeoutMs: 180000 } } },
+      options: { provider: { id: 'file://' + path.join(suite, 'opencode-v2-judge.mjs'), config: { root, authFile: piAuthFile, cliBinary, configDir, telemetryEndpoint: graderHTTP } } },
       assert: [{ type: 'llm-rubric', threshold: 1, rubricPrompt: JSON.stringify([{ role: 'user', content: '{{rubric}}' }]),
         value: 'file://' + path.join(suite, 'opencode-v2-grading-evidence.mjs') }],
     },

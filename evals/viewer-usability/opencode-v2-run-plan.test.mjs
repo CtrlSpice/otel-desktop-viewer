@@ -75,7 +75,7 @@ test('specific six-run plan uses real catalogue IDs and ordinary repeat scheduli
   assert.equal(config.tests.length, 1); assert.equal(config.providers.length, 2)
   assert.equal(new Set(config.providers.map(provider => provider.label)).size, 2)
   assert.ok(config.providers.every(provider => provider.config.telemetryForward === 'http://127.0.0.1:61002'))
-  assert.equal(config.defaultTest.options.provider.config.model, 'gpt-6.1-sol')
+  assert.match(config.defaultTest.options.provider.id, /opencode-v2-judge\.mjs$/)
   assert.equal(config.defaultTest.assert[0].threshold, 1)
   assert.ok(!JSON.stringify(config).includes('gpt-6.1-luna'))
   assert.ok(!JSON.stringify(config).includes('56010'))
@@ -194,6 +194,24 @@ for (const runtimeVersion of ['2.0.29', '2.3.0']) test(`${runtimeVersion} rows p
   assert.throws(() => validateSchedule(bad, spec, data.identities))
   const duplicate = [...data.rows.slice(0, 5), data.rows[0]]
   assert.throws(() => validateSchedule(duplicate, spec, data.identities), /Distinct/)
+})
+
+test('grader verification rejects a Sol self-grade and checks the recorded Opus response', t => {
+  const root = temporary(t), data = sixRows(root), row = data.rows[0]
+  const investigator = verifyInvestigator(root, row, data.wrapper, rubric, question)
+  const expected = 'claude-code:claude-opus-5-5'
+  assert.throws(() => verifyGrader(root, row, investigator, data.graders, expected))
+  const dir = data.graders[0].evidence
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, 'response.json')))
+  raw.metadata.runtime = 'claude-code'; raw.metadata.model = 'claude-opus-5-5'
+  write(dir, 'response.json', raw)
+  const events = [{ type: 'assistant', message: { model: raw.metadata.model, content: [{ type: 'text', text: raw.output }] } },
+    { type: 'result', result: raw.output }]
+  fs.writeFileSync(path.join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n'))
+  assert.equal(verifyGrader(root, row, investigator, data.graders, expected).model, raw.metadata.model)
+  events[0].message.model = 'claude-sonnet-5-5'
+  fs.writeFileSync(path.join(dir, 'events.jsonl'), events.map(e => JSON.stringify(e)).join('\n'))
+  assert.throws(() => verifyGrader(root, row, investigator, data.graders, expected))
 })
 
 test('offline preflight exceptions retain separate slot evidence and do not prevent following calls', async t => {

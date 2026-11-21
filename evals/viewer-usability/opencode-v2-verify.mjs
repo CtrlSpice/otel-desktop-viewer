@@ -7,6 +7,8 @@ import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
 import { missingToolLogs } from './tool-logs.ts'
 import { verifyToolEvent } from './opencode-v2-verify-evidence.mjs'
 import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
+import { claudeEvidence } from './claude-provider.ts'
+import { judgeFor } from './opencode-v2-judge.mjs'
 import { nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 import { observerURL, validateSchedule, converge } from './opencode-v2-run-plan.mjs'
 import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
@@ -120,7 +122,7 @@ export function verifyInvestigator(root, row, wrapper, rubric, question, nativeS
   } }
 }
 
-export function verifyGrader(root, row, investigator, graders) {
+export function verifyGrader(root, row, investigator, graders, expected = 'pi:openai-codex/gpt-6.1-sol') {
   const matches = graders.filter(item => item.identity.promptfoo.traceparent?.split('-')[1] === row.traceId)
   assert.ok(matches.length <= 1, 'Repeated grader invocation for result')
   const components = row.gradingResult?.componentResults ?? []
@@ -148,8 +150,9 @@ export function verifyGrader(root, row, investigator, graders) {
     return { invoked: true, evidence: grader.evidence, captureUnavailable: true, error: row.error, gradingResult: row.gradingResult }
   }
   const raw = read(responseFile)
-  assert.equal(raw.metadata.runtime, 'pi'); assert.equal(raw.metadata.role, 'grader')
-  assert.equal(raw.metadata.model, 'openai-codex/gpt-6.1-sol')
+  const [runtime, model] = expected.split(':')
+  assert.equal(raw.metadata.runtime, runtime); assert.equal(raw.metadata.role, 'grader')
+  assert.equal(raw.metadata.model, model)
   assert.equal(raw.metadata.toolCalls, 0)
   if (raw.metadata.sessionID) assert.notEqual(raw.metadata.sessionID, row.response.metadata.sessionID)
   const events = jsonLines(path.join(grader.evidence, 'events.jsonl'))
@@ -157,18 +160,25 @@ export function verifyGrader(root, row, investigator, graders) {
   assert.equal(events.filter(event => event.type === 'tool_execution_start').length, 0)
   const messages = events.filter(event => event.type === 'message_end' && event.message.role === 'assistant')
   assert.ok(messages.length <= 1, 'Grader must be a single response, without tools/retries')
-  if (!raw.error) assert.equal(messages.length, 1)
-  assert.equal(components.length, 1)
-  assert.equal(components[0].assertion.type, 'llm-rubric')
-  if (components[0].metadata?.evidence) {
-    assert.equal(ownedEvidence(root, components[0].metadata.evidence), grader.evidence)
-    assert.equal(components[0].metadata.sessionID, raw.metadata.sessionID)
+  if (runtime === 'claude-code') {
+    const stats = claudeEvidence(events)
+    if (!raw.error) {
+      assert.equal(stats.toolCalls, 0)
+      assert.deepEqual(stats.actualModels, [model])
+      assert.equal(events.filter(event => event.type === 'result').length, 1)
+    }
+  } else if (!raw.error) assert.equal(messages.length, 1)
+  const rubric = components.filter(component => component.assertion.type === 'llm-rubric')
+  assert.equal(rubric.length, 1)
+  if (rubric[0].metadata?.evidence) {
+    assert.equal(ownedEvidence(root, rubric[0].metadata.evidence), grader.evidence)
+    assert.equal(rubric[0].metadata.sessionID, raw.metadata.sessionID)
   }
   // Native failed/partial judgments and grader execution/JSON failures are valid
   // observed outcomes. Keep their recorded failureReason, score and explanation.
   if (raw.error) assert.equal(row.success, false)
   return { invoked: true, evidence: grader.evidence, sessionID: raw.metadata.sessionID, error: raw.error, exit: raw.metadata.exit,
-    usage: messages[0]?.message.usage, gradingResult: row.gradingResult }
+    model, usage: runtime === 'claude-code' ? raw.metadata.usage : messages[0]?.message.usage, gradingResult: row.gradingResult }
 }
 
 export async function importOriginal(root, endpoint, bytes, rows, request = fetch) {
@@ -268,7 +278,9 @@ export async function verifyRun(root, { importSource = false, env = process.env 
       const key = tool.sessionID + '/' + tool.id
       assert.ok(!nativeTools.has(key), 'Duplicate original session/tool identity'); nativeTools.add(key)
     }
-    const grader = verifyGrader(root, row, investigator, graders)
+    const expected = plan.graders ? judgeFor(row.provider.id) : plan.grader
+    if (plan.graders) assert.equal(plan.graders[spec.mode === 'full' ? metadata.model : metadata.model.split('/')[1]], expected)
+    const grader = verifyGrader(root, row, investigator, graders, expected)
     if (grader.sessionID) { assert.ok(!graderSessions.has(grader.sessionID)); graderSessions.add(grader.sessionID) }
     if (spec.nativeTelemetry && !native) throw new Error('Missing native capture for scheduled attempt')
     if (native) {

@@ -73,7 +73,7 @@ test('build consumes validated human review without exposing private audit data'
   assert.doesNotMatch(html, /\n[ \t]*\n/)
   assert.ok(!html.includes('<dt>Mean</dt>'))
   assert.ok(html.includes('.5/1'))
-  assert.ok(html.includes(tasks[0].goal))
+  assert.ok(html.replace(/\s+/g, ' ').includes(tasks[0].goal))
   assert.ok(!html.includes('<style>'))
   assert.ok(!html.includes('base64,'))
   assert.match(html, /href="\.\/index.html.assets\/results.css"/)

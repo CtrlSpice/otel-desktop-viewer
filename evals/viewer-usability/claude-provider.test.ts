@@ -89,13 +89,15 @@ for (const scenario of ['success', 'wrong-model', 'tool-call', 'large-input']) t
   fs.writeFileSync(cli, `#!/bin/sh\nif [ "$1" = "--version" ]; then\n  echo '2.1.326 (Claude Code)'\nelse\n  cat > received-prompt.txt\n  cat <<'EVENTS'\n${events.map(event => JSON.stringify(event)).join('\n')}\nEVENTS\nfi\n`, { mode: 0o700 })
   const source = { evaluationId: 'eval-source', resultID: 'source-row', repeatIndex: 2,
     traceparent: '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01' }
+  const savedSource = scenario === 'success' ? undefined : source
   const provider = new ClaudeProvider({ config: { root, role: 'grader', model: 'claude-opus-5-5', cliBinary: cli,
-    source, telemetryEndpoint: 'http://127.0.0.1:1', timeoutMs: 5000 } })
+    source: savedSource, telemetryEndpoint: 'http://127.0.0.1:1', timeoutMs: 5000 } })
   const prompt = scenario === 'large-input' ? 'Recorded Unicode ☃\n' + 'x'.repeat(1_100_000) + '\n{{ unchanged }} {% unchanged %}' : 'saved evidence'
-  const response = await provider.callApi(prompt, { vars: { task_id: 'checkout-failure' } })
+  const response = await provider.callApi(prompt, { vars: { task_id: 'checkout-failure' }, ...(!savedSource && { traceparent: source.traceparent }) })
   assert.equal(response.metadata.role, 'grader')
   assert.equal(response.metadata.runtimeVersion, '2.1.326')
-  assert.deepEqual(response.metadata.source, source)
+  assert.deepEqual(response.metadata.source, savedSource)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'identity.json'), 'utf8')).promptfoo.traceparent, source.traceparent)
   assert.equal(response.metadata.inputTransport, 'stdin')
   assert.ok(!fs.existsSync(path.join(response.metadata.workspace, 'bin')))
   assert.equal(fs.readFileSync(path.join(response.metadata.workspace, 'received-prompt.txt'), 'utf8'), prompt)

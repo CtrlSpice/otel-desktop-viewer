@@ -10,15 +10,15 @@ test('exact approved questions contain no private grading values or answer forma
   assert.deepEqual(
     tasks.map(task => task.goal),
     [
-      'Why did checkout-017 fail?',
+      'Support grouped checkout-017 and checkout-020 under “payment failed.” Should those tickets go to the same team for the same reason? Show what happened in each request and what the evidence supports doing next.',
       'Why was checkout-019 slower than checkout-018?',
       'How did the checkout failure rate change during this period?',
-      'Show me all the logs for checkout-017.',
-      'How many different customers appear in the checkout traffic during this period?',
+      'I’m writing the incident timeline for checkout-017. What happened before the customer got a response, and what was recorded afterward? Include the relevant logs and flag anything you can link to the request but not to a specific operation.',
+      'Support needs an impact estimate for this window. Of the distinct customers you can see attempting checkout, how many experienced a failed checkout? Give the numerator and denominator, and say what population those numbers cover.',
       'What data types are used for order sequence numbers across checkouts?',
-      'Export checkout-017 so another engineer can load it into their viewer.',
+      'Payments is taking over checkout-017. Leave them a file they can load into a fresh viewer, tell them where it is, and identify the operation they should inspect first and why.',
       'How did request latency change during this period?',
-      'How many requests does the request counter report during this period?',
+      'The gateway request counter and the checkout traces give me different totals for this window. What does each source actually count? Give both totals and tell me whether the difference, by itself, is evidence that we lost traces.',
       'What CPU readings are available around checkout-019?',
       'How do the recorded CPU readings around checkout-019 compare with the rest of the time window?',
     ]
