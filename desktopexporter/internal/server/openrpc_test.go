@@ -152,6 +152,30 @@ func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, read("GET", "/openrpc/unknown.json").Code)
 }
 
+func TestDiscoverySignalPredicateContract(t *testing.T) {
+	h := setupHandler(t)
+	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, tc := range []struct {
+		predicate string
+		valid     bool
+	}{
+		{`{}`, false}, {`{"type":"unknown"}`, false},
+		{`null`, true}, {`false`, true},
+		{`{"type":"text","query":{"fieldOperator":"CONTAINS","value":"test"}}`, true},
+	} {
+		t.Run(tc.predicate, func(t *testing.T) {
+			var predicate any
+			require.NoError(t, decodeParams([]byte(tc.predicate), &predicate))
+			queries := map[string]any{"traces": predicate}
+			options := map[string]any{"kind": "services", "queries": queries}
+			_, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": options}))
+			require.Equal(t, tc.valid, err == nil)
+			schema := rpcDiscoveryOptions()["properties"].(map[string]any)["queries"].(map[string]any)["additionalProperties"].(map[string]any)
+			require.Equal(t, tc.valid, checkRPCWireSchema(schema, predicate, schemas) == nil)
+		})
+	}
+}
+
 func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
 	document := openRPCDocument()
 	methods := document["methods"].([]rpcMethodDescription)

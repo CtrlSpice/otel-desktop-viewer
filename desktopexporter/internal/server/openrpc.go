@@ -119,8 +119,18 @@ func openRPCDocument() map[string]any {
 			"serviceName": text, "seriesCount": nullableInteger, "seriesCardinality": integer, "dataPointCount": nullableInteger,
 			"lastValue": map[string]any{"anyOf": []any{rpcSchemaRef("Double"), map[string]any{"type": "null"}}}, "lastSeen": nullableText,
 		}, "metricRef", "name", "metricType", "seriesCount", "seriesCardinality", "dataPointCount", "lastValue", "lastSeen")),
-		"SearchQuery": map[string]any{"type": []string{"object", "null"}, "description": "Pass null to select all records. Use groups to combine conditions and text searches.\n\n- Condition: `{id,type:'condition',query:{field:{owner,path,type},fieldOperator,value}}`. In path, strings are exact keys relative to the owner. Numbers are zero-based array indices.\n- Text search: `{id,type:'text',query:{fieldOperator:'CONTAINS',value}}`.\n\nAllowed fields and operators depend on the signal. Legacy field references using name, searchScope and attributeScope are also accepted."},
-		"Sort":        map[string]any{"anyOf": []any{map[string]any{"type": "null"}, map[string]any{"type": "object", "required": []string{"field", "direction"}, "additionalProperties": false, "properties": map[string]any{"field": text, "direction": map[string]any{"enum": []string{"asc", "desc"}}}}}},
+
+		"SearchQuery": map[string]any{
+			"type": []string{"object", "null"}, "required": []string{"type"},
+			"description": "Condition fields and operators depend on the signal. Path strings are owner-relative keys; numbers are array indices. Legacy field references remain valid.",
+			"properties": map[string]any{"type": map[string]any{"enum": []string{"text", "condition", "group"}},
+				"query": rpcObject(map[string]any{"fieldOperator": text, "field": nullableObject, "value": text}, "fieldOperator"),
+				"group": map[string]any{"type": "object", "properties": map[string]any{"logicalOperator": text, "children": rpcArray(rpcSchemaRef("SearchQuery"))}},
+			},
+			"if":   map[string]any{"properties": map[string]any{"type": map[string]any{"const": "group"}}},
+			"then": map[string]any{"required": []string{"group"}}, "else": map[string]any{"required": []string{"query"}},
+		},
+		"Sort": map[string]any{"anyOf": []any{map[string]any{"type": "null"}, map[string]any{"type": "object", "required": []string{"field", "direction"}, "additionalProperties": false, "properties": map[string]any{"field": text, "direction": map[string]any{"enum": []string{"asc", "desc"}}}}}},
 		"QueryResult": rpcObject(map[string]any{
 			"columns": rpcArray(rpcObject(map[string]any{"name": text, "type": text}, "name", "type")),
 			"rows":    rpcArray(rpcArray(map[string]any{})), "truncated": boolean,
@@ -412,7 +422,7 @@ func rpcDiscoveryOptions() map[string]any {
 	}
 	return map[string]any{
 		"type": "object", "required": []string{"kind"}, "additionalProperties": false,
-		"description": "Inclusive times: uint64 Unix nanoseconds as strings, or null. Service filters are exact; empty differs from omitted. term: case-insensitive substring. Signal queries: null selects all, false none. Filter before paging. One entry per row; truncated means more.",
+		"description": "Times: inclusive uint64 Unix nanosecond strings or null. Exact service filters distinguish empty from omitted. term: case-insensitive substring. Per signal: null selects all, false none. Filters precede paging.",
 		"if":          only("home-values"),
 		"else":        map[string]any{"properties": map[string]any{"limit": limit(1, 500, 100)}},
 		"properties": map[string]any{
@@ -424,7 +434,7 @@ func rpcDiscoveryOptions() map[string]any {
 			"sortBy": map[string]any{"enum": []any{nil, "", "name", "frequency"}}, "sortDirection": map[string]any{"enum": []any{nil, "", "asc", "desc"}},
 			"ownerType": choice("span", "event", "link", "log", "datapoint", "exemplar", "metadata", "resource", "scope"),
 			"queries": map[string]any{"type": []string{"object", "null"}, "propertyNames": choice("traces", "logs", "metrics"),
-				"additionalProperties": map[string]any{"anyOf": []any{map[string]any{"type": []string{"object", "null"}}, map[string]any{"const": false}}}},
+				"additionalProperties": map[string]any{"anyOf": []any{rpcSchemaRef("SearchQuery"), map[string]any{"const": false}}}},
 		},
 		"dependencies": map[string]any{
 			"targetIdentity": only("connection-spans"), "valueRef": only("home-value"),
@@ -436,13 +446,13 @@ func rpcDiscoveryOptions() map[string]any {
 				map[string]any{"properties": map[string]any{"signal": choice("metrics"), "ownerType": choice("datapoint", "exemplar", "metadata", "resource", "scope")}},
 			}}},
 		"oneOf": []any{
-			mode("services", "Group by typed namespace and name. Missing and empty namespaces group together. Only totals.home reflects service filters and term."),
-			mode("connections", "Incoming/outgoing edges and counts. Both spans must match in one trace and window.", "serviceIdentity"),
-			mode("connection-spans", "Child spans from source to target: IDs, names, times and status.", "serviceIdentity", "targetIdentity"),
-			mode("keys", "List attribute keys and types.", "signal", "ownerType"),
-			mode("values", "Distinct records per typed value. Denominator: records with the key before paging. Empty keys allowed.", "signal", "ownerType", "key"),
-			mode("home-values", "Display preview; identity identifies the row. Limit 0: counts only. Otherwise advance offset by values returned.", "ownerType", "key"),
-			mode("home-value", "Resolve valueRef to canonical identity; Arrow returns the received value. Refresh expired refs with home-values.", "valueRef"),
+			mode("services", "Group by typed namespace/name; missing namespace counts as empty. Only totals.home includes service filters and term."),
+			mode("connections", "Edges and counts. Both spans match one trace and window.", "serviceIdentity"),
+			mode("connection-spans", "Child spans from source to target.", "serviceIdentity", "targetIdentity"),
+			mode("keys", "Attribute keys and types.", "signal", "ownerType"),
+			mode("values", "Counts distinct records per typed value. Denominator: records carrying key. Empty keys allowed.", "signal", "ownerType", "key"),
+			mode("home-values", "Display preview; identify rows by identity. Limit 0: counts only. Otherwise advance by values returned.", "ownerType", "key"),
+			mode("home-value", "Canonical identity (Arrow: received value). Refresh expired refs with home-values.", "valueRef"),
 		},
 	}
 }
@@ -466,7 +476,7 @@ func rpcExamples(method string) []map[string]any {
 	default:
 		return nil
 	}
-	return []map[string]any{{"name": "empty-store", "description": "Executable example against an empty viewer store. Named params use these names as keys; positional params use the listed values in order.", "params": params, "result": map[string]any{"name": "result", "value": result}}}
+	return []map[string]any{{"name": "empty-store", "params": params, "result": map[string]any{"name": "result", "value": result}}}
 }
 
 func registerOpenRPC(mux *http.ServeMux) error {
@@ -487,6 +497,9 @@ func registerOpenRPC(mux *http.ServeMux) error {
 			}
 		}
 		single := maps.Clone(doc)
+		info := maps.Clone(doc["info"].(map[string]any))
+		delete(info, "description")
+		single["info"] = info
 		single["methods"] = []rpcMethodDescription{method}
 		single["components"] = map[string]any{"schemas": schemas}
 		filename := method.Name + ".json"
