@@ -89,7 +89,6 @@ try {
     cliBinary: process.env.OTEL_EVAL_CLAUDE_BINARY ?? path.join(parent, 'runtime/claude-plugin/node_modules/@anthropic-ai/claude-code-darwin-arm64/claude'),
     configDir: process.env.OTEL_EVAL_CLAUDE_CONFIG_DIR ?? path.join(parent, 'runtime/claude-profile') })
   config.extensions = ['file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':beforeAll',
-    'file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':afterEach',
     ...(spec.mode === 'full' ? ['file://' + path.join(suite, 'opencode-v2-execution-stop.mjs') + ':afterEach'] : [])]
   save('run-plan.json', { ...spec, ...(spec.mode === 'full' ? {} : { task }), investigators: scheduled, maxGraders: scheduled,
     retry: false, version: V2_VERSION, graders: graderMap(spec), observer: settings.observerAPI, observerHTTP: settings.observerHTTP, config })

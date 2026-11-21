@@ -188,8 +188,10 @@ and OpenCode runners continue to the next scheduled case after a model or
 grader error. An investigator error leaves the case ungraded. A grader error
 preserves the answer without a grade. Neither triggers a repeat. An investigator
 deadline without a provider error remains a no-answer outcome. The full OpenCode
-run stops on shared harness failure or missing investigator evidence. Both
-runners stop when cleanup fails. Before a full run, check each selected judge
+run continues after a single session fails to start if it records the failure
+and cleans up. It stops if the shared fixture is unavailable, workspace
+protection cannot be verified, or run evidence cannot be trusted. Both
+runners stop on an actual cleanup failure. Before a full run, check each selected judge
 with one synthetic answer using the same login and grading path.
 
 ## Checks

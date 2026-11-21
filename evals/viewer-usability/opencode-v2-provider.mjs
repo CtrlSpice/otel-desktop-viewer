@@ -10,6 +10,7 @@ import { context as otelContext, propagation } from '@opentelemetry/api'
 import { exportToolLogs, missingToolLogs } from './tool-logs.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
 import { withBinaryTeardown } from './attempt-teardown.ts'
+import { isEvidenceError, stopRun } from './opencode-v2-execution-stop.mjs'
 import { readBinarySkill } from './grade.ts'
 import { aggregateUsage, skillFetched, toolEvidence } from './opencode-v2-evidence.mjs'
 import { openV2EventStream } from './opencode-v2-stream.mjs'
@@ -23,6 +24,17 @@ export async function cancelOpenCodeV2() {
 }
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'))
 const hosts = new Map()
+class SharedRunFailure extends Error {}
+
+async function checkFixture(endpoint) {
+  try {
+    const response = await fetch(endpoint + '/api/features', { signal: AbortSignal.timeout(3000), redirect: 'error' })
+    await response.body?.cancel()
+    if (!response.ok) throw Error(`HTTP ${response.status}`)
+  } catch (cause) {
+    throw new SharedRunFailure(`Shared viewer fixture unavailable: ${cause.message}`, { cause })
+  }
+}
 export async function withSharedHost(host, evaluate) {
   if (hosts.has(host.root)) throw Error('Duplicate evaluation host')
   hosts.set(host.root, host)
@@ -89,6 +101,20 @@ export default class OpenCodeV2Provider {
   }
 
   async callApi(prompt, context = {}, options = {}) {
+    try {
+      const response = await this.ownedAttempt(prompt, context, options)
+      // Promptfoo can defer afterEach until grading. Stop before the next
+      // provider call, after this attempt's evidence and teardown are recorded.
+      if (response.metadata.harnessFailure) stopRun(new Error(response.error))
+      return response
+    } catch (error) {
+      // No saved response: setup, evidence recording or teardown did not finish.
+      if (this.config.sharedHost) stopRun(error)
+      throw error
+    }
+  }
+
+  async ownedAttempt(prompt, context, options) {
     const root = fs.realpathSync(this.config.root)
     if (this.config.sharedHost && !hosts.has(root)) throw Error('Missing owned shared eval server')
     if (!this.config.sharedHost && (this.config.providerID ?? 'openai') !== 'openai') throw Error('Multiple providers require the shared eval server')
@@ -120,7 +146,8 @@ export default class OpenCodeV2Provider {
         runtime: 'opencode-v2', expectedRuntimeVersion: V2_VERSION, role: 'investigator', model: this.id().slice('opencode-v2:'.length),
         task: context.vars?.task_id, evidence, workspace: path.join(evidence, 'workspace'), repeatIndex: context.repeatIndex,
         exit: 'provider-exception', captureUnavailable: true, skillFetched: 'unknown',
-        ...(this.config.sharedHost ? { harnessFailure: true } : {}),
+        ...(error instanceof SharedRunFailure || isEvidenceError(error, root) ||
+          error.path === this.config.binary ? { harnessFailure: true } : {}),
       } }
       fs.writeFileSync(path.join(evidence, 'provider-exception.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
       if (!fs.existsSync(path.join(evidence, 'response.json'))) fs.writeFileSync(path.join(evidence, 'response.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
@@ -147,7 +174,7 @@ export default class OpenCodeV2Provider {
     const invocation = otelContext.active(), carrier = {}
     propagation.inject(invocation, carrier)
     const traceparent = carrier.traceparent ?? context.traceparent
-    if (!/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test(traceparent ?? '')) throw Error('Missing eval trace')
+    if (!/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test(traceparent ?? '')) throw new SharedRunFailure('Missing eval trace')
     const deadline = AbortSignal.timeout(this.config.timeoutMs)
     const signal = AbortSignal.any([host.signal, deadline, options.abortSignal].filter(Boolean))
     const api = async (route, method, body, name) => {
@@ -163,24 +190,28 @@ export default class OpenCodeV2Provider {
       {action:'external_directory',resource:'*',effect:'deny'},
       {action:'shell',resource:'curl *',effect:'allow'},
       ...[binary,'./bin/otel-desktop-viewer'].flatMap(exe => ['--help','--version','-h','-v','skills','logs','log','metrics','metric','traces','trace','span','attributes','services','query','export'].map(cmd=>({action:'shell',resource:`${exe} ${cmd} *`,effect:'allow'})))]
-    await host.checkPolicy(workspace)
+    await checkFixture(this.config.fixtureEndpoint)
+    try { await host.checkPolicy(workspace) }
+    catch (cause) { throw new SharedRunFailure(`Cannot verify shared workspace protection: ${cause.message}`, { cause }) }
     const started = performance.now(), firstReceipt = host.telemetry.receipts.length
-    const sessionID = (await this.createSession(api, workspace, permissions, 'Viewer ' + context.vars.task_id)).data.id
-    if (!/^ses_[a-zA-Z0-9]+$/.test(sessionID)) throw Error('Unexpected session ID')
+    const sessionID = (await this.createSession(api, workspace, permissions, 'Viewer ' + context.vars.task_id))?.data?.id
+    if (!/^ses_[a-zA-Z0-9]+$/.test(sessionID)) throw new SharedRunFailure('Cannot identify the created session for cleanup')
     const registration = path.join(host.registry, sessionID + '.json')
-    fs.writeFileSync(registration, JSON.stringify({ sessionID, workspace, fixtureEndpoint:this.config.fixtureEndpoint, binarySHA256: createHash('sha256').update(fs.readFileSync(binary)).digest('hex') }), { flag:'wx', mode:0o600 })
+    let registered = false
     let history = [], receivedError, waiting = false, modelTimeout = false, settled = false, stopping
     const stop = () => stopping ??= (async () => {
       if (!settled) {
         await host.api(`/api/session/${sessionID}/interrupt`, 'POST', undefined, traceparent, AbortSignal.timeout(10000))
         await host.api(`/api/experimental/session/${sessionID}/wait`, 'POST', undefined, traceparent, AbortSignal.timeout(30000))
       }
-      fs.unlinkSync(registration)
+      if (registered) fs.unlinkSync(registration)
       save('owned-shutdown.json', { sessionID, waited: true, sharedHostRetained: true })
     })()
     register(stop)
+    fs.writeFileSync(registration, JSON.stringify({ sessionID, workspace, fixtureEndpoint:this.config.fixtureEndpoint, binarySHA256: createHash('sha256').update(fs.readFileSync(binary)).digest('hex') }), { flag:'wx', mode:0o600 })
+    registered = true
     try {
-      if ((await api(`/api/session/${sessionID}/context`)).data.length) throw Error('Expected fresh conversation')
+      if ((await api(`/api/session/${sessionID}/context`)).data.length) throw new SharedRunFailure('Expected fresh conversation')
       await api(`/api/session/${sessionID}/prompt`, 'POST', { text: prompt }, 'admitted-prompt.json')
       waiting = true
       await api(`/api/experimental/session/${sessionID}/wait`, 'POST')
@@ -189,14 +220,14 @@ export default class OpenCodeV2Provider {
       history = (await api(`/api/session/${sessionID}/context`, 'GET', undefined, 'context.json')).data
       await api(`/api/experimental/session/${sessionID}/export`, 'GET', undefined, 'session-export.json')
     } catch (e) {
-      if (e.syscall || e.path?.startsWith(evidence + '/')) throw e
+      if (e instanceof SharedRunFailure || e.syscall || isEvidenceError(e, host.root)) throw e
       receivedError = e.message
       await host.api(`/api/session/${sessionID}/interrupt`, 'POST', undefined, traceparent, AbortSignal.timeout(10000))
       await host.api(`/api/experimental/session/${sessionID}/wait`, 'POST', undefined, traceparent, AbortSignal.timeout(30000))
       settled = true
       if (waiting && deadline.aborted && signal.reason === deadline.reason && !host.signal.aborted && !options.abortSignal?.aborted) {
         const capture = async (route, method = 'GET') => host.api(route, method, undefined, traceparent, AbortSignal.timeout(30000))
-        if (!(await fetch(this.config.fixtureEndpoint + '/api/features', { signal: AbortSignal.timeout(3000), redirect:'error' })).ok) throw Error('Fixture unavailable after timeout')
+        await checkFixture(this.config.fixtureEndpoint)
         const context = await capture(`/api/session/${sessionID}/context`)
         save('context.json', context)
         save('session-export.json', await capture(`/api/experimental/session/${sessionID}/export`))
@@ -205,8 +236,11 @@ export default class OpenCodeV2Provider {
         receivedError = 'No answer: investigator reached its time limit'
       }
     } finally { await stop() }
-    await host.telemetry.flush()
-    const nativeSpans = readNativeTelemetry(host.root, host.telemetry.receipts.slice(firstReceipt)).spans
+    let nativeSpans
+    try {
+      await host.telemetry.flush()
+      nativeSpans = readNativeTelemetry(host.root, host.telemetry.receipts.slice(firstReceipt)).spans
+    } catch (cause) { throw new SharedRunFailure(`Cannot verify recorded telemetry: ${cause.message}`, { cause }) }
     return this.recordResponse({ history, sessionID, save, receivedError, timedOut: signal.aborted, modelTimeout, traceparent, invocation, context, workspace, evidence, started, nativeSpans })
   }
 

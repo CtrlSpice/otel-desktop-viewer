@@ -40,8 +40,7 @@ export default {
     },
   }],
   evaluateOptions: { repeat: 3, maxConcurrency: 1, cache: false },
-  extensions: ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll',
-    'file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':afterEach'],
+  extensions: ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll'],
   defaultTest: {
     vars: { ...connection, binary: './bin/otel-desktop-viewer' },
     options: {

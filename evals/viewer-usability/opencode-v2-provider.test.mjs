@@ -148,3 +148,70 @@ test('non-shared V2 preflight errors still remove the owned executable copy', as
   assert.equal(JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'teardown.json'))).status, 'removed')
   assert.equal(fs.readFileSync(binary, 'utf8'), 'fixture viewer')
 })
+
+for (const fault of ['session-start', 'disk-full', 'cleanup', 'unavailable-fixture', 'missing-policy']) {
+  test(`full benchmark scheduling after ${fault}`, async t => {
+    const { root, binary, registry } = fixture(t)
+    const controller = new AbortController()
+    onFailure(error => controller.abort(error))
+    t.after(() => onFailure(undefined))
+    const receiver = http.createServer((_req, res) => res.writeHead(fault === 'unavailable-fixture' ? 503 : 200).end('{}'))
+    receiver.listen(0, '127.0.0.1')
+    await once(receiver, 'listening')
+    t.after(() => { receiver.closeAllConnections(); receiver.close() })
+    let attempted = 0, admitted = false
+    const host = { root, registry, signal: controller.signal, telemetry: { receipts: [], async flush() {} },
+      async checkPolicy() { if (fault === 'missing-policy') throw Error('isolation unavailable') },
+      async api(route) {
+        if (route === '/api/session') {
+          if (fault === 'session-start' && attempted === 1) throw Error('One session refused')
+          return { data: { id: 'ses_' + attempted } }
+        }
+        if (route.endsWith('/context')) return { data: admitted ? [
+          { type: 'assistant', model: { providerID: 'openai', id: 'fixture' }, content: [{ type: 'text', text: 'answer' }], finish: 'stop' },
+          { type: 'idle', outcome: 'succeeded' },
+        ] : [] }
+        if (route.endsWith('/prompt')) admitted = true
+        if (route.endsWith('/wait') && fault === 'cleanup') throw Error('cannot drain owned session')
+        return {}
+      } }
+    if (fault === 'disk-full') {
+      const write = fs.writeFileSync
+      t.mock.method(fs, 'writeFileSync', (file, ...args) => {
+        if (path.basename(file) === 'prompt.txt') throw Object.assign(Error('ENOSPC writing prompt'), { code: 'ENOSPC' })
+        return write(file, ...args)
+      })
+    }
+    const provider = new OpenCodeV2Provider({ config: { root, binary, model: 'fixture', sharedHost: true,
+      fixtureEndpoint: `http://127.0.0.1:${receiver.address().port}`, timeoutMs: 5000 } })
+    process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'promptfoo-state')
+    process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
+    const { evaluate } = await import('promptfoo')
+    const rowsFile = path.join(root, 'result.json')
+    await withSharedHost(host, () => evaluate({
+      prompts: ['{{task_id}}'], tests: ['one', 'two'].map(task_id => ({ vars: { task_id } })),
+      providers: [{ id: () => provider.id(), callApi(prompt, context) {
+        attempted++
+        admitted = false
+        return provider.callApi(prompt, { ...context, traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01` })
+      } }], defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture' }],
+        options: { provider: { id: () => 'offline-judge', callApi: async () => ({ output: '{"pass":true,"score":1,"reason":"fixture"}' }) } } },
+      extensions: ['file://' + path.join(import.meta.dirname, 'opencode-v2-execution-stop.mjs') + ':afterEach'],
+      outputPath: rowsFile,
+    }, { maxConcurrency: 1, cache: false, share: false, abortSignal: controller.signal }))
+    const recoverable = fault === 'session-start'
+    assert.equal(attempted, recoverable ? 2 : 1)
+    assert.equal(controller.signal.aborted, !recoverable)
+    const receipts = fs.readdirSync(path.join(root, 'runs')).map(name =>
+      JSON.parse(fs.readFileSync(path.join(root, 'runs', name, 'teardown.json'))).status)
+    assert.ok(receipts.every(status => status === (fault === 'cleanup' ? 'failed' : 'removed')))
+    if (recoverable) {
+      const rows = JSON.parse(fs.readFileSync(rowsFile)).results.results
+      assert.equal(rows.length, 2)
+      assert.equal(rows.find(row => row.vars.task_id === 'one').response.error, 'One session refused')
+      assert.equal(rows.find(row => row.vars.task_id === 'two').success, true)
+    } else assert.match(controller.signal.reason.message, {
+      'disk-full': /ENOSPC/, cleanup: /teardown failed/, 'unavailable-fixture': /503/, 'missing-policy': /isolation unavailable/,
+    }[fault])
+  })
+}

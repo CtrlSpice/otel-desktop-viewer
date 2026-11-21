@@ -5,28 +5,9 @@ import path from 'node:path'
 import childProcess from 'node:child_process'
 import net from 'node:net'
 import { syncBuiltinESMExports } from 'node:module'
-import { afterEach, onFailure } from './attempt-teardown-stop.mjs'
+import { onFailure } from './attempt-teardown-stop.mjs'
 import { withBinaryTeardown } from './attempt-teardown.ts'
 import { TEMPORARY, SUITE } from './runtime.ts'
-
-test('teardown stop hook distinguishes cleanup failures from answer outcomes and investigator deadlines', () => {
-  const errors = []
-  onFailure(error => errors.push(error))
-  try {
-    for (const result of [
-      { success: true },
-      { success: false, failureReason: 1, error: 'Wrong answer' },
-      { response: { error: 'No answer: investigator reached its time limit', metadata: { caseOutcome: 'investigator-timeout' } } },
-    ]) afterEach({ result })
-    assert.equal(errors.length, 0)
-    for (const result of [
-      { error: 'AggregateError: Harness binary teardown failed; see receipt' },
-      { response: { error: 'Harness binary teardown failed' } },
-      { gradingResult: { componentResults: [{ reason: 'Grader failed: Harness binary teardown failed' }] } },
-    ]) afterEach({ result })
-    assert.equal(errors.length, 3)
-  } finally { onFailure(undefined) }
-})
 
 test('native Promptfoo stops scheduling after an actual harness teardown failure', async t => {
   const root = fs.mkdtempSync(path.join(TEMPORARY, 'teardown-scheduling-test-'))
@@ -56,8 +37,7 @@ test('native Promptfoo stops scheduling after an actual harness teardown failure
         },
       }],
       tests: [0, 1, 2].map(index => ({ description: `case-${index}` })),
-      extensions: ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll',
-        'file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':afterEach'],
+      extensions: ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll'],
       outputPath: path.join(root, 'promptfoo.json'), writeLatestResults: true,
     }, { maxConcurrency: 1, cache: false, share: false, abortSignal: cancellation.signal })
     assert.equal(attempts, 1, 'No later test may start after teardown failure')
@@ -94,8 +74,7 @@ for (const runtime of ['pi', 'opencode-v2']) test(`${runtime} direct launch is r
         return { output: 'must not run' }
       } }],
       tests: [{ description: 'rejected direct launch' }],
-      extensions: ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll',
-        'file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':afterEach'],
+      extensions: ['file://' + path.join(SUITE, 'attempt-teardown-stop.mjs') + ':beforeAll'],
     }, { maxConcurrency: 1, cache: false, share: false, writeToDatabase: false }),
     error => {
       const message = runtime === 'pi'

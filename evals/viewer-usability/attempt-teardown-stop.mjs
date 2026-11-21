@@ -9,9 +9,4 @@ export function beforeAll({ suite }) {
     : 'Use npm run evaluate --prefix evals/viewer-usability so cleanup failures stop the batch.')
 }
 
-export function afterEach({ result }) {
-  const errors = [result.error, result.response?.error,
-    ...(result.gradingResult?.componentResults ?? []).map(component => component.reason)]
-  if (errors.some(error => typeof error === 'string' && error.includes('Harness binary teardown failed')))
-    stop?.(new Error('Stopped on harness teardown failure; original evidence retained'))
-}
+export function teardownFailed(error) { stop?.(error) }

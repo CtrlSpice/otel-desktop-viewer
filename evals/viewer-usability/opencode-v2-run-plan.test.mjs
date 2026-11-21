@@ -156,7 +156,7 @@ test('full-run hooks preserve an ungraded answer and let the following grade fin
   teardown.onFailure(error => controller.abort(error))
   t.after(() => { onFailure(undefined); teardown.onFailure(undefined) })
   let calls = 0
-  const grader = { id: () => 'offline-judge', callApi: async () => ++calls === 1 ? { error: 'fixture grader 401' } :
+  const grader = { id: () => 'offline-judge', callApi: async () => ++calls === 1 ? { error: 'provider error quoting “Harness binary teardown failed”' } :
     { output: '{"pass":true,"score":1,"reason":"fixture"}' } }
   await evaluate({ prompts: ['{{id}}'], tests: ['1','2'].map(id => ({ vars: { id } })),
     providers: [{ id: () => 'offline-investigator', async callApi(prompt) {
@@ -166,7 +166,7 @@ test('full-run hooks preserve an ungraded answer and let the following grade fin
       write(evidence, 'response.json', response)
       return response
     } }], defaultTest: { assert: [{ type: 'llm-rubric', value: 'fixture criterion' }], options: { provider: grader } },
-    extensions: ['attempt-teardown-stop.mjs:beforeAll','attempt-teardown-stop.mjs:afterEach','opencode-v2-execution-stop.mjs:afterEach']
+    extensions: ['attempt-teardown-stop.mjs:beforeAll','opencode-v2-execution-stop.mjs:afterEach']
       .map(name => 'file://' + path.join(import.meta.dirname, name)),
     outputPath: path.join(root, 'result.json') }, { maxConcurrency: 1, cache: false, share: false, abortSignal: controller.signal })
   const rows = JSON.parse(fs.readFileSync(path.join(root, 'result.json'))).results.results

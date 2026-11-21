@@ -108,8 +108,12 @@ export async function withBinaryTeardown<T>(fixture: BinaryFixture, execute: (re
         if (!fs.existsSync(receipt)) saveJson(receipt, { status: 'failed', error: String(cleanupError),
           ...(attemptError === undefined ? {} : { attemptError: String(attemptError) }) })
       } catch (receiptError) { errors.push(receiptError) }
-      throw new AggregateError(errors,
+      const failure = new AggregateError(errors,
         `Harness binary teardown failed; see ${path.join(fixture.directory, 'teardown.json')}`)
+      const hook = './attempt-teardown-stop.mjs'
+      const { teardownFailed } = await import(hook)
+      teardownFailed(failure)
+      throw failure
     }
   }
 }
