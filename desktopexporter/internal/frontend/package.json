@@ -77,7 +77,7 @@
     "oxlint": "1.94.0",
     "postcss": "^8.5.33",
     "prettier": "^3.10.1",
-    "prettier-plugin-svelte": "^4.2.0",
+    "prettier-plugin-svelte": "^4.1.1",
     "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3",
