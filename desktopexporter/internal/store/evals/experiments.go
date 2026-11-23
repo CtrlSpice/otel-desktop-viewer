@@ -38,7 +38,7 @@ type ExperimentSearchPage struct {
 	Indexing    ExperimentIndexState `json:"indexing"`
 }
 
-const visibleExperiments = `select r.* from eval_experiments r
+const physicalExperiments = `select r.* from eval_experiments r
 join eval_experiment_indexes i on i.dataset_id=r.dataset_id
 join eval_datasets d on d.id=r.dataset_id
 join eval_imports f on f.id=d.import_id
@@ -218,6 +218,9 @@ func GetExperimentPage(ctx context.Context, db *sql.DB, id string, after int64, 
 		return out, err
 	}
 	out.Summary = summary
+	if summary.Source == "live-result" {
+		return livePage(ctx, db, out, after, limit)
+	}
 	if err := db.QueryRowContext(ctx, `select to_json(context)::varchar from eval_experiment_indexes where dataset_id=? and source_kind='dataset' and status='ready'`, summary.DatasetID).Scan(&out.ContextJSON); err != nil {
 		return out, err
 	}

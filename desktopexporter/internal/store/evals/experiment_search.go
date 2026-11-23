@@ -18,9 +18,9 @@ func experimentSearchSQL(criteria *search.QueryNode) (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	from := `visible v join eval_experiment_search x on x.experiment_id=v.id`
+	from := `visible v join (select x.*,coalesce(m.experiment_id,x.experiment_id) as display_id, coalesce(m.ordinal,x.ordinal) as display_ordinal from eval_experiment_search x left join eval_live_members m on m.dataset_id=x.dataset_id) x on x.display_id=v.id`
 	if needsPayload {
-		from += ` join eval_datasets d on d.id=v.dataset_id
+		from += ` join eval_datasets d on d.id=x.dataset_id
 join eval_records r on r.import_id=d.import_id and r.envelope=d.envelope and r.ordinal=x.ordinal`
 	}
 	if cte == "" {
@@ -61,7 +61,7 @@ func experimentExpression(name string, query *search.Query, needsPayload *bool) 
 	case "result.text":
 		expression = search.Text("x.text")
 	case "result.ordinal":
-		expression = search.NativeInteger("x.ordinal")
+		expression = search.NativeInteger("x.display_ordinal")
 		kind = "number"
 	case "result.id", "result.provider", "result.prompt", "result.output":
 		paths := map[string]string{

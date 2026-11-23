@@ -6,11 +6,15 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { beginLiveResults, finishLiveResults, liveResultHooks } from './opencode-v2-live-results.mjs'
+import { onFailure } from './opencode-v2-execution-stop.mjs'
+
+// Promptfoo binds its DB connection on import; the CLI export must use the
+// same private database for every evaluation in this test process.
+process.env.PROMPTFOO_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(),'opencode/live-promptfoo-state-'))
+process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
 
 test('each persisted native grade is published before the next investigation, including an ungraded result', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'opencode/live-grades-'))
-  process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'state')
-  process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
   const calls = [], rows = []
   const server = http.createServer(async (req, res) => {
     let text = ''; for await (const data of req) text += data
@@ -44,4 +48,30 @@ test('each persisted native grade is published before the next investigation, in
   assert.deepEqual(calls,['investigate one','grade','publish one','investigate two','grade','publish two','investigate three','grade','publish three'])
   assert.equal(rows[0].success,true)
   assert.equal(rows[1].gradingResult.componentResults[0].metadata.graderError,true)
+})
+
+test('a publication failure stops the next investigation and leaves the saved result', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'opencode/live-publish-error-'))
+  const attempts = []
+  const controller = new AbortController()
+  onFailure(error => controller.abort(error))
+  t.after(() => onFailure(undefined))
+  const server = http.createServer((req,res) => { req.resume(); res.writeHead(502).end() })
+  server.listen(0,'127.0.0.1'); await once(server,'listening')
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const config = { providers: [{ id: () => 'offline', callApi: async n => { attempts.push(n); return {output:n} } }],
+    prompts:['{{n}}'], tests:['one','two'].map(n => ({vars:{n},assert:[{type:'equals',value:n}]})),
+    tracing:{enabled:true},writeLatestResults:true,evaluateOptions:{cache:false} }
+  liveResultHooks(config)
+  beginLiveResults(root,`http://127.0.0.1:${server.address().port}`,controller.signal)
+  const {evaluate} = await import('promptfoo')
+  try { await evaluate(config,{...config.evaluateOptions,share:false,abortSignal:controller.signal}) }
+  catch (error) { assert.ok(controller.signal.aborted, String(error)) }
+  assert.match(controller.signal.reason.message,/HTTP 502/)
+  assert.deepEqual(attempts,['one'])
+  const dir = path.join(root,'published-results'), files = fs.readdirSync(dir)
+  const saved = files.filter(f=>/^[a-f0-9-]{36}\.json$/.test(f))
+  assert.equal(saved.length,1)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,saved[0]))).success,true)
+  assert.ok(!files.some(f=>f.endsWith('.receipt.json')))
 })

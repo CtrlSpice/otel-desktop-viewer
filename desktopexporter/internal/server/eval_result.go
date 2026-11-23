@@ -39,7 +39,7 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 			ID string `json:"id"`
 		} `json:"provider"`
 	}
-	if evaldecode.ValidateResult(body) != nil || json.Unmarshal(body, &row) != nil || row.ID != result || row.Provider.ID == "" {
+	if evaldecode.ValidateResult(body) != nil || json.Unmarshal(body, &row) != nil || row.ID != result || row.Provider.ID == "" || evals.ValidateLiveRow(body) != nil {
 		http.Error(w, "expected a Promptfoo result with the named id and a provider.id", 400)
 		return
 	}
@@ -54,6 +54,7 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 	defer s.evalImports.Delete(id)
 	var ordinal int64
 	runKey, resultKey, digest := resultHash(run), resultHash(result), fmt.Sprintf("%x", sha256.Sum256(body))
+	recordID := resultHash("live-row-v1:" + runKey + resultKey)
 	err = s.store.WithDBWrite(func(db *sql.DB) error {
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
@@ -94,7 +95,7 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 		}
 		return storeRead(s.store, func(db *sql.DB) (bool, error) {
 			var found bool
-			err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets d join eval_imports i on i.id=d.import_id join eval_records r on r.import_id=d.import_id and r.envelope=d.envelope where d.id=? and r.ordinal=? and i.complete and not d.deleted)`, dataset, ordinal).Scan(&found)
+			err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets d join eval_imports i on i.id=d.import_id join eval_records r on r.import_id=d.import_id and r.envelope=d.envelope where d.import_id=? and r.ordinal=0 and i.complete and not d.deleted)`, recordID).Scan(&found)
 			return found, err
 		})
 	}
@@ -104,17 +105,17 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		if ordinal == 0 {
-			header, _ := json.Marshal(map[string]any{"evalId": run, "config": map[string]any{}, "results": map[string]any{"version": 3, "results": []any{}}})
-			manifest, _ := json.Marshal(map[string]any{"name": "Live evaluation", "liveGroup": id})
-			for _, part := range []evaldecode.IngestPart{{Envelope: 0, Row: -1, Format: "promptfoo-v3", Payload: header}, {Envelope: -1, Row: -2, Count: 1, Payload: manifest}} {
-				if err := s.forwardEvalPart(ctx, id, part); err != nil {
-					http.Error(w, "receiver did not accept run metadata", 502)
-					return
-				}
-			}
+		data, err := evaldecode.Encode(recordID, evaldecode.IngestPart{Row: 0, Payload: body})
+		if err != nil {
+			http.Error(w, "invalid result", 400)
+			return
 		}
-		if err := s.forwardEvalPart(ctx, id, evaldecode.IngestPart{Row: ordinal, Payload: body}); err != nil {
+		log := data.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+		log.SetEventName(evaldecode.ResultEvent)
+		log.Attributes().PutStr("eval.run.id", run)
+		log.Attributes().PutInt("eval.result.ordinal", ordinal)
+		log.Attributes().PutStr("eval.result.digest", digest)
+		if err := s.forwardEvalLogs(ctx, data); err != nil {
 			http.Error(w, "receiver did not accept result", 502)
 			return
 		}

@@ -20,6 +20,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/evaldecode"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 )
 
@@ -183,6 +184,10 @@ func (s *Server) forwardEvalPart(ctx context.Context, id string, part evaldecode
 	if err != nil {
 		return err
 	}
+	return s.forwardEvalLogs(ctx, logs)
+}
+
+func (s *Server) forwardEvalLogs(ctx context.Context, logs plog.Logs) error {
 	logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	data, err := plogotlp.NewExportRequestFromLogs(logs).MarshalProto()
 	if err != nil {

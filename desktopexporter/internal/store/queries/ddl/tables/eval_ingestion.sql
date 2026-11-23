@@ -52,3 +52,11 @@ create table if not exists eval_result_claims (
     primary key (run_key, result_key),
     unique (import_id, ordinal)
 );
+-- Read-time group membership projected from each retained result observation.
+create table if not exists eval_live_members (
+    dataset_id varchar primary key,
+    group_id varchar not null,
+    ordinal bigint not null,
+    adapter_id varchar not null,
+    experiment_id varchar not null
+);

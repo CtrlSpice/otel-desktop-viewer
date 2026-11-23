@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-const evidenceFrom = `logs l where l.event_name='viewer.eval.import.v1' and l.scope.name='otel-desktop-viewer.evaldecode' and l.scope.version='1' and l.service_name='otel-desktop-viewer'`
+const evidenceFrom = `logs l where l.event_name in ('viewer.eval.import.v1','viewer.eval.result.v1') and l.scope.name='otel-desktop-viewer.evaldecode' and l.scope.version='1' and l.service_name='otel-desktop-viewer'`
 
 var errUndiscoveredEvidence = errors.New("evaluation evidence arrived during reconstruction")
 
@@ -197,7 +197,7 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 	}
 	last, reason, name := "", "", "Imported evaluation"
 	envelopes := int64(-1)
-	live := false
+	var live *liveMember
 	for {
 		var ids []string
 		if err := db.WithDBRead(func(conn *sql.DB) error {
@@ -231,62 +231,72 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 				reason = "Retained evidence is invalid or changed by processing."
 				continue
 			}
-			// Bytes describe the processed representation, never the original upload.
-			part.Bytes = 0
-			canonical, _ := json.Marshal(part)
-			digest := fmt.Sprintf("%x", sha256.Sum256(canonical))
-			duplicate := false
-			if err := db.WithDBWrite(func(conn *sql.DB) error {
-				var retained bool
-				if err := conn.QueryRowContext(ctx, `select exists(select 1 from logs where id=try_cast(? as uuid))`, logID).Scan(&retained); err != nil {
-					return err
+			parts := []IngestPart{part}
+			if log.EventName() == evaldecode.ResultEvent {
+				member, header, err := liveMemberFromLog(log, part)
+				if err != nil || (live != nil && *live != member) {
+					reason = "Invalid or conflicting retained result identity."
+					continue
 				}
-				if !retained {
-					return fmt.Errorf("evaluation evidence expired during reconstruction; retry")
-				}
-				var previous string
-				err := conn.QueryRowContext(ctx, `select digest from eval_parts where import_id=? and envelope=? and ordinal=?`, id, part.Envelope, part.Row).Scan(&previous)
-				if err == nil {
-					duplicate = true
-					if previous != digest {
-						reason = "Conflicting retained evidence for one logical source identity."
-					}
-					return nil
-				}
-				if err != sql.ErrNoRows {
-					return err
-				}
-				_, err = conn.ExecContext(ctx, `insert into eval_parts values (?, ?, ?, ?)`, id, part.Envelope, part.Row, digest)
-				if err != nil || part.Row == -2 {
-					return err
-				}
-				part.Bytes = int64(len(part.Payload))
-				return AppendParts(ctx, conn, id, name, []IngestPart{part})
-			}); err != nil {
-				return err
+				live = &member
+				parts = []IngestPart{header, part}
+				name, envelopes = "Live evaluation", 1
 			}
-			if !duplicate && part.Row == -2 {
-				var manifest struct {
-					Name      string `json:"name"`
-					LiveGroup string `json:"liveGroup"`
+			for _, part := range parts {
+				// Bytes describe the processed representation, never the original upload.
+				part.Bytes = 0
+				canonical, _ := json.Marshal(part)
+				digest := fmt.Sprintf("%x", sha256.Sum256(canonical))
+				duplicate := false
+				if err := db.WithDBWrite(func(conn *sql.DB) error {
+					var retained bool
+					if err := conn.QueryRowContext(ctx, `select exists(select 1 from logs where id=try_cast(? as uuid))`, logID).Scan(&retained); err != nil {
+						return err
+					}
+					if !retained {
+						return fmt.Errorf("evaluation evidence expired during reconstruction; retry")
+					}
+					var previous string
+					err := conn.QueryRowContext(ctx, `select digest from eval_parts where import_id=? and envelope=? and ordinal=?`, id, part.Envelope, part.Row).Scan(&previous)
+					if err == nil {
+						duplicate = true
+						if previous != digest {
+							reason = "Conflicting retained evidence for one logical source identity."
+						}
+						return nil
+					}
+					if err != sql.ErrNoRows {
+						return err
+					}
+					_, err = conn.ExecContext(ctx, `insert into eval_parts values (?, ?, ?, ?)`, id, part.Envelope, part.Row, digest)
+					if err != nil || part.Row == -2 {
+						return err
+					}
+					part.Bytes = int64(len(part.Payload))
+					return AppendParts(ctx, conn, id, name, []IngestPart{part})
+				}); err != nil {
+					return err
 				}
-				if err := json.Unmarshal(part.Payload, &manifest); err != nil || len(manifest.Name) == 0 || len(manifest.Name) > MaxNameBytes {
-					reason = "Invalid retained import manifest."
-				} else {
-					name, envelopes = manifest.Name, part.Count
-					live = manifest.LiveGroup == id && envelopes == 1
+				if !duplicate && part.Row == -2 {
+					var manifest struct {
+						Name string `json:"name"`
+					}
+					if err := json.Unmarshal(part.Payload, &manifest); err != nil || len(manifest.Name) == 0 || len(manifest.Name) > MaxNameBytes {
+						reason = "Invalid retained import manifest."
+					} else {
+						name, envelopes = manifest.Name, part.Count
+					}
 				}
 			}
 		}
 	}
 	if reason == "" {
-		if live {
-			// A live envelope has no final row count. Derive its visible size
-			// from the retained rows, then apply the usual coverage checks.
+		if live != nil {
 			if err := db.WithDBWrite(func(conn *sql.DB) error {
-				_, err := conn.ExecContext(ctx, `update eval_datasets set source='live-result', row_count=(select count(*) from eval_records where import_id=? and envelope=0) where import_id=? and envelope=0`, id, id)
-				return err
-			}); err != nil {
+				return live.save(ctx, conn, DatasetID(id, 0))
+			}); errors.Is(err, errLiveClaimMismatch) {
+				reason = "Conflicting retained result identity."
+			} else if err != nil {
 				return err
 			}
 		}

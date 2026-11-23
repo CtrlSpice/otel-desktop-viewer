@@ -28,7 +28,7 @@ left join eval_experiment_search s on s.dataset_id=r.dataset_id and s.ordinal=r.
 where s.dataset_id is null
 ), stale_names as (
 select distinct r.dataset_id from candidates c join eval_experiments r on r.dataset_id=c.id
-where r.name <> coalesce(nullif(json_extract_string(r.adapter_id, '$[4]'), ''), r.evaluation)
+where r.source<>'live-result' and r.name <> coalesce(nullif(json_extract_string(r.adapter_id, '$[4]'), ''), r.evaluation)
 ), index_state as (
 select c.id,c.kind,i.status,i.reason,
 (i.status is null or i.status='pending' or (i.status='ready' and (m.dataset_id is not null or n.dataset_id is not null))) as needs_work
