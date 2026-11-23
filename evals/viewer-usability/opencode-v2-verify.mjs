@@ -8,7 +8,6 @@ import { missingToolLogs } from './tool-logs.ts'
 import { verifyToolEvent } from './opencode-v2-verify-evidence.mjs'
 import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
 import { claudeEvidence } from './claude-provider.ts'
-import { judgeFor } from './opencode-v2-judge.mjs'
 import { nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 import { observerURL, validateSchedule, converge, scheduleForAvailability } from './opencode-v2-run-plan.mjs'
 import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
@@ -259,9 +258,22 @@ export function attemptNativeReport(root, telemetry, spec, investigator) {
     path.join(dedicated ? investigator.evidence : root, 'native-otlp', receipt.name)) }
 }
 
+export function expectedGrader(plan, model) {
+  const sol = 'pi:openai-codex/gpt-6.1-sol'
+  if (plan.graderPolicy !== undefined) assert.equal(plan.graderPolicy, 'blind-sol-6.1', 'Unknown grader policy')
+  if (!plan.graders && !plan.graderPolicy) return plan.grader // Early single-grader runs
+  const expected = plan.graderPolicy === undefined && /^(?:openai|opencode-go)\/gpt-/.test(model)
+    ? 'claude-code:claude-opus-5-5' : sol
+  assert.equal(plan.graders?.[plan.mode === 'full' ? model : model.split('/')[1]], expected, 'Saved grader does not match run policy')
+  return expected
+}
+
 export async function verifyRun(root, { importSource = false, env = process.env } = {}) {
   root = fs.realpathSync(root)
   const plan = read(path.join(root, 'run-plan.json'))
+  const startedFile = path.join(root, 'run-started.json')
+  if (plan.graderPolicy !== undefined || fs.existsSync(startedFile))
+    assert.equal(plan.graderPolicy, read(startedFile).spec?.graderPolicy, 'Grader policy changed after launch')
   assert.ok(['2.0.29', '2.3.0'].includes(plan.version), 'Unsupported OpenCode run version')
   const spec = { ...plan, models: plan.models ?? plan.config.providers.map(provider => provider.config.model) }
   if (plan.availability) {
@@ -330,8 +342,7 @@ export async function verifyRun(root, { importSource = false, env = process.env 
       const key = tool.sessionID + '/' + tool.id
       assert.ok(!nativeTools.has(key), 'Duplicate original session/tool identity'); nativeTools.add(key)
     }
-    const expected = plan.graders ? judgeFor(row.provider.id) : plan.grader
-    if (plan.graders) assert.equal(plan.graders[spec.mode === 'full' ? metadata.model : metadata.model.split('/')[1]], expected)
+    const expected = expectedGrader(plan, metadata.model)
     const grader = verifyGrader(root, row, investigator, graders, expected)
     if (grader.sessionID) { assert.ok(!graderSessions.has(grader.sessionID)); graderSessions.add(grader.sessionID) }
     reports.push({ ...investigator.report, evidence: investigator.evidence, grader,

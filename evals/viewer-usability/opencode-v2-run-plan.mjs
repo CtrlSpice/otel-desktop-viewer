@@ -7,7 +7,7 @@ import cases from './tasks.json' with { type: 'json' }
 export function fullRunPlan() {
   const models = [
     'opencode-go/minimax-m3.1-flash', 'opencode-go/deepseek-v4.1-flash',
-    'opencode-go/glm-5.3-flash', 'opencode-go/mimo-v2.6-flash',
+    'opencode-go/glm-5.3-flash',
     'kimi-code-plan-global/k3', 'kimi-code-plan-global/k3.1-pro',
     'openai/gpt-6.2-sol', 'openai/gpt-6.1-sol', 'openai/gpt-6.1-terra',
     'anthropic/claude-haiku-5-5', 'anthropic/claude-sonnet-5-5', 'anthropic/claude-opus-5-5',
@@ -75,7 +75,7 @@ export function assertFreshRoot(root) {
     if (fs.existsSync(path.join(root, name))) throw new Error('Refusing to reuse run evidence: ' + name)
 }
 
-export function evaluationConfig({ suite, root, spec, task, connection, binary, authFile, authEntry, piAuthFile, observerHTTP, cliBinary, configDir, graderHTTP = observerHTTP }) {
+export function evaluationConfig({ suite, root, spec, task, connection, binary, authFile, authEntry, piAuthFile, observerHTTP }) {
   const full = spec.mode === 'full'
   const tasks = full ? spec.taskIDs.map(id => cases.find(c => c.id === id)) : [task]
   return {
@@ -87,15 +87,15 @@ export function evaluationConfig({ suite, root, spec, task, connection, binary, 
         config: { root, providerID, model, maxRetries: 0, ...(full ? { sharedHost: true, fixtureEndpoint: connection?.endpoint } : { authFile, authEntry }), binary,
           timeoutMs: 600000, ...(spec.nativeTelemetry ? { telemetryForward: observerHTTP } : {}) } }
     }),
-    defaultTest: { vars: { ...connection, binary: './bin/otel-desktop-viewer' },
-      options: { provider: { id: 'file://' + path.join(suite, 'opencode-v2-judge.mjs'), config: { root, maxRetries: 0, authFile: piAuthFile, cliBinary, configDir, telemetryEndpoint: graderHTTP } } },
+    defaultTest: { vars: { ...connection, binary: './bin/otel-desktop-viewer', ...(full ? { sharedShell: true } : {}) },
+      options: { provider: { id: 'file://' + path.join(suite, 'opencode-v2-judge.mjs'), config: { root, maxRetries: 0, authFile: piAuthFile } } },
       assert: [{ type: 'llm-rubric', threshold: 1, rubricPrompt: JSON.stringify([{ role: 'user', content: '{{rubric}}' }]),
         value: 'file://' + path.join(suite, 'opencode-v2-grading-evidence.mjs') }],
     },
     tests: tasks.map(task => ({ description: task.id, vars: { task_id: task.id, goal: task.goal },
       ...(task.id === 'trace-export' ? {
         assertScoringFunction: 'file://' + path.join(suite, 'score-export.mjs'),
-        assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(suite, 'grading-evidence.ts') + ':verifyArtifact' }],
+        assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(suite, 'verify-artifact.ts') }],
       } : {}),
     })),
     evaluateOptions: { repeat: spec.repeat, maxConcurrency: 1, cache: false },

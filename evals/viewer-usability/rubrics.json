@@ -89,8 +89,8 @@
         "id": "usable-export",
         "text": "Hands Payments a verified, reloadable trace and an evidence-based starting point for investigating the failed charge.",
         "scoring": {
-          "Fail": "The answer does not identify a file that passes the reload check, or it gives no evidence-based operation to inspect.",
-          "Pass": "Reports the location of a checkout-017 export that passes the reload check. Identifies stripe/create-charge and its recorded insufficient-funds decline, or another defensible starting operation such as payment/charge with its failed child charge as the reason."
+          "Fail": "The named handoff file is not among the verified files, contains another trace, logs or metrics, or the answer gives no evidence-based operation to inspect.",
+          "Pass": "Reports the location of a verified file containing only the checkout-017 trace. Other scratch files do not affect the grade. Identifies stripe/create-charge and its recorded insufficient-funds decline, or another defensible starting operation such as payment/charge with its failed child charge as the reason."
         }
       }
     ]

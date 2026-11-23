@@ -1,8 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
+import { isUtf8 } from 'node:buffer'
 import { Parser } from 'tar'
-import { prepare, IngestionRejectedError, expectedStoredCounts } from './prepare.ts'
+import { prepare, IngestionRejectedError } from './prepare.ts'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 import { ownedPath } from './evidence.ts'
@@ -205,7 +206,6 @@ export async function verifyExport(
     file: string
     member?: string
     bytes: Buffer
-    spanCount: number
   }[] = []
   for (const file of scratchFiles(workspace)) {
     const descriptor = fs.openSync(
@@ -225,26 +225,41 @@ export async function verifyExport(
       // A malformed archive fails its own file check, like malformed JSON.
       continue
     }
-    for (const payload of payloads) {
-      try {
-        const document: unknown = JSON.parse(payload.bytes.toString('utf8'))
-        const rows = traceRows(document)
-        assert.deepEqual(
-          rows.filter(row => record(row.span).traceId === CHECKOUT_TRACE),
-          expected
-        )
-        const [spanCount] = expectedStoredCounts([
-          { signal: 'traces', document },
-        ])
-        candidates.push({ file, ...payload, spanCount })
-      } catch {}
-    }
+    // Grade the delivered file, not just the first matching archive member.
+    const matching = []
+    try {
+      for (const payload of payloads) {
+        if (payload.member !== undefined && (!isUtf8(payload.bytes) || payload.bytes.includes(0)))
+          throw new Error('Handoff contains a non-text archive member')
+        const text = payload.bytes.toString('utf8').trimStart()
+        if (!text.startsWith('{')) continue // e.g. an archive README
+        let parsed: unknown
+        try { parsed = JSON.parse(text) } catch (error) {
+          // The viewer also imports newline-separated root objects. A literal
+          // newline cannot occur inside a JSON string, so a separator between
+          // "}" and "{" in valid JSONL is a document boundary, even for
+          // pretty-printed objects. Keep multi-document exports out of notes.
+          if (payload.member && !/"resource(?:Spans|Logs|Metrics|Profiles)"\s*:/.test(text)) {
+            const sequence = text.replace(/}[ \t\r]*\n[ \t\r\n]*{/g, '},{')
+            try { JSON.parse('[' + sequence + ']') } catch { continue }
+          }
+          throw error
+        }
+        const document = record(parsed)
+        if ('resourceLogs' in document || 'resourceMetrics' in document || 'resourceProfiles' in document)
+          throw new Error('Handoff includes another signal')
+        if (!('resourceSpans' in document)) continue
+        assert.deepEqual(traceRows(document), expected)
+        matching.push({ file, ...payload })
+      }
+      candidates.push(...matching)
+    } catch { continue }
   }
   if (!candidates.length)
     return {
       pass: false,
       reason:
-        'No file in this investigator scratch retains the complete six-span trace and context.',
+        'No file in this investigator scratch contains only the complete six-span trace and its context.',
       files: [] as string[],
     }
   const connection = record(readJson(path.join(root, 'connection.json')))
@@ -269,7 +284,7 @@ export async function verifyExport(
         startTimeUnixNano: manifest.start.toString(),
         endTimeUnixNano: manifest.end.toString(),
         requests: [{ signal: 'traces', file: 'trace.json' }],
-        storedCounts: { spans: candidate.spanCount, logs: 0, datapoints: 0 },
+        storedCounts: { spans: expected.length, logs: 0, datapoints: 0 },
       })
       let ready: Awaited<ReturnType<typeof prepare>>
       let stop = async () => {}

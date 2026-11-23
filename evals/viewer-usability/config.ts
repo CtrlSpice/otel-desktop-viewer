@@ -56,7 +56,7 @@ export default {
     vars: { task_id: task.id, goal: task.goal },
     ...(task.id === 'trace-export' ? {
       assertScoringFunction: 'file://' + path.join(SUITE, 'score-export.mjs'),
-      assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(SUITE, 'grading-evidence.ts') + ':verifyArtifact' }],
+      assert: [{ type: 'javascript', metric: 'export-file', value: 'file://' + path.join(SUITE, 'verify-artifact.ts') }],
     } : {}),
   })),
   outputPath: [path.join(root, 'promptfoo.json'), path.join(root, 'promptfoo-rows.jsonl')],

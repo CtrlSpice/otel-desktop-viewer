@@ -5,3 +5,6 @@ Endpoint: {{endpoint}}
 Time window: {{start}} through {{end}}, inclusive.
 
 The viewer is already running. Do not start, stop or reconfigure viewers. Keep scratch files inside your assigned temporary working directory. Work independently.
+{% if sharedShell %}
+You can use `ls` inside your workspace and pipe command output through `head`, `jq`, `grep`, or `wc`. These four filters read from stdin only.
+{% endif %}

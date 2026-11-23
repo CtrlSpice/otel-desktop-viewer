@@ -66,6 +66,4 @@ otel-desktop-viewer export log <log-ref> --endpoint <viewer-url> > log.json
 otel-desktop-viewer export metric <metric-ref> --endpoint <viewer-url> > metric.json
 ```
 
-Trace exports contain spans; export logs separately.
-
 When asked to import, use `import <file> --endpoint <viewer-url>`. Receiver acceptance does not confirm storage. Retrying the whole file can duplicate records.

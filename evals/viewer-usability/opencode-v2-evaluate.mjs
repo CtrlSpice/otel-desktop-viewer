@@ -25,7 +25,7 @@ if (args.length === 1 && args[0] === '--plan-full') {
     graders: graderMap(plan) }, null, 2))
   process.exit(0)
 }
-const spec = runMode(args)
+const spec = { ...runMode(args), graderPolicy: 'blind-sol-6.1' }
 const planned = spec.models.length * (spec.taskIDs?.length ?? 1) * spec.repeat
 let selection = { models: spec.models, notStarted: [] }, scheduled = 0
 process.umask(0o077)
@@ -68,7 +68,7 @@ process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'promptfoo-state')
 process.env.PROMPTFOO_DISABLE_TELEMETRY = '1'
 const cancellation = runCancellation()
 onTeardownFailure(error => cancellation.cancel(error))
-let fixture, collector, judgeCollector, failure, rows = []
+let fixture, collector, failure, rows = []
 const cancel = () => { void Promise.all([cancelOpenCodeV2(), cancelPiAttempts(), cancelClaudeAttempts()]) }
 cancellation.signal.addEventListener('abort', cancel, { once: true })
 try {
@@ -76,7 +76,6 @@ try {
   if (spec.mode === 'sol-luna') assert.deepEqual(baseline, [0, 0, 0], 'Sol/Luna requires a fresh empty observer DB')
   save('observer-baseline.json', { counts: baseline, fresh: spec.mode === 'sol-luna' })
   collector = await nativeTelemetryReceiver(root, settings.observerHTTP, { directoryName: 'otlp', origin: 'promptfoo-wrapper' })
-  judgeCollector = await nativeTelemetryReceiver(root, settings.observerHTTP, { directoryName: 'otlp-opus', origin: 'claude-grader' })
   process.env.OTEL_EVAL_OBSERVER_HTTP = collector.endpoint
   Object.assign(process.env, observerEnvironment())
   stageDataset(path.join(suite, '../../testdata/otlp/small'), path.join(root, 'fixture'))
@@ -89,9 +88,7 @@ try {
     if (availability) selection = scheduleForAvailability(spec, availability)
     scheduled = planned - selection.notStarted.length
     const config = evaluationConfig({ suite, root, spec: { ...spec, models: selection.models }, task, connection, binary: settings.binary, authFile, authEntry, piAuthFile,
-      observerHTTP: settings.observerHTTP, graderHTTP: judgeCollector.endpoint,
-      cliBinary: process.env.OTEL_EVAL_CLAUDE_BINARY ?? path.join(parent, 'runtime/claude-plugin/node_modules/@anthropic-ai/claude-code-darwin-arm64/claude'),
-      configDir: process.env.OTEL_EVAL_CLAUDE_CONFIG_DIR ?? path.join(parent, 'runtime/claude-profile') })
+      observerHTTP: settings.observerHTTP })
     config.extensions = ['file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':beforeAll',
       ...(spec.mode === 'full' ? ['file://' + path.join(suite, 'opencode-v2-execution-stop.mjs') + ':afterEach'] : [])]
     if (availability) config.metadata = { plannedModels: spec.models, notStarted: selection.notStarted }
@@ -132,7 +129,6 @@ try {
   await cleanup(() => Promise.all([cancelOpenCodeV2(), cancelPiAttempts(), cancelClaudeAttempts()]))
   if (fixture) await cleanup(async () => { await stopOwnedGroup(fixture.pid, fixture.process); save('owned-shutdown.json', { pid: fixture.pid, exit: await fixture.closed }) })
   if (collector) await cleanup(async () => { await collector.close(); save('otlp-summary.json', { receipts: collector.receipts }) })
-  if (judgeCollector) await cleanup(() => judgeCollector.close())
   if (cleanupErrors.length) { save('cleanup-errors.json', cleanupErrors); failure ??= 'Owned cleanup failed'; process.exitCode = 1 }
   await cleanup(async () => {
     const telemetry = loadRunTelemetry(root)
@@ -154,7 +150,7 @@ try {
   save('run-completed.json', { mode: spec.mode, planned, scheduled, notStartedUnavailable: selection.notStarted.length, results: rows.length, failure,
     executionErrors, completedAt: new Date().toISOString() })
   const coverage = `${planned} planned; ${scheduled} scheduled; ${selection.notStarted.length} not started: model unavailable.`
-  fs.writeFileSync(path.join(root, 'handoff.md'), `# OpenCode V2 ${spec.mode} evaluation\n\nRoot: ${root}\n\nStatus: ${failure ?? coverage}\n\n${spec.models.join(', ')}; ${spec.repeat} repetitions; ${rows.length} rows; ${executionErrors} execution errors. Opus grades GPT answers; Sol grades the rest. No retries.\n\nObserver API: ${settings.observerAPI}\nOTLP destination: ${settings.observerHTTP}\nMain owns observer process/database; runner stops only its own fixture, V2 servers and relays.\n\nUnavailable slots and native outcomes: result-summary.json. Wrapper raw batches: otlp/. Opus grader batches: otlp-opus/. Per-investigator native batches: runs/investigator-opencode-v2-*/native-otlp/. Full source snapshot and hashes: sources/, source-snapshot.json. Flush verification: observer-convergence.json. Sources/credentials: source-preservation.json.\n\n${scheduled ? `Run opencode-v2-verify.mjs ${root} to verify the native results.` : 'No Promptfoo evaluation was scheduled.'} Never replay OTLP.\n`, { flag: 'wx', mode: 0o600 })
+  fs.writeFileSync(path.join(root, 'handoff.md'), `# OpenCode V2 ${spec.mode} evaluation\n\nRoot: ${root}\n\nStatus: ${failure ?? coverage}\n\n${spec.models.join(', ')}; ${spec.repeat} repetitions; ${rows.length} rows; ${executionErrors} execution errors. GPT-6.1 Sol grades every completed answer in a fresh blind session. No retries.\n\nObserver API: ${settings.observerAPI}\nOTLP destination: ${settings.observerHTTP}\nMain owns observer process/database; runner stops only its own fixture, V2 servers and relays.\n\nUnavailable slots and native outcomes: result-summary.json. Wrapper raw batches: otlp/. Per-investigator native batches: runs/investigator-opencode-v2-*/native-otlp/. Full source snapshot and hashes: sources/, source-snapshot.json. Flush verification: observer-convergence.json. Sources/credentials: source-preservation.json.\n\n${scheduled ? `Run opencode-v2-verify.mjs ${root} to verify the native results.` : 'No Promptfoo evaluation was scheduled.'} Never replay OTLP.\n`, { flag: 'wx', mode: 0o600 })
   cancellation.dispose()
   onTeardownFailure(undefined)
   console.log(JSON.stringify({ root, status: failure ? 'blocked' : scheduled ? 'completed' : 'not started', planned, scheduled, unavailable: selection.notStarted.length, results: rows.length, handoff: path.join(root, 'handoff.md') }))

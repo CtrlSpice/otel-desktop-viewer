@@ -92,7 +92,23 @@ export async function checkConnections({ root, catalogue, files, runtime, probe,
     env.OTEL_EVAL_CURL_BIN = path.join(work, 'viewer-http-bin')
     fs.mkdirSync(env.OTEL_EVAL_CURL_BIN)
     fs.copyFileSync(path.join(import.meta.dirname, 'opencode-v2-curl.mjs'), path.join(policy, 'opencode-v2-curl.mjs'))
+    const stdinFilter = path.join(policy, 'opencode-v2-stdin-filter.mjs')
+    fs.copyFileSync(path.join(import.meta.dirname, 'opencode-v2-stdin-filter.mjs'), stdinFilter)
+    for (const name of ['jq', 'grep', 'wc'])
+      fs.writeFileSync(path.join(env.OTEL_EVAL_CURL_BIN, name),
+        `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(stdinFilter)} ${name} "$@"\n`, { mode: 0o500 })
     fs.writeFileSync(path.join(env.OTEL_EVAL_CURL_BIN, 'curl'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(policy, 'opencode-v2-curl.mjs'))} "$@"\n`, { mode: 0o500 })
+    fs.writeFileSync(path.join(env.OTEL_EVAL_CURL_BIN, 'ls'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(policy, 'opencode-v2-workspace-guard.mjs'))} "$@"\n`, { mode: 0o500 })
+    fs.writeFileSync(path.join(env.OTEL_EVAL_CURL_BIN, 'head'), `#!/bin/sh
+if [ "$#" -eq 0 ]; then exec /usr/bin/head; fi
+if [ "$#" -eq 1 ]; then
+  case "$1" in -*) n=\${1#-};; *) exit 2;; esac
+elif [ "$#" -eq 2 ] && [ "$1" = "-n" ]; then n=$2
+else exit 2
+fi
+case "$n" in ''|*[!0-9]*) exit 2;; esac
+exec /usr/bin/head -n "$n"
+`, { mode: 0o500 })
     fs.writeFileSync(path.join(policy, 'fixture-shell'), '#!/bin/sh\nexec /usr/bin/sandbox-exec -p "${OTEL_EVAL_SHELL_PROFILE:?}" /bin/sh "$@"\n', { mode: 0o500 })
     telemetry = await nativeTelemetryReceiver(root, telemetryForward)
     env.OTEL_EXPORTER_OTLP_ENDPOINT = telemetry.endpoint
