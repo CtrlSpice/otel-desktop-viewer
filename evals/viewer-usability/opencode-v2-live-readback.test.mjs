@@ -27,10 +27,13 @@ test('real observer verifies the redacted grade, including large integers, witho
       await finishLiveResults()
       assert.deepEqual((await verifyLiveReadback(root,endpoint)).resultIDs,[id])
       const fetchReal = globalThis.fetch
+      let corrupt = 'integer'
       t.mock.method(globalThis,'fetch',async (url,options) => {
         const r = await fetchReal(url,options)
         if (!String(url).includes('/rows?')) return r
+        if (corrupt === 'response') return new Response('synthetic-readback-secret')
         const page = await r.json(), text = page.rows[0].json
+        if (corrupt === 'context') return Response.json({...page,contextJSON:'synthetic-readback-secret'})
         assert.ok(!text.includes('synthetic-readback-secret') && text.includes('"password":"****"'))
         assert.ok(text.includes('9007199254740993'))
         page.rows[0].json = text.replace('9007199254740993','9007199254740992')
@@ -38,6 +41,9 @@ test('real observer verifies the redacted grade, including large integers, witho
       })
       await assert.rejects(verifyLiveReadback(root,endpoint),error =>
         error.message === 'Retained result digest mismatch' && !JSON.stringify(error).includes('synthetic-readback-secret'))
+      for (corrupt of ['response','context'])
+        await assert.rejects(verifyLiveReadback(root,endpoint),error =>
+          error.message === 'Invalid JSON in evaluation readback' && !error.stack.includes('synthetic-readback-secret'))
       t.diagnostic(`Real-observer readback evidence: ${root}`)
     })
   })

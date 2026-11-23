@@ -7,11 +7,14 @@ import { promisify } from 'node:util'
 import { stopRun } from './opencode-v2-execution-stop.mjs'
 
 const exec = promisify(execFile)
-const read = file => JSON.parse(fs.readFileSync(file))
+function parseJSON(text,reviver) {
+  try { return JSON.parse(text,reviver) } catch { throw Error('Invalid JSON in evaluation readback') }
+}
+const read = file => parseJSON(fs.readFileSync(file,'utf8'))
 let active
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 // Keep numeric tokens when extracting native rows from a saved JSON export.
-const readExport = file => JSON.parse(fs.readFileSync(file, 'utf8'), (_k, value, ctx) =>
+const readExport = file => parseJSON(fs.readFileSync(file, 'utf8'), (_k, value, ctx) =>
   typeof value === 'number' ? JSON.rawJSON(ctx.source) : value)
 
 export function liveResultHooks(config, suite = import.meta.dirname) {
@@ -26,7 +29,7 @@ export function liveResultHooks(config, suite = import.meta.dirname) {
 export async function checkLiveResultSupport(endpoint, signal) {
   const res = await fetch(endpoint + '/openapi.json', {redirect:'error', signal:bounded(signal)})
   assert.equal(res.status, 200, 'Could not inspect observer capabilities')
-  const spec = await res.json()
+  const spec = parseJSON(await res.text())
   const put = spec.paths?.['/api/evals/runs/{runID}/results/{resultID}']?.put
   assert.ok(put?.operationId === 'putEvalResult' &&
     put.responses?.['200']?.content?.['application/json']?.schema?.required?.includes('retainedSHA256'),
@@ -67,7 +70,7 @@ async function publish(exported) {
     redirect: 'error', signal: bounded(active.signal),
   })
   assert.equal(reply.status, 200, 'Viewer publication failed: HTTP ' + reply.status)
-  const receipt = await reply.json()
+  const receipt = parseJSON(await reply.text())
   assert.ok(receipt.complete && receipt.resultID === row.id)
   assert.ok(/^[0-9a-f]{64}$/.test(receipt.retainedSHA256),'Missing redacted result digest')
   fs.writeFileSync(prefix + '.receipt.json', JSON.stringify(receipt), { flag: 'wx', mode: 0o600 })
@@ -103,7 +106,7 @@ export async function verifyLiveReadback(root,endpoint,signal) {
   const get = async route => {
     const res = await fetch(endpoint+route,{redirect:'error',signal:bounded(signal)})
     assert.equal(res.status,200)
-    return res.json()
+    return parseJSON(await res.text())
   }
   for (const row of source.results.results) {
     assert.ok(row.evaluationId === source.evalId && /^[0-9a-f-]{36}$/.test(row.id),'Invalid saved result identity')
@@ -125,12 +128,12 @@ export async function verifyLiveReadback(root,endpoint,signal) {
       assert.equal(item.resultCount,group.size)
       for (let after=-1;;) {
         const detail = await get(`/api/evals/experiments/${item.id}/rows?limit=100&after=${after}`)
-        assert.ok(JSON.parse(detail.contextJSON).evalId===source.evalId,'Unexpected retained run')
+        assert.ok(parseJSON(detail.contextJSON).evalId===source.evalId,'Unexpected retained run')
         for (const entry of detail.rows) {
           const expected = group.get(entry.ordinal)
           // Hash the exact row JSON string, not a parsed and reserialized number.
           assert.ok(expected && !seen.has(expected.id) && sha(entry.json)===expected.digest,'Retained result digest mismatch')
-          const row = JSON.parse(entry.json)
+          const row = parseJSON(entry.json)
           assert.ok(row.id===expected.id && row.provider?.id===expected.provider,'Unexpected retained result identity')
           seen.add(expected.id)
         }

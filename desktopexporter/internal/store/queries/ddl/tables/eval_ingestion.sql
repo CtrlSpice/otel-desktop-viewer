@@ -60,3 +60,4 @@ create table if not exists eval_live_members (
     adapter_id varchar not null,
     experiment_id varchar not null
 );
+alter table eval_result_claims add column if not exists expected_sha varchar;

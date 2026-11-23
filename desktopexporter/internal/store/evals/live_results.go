@@ -30,29 +30,32 @@ func LiveRowProvider(raw json.RawMessage, run, result string) (string, error) {
 
 type liveMember struct {
 	group, adapter, experiment, runKey, resultKey, digest, importGroup string
+	expectedSHA                                                        string
 	ordinal                                                            int64
 }
 
 // Compare the same serialized VARIANT representation returned by the rows API.
 // The expected bytes have already passed through the pinned redactor on a copy.
 // Neither the original nor redacted row is included in errors.
-func VerifyLivePayload(ctx context.Context, db *sql.DB, importID string, expected json.RawMessage) (string, error) {
-	var got, want string
-	if err := db.QueryRowContext(ctx, `select sha256(to_json(payload)::varchar),sha256(to_json(?::json::variant)::varchar) from eval_records where import_id=? and envelope=0 and ordinal=0`, nativeJSON(expected), importID).Scan(&got, &want); err != nil {
+func ExpectedLiveSHA(ctx context.Context, db *sql.DB, expected json.RawMessage) (string, error) {
+	var want string
+	if err := db.QueryRowContext(ctx, `select sha256(to_json(?::json::variant)::varchar)`, nativeJSON(expected)).Scan(&want); err != nil {
 		return "", fmt.Errorf("could not compare retained result")
-	}
-	if got != want {
-		return "", fmt.Errorf("retained result differs from its expected redacted representation")
 	}
 	return want, nil
 }
 
 var errLiveClaimMismatch = errors.New("conflicting retained live result claim")
+var errLiveReadback = errors.New("retained result failed readback verification")
 
 func liveMemberFromLog(log plog.LogRecord, part IngestPart) (liveMember, IngestPart, error) {
 	run, hasRun := log.Attributes().Get("eval.run.id")
 	ordinal, hasOrdinal := log.Attributes().Get("eval.result.ordinal")
 	digest, hasDigest := log.Attributes().Get("eval.result.digest")
+	expected, hasExpected := log.Attributes().Get("eval.result.redacted_sha256")
+	if !hasExpected || expected.Type() != pcommon.ValueTypeStr || ValidateID(expected.Str()) != nil {
+		return liveMember{}, IngestPart{}, errLiveReadback
+	}
 	row := sourceMap(part.Payload)
 	result := sourceText(row["id"])
 	if !hasRun || !hasOrdinal || !hasDigest || run.Type() != pcommon.ValueTypeStr || run.Str() == "" || ordinal.Type() != pcommon.ValueTypeInt || ordinal.Int() < 0 || part.Row != 0 || part.Envelope != 0 || digest.Type() != pcommon.ValueTypeStr || ValidateID(digest.Str()) != nil {
@@ -63,7 +66,7 @@ func liveMemberFromLog(log plog.LogRecord, part IngestPart) (liveMember, IngestP
 		return liveMember{}, IngestPart{}, err
 	}
 	hash := func(s string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(s))) }
-	m := liveMember{runKey: hash(run.Str()), resultKey: hash(result), digest: digest.Str(), ordinal: ordinal.Int()}
+	m := liveMember{runKey: hash(run.Str()), resultKey: hash(result), digest: digest.Str(), ordinal: ordinal.Int(), expectedSHA: expected.Str()}
 	if hash("live-row-v1:"+m.runKey+m.resultKey) != evaldecode.ImportID(log) {
 		return liveMember{}, IngestPart{}, fmt.Errorf("wrong live result identity")
 	}
@@ -86,11 +89,20 @@ func (m liveMember) save(ctx context.Context, db *sql.DB, dataset string) error 
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `insert into eval_result_claims values (?,?,?,?,?) on conflict do nothing`, m.runKey, m.resultKey, m.digest, m.importGroup, m.ordinal); err != nil {
+	// Gate indexing, search and visibility on both the pre-receiver claim and
+	// the exact serialized row that the detail endpoint would return.
+	var verified bool
+	if err = tx.QueryRowContext(ctx, `select exists(select 1 from eval_records r join eval_datasets d on r.import_id=d.import_id and r.envelope=d.envelope where d.id=? and r.ordinal=0 and sha256(to_json(r.payload)::varchar)=?)`, dataset, m.expectedSHA).Scan(&verified); err != nil {
+		return err
+	}
+	if !verified {
+		return errLiveReadback
+	}
+	if _, err = tx.ExecContext(ctx, `insert into eval_result_claims (run_key,result_key,digest,import_id,ordinal,expected_sha) values (?,?,?,?,?,?) on conflict do nothing`, m.runKey, m.resultKey, m.digest, m.importGroup, m.ordinal, m.expectedSHA); err != nil {
 		return err
 	}
 	var matches bool
-	if err = tx.QueryRowContext(ctx, `select exists(select 1 from eval_result_claims where run_key=? and result_key=? and digest=? and import_id=? and ordinal=?)`, m.runKey, m.resultKey, m.digest, m.importGroup, m.ordinal).Scan(&matches); err != nil {
+	if err = tx.QueryRowContext(ctx, `select exists(select 1 from eval_result_claims where run_key=? and result_key=? and digest=? and import_id=? and ordinal=? and expected_sha=?)`, m.runKey, m.resultKey, m.digest, m.importGroup, m.ordinal, m.expectedSHA).Scan(&matches); err != nil {
 		return err
 	}
 	if !matches {

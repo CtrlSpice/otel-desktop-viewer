@@ -238,6 +238,18 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 					reason = "Invalid or conflicting retained result identity."
 					continue
 				}
+				var actualSHA string
+				if err := db.WithDBRead(func(conn *sql.DB) error {
+					var err error
+					actualSHA, err = ExpectedLiveSHA(ctx, conn, part.Payload)
+					return err
+				}); err != nil {
+					return err
+				}
+				if actualSHA != member.expectedSHA {
+					reason = "Retained result failed readback verification."
+					continue
+				}
 				live = &member
 				parts = []IngestPart{header, part}
 				name, envelopes = "Live evaluation", 1
@@ -296,6 +308,8 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 				return live.save(ctx, conn, DatasetID(id, 0))
 			}); errors.Is(err, errLiveClaimMismatch) {
 				reason = "Conflicting retained result identity."
+			} else if errors.Is(err, errLiveReadback) {
+				reason = "Retained result failed readback verification."
 			} else if err != nil {
 				return err
 			}
