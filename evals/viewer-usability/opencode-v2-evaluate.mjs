@@ -8,7 +8,7 @@ import { stopOwnedGroup, runCancellation } from './run-cancellation.ts'
 import { observerEnvironment } from './clean-environment.ts'
 import { cancelOpenCodeV2, V2_VERSION, withSharedHost } from './opencode-v2-provider.mjs'
 import { checkConnections } from './opencode-v2-connect.mjs'
-import { importOriginal } from './opencode-v2-verify.mjs'
+import { beginLiveResults, finishLiveResults, liveResultHooks } from './opencode-v2-live-results.mjs'
 import { cancelPiAttempts } from './pi-provider.ts'
 import { cancelClaudeAttempts } from './claude-provider.ts'
 import { judgeFor } from './opencode-v2-judge.mjs'
@@ -92,8 +92,12 @@ try {
     config.extensions = ['file://' + path.join(suite, 'attempt-teardown-stop.mjs') + ':beforeAll',
       ...(spec.mode === 'full' ? ['file://' + path.join(suite, 'opencode-v2-execution-stop.mjs') + ':afterEach'] : [])]
     if (availability) config.metadata = { plannedModels: spec.models, notStarted: selection.notStarted }
+    if (spec.mode === 'full') {
+      liveResultHooks(config)
+      if (scheduled) beginLiveResults(root, settings.observerAPI)
+    }
     save('run-plan.json', { ...spec, ...(availability ? { availability, notStarted: selection.notStarted } : { task }), planned, investigators: scheduled, maxGraders: scheduled,
-      retry: false, version: V2_VERSION, graders: graderMap(spec), observer: settings.observerAPI, observerHTTP: settings.observerHTTP, config })
+      retry: false, version: V2_VERSION, graders: graderMap(spec), observer: settings.observerAPI, observerHTTP: settings.observerHTTP, ...(spec.mode === 'full' ? { publication: 'per-result' } : {}), config })
     console.log(JSON.stringify({ root, state: scheduled ? 'evaluating' : 'not started', mode: spec.mode, planned, scheduled, unavailable: selection.notStarted.length }))
     if (!scheduled) return
     const { evaluate } = await import('promptfoo')
@@ -113,7 +117,7 @@ try {
     assert.ok(exported.evalId && exported.config)
     evalId = exported.evalId
     rows = exported.results.results
-    if (spec.mode === 'full' && rows.length) await importOriginal(root, settings.observerAPI, fs.readFileSync(path.join(root, 'promptfoo.json')), rows)
+    if (spec.mode === 'full') await finishLiveResults(exported)
     const identities = new Map(rows.map(row => [row.response?.metadata?.evidence, readJSON(path.join(row.response.metadata.evidence, 'identity.json'))]))
     validateSchedule(rows, { ...spec, models: selection.models }, identities)
   }

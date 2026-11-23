@@ -367,7 +367,28 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   save(path.join(reportDirectory, 'received-data-verification.json'), report)
   let imported
   if (importSource) {
-    imported = await importOriginal(root, endpoint, bytes, rows)
+    if (plan.publication === 'per-result') {
+      const datasetCounts = new Map()
+      for (const row of rows) {
+        const prefix = path.join(root, 'published-results', row.id)
+        assert.deepEqual(read(prefix + '.json'), row)
+        const receipt = read(prefix + '.receipt.json')
+        assert.ok(receipt.complete && receipt.resultID === row.id)
+        datasetCounts.set(receipt.datasetID, (datasetCounts.get(receipt.datasetID) ?? 0) + 1)
+      }
+      const found = new Map()
+      for (let offset = 0; ; offset += 100) {
+        const res = await fetch(endpoint + '/api/evals/experiments?limit=100&offset=' + offset, {signal:AbortSignal.timeout(10000)})
+        assert.equal(res.status,200)
+        const page = await res.json()
+        for (const item of page.experiments) if (datasetCounts.has(item.datasetID)) {
+          assert.ok(!found.has(item.datasetID)); found.set(item.datasetID,item.resultCount)
+        }
+        if (!page.hasMore) break
+      }
+      assert.deepEqual(found,datasetCounts)
+      imported = { publication: plan.publication, resultIDs: rows.map(row => row.id), otlpResent: false }
+    } else imported = await importOriginal(root, endpoint, bytes, rows)
     save(path.join(reportDirectory, 'preview-verification.json'), imported)
   }
   assert.equal(sha(fs.readFileSync(exportFile)), digest)

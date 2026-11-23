@@ -304,6 +304,11 @@ func (p experimentProjector) row(row json.RawMessage, ordinal int64) (projectedE
 	encoder := json.NewEncoder(&key)
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode([]any{dataset.ID, "run", identityValue(evaluationID), identityValue(providerID), identityValue(providerName), nil, identityValue(promptID), promptIndex, fallback})
+	if dataset.Source == "live-result" {
+		// Each live dataset already identifies one (run, provider) pair.
+		key.Reset()
+		_ = encoder.Encode([]any{dataset.ID, "run", identityValue(evaluationID), identityValue(providerID)})
+	}
 	adapterID := javascriptJSONString(strings.TrimSuffix(key.String(), "\n"))
 	// Keep the persisted identity namespace stable across terminology changes.
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte("eval-run-v1:"+adapterID)))

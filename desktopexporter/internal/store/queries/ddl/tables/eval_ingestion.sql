@@ -42,3 +42,13 @@ create table if not exists eval_parts (
     digest varchar not null,
     primary key(import_id, envelope, ordinal)
 );
+-- Publication receipts contain hashes and ordinals, never uploaded row values.
+create table if not exists eval_result_claims (
+    run_key varchar not null,
+    result_key varchar not null,
+    digest varchar not null,
+    import_id varchar not null,
+    ordinal bigint not null,
+    primary key (run_key, result_key),
+    unique (import_id, ordinal)
+);

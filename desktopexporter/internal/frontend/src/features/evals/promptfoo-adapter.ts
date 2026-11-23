@@ -354,16 +354,19 @@ export function projectPromptfooDataset(
       const sourceResultID = identity(row.id)
       const hasProvider = providerID !== undefined
       const hasPrompt = promptID !== undefined || promptIndex !== undefined
-      const experimentID = localID(
-        'run',
-        evaluationID,
-        providerID,
-        providerName,
-        undefined,
-        promptID,
-        promptIndex,
-        hasProvider && hasPrompt ? undefined : position
-      )
+      const experimentID =
+        dataset.source === 'live-result'
+          ? localID('run', evaluationID, providerID)
+          : localID(
+              'run',
+              evaluationID,
+              providerID,
+              providerName,
+              undefined,
+              promptID,
+              promptIndex,
+              hasProvider && hasPrompt ? undefined : position
+            )
       let experiment = experiments.get(experimentID)
       const assessmentID = localID('assessment', 'outcome')
       if (!experiment) {

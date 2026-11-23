@@ -197,6 +197,7 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 	}
 	last, reason, name := "", "", "Imported evaluation"
 	envelopes := int64(-1)
+	live := false
 	for {
 		var ids []string
 		if err := db.WithDBRead(func(conn *sql.DB) error {
@@ -266,17 +267,29 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 			}
 			if !duplicate && part.Row == -2 {
 				var manifest struct {
-					Name string `json:"name"`
+					Name      string `json:"name"`
+					LiveGroup string `json:"liveGroup"`
 				}
 				if err := json.Unmarshal(part.Payload, &manifest); err != nil || len(manifest.Name) == 0 || len(manifest.Name) > MaxNameBytes {
 					reason = "Invalid retained import manifest."
 				} else {
 					name, envelopes = manifest.Name, part.Count
+					live = manifest.LiveGroup == id && envelopes == 1
 				}
 			}
 		}
 	}
 	if reason == "" {
+		if live {
+			// A live envelope has no final row count. Derive its visible size
+			// from the retained rows, then apply the usual coverage checks.
+			if err := db.WithDBWrite(func(conn *sql.DB) error {
+				_, err := conn.ExecContext(ctx, `update eval_datasets set source='live-result', row_count=(select count(*) from eval_records where import_id=? and envelope=0) where import_id=? and envelope=0`, id, id)
+				return err
+			}); err != nil {
+				return err
+			}
+		}
 		if envelopes < 1 {
 			reason = "Waiting for retained import manifest."
 		} else {
