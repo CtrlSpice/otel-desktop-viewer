@@ -71,6 +71,8 @@ it('opens live results for different prompts in the same model experiment', () =
     JSON.stringify(['dataset-a', 'run', 'eval-source-id', 'provider:model'])
   )
   expect(live.experiments[0].results).toHaveLength(2)
+  expect(new Set(live.experiments[0].results.map(r => r.caseID)).size).toBe(2)
+  expect(live.experiments[0].promptLabel).toBeUndefined()
   expect(supported(data).experiments).toHaveLength(2)
 })
 

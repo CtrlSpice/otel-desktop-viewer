@@ -8,7 +8,7 @@ import { stopOwnedGroup, runCancellation } from './run-cancellation.ts'
 import { observerEnvironment } from './clean-environment.ts'
 import { cancelOpenCodeV2, V2_VERSION, withSharedHost } from './opencode-v2-provider.mjs'
 import { checkConnections } from './opencode-v2-connect.mjs'
-import { beginLiveResults, finishLiveResults, liveResultHooks } from './opencode-v2-live-results.mjs'
+import { beginLiveResults, checkLiveResultSupport, finishLiveResults, liveResultHooks } from './opencode-v2-live-results.mjs'
 import { cancelPiAttempts } from './pi-provider.ts'
 import { cancelClaudeAttempts } from './claude-provider.ts'
 import { judgeFor } from './opencode-v2-judge.mjs'
@@ -72,6 +72,7 @@ let fixture, collector, failure, rows = []
 const cancel = () => { void Promise.all([cancelOpenCodeV2(), cancelPiAttempts(), cancelClaudeAttempts()]) }
 cancellation.signal.addEventListener('abort', cancel, { once: true })
 try {
+  if (spec.mode === 'full') await checkLiveResultSupport(settings.observerAPI, cancellation.signal)
   const baseline = await observerTotals(settings.observerAPI)
   if (spec.mode === 'sol-luna') assert.deepEqual(baseline, [0, 0, 0], 'Sol/Luna requires a fresh empty observer DB')
   save('observer-baseline.json', { counts: baseline, fresh: spec.mode === 'sol-luna' })
@@ -94,7 +95,7 @@ try {
     if (availability) config.metadata = { plannedModels: spec.models, notStarted: selection.notStarted }
     if (spec.mode === 'full') {
       liveResultHooks(config)
-      if (scheduled) beginLiveResults(root, settings.observerAPI)
+      if (scheduled) beginLiveResults(root, settings.observerAPI, cancellation.signal)
     }
     save('run-plan.json', { ...spec, ...(availability ? { availability, notStarted: selection.notStarted } : { task }), planned, investigators: scheduled, maxGraders: scheduled,
       retry: false, version: V2_VERSION, graders: graderMap(spec), observer: settings.observerAPI, observerHTTP: settings.observerHTTP, ...(spec.mode === 'full' ? { publication: 'per-result' } : {}), config })

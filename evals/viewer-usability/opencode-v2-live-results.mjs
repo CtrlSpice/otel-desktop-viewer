@@ -18,11 +18,23 @@ export function liveResultHooks(config, suite = import.meta.dirname) {
   config.extensions = [...config.extensions ?? [], file + ':beforeEach', file + ':afterEach']
 }
 
-export function beginLiveResults(root, endpoint) {
+export async function checkLiveResultSupport(endpoint, signal) {
+  const res = await fetch(endpoint + '/openapi.json', {redirect:'error', signal:bounded(signal)})
+  assert.equal(res.status, 200, 'Could not inspect observer capabilities')
+  const spec = await res.json()
+  assert.equal(spec.paths?.['/api/evals/runs/{runID}/results/{resultID}']?.put?.operationId,
+    'putEvalResult', 'Observer does not support publishing individual results')
+}
+
+function bounded(signal) {
+  return AbortSignal.any([AbortSignal.timeout(90000), ...(signal ? [signal] : [])])
+}
+
+export function beginLiveResults(root, endpoint, signal) {
   assert.ok(!active)
   const dir = path.join(root, 'published-results')
   fs.mkdirSync(dir, { mode: 0o700 })
-  active = { dir, endpoint, count: 0 }
+  active = { dir, endpoint, signal, count: 0 }
 }
 
 export function afterEach({ result }) {
@@ -45,7 +57,7 @@ async function publish(exported) {
   fs.writeFileSync(prefix + '.json', bytes, { flag: 'wx', mode: 0o600 })
   const reply = await fetch(`${endpoint}/api/evals/runs/${encodeURIComponent(pending.run)}/results/${row.id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: bytes,
-    redirect: 'error', signal: AbortSignal.timeout(90000),
+    redirect: 'error', signal: bounded(active.signal),
   })
   assert.equal(reply.status, 200, 'Viewer publication failed: HTTP ' + reply.status)
   const receipt = await reply.json()
@@ -62,7 +74,7 @@ export async function beforeEach() {
     // own persisted representation here, before admitting the next investigator.
     const snapshot = path.join(active.dir, 'latest-export.json')
     const cli = path.join(import.meta.dirname, 'node_modules/promptfoo/dist/src/entrypoint.js')
-    await exec(process.execPath, [cli, 'export', 'eval', active.pending.run, '-o', snapshot])
+    await exec(process.execPath, [cli, 'export', 'eval', active.pending.run, '-o', snapshot], { signal: bounded(active.signal), killSignal: 'SIGKILL' })
     await publish(read(snapshot))
   } catch (error) { stopRun(error); throw error }
 }

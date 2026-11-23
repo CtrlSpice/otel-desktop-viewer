@@ -30,9 +30,9 @@ test('each persisted native grade is published before the next investigation, in
     } }], prompts: ['{{n}}'], tracing: { enabled: true }, writeLatestResults: true,
     defaultTest: { assert: [{ type: 'llm-rubric', value: 'check' }], options: { provider: {
       id: () => 'offline-grader', callApi: async () => {
-        calls.push('grade'); return rows.length ? { error: 'synthetic grader error' } : { output: '{"pass":true,"score":1,"reason":"ok"}' }
+        calls.push('grade'); return rows.length === 1 ? { error: 'synthetic grader error' } : { output: '{"pass":true,"score":1,"reason":"ok"}' }
       },
-    } } }, tests: ['one', 'two'].map(n => ({ vars: { n } })), extensions: [], outputPath: output,
+    } } }, tests: ['one', 'two', 'three'].map(n => ({ vars: { n } })), extensions: [], outputPath: output,
     evaluateOptions: { repeat: 1, cache: false },
   }
   liveResultHooks(config)
@@ -41,7 +41,7 @@ test('each persisted native grade is published before the next investigation, in
   await evaluate(config, {...config.evaluateOptions, share:false})
   const exported = JSON.parse(fs.readFileSync(output))
   await finishLiveResults(exported)
-  assert.deepEqual(calls,['investigate one','grade','publish one','investigate two','grade','publish two'])
+  assert.deepEqual(calls,['investigate one','grade','publish one','investigate two','grade','publish two','investigate three','grade','publish three'])
   assert.equal(rows[0].success,true)
   assert.equal(rows[1].gradingResult.componentResults[0].metadata.graderError,true)
 })

@@ -368,31 +368,53 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   let imported
   if (importSource) {
     if (plan.publication === 'per-result') {
-      const datasetCounts = new Map()
+      const groups = new Map(), providerDatasets = new Map(), seen = new Set()
+      const get = async route => {
+        const res = await fetch(endpoint + route, { redirect:'error', signal:AbortSignal.timeout(10000) })
+        assert.equal(res.status,200)
+        return res.json()
+      }
       for (const row of rows) {
         const prefix = path.join(root, 'published-results', row.id)
         assert.deepEqual(read(prefix + '.json'), row)
         const receipt = read(prefix + '.receipt.json')
         assert.ok(receipt.complete && receipt.resultID === row.id)
-        datasetCounts.set(receipt.datasetID, (datasetCounts.get(receipt.datasetID) ?? 0) + 1)
+        assert.equal(row.evaluationId, source.evalId)
+        if (!groups.has(receipt.datasetID)) groups.set(receipt.datasetID, new Map())
+        const group = groups.get(receipt.datasetID)
+        assert.ok(!group.has(receipt.ordinal))
+        group.set(receipt.ordinal, row)
+        const provider = row.provider.id
+        if (!providerDatasets.has(provider)) providerDatasets.set(provider, receipt.datasetID)
+        assert.equal(providerDatasets.get(provider),receipt.datasetID)
       }
-      const found = new Map()
+      assert.equal(providerDatasets.size, groups.size)
       for (let offset = 0; ; offset += 100) {
-        const res = await fetch(endpoint + '/api/evals/experiments?limit=100&offset=' + offset, {signal:AbortSignal.timeout(10000)})
-        assert.equal(res.status,200)
-        const page = await res.json()
-        for (const item of page.experiments) if (datasetCounts.has(item.datasetID)) {
-          assert.ok(!found.has(item.datasetID)); found.set(item.datasetID,item.resultCount)
+        const page = await get('/api/evals/experiments?limit=100&offset=' + offset)
+        for (const item of page.experiments) if (groups.has(item.datasetID)) {
+          const group = groups.get(item.datasetID)
+          assert.equal(item.resultCount,group.size)
+          for (let after = -1; ; ) {
+            const detail = await get(`/api/evals/experiments/${item.id}/rows?limit=100&after=${after}`)
+            assert.equal(JSON.parse(detail.contextJSON).evalId, source.evalId)
+            for (const entry of detail.rows) {
+              const row = JSON.parse(entry.json), expected = group.get(entry.ordinal)
+              assert.ok(expected && !seen.has(row.id)); seen.add(row.id)
+              assert.deepEqual(row,expected,'Viewer readback differs from the published native result')
+            }
+            if (!detail.hasMore) break
+            assert.ok(detail.nextAfter > after); after = detail.nextAfter
+          }
         }
         if (!page.hasMore) break
       }
-      assert.deepEqual(found,datasetCounts)
+      assert.equal(seen.size,rows.length)
       imported = { publication: plan.publication, resultIDs: rows.map(row => row.id), otlpResent: false }
     } else imported = await importOriginal(root, endpoint, bytes, rows)
     save(path.join(reportDirectory, 'preview-verification.json'), imported)
   }
   assert.equal(sha(fs.readFileSync(exportFile)), digest)
-  fs.writeFileSync(path.join(reportDirectory, 'handoff.md'), `# OpenCode V2 verification\n\nEval: ${source.evalId}\nResults: ${rows.length}; investigators: ${reports.length}; graders: ${graders.length}.\nSlots: ${slots.join(', ')}\nNative outcomes: ${JSON.stringify(report.nativeOutcomes)}\n\nObserver: ${endpoint}\nVerified spans: ${observed.expected.spans}; logs: ${observed.expected.logs}; events: ${observed.expected.events}; metric datapoints: ${observed.expected.datapoints}.\nWrapper spans: ${report.wrapperSpans}; wrapper tool events: ${report.wrapperToolEvents}.\nOriginal export SHA-256: ${digest}\nImport: ${imported ? 'all original rows verified; single import receipt at root' : 'not requested'}. OTLP never replayed.\n\nSee received-data-verification.json for per-attempt native/wrapper raw-upload paths, scope counts, native errors, usage availability, grader evidence, IDs and recorded failure/partial/pass outcomes.\n`, { flag: 'wx', mode: 0o600 })
+  fs.writeFileSync(path.join(reportDirectory, 'handoff.md'), `# OpenCode V2 verification\n\nEval: ${source.evalId}\nResults: ${rows.length}; investigators: ${reports.length}; graders: ${graders.length}.\nSlots: ${slots.join(', ')}\nNative outcomes: ${JSON.stringify(report.nativeOutcomes)}\n\nObserver: ${endpoint}\nVerified spans: ${observed.expected.spans}; logs: ${observed.expected.logs}; events: ${observed.expected.events}; metric datapoints: ${observed.expected.datapoints}.\nWrapper spans: ${report.wrapperSpans}; wrapper tool events: ${report.wrapperToolEvents}.\nOriginal export SHA-256: ${digest}\nImport: ${imported?.publication === 'per-result' ? 'published rows read back; receipts in published-results/' : imported ? 'all original rows verified; single import receipt at root' : 'not requested'}. OTLP never replayed.\n\nSee received-data-verification.json for per-attempt native/wrapper raw-upload paths, scope counts, native errors, usage availability, grader evidence, IDs and recorded failure/partial/pass outcomes.\n`, { flag: 'wx', mode: 0o600 })
   return { root, reportDirectory, resultCount: rows.length, slots, spans: observed.expected.spans, logs: observed.expected.logs, imported: Boolean(imported) }
 }
 

@@ -379,9 +379,10 @@ export function projectPromptfooDataset(
             : providerID
               ? pointer + '/provider/id'
               : undefined,
-          promptLabel: text(prompt?.label)
-            ? pointer + '/prompt/label'
-            : undefined,
+          promptLabel:
+            dataset.source !== 'live-result' && text(prompt?.label)
+              ? pointer + '/prompt/label'
+              : undefined,
         }
         const configuration: EvalExperiment['configuration'] = [
           { name: 'Dataset ID', value: dataset.id },
@@ -393,8 +394,9 @@ export function projectPromptfooDataset(
           })
         if (providerID)
           configuration.push({ name: 'Provider ID', value: providerID })
-        if (promptID) configuration.push({ name: 'Prompt ID', value: promptID })
-        if (promptIndex !== undefined)
+        if (dataset.source !== 'live-result' && promptID)
+          configuration.push({ name: 'Prompt ID', value: promptID })
+        if (dataset.source !== 'live-result' && promptIndex !== undefined)
           configuration.push({
             name: 'Prompt index',
             value: promptIndex,
@@ -404,6 +406,7 @@ export function projectPromptfooDataset(
           name: display(providerName ?? evaluation),
           evaluation,
           promptLabel:
+            dataset.source === 'live-result' ||
             text(prompt?.label) === undefined
               ? undefined
               : display(text(prompt?.label)!),
@@ -452,7 +455,9 @@ export function projectPromptfooDataset(
               : undefined
       const groupable = hasProvider && hasPrompt && testKey !== undefined
       const caseID = groupable
-        ? localID('case', experimentID, testKey)
+        ? dataset.source === 'live-result'
+          ? localID('case', experimentID, promptID, promptIndex, testKey)
+          : localID('case', experimentID, testKey)
         : localID('case-row', position)
       if (!groupable)
         notes.add(
