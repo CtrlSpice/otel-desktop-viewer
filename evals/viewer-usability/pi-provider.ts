@@ -18,6 +18,7 @@ export type PiConfig = {
   binary?: string
   role: 'investigator' | 'grader'
   timeoutMs?: number
+  defaultEffort?: boolean
   /** Scripted loopback endpoint for integration tests. */
   baseUrl?: string
 }
@@ -128,6 +129,7 @@ export default class PiProvider {
     const args = ['-f', path.join(evidence, 'sandbox.sb'), process.execPath,
       path.join(modules, '@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
       '--mode', 'json', '--provider', provider, '--model', model,
+      ...(this.config.defaultEffort ? [] : ['--thinking', 'low']),
       '--session-dir', path.join(evidence, 'sessions'), '--no-context-files', '--no-extensions',
       '--no-mcp', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve',
       ...(role === 'grader' ? ['--no-tools'] : ['--tools', 'read,bash,edit,write']), ...(usePromptFile ? [] : ['--', prompt])]

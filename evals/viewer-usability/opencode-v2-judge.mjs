@@ -13,7 +13,7 @@ export default class BlindJudge {
     judgeFor(context?.originalProvider?.id())
     const { root, authFile } = this.config
     const provider = new PiProvider({ config: { role: 'grader', root, timeoutMs: 180000,
-      model: 'gpt-6.1-sol', provider: 'openai-codex', authFile } })
+      model: 'gpt-6.1-sol', provider: 'openai-codex', defaultEffort: true, authFile } })
     try { return await provider.callApi(prompt, context) }
     catch (error) { checkEvidenceError(error, root); throw error }
   }

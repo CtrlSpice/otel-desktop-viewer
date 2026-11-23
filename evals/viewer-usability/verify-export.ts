@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
+import { isUtf8 } from 'node:buffer'
 import { Parser } from 'tar'
 import { prepare, IngestionRejectedError } from './prepare.ts'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
@@ -228,8 +229,8 @@ export async function verifyExport(
     const matching = []
     try {
       for (const payload of payloads) {
-        if (payload.member !== undefined && payload.bytes[0] === 0x1f && payload.bytes[1] === 0x8b)
-          throw new Error('Handoff contains a nested archive')
+        if (payload.member !== undefined && (!isUtf8(payload.bytes) || payload.bytes.includes(0)))
+          throw new Error('Handoff contains a non-text archive member')
         const text = payload.bytes.toString('utf8').trimStart()
         if (!text.startsWith('{')) continue // e.g. an archive README
         const document = record(JSON.parse(text))

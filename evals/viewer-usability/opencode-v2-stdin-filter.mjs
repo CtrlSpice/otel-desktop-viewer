@@ -4,6 +4,30 @@ import { spawnSync } from 'node:child_process'
 // Only a jq filter or a grep pattern is an operand; input always comes from stdin.
 const [name, ...args] = process.argv.slice(2)
 const flags = { jq: /^-[rcse]+$/, grep: /^-[EFiinvoc]+$/, wc: /^-[clmw]+$/ }
+// Examine identifiers in code, including interpolation expressions. Keep
+// nested strings and parentheses separate so a quoted key is always data.
+function usesModule(filter) {
+  const modes = ['code']
+  for (let i = 0; i < filter.length; i++) {
+    const ch = filter[i]
+    if (modes.at(-1) === 'string') {
+      if (ch === '"') modes.pop()
+      else if (ch === '\\' && filter[++i] === '(') modes.push('expression')
+    } else if (ch === '"') modes.push('string')
+    else if (ch === '#') {
+      const end = filter.slice(i).search(/[\r\n]/)
+      if (end < 0) break
+      i += end
+    } else if (ch === '(') modes.push('expression')
+    else if (ch === ')' && modes.at(-1) === 'expression') modes.pop()
+    else if (/[A-Za-z_]/.test(ch)) {
+      const start = i
+      while (i + 1 < filter.length && /[A-Za-z0-9_]/.test(filter[i + 1])) i++
+      if (/^(?:import|include|_*modulemeta)$/.test(filter.slice(start, i + 1))) return true
+    }
+  }
+  return false
+}
 try {
   if (!Object.hasOwn(flags, name)) throw Error('Unknown stdin filter')
   const options = []
@@ -13,9 +37,7 @@ try {
     throw Error(`${name} accepts stdin only; file operands are not supported`)
   if (name === 'jq') {
     const filter = args[0] ?? '.'
-    // Plain quoted keys and values are data. Interpolation can contain jq code.
-    const code = filter.includes('\\(') ? filter : filter.replace(/"(?:[^"\\\r\n]|\\[^\r\n])*"/g, '""')
-    if (filter.startsWith('-') || /\b(?:import|include|_*modulemeta)\b/.test(code))
+    if (filter.startsWith('-') || usesModule(filter))
       throw Error('Use an inline jq filter without file options or modules')
     options.push('-L', '/var/empty', '--', filter)
   }
