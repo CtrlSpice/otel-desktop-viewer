@@ -235,9 +235,14 @@ export async function verifyExport(
         if (!text.startsWith('{')) continue // e.g. an archive README
         let parsed: unknown
         try { parsed = JSON.parse(text) } catch (error) {
-          // Plain-text notes can start with a placeholder such as {filename}.
-          // Do not skip JSONL or malformed telemetry alongside a valid trace.
-          if (payload.member && !/"resource(?:Spans|Logs|Metrics|Profiles)"\s*:/.test(text)) continue
+          // The viewer also imports newline-separated root objects. A literal
+          // newline cannot occur inside a JSON string, so a separator between
+          // "}" and "{" in valid JSONL is a document boundary, even for
+          // pretty-printed objects. Keep multi-document exports out of notes.
+          if (payload.member && !/"resource(?:Spans|Logs|Metrics|Profiles)"\s*:/.test(text)) {
+            const sequence = text.replace(/}[ \t\r]*\n[ \t\r\n]*{/g, '},{')
+            try { JSON.parse('[' + sequence + ']') } catch { continue }
+          }
           throw error
         }
         const document = record(parsed)
