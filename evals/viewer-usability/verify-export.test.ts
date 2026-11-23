@@ -297,7 +297,7 @@ test('extra traces, logs or metrics invalidate the whole handoff, including arch
     for (const scope of resource.scopeSpans)
       for (const span of scope.spans) span.traceId = '00000000000000000000000000000012'
   const file = path.join(workspace, 'handoff')
-  for (const extra of [other, readJson(path.join(root, 'fixture/logs.json')), readJson(path.join(root, 'fixture/metrics.json'))]) {
+  for (const extra of [other, readJson(path.join(root, 'fixture/logs.json')), readJson(path.join(root, 'fixture/metrics.json')), { resourceProfiles: [{}] }]) {
     const sibling = record(extra)
     const mixed = extra === other
       ? { resourceSpans: [...document.resourceSpans, ...other.resourceSpans] }
@@ -414,7 +414,7 @@ test(
     const packed = await archive(root, {
       'handoff/trace.json': bytes,
       'handoff/copy.json': bytes,
-      'README.txt': 'Import the OTLP JSON in handoff/trace.json.',
+      'README.txt': '{filename} is handoff/trace.json. Import that OTLP JSON.',
       'unrelated.json': '{}',
     })
     fs.writeFileSync(file, packed)

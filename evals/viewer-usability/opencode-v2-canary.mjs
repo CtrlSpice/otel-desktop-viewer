@@ -84,7 +84,7 @@ const server = http.createServer(async (req, res) => {
       './bin/otel-desktop-viewer --help | grep -iE "^usage$" | wc -l',
       'jq . handoff.json', 'grep -i spans handoff.json', 'wc -c handoff.json',
       'jq -f handoff.json', `jq 'include "handoff"; .'`,
-      `./bin/otel-desktop-viewer query 'select 1' --endpoint ${origin(destinations[0])} --json | jq -c '{"include": .rows, "count": "rows: \\(.rows | length)"} | [.["include"], .count]'`,
+      `./bin/otel-desktop-viewer query 'select 1' --endpoint ${origin(destinations[0])} --json | jq -c '{"include": .rows, "count": "rows: \\(.rows | length)"} | [.include, .["include"], .count]'`,
     ][requests.length - 14]
     tool = { name: 'shell', arguments: JSON.stringify({ command, description: 'Check stdin-only viewer output filters' }) }
   } else if (!shared && requests.length === 1 && shell) {
@@ -174,7 +174,7 @@ try {
     assert.equal(output(14), '1')
     for (const tool of tools.slice(15, 20)) assert.equal(tool.state.metadata.exit, 2)
     assert.equal(tools[20].state.metadata.exit, 0)
-    assert.equal(output(20), '[[[1]],"rows: 1"]')
+    assert.equal(output(20), '[[[1]],[[1]],"rows: 1"]')
     assert.equal(requests.length, 22)
     const { receipts } = JSON.parse(fs.readFileSync(path.join(root, 'native-otlp/summary.json')))
     assert.ok(receipts.some(receipt => receipt.route === '/v1/traces' && receipt.status === 200))

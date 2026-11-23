@@ -233,8 +233,15 @@ export async function verifyExport(
           throw new Error('Handoff contains a non-text archive member')
         const text = payload.bytes.toString('utf8').trimStart()
         if (!text.startsWith('{')) continue // e.g. an archive README
-        const document = record(JSON.parse(text))
-        if ('resourceLogs' in document || 'resourceMetrics' in document)
+        let parsed: unknown
+        try { parsed = JSON.parse(text) } catch (error) {
+          // Plain-text notes can start with a placeholder such as {filename}.
+          // Do not skip JSONL or malformed telemetry alongside a valid trace.
+          if (payload.member && !/"resource(?:Spans|Logs|Metrics|Profiles)"\s*:/.test(text)) continue
+          throw error
+        }
+        const document = record(parsed)
+        if ('resourceLogs' in document || 'resourceMetrics' in document || 'resourceProfiles' in document)
           throw new Error('Handoff includes another signal')
         if (!('resourceSpans' in document)) continue
         assert.deepEqual(traceRows(document), expected)

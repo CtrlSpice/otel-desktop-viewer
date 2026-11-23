@@ -23,7 +23,7 @@ function usesModule(filter) {
     else if (/[A-Za-z_]/.test(ch)) {
       const start = i
       while (i + 1 < filter.length && /[A-Za-z0-9_]/.test(filter[i + 1])) i++
-      if (/^(?:import|include|_*modulemeta)$/.test(filter.slice(start, i + 1))) return true
+      if (filter[start - 1] !== '.' && /^(?:import|include|_*modulemeta)$/.test(filter.slice(start, i + 1))) return true
     }
   }
   return false
