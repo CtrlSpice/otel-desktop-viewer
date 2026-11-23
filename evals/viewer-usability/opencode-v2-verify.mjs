@@ -1,3 +1,4 @@
+import { verifyLiveReadback } from './opencode-v2-live-results.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -366,51 +367,8 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   }
   save(path.join(reportDirectory, 'received-data-verification.json'), report)
   let imported
-  if (importSource) {
-    if (plan.publication === 'per-result') {
-      const groups = new Map(), providerDatasets = new Map(), seen = new Set()
-      const get = async route => {
-        const res = await fetch(endpoint + route, { redirect:'error', signal:AbortSignal.timeout(10000) })
-        assert.equal(res.status,200)
-        return res.json()
-      }
-      for (const row of rows) {
-        const prefix = path.join(root, 'published-results', row.id)
-        assert.deepEqual(read(prefix + '.json'), row)
-        const receipt = read(prefix + '.receipt.json')
-        assert.ok(receipt.complete && receipt.resultID === row.id)
-        assert.equal(row.evaluationId, source.evalId)
-        if (!groups.has(receipt.datasetID)) groups.set(receipt.datasetID, new Map())
-        const group = groups.get(receipt.datasetID)
-        assert.ok(!group.has(receipt.ordinal))
-        group.set(receipt.ordinal, row)
-        const provider = row.provider.id
-        if (!providerDatasets.has(provider)) providerDatasets.set(provider, receipt.datasetID)
-        assert.equal(providerDatasets.get(provider),receipt.datasetID)
-      }
-      assert.equal(providerDatasets.size, groups.size)
-      for (let offset = 0; ; offset += 100) {
-        const page = await get('/api/evals/experiments?limit=100&offset=' + offset)
-        for (const item of page.experiments) if (groups.has(item.datasetID)) {
-          const group = groups.get(item.datasetID)
-          assert.equal(item.resultCount,group.size)
-          for (let after = -1; ; ) {
-            const detail = await get(`/api/evals/experiments/${item.id}/rows?limit=100&after=${after}`)
-            assert.equal(JSON.parse(detail.contextJSON).evalId, source.evalId)
-            for (const entry of detail.rows) {
-              const row = JSON.parse(entry.json), expected = group.get(entry.ordinal)
-              assert.ok(expected && !seen.has(row.id)); seen.add(row.id)
-              assert.deepEqual(row,expected,'Viewer readback differs from the published native result')
-            }
-            if (!detail.hasMore) break
-            assert.ok(detail.nextAfter > after); after = detail.nextAfter
-          }
-        }
-        if (!page.hasMore) break
-      }
-      assert.equal(seen.size,rows.length)
-      imported = { publication: plan.publication, resultIDs: rows.map(row => row.id), otlpResent: false }
-    } else imported = await importOriginal(root, endpoint, bytes, rows)
+  if (plan.publication === 'per-result' || importSource) {
+    imported = plan.publication === 'per-result' ? await verifyLiveReadback(root,endpoint) : await importOriginal(root, endpoint, bytes, rows)
     save(path.join(reportDirectory, 'preview-verification.json'), imported)
   }
   assert.equal(sha(fs.readFileSync(exportFile)), digest)

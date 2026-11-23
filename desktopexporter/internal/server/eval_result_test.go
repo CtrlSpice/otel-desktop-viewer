@@ -29,6 +29,8 @@ func TestLiveEvaluationRetainsEachResultOnceInItsModelGroup(t *testing.T) {
 	}
 	first := `{"id":"r1","provider":{"id":"m"},"promptId":"p1","success":true,"sequence":9007199254740993,"password":"synthetic-password"}`
 	const root = "/api/evals/runs/run/results/"
+	request("PUT", root+"r1", strings.Replace(first, `"provider":{"id"`, `"provider":{"ID"`, 1), 400)
+	request("PUT", root+"r1", strings.Replace(first, `"id":"r1"`, `"id":"r1","evaluationId":"elsewhere"`, 1), 400)
 	request("PUT", root+"r1", first, 200)
 	groups := func() []evals.ExperimentSummary {
 		var p evals.ExperimentSearchPage

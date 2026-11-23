@@ -15,14 +15,36 @@ import (
 )
 
 // HTTP validation and retained projection use the same result semantics.
-func ValidateLiveRow(raw json.RawMessage) error {
+func LiveRowProvider(raw json.RawMessage, run, result string) (string, error) {
+	row := sourceMap(raw)
+	provider := sourceText(sourceMap(row["provider"])["id"])
+	if provider == "" || result == "" || sourceText(row["id"]) != result {
+		return "", fmt.Errorf("result id or provider.id missing or mismatched")
+	}
+	if id, present := row["evaluationId"]; present && sourceText(id) != run {
+		return "", fmt.Errorf("evaluationId differs from run ID")
+	}
 	_, err := (experimentProjector{}).row(raw, 0)
-	return err
+	return provider, err
 }
 
 type liveMember struct {
 	group, adapter, experiment, runKey, resultKey, digest, importGroup string
 	ordinal                                                            int64
+}
+
+// Compare the same serialized VARIANT representation returned by the rows API.
+// The expected bytes have already passed through the pinned redactor on a copy.
+// Neither the original nor redacted row is included in errors.
+func VerifyLivePayload(ctx context.Context, db *sql.DB, importID string, expected json.RawMessage) (string, error) {
+	var got, want string
+	if err := db.QueryRowContext(ctx, `select sha256(to_json(payload)::varchar),sha256(to_json(?::json::variant)::varchar) from eval_records where import_id=? and envelope=0 and ordinal=0`, nativeJSON(expected), importID).Scan(&got, &want); err != nil {
+		return "", fmt.Errorf("could not compare retained result")
+	}
+	if got != want {
+		return "", fmt.Errorf("retained result differs from its expected redacted representation")
+	}
+	return want, nil
 }
 
 var errLiveClaimMismatch = errors.New("conflicting retained live result claim")
@@ -32,9 +54,13 @@ func liveMemberFromLog(log plog.LogRecord, part IngestPart) (liveMember, IngestP
 	ordinal, hasOrdinal := log.Attributes().Get("eval.result.ordinal")
 	digest, hasDigest := log.Attributes().Get("eval.result.digest")
 	row := sourceMap(part.Payload)
-	result, provider := sourceText(row["id"]), sourceText(sourceMap(row["provider"])["id"])
-	if !hasRun || !hasOrdinal || !hasDigest || run.Type() != pcommon.ValueTypeStr || run.Str() == "" || ordinal.Type() != pcommon.ValueTypeInt || ordinal.Int() < 0 || part.Row != 0 || part.Envelope != 0 || provider == "" || result == "" || digest.Type() != pcommon.ValueTypeStr || ValidateID(digest.Str()) != nil {
+	result := sourceText(row["id"])
+	if !hasRun || !hasOrdinal || !hasDigest || run.Type() != pcommon.ValueTypeStr || run.Str() == "" || ordinal.Type() != pcommon.ValueTypeInt || ordinal.Int() < 0 || part.Row != 0 || part.Envelope != 0 || digest.Type() != pcommon.ValueTypeStr || ValidateID(digest.Str()) != nil {
 		return liveMember{}, IngestPart{}, fmt.Errorf("invalid live result")
+	}
+	provider, err := LiveRowProvider(part.Payload, run.Str(), result)
+	if err != nil {
+		return liveMember{}, IngestPart{}, err
 	}
 	hash := func(s string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(s))) }
 	m := liveMember{runKey: hash(run.Str()), resultKey: hash(result), digest: digest.Str(), ordinal: ordinal.Int()}

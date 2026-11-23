@@ -32,7 +32,7 @@ func addEvalsOpenAPI(paths map[string]any) {
 		},
 		"requestBody": map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"type": "object", "required": []string{"id", "provider"}, "properties": map[string]any{"id": text, "provider": map[string]any{"type": "object", "required": []string{"id"}, "properties": map[string]any{"id": text}}}}}}},
 		"responses": map[string]any{
-			"200": apiResponse("Result retained.", "application/json", map[string]any{"type": "object", "required": []string{"resultID", "datasetID", "ordinal", "complete"}, "properties": map[string]any{"resultID": text, "datasetID": text, "ordinal": map[string]any{"type": "integer"}, "complete": map[string]any{"const": true}}}),
+			"200": apiResponse("Result retained.", "application/json", map[string]any{"type": "object", "required": []string{"resultID", "datasetID", "ordinal", "complete", "retainedSHA256"}, "properties": map[string]any{"resultID": text, "datasetID": text, "ordinal": map[string]any{"type": "integer"}, "complete": map[string]any{"const": true}, "retainedSHA256": map[string]any{"type": "string", "description": "SHA-256 of the redacted row JSON returned by the viewer."}}}),
 			"400": apiResponse("Invalid result.", "text/plain", text),
 			"409": apiResponse("Conflicting result or publication in progress.", "text/plain", text),
 			"500": apiResponse("Result storage or verification failed.", "text/plain", text),

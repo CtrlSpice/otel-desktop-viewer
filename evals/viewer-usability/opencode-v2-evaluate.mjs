@@ -8,7 +8,7 @@ import { stopOwnedGroup, runCancellation } from './run-cancellation.ts'
 import { observerEnvironment } from './clean-environment.ts'
 import { cancelOpenCodeV2, V2_VERSION, withSharedHost } from './opencode-v2-provider.mjs'
 import { checkConnections } from './opencode-v2-connect.mjs'
-import { beginLiveResults, checkLiveResultSupport, finishLiveResults, liveResultHooks } from './opencode-v2-live-results.mjs'
+import { beginLiveResults, checkLiveResultSupport, finishLiveResults, liveResultHooks, verifyLiveReadback } from './opencode-v2-live-results.mjs'
 import { cancelPiAttempts } from './pi-provider.ts'
 import { cancelClaudeAttempts } from './claude-provider.ts'
 import { judgeFor } from './opencode-v2-judge.mjs'
@@ -118,7 +118,10 @@ try {
     assert.ok(exported.evalId && exported.config)
     evalId = exported.evalId
     rows = exported.results.results
-    if (spec.mode === 'full') await finishLiveResults(exported)
+    if (spec.mode === 'full') {
+      await finishLiveResults()
+      save('viewer-readback.json',await verifyLiveReadback(root,settings.observerAPI,cancellation.signal))
+    }
     const identities = new Map(rows.map(row => [row.response?.metadata?.evidence, readJSON(path.join(row.response.metadata.evidence, 'identity.json'))]))
     validateSchedule(rows, { ...spec, models: selection.models }, identities)
   }

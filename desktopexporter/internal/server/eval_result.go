@@ -33,19 +33,18 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot read result within the evaluation record size limit", 400)
 		return
 	}
-	var row struct {
-		ID       string `json:"id"`
-		Provider struct {
-			ID string `json:"id"`
-		} `json:"provider"`
+	if evaldecode.ValidateResult(body) != nil {
+		http.Error(w, "invalid Promptfoo result JSON", 400)
+		return
 	}
-	if evaldecode.ValidateResult(body) != nil || json.Unmarshal(body, &row) != nil || row.ID != result || row.Provider.ID == "" || evals.ValidateLiveRow(body) != nil {
+	provider, err := evals.LiveRowProvider(body, run, result)
+	if err != nil {
 		http.Error(w, "expected a Promptfoo result with the named id and a provider.id", 400)
 		return
 	}
 	ctx := r.Context()
 	// Hash a structured tuple: two strings must not collide at their boundary.
-	group, _ := json.Marshal([]string{"live-result-v1", run, row.Provider.ID})
+	group, _ := json.Marshal([]string{"live-result-v1", run, provider})
 	id := resultHash(string(group))
 	if _, busy := s.evalImports.LoadOrStore(id, struct{}{}); busy {
 		http.Error(w, "publication for this model is in progress", 409)
@@ -104,17 +103,17 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not inspect retained result", 500)
 		return
 	}
+	data, err := evaldecode.Encode(recordID, evaldecode.IngestPart{Row: 0, Payload: body})
+	if err != nil {
+		http.Error(w, "invalid result", 400)
+		return
+	}
+	log := data.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	log.SetEventName(evaldecode.ResultEvent)
+	log.Attributes().PutStr("eval.run.id", run)
+	log.Attributes().PutInt("eval.result.ordinal", ordinal)
+	log.Attributes().PutStr("eval.result.digest", digest)
 	if !ok {
-		data, err := evaldecode.Encode(recordID, evaldecode.IngestPart{Row: 0, Payload: body})
-		if err != nil {
-			http.Error(w, "invalid result", 400)
-			return
-		}
-		log := data.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-		log.SetEventName(evaldecode.ResultEvent)
-		log.Attributes().PutStr("eval.run.id", run)
-		log.Attributes().PutInt("eval.result.ordinal", ordinal)
-		log.Attributes().PutStr("eval.result.digest", digest)
 		if err := s.forwardEvalLogs(ctx, data); err != nil {
 			http.Error(w, "receiver did not accept result", 502)
 			return
@@ -143,6 +142,23 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// forwardEvalLogs marshals the source without modifying its contents.
+	// The reference processor consumes only this request-owned in-memory copy.
+	normalizer, err := importRedactors()
+	if err != nil || normalizer.logs.ConsumeLogs(ctx, data) != nil {
+		http.Error(w, "could not normalize result for readback", 500)
+		return
+	}
+	expected, err := evaldecode.Decode(log)
+	if err != nil {
+		http.Error(w, "could not decode reference result", 500)
+		return
+	}
+	retainedSHA, err := storeRead(s.store, func(db *sql.DB) (string, error) { return evals.VerifyLivePayload(ctx, db, recordID, expected.Payload) })
+	if err != nil {
+		http.Error(w, "retained result failed readback verification", 500)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"datasetID": dataset, "resultID": result, "ordinal": ordinal, "complete": true})
+	_ = json.NewEncoder(w).Encode(map[string]any{"datasetID": dataset, "resultID": result, "ordinal": ordinal, "complete": true, "retainedSHA256": retainedSHA})
 }
