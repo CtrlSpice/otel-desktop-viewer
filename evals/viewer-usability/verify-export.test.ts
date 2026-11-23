@@ -304,6 +304,8 @@ test('extra traces, logs or metrics invalidate the whole handoff, including arch
       : { ...document, ...sibling }
     for (const bytes of [Buffer.from(JSON.stringify(mixed)), await archive(root, {
       'trace.json': JSON.stringify(document), 'extra.json': JSON.stringify(sibling),
+    }), await archive(root, {
+      'trace.json': JSON.stringify(document), 'extra': await archive(root, { 'payload.json': JSON.stringify(sibling) }),
     })]) {
       fs.writeFileSync(file, bytes)
       assert.equal((await verifyExport(metadata, root)).pass, false)

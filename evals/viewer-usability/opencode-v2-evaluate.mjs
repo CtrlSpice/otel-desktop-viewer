@@ -25,7 +25,7 @@ if (args.length === 1 && args[0] === '--plan-full') {
     graders: graderMap(plan) }, null, 2))
   process.exit(0)
 }
-const spec = runMode(args)
+const spec = { ...runMode(args), graderPolicy: 'blind-sol-6.1' }
 const planned = spec.models.length * (spec.taskIDs?.length ?? 1) * spec.repeat
 let selection = { models: spec.models, notStarted: [] }, scheduled = 0
 process.umask(0o077)

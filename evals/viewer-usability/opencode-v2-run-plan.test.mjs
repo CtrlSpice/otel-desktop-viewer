@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { runMode, fullRunPlan, runSettings, assertFreshRoot, evaluationConfig, validateSchedule, converge, scheduleForAvailability, isExecutionError } from './opencode-v2-run-plan.mjs'
 import { aggregateUsage } from './opencode-v2-evidence.mjs'
-import { verifyInvestigator, verifyGrader, verifyNoRetry, importOriginal, verifyRun, attemptNativeReport } from './opencode-v2-verify.mjs'
+import { verifyInvestigator, verifyGrader, expectedGrader, verifyNoRetry, importOriginal, verifyRun, attemptNativeReport } from './opencode-v2-verify.mjs'
 import { afterEach as checkEvidence, checkEvidenceError, onFailure } from './opencode-v2-execution-stop.mjs'
 import { telemetryExpectation } from './opencode-v2-observer.mjs'
 import Provider from './opencode-v2-provider.mjs'
@@ -21,6 +21,14 @@ const traceID = n => n.toString(16).padStart(32, '0')
 const spanID = n => n.toString(16).padStart(16, '0')
 const rubric = { reference: 'fixture reference', criteria: { pass: 'fixture criterion' } }
 const question = 'fixture question'
+
+test('verifies new and historical GPT grades against their respective routing policies', () => {
+  const gpt = 'openai/gpt-6.2-sol', sol = 'pi:openai-codex/gpt-6.1-sol', opus = 'claude-code:claude-opus-5-5'
+  for (const [graderPolicy, correct, wrong] of [[undefined, opus, sol], ['blind-sol-6.1', sol, opus]]) {
+    assert.equal(expectedGrader({ mode: 'full', graderPolicy, graders: { [gpt]: correct } }, gpt), correct)
+    assert.throws(() => expectedGrader({ mode: 'full', graderPolicy, graders: { [gpt]: wrong } }, gpt), /run policy/)
+  }
+})
 
 function sixRows(root, runtimeVersion = '2.0.29') {
   fs.mkdirSync(path.join(root, 'runs'))

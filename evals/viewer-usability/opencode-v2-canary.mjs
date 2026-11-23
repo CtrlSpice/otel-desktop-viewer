@@ -78,12 +78,13 @@ const server = http.createServer(async (req, res) => {
     const command = ['./bin/otel-desktop-viewer --help 2>&1 | head -50; ls -la . bin',
       './bin/otel-desktop-viewer --help | head -n 2', 'head -n 1 handoff.json'][requests.length - 11]
     tool = { name: 'shell', arguments: JSON.stringify({ command, description: 'Check help output through head' }) }
-  } else if (shared && requests.length <= 20 && shell) {
+  } else if (shared && requests.length <= 21 && shell) {
     const command = [
       `./bin/otel-desktop-viewer query 'select 1' --endpoint ${origin(destinations[0])} --json | jq -c '.rows[]'`,
       './bin/otel-desktop-viewer --help | grep -iE "^usage$" | wc -l',
       'jq . handoff.json', 'grep -i spans handoff.json', 'wc -c handoff.json',
       'jq -f handoff.json', `jq 'include "handoff"; .'`,
+      `./bin/otel-desktop-viewer query 'select 1' --endpoint ${origin(destinations[0])} --json | jq -c '{"include": .rows} | .["include"]'`,
     ][requests.length - 14]
     tool = { name: 'shell', arguments: JSON.stringify({ command, description: 'Check stdin-only viewer output filters' }) }
   } else if (!shared && requests.length === 1 && shell) {
@@ -136,7 +137,7 @@ try {
   } else if (shared) {
     assert.equal(response.error, undefined)
     const tools = JSON.parse(fs.readFileSync(path.join(response.metadata.evidence, 'tools.json')))
-    assert.equal(tools.length, 20)
+    assert.equal(tools.length, 21)
     assert.equal(tools[0].state.metadata.exit, 0)
     assert.ok(hits[0].includes('/rpc'))
     assert.ok(tools[1].state.metadata?.exit > 0)
@@ -171,8 +172,10 @@ try {
     assert.equal(output(13), '[1]')
     assert.equal(tools[14].state.metadata.exit, 0)
     assert.equal(output(14), '1')
-    for (const tool of tools.slice(15)) assert.equal(tool.state.metadata.exit, 2)
-    assert.equal(requests.length, 21)
+    for (const tool of tools.slice(15, 20)) assert.equal(tool.state.metadata.exit, 2)
+    assert.equal(tools[20].state.metadata.exit, 0)
+    assert.equal(output(20), '[[1]]')
+    assert.equal(requests.length, 22)
     const { receipts } = JSON.parse(fs.readFileSync(path.join(root, 'native-otlp/summary.json')))
     assert.ok(receipts.some(receipt => receipt.route === '/v1/traces' && receipt.status === 200))
   } else {

@@ -228,6 +228,8 @@ export async function verifyExport(
     const matching = []
     try {
       for (const payload of payloads) {
+        if (payload.member !== undefined && payload.bytes[0] === 0x1f && payload.bytes[1] === 0x8b)
+          throw new Error('Handoff contains a nested archive')
         const text = payload.bytes.toString('utf8').trimStart()
         if (!text.startsWith('{')) continue // e.g. an archive README
         const document = record(JSON.parse(text))

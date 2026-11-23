@@ -13,7 +13,9 @@ try {
     throw Error(`${name} accepts stdin only; file operands are not supported`)
   if (name === 'jq') {
     const filter = args[0] ?? '.'
-    if (filter.startsWith('-') || /\b(?:import|include|_*modulemeta)\b/.test(filter))
+    // Plain quoted keys and values are data. Interpolation can contain jq code.
+    const code = filter.includes('\\(') ? filter : filter.replace(/"(?:[^"\\\r\n]|\\[^\r\n])*"/g, '""')
+    if (filter.startsWith('-') || /\b(?:import|include|_*modulemeta)\b/.test(code))
       throw Error('Use an inline jq filter without file options or modules')
     options.push('-L', '/var/empty', '--', filter)
   }
