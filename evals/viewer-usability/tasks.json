@@ -22,7 +22,7 @@
   },
   {
     "id": "trace-export",
-    "goal": "Payments is taking over checkout-017. Leave them a file they can load into a fresh viewer, tell them where it is, and identify the operation they should inspect first and why."
+    "goal": "Payments is taking over checkout-017. Save just the trace for that request to a file they can load into a fresh viewer. Tell Payments the file path, which operation to inspect first, and what in the trace points to it. Payments will load the file themselves."
   },
   {
     "id": "request-latency",

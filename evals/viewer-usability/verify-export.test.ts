@@ -290,35 +290,27 @@ process.on('SIGTERM',()=>{rpc.close();receiver.close();rpc.closeAllConnections()
   }
 })
 
-test('fresh real dedup-only export retains matching target IDs and contents',
-  { skip: !process.env.OTEL_EVAL_VIEWER_BINARY }, async t => {
-    const { root, workspace, metadata, document } = fixture()
-    t.diagnostic(`Dedup export evidence: ${root}`)
-    const scope = document.resourceSpans[0].scopeSpans[0]
-    const extra = structuredClone(scope.spans[0])
-    extra.traceId = '00000000000000000000000000000012'
-    scope.spans.push(extra, structuredClone(extra))
-    const bytes = Buffer.from(JSON.stringify(document, null, 2) + '\n')
-    const file = path.join(workspace, 'dedup.json')
-    fs.writeFileSync(file, bytes)
-    saveJson(path.join(root, 'connection.json'), { binary: process.env.OTEL_EVAL_VIEWER_BINARY })
-    const result = await verifyExport(metadata, root)
-    assert.equal(result.pass, true)
-    assert.deepEqual(result.files, [file])
-    const replay = fs.readdirSync(root).find(name => name.startsWith('export-replay-'))!
-    assert.deepEqual(fs.readFileSync(path.join(root, replay, 'fixture/trace.json')), bytes)
-    assert.deepEqual(record(readJson(path.join(root, replay, 'runtime/counts.json'))).rows, [[7, 0, 0]])
-    const rejections = record(record(readJson(path.join(root, replay, 'runtime/stats.json'))).result).rejections as Record<string, unknown>[]
-    assert.ok(rejections.length)
-    assert.ok(rejections.every(rejection => rejection.signal === 'traces' && rejection.kind === 'span_already_stored'))
-    assert.equal(record(readJson(path.join(root, replay, 'export-proof.json'))).pass, true)
-    assert.equal(fs.existsSync(path.join(root, replay, 'otel-desktop-viewer')), false)
-    assert.equal(record(readJson(path.join(root, replay, 'teardown.json'))).status, 'removed')
-    const shutdown = record(readJson(path.join(root, replay, 'owned-shutdown.json')))
-    assert.equal(shutdown.waited, true)
-    assert.equal(record(shutdown.exit).code, 0)
-    assert.throws(() => process.kill(Number(shutdown.pid), 0), /ESRCH/)
-  })
+test('extra traces, logs or metrics invalidate the whole handoff, including archive siblings', async () => {
+  const { root, workspace, metadata, document } = fixture()
+  const other = structuredClone(document)
+  for (const resource of other.resourceSpans)
+    for (const scope of resource.scopeSpans)
+      for (const span of scope.spans) span.traceId = '00000000000000000000000000000012'
+  const file = path.join(workspace, 'handoff')
+  for (const extra of [other, readJson(path.join(root, 'fixture/logs.json')), readJson(path.join(root, 'fixture/metrics.json'))]) {
+    const sibling = record(extra)
+    const mixed = extra === other
+      ? { resourceSpans: [...document.resourceSpans, ...other.resourceSpans] }
+      : { ...document, ...sibling }
+    for (const bytes of [Buffer.from(JSON.stringify(mixed)), await archive(root, {
+      'trace.json': JSON.stringify(document), 'extra.json': JSON.stringify(sibling),
+    })]) {
+      fs.writeFileSync(file, bytes)
+      assert.equal((await verifyExport(metadata, root)).pass, false)
+    }
+  }
+  assert.ok(!fs.readdirSync(root).some(name => name.startsWith('export-replay-')))
+})
 
 test(
   'valid file with unconstrained name replays actual bytes and shuts down owned receiver',

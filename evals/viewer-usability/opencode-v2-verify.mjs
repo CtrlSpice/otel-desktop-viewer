@@ -8,7 +8,6 @@ import { missingToolLogs } from './tool-logs.ts'
 import { verifyToolEvent } from './opencode-v2-verify-evidence.mjs'
 import { v2GradingPrompt } from './opencode-v2-grading-evidence.mjs'
 import { claudeEvidence } from './claude-provider.ts'
-import { judgeFor } from './opencode-v2-judge.mjs'
 import { nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 import { observerURL, validateSchedule, converge, scheduleForAvailability } from './opencode-v2-run-plan.mjs'
 import { readJSON as read, sha256 as sha, loadRunTelemetry, awaitTelemetry } from './opencode-v2-observer.mjs'
@@ -330,8 +329,8 @@ export async function verifyRun(root, { importSource = false, env = process.env 
       const key = tool.sessionID + '/' + tool.id
       assert.ok(!nativeTools.has(key), 'Duplicate original session/tool identity'); nativeTools.add(key)
     }
-    const expected = plan.graders ? judgeFor(row.provider.id) : plan.grader
-    if (plan.graders) assert.equal(plan.graders[spec.mode === 'full' ? metadata.model : metadata.model.split('/')[1]], expected)
+    const expected = plan.graders ? plan.graders[spec.mode === 'full' ? metadata.model : metadata.model.split('/')[1]] : plan.grader
+    if (plan.graders) assert.ok(['pi:openai-codex/gpt-6.1-sol', 'claude-code:claude-opus-5-5'].includes(expected), 'Missing or unknown grader in saved run plan')
     const grader = verifyGrader(root, row, investigator, graders, expected)
     if (grader.sessionID) { assert.ok(!graderSessions.has(grader.sessionID)); graderSessions.add(grader.sessionID) }
     reports.push({ ...investigator.report, evidence: investigator.evidence, grader,

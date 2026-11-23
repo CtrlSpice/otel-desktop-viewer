@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 
 const inside = (directory, file) => file === directory || file.startsWith(directory + path.sep)
 
@@ -33,4 +35,29 @@ export function workspaceSearch(workspace, value = '.') {
   }
   visit(root)
   return root
+}
+
+// The session shell starts in its assigned workspace. Pass literal operands
+// to ls without letting it follow directory links during a listing.
+export function listWorkspace(workspace, args) {
+  const flags = [], paths = []
+  let options = true
+  for (const arg of args) {
+    if (options && arg === '--') { options = false; continue }
+    if (options && arg.startsWith('-') && arg !== '-') {
+      if (!/^-[1aAcdFhilnprSt]+$/.test(arg)) throw Error('Unsupported workspace ls option')
+      flags.push(arg)
+    } else {
+      const checked = workspacePath(workspace, arg)
+      paths.push(path.relative(workspace, checked) || '.')
+    }
+  }
+  return [...flags, '-P', '--', ...paths]
+}
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  try {
+    const args = listWorkspace(process.cwd(), process.argv.slice(2))
+    process.exitCode = spawnSync('/bin/ls', args, { stdio: 'inherit', env: { LANG: 'C' } }).status ?? 1
+  } catch (error) { console.error(error.message); process.exitCode = 2 }
 }

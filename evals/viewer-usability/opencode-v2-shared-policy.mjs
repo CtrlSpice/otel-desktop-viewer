@@ -45,9 +45,11 @@ export default {
         throw new Error('Expected the assigned loopback fixture origin')
       event.shell = path.join(path.dirname(directory), 'policy', 'fixture-shell')
       const q = JSON.stringify
+      const helpers = [...['curl', 'ls', 'head', 'jq', 'grep', 'wc'].map(name => path.join(process.env.OTEL_EVAL_CURL_BIN, name)),
+        ...['opencode-v2-curl.mjs', 'opencode-v2-workspace-guard.mjs', 'opencode-v2-stdin-filter.mjs'].map(name => path.join(path.dirname(event.shell), name))]
       const profile = ['(version 1)', '(allow default)',
         ...JSON.parse(process.env.OTEL_EVAL_SHELL_PROTECTED).map(file => `(deny file-read-data (subpath ${q(file)}))`),
-        `(allow file-read-data (subpath ${q(cwd)}) (literal ${q(path.join(process.env.OTEL_EVAL_CURL_BIN, 'curl'))}) (literal ${q(path.join(path.dirname(event.shell), 'opencode-v2-curl.mjs'))}))`,
+        `(allow file-read-data (subpath ${q(cwd)}) ${helpers.map(file => `(literal ${q(file)})`).join(' ')})`,
         '(deny file-write*)',
         `(allow file-write* (subpath ${q(cwd)}) (literal "/dev/null"))`,
         `(deny file-write* (subpath ${q(path.join(cwd, 'bin'))}))`,

@@ -127,7 +127,7 @@ export default class PiProvider {
     }
     const args = ['-f', path.join(evidence, 'sandbox.sb'), process.execPath,
       path.join(modules, '@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
-      '--mode', 'json', '--provider', provider, '--model', model, '--thinking', 'low',
+      '--mode', 'json', '--provider', provider, '--model', model,
       '--session-dir', path.join(evidence, 'sessions'), '--no-context-files', '--no-extensions',
       '--no-mcp', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve',
       ...(role === 'grader' ? ['--no-tools'] : ['--tools', 'read,bash,edit,write']), ...(usePromptFile ? [] : ['--', prompt])]

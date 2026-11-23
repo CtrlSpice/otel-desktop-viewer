@@ -188,6 +188,11 @@ export default class OpenCodeV2Provider {
     const permissions = [{action:'*', resource:'*', effect:'deny'},
       ...['read','edit','glob','grep'].map(action => ({action,resource:'*',effect:'allow'})),
       {action:'external_directory',resource:'*',effect:'deny'},
+      {action:'shell',resource:'ls',effect:'allow'},
+      {action:'shell',resource:'ls *',effect:'allow'},
+      {action:'shell',resource:'head',effect:'allow'},
+      {action:'shell',resource:'head *',effect:'allow'},
+      ...['jq','grep','wc'].flatMap(name => [name,`${name} *`].map(resource => ({action:'shell',resource,effect:'allow'}))),
       {action:'shell',resource:'curl *',effect:'allow'},
       ...[binary,'./bin/otel-desktop-viewer'].flatMap(exe => ['--help','--version','-h','-v','skills','logs','log','metrics','metric','traces','trace','span','attributes','services','query','export'].map(cmd=>({action:'shell',resource:`${exe} ${cmd} *`,effect:'allow'})))]
     await checkFixture(this.config.fixtureEndpoint)

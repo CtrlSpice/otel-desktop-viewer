@@ -43,7 +43,7 @@ export function claudeEvidence(events: Record<string, unknown>[]) {
 }
 
 export function claudeArguments(model: string, role: 'investigator' | 'grader', prompt: string) {
-  return ['--model', model, '--effort', 'low', '--safe-mode', '--restricted',
+  return ['--model', model, '--safe-mode', '--restricted',
     '--tools', role === 'grader' ? '' : 'Bash,Read,Edit,Write',
     ...(role === 'grader' ? [] : ['--allowedTools', 'Bash(./bin/otel-desktop-viewer *)', 'Read', 'Edit', 'Write']),
     '--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',

@@ -78,8 +78,7 @@ npm run evaluate --prefix evals/viewer-usability
 
 `opencode-v2-regrade.mjs` uses Claude Opus 5.5 to grade saved GPT‑6.2 Astra
 and GPT‑6.2 Sol answers from the historical eleven-question OpenCode run
-(three repetitions per question). The current five-question OpenCode benchmark
-grades GPT answers with Opus during the run. Neither that benchmark nor the
+(three repetitions per question). Neither the five-question OpenCode benchmark nor the
 Pi `npm run evaluate` run is a source for this command.
 
 The comparison reads the saved answers,
@@ -231,23 +230,20 @@ It calls the native API directly; Promptfoo does not need a package patch.
 Saved 2.0.29 runs remain readable by the verification helpers.
 
 `node evals/viewer-usability/opencode-v2-evaluate.mjs --plan-full` prints the
-twelve investigator model IDs, five selected questions, the judge for each investigator and the repetition count without
+eleven investigator model IDs, five selected questions, the judge for each investigator and the repetition count without
 starting a run. `--run-full` executes that plan through a shared host and requires
 an explicit fresh run directory, prebuilt viewer, separate observer and private
 membership references.
 
-The full run keeps all twelve models in its plan and schedules only those
+The full run keeps all eleven models in its plan and schedules only those
 enabled in the host catalogue. `result-summary.json` lists each unavailable
 model, question and repetition as “not started: model unavailable”.
 These slots have no judge calls, scores or Promptfoo result rows. If no model
 is enabled, the launcher records coverage without starting Promptfoo.
 
-Claude Opus 5.5 grades GPT investigations, including both Sol versions. Pi Sol
-6.1 grades the other investigations, including Opus. Promptfoo routes the
-blind prompt using the original investigator provider ID. An unavailable
-judge leaves an execution error; the runner does not substitute another judge.
-The live Opus judge uses the eval runtime's Claude CLI and subscription profile;
-`OTEL_EVAL_CLAUDE_BINARY` and `OTEL_EVAL_CLAUDE_CONFIG_DIR` override those paths.
+GPT-6.1 Sol grades each completed answer in a fresh Pi session at default effort.
+The grader receives the question, rubric, anonymized answer and tool evidence.
+If Sol is unavailable, the result stays ungraded.
 
 For `checkout-failure`, `--run-one` selects
 Sol once; `--run-sol-luna` selects Sol and Luna three times each. This is separate

@@ -98,7 +98,7 @@ test('new mode requires explicit observer/binary and preserves main-owned root f
   write(root, 'run-started.json', {}); assert.throws(() => assertFreshRoot(root), /reuse/)
 })
 
-test('full plan distinguishes 180 model/question/repetition slots and rejects a duplicate', () => {
+test('full plan distinguishes 165 model/question/repetition slots and rejects a duplicate', () => {
   const spec = fullRunPlan()
   const config = evaluationConfig({ suite: '/suite', root: '/fresh', spec })
   const rows = [], identities = new Map()
@@ -112,7 +112,7 @@ test('full plan distinguishes 180 model/question/repetition slots and rejects a 
   }
   assert.ok(config.providers.some(p => p.config.providerID === 'kimi-code-plan-global' && p.config.model === 'k3.1-pro'))
   assert.ok(config.tests.find(t => t.vars.task_id === 'trace-export').assert.some(a => a.metric === 'export-file'))
-  assert.equal(validateSchedule(rows, spec, identities).length, 180)
+  assert.equal(validateSchedule(rows, spec, identities).length, 165)
   const last = rows.at(-1).response.metadata
   last.repeatIndex = identities.get(last.evidence).promptfoo.repeatIndex = 1
   assert.throws(() => validateSchedule(rows, spec, identities), /Duplicate model/)
@@ -128,7 +128,7 @@ test('one unavailable model has 15 unstarted slots and never reaches the native 
   const availability = availabilityFor(plan, model => model !== disabled)
   const { models, notStarted } = scheduleForAvailability(plan, availability)
   const config = evaluationConfig({ suite: '/suite', root: '/fresh', spec: { ...plan, models } })
-  assert.equal(config.providers.length * config.tests.length * config.evaluateOptions.repeat, 165)
+  assert.equal(config.providers.length * config.tests.length * config.evaluateOptions.repeat, 150)
   assert.deepEqual(config.providers.map(p => new Provider(p).id()), plan.models.filter(m => m !== disabled).map(m => 'opencode-v2:' + m))
   assert.equal(notStarted.length, 15)
   for (const task of plan.taskIDs) assert.deepEqual(notStarted.filter(r => r.task === task),
@@ -139,9 +139,9 @@ test('one unavailable model has 15 unstarted slots and never reaches the native 
 test('all unavailable verifies zero results without an export or viewer import', async t => {
   const root = temporary(t), plan = fullRunPlan(), availability = availabilityFor(plan, () => false)
   const selection = scheduleForAvailability(plan, availability)
-  assert.equal(selection.notStarted.length, 180)
+  assert.equal(selection.notStarted.length, 165)
   write(root, 'run-started.json', { spec: plan })
-  write(root, 'run-plan.json', { ...plan, version: '2.3.0', availability, planned: 180, investigators: 0, notStarted: selection.notStarted,
+  write(root, 'run-plan.json', { ...plan, version: '2.3.0', availability, planned: 165, investigators: 0, notStarted: selection.notStarted,
     config: { providers: [] }, observer: 'http://127.0.0.1:1' })
   write(root, 'owned-shutdown.json', {})
   write(root, 'source-preservation.json', { unchanged: true })
