@@ -49,7 +49,7 @@ func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			return writeTelemetrySearchResult(cmd.OutOrStdout(), result, fields, jsonOutput)
+			return writeProjectedSearchResult(cmd.OutOrStdout(), result, fields, jsonOutput)
 		},
 	}
 	addTelemetrySearchFlags(cmd, &options, &jsonOutput)

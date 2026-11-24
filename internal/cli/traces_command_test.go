@@ -68,10 +68,12 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 		var rpcRequest queryRPCRequest
 		require.NoError(t, json.NewDecoder(request.Body).Decode(&rpcRequest))
 		requests <- rpcRequest
-		response := unfilteredResponse
+		const serviceBreakdown = `,"serviceBreakdown":[{"key":"service:checkout","label":"checkout","count":4,"other":false}]`
+		response := `[` + summary[:len(summary)-1] + serviceBreakdown
 		if rpcRequest.Params["query"] != nil {
-			response = filteredResponse
+			response += `,"matchedSpans":` + matchedSpans
 		}
+		response += `}]`
 		_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + response + `}`))
 		require.NoError(t, err)
 	}))
