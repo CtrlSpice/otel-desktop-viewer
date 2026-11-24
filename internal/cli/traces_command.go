@@ -31,7 +31,8 @@ func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command 
 		Use:   "traces",
 		Short: "🧵 Search traces in a running viewer",
 		Long: "🧵 Search existing trace summaries in the running viewer. " +
-			"The default window is the last hour; output uses aligned columns unless --json is set.",
+			"The default window is the last hour; output uses aligned columns unless --json is set. " +
+			"With --service, matches use the row’s trace ID unless shown. --json includes both IDs.",
 		Example: "  otel-desktop-viewer traces\n" +
 			"  otel-desktop-viewer traces --service checkout --since 30m\n" +
 			"  otel-desktop-viewer traces --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json",
