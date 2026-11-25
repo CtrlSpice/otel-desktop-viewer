@@ -69,7 +69,7 @@ process memory.
 Start a monitoring viewer in one terminal:
 
 ```sh
-otel-desktop-viewer --browser-port 8001 --http 4328 --grpc 4327
+otel-desktop-viewer --browser-port 8001 --http 4328 --grpc 4327 --db ./monitoring.duckdb
 ```
 
 In another terminal, start the viewer to observe:
