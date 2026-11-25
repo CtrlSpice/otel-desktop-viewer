@@ -29,9 +29,28 @@ func LiveRowProvider(raw json.RawMessage, run, result string) (string, error) {
 }
 
 type liveMember struct {
-	group, adapter, experiment, runKey, resultKey, digest, importGroup string
-	expectedSHA                                                        string
-	ordinal                                                            int64
+	group, adapter, experiment string
+	liveClaim
+}
+
+// Only a local PUT writes these values. Read them once per reconstruction.
+type liveClaim struct {
+	runKey, resultKey, digest, importGroup, expectedSHA string
+	ordinal                                             int64
+}
+
+func readLiveClaim(ctx context.Context, db *sql.DB, id string) (*liveClaim, error) {
+	var c liveClaim
+	err := db.QueryRowContext(ctx, `select run_key, result_key, digest, import_id, coalesce(expected_sha,''), ordinal
+		from eval_result_claims where sha256('live-row-v1:' || run_key || result_key)=?`, id).
+		Scan(&c.runKey, &c.resultKey, &c.digest, &c.importGroup, &c.expectedSHA, &c.ordinal)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 // Compare the same serialized VARIANT representation returned by the rows API.
@@ -76,7 +95,7 @@ func liveMemberFromLog(log plog.LogRecord, part IngestPart) (liveMember, IngestP
 		return liveMember{}, IngestPart{}, err
 	}
 	hash := func(s string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(s))) }
-	m := liveMember{runKey: hash(run.Str()), resultKey: hash(result), digest: digest.Str(), ordinal: ordinal.Int(), expectedSHA: expected.Str()}
+	m := liveMember{liveClaim: liveClaim{runKey: hash(run.Str()), resultKey: hash(result), digest: digest.Str(), ordinal: ordinal.Int(), expectedSHA: expected.Str()}}
 	if hash("live-row-v1:"+m.runKey+m.resultKey) != evaldecode.ImportID(log) {
 		return liveMember{}, IngestPart{}, fmt.Errorf("wrong live result identity")
 	}

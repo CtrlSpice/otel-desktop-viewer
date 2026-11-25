@@ -201,7 +201,13 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 		return err
 	}
 	var physical int64
+	var claim *liveClaim
 	if err := db.WithDBRead(func(conn *sql.DB) error {
+		var err error
+		claim, err = readLiveClaim(ctx, conn, id)
+		if err != nil {
+			return err
+		}
 		return conn.QueryRowContext(ctx, `select count(*) from eval_evidence where import_id=?`, id).Scan(&physical)
 	}); err != nil {
 		return err
@@ -237,16 +243,26 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 			if err != nil {
 				return err
 			}
+			// A claimed ID describes one live result. Only a matching retained
+			// observation may supply its cache; other logs remain ordinary telemetry.
+			if claim != nil && (live != nil || log.EventName() != evaldecode.ResultEvent) {
+				continue
+			}
 			part, err := evaldecode.Decode(log)
 			if err != nil {
-				reason = "Retained evidence is invalid or changed by processing."
+				if claim == nil {
+					reason = "Retained evidence is invalid or changed by processing."
+				}
 				continue
 			}
 			parts := []IngestPart{part}
 			if log.EventName() == evaldecode.ResultEvent {
 				member, header, err := liveMemberFromLog(log, part)
-				if err != nil || (live != nil && *live != member) {
-					reason = "Invalid or conflicting retained result identity."
+				if claim == nil {
+					reason = "Invalid retained result without a publication claim."
+					continue
+				}
+				if err != nil || member.liveClaim != *claim {
 					continue
 				}
 				var actualSHA string
@@ -257,8 +273,7 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 				}); err != nil {
 					return err
 				}
-				if actualSHA != member.expectedSHA {
-					reason = "Retained result failed readback verification."
+				if actualSHA != claim.expectedSHA {
 					continue
 				}
 				live = &member
@@ -312,6 +327,9 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 				}
 			}
 		}
+	}
+	if claim != nil && physical > 0 && live == nil {
+		reason = "Retained result failed readback verification."
 	}
 	if reason == "" {
 		if live != nil {

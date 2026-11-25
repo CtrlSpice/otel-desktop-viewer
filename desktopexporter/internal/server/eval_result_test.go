@@ -69,6 +69,14 @@ func TestLiveResultObservationWithoutLocalPUT(t *testing.T) {
 			require.NoError(t, json.Unmarshal(request(t, s, "GET", "/api/evals/experiments/"+g[0].ID+"/rows", ""), &detail))
 			require.Len(t, detail.Rows, 1)
 			require.Contains(t, detail.Rows[0].JSON, `"success":true`)
+			// The same foreign observation arriving after publication must
+			// neither replace the local row nor prevent an idempotent PUT.
+			observation.CopyTo(data)
+			require.NoError(t, s.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(t.Context(), conn, data) }))
+			request(t, s, "PUT", route, `{"id":"r1","provider":{"id":"m"},"success":true}`)
+			require.NoError(t, json.Unmarshal(request(t, s, "GET", "/api/evals/experiments/"+g[0].ID+"/rows", ""), &detail))
+			require.Len(t, detail.Rows, 1)
+			require.Contains(t, detail.Rows[0].JSON, `"success":true`)
 		})
 	}
 }
@@ -164,6 +172,11 @@ func TestUnverifiedLiveResultNeverBecomesVisible(t *testing.T) {
 	req("PUT", "/api/evals/runs/check/results/ok", `{"id":"ok","provider":{"id":"m"},"success":true}`, 200)
 	req("PUT", "/api/evals/runs/check/results/bad", `{"id":"bad","provider":{"id":"m"},"password":"synthetic-unmasked","success":true}`, 500)
 	req("PUT", "/api/evals/runs/check/results/wrong-ordinal", `{"id":"wrong-ordinal","provider":{"id":"m"},"success":true}`, 500)
+	var cached int
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from eval_records`).Scan(&cached)
+	}))
+	require.Equal(t, 1, cached, "only the verified result is cached")
 	var page evals.ExperimentSearchPage
 	require.NoError(t, json.Unmarshal(req("GET", "/api/evals/experiments", "", 200), &page))
 	require.Len(t, page.Experiments, 1)
