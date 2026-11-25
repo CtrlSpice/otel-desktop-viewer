@@ -69,11 +69,16 @@ func (e *DuckDBExtension) Store() *store.Store {
 }
 
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	path, err := databasePath(e.cfg.Db)
+	path, createDefault, err := databasePath(e.cfg.Db)
 	if err != nil {
 		return fmt.Errorf("resolve telemetry database: %w", err)
 	}
-	str, err := store.NewStore(ctx, path, e.logger)
+	var str *store.Store
+	if e.cfg.Db == "" {
+		str, err = store.OpenViewerDatabase(ctx, path, createDefault, e.logger)
+	} else {
+		str, err = store.NewStore(ctx, path, e.logger)
+	}
 	if err != nil {
 		return fmt.Errorf("open telemetry database %s: %w", path, err)
 	}

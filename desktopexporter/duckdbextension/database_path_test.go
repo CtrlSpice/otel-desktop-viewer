@@ -24,28 +24,30 @@ func TestDefaultDatabaseResumesInUserAppData(t *testing.T) {
 	case "windows":
 		want = filepath.Join(home, "OTel Desktop Viewer", "current.duckdb")
 	}
-	path, err := databasePath("")
+	path, create, err := databasePath("")
 	require.NoError(t, err)
+	require.True(t, create)
 	require.Equal(t, want, path)
 	require.NoError(t, os.WriteFile(path, []byte("existing"), 0600))
-	again, err := databasePath("")
+	again, create, err := databasePath("")
 	require.NoError(t, err)
+	require.False(t, create)
 	require.Equal(t, path, again)
 	other := filepath.Join(filepath.Dir(path), "another trace.duckdb")
 	require.NoError(t, os.WriteFile(other, nil, 0600))
 	require.NoError(t, rememberDatabase(other))
 	require.NoError(t, rememberDatabase(filepath.Join(t.TempDir(), "fixture.duckdb")))
-	again, err = databasePath("")
+	again, _, err = databasePath("")
 	require.NoError(t, err)
 	require.Equal(t, other, again)
 	require.NoError(t, os.Remove(other))
-	_, err = databasePath("")
+	_, _, err = databasePath("")
 	require.ErrorIs(t, err, os.ErrNotExist)
-	_, err = databasePath(":memory:")
+	_, _, err = databasePath(":memory:")
 	require.Error(t, err)
 	if runtime.GOOS != "windows" {
 		require.NoError(t, os.Chmod(filepath.Dir(path), 0755))
-		_, err = databasePath("")
+		_, _, err = databasePath("")
 		require.ErrorContains(t, err, "private app data directory")
 	}
 }
@@ -94,9 +96,9 @@ func TestRestartUsesLastActiveDatabase(t *testing.T) {
 	bytes, err := os.ReadFile(active)
 	require.NoError(t, err)
 	require.Equal(t, "checkout.duckdb", string(bytes))
-	_, err = databasePath(active)
+	_, _, err = databasePath(active)
 	require.Error(t, err)
-	_, err = databasePath(filepath.Join(dir, "settings", "other.duckdb"))
+	_, _, err = databasePath(filepath.Join(dir, "settings", "other.duckdb"))
 	require.Error(t, err)
 
 	// Preserve an existing database even if someone placed it at the new
@@ -105,12 +107,37 @@ func TestRestartUsesLastActiveDatabase(t *testing.T) {
 	require.NoError(t, os.Rename(oldName, active))
 	original, err := os.ReadFile(active)
 	require.NoError(t, err)
-	_, err = databasePath("")
+	_, _, err = databasePath("")
 	require.Error(t, err)
 	require.Error(t, rememberDatabase(filepath.Join(dir, "checkout.duckdb")))
 	remaining, err := os.ReadFile(active)
 	require.NoError(t, err)
 	require.Equal(t, original, remaining)
+}
+
+func TestAutomaticStartupRejectsUnrelatedFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Setenv("XDG_DATA_HOME", home)
+	path, _, err := databasePath("")
+	require.NoError(t, err)
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create macro attr_id(k, v) as 'original'`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	e := &DuckDBExtension{cfg: &Config{Endpoint: "127.0.0.1:0"}, logger: zap.NewNop()}
+	err = e.Start(t.Context(), componenttest.NewNopHost())
+	require.ErrorContains(t, err, path)
+	require.ErrorContains(t, err, "not a recognized viewer database")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	require.NoFileExists(t, filepath.Join(filepath.Dir(path), settingsFolder, activeFile))
 }
 
 func TestManagedDatabaseLocationBeforeOpen(t *testing.T) {
@@ -121,7 +148,7 @@ func TestManagedDatabaseLocationBeforeOpen(t *testing.T) {
 	dir, err := appDataDirectory()
 	require.NoError(t, err)
 	other := filepath.Join(dir, "checkout.duckdb")
-	path, err := databasePath(other)
+	path, _, err := databasePath(other)
 	require.NoError(t, err)
 	require.Equal(t, other, path)
 	require.NoFileExists(t, other)
@@ -136,15 +163,15 @@ func TestManagedDatabaseLocationBeforeOpen(t *testing.T) {
 	require.NoError(t, os.Symlink(ext, other))
 	require.NoError(t, os.Symlink(ext, filepath.Join(dir, "current.duckdb")))
 	for _, arg := range []string{"", other} {
-		_, err := databasePath(arg)
+		_, _, err := databasePath(arg)
 		require.ErrorContains(t, err, "not a regular file")
 	}
 	require.NoError(t, os.Chmod(dir, 0755))
 	for _, arg := range []string{"", filepath.Join(dir, "third.duckdb")} {
-		_, err := databasePath(arg)
+		_, _, err := databasePath(arg)
 		require.ErrorContains(t, err, "private app data directory")
 	}
-	path, err = databasePath(ext)
+	path, _, err = databasePath(ext)
 	require.NoError(t, err)
 	require.Equal(t, ext, path)
 	info, err := os.Stat(external)

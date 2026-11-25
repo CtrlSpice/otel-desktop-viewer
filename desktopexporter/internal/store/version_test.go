@@ -446,6 +446,33 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 	assert.Equal(t, 1, unrelatedTables)
 }
 
+func TestAutomaticOpenPreservesUnrelatedDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "current.duckdb")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create macro attr_id(k, v) as 'mine'; create table schema_meta(version integer); insert into schema_meta values (27)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	for _, createDefault := range []bool{false, true} {
+		// true simulates another file appearing after path resolution.
+		_, err = OpenViewerDatabase(t.Context(), path, createDefault, nil)
+		require.ErrorIs(t, err, ErrSchemaIncompatible)
+		require.ErrorContains(t, err, path)
+		after, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+	}
+	db, err = sql.Open("duckdb", path)
+	require.NoError(t, err)
+	defer db.Close()
+	var result string
+	require.NoError(t, db.QueryRow(`select attr_id('k', 'v')`).Scan(&result))
+	require.Equal(t, "mine", result)
+}
+
 func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom-schema.db")
 	db, err := sql.Open("duckdb", path)

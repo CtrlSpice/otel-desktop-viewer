@@ -76,6 +76,10 @@ func (s *Store) RetentionCap() int64 {
 //
 // logger may be nil, in which case nothing is logged.
 func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, error) {
+	return openStore(ctx, dbPath, logger, false)
+}
+
+func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireViewer bool) (*Store, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -113,6 +117,13 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 			_ = conn.Close()
 		}
 	}()
+	if requireViewer {
+		// Verify the writable connection as well: the path may have changed
+		// since the read-only inspection.
+		if err := verifyViewerDatabase(ctx, db, dbPath); err != nil {
+			return nil, err
+		}
+	}
 	if err := arrowbridge.Load(ctx, conn); err != nil {
 		return nil, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
 	}

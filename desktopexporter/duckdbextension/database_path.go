@@ -16,37 +16,41 @@ const (
 )
 
 // Resolve storage at startup, not when printing help or creating a factory.
-func databasePath(configured string) (string, error) {
+func databasePath(configured string) (path string, createDefault bool, err error) {
 	dir, dirErr := appDataDirectory()
 	if configured != "" {
 		path, err := filepath.Abs(configured)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if configured == ":memory:" || strings.Contains(path, "?") {
-			return "", fmt.Errorf("db must be a database file path, not an in-memory database or connection options")
+			return "", false, fmt.Errorf("db must be a database file path, not an in-memory database or connection options")
 		}
 		if dirErr == nil {
 			if err := checkDatabaseLocation(dir, path); err != nil {
-				return "", err
+				return "", false, err
 			}
 		}
-		return path, nil
+		return path, false, nil
 	}
 
 	if dirErr != nil {
-		return "", dirErr
+		return "", false, dirErr
 	}
 	name, err := managedSelection(dir)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if name == "" {
 		path := filepath.Join(dir, "current.duckdb")
-		return path, checkManagedFile(path, true)
+		err := checkManagedFile(path, false)
+		if errors.Is(err, os.ErrNotExist) {
+			return path, true, nil
+		}
+		return path, false, err
 	}
-	path := filepath.Join(dir, name)
-	return path, checkManagedFile(path, false)
+	path = filepath.Join(dir, name)
+	return path, false, checkManagedFile(path, false)
 }
 
 func checkManagedFile(path string, allowNew bool) error {
