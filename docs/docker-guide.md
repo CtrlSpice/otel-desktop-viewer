@@ -48,6 +48,10 @@ on later runs, stopping the previous container before its replacement starts.
 
 Arguments after the published image name replace its defaults. Include
 `--host 0.0.0.0` when supplying flags so published ports remain reachable.
+
+If your existing volume contains `/data/telemetry.duckdb`, keep `--host 0.0.0.0 --db /data/telemetry.duckdb` after the image name to reopen it.
+For Compose, keep `command: ["--host", "0.0.0.0", "--db", "/data/telemetry.duckdb"]` under the viewer service.
+
 With file storage, periodic checks delete the oldest telemetry above a `2GB`
 default threshold. See [Command-line options](command-line-options.md#choose-storage-and-retention)
 for size syntax and retention behaviour.
