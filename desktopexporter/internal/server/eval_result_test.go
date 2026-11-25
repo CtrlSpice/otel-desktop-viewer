@@ -13,6 +13,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
@@ -146,6 +147,27 @@ func TestLiveEvaluationRetainsEachResultOnceInItsModelGroup(t *testing.T) {
 	require.Contains(t, detail.Rows[0].JSON, "9007199254740993")
 	require.NotContains(t, detail.Rows[0].JSON, "synthetic-password")
 	require.EqualValues(t, 2, detail.Rows[1].Ordinal, "failed publication leaves a gap, not a missing prerequisite")
+	// A sibling keeps the group visible while one result's index is being rebuilt.
+	searchCount := func(id string, want int64) {
+		t.Helper()
+		criteria := &search.QueryNode{Type: "condition", Query: &search.Query{
+			Field: &search.FieldDefinition{Owner: "result", Path: []any{"id"}}, FieldOperator: "=", Value: id,
+		}}
+		require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+			page, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Criteria: criteria, Limit: 10, Sort: "name", Direction: "asc"})
+			if err == nil {
+				require.Equal(t, want, page.Total)
+			}
+			return err
+		}))
+	}
+	searchCount("r1", 1)
+	require.NoError(t, h.store.WithDBWrite(func(db *sql.DB) error {
+		_, err := db.Exec(`update eval_imports set complete=false where id=(select d.import_id from eval_live_members m join eval_datasets d on d.id=m.dataset_id where m.experiment_id=? and m.ordinal=0)`, groupID)
+		return err
+	}))
+	searchCount("r1", 0)
+	searchCount("r2", 1)
 	var oldest string
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(`select e.log_id::varchar from eval_evidence e join eval_datasets d on d.import_id=e.import_id join eval_live_members m on m.dataset_id=d.id where m.ordinal=0 and m.experiment_id=?`, groupID).Scan(&oldest)
