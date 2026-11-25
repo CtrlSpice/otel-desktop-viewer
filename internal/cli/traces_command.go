@@ -61,7 +61,7 @@ func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command 
 				fields = slices.Clone(fields)
 				fields[matchColumn] = "matchedSpans (row traceID omitted)"
 			}
-			return writeTelemetrySearchResult(cmd.OutOrStdout(), result, fields, jsonOutput)
+			return writeProjectedSearchResult(cmd.OutOrStdout(), result, fields, jsonOutput)
 		},
 	}
 	addTelemetrySearchFlags(cmd, &options, &jsonOutput)

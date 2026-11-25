@@ -1,10 +1,6 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -51,54 +47,9 @@ func newMetricsCommand(client *http.Client, now func() time.Time) *cobra.Command
 			if err != nil {
 				return err
 			}
-			return writeMetricSearchResult(cmd.OutOrStdout(), result, jsonOutput)
+			return writeProjectedSearchResult(cmd.OutOrStdout(), result, metricSummaryFields, jsonOutput)
 		},
 	}
 	addTelemetrySearchFlags(cmd, &options, &jsonOutput)
 	return cmd
-}
-
-func writeMetricSearchResult(writer io.Writer, result telemetrySearchResult, jsonOutput bool) error {
-	if !jsonOutput {
-		return writeTelemetrySearchResult(writer, result, metricSummaryFields, false)
-	}
-	summaries, err := metricSummariesForCLI(result.Summaries)
-	if err != nil {
-		return fmt.Errorf("prepare metric JSON output: %w", err)
-	}
-	result.Summaries = summaries
-	return writeTelemetrySearchResult(writer, result, metricSummaryFields, true)
-}
-
-func metricSummariesForCLI(summaries []json.RawMessage) ([]json.RawMessage, error) {
-	projected := make([]json.RawMessage, len(summaries))
-	for index, summary := range summaries {
-		fields := make(map[string]json.RawMessage, len(metricSummaryFields))
-		decoder := json.NewDecoder(bytes.NewReader(summary))
-		if err := decoder.Decode(&fields); err != nil {
-			return nil, fmt.Errorf("decode summary %d: %w", index, err)
-		}
-
-		var output bytes.Buffer
-		output.WriteByte('{')
-		for fieldIndex, field := range metricSummaryFields {
-			value, ok := fields[field]
-			if !ok {
-				return nil, fmt.Errorf("summary %d is missing field %q", index, field)
-			}
-			if fieldIndex > 0 {
-				output.WriteByte(',')
-			}
-			encodedField, err := json.Marshal(field)
-			if err != nil {
-				return nil, err
-			}
-			output.Write(encodedField)
-			output.WriteByte(':')
-			output.Write(value)
-		}
-		output.WriteByte('}')
-		projected[index] = output.Bytes()
-	}
-	return projected, nil
 }
