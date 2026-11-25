@@ -44,8 +44,8 @@ VIEWER FLAGS
       --grpc int                        OTLP gRPC port (default 4317)
       --browser-port int                Viewer HTTP port (default 8000)
       --open-browser                    Open viewer after startup (default true)
-      --db string                       DuckDB file; omit for memory
-      --db-max-size string              Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
+      --db string                       DuckDB file (defaults to the last active database in app data)
+      --db-max-size string              Maximum telemetry-store size (default 2GB; 0 disables pruning)
       --self-telemetry-endpoint string  Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 
 GLOBAL FLAGS

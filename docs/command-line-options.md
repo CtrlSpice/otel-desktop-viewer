@@ -31,8 +31,17 @@ Client commands use `--endpoint` with the viewer HTTP address.
 
 | Option | Default | Behaviour |
 | --- | --- | --- |
-| `--db <path>` | Omitted | Save telemetry in a DuckDB file. Without this option, storage is in memory and is lost on shutdown. |
-| `--db-max-size <size>` | `512MB` in memory, `2GB` with `--db` | Set the size threshold for automatic deletion of the oldest telemetry; `0` disables automatic deletion. |
+| `--db <path>` | Last active database in app data | Use a different database file. |
+| `--db-max-size <size>` | `2GB` | Set the size threshold for automatic deletion of the oldest telemetry; `0` disables automatic deletion. |
+
+The app data directory can hold multiple `.duckdb` files. Starting the viewer with `--db <path>` opens that file, creating it if needed. A file in the app data directory becomes the default for future launches. A file elsewhere leaves the default unchanged.
+
+| Platform | Directory |
+| --- | --- |
+| macOS | `~/Library/Application Support/com.ctrlspice.otel-desktop-viewer/` |
+| Windows | `%LOCALAPPDATA%\OTel Desktop Viewer\` |
+| Linux | `$XDG_DATA_HOME/otel-desktop-viewer/` (default: `~/.local/share/otel-desktop-viewer/`) |
+| Docker image | `/data/otel-desktop-viewer/`. Mount a volume at `/data` to keep the database when replacing the container. |
 
 To save telemetry with a custom threshold:
 

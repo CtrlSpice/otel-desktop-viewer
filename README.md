@@ -51,7 +51,7 @@ brew install --cask otel-desktop-viewer
 <summary><img src="https://cdn.simpleicons.org/docker/2496ED" width="16" height="16" alt="" style="display: inline-block; vertical-align: middle; margin: 0;"> Docker</summary>
 
 ```sh
-docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
+docker run -v otel-viewer-data:/data -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
 ```
 
 See the [Docker guide](docs/docker-guide.md) for ports, persistent storage, Docker Compose and image options.
@@ -157,13 +157,13 @@ See [SDK configuration](docs/sdk-configuration.md) for more options and examples
 
 ## 3. Start the viewer
 
-By default, the viewer stores telemetry in memory, opens your browser at `http://localhost:8000`, and receives OTLP on `localhost:4317` (gRPC) and `localhost:4318` (HTTP):
+The viewer opens your browser at `http://localhost:8000` and receives OTLP on `localhost:4317` (gRPC) and `localhost:4318` (HTTP):
 
 ```sh
 otel-desktop-viewer
 ```
 
-Telemetry stored in memory is lost when the viewer stops. Use `--db` to save it to a file, then start the viewer with that file to pick up where you left off:
+The viewer stores telemetry in `current.duckdb` in the collector’s [app data directory](docs/command-line-options.md#choose-storage-and-retention) by default. If you open another database in that directory, the viewer reopens it next time.
 
 ```sh
 otel-desktop-viewer --db ./telemetry.duckdb

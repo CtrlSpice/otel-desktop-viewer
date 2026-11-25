@@ -102,6 +102,8 @@ Storage preserves the types and precision of received values.
 
 ### Database access
 
+The collector writes incoming telemetry to one DuckDB file at a time. If it cannot open the database, startup fails.
+
 Queries can run alongside ingestion. `store.Store` controls access:
 
 | Method | Use |

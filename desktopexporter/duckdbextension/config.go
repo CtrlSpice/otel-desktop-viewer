@@ -19,14 +19,13 @@ type Config struct {
 	// Zero means no gRPC receiver port was supplied.
 	OTLPGRPCPort int `mapstructure:"otlp_grpc_port"`
 
-	// Db defines the path of your database file. Setting an empty string opens
-	// DuckDB in in-memory mode.
+	// Db selects a database file. When omitted the viewer reopens the last
+	// active database in app data, or current.duckdb on first launch.
 	Db string `mapstructure:"db"`
 
 	// DbMaxSize caps the size of the telemetry store as a human-readable byte
 	// size (e.g. "512MB", "2GB"). "0" disables retention enforcement. An empty
-	// string picks a default based on the storage mode: 512MB in-memory, 2GB
-	// on disk.
+	// string uses the 2 GiB default.
 	DbMaxSize string `mapstructure:"db_max_size"`
 
 	// Telemetry controls whether the extension instruments its own operation

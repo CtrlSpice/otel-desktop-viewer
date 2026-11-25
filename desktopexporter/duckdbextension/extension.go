@@ -12,6 +12,7 @@ package duckdbextension
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -27,11 +28,7 @@ const (
 	// retentionInterval is how often the retention loop checks the store size.
 	retentionInterval = 30 * time.Second
 
-	// Default store size caps applied when db_max_size is unset. In-memory
-	// mode gets a tighter default because the data competes with everything
-	// else for RAM; a database file can afford more room.
-	defaultMaxSizeInMemory = 512 << 20 // 512 MB
-	defaultMaxSizeOnDisk   = 2 << 30   // 2 GB
+	defaultMaxSizeOnDisk = 2 << 30
 )
 
 // DuckDBExtension is the running component. The store and server exist only
@@ -71,9 +68,13 @@ func (e *DuckDBExtension) Store() *store.Store {
 }
 
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
+	path, err := databasePath(e.cfg.Db)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve telemetry database: %w", err)
+	}
+	str, err := store.NewStore(ctx, path, e.logger)
+	if err != nil {
+		return fmt.Errorf("open telemetry database %s: %w", path, err)
 	}
 
 	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort))
@@ -90,11 +91,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		return err
 	}
 	if maxBytes < 0 {
-		if e.cfg.Db == "" {
-			maxBytes = defaultMaxSizeInMemory
-		} else {
-			maxBytes = defaultMaxSizeOnDisk
-		}
+		maxBytes = defaultMaxSizeOnDisk
 	}
 	// The cap lives on the store so getStats can report it alongside usage.
 	str.SetRetentionCap(maxBytes)
@@ -102,6 +99,11 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	if err := srv.Start(); err != nil {
 		str.Close()
 		return err
+	}
+	if err := rememberDatabase(path); err != nil {
+		_ = srv.Shutdown(ctx)
+		_ = str.Close()
+		return fmt.Errorf("remember telemetry database: %w", err)
 	}
 
 	e.store = str

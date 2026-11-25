@@ -50,8 +50,7 @@ The HTTP and gRPC setup snippets use the receiver ports advertised by the runnin
 viewer. If configuration is unavailable, the guide labels the standard fallback
 port explicitly. The test-trace command uses the configured HTTP receiver port.
 
-Storage identifies DuckDB's in-memory or on-disk mode, current usage and configured
-retention limit. The default cap is 512 MiB in memory or 2 GiB on disk;
+Storage shows database usage and the configured retention limit. The default cap is 2 GiB;
 `--db-max-size 0` explicitly disables size-based retention.
 
 Service cards use three shared card rows: service name and right-aligned Error

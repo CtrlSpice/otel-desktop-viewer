@@ -30,6 +30,7 @@ RUN go build -o otel-desktop-viewer .
 
 # duckdb-go requires libraries absent from slim images.
 FROM debian:13
+ENV XDG_DATA_HOME=/data
 
 # Runtime dependencies.
 COPY --from=golang /usr/lib/*/libstdc++.so.6* /usr/lib/

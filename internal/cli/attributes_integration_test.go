@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"path/filepath"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
@@ -34,7 +35,7 @@ func (h attributeIntegrationHost) GetExtensions() map[component.ID]component.Com
 
 // Exercise ingestion, canonical value encoding, the production HTTP query
 // handler/executor, and the actual commands together, without a browser or
-// a collector subprocess. Only this test's extension owns the in-memory store.
+// a collector subprocess. Only this test's extension owns the database.
 func startAttributeIntegration(t *testing.T) (string, exporter.Traces, exporter.Logs, exporter.Metrics) {
 	t.Helper()
 	return startAttributeIntegrationWithImportPort(t, 0)
@@ -50,6 +51,7 @@ func startAttributeIntegrationWithImportPort(t *testing.T, port int) (string, ex
 
 	factory := duckdbextension.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*duckdbextension.Config)
+	cfg.Db = filepath.Join(t.TempDir(), "test.duckdb")
 	cfg.Endpoint = address
 	cfg.DbMaxSize = "0"
 	cfg.OTLPHTTPPort = port

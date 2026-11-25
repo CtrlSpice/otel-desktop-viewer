@@ -39,7 +39,7 @@ func URIs(o ConfigOptions) []string {
 		`yaml:extensions::duckdb::endpoint: "` + endpoint(o.BrowserPort) + `"`,
 		`yaml:extensions::duckdb::otlp_http_port: ` + strconv.Itoa(o.HTTPPort),
 		`yaml:extensions::duckdb::otlp_grpc_port: ` + strconv.Itoa(o.GRPCPort),
-		`yaml:extensions::duckdb::db: ` + o.DB,
+		`yaml:extensions::duckdb::db: ` + strconv.Quote(o.DB),
 		`yaml:extensions::duckdb::db_max_size: "` + o.DBMaxSize + `"`,
 		`yaml:service::extensions: [duckdb]`,
 		// Batching happens here rather than in the exporter's sending queue.
