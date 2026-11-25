@@ -190,7 +190,7 @@ func ensurePrivateDirectory(dir string) error {
 	if !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0) {
 		return fmt.Errorf("expected a private app data directory at %s", dir)
 	}
-	return nil
+	return checkDirectoryOwner(dir, info)
 }
 
 func isSessionFilename(name string) bool {
