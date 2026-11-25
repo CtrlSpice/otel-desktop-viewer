@@ -1,10 +1,13 @@
 package collector
 
 import (
+	"context"
 	"net"
+	"slices"
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/redaction"
+	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/otelcol"
 )
 
@@ -39,7 +42,6 @@ func URIs(o ConfigOptions) []string {
 		`yaml:extensions::duckdb::endpoint: "` + endpoint(o.BrowserPort) + `"`,
 		`yaml:extensions::duckdb::otlp_http_port: ` + strconv.Itoa(o.HTTPPort),
 		`yaml:extensions::duckdb::otlp_grpc_port: ` + strconv.Itoa(o.GRPCPort),
-		`yaml:extensions::duckdb::db: ` + strconv.Quote(o.DB),
 		`yaml:extensions::duckdb::db_max_size: "` + o.DBMaxSize + `"`,
 		`yaml:service::extensions: [duckdb]`,
 		// Batching happens here rather than in the exporter's sending queue.
@@ -107,9 +109,23 @@ service:
 
 // PrepareSettings installs the composed configuration in the supplied settings.
 func PrepareSettings(set otelcol.CollectorSettings, options ConfigOptions) otelcol.CollectorSettings {
-	set.ConfigProviderSettings.ResolverSettings.URIs = URIs(options)
-	set.ConfigProviderSettings.ResolverSettings.DefaultScheme = "env"
+	resolver := &set.ConfigProviderSettings.ResolverSettings
+	resolver.URIs = URIs(options)
+	resolver.DefaultScheme = "env"
+	if options.DB != "" {
+		path := literalDatabasePath(options.DB)
+		resolver.ConverterFactories = append(slices.Clip(resolver.ConverterFactories),
+			confmap.NewConverterFactory(func(confmap.ConverterSettings) confmap.Converter { return path }))
+	}
 	return set
+}
+
+// Converters run after provider expansion. Keep the CLI filename out of YAML
+// so the resolver never interprets parts of it as environment references.
+type literalDatabasePath string
+
+func (path literalDatabasePath) Convert(_ context.Context, cfg *confmap.Conf) error {
+	return cfg.Merge(confmap.NewFromStringMap(map[string]any{"extensions::duckdb::db": string(path)}))
 }
 
 // formatEndpoint returns a function that produces a properly formatted
