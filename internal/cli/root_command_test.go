@@ -113,7 +113,7 @@ func TestCommandHelpSnapshotsAreOffline(t *testing.T) {
 	}{
 		{name: "root", args: []string{"--help"}, expected: expectedRootHelp},
 		{name: "query", args: []string{"query", "--help"}, expected: expectedQueryHelp},
-		{name: "traces", args: []string{"traces", "--help"}, expected: expectedTelemetryHelp("traces", "🧵", "trace")},
+		{name: "traces", args: []string{"traces", "--help"}, expected: expectedTelemetryHelp("traces", "🧵", "trace", "With --service, matches use the row’s trace ID unless shown. --json includes both IDs.")},
 		{name: "logs", args: []string{"logs", "--help"}, expected: expectedTelemetryHelp("logs", "🪵", "log")},
 		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric", "Use metricRef to inspect or export a Metric.")},
 		{name: "skills", args: []string{"skills", "--help"}, expected: expectedSkillsHelp},

@@ -86,9 +86,9 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--limit", "25"})
 	require.NoError(t, cmd.Execute())
-	const tableOutput = "traceID                           hasRootSpan  rootSpan                                            startTime            durationNs        spanCount  errorCount  matchedSpans                                                                                                                                           \n" +
-		"--------------------------------  -----------  --------------------------------------------------  -------------------  ----------------  ---------  ----------  -------------------------------------------------------------------------------------------------------------------------------------------------------\n" +
-		"0123456789abcdef0123456789abcdef  true         {\"name\":\"POST /checkout\",\"serviceName\":\"checkout\"}  1790928000123456789  9007199254740993  4          1           [{\"spanID\":\"00000000000000a1\",\"traceID\":\"0123456789abcdef0123456789abcdef\"},{\"spanID\":\"00000000000000a2\",\"traceID\":\"0123456789abcdef0123456789abcdef\"}]\n"
+	const tableOutput = "traceID                           hasRootSpan  rootSpan                                            startTime            durationNs        spanCount  errorCount  matchedSpans (row traceID omitted)                           \n" +
+		"--------------------------------  -----------  --------------------------------------------------  -------------------  ----------------  ---------  ----------  -------------------------------------------------------------\n" +
+		"0123456789abcdef0123456789abcdef  true         {\"name\":\"POST /checkout\",\"serviceName\":\"checkout\"}  1790928000123456789  9007199254740993  4          1           [{\"spanID\":\"00000000000000a1\"},{\"spanID\":\"00000000000000a2\"}]\n"
 	assert.Equal(t, tableOutput, output.String())
 
 	request := <-requests
@@ -116,6 +116,18 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, unfilteredResponse+"\n", output.String())
 	<-requests
+}
+
+func TestMatchedSpansForTableKeepsForeignIDsAndRepeatedMatches(t *testing.T) {
+	own := map[string]any{"traceID": "parent", "spanID": "a", "count": json.Number("9007199254740993")}
+	foreign := map[string]any{"traceID": "other", "spanID": "a"}
+	unknown := map[string]any{"traceID": nil, "spanID": "b"}
+	matches := []any{own, foreign, unknown, own}
+	display := map[string]any{"spanID": "a", "count": json.Number("9007199254740993")}
+	assert.Equal(t, []any{display, foreign, unknown, display}, matchedSpansForTable("parent", matches))
+	assert.Equal(t, "parent", own["traceID"])
+	assert.Equal(t, []any{}, matchedSpansForTable("parent", []any{}))
+	assert.Nil(t, matchedSpansForTable("parent", nil))
 }
 
 func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
