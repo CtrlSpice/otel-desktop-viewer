@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
-import { waitFor } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor } from '@testing-library/svelte'
 import WaterfallView from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
 import { spanNode } from '@/test/waterfall-fixtures'
@@ -701,6 +701,40 @@ describe('WaterfallView error navigation, vim brackets', () => {
 
     press(']')
     expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+})
+
+describe('WaterfallView subtree focus', () => {
+  beforeEach(() => resetCollapseStoreForTests())
+  it('isolates nested branches and restores the original tree and its collapsed rows', async () => {
+    const spans = [
+      ...deepTree(),
+      spanNode('sibling', 'a', 1),
+      spanNode('other', null, 0),
+    ]
+    const view = renderTree({ spans })
+    await collapseRow('e')
+    const original = rowIDs()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Focus on c subtree' })
+    )
+    expect(rowIDs()).toEqual(['c', 'd', 'e', 'f'])
+    expect(spanRow('c')).toHaveAttribute('aria-level', '1')
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Focus on e subtree' })
+    )
+    expect(rowIDs()).toEqual(['e', 'f'])
+    await fireEvent.click(screen.getByRole('button', { name: 'c' }))
+    expect(rowIDs()).toEqual(['c', 'd', 'e', 'f'])
+    await fireEvent.click(screen.getByRole('button', { name: 'Full trace' }))
+    expect(rowIDs()).toEqual(original)
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Focus on c subtree' })
+    )
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'other', onSelectSpan: vi.fn() },
+    })
+    await waitFor(() => expect(rowIDs()).toEqual(original))
   })
 })
 

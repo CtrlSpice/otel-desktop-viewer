@@ -8,7 +8,7 @@
   import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
   import SpanBar from '@/components/shared/SpanBar.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { BiohazardIcon } from '@hugeicons/core-free-icons'
+  import { BiohazardIcon, FocusIcon } from '@hugeicons/core-free-icons'
   import TimelineMarkers from './TimelineMarkers.svelte'
   import WaterfallTimeGuides from './WaterfallTimeGuides.svelte'
   import type { WaterfallAxis } from './WaterfallTimeAxisHeader.svelte'
@@ -42,6 +42,7 @@
     matchAfter?: boolean
     onRowClick: () => void
     onInspectColumn?: (column: WaterfallColumn) => void
+    onFocusSubtree?: () => void
     onToggleExpand: () => void
     onSelectTimelineRecord: (
       record: import('./timeline-markers').TimelineRecord
@@ -66,6 +67,7 @@
     matchAfter = false,
     onRowClick,
     onInspectColumn,
+    onFocusSubtree,
     onToggleExpand,
     onSelectTimelineRecord,
   }: Props = $props()
@@ -152,6 +154,20 @@
             : onRowClick()}
       />
       {#snippet trailing()}
+        {#if onFocusSubtree}
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs tooltip subtree-action"
+            aria-label={`Focus on ${span.name} subtree`}
+            data-tip="Focus subtree"
+            onclick={event => {
+              event.stopPropagation()
+              onFocusSubtree()
+            }}
+          >
+            <HugeiconsIcon icon={FocusIcon} size={14} aria-hidden="true" />
+          </button>
+        {/if}
         {#if cycleLabel}
           <span
             class="waterfall-row__cycle"
@@ -248,6 +264,12 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+  @media (hover: hover) {
+    .waterfall-row:not(:hover):not(:focus-within):not(.table-row--selected)
+      .subtree-action {
+      opacity: 0;
+    }
+  }
   .waterfall-row {
     @apply cursor-pointer border-none;
     height: var(--table-row-h);

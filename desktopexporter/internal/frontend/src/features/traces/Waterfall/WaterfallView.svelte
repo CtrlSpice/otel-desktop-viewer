@@ -40,6 +40,7 @@
   import {
     computeSearchCollapsedParents,
     buildStructuralMaps,
+    spanSubtree,
   } from './waterfall-tree'
   import { ancestorIdsOf, keyboardAnchorSpanID } from './waterfall-reveal'
   import {
@@ -111,7 +112,7 @@
   }
 
   let {
-    spans,
+    spans: traceSpans,
     traceID: providedTraceID,
     logs = [],
     columnCatalogue,
@@ -124,10 +125,39 @@
     footer,
   }: Props = $props()
 
+  let traceID = $derived(
+    providedTraceID ?? traceSpans[0]?.spanData.traceID ?? ''
+  )
+  let focus = $state<{ traceID: string; spanID: string } | null>(null)
+  let subtree = $derived(
+    focus?.traceID === traceID ? spanSubtree(traceSpans, focus.spanID) : null
+  )
+  let spans = $derived(subtree?.spans ?? traceSpans)
+  let collapseKey = $derived(
+    subtree ? `${traceID}/${subtree.root.spanData.spanID}` : traceID
+  )
+
+  async function focusSubtree(id: string | null) {
+    const selected = id ?? subtree?.root.spanData.spanID
+    focus = id ? { traceID, spanID: id } : null
+    if (selected) {
+      onSelectSpan(selected)
+      await tick()
+      await revealAndScrollToSpan(selected, false)
+      await focusRowTr(selected)
+    }
+  }
+
   let bounds = $derived(getTraceBounds(spans))
-  let logPartition = $derived(partitionTraceLogs(logs, spans))
+  let logPartition = $derived(partitionTraceLogs(logs, traceSpans))
   let rows = $derived(
-    buildWaterfallRows(spans, bounds, themeSignal.value, logPartition.bySpanID)
+    buildWaterfallRows(
+      spans,
+      bounds,
+      themeSignal.value,
+      logPartition.bySpanID,
+      subtree?.root.spanData.spanID
+    )
   )
   let rowIndexBySpanID = $derived(
     new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
@@ -485,8 +515,7 @@
    * Span IDs collapsed by row toggles, keyboard arrows, or collapse-all.
    * Refetches, searches, selections, and resizes must not write this state.
    */
-  let traceID = $derived(providedTraceID ?? spans[0]?.spanData.traceID ?? '')
-  let userCollapsed = $derived(collapsedForTrace(traceID))
+  let userCollapsed = $derived(collapsedForTrace(collapseKey))
 
   // Search uses a response-scoped overlay so clearing it restores user state.
   let searchCollapsedParents = $derived.by((): Set<string> | null =>
@@ -531,7 +560,7 @@
     } else {
       const next = new Set(userCollapsed)
       if (!next.delete(spanID)) next.add(spanID)
-      setCollapsedForTrace(traceID, next)
+      setCollapsedForTrace(collapseKey, next)
     }
     await clampScroll()
     if (
@@ -563,7 +592,7 @@
       searchOverrides = next
     } else {
       setCollapsedForTrace(
-        traceID,
+        collapseKey,
         collapsed ? new Set(collapsibleSpanIDs) : new Set()
       )
     }
@@ -717,7 +746,16 @@
     if (!vlistRef || !id) return
     if (id === lastScrolledSelection) return
     lastScrolledSelection = id
-    void revealAndScrollToSpan(id)
+    if (
+      subtree &&
+      !rowIndexBySpanID.has(id) &&
+      traceSpans.some(node => node.spanData.spanID === id)
+    ) {
+      focus = null
+      void tick().then(() => revealAndScrollToSpan(id))
+    } else {
+      void revealAndScrollToSpan(id)
+    }
   })
 
   $effect(() => {
@@ -961,6 +999,32 @@
       {/key}
     {/snippet}
   </PaneHeader>
+  {#if subtree}
+    <nav
+      class="flex shrink-0 flex-wrap items-center gap-1 px-3 py-1 text-sm"
+      aria-label="Focused span ancestry"
+    >
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        onclick={() => focusSubtree(null)}
+      >
+        Full trace
+      </button>
+      {#each subtree.ancestors as node (node.spanData.spanID)}
+        <span aria-hidden="true">›</span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          onclick={() => focusSubtree(node.spanData.spanID)}
+        >
+          {node.spanData.name}
+        </button>
+      {/each}
+      <span aria-hidden="true">›</span>
+      <span aria-current="location">{subtree.root.spanData.name}</span>
+    </nav>
+  {/if}
   <div class="waterfall-view__tree">
     <div
       class="waterfall-view__scroll"
@@ -1054,6 +1118,10 @@
                   onSelectSpan(sid)
                   void focusRowTr(sid)
                 }}
+                onFocusSubtree={row.tree.childrenCount > 0 &&
+                sid !== subtree?.root.spanData.spanID
+                  ? () => focusSubtree(sid)
+                  : undefined}
                 onToggleExpand={() => toggleCollapse(sid)}
                 onInspectColumn={column => {
                   if (onInspectColumn) onInspectColumn(sid, column)

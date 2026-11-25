@@ -70,9 +70,10 @@ export function buildWaterfallRows(
   spans: SpanNode[],
   bounds: TraceBounds,
   theme: string,
-  logsBySpanID: ReadonlyMap<string, TraceLogSummary[]> = new Map()
+  logsBySpanID: ReadonlyMap<string, TraceLogSummary[]> = new Map(),
+  focusedSpanID?: string
 ): WaterfallRowData[] {
-  const treeMeta = computeTreeMeta(spans)
+  const treeMeta = computeTreeMeta(spans, focusedSpanID)
   const services = spans.map(
     node => getServiceName(node.spanData.resource) ?? ''
   )
