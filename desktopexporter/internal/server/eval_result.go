@@ -97,6 +97,9 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 				return errResultConflict
 			}
 		case errors.Is(err, sql.ErrNoRows):
+			if err := evals.IgnorePreclaimLiveEvidence(ctx, tx, recordID); err != nil {
+				return err
+			}
 			if err := tx.QueryRowContext(ctx, `select coalesce(max(ordinal)+1, 0) from eval_result_claims where import_id=?`, id).Scan(&ordinal); err != nil {
 				return err
 			}
@@ -130,7 +133,7 @@ func (s *Server) putEvalResult(w http.ResponseWriter, r *http.Request) {
 		}
 		return storeRead(s.store, func(db *sql.DB) (bool, error) {
 			var found bool
-			err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets d join eval_imports i on i.id=d.import_id join eval_records r on r.import_id=d.import_id and r.envelope=d.envelope where d.import_id=? and r.ordinal=0 and i.complete and not d.deleted)`, recordID).Scan(&found)
+			err := db.QueryRowContext(ctx, `select exists(select 1 from eval_datasets d join eval_imports i on i.id=d.import_id join eval_records r on r.import_id=d.import_id and r.envelope=d.envelope join eval_live_members m on m.dataset_id=d.id where d.import_id=? and m.group_id=? and m.ordinal=? and r.ordinal=0 and i.complete and not d.deleted)`, recordID, dataset, ordinal).Scan(&found)
 			return found, err
 		})
 	}

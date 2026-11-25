@@ -48,6 +48,16 @@ func ExpectedLiveSHA(ctx context.Context, db *sql.DB, expected json.RawMessage) 
 var errLiveClaimMismatch = errors.New("conflicting retained live result claim")
 var errLiveReadback = errors.New("retained result failed readback verification")
 
+// At the first PUT, register any result logs that arrived before this claim as
+// observed but unassociated. A later rebuild must not adopt them as PUT evidence.
+func IgnorePreclaimLiveEvidence(ctx context.Context, tx *sql.Tx, recordID string) error {
+	_, err := tx.ExecContext(ctx, `insert into eval_evidence
+		select l.id, '' from `+evidenceFrom+` and l.event_name='viewer.eval.result.v1'
+		and otel_value_kind(l.body.importID)='string' and l.body.importID::varchar=?
+		on conflict do nothing`, recordID)
+	return err
+}
+
 func liveMemberFromLog(log plog.LogRecord, part IngestPart) (liveMember, IngestPart, error) {
 	run, hasRun := log.Attributes().Get("eval.run.id")
 	ordinal, hasOrdinal := log.Attributes().Get("eval.result.ordinal")
@@ -97,9 +107,6 @@ func (m liveMember) save(ctx context.Context, db *sql.DB, dataset string) error 
 	}
 	if !verified {
 		return errLiveReadback
-	}
-	if _, err = tx.ExecContext(ctx, `insert into eval_result_claims (run_key,result_key,digest,import_id,ordinal,expected_sha) values (?,?,?,?,?,?) on conflict do nothing`, m.runKey, m.resultKey, m.digest, m.importGroup, m.ordinal, m.expectedSHA); err != nil {
-		return err
 	}
 	var matches bool
 	if err = tx.QueryRowContext(ctx, `select exists(select 1 from eval_result_claims where run_key=? and result_key=? and digest=? and import_id=? and ordinal=? and expected_sha=?)`, m.runKey, m.resultKey, m.digest, m.importGroup, m.ordinal, m.expectedSHA).Scan(&matches); err != nil {

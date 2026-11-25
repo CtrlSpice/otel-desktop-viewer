@@ -4,6 +4,7 @@ package server
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -11,10 +12,66 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
 )
+
+func TestLiveResultObservationWithoutLocalPUT(t *testing.T) {
+	const route = "/api/evals/runs/run/results/r1"
+	request := func(t *testing.T, s *Server, method, path, body string) []byte {
+		t.Helper()
+		w := httptest.NewRecorder()
+		s.server.Handler.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+		require.Equal(t, 200, w.Code)
+		return w.Body.Bytes()
+	}
+
+	// Use a real processed observation from a different store. Its claim is
+	// local to that store and must not travel with the log.
+	src, err := NewServer("localhost:0", 0, setupHandler(t).store, zap.NewNop(), nil)
+	require.NoError(t, err)
+	observation := plog.NewLogs()
+	startEvalReceiverWithSink(t, src, func(data plog.Logs) { data.CopyTo(observation) })
+	request(t, src, "PUT", route, `{"id":"r1","provider":{"id":"m"},"success":false}`)
+
+	for _, tc := range []struct {
+		name string
+		read bool
+	}{{"already reconciled", true}, {"not yet reconciled", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := NewServer("localhost:0", 0, setupHandler(t).store, zap.NewNop(), nil)
+			require.NoError(t, err)
+			startEvalReceiver(t, s)
+			data := plog.NewLogs()
+			observation.CopyTo(data)
+			require.NoError(t, s.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(t.Context(), conn, data) }))
+			groups := func() []evals.ExperimentSummary {
+				var page evals.ExperimentSearchPage
+				require.NoError(t, json.Unmarshal(request(t, s, "GET", "/api/evals/experiments", ""), &page))
+				return page.Experiments
+			}
+			if tc.read {
+				require.Empty(t, groups())
+				var claims int
+				require.NoError(t, s.store.WithDBRead(func(db *sql.DB) error {
+					return db.QueryRow(`select count(*) from eval_result_claims`).Scan(&claims)
+				}))
+				require.Zero(t, claims)
+			}
+			var receipt struct{ Ordinal int64 }
+			require.NoError(t, json.Unmarshal(request(t, s, "PUT", route, `{"id":"r1","provider":{"id":"m"},"success":true}`), &receipt))
+			require.Zero(t, receipt.Ordinal)
+			g := groups()
+			require.Len(t, g, 1)
+			var detail evals.ExperimentSourcePage
+			require.NoError(t, json.Unmarshal(request(t, s, "GET", "/api/evals/experiments/"+g[0].ID+"/rows", ""), &detail))
+			require.Len(t, detail.Rows, 1)
+			require.Contains(t, detail.Rows[0].JSON, `"success":true`)
+		})
+	}
+}
 
 func TestLiveEvaluationRetainsEachResultOnceInItsModelGroup(t *testing.T) {
 	h := setupHandler(t)
@@ -87,10 +144,13 @@ func TestUnverifiedLiveResultNeverBecomesVisible(t *testing.T) {
 	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
 	require.NoError(t, err)
 	startEvalReceiverWithSink(t, s, func(logs plog.Logs) {
-		body := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Map()
-		source, _ := body.Get("source")
+		log := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+		source, _ := log.Body().Map().Get("source")
 		if _, has := source.Map().Get("password"); has {
 			source.Map().PutStr("password", "synthetic-unmasked")
+		}
+		if id, _ := source.Map().Get("id"); id.Str() == "wrong-ordinal" {
+			log.Attributes().PutInt("eval.result.ordinal", 99)
 		}
 	})
 	req := func(method, url, body string, code int) []byte {
@@ -103,6 +163,7 @@ func TestUnverifiedLiveResultNeverBecomesVisible(t *testing.T) {
 	}
 	req("PUT", "/api/evals/runs/check/results/ok", `{"id":"ok","provider":{"id":"m"},"success":true}`, 200)
 	req("PUT", "/api/evals/runs/check/results/bad", `{"id":"bad","provider":{"id":"m"},"password":"synthetic-unmasked","success":true}`, 500)
+	req("PUT", "/api/evals/runs/check/results/wrong-ordinal", `{"id":"wrong-ordinal","provider":{"id":"m"},"success":true}`, 500)
 	var page evals.ExperimentSearchPage
 	require.NoError(t, json.Unmarshal(req("GET", "/api/evals/experiments", "", 200), &page))
 	require.Len(t, page.Experiments, 1)

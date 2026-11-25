@@ -62,6 +62,17 @@ discover:
 					return err
 				}
 				defer tx.Rollback()
+				if log.EventName() == evaldecode.ResultEvent && importID != "" {
+					// Only the PUT reserves an identity. Keep an unclaimed log in
+					// telemetry without associating it with a future publication.
+					var claimed bool
+					if err := tx.QueryRowContext(ctx, `select exists(select 1 from eval_result_claims where sha256('live-row-v1:' || run_key || result_key)=?)`, importID).Scan(&claimed); err != nil {
+						return err
+					}
+					if !claimed {
+						importID = ""
+					}
+				}
 				// Retention may remove the record while it is decoded outside the lock.
 				result, err := tx.ExecContext(ctx, `insert into eval_evidence select id, ? from logs where id=try_cast(? as uuid) on conflict do nothing`, importID, id)
 				if err != nil {

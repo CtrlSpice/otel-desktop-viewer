@@ -13,6 +13,13 @@ function parseJSON(text,reviver) {
 const read = file => parseJSON(fs.readFileSync(file,'utf8'))
 let active
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
+const hashID = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+const resultID = value => typeof value === 'string' && /^[0-9a-f-]{36}$/.test(value)
+const ordinal = value => Number.isSafeInteger(value) && value >= 0
+function checkReceipt(receipt, id) {
+  assert.ok(receipt?.complete === true && typeof receipt.resultID === 'string' && receipt.resultID === id &&
+    hashID(receipt.datasetID) && ordinal(receipt.ordinal) && hashID(receipt.retainedSHA256), 'Invalid publication receipt')
+}
 // Keep numeric tokens when extracting native rows from a saved JSON export.
 const readExport = file => parseJSON(fs.readFileSync(file, 'utf8'), (_k, value, ctx) =>
   typeof value === 'number' ? JSON.rawJSON(ctx.source) : value)
@@ -30,9 +37,9 @@ export async function checkLiveResultSupport(endpoint, signal) {
   const res = await fetch(endpoint + '/openapi.json', {redirect:'error', signal:bounded(signal)})
   assert.equal(res.status, 200, 'Could not inspect observer capabilities')
   const spec = parseJSON(await res.text())
-  const put = spec.paths?.['/api/evals/runs/{runID}/results/{resultID}']?.put
-  assert.ok(put?.operationId === 'putEvalResult' &&
-    put.responses?.['200']?.content?.['application/json']?.schema?.required?.includes('retainedSHA256'),
+  const put = spec?.paths?.['/api/evals/runs/{runID}/results/{resultID}']?.put
+  const required = put?.responses?.['200']?.content?.['application/json']?.schema?.required
+  assert.ok(put?.operationId === 'putEvalResult' && Array.isArray(required) && required.includes('retainedSHA256'),
     'Observer does not support verified result publication')
 }
 
@@ -57,11 +64,11 @@ export function afterEach({ result }) {
 
 async function publish(exported) {
   const { dir, endpoint, pending } = active
-  assert.equal(exported.evalId, pending.run)
+  assert.ok(typeof exported?.evalId === 'string' && exported.evalId === pending.run,'Unexpected exported run')
   const rows = exported.results.results.filter(r => r.traceId === pending.trace)
   assert.equal(rows.length, 1, 'Expected one persisted native grade for this trace')
   const row = rows[0]
-  assert.match(row.id, /^[0-9a-f-]{36}$/)
+  assert.ok(resultID(row.id),'Invalid saved result identity')
   const bytes = JSON.stringify(row)
   const prefix = path.join(dir, row.id)
   fs.writeFileSync(prefix + '.json', bytes, { flag: 'wx', mode: 0o600 })
@@ -71,8 +78,7 @@ async function publish(exported) {
   })
   assert.equal(reply.status, 200, 'Viewer publication failed: HTTP ' + reply.status)
   const receipt = parseJSON(await reply.text())
-  assert.ok(receipt.complete && receipt.resultID === row.id)
-  assert.ok(/^[0-9a-f]{64}$/.test(receipt.retainedSHA256),'Missing redacted result digest')
+  checkReceipt(receipt, row.id)
   fs.writeFileSync(prefix + '.receipt.json', JSON.stringify(receipt), { flag: 'wx', mode: 0o600 })
   active.count++
   active.pending = undefined
@@ -102,47 +108,60 @@ export async function finishLiveResults() {
 
 export async function verifyLiveReadback(root,endpoint,signal) {
   const source = readExport(path.join(root,'promptfoo.json'))
+  assert.ok(typeof source?.evalId === 'string' && Array.isArray(source.results?.results),'Invalid saved evaluation')
   const groups = new Map(), providers = new Map(), seen = new Set()
   const get = async route => {
     const res = await fetch(endpoint+route,{redirect:'error',signal:bounded(signal)})
-    assert.equal(res.status,200)
+    assert.ok(res.status === 200,'Could not read retained evaluation')
     return parseJSON(await res.text())
   }
   for (const row of source.results.results) {
-    assert.ok(row.evaluationId === source.evalId && /^[0-9a-f-]{36}$/.test(row.id),'Invalid saved result identity')
+    assert.ok(row?.evaluationId === source.evalId && resultID(row.id) &&
+      typeof row.provider?.id === 'string','Invalid saved result identity')
     const prefix = path.join(root,'published-results',row.id)
     assert.ok(fs.readFileSync(prefix+'.json','utf8')===JSON.stringify(row),'Publication differs from final native result')
     const r = read(prefix+'.receipt.json')
-    assert.ok(r.complete && r.resultID===row.id && /^[0-9a-f]{64}$/.test(r.retainedSHA256),'Invalid publication receipt')
+    checkReceipt(r, row.id)
     if (!groups.has(r.datasetID)) groups.set(r.datasetID,new Map())
     const group = groups.get(r.datasetID)
-    assert.ok(!group.has(r.ordinal)); group.set(r.ordinal,{id:row.id,provider:row.provider.id,digest:r.retainedSHA256})
+    assert.ok(!group.has(r.ordinal),'Duplicate publication ordinal'); group.set(r.ordinal,{id:row.id,provider:row.provider.id,digest:r.retainedSHA256})
     if (!providers.has(row.provider.id)) providers.set(row.provider.id,r.datasetID)
     assert.ok(providers.get(row.provider.id)===r.datasetID,'Published model split across datasets')
   }
-  assert.equal(providers.size, groups.size)
+  assert.ok(providers.size === groups.size,'Unexpected publication dataset count')
   for (let offset=0;;offset+=100) {
     const page = await get('/api/evals/experiments?limit=100&offset='+offset)
-    for (const item of page.experiments) if (groups.has(item.datasetID)) {
+    assert.ok(Array.isArray(page?.experiments) && typeof page.hasMore === 'boolean' &&
+      (!page.hasMore || page.experiments.length > 0),'Invalid experiment page')
+    for (const item of page.experiments) {
+      assert.ok(hashID(item?.datasetID) && hashID(item.id) && ordinal(item.resultCount),'Invalid experiment summary')
+      if (!groups.has(item.datasetID)) continue
       const group = groups.get(item.datasetID)
-      assert.equal(item.resultCount,group.size)
+      assert.ok(item.resultCount === group.size,'Unexpected retained result count')
       for (let after=-1;;) {
         const detail = await get(`/api/evals/experiments/${item.id}/rows?limit=100&after=${after}`)
-        assert.ok(parseJSON(detail.contextJSON).evalId===source.evalId,'Unexpected retained run')
+        assert.ok(typeof detail?.contextJSON === 'string' && Array.isArray(detail.rows) &&
+          typeof detail.hasMore === 'boolean' && Number.isSafeInteger(detail.nextAfter) && detail.nextAfter >= -1,'Invalid retained result page')
+        const context = parseJSON(detail.contextJSON)
+        assert.ok(typeof context?.evalId === 'string' && context.evalId===source.evalId,'Unexpected retained run')
         for (const entry of detail.rows) {
+          assert.ok(ordinal(entry?.ordinal) && typeof entry.json === 'string','Invalid retained result row')
           const expected = group.get(entry.ordinal)
           // Hash the exact row JSON string, not a parsed and reserialized number.
           assert.ok(expected && !seen.has(expected.id) && sha(entry.json)===expected.digest,'Retained result digest mismatch')
           const row = parseJSON(entry.json)
-          assert.ok(row.id===expected.id && row.provider?.id===expected.provider,'Unexpected retained result identity')
+          assert.ok(typeof row?.id === 'string' && typeof row.provider?.id === 'string' &&
+            row.id===expected.id && row.provider.id===expected.provider,'Unexpected retained result identity')
           seen.add(expected.id)
         }
         if (!detail.hasMore) break
-        assert.ok(detail.nextAfter>after); after=detail.nextAfter
+        assert.ok(detail.rows.length > 0 && detail.nextAfter === detail.rows.at(-1).ordinal &&
+          detail.nextAfter > after,'Invalid retained result cursor')
+        after=detail.nextAfter
       }
     }
     if (!page.hasMore) break
   }
-  assert.equal(seen.size,source.results.results.length)
+  assert.ok(seen.size === source.results.results.length,'Missing retained result')
   return {publication:'per-result',resultIDs:[...seen],otlpResent:false}
 }

@@ -23,7 +23,7 @@ test('each persisted native grade is published before the next investigation, in
     assert.equal(req.url, `/api/evals/runs/${encodeURIComponent(row.evaluationId)}/results/${row.id}`)
     calls.push('publish ' + row.vars.n); rows.push(row)
     res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ complete: true, resultID: row.id, datasetID: 'fixture', ordinal: rows.length - 1, retainedSHA256:'0'.repeat(64) }))
+    res.end(JSON.stringify({ complete: true, resultID: row.id, datasetID: '1'.repeat(64), ordinal: rows.length - 1, retainedSHA256:'0'.repeat(64) }))
   })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   t.after(() => { server.closeAllConnections(); server.close() })
