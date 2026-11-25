@@ -103,9 +103,10 @@
     logs?: TraceLogSummary[]
     columnCatalogue?: TraceColumnOption[]
     onColumnsChange?: (columns: WaterfallColumn[]) => void
+    focusedSpanID?: string | null
     selectedSpanID: string | null
     searchActive?: boolean
-    onSelectSpan: (spanID: string) => void
+    onSelectSpan: (spanID: string, focus?: string | null) => void
     onInspectColumn?: (spanID: string, column: WaterfallColumn) => void
     onSelectTimelineRecord: (spanID: string, record: TimelineRecord) => void
     footer?: Snippet
@@ -118,6 +119,7 @@
     columnCatalogue,
     onColumnsChange,
     selectedSpanID,
+    focusedSpanID,
     searchActive = false,
     onSelectSpan,
     onInspectColumn,
@@ -128,9 +130,8 @@
   let traceID = $derived(
     providedTraceID ?? traceSpans[0]?.spanData.traceID ?? ''
   )
-  let focus = $state<{ traceID: string; spanID: string } | null>(null)
   let subtree = $derived(
-    focus?.traceID === traceID ? spanSubtree(traceSpans, focus.spanID) : null
+    focusedSpanID ? spanSubtree(traceSpans, focusedSpanID) : null
   )
   let spans = $derived(subtree?.spans ?? traceSpans)
   let collapseKey = $derived(
@@ -138,10 +139,9 @@
   )
 
   async function focusSubtree(id: string | null) {
-    const selected = id ?? subtree?.root.spanData.spanID
-    focus = id ? { traceID, spanID: id } : null
+    const selected = id ?? selectedSpanID ?? subtree?.root.spanData.spanID
     if (selected) {
-      onSelectSpan(selected)
+      onSelectSpan(selected, id)
       await tick()
       await revealAndScrollToSpan(selected, false)
       await focusRowTr(selected)
@@ -746,16 +746,7 @@
     if (!vlistRef || !id) return
     if (id === lastScrolledSelection) return
     lastScrolledSelection = id
-    if (
-      subtree &&
-      !rowIndexBySpanID.has(id) &&
-      traceSpans.some(node => node.spanData.spanID === id)
-    ) {
-      focus = null
-      void tick().then(() => revealAndScrollToSpan(id))
-    } else {
-      void revealAndScrollToSpan(id)
-    }
+    void revealAndScrollToSpan(id)
   })
 
   $effect(() => {

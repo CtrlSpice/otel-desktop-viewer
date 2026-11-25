@@ -1,4 +1,5 @@
 export const SPAN_PARAM = 'span'
+export const FOCUS_PARAM = 'focus'
 export const EVENT_PARAM = 'event'
 export const LOG_PARAM = 'log'
 
@@ -15,6 +16,7 @@ export type MetricViewParam = (typeof METRIC_VIEW_PARAMS)[number]
 /** Query keys scoped to a selected trace or metric item (not shared across signals). */
 export const SIGNAL_ITEM_QUERY_PARAMS = [
   SPAN_PARAM,
+  FOCUS_PARAM,
   EVENT_PARAM,
   LOG_PARAM,
   ...METRIC_VIEW_PARAMS,

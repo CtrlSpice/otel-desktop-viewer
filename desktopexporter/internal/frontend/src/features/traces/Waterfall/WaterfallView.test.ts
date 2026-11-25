@@ -712,7 +712,15 @@ describe('WaterfallView subtree focus', () => {
       spanNode('sibling', 'a', 1),
       spanNode('other', null, 0),
     ]
-    const view = renderTree({ spans })
+    const onSelectSpan = (
+      selectedSpanID: string,
+      focusedSpanID?: string | null
+    ) => {
+      void view.rerender({
+        componentProps: { spans, selectedSpanID, focusedSpanID, onSelectSpan },
+      })
+    }
+    const view = renderTree({ spans, onSelectSpan })
     await collapseRow('e')
     const original = rowIDs()
     await fireEvent.click(
