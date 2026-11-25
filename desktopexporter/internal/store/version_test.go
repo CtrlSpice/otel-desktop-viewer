@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -471,6 +472,42 @@ func TestAutomaticOpenPreservesUnrelatedDatabase(t *testing.T) {
 	var result string
 	require.NoError(t, db.QueryRow(`select attr_id('k', 'v')`).Scan(&result))
 	require.Equal(t, "mine", result)
+}
+
+func TestResumeDoesNotRecreateDatabaseMovedAfterInspection(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		alias := filepath.Join(t.TempDir(), "alias")
+		require.NoError(t, os.Symlink(dir, alias))
+		dir = alias
+	}
+	path := filepath.Join(dir, "remembered.duckdb")
+	moved := filepath.Join(dir, "moved.duckdb")
+	s := newFileStore(t, path)
+	require.NoError(t, s.Close())
+
+	// Exercise the two production steps in order, moving the file exactly
+	// between the read-only inspection and the writable open.
+	require.NoError(t, inspectViewerFile(ctx, path))
+	require.NoError(t, os.Rename(path, moved))
+	journal := []byte("existing journal must not be removed")
+	require.NoError(t, os.WriteFile(path+".wal", journal, 0600))
+	original, err := os.ReadFile(moved)
+	require.NoError(t, err)
+	s, err = openStore(ctx, path, nil, true)
+	if s != nil {
+		require.NoError(t, s.Close())
+	}
+	require.ErrorContains(t, err, path)
+	_, err = os.Lstat(path)
+	require.ErrorIs(t, err, os.ErrNotExist, "resume created a replacement database")
+	remaining, err := os.ReadFile(path + ".wal")
+	require.NoError(t, err)
+	require.Equal(t, journal, remaining)
+	after, err := os.ReadFile(moved)
+	require.NoError(t, err)
+	require.Equal(t, original, after)
 }
 
 func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {

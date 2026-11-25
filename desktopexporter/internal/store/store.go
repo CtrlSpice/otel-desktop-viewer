@@ -94,7 +94,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 			commits.Close()
 		}
 	}()
-	connector, err := storeConnector(ctx, dbPath, commits)
+	connector, err := storeConnector(ctx, dbPath, commits, requireViewer)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
@@ -155,29 +155,34 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 	}, nil
 }
 
-func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer) (*duckdb.Connector, error) {
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, requireViewer bool) (*duckdb.Connector, error) {
 	// duckdb-go parses the DSN as a URL, but opens the original bytes.
 	// Encoding '%' as "%25" would therefore change the filename on disk.
-	if strings.Contains(path, "%") && !strings.Contains(path, "?") {
-		if _, err := url.Parse(path); err != nil {
-			var attach sync.Once
-			var attachErr error
-			return duckdb.NewConnector("", func(conn driver.ExecerContext) error {
-				attach.Do(func() {
-					_, attachErr = conn.ExecContext(ctx, "attach ? as viewer_file", []driver.NamedValue{{Ordinal: 1, Value: path}})
-				})
-				if attachErr != nil {
-					return attachErr
-				}
-				// Each connection must select the file before it can serve queries.
-				if _, err := conn.ExecContext(context.Background(), "use viewer_file", nil); err != nil {
-					return err
-				}
-				return commits.Init(conn)
-			})
-		}
+	_, parseErr := url.Parse(path)
+	if !requireViewer && !(parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")) {
+		return duckdb.NewConnector(path, commits.Init)
 	}
-	return duckdb.NewConnector(path, commits.Init)
+	var attach sync.Once
+	var attachErr error
+	return duckdb.NewConnector("", func(conn driver.ExecerContext) error {
+		if err := commits.Init(conn); err != nil {
+			return err
+		}
+		attach.Do(func() {
+			arg := []driver.NamedValue{{Ordinal: 1, Value: path}}
+			if requireViewer {
+				if _, attachErr = conn.ExecContext(ctx, "set otel_resume_file = ?", arg); attachErr != nil {
+					return
+				}
+			}
+			_, attachErr = conn.ExecContext(ctx, "attach ? as viewer_file", arg)
+		})
+		if attachErr != nil {
+			return attachErr
+		}
+		_, err := conn.ExecContext(context.Background(), "use viewer_file", nil)
+		return err
+	})
 }
 
 // Close closes the store and the underlying database connection.

@@ -1,3 +1,4 @@
+#include "duckdb/common/local_file_system.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_context_state.hpp"
 #include "duckdb/main/config.hpp"
@@ -33,6 +34,31 @@ void SetObserver(ClientContext &context, SetScope scope, Value &value) {
     context.registered_state->Insert("otel_commits", make_shared_ptr<CommitObserver>(value.GetValue<uint64_t>()));
 }
 
+// DuckDB tests FileExists before choosing its create path (and removing an old WAL).
+// Bind both spellings to the same path for the duration of this database instance.
+class ResumeFile final : public LocalFileSystem {
+public:
+    explicit ResumeFile(const string &path) : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)) {}
+
+    string GetName() const override { return "ViewerResumeFile"; }
+    bool CanHandleFile(const string &path) override { return path == input || path == canonical; }
+    string CanonicalizePath(const string &, optional_ptr<FileOpener>) override { return canonical; }
+
+    bool FileExists(const string &path, optional_ptr<FileOpener> opener) override {
+        if (!LocalFileSystem::FileExists(path, opener)) {
+            throw IOException("Cannot resume missing database: %s", input);
+        }
+        return true;
+    }
+
+private:
+    const string input, canonical;
+};
+
+void SetResumeFile(ClientContext &context, SetScope, Value &value) {
+    FileSystem::GetFileSystem(*context.db).RegisterSubSystem(make_uniq<ResumeFile>(value.GetValue<string>()));
+}
+
 void Load(ExtensionLoader &loader) {
     // This bridge uses C++ layouts. Refuse a different engine before accessing
     // them, even if its public version number is the same.
@@ -40,6 +66,8 @@ void Load(ExtensionLoader &loader) {
         throw InvalidInputException("otel_commits requires DuckDB source d54cbbe3df");
     }
     auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
+    config.AddExtensionOption("otel_resume_file", "Existing viewer database to reopen", LogicalType::VARCHAR,
+                              Value(LogicalType::VARCHAR), SetResumeFile);
     config.AddExtensionOption("otel_commit_observer", "Viewer commit observer", LogicalType::UBIGINT,
                               Value::UBIGINT(0), SetObserver);
 }
