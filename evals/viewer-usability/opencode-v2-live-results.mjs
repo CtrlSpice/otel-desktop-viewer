@@ -98,6 +98,7 @@ export async function beforeEach() {
 
 export async function finishLiveResults() {
   try {
+    active.signal?.throwIfAborted()
     const exported = readExport(path.join(active.dir,'../promptfoo.json'))
     if (active.pending) await publish(exported)
     assert.equal(active.count, exported.results.results.length)
@@ -144,8 +145,11 @@ export async function verifyLiveReadback(root,endpoint,signal) {
           typeof detail.hasMore === 'boolean' && Number.isSafeInteger(detail.nextAfter) && detail.nextAfter >= -1,'Invalid retained result page')
         const context = parseJSON(detail.contextJSON)
         assert.ok(typeof context?.evalId === 'string' && context.evalId===source.evalId,'Unexpected retained run')
+        let last = after
         for (const entry of detail.rows) {
           assert.ok(ordinal(entry?.ordinal) && typeof entry.json === 'string','Invalid retained result row')
+          assert.ok(entry.ordinal > last,'Invalid retained result order')
+          last = entry.ordinal
           const expected = group.get(entry.ordinal)
           // Hash the exact row JSON string, not a parsed and reserialized number.
           assert.ok(expected && !seen.has(expected.id) && sha(entry.json)===expected.digest,'Retained result digest mismatch')
@@ -154,10 +158,9 @@ export async function verifyLiveReadback(root,endpoint,signal) {
             row.id===expected.id && row.provider.id===expected.provider,'Unexpected retained result identity')
           seen.add(expected.id)
         }
+        assert.ok(detail.nextAfter === last && (!detail.hasMore || last > after),'Invalid retained result cursor')
         if (!detail.hasMore) break
-        assert.ok(detail.rows.length > 0 && detail.nextAfter === detail.rows.at(-1).ordinal &&
-          detail.nextAfter > after,'Invalid retained result cursor')
-        after=detail.nextAfter
+        after=last
       }
     }
     if (!page.hasMore) break

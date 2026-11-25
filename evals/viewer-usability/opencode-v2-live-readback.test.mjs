@@ -44,6 +44,8 @@ test('malformed readback fields fail with fixed diagnostics before they are used
     [receipt, [page,{...detail,hasMore:marker}], 'Invalid retained result page'],
     [receipt, [page,{...detail,hasMore:true,nextAfter:marker}], 'Invalid retained result page'],
     [receipt, [page,{...detail,hasMore:true,nextAfter:1}], 'Invalid retained result cursor'],
+    [receipt, [page,{...detail,nextAfter:1}], 'Invalid retained result cursor'],
+    [receipt, [page,{...detail,rows:[entry,entry]}], 'Invalid retained result order'],
     [receipt, [page,{...detail,contextJSON:[detail.contextJSON]}], 'Invalid retained result page'],
     [receipt, [page,{...detail,rows:[{...entry,json:{text:marker}}]}], 'Invalid retained result row'],
     [receipt, [page,{...detail,rows:[{...entry,ordinal:marker}]}], 'Invalid retained result row'],

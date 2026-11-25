@@ -67,6 +67,7 @@ test('a publication failure stops the next investigation and leaves the saved re
   try { await evaluate(config,{...config.evaluateOptions,share:false,abortSignal:controller.signal}) }
   catch (error) { assert.ok(controller.signal.aborted, String(error)) }
   assert.match(controller.signal.reason.message,/HTTP 502/)
+  await assert.rejects(finishLiveResults(), error => error === controller.signal.reason)
   assert.deepEqual(attempts,['one'])
   const dir = path.join(root,'published-results'), files = fs.readdirSync(dir)
   const saved = files.filter(f=>/^[a-f0-9-]{36}\.json$/.test(f))
