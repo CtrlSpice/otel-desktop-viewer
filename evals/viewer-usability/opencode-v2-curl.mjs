@@ -36,7 +36,7 @@ export function viewerRequest(args, endpoint) {
     else if (/^-[fsSiI]+$/.test(a)) {
       if (a.includes('I')) method = 'HEAD'
       flags.push(a.replaceAll('I',''))
-    } else if (a === '--max-time' && /^\d+(\.\d+)?$/.test(args[i+1])) flags.push(a,args[++i])
+    } else if ((a === '-m' || a === '--max-time') && /^\d+(\.\d+)?$/.test(args[i+1])) flags.push('--max-time',args[++i])
     else if (a === '-X' || a === '--request') method = args[++i]
     else if (a === '-H' || a === '--header') {
       if (!/^content-type:\s*application\/json$/i.test(args[++i])) throw Error('Expected JSON header')
