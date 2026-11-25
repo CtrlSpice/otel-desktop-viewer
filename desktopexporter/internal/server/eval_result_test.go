@@ -18,6 +18,25 @@ import (
 	"go.uber.org/zap"
 )
 
+func TestLiveResultChecksGroupingLimitBeforeClaim(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
+	require.NoError(t, err)
+	startEvalReceiver(t, s)
+	put := func(run string) int {
+		w := httptest.NewRecorder()
+		s.server.Handler.ServeHTTP(w, httptest.NewRequest("PUT", "/api/evals/runs/"+run+"/results/r", strings.NewReader(`{"id":"r","provider":{"id":"m"}}`)))
+		return w.Code
+	}
+	require.Equal(t, 400, put(strings.Repeat("x", 8193)))
+	var claims int
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from eval_result_claims`).Scan(&claims)
+	}))
+	require.Zero(t, claims)
+	require.Equal(t, 200, put(strings.Repeat("x", 8192)))
+}
+
 func TestLiveResultObservationWithoutLocalPUT(t *testing.T) {
 	const route = "/api/evals/runs/run/results/r1"
 	request := func(t *testing.T, s *Server, method, path, body string) []byte {

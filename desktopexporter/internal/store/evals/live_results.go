@@ -24,7 +24,7 @@ func LiveRowProvider(raw json.RawMessage, run, result string) (string, error) {
 	if id, present := row["evaluationId"]; present && sourceText(id) != run {
 		return "", fmt.Errorf("evaluationId differs from run ID")
 	}
-	_, err := (experimentProjector{}).row(raw, 0)
+	_, err := (experimentProjector{evaluationID: run}).row(raw, 0)
 	return provider, err
 }
 
