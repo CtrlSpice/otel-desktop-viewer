@@ -6,7 +6,9 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,7 +90,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 			commits.Close()
 		}
 	}()
-	connector, err := duckdb.NewConnector(dbPath, commits.Init)
+	connector, err := storeConnector(ctx, dbPath, commits)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
@@ -140,6 +142,31 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		logger:       logger,
 		schemaCompat: schemaCompat,
 	}, nil
+}
+
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer) (*duckdb.Connector, error) {
+	// duckdb-go parses the DSN as a URL, but opens the original bytes.
+	// Encoding '%' as "%25" would therefore change the filename on disk.
+	if strings.Contains(path, "%") && !strings.Contains(path, "?") {
+		if _, err := url.Parse(path); err != nil {
+			var attach sync.Once
+			var attachErr error
+			return duckdb.NewConnector("", func(conn driver.ExecerContext) error {
+				attach.Do(func() {
+					_, attachErr = conn.ExecContext(ctx, "attach ? as viewer_file", []driver.NamedValue{{Ordinal: 1, Value: path}})
+				})
+				if attachErr != nil {
+					return attachErr
+				}
+				// Each connection must select the file before it can serve queries.
+				if _, err := conn.ExecContext(context.Background(), "use viewer_file", nil); err != nil {
+					return err
+				}
+				return commits.Init(conn)
+			})
+		}
+	}
+	return duckdb.NewConnector(path, commits.Init)
 }
 
 // Close closes the store and the underlying database connection.

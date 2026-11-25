@@ -151,3 +151,48 @@ func TestManagedDatabaseLocationBeforeOpen(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0755), info.Mode().Perm())
 }
+
+func TestPercentPathsReopenExactDatabase(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "100% complete")
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Setenv("XDG_DATA_HOME", home)
+	dir, err := appDataDirectory()
+	require.NoError(t, err)
+	ctx := t.Context()
+	use := func(arg, want, label string, write bool) {
+		t.Helper()
+		e := &DuckDBExtension{cfg: &Config{Db: arg, Endpoint: "127.0.0.1:0"}, logger: zap.NewNop()}
+		require.NoError(t, e.Start(ctx, componenttest.NewNopHost()))
+		defer func() { require.NoError(t, e.Shutdown(ctx)) }()
+		require.NoError(t, e.Ready())
+		require.NoError(t, e.Store().WithDBWrite(func(db *sql.DB) error {
+			file, err := os.Stat(want)
+			require.NoError(t, err)
+			if write {
+				_, err = db.Exec(`create table marker as select ? as label`, label)
+				require.NoError(t, err)
+			}
+			// Hold both connections so the second one cannot reuse the first.
+			for range 2 {
+				conn, err := db.Conn(ctx)
+				require.NoError(t, err)
+				defer conn.Close()
+				var opened, stored string
+				err = conn.QueryRowContext(ctx, `select path, label from duckdb_databases(), marker where database_name = current_database()`).Scan(&opened, &stored)
+				require.NoError(t, err)
+				actual, err := os.Stat(opened)
+				require.NoError(t, err)
+				require.True(t, os.SameFile(file, actual))
+				require.Equal(t, label, stored)
+			}
+			return nil
+		}))
+	}
+	first := filepath.Join(dir, "current.duckdb")
+	other := filepath.Join(dir, "O'Brien 50%.duckdb")
+	use("", first, "first", true)
+	use("", first, "first", false)
+	use(other, other, "second", true)
+	use("", other, "second", false)
+}
