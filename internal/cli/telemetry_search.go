@@ -217,6 +217,48 @@ func decodeTelemetryRows(summaries []json.RawMessage, fields []string) ([][]any,
 	return rows, nil
 }
 
+func writeProjectedSearchResult(writer io.Writer, result telemetrySearchResult, fields []string, jsonOutput bool) error {
+	if jsonOutput {
+		summaries, err := projectSummaryFields(result.Summaries, fields)
+		if err != nil {
+			return fmt.Errorf("prepare summary JSON output: %w", err)
+		}
+		result.Summaries = summaries
+	}
+	return writeTelemetrySearchResult(writer, result, fields, jsonOutput)
+}
+
+func projectSummaryFields(summaries []json.RawMessage, fields []string) ([]json.RawMessage, error) {
+	projected := make([]json.RawMessage, len(summaries))
+	for index, summary := range summaries {
+		values := make(map[string]json.RawMessage, len(fields))
+		if err := json.Unmarshal(summary, &values); err != nil {
+			return nil, fmt.Errorf("decode summary %d: %w", index, err)
+		}
+		var output bytes.Buffer
+		output.WriteByte('{')
+		for fieldIndex, field := range fields {
+			value, ok := values[field]
+			if !ok {
+				return nil, fmt.Errorf("summary %d is missing field %q", index, field)
+			}
+			if fieldIndex > 0 {
+				output.WriteByte(',')
+			}
+			encodedField, err := json.Marshal(field)
+			if err != nil {
+				return nil, err
+			}
+			output.Write(encodedField)
+			output.WriteByte(':')
+			output.Write(value)
+		}
+		output.WriteByte('}')
+		projected[index] = output.Bytes()
+	}
+	return projected, nil
+}
+
 func writeTelemetrySearchResult(writer io.Writer, result telemetrySearchResult, fields []string, jsonOutput bool) error {
 	if jsonOutput {
 		if _, err := io.WriteString(writer, "["); err != nil {
