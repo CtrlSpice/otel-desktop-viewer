@@ -63,6 +63,7 @@ func TestRestartUsesLastActiveDatabase(t *testing.T) {
 		e := &DuckDBExtension{cfg: &Config{Db: path, Endpoint: "127.0.0.1:0"}, logger: zap.NewNop()}
 		require.NoError(t, e.Start(ctx, componenttest.NewNopHost()))
 		defer func() { require.NoError(t, e.Shutdown(ctx)) }()
+		require.NoError(t, e.Ready())
 		require.NoError(t, e.Store().WithDBWrite(use))
 	}
 	mark := func(label string) func(*sql.DB) error {

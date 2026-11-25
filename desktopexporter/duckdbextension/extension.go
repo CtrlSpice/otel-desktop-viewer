@@ -42,6 +42,7 @@ type DuckDBExtension struct {
 
 	store  *store.Store
 	server *server.Server
+	dbPath string
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
@@ -100,12 +101,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		str.Close()
 		return err
 	}
-	if err := rememberDatabase(path); err != nil {
-		_ = srv.Shutdown(ctx)
-		_ = str.Close()
-		return fmt.Errorf("remember telemetry database: %w", err)
-	}
-
+	e.dbPath = path
 	e.store = str
 	e.server = srv
 	if features.EvalsBuilt {
@@ -122,6 +118,16 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	}
 	return nil
 }
+
+// Ready is called by the collector after all pipeline receivers have started.
+func (e *DuckDBExtension) Ready() error {
+	if err := rememberDatabase(e.dbPath); err != nil {
+		return fmt.Errorf("remember telemetry database: %w", err)
+	}
+	return nil
+}
+
+func (*DuckDBExtension) NotReady() error { return nil }
 
 func (e *DuckDBExtension) Shutdown(ctx context.Context) error {
 	// Stop the retention loop and wait for any in-flight enforcement pass,
