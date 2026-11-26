@@ -329,6 +329,53 @@ func TestCrashDuringManagedDatabaseSwitch(t *testing.T) {
 	}
 }
 
+func TestCollectorRecoversCommittedLogsThroughAnotherHardLink(t *testing.T) {
+	ctx := t.Context()
+	start := func(path string) *DuckDBExtension {
+		t.Helper()
+		e := &DuckDBExtension{cfg: &Config{Endpoint: "127.0.0.1:0", Db: path}, logger: zap.NewNop()}
+		require.NoError(t, e.Start(ctx, componenttest.NewNopHost()))
+		require.NoError(t, e.Ready())
+		return e
+	}
+	const env = "VIEWER_TEST_ALIAS_PATH"
+	if path := os.Getenv(env); path != "" {
+		e := start(path)
+		batch := plog.NewLogs()
+		batch.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetSeverityText(filepath.Base(path))
+		require.NoError(t, e.Store().WithConn(func(c driver.Conn) error { return logs.Ingest(ctx, c, batch) }))
+		os.Exit(0) // Do not run DuckDB shutdown or checkpoint the committed log.
+	}
+	home := t.TempDir()
+	for _, key := range []string{"HOME", "XDG_DATA_HOME", "LOCALAPPDATA"} {
+		t.Setenv(key, home)
+	}
+	a := filepath.Join(t.TempDir(), "first.duckdb")
+	b := filepath.Join(t.TempDir(), "second.duckdb")
+	e := start(a)
+	require.NoError(t, e.Shutdown(ctx))
+	require.NoError(t, os.Link(a, b))
+	for _, path := range []string{a, b} {
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCollectorRecoversCommittedLogsThroughAnotherHardLink$")
+		cmd.Env = append(os.Environ(), env+"="+path)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		wal, err := os.Stat(path + ".wal")
+		require.NoError(t, err)
+		require.Positive(t, wal.Size())
+	}
+	for _, path := range []string{a, b} {
+		e = start(path)
+		var labels, catalog string
+		require.NoError(t, e.Store().WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select current_database(), string_agg(severity_text, ',' order by severity_text) from logs`).Scan(&catalog, &labels)
+		}))
+		require.Equal(t, filepath.Base(path[:len(path)-len(".duckdb")]), catalog)
+		require.Equal(t, "first.duckdb,second.duckdb", labels)
+		require.NoError(t, e.Shutdown(ctx))
+	}
+}
+
 func TestPercentPathsReopenExactDatabase(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "100% complete")
 	t.Setenv("HOME", home)

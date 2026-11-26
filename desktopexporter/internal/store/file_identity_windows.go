@@ -63,3 +63,7 @@ func pinViewerFile(path string) (*viewerFile, error) {
 	return &viewerFile{os.NewFile(uintptr(h), path), fileIdentity{uint64(info.VolumeSerialNumber),
 		uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)}}, nil
 }
+
+func lockWriterRecord(f *os.File) error {
+	return windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &windows.Overlapped{})
+}

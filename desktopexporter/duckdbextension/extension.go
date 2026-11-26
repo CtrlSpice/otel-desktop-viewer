@@ -13,6 +13,7 @@ package duckdbextension
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -73,11 +74,23 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	if err != nil {
 		return fmt.Errorf("resolve telemetry database: %w", err)
 	}
+	dir, err := appDataDirectory()
+	if err != nil {
+		return err
+	}
+	settings := filepath.Join(dir, settingsFolder)
+	recovery := filepath.Join(settings, "writers")
+	for _, d := range []string{dir, settings, recovery} {
+		if err := ensurePrivateDirectory(d); err != nil {
+			return err
+		}
+	}
+	files := store.CaptureFiles{RecoveryDir: recovery}
 	var str *store.Store
 	if e.cfg.Db == "" {
-		str, err = store.OpenViewerDatabase(ctx, path, createDefault, e.logger)
+		str, err = files.OpenViewerDatabase(ctx, path, createDefault, e.logger)
 	} else {
-		str, err = store.OpenExplicitDatabase(ctx, path, e.logger)
+		str, err = files.OpenExplicitDatabase(ctx, path, e.logger)
 	}
 	if err != nil {
 		return fmt.Errorf("open telemetry database %s: %w", path, err)

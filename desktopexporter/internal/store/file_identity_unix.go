@@ -36,3 +36,7 @@ func pinViewerFile(path string) (*viewerFile, error) {
 	}
 	return &viewerFile{f, unixFileIdentity(info)}, nil
 }
+
+func lockWriterRecord(f *os.File) error {
+	return syscall.FcntlFlock(f.Fd(), syscall.F_SETLK, &syscall.Flock_t{Type: syscall.F_WRLCK})
+}

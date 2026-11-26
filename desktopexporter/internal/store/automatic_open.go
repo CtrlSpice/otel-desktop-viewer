@@ -17,10 +17,19 @@ import (
 // OpenViewerDatabase reopens a recognized viewer database. Only the first
 // launch may create one.
 func OpenViewerDatabase(ctx context.Context, path string, createDefault bool, logger *zap.Logger) (*Store, error) {
+	return CaptureFiles{}.OpenViewerDatabase(ctx, path, createDefault, logger)
+}
+
+type CaptureFiles struct {
+	RecoveryDir string
+}
+
+func (files CaptureFiles) OpenViewerDatabase(ctx context.Context, path string, createDefault bool, logger *zap.Logger) (*Store, error) {
 	e, err := newCaptureEngine(ctx, path)
 	if err != nil {
 		return nil, err
 	}
+	e.files = files
 	if createDefault {
 		if err := createViewerDatabaseOn(ctx, path, logger, e); err != nil && !errors.Is(err, os.ErrExist) {
 			e.close()
@@ -49,10 +58,15 @@ func (e *captureEngine) openExisting(ctx context.Context, path string, logger *z
 // OpenExplicitDatabase keeps --db's schema and creation rules while allowing
 // the collector to switch away from its first file without closing the engine.
 func OpenExplicitDatabase(ctx context.Context, path string, logger *zap.Logger) (*Store, error) {
+	return CaptureFiles{}.OpenExplicitDatabase(ctx, path, logger)
+}
+
+func (files CaptureFiles) OpenExplicitDatabase(ctx context.Context, path string, logger *zap.Logger) (*Store, error) {
 	e, err := newCaptureEngine(ctx, path)
 	if err != nil {
 		return nil, err
 	}
+	e.files = files
 	s, err := openFileStore(path, false, func() (*Store, error) {
 		f := &inspectedFile{engine: e}
 		pin, err := pinUnownedFile(path)
@@ -69,8 +83,11 @@ func OpenExplicitDatabase(ctx context.Context, path string, logger *zap.Logger) 
 			}
 		}
 		f.viewerFile = pin
+		if err := f.recoverWriter(ctx); err != nil {
+			return nil, errors.Join(err, f.finish(nil))
+		}
 		if err := pin.guard(ctx, e.control); err != nil {
-			return nil, errors.Join(err, pin.Close())
+			return nil, errors.Join(err, f.finish(nil))
 		}
 		f.guarded = true
 		if err := f.attach(ctx, path, ""); err != nil {
@@ -226,12 +243,14 @@ type inspectedFile struct {
 	attached   bool
 	recognized bool
 	catalog    string // quoted DuckDB identifier, derived by ATTACH
+	writer     *writerRecord
 }
 
 type captureEngine struct {
 	*duckdb.Connector
 	control  *sql.DB
 	retained []retainedFile
+	files    CaptureFiles
 }
 
 type retainedFile struct {
@@ -244,6 +263,9 @@ func (e *captureEngine) close() error {
 	for _, entry := range e.retained {
 		if entry.file.viewerFile != nil {
 			err = errors.Join(err, entry.file.File.Close())
+		}
+		if entry.file.writer != nil {
+			err = errors.Join(err, entry.file.writer.release(false))
 		}
 		if entry.owner != nil {
 			entry.owner.release()
@@ -277,6 +299,9 @@ func (e *captureEngine) inspectFile(ctx context.Context, path string) (*inspecte
 		return nil, err
 	}
 	inspected := &inspectedFile{viewerFile: file, engine: e}
+	if err := inspected.recoverWriter(ctx); err != nil {
+		return nil, errors.Join(err, inspected.finish(nil))
+	}
 	if err := inspected.inspect(ctx, path); err != nil {
 		return nil, errors.Join(err, inspected.finish(nil))
 	}
@@ -291,7 +316,11 @@ type viewerFile struct {
 }
 
 func (file *viewerFile) guard(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint, fd := ?::ubigint)", file.Name(), file.device, file.id, uint64(file.Fd()))
+	return file.guardName(ctx, db, file.Name())
+}
+
+func (file *viewerFile) guardName(ctx context.Context, db *sql.DB, name string) error {
+	_, err := db.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint, fd := ?::ubigint)", name, file.device, file.id, uint64(file.Fd()))
 	if err == nil {
 		_, err = db.ExecContext(ctx, "set otel_resume_file = getvariable('viewer_identity')")
 	}
@@ -369,14 +398,13 @@ func (f *inspectedFile) close() error {
 		return detachErr
 	}
 	if f.guarded {
-		db := f.engine.control
-		if _, err := db.Exec("set variable viewer_identity = struct_pack(path := ?::varchar, device := null::ubigint, file := null::ubigint, fd := null::ubigint)", f.Name()); err != nil {
+		if err := f.unguard(); err != nil {
 			return errors.Join(detachErr, err)
 		}
-		if _, err := db.Exec("set otel_resume_file = getvariable('viewer_identity')"); err != nil {
-			return errors.Join(detachErr, err)
-		}
-		f.guarded = false
+	}
+	if f.writer != nil {
+		detachErr = errors.Join(detachErr, f.writer.release(detachErr == nil))
+		f.writer = nil
 	}
 	if f.viewerFile != nil {
 		err := f.File.Close()
@@ -384,6 +412,22 @@ func (f *inspectedFile) close() error {
 		return errors.Join(detachErr, err)
 	}
 	return detachErr
+}
+
+func (f *inspectedFile) unguard() error {
+	name := f.Name()
+	if f.writer != nil && f.writer.replaying != "" {
+		name = f.writer.replaying
+	}
+	db := f.engine.control
+	if _, err := db.Exec("set variable viewer_identity = struct_pack(path := ?::varchar, device := null::ubigint, file := null::ubigint, fd := null::ubigint)", name); err != nil {
+		return err
+	}
+	if _, err := db.Exec("set otel_resume_file = getvariable('viewer_identity')"); err != nil {
+		return err
+	}
+	f.guarded = false
+	return nil
 }
 
 func (f *inspectedFile) finish(owner *fileOwner) error {
@@ -455,8 +499,10 @@ func createViewerDatabaseOn(ctx context.Context, path string, logger *zap.Logger
 
 // Creating a new main file can make DuckDB discard or replay a previous
 // capture's WAL. An existing recovery file belongs with its original capture.
+var recoverySuffixes = [...]string{".wal", ".wal.checkpoint", ".wal.recovery"}
+
 func checkRecoveryFiles(path string) error {
-	for _, suffix := range []string{".wal", ".wal.checkpoint", ".wal.recovery"} {
+	for _, suffix := range recoverySuffixes {
 		journal := path + suffix
 		if _, err := os.Lstat(journal); err == nil {
 			return fmt.Errorf("cannot create %s: existing recovery file %s", path, journal)
