@@ -6,7 +6,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,22 +228,8 @@ func createViewerDatabase(ctx context.Context, path string, logger *zap.Logger) 
 	if err := s.Close(); err != nil {
 		return err
 	}
-	// A hard link publishes the complete, closed database in one step.
-	err = os.Link(staged, path)
-	if err == nil || errors.Is(err, os.ErrExist) {
-		return err
+	if err := publishNewDatabase(staged, path); err != nil {
+		return fmt.Errorf("publish complete database at %s without replacing an existing file: %w", path, err)
 	}
-	// Some app-data volumes do not support hard links. Still never replace
-	// an existing destination on these filesystems.
-	src, err := os.Open(staged)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	dst, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(dst, src)
-	return errors.Join(err, dst.Close())
+	return nil
 }

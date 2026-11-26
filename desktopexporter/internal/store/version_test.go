@@ -506,6 +506,20 @@ func TestManagedReopenRecoversCommittedRowUnderOriginalCatalog(t *testing.T) {
 	require.Equal(t, 42, value)
 }
 
+func TestPublishNewDatabaseRefusesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	staged := filepath.Join(dir, "staged")
+	path := filepath.Join(dir, "capture.duckdb")
+	require.NoError(t, os.WriteFile(staged, []byte("first complete capture"), 0600))
+	require.NoError(t, publishNewDatabase(staged, path))
+	other := filepath.Join(dir, "other")
+	require.NoError(t, os.WriteFile(other, []byte("second complete capture"), 0600))
+	require.ErrorIs(t, publishNewDatabase(other, path), os.ErrExist)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "first complete capture", string(got))
+}
+
 func TestResumeDoesNotRecreateDatabaseMovedAfterInspection(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

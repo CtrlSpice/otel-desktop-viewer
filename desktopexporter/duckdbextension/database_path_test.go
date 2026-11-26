@@ -2,14 +2,19 @@ package duckdbextension
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
 )
 
@@ -249,6 +254,79 @@ func TestManagedOpenAndNewSurviveCollectorRestart(t *testing.T) {
 	require.NoError(t, e.Shutdown(ctx))
 	e = start()
 	require.Equal(t, "checkout", read())
+}
+
+func TestCrashDuringManagedDatabaseSwitch(t *testing.T) {
+	const env = "VIEWER_TEST_SWITCH_EXIT"
+	ctx := t.Context()
+	open := func(path string, create bool) *store.Store {
+		t.Helper()
+		s, err := store.OpenViewerDatabase(ctx, path, create, nil)
+		require.NoError(t, err)
+		return s
+	}
+	if phase := os.Getenv(env); phase != "" {
+		first, create, err := databasePath("")
+		require.NoError(t, err)
+		active := open(first, create)
+		require.NoError(t, rememberDatabase(first))
+		writeBatch := func(label string) {
+			t.Helper()
+			batch := plog.NewLogs()
+			batch.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetSeverityText(label)
+			require.NoError(t, active.WithConn(func(c driver.Conn) error { return logs.Ingest(ctx, c, batch) }))
+		}
+		writeBatch("before")
+		second := filepath.Join(filepath.Dir(first), "checkout.duckdb")
+		require.NoError(t, active.CreateDatabase(ctx, second, func() error {
+			if phase == "before-remember" {
+				os.Exit(0)
+			}
+			require.NoError(t, rememberDatabase(second))
+			if phase == "after-remember" {
+				os.Exit(0)
+			}
+			return nil
+		}))
+		writeBatch("after")
+		os.Exit(0)
+	}
+	for _, phase := range []string{"before-remember", "after-remember", "after-ingest"} {
+		t.Run(phase, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_DATA_HOME", home)
+			t.Setenv("LOCALAPPDATA", home)
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCrashDuringManagedDatabaseSwitch$")
+			cmd.Env = append(os.Environ(), env+"="+phase)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			selected, create, err := databasePath("")
+			require.NoError(t, err)
+			require.False(t, create)
+			want := "checkout.duckdb"
+			if phase == "before-remember" {
+				want = "current.duckdb"
+			}
+			require.Equal(t, want, filepath.Base(selected))
+			for _, name := range []string{"current.duckdb", "checkout.duckdb"} {
+				s := open(filepath.Join(filepath.Dir(selected), name), false)
+				var batches string
+				require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+					return db.QueryRow(`select coalesce(string_agg(severity_text, ',' order by severity_text), '') from logs`).Scan(&batches)
+				}))
+				require.NoError(t, s.Close())
+				switch {
+				case name == "current.duckdb":
+					require.Equal(t, "before", batches)
+				case phase == "after-ingest":
+					require.Equal(t, "after", batches)
+				default:
+					require.Empty(t, batches)
+				}
+			}
+		})
+	}
 }
 
 func TestPercentPathsReopenExactDatabase(t *testing.T) {
