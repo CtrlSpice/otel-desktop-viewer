@@ -103,6 +103,9 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 	if active == "" || !filepath.IsAbs(path) {
 		return errors.New("database selection requires an absolute file path and a file-backed store")
 	}
+	if err := checkDuckDBPath(path); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -221,6 +224,9 @@ type captureEngine struct {
 }
 
 func newCaptureEngine(ctx context.Context, path string) (*captureEngine, error) {
+	if err := checkDuckDBPath(path); err != nil {
+		return nil, err
+	}
 	connector, err := duckdb.NewConnector(attachedDatabaseDSN(path), nil)
 	if err != nil {
 		return nil, err

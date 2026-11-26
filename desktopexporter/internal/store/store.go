@@ -93,9 +93,24 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if err != nil {
 		return nil, err
 	}
+	if err := checkDuckDBPath(path); err != nil {
+		return nil, err
+	}
 	return openFileStore(path, !needsLiteralAttach(path), func() (*Store, error) {
 		return openStore(ctx, path, logger, nil)
 	})
+}
+
+// DuckDB treats backslashes as separators even on Unix and interprets a
+// question mark in a path when deriving auxiliary filenames such as the WAL.
+func checkDuckDBPath(path string) error {
+	if filepath.Separator != '\\' && strings.Contains(path, `\`) {
+		return fmt.Errorf("DuckDB cannot open this literal path: backslash is interpreted as a directory separator: %s", path)
+	}
+	if strings.Contains(path, "?") {
+		return fmt.Errorf("DuckDB cannot open this literal path: question mark in database path: %s", path)
+	}
+	return nil
 }
 
 // openStore takes ownership of pin on both success and failure.

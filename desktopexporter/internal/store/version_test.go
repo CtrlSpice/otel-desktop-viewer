@@ -506,6 +506,21 @@ func TestManagedReopenRecoversCommittedRowUnderOriginalCatalog(t *testing.T) {
 	require.Equal(t, 42, value)
 }
 
+func TestExplicitOpenDoesNotCreateAFileAtAnotherSpelling(t *testing.T) {
+	if filepath.Separator == '\\' {
+		t.Skip("backslash is the native directory separator")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "build"), 0700))
+	literal := filepath.Join(dir, `build\run.duckdb`)
+	_, err := OpenExplicitDatabase(t.Context(), literal, nil)
+	require.ErrorContains(t, err, "backslash")
+	require.NoFileExists(t, literal)
+	files, err := os.ReadDir(filepath.Join(dir, "build"))
+	require.NoError(t, err)
+	require.Empty(t, files)
+}
+
 func TestPublishNewDatabaseRefusesExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	staged := filepath.Join(dir, "staged")
