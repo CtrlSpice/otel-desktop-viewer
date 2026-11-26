@@ -55,19 +55,24 @@ func OpenExplicitDatabase(ctx context.Context, path string, logger *zap.Logger) 
 	}
 	s, err := openFileStore(path, false, func() (*Store, error) {
 		f := &inspectedFile{engine: e}
-		pin, err := pinViewerFile(path)
+		pin, err := pinUnownedFile(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
-		if pin != nil {
-			f.viewerFile = pin
-			if err := pin.guard(ctx, e.control); err != nil {
-				return nil, errors.Join(err, pin.Close())
+		if pin == nil {
+			if err := createViewerDatabaseOn(ctx, path, logger, e); err != nil {
+				return nil, err
 			}
-			f.guarded = true
-		} else if err := checkRecoveryFiles(path); err != nil {
-			return nil, err
+			pin, err = pinUnownedFile(path)
+			if err != nil {
+				return nil, err
+			}
 		}
+		f.viewerFile = pin
+		if err := pin.guard(ctx, e.control); err != nil {
+			return nil, errors.Join(err, pin.Close())
+		}
+		f.guarded = true
 		if err := f.attach(ctx, path, ""); err != nil {
 			return nil, errors.Join(err, f.finish(nil))
 		}
@@ -267,7 +272,7 @@ func newCaptureEngine(ctx context.Context, path string) (*captureEngine, error) 
 }
 
 func (e *captureEngine) inspectFile(ctx context.Context, path string) (*inspectedFile, error) {
-	file, err := pinViewerFile(path)
+	file, err := pinUnownedFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +291,7 @@ type viewerFile struct {
 }
 
 func (file *viewerFile) guard(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint)", file.Name(), file.device, file.id)
+	_, err := db.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint, fd := ?::ubigint)", file.Name(), file.device, file.id, uint64(file.Fd()))
 	if err == nil {
 		_, err = db.ExecContext(ctx, "set otel_resume_file = getvariable('viewer_identity')")
 	}
@@ -365,7 +370,7 @@ func (f *inspectedFile) close() error {
 	}
 	if f.guarded {
 		db := f.engine.control
-		if _, err := db.Exec("set variable viewer_identity = struct_pack(path := ?::varchar, device := null::ubigint, file := null::ubigint)", f.Name()); err != nil {
+		if _, err := db.Exec("set variable viewer_identity = struct_pack(path := ?::varchar, device := null::ubigint, file := null::ubigint, fd := null::ubigint)", f.Name()); err != nil {
 			return errors.Join(detachErr, err)
 		}
 		if _, err := db.Exec("set otel_resume_file = getvariable('viewer_identity')"); err != nil {

@@ -714,6 +714,23 @@ func checkExternalWriter(t *testing.T, path, want string) {
 	require.NoError(t, err, "%s", out)
 }
 
+func TestRejectedPinKeepsWriterLockedUntilClose(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "capture.duckdb")
+	active, err := OpenViewerDatabase(ctx, path, true, nil)
+	require.NoError(t, err)
+	defer active.Close()
+	// Exercise the post-open identity check, independent of the preliminary
+	// pathname check. A second descriptor must not shorten the writer lock.
+	openFiles.Lock()
+	_, err = pinUnownedFile(path)
+	openFiles.Unlock()
+	require.ErrorIs(t, err, ErrFileInUse)
+	checkExternalWriter(t, path, "locked")
+	require.NoError(t, active.Close())
+	checkExternalWriter(t, path, "available")
+}
+
 func TestExternalWriterProbe(t *testing.T) {
 	path := os.Getenv("VIEWER_TEST_WRITER_PATH")
 	if path == "" {

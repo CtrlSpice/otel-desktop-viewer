@@ -38,8 +38,9 @@ void SetObserver(ClientContext &context, SetScope scope, Value &value) {
 // Bind both spellings to the same path for the duration of this database instance.
 class ResumeFile final : public LocalFileSystem {
 public:
-    ResumeFile(const string &path, idx_t device, idx_t file)
-        : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)), device(device), file(file) {}
+    ResumeFile(const string &path, idx_t device, idx_t file, idx_t fd)
+        : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)), device(device), file(file),
+          descriptor("/dev/fd/" + to_string(fd)) {}
 
     string GetName() const override { return "ViewerResumeFile:" + input; }
     bool CanHandleFile(const string &path) override { return path == input || path == canonical; }
@@ -54,7 +55,17 @@ public:
 
     unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags, optional_ptr<FileOpener> opener) override {
         // Check the opened handle, not the pathname, before DuckDB can replay the WAL.
+#ifdef _WIN32
         auto handle = LocalFileSystem::OpenFile(path, flags, opener);
+#else
+        // Never open or lock a different inode, even when the name changes
+        // after stat. WAL naming continues to use the original attachment path.
+        auto named = GetStatsIfExists(OpenFileInfo(path), opener);
+        if (!named || named->device_id != device || named->file_id != file) {
+            throw IOException("Cannot resume %s: database file changed", input);
+        }
+        auto handle = LocalFileSystem::OpenFile(descriptor, flags, opener);
+#endif
         if (handle) {
             auto stats = handle->Stats();
             if (stats.device_id != device || stats.file_id != file) {
@@ -67,6 +78,7 @@ public:
 private:
     const string input, canonical;
     const optional_idx device, file;
+    const string descriptor;
 };
 
 void SetResumeFile(ClientContext &context, SetScope, Value &value) {
@@ -78,7 +90,8 @@ void SetResumeFile(ClientContext &context, SetScope, Value &value) {
         return;
     }
     fs.RegisterSubSystem(make_uniq<ResumeFile>(
-        fields[0].GetValue<string>(), fields[1].GetValue<uint64_t>(), fields[2].GetValue<uint64_t>()));
+        fields[0].GetValue<string>(), fields[1].GetValue<uint64_t>(), fields[2].GetValue<uint64_t>(),
+        fields[3].GetValue<uint64_t>()));
 }
 
 void Load(ExtensionLoader &loader) {
@@ -89,7 +102,7 @@ void Load(ExtensionLoader &loader) {
     }
     auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
     auto identity = LogicalType::STRUCT({{"path", LogicalType::VARCHAR}, {"device", LogicalType::UBIGINT},
-                                         {"file", LogicalType::UBIGINT}});
+                                         {"file", LogicalType::UBIGINT}, {"fd", LogicalType::UBIGINT}});
     config.AddExtensionOption("otel_resume_file", "Existing viewer database to reopen", identity,
                               Value(identity), SetResumeFile);
     config.AddExtensionOption("otel_commit_observer", "Viewer commit observer", LogicalType::UBIGINT,

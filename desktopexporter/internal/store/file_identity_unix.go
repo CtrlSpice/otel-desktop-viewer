@@ -23,7 +23,9 @@ func unixFileIdentity(info os.FileInfo) fileIdentity {
 }
 
 func pinViewerFile(path string) (*viewerFile, error) {
-	f, err := os.Open(path)
+	// Native inspection and writable attachment reopen this pin rather than
+	// opening the pathname a second time.
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
 	}

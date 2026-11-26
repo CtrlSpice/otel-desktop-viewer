@@ -21,7 +21,10 @@ type fileOwner struct {
 var openFiles = struct {
 	sync.Mutex
 	owners map[*fileOwner]struct{}
-}{owners: make(map[*fileOwner]struct{})}
+	// A Unix pin that unexpectedly opened an owned inode cannot close until
+	// its last writer does: closing any descriptor releases process locks.
+	extraPins map[fileIdentity][]*os.File
+}{owners: make(map[*fileOwner]struct{}), extraPins: make(map[fileIdentity][]*os.File)}
 
 var ErrFileInUse = errors.New("database file already open in this process")
 
@@ -59,4 +62,29 @@ func (o *fileOwner) release() {
 	openFiles.Lock()
 	defer openFiles.Unlock()
 	delete(openFiles.owners, o)
+	for other := range openFiles.owners {
+		if other.identity == o.identity {
+			return
+		}
+	}
+	for _, f := range openFiles.extraPins[o.identity] {
+		f.Close()
+	}
+	delete(openFiles.extraPins, o.identity)
+}
+
+// The caller holds openFiles during the pathname check and open. A rename by
+// another process can still change which file this descriptor actually pins.
+func pinUnownedFile(path string) (*viewerFile, error) {
+	f, err := pinViewerFile(path)
+	if err != nil {
+		return nil, err
+	}
+	for owner := range openFiles.owners {
+		if owner.identity == f.fileIdentity {
+			openFiles.extraPins[f.fileIdentity] = append(openFiles.extraPins[f.fileIdentity], f.File)
+			return nil, fmt.Errorf("%w: %s (active as %s)", ErrFileInUse, path, owner.path)
+		}
+	}
+	return f, nil
 }
