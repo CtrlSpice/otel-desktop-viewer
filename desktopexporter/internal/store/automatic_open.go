@@ -65,6 +65,8 @@ func OpenExplicitDatabase(ctx context.Context, path string, logger *zap.Logger) 
 				return nil, errors.Join(err, pin.Close())
 			}
 			f.guarded = true
+		} else if err := checkRecoveryFiles(path); err != nil {
+			return nil, err
 		}
 		if err := f.attach(ctx, path, ""); err != nil {
 			return nil, errors.Join(err, f.close())
@@ -373,8 +375,30 @@ func createViewerDatabaseOn(ctx context.Context, path string, logger *zap.Logger
 	if err := s.Close(); err != nil {
 		return err
 	}
+	if _, err := os.Lstat(path); err == nil {
+		return &os.PathError{Op: "create", Path: path, Err: os.ErrExist}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := checkRecoveryFiles(path); err != nil {
+		return err
+	}
 	if err := publishNewDatabase(staged, path); err != nil {
 		return fmt.Errorf("publish complete database at %s without replacing an existing file: %w", path, err)
+	}
+	return nil
+}
+
+// Creating a new main file can make DuckDB discard or replay a previous
+// capture's WAL. An existing recovery file belongs with its original capture.
+func checkRecoveryFiles(path string) error {
+	for _, suffix := range []string{".wal", ".wal.checkpoint", ".wal.recovery"} {
+		journal := path + suffix
+		if _, err := os.Lstat(journal); err == nil {
+			return fmt.Errorf("cannot create %s: existing recovery file %s", path, journal)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	return nil
 }

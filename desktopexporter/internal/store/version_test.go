@@ -521,6 +521,26 @@ func TestExplicitOpenDoesNotCreateAFileAtAnotherSpelling(t *testing.T) {
 	require.Empty(t, files)
 }
 
+func TestCreationPreservesOrphanedRecoveryFiles(t *testing.T) {
+	ctx := t.Context()
+	for _, suffix := range []string{".wal", ".wal.checkpoint", ".wal.recovery"} {
+		t.Run(suffix, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "current.duckdb")
+			journal := path + suffix
+			require.NoError(t, os.WriteFile(journal, []byte("original recovery data"), 0600))
+			_, err := OpenViewerDatabase(ctx, path, true, nil)
+			require.ErrorContains(t, err, journal)
+			_, err = OpenExplicitDatabase(ctx, path, nil)
+			require.ErrorContains(t, err, journal)
+			_, err = os.Lstat(path)
+			require.ErrorIs(t, err, os.ErrNotExist)
+			data, err := os.ReadFile(journal)
+			require.NoError(t, err)
+			require.Equal(t, "original recovery data", string(data))
+		})
+	}
+}
+
 func TestPublishNewDatabaseRefusesExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	staged := filepath.Join(dir, "staged")
