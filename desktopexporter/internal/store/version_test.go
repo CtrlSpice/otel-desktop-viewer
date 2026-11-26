@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -538,6 +540,134 @@ func TestResumeRejectsReplacementBeforeJournalRecovery(t *testing.T) {
 	remaining, err := os.ReadFile(path + ".wal")
 	require.NoError(t, err)
 	require.Equal(t, journal, remaining)
+}
+
+func TestPhysicalFileHasOneWriterAcrossNames(t *testing.T) {
+	for _, mode := range []string{"direct", "resume", "literal percent"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "original.duckdb")
+			if mode == "literal percent" {
+				path = filepath.Join(dir, "100% original.duckdb")
+			}
+			require.NoError(t, newFileStore(t, path).Close())
+			alias := filepath.Join(dir, "alias.duckdb")
+			require.NoError(t, os.Link(path, alias))
+			var active *Store
+			var err error
+			if mode == "resume" {
+				active, err = OpenViewerDatabase(t.Context(), path, false, nil)
+			} else {
+				active, err = NewStore(t.Context(), path, nil)
+			}
+			require.NoError(t, err)
+			defer active.Close()
+			before, changed, _ := active.CommitSnapshot()
+			require.NoError(t, active.SelectDatabase(t.Context(), alias, func() error {
+				return errors.New("must not publish a second name for an open database")
+			}))
+			after, stillWatching, _ := active.CommitSnapshot()
+			require.Equal(t, before, after)
+			require.True(t, changed == stillWatching)
+			_, err = NewStore(t.Context(), alias, nil)
+			require.ErrorIs(t, err, ErrFileInUse)
+			_, err = OpenViewerDatabase(t.Context(), alias, false, nil)
+			require.ErrorIs(t, err, ErrFileInUse)
+			if mode == "resume" {
+				checkExternalWriter(t, path, "locked")
+			}
+
+			require.NoError(t, active.WithDBWrite(func(db *sql.DB) error {
+				_, err := db.Exec("create table ownership_marker as select 42 as value")
+				return err
+			}))
+			require.NoError(t, active.Close())
+			if mode == "resume" {
+				checkExternalWriter(t, path, "available")
+			}
+			reopened, err := OpenViewerDatabase(t.Context(), alias, false, nil)
+			require.NoError(t, err)
+			defer reopened.Close()
+			var marker int
+			require.NoError(t, reopened.WithDBRead(func(db *sql.DB) error {
+				return db.QueryRow("select value from ownership_marker").Scan(&marker)
+			}))
+			require.Equal(t, 42, marker)
+		})
+	}
+}
+
+func checkExternalWriter(t *testing.T, path, want string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestExternalWriterProbe$")
+	cmd.Env = append(os.Environ(), "VIEWER_TEST_WRITER_PATH="+path, "VIEWER_TEST_WRITER_STATE="+want)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+}
+
+func TestExternalWriterProbe(t *testing.T) {
+	path := os.Getenv("VIEWER_TEST_WRITER_PATH")
+	if path == "" {
+		t.Skip("child process for the native file-lock test")
+	}
+	db, err := sql.Open("duckdb", path)
+	if err == nil {
+		defer db.Close()
+		err = db.PingContext(t.Context())
+	}
+	if os.Getenv("VIEWER_TEST_WRITER_STATE") == "locked" {
+		require.Error(t, err, "a separate process acquired the active file")
+	} else {
+		require.NoError(t, err)
+	}
+}
+
+func TestReselectRejectsReplacementAtActivePath(t *testing.T) {
+	dir := t.TempDir()
+	path, other := filepath.Join(dir, "active.duckdb"), filepath.Join(dir, "other.duckdb")
+	require.NoError(t, newFileStore(t, other).Close())
+	active := newFileStore(t, path)
+	defer active.Close()
+	require.NoError(t, os.Rename(path, path+".moved"))
+	require.NoError(t, os.Rename(other, path))
+	err := active.SelectDatabase(t.Context(), path, func() error {
+		t.Fatal("replacement must not become the remembered database")
+		return nil
+	})
+	require.ErrorContains(t, err, "database file changed")
+}
+
+func TestConcurrentOpensOfHardLinksAdmitOneStore(t *testing.T) {
+	dir := t.TempDir()
+	path, alias := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+	require.NoError(t, newFileStore(t, path).Close())
+	require.NoError(t, os.Link(path, alias))
+	type result struct {
+		s   *Store
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for _, name := range []string{path, alias} {
+		go func() {
+			<-start
+			s, err := OpenViewerDatabase(t.Context(), name, false, nil)
+			results <- result{s, err}
+		}()
+	}
+	close(start)
+	var admitted int
+	for range 2 {
+		result := <-results
+		if result.s != nil {
+			defer result.s.Close() // Keep the winner open until both attempts finish.
+			admitted++
+			require.NoError(t, result.err)
+		} else {
+			require.ErrorIs(t, result.err, ErrFileInUse)
+		}
+	}
+	require.Equal(t, 1, admitted)
 }
 
 func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {

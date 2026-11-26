@@ -37,6 +37,7 @@ type databaseHandles struct {
 	conn         driver.Conn
 	dbPath       string // empty means in-memory mode
 	pin          *viewerFile
+	owner        *fileOwner
 	commits      *commitbridge.Observer
 	schemaCompat SchemaCompatibility
 }
@@ -84,7 +85,16 @@ func (s *Store) RetentionCap() int64 {
 //
 // logger may be nil, in which case nothing is logged.
 func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, error) {
-	return openStore(ctx, dbPath, logger, nil)
+	if dbPath == "" {
+		return openStore(ctx, "", logger, nil)
+	}
+	path, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return openFileStore(path, !needsLiteralAttach(path), func() (*Store, error) {
+		return openStore(ctx, path, logger, nil)
+	})
 }
 
 // openStore takes ownership of pin on both success and failure.
@@ -171,12 +181,15 @@ func attachedDatabaseDSN(path string) string {
 	return "?temp_directory=" + url.QueryEscape(path+".tmp")
 }
 
-func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, pin *viewerFile) (*duckdb.Connector, error) {
+func needsLiteralAttach(path string) bool {
 	// duckdb-go parses the DSN as a URL, but opens the original bytes.
 	// Encoding '%' as "%25" would therefore change the filename on disk.
 	_, parseErr := url.Parse(path)
-	attachLiteralPercentPath := parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")
-	if pin == nil && !attachLiteralPercentPath {
+	return parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")
+}
+
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, pin *viewerFile) (*duckdb.Connector, error) {
+	if pin == nil && !needsLiteralAttach(path) {
 		return duckdb.NewConnector(path, commits.Init)
 	}
 	var attach sync.Once
@@ -235,6 +248,10 @@ func (s *databaseHandles) close() error {
 	if s.pin != nil {
 		pinErr = s.pin.Close()
 		s.pin = nil
+	}
+	if s.owner != nil {
+		s.owner.release()
+		s.owner = nil
 	}
 	return errors.Join(connErr, dbErr, pinErr)
 }

@@ -7,6 +7,21 @@ import (
 	"syscall"
 )
 
+// stat does not open and close a descriptor: doing that for an alias of an
+// active database could release the process's fcntl lock.
+func identifyFile(path string) (fileIdentity, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileIdentity{}, err
+	}
+	return unixFileIdentity(info), nil
+}
+
+func unixFileIdentity(info os.FileInfo) fileIdentity {
+	stat := info.Sys().(*syscall.Stat_t)
+	return fileIdentity{uint64(stat.Dev), uint64(stat.Ino)}
+}
+
 func pinViewerFile(path string) (*viewerFile, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -17,6 +32,5 @@ func pinViewerFile(path string) (*viewerFile, error) {
 		f.Close()
 		return nil, err
 	}
-	stat := info.Sys().(*syscall.Stat_t)
-	return &viewerFile{f, uint64(stat.Dev), uint64(stat.Ino)}, nil
+	return &viewerFile{f, unixFileIdentity(info)}, nil
 }

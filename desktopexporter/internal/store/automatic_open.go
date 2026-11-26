@@ -23,11 +23,13 @@ func OpenViewerDatabase(ctx context.Context, path string, createDefault bool, lo
 			return nil, err
 		}
 	}
-	file, err := inspectViewerFile(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	return openStore(ctx, path, logger, file)
+	return openFileStore(path, false, func() (*Store, error) {
+		file, err := inspectViewerFile(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		return openStore(ctx, path, logger, file)
+	})
 }
 
 // SelectDatabase opens an existing viewer file. remember must persist the
@@ -46,7 +48,7 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 	defer s.switchMu.Unlock()
 
 	s.mu.RLock()
-	closed, active := s.db == nil, s.dbPath
+	closed, active, owner := s.db == nil, s.dbPath, s.owner
 	s.mu.RUnlock()
 	if closed {
 		return ErrStoreConnectionClosed
@@ -61,21 +63,31 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 		if err := createViewerDatabase(ctx, path, s.logger); err != nil {
 			return err
 		}
-	} else if path == active {
-		// DuckDB already holds this file's writer lock. It may still need
-		// remembering if another viewer changed the selection.
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.db == nil {
-			return ErrStoreConnectionClosed
-		}
-		if _, err := os.Stat(path); err != nil {
+	} else {
+		target, err := identifyFile(path)
+		if err != nil {
 			return err
 		}
-		if err := ctx.Err(); err != nil {
-			return err
+		if path == active && target != owner.identity {
+			return fmt.Errorf("cannot select %s: database file changed", path)
 		}
-		return remember()
+		if target == owner.identity {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if path != active {
+				// Keep the original filename: its journal is named after it.
+				source, err := identifyFile(active)
+				if err != nil {
+					return err
+				}
+				if source != target {
+					return fmt.Errorf("cannot select %s: active database file changed", path)
+				}
+				return nil
+			}
+			return remember()
+		}
 	}
 	next, err := OpenViewerDatabase(ctx, path, false, s.logger)
 	if err != nil {
@@ -124,7 +136,7 @@ func inspectViewerFile(ctx context.Context, path string) (*viewerFile, error) {
 // Closing an extra descriptor earlier can also release Unix process locks.
 type viewerFile struct {
 	*os.File
-	device, id uint64
+	fileIdentity
 }
 
 func (file *viewerFile) guard(ctx context.Context, conn driver.ExecerContext) error {
