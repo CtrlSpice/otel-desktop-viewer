@@ -16,11 +16,12 @@ type writerRecord struct {
 	path      string
 	replaying string
 	current   string
+	requested string // canonical name returned by the requested attachment's guard
 }
 
 func (f *inspectedFile) recoverWriter(ctx context.Context) error {
 	if f.engine.files.RecoveryDir == "" {
-		return nil
+		return f.guardRequested(ctx)
 	}
 	previous, err := f.beginWriterRecovery(ctx)
 	if err != nil {
@@ -41,7 +42,16 @@ func (f *inspectedFile) recoverWriter(ctx context.Context) error {
 			return errors.Join(fmt.Errorf("journal recovery did not finish at %s", previous), err)
 		}
 	}
-	return f.writer.remember(previous, f.Name())
+	if !f.guarded {
+		if err := f.guardRequested(ctx); err != nil {
+			return err
+		}
+	}
+	id, err := identifyFile(f.writer.requested)
+	if err != nil || id != f.fileIdentity {
+		return errors.Join(fmt.Errorf("database file changed before recording journal path: %s", f.writer.requested), err)
+	}
+	return f.writer.remember(previous, f.writer.requested)
 }
 
 // A process that exits in this step leaves the previous writer recorded.
@@ -66,7 +76,10 @@ func (f *inspectedFile) beginWriterRecovery(ctx context.Context) (string, error)
 	if err == nil && !filepath.IsAbs(previous) {
 		return "", fmt.Errorf("invalid writer path in %s", record)
 	}
-	if previous != "" && previous != f.Name() {
+	if err := f.guardRequested(ctx); err != nil {
+		return "", err
+	}
+	if previous != "" && previous != w.requested {
 		pending, err := hasRecoveryFiles(previous)
 		if err != nil {
 			return "", err
@@ -75,6 +88,9 @@ func (f *inspectedFile) beginWriterRecovery(ctx context.Context) (string, error)
 			id, err := identifyFile(previous)
 			if err != nil || id != f.fileIdentity {
 				return "", errors.Join(fmt.Errorf("journal at %s does not have its original database", previous), err)
+			}
+			if err := f.unguard(); err != nil {
+				return "", err
 			}
 			w.replaying = previous
 			if err := f.guardName(ctx, f.engine.control, previous); err != nil {

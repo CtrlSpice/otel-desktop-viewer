@@ -542,7 +542,12 @@ func TestSecondCrashDuringAliasRecovery(t *testing.T) {
 			f := &inspectedFile{viewerFile: pin, engine: e}
 			previous, err := f.beginWriterRecovery(ctx)
 			require.NoError(t, err)
-			require.Equal(t, first, previous)
+			firstInfo, err := os.Stat(first)
+			require.NoError(t, err)
+			previousInfo, err := os.Stat(previous)
+			require.NoError(t, err)
+			require.True(t, os.SameFile(firstInfo, previousInfo))
+			require.Equal(t, filepath.Base(first), filepath.Base(previous))
 			require.True(t, f.attached)
 		}
 		os.Exit(0)

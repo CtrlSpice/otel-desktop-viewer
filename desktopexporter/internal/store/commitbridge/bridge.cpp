@@ -89,9 +89,14 @@ void SetResumeFile(ClientContext &context, SetScope, Value &value) {
         fs.ExtractSubSystem("ViewerResumeFile:" + fields[0].GetValue<string>());
         return;
     }
-    fs.RegisterSubSystem(make_uniq<ResumeFile>(
+    auto guard = make_uniq<ResumeFile>(
         fields[0].GetValue<string>(), fields[1].GetValue<uint64_t>(), fields[2].GetValue<uint64_t>(),
-        fields[3].GetValue<uint64_t>()));
+        fields[3].GetValue<uint64_t>());
+    // Publish the exact name this guard will give ATTACH for WAL naming.
+    auto resolved = fields;
+    resolved[0] = Value(guard->CanonicalizePath(fields[0].GetValue<string>(), nullptr));
+    fs.RegisterSubSystem(std::move(guard));
+    value = Value::STRUCT(value.type(), std::move(resolved));
 }
 
 void Load(ExtensionLoader &loader) {

@@ -86,10 +86,6 @@ func (files CaptureFiles) OpenExplicitDatabase(ctx context.Context, path string,
 		if err := f.recoverWriter(ctx); err != nil {
 			return nil, errors.Join(err, f.finish(nil))
 		}
-		if err := pin.guard(ctx, e.control); err != nil {
-			return nil, errors.Join(err, f.finish(nil))
-		}
-		f.guarded = true
 		if err := f.attach(ctx, path, ""); err != nil {
 			return nil, errors.Join(err, f.finish(nil))
 		}
@@ -315,8 +311,15 @@ type viewerFile struct {
 	fileIdentity
 }
 
-func (file *viewerFile) guard(ctx context.Context, db *sql.DB) error {
-	return file.guardName(ctx, db, file.Name())
+func (f *inspectedFile) guardRequested(ctx context.Context) error {
+	if err := f.guardName(ctx, f.engine.control, f.Name()); err != nil {
+		return err
+	}
+	f.guarded = true
+	if f.writer != nil {
+		return f.engine.control.QueryRowContext(ctx, "select current_setting('otel_resume_file').path").Scan(&f.writer.requested)
+	}
+	return nil
 }
 
 func (file *viewerFile) guardName(ctx context.Context, db *sql.DB, name string) error {
@@ -329,10 +332,6 @@ func (file *viewerFile) guardName(ctx context.Context, db *sql.DB, name string) 
 
 func (file *inspectedFile) inspect(ctx context.Context, path string) error {
 	db := file.engine.control
-	if err := file.guard(ctx, db); err != nil {
-		return err
-	}
-	file.guarded = true
 	if err := file.attach(ctx, path, " (read_only)"); err != nil {
 		return err
 	}

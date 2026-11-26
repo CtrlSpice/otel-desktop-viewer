@@ -341,6 +341,13 @@ func TestCollectorRecoversCommittedLogsThroughAnotherHardLink(t *testing.T) {
 	const env = "VIEWER_TEST_ALIAS_PATH"
 	if path := os.Getenv(env); path != "" {
 		e := start(path)
+		if previous := os.Getenv("VIEWER_TEST_PREVIOUS_LOG"); previous != "" {
+			var count int
+			require.NoError(t, e.Store().WithDBRead(func(db *sql.DB) error {
+				return db.QueryRow("select count(*) from logs where severity_text = ?", previous).Scan(&count)
+			}))
+			require.Equal(t, 1, count, "committed log missing immediately after restart")
+		}
 		batch := plog.NewLogs()
 		batch.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetSeverityText(filepath.Base(path))
 		require.NoError(t, e.Store().WithConn(func(c driver.Conn) error { return logs.Ingest(ctx, c, batch) }))
@@ -355,12 +362,25 @@ func TestCollectorRecoversCommittedLogsThroughAnotherHardLink(t *testing.T) {
 	e := start(a)
 	require.NoError(t, e.Shutdown(ctx))
 	require.NoError(t, os.Link(a, b))
-	for _, path := range []string{a, b} {
+	writers := []string{a, b}
+	wantLabels := "first.duckdb,second.duckdb"
+	if runtime.GOOS != "windows" {
+		link := filepath.Join(t.TempDir(), "symlink.duckdb")
+		require.NoError(t, os.Symlink(a, link))
+		writers = []string{link, b, a}
+		wantLabels = "first.duckdb,second.duckdb,symlink.duckdb"
+	}
+	for i, path := range writers {
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCollectorRecoversCommittedLogsThroughAnotherHardLink$")
 		cmd.Env = append(os.Environ(), env+"="+path)
+		if i > 0 {
+			cmd.Env = append(cmd.Env, "VIEWER_TEST_PREVIOUS_LOG="+filepath.Base(writers[i-1]))
+		}
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, "%s", out)
-		wal, err := os.Stat(path + ".wal")
+		target, err := filepath.EvalSymlinks(path)
+		require.NoError(t, err)
+		wal, err := os.Stat(target + ".wal")
 		require.NoError(t, err)
 		require.Positive(t, wal.Size())
 	}
@@ -371,7 +391,7 @@ func TestCollectorRecoversCommittedLogsThroughAnotherHardLink(t *testing.T) {
 			return db.QueryRow(`select current_database(), string_agg(severity_text, ',' order by severity_text) from logs`).Scan(&catalog, &labels)
 		}))
 		require.Equal(t, filepath.Base(path[:len(path)-len(".duckdb")]), catalog)
-		require.Equal(t, "first.duckdb,second.duckdb", labels)
+		require.Equal(t, wantLabels, labels)
 		require.NoError(t, e.Shutdown(ctx))
 	}
 }
