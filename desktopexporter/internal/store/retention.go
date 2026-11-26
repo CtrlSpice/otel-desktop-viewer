@@ -28,7 +28,7 @@ const (
 
 // InMemory reports whether this store has no persistent database file.
 func (s *Store) InMemory() bool {
-	return s.dbPath == ""
+	return s.inMemory
 }
 
 // SizeBytes reports the current size of the telemetry store.

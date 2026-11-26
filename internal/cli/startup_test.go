@@ -2,13 +2,53 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"net"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/collector"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOccupiedOTLPPortPreservesDatabaseSelection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	dir := filepath.Join(home, "otel-desktop-viewer")
+	switch runtime.GOOS {
+	case "darwin":
+		dir = filepath.Join(home, "Library", "Application Support", "com.ctrlspice.otel-desktop-viewer")
+	case "windows":
+		dir = filepath.Join(home, "OTel Desktop Viewer")
+	}
+	settings := filepath.Join(dir, "settings")
+	require.NoError(t, os.MkdirAll(settings, 0700))
+	marker := filepath.Join(settings, "active-database")
+	require.NoError(t, os.WriteFile(marker, []byte("previous.duckdb"), 0600))
+
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer busy.Close()
+	target := filepath.Join(dir, "next.duckdb")
+	cmd := newCommand(collector.Settings("test"))
+	cmd.SetArgs([]string{"--db", target, "--host", "127.0.0.1", "--open-browser=false",
+		"--browser-port", "0", "--grpc", "0", "--http", strconv.Itoa(busy.Addr().(*net.TCPAddr).Port)})
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	err = cmd.ExecuteContext(ctx)
+	require.ErrorContains(t, err, busy.Addr().String())
+	require.FileExists(t, target) // The database opened before the receiver failed.
+	selected, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	require.Equal(t, "previous.duckdb", string(selected))
+}
 
 // TestStartupFailureIsNotAnsweredWithUsage distinguishes command errors from
 // collector startup failures. Usage remains enabled until flag parsing succeeds.

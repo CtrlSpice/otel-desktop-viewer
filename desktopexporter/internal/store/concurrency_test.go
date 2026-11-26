@@ -6,15 +6,212 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
+
+func TestCloseWaitsForSwitchPreparation(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "next.duckdb")
+	active, err := OpenViewerDatabase(ctx, filepath.Join(dir, "original.duckdb"), true, nil)
+	require.NoError(t, err)
+	defer active.Close()
+
+	// Hold candidate initialization while the engine is preparing the new file.
+	schemaInitializationMu.Lock()
+	release := sync.OnceFunc(schemaInitializationMu.Unlock)
+	defer release()
+	switched := make(chan error, 1)
+	go func() {
+		switched <- active.CreateDatabase(ctx, dest, func() error { return nil })
+	}()
+	require.Eventually(t, func() bool {
+		staging, _ := filepath.Glob(filepath.Join(dir, ".viewer-init-*", "current.duckdb"))
+		return len(staging) == 1
+	}, 10*time.Second, time.Millisecond)
+
+	closing, closed := make(chan struct{}), make(chan error, 1)
+	go func() {
+		close(closing)
+		closed <- active.Close()
+	}()
+	<-closing
+	select {
+	case <-closed:
+		t.Fatal("Close returned while the switch was preparing its database")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	require.NoError(t, <-switched)
+	require.NoError(t, <-closed)
+	require.ErrorIs(t, active.CreateDatabase(ctx, filepath.Join(dir, "late.duckdb"), func() error { return nil }), ErrStoreConnectionClosed)
+	_, err = os.Stat(filepath.Join(dir, "late.duckdb"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestSwitchWaitsForIngestAndKeepsEachBatchInOneFile(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	first, second := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+	active := newFileStore(t, first)
+	defer active.Close()
+	entered, finish := make(chan struct{}), make(chan struct{})
+	release := sync.OnceFunc(func() { close(finish) })
+	defer release()
+	written := make(chan error, 1)
+	go func() {
+		written <- active.WithConn(func(c driver.Conn) error {
+			close(entered)
+			<-finish
+			return spans.Ingest(ctx, c, buildUniqueTraces(1))
+		})
+	}()
+	<-entered
+	switched := make(chan error, 1)
+	go func() {
+		switched <- active.CreateDatabase(ctx, second, func() error { return nil })
+	}()
+	// WithConn holds a read lock. Another reader is excluded only once the
+	// switch is actually waiting for that in-flight batch to finish.
+	require.Eventually(t, func() bool {
+		if !active.mu.TryRLock() {
+			return true
+		}
+		active.mu.RUnlock()
+		return false
+	}, 10*time.Second, time.Millisecond)
+	release()
+	require.NoError(t, <-written)
+	require.NoError(t, <-switched)
+	require.NoError(t, active.WithConn(func(c driver.Conn) error {
+		return spans.Ingest(ctx, c, buildUniqueTraces(2))
+	}))
+	for i, path := range []string{first, second} {
+		s := active
+		if i == 0 {
+			s = newFileStore(t, path)
+			defer s.Close()
+		}
+		var ids []uint64
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			rows, err := db.QueryContext(ctx, "select span_id from spans")
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id uint64
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				ids = append(ids, id)
+			}
+			return rows.Err()
+		}))
+		require.Equal(t, []uint64{uint64(i + 1)}, ids)
+	}
+}
+
+func TestSwitchPublishesOnlyAfterSelectionIsRemembered(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	first, second := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+	active := newFileStore(t, first)
+	defer active.Close()
+	require.NoError(t, newFileStore(t, second).Close())
+	readPath := func() string {
+		t.Helper()
+		var path string
+		require.NoError(t, active.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select path from duckdb_databases() where database_name = current_database()`).Scan(&path)
+		}))
+		return path
+	}
+	before, changed, _ := active.CommitSnapshot()
+	refused := errors.New("selection write failed")
+	require.ErrorIs(t, active.SelectDatabase(ctx, second, func() error { return refused }), refused)
+	require.True(t, sameTestFile(t, first, readPath()))
+	select {
+	case <-changed:
+		t.Fatal("failed switch invalidated the active database")
+	default:
+	}
+	require.NoError(t, active.SelectDatabase(ctx, second, func() error { return nil }))
+	require.True(t, sameTestFile(t, second, readPath()))
+	after, _, closed := active.CommitSnapshot()
+	require.False(t, closed)
+	require.Greater(t, after, before)
+	select {
+	case <-changed:
+	default:
+		t.Fatal("successful switch did not wake Live subscribers")
+	}
+}
+
+func TestSwitchUsesOneEngineForFilesWithTheSameCatalogName(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	first := filepath.Join(dir, "capture.one.duckdb")
+	second := filepath.Join(dir, "capture.two.duckdb")
+	active, err := OpenViewerDatabase(ctx, first, true, nil)
+	require.NoError(t, err)
+	defer active.Close()
+	// The host table lasts only for the lifetime of this engine. Both file
+	// names naturally bind as "capture"; qualified SQL must keep working.
+	_, err = active.db.Exec(`create table "viewer.engine".main.engine_marker as select 17 as n;
+		create table capture.main.capture_marker as select 1 as n`)
+	require.NoError(t, err)
+	refused := errors.New("remember failed")
+	require.ErrorIs(t, active.CreateDatabase(ctx, second, func() error { return refused }), refused)
+	var n int
+	require.NoError(t, active.db.QueryRow(`select n from capture.main.capture_marker`).Scan(&n))
+	require.Equal(t, 1, n)
+	require.NoError(t, active.SelectDatabase(ctx, second, func() error { return nil }))
+	_, err = active.db.Exec(`create table capture.main.capture_marker as select 2 as n`)
+	require.NoError(t, err)
+	check := func(expected int) {
+		t.Helper()
+		var held []*sql.Conn
+		defer func() {
+			for _, c := range held {
+				c.Close()
+			}
+		}()
+		for range maxPoolConns {
+			c, err := active.db.Conn(ctx)
+			require.NoError(t, err)
+			held = append(held, c)
+			var name string
+			var sum int
+			require.NoError(t, c.QueryRowContext(ctx, `select current_database(), engine_marker.n + capture_marker.n
+				from "viewer.engine".main.engine_marker, capture_marker`).Scan(&name, &sum))
+			require.Equal(t, "capture", name)
+			require.Equal(t, expected+17, sum)
+		}
+	}
+	check(2)
+	require.NoError(t, active.SelectDatabase(ctx, first, func() error { return nil }))
+	check(1)
+}
+
+func sameTestFile(t *testing.T, a, b string) bool {
+	t.Helper()
+	x, err := filepath.EvalSymlinks(a)
+	require.NoError(t, err)
+	y, err := filepath.EvalSymlinks(b)
+	require.NoError(t, err)
+	return x == y
+}
 
 // buildUniqueTraces returns a single-span trace whose IDs are derived from seq,
 // so repeated ingest in the stress loop does not collide on primary keys.

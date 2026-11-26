@@ -30,12 +30,12 @@ const StampVersionQuery = `insert into schema_meta (version) values (?)`
 // whole statement before running it, so a subquery naming a missing table fails
 // even when guarded by EXISTS.
 const (
-	SchemaMetaTableExistsQuery = `select count(*) from duckdb_tables() where schema_name = current_schema() and table_name = 'schema_meta'`
+	SchemaMetaTableExistsQuery = `select count(*) from duckdb_tables() where database_name = current_database() and schema_name = current_schema() and table_name = 'schema_meta'`
 	SchemaMetaShapeQuery       = `select count(*), count(*) filter (where column_name = 'version' and data_type = 'INTEGER')
-		from duckdb_columns() where schema_name = current_schema() and table_name = 'schema_meta'`
+		from duckdb_columns() where database_name = current_database() and schema_name = current_schema() and table_name = 'schema_meta'`
 	TelemetryTableExistsQuery = `select count(*) from (
 		select table_name from duckdb_columns()
-		where schema_name = current_schema() and table_name in ('spans', 'logs')
+		where database_name = current_database() and schema_name = current_schema() and table_name in ('spans', 'logs')
 		group by table_name
 		having (table_name = 'spans'
 			and count(*) filter (where column_name in ('trace_id', 'span_id')) = 2

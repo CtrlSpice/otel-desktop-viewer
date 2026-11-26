@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -444,6 +447,402 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'business_metrics'`).Scan(&unrelatedTables)
 	}))
 	assert.Equal(t, 1, unrelatedTables)
+}
+
+func TestAutomaticOpenPreservesUnrelatedDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "current.duckdb")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create macro attr_id(k, v) as 'mine'; create table schema_meta(version integer); insert into schema_meta values (27)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	for _, createDefault := range []bool{false, true} {
+		// true simulates another file appearing after path resolution.
+		_, err = OpenViewerDatabase(t.Context(), path, createDefault, nil)
+		require.ErrorIs(t, err, ErrSchemaIncompatible)
+		require.ErrorContains(t, err, path)
+		after, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+	}
+	db, err = sql.Open("duckdb", path)
+	require.NoError(t, err)
+	defer db.Close()
+	var result string
+	require.NoError(t, db.QueryRow(`select attr_id('k', 'v')`).Scan(&result))
+	require.Equal(t, "mine", result)
+}
+
+func TestManagedReopenRecoversCommittedRowUnderOriginalCatalog(t *testing.T) {
+	const env = "VIEWER_TEST_CRASH_DATABASE"
+	ctx := t.Context()
+	if path := os.Getenv(env); path != "" {
+		s, err := OpenViewerDatabase(ctx, path, false, nil)
+		require.NoError(t, err)
+		_, err = s.db.ExecContext(ctx, `insert into capture.main.capture_marker values (42)`)
+		require.NoError(t, err)
+		os.Exit(0) // Skip store shutdown and leave the committed row in the WAL.
+	}
+	path := filepath.Join(t.TempDir(), "capture.duckdb")
+	s := newFileStore(t, path)
+	_, err := s.db.ExecContext(ctx, `create table capture.main.capture_marker(value integer)`)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagedReopenRecoversCommittedRowUnderOriginalCatalog$")
+	cmd.Env = append(os.Environ(), env+"="+path)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	wal, err := os.Stat(path + ".wal")
+	require.NoError(t, err)
+	require.Positive(t, wal.Size())
+	s, err = OpenViewerDatabase(ctx, path, false, nil)
+	require.NoError(t, err)
+	defer s.Close()
+	var value int
+	require.NoError(t, s.db.QueryRowContext(ctx, `select value from capture.main.capture_marker`).Scan(&value))
+	require.Equal(t, 42, value)
+}
+
+func TestExplicitOpenDoesNotCreateAFileAtAnotherSpelling(t *testing.T) {
+	if filepath.Separator == '\\' {
+		t.Skip("backslash is the native directory separator")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "build"), 0700))
+	literal := filepath.Join(dir, `build\run.duckdb`)
+	_, err := OpenExplicitDatabase(t.Context(), literal, nil)
+	require.ErrorContains(t, err, "backslash")
+	require.NoFileExists(t, literal)
+	files, err := os.ReadDir(filepath.Join(dir, "build"))
+	require.NoError(t, err)
+	require.Empty(t, files)
+}
+
+func TestSecondCrashDuringAliasRecovery(t *testing.T) {
+	ctx := t.Context()
+	const key = "VIEWER_TEST_RECOVERY_PHASE"
+	if phase := os.Getenv(key); phase != "" {
+		dir := os.Getenv("VIEWER_TEST_RECOVERY_FIXTURE")
+		files := CaptureFiles{RecoveryDir: dir}
+		first, second := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+		if phase == "write" {
+			s, err := files.OpenViewerDatabase(ctx, first, false, nil)
+			require.NoError(t, err)
+			_, err = s.db.Exec(`create table crash_marker as select 42 as n`)
+			require.NoError(t, err)
+		} else {
+			e, err := newCaptureEngine(ctx, second)
+			require.NoError(t, err)
+			e.files = files
+			pin, err := pinViewerFile(second)
+			require.NoError(t, err)
+			f := &inspectedFile{viewerFile: pin, engine: e}
+			previous, err := f.beginWriterRecovery(ctx)
+			require.NoError(t, err)
+			firstInfo, err := os.Stat(first)
+			require.NoError(t, err)
+			previousInfo, err := os.Stat(previous)
+			require.NoError(t, err)
+			require.True(t, os.SameFile(firstInfo, previousInfo))
+			require.Equal(t, filepath.Base(first), filepath.Base(previous))
+			require.True(t, f.attached)
+		}
+		os.Exit(0)
+	}
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.duckdb")
+	require.NoError(t, newFileStore(t, first).Close())
+	require.NoError(t, os.Link(first, filepath.Join(dir, "second.duckdb")))
+	for _, phase := range []string{"write", "replay"} {
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSecondCrashDuringAliasRecovery$")
+		cmd.Env = append(os.Environ(), key+"="+phase, "VIEWER_TEST_RECOVERY_FIXTURE="+dir)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	s, err := (CaptureFiles{RecoveryDir: dir}).OpenViewerDatabase(ctx, filepath.Join(dir, "second.duckdb"), false, nil)
+	require.NoError(t, err)
+	defer s.Close()
+	var count int
+	require.NoError(t, s.db.QueryRow(`select count(*) from second.main.crash_marker where n = 42`).Scan(&count))
+	require.Equal(t, 1, count)
+}
+
+func TestCreationPreservesOrphanedRecoveryFiles(t *testing.T) {
+	ctx := t.Context()
+	for _, suffix := range []string{".wal", ".wal.checkpoint", ".wal.recovery"} {
+		t.Run(suffix, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "current.duckdb")
+			journal := path + suffix
+			require.NoError(t, os.WriteFile(journal, []byte("original recovery data"), 0600))
+			_, err := OpenViewerDatabase(ctx, path, true, nil)
+			require.ErrorContains(t, err, journal)
+			_, err = OpenExplicitDatabase(ctx, path, nil)
+			require.ErrorContains(t, err, journal)
+			_, err = os.Lstat(path)
+			require.ErrorIs(t, err, os.ErrNotExist)
+			data, err := os.ReadFile(journal)
+			require.NoError(t, err)
+			require.Equal(t, "original recovery data", string(data))
+		})
+	}
+}
+
+func TestCatalogDiscoveryFailureRollsBackAttachment(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target.duckdb")
+	require.NoError(t, newFileStore(t, path).Close())
+	e, err := newCaptureEngine(ctx, path)
+	require.NoError(t, err)
+	defer e.close()
+	// Leave no eligible row for catalog discovery, after a successful ATTACH.
+	_, err = e.control.Exec(`create temp macro duckdb_databases() as table
+		select null::varchar as path, null::varchar as database_name where false`)
+	require.NoError(t, err)
+	_, err = e.openExisting(ctx, path, nil)
+	require.ErrorIs(t, err, sql.ErrNoRows)
+	_, err = e.control.Exec("drop macro duckdb_databases")
+	require.NoError(t, err)
+	var count int
+	require.NoError(t, e.control.QueryRow(`select count(*) from duckdb_databases() where path is not null`).Scan(&count))
+	require.Zero(t, count)
+	s, err := e.openExisting(ctx, path, nil)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+}
+
+func TestPublishNewDatabaseRefusesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	staged := filepath.Join(dir, "staged")
+	path := filepath.Join(dir, "capture.duckdb")
+	require.NoError(t, os.WriteFile(staged, []byte("first complete capture"), 0600))
+	require.NoError(t, publishNewDatabase(staged, path))
+	other := filepath.Join(dir, "other")
+	require.NoError(t, os.WriteFile(other, []byte("second complete capture"), 0600))
+	require.ErrorIs(t, publishNewDatabase(other, path), os.ErrExist)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "first complete capture", string(got))
+}
+
+func TestResumeDoesNotRecreateDatabaseMovedAfterInspection(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		alias := filepath.Join(t.TempDir(), "alias")
+		require.NoError(t, os.Symlink(dir, alias))
+		dir = alias
+	}
+	path := filepath.Join(dir, "remembered.duckdb")
+	moved := filepath.Join(dir, "moved.duckdb")
+	s := newFileStore(t, path)
+	require.NoError(t, s.Close())
+
+	// Exercise the two production steps in order, moving the file exactly
+	// between the read-only inspection and the writable open.
+	engine, err := newCaptureEngine(ctx, path)
+	require.NoError(t, err)
+	defer engine.control.Close()
+	pin, err := engine.inspectFile(ctx, path)
+	require.NoError(t, err)
+	require.NoError(t, os.Rename(path, moved))
+	journal := []byte("existing journal must not be removed")
+	require.NoError(t, os.WriteFile(path+".wal", journal, 0600))
+	original, err := os.ReadFile(moved)
+	require.NoError(t, err)
+	s, err = openStore(ctx, path, nil, pin)
+	if s != nil {
+		require.NoError(t, s.Close())
+	}
+	require.ErrorContains(t, err, path)
+	_, err = os.Lstat(path)
+	require.ErrorIs(t, err, os.ErrNotExist, "resume created a replacement database")
+	remaining, err := os.ReadFile(path + ".wal")
+	require.NoError(t, err)
+	require.Equal(t, journal, remaining)
+	after, err := os.ReadFile(moved)
+	require.NoError(t, err)
+	require.Equal(t, original, after)
+}
+
+func TestResumeRejectsReplacementBeforeJournalRecovery(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "remembered.duckdb")
+	other := filepath.Join(dir, "other.duckdb")
+	require.NoError(t, newFileStore(t, path).Close())
+	require.NoError(t, newFileStore(t, other).Close())
+	engine, err := newCaptureEngine(ctx, path)
+	require.NoError(t, err)
+	defer engine.control.Close()
+	pin, err := engine.inspectFile(ctx, path)
+	require.NoError(t, err)
+	require.NoError(t, os.Rename(path, path+".moved"))
+	require.NoError(t, os.Rename(other, path))
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	journal := []byte("replacement journal must remain unchanged")
+	require.NoError(t, os.WriteFile(path+".wal", journal, 0600))
+	s, err := openStore(ctx, path, nil, pin)
+	if s != nil {
+		require.NoError(t, s.Close())
+	}
+	require.ErrorContains(t, err, "database file changed")
+	require.ErrorContains(t, err, path)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	remaining, err := os.ReadFile(path + ".wal")
+	require.NoError(t, err)
+	require.Equal(t, journal, remaining)
+}
+
+func TestPhysicalFileHasOneWriterAcrossNames(t *testing.T) {
+	for _, mode := range []string{"direct", "resume", "literal percent"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "original.duckdb")
+			if mode == "literal percent" {
+				path = filepath.Join(dir, "100% original.duckdb")
+			}
+			require.NoError(t, newFileStore(t, path).Close())
+			alias := filepath.Join(dir, "alias.duckdb")
+			require.NoError(t, os.Link(path, alias))
+			var active *Store
+			var err error
+			if mode == "resume" {
+				active, err = OpenViewerDatabase(t.Context(), path, false, nil)
+			} else {
+				active, err = NewStore(t.Context(), path, nil)
+			}
+			require.NoError(t, err)
+			defer active.Close()
+			before, changed, _ := active.CommitSnapshot()
+			require.NoError(t, active.SelectDatabase(t.Context(), alias, func() error {
+				return errors.New("must not publish a second name for an open database")
+			}))
+			after, stillWatching, _ := active.CommitSnapshot()
+			require.Equal(t, before, after)
+			require.True(t, changed == stillWatching)
+			_, err = NewStore(t.Context(), alias, nil)
+			require.ErrorIs(t, err, ErrFileInUse)
+			_, err = OpenViewerDatabase(t.Context(), alias, false, nil)
+			require.ErrorIs(t, err, ErrFileInUse)
+			if mode == "resume" {
+				checkExternalWriter(t, path, "locked")
+			}
+
+			require.NoError(t, active.WithDBWrite(func(db *sql.DB) error {
+				_, err := db.Exec("create table ownership_marker as select 42 as value")
+				return err
+			}))
+			require.NoError(t, active.Close())
+			if mode == "resume" {
+				checkExternalWriter(t, path, "available")
+			}
+			reopened, err := OpenViewerDatabase(t.Context(), alias, false, nil)
+			require.NoError(t, err)
+			defer reopened.Close()
+			var marker int
+			require.NoError(t, reopened.WithDBRead(func(db *sql.DB) error {
+				return db.QueryRow("select value from ownership_marker").Scan(&marker)
+			}))
+			require.Equal(t, 42, marker)
+		})
+	}
+}
+
+func checkExternalWriter(t *testing.T, path, want string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestExternalWriterProbe$")
+	cmd.Env = append(os.Environ(), "VIEWER_TEST_WRITER_PATH="+path, "VIEWER_TEST_WRITER_STATE="+want)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+}
+
+func TestRejectedPinKeepsWriterLockedUntilClose(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "capture.duckdb")
+	active, err := OpenViewerDatabase(ctx, path, true, nil)
+	require.NoError(t, err)
+	defer active.Close()
+	// Exercise the post-open identity check, independent of the preliminary
+	// pathname check. A second descriptor must not shorten the writer lock.
+	openFiles.Lock()
+	_, err = pinUnownedFile(path)
+	openFiles.Unlock()
+	require.ErrorIs(t, err, ErrFileInUse)
+	checkExternalWriter(t, path, "locked")
+	require.NoError(t, active.Close())
+	checkExternalWriter(t, path, "available")
+}
+
+func TestExternalWriterProbe(t *testing.T) {
+	path := os.Getenv("VIEWER_TEST_WRITER_PATH")
+	if path == "" {
+		t.Skip("child process for the native file-lock test")
+	}
+	db, err := sql.Open("duckdb", path)
+	if err == nil {
+		defer db.Close()
+		err = db.PingContext(t.Context())
+	}
+	if os.Getenv("VIEWER_TEST_WRITER_STATE") == "locked" {
+		require.Error(t, err, "a separate process acquired the active file")
+	} else {
+		require.NoError(t, err)
+	}
+}
+
+func TestReselectRejectsReplacementAtActivePath(t *testing.T) {
+	dir := t.TempDir()
+	path, other := filepath.Join(dir, "active.duckdb"), filepath.Join(dir, "other.duckdb")
+	require.NoError(t, newFileStore(t, other).Close())
+	active := newFileStore(t, path)
+	defer active.Close()
+	require.NoError(t, os.Rename(path, path+".moved"))
+	require.NoError(t, os.Rename(other, path))
+	err := active.SelectDatabase(t.Context(), path, func() error {
+		t.Fatal("replacement must not become the remembered database")
+		return nil
+	})
+	require.ErrorContains(t, err, "database file changed")
+}
+
+func TestConcurrentOpensOfHardLinksAdmitOneStore(t *testing.T) {
+	dir := t.TempDir()
+	path, alias := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+	require.NoError(t, newFileStore(t, path).Close())
+	require.NoError(t, os.Link(path, alias))
+	type result struct {
+		s   *Store
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for _, name := range []string{path, alias} {
+		go func() {
+			<-start
+			s, err := OpenViewerDatabase(t.Context(), name, false, nil)
+			results <- result{s, err}
+		}()
+	}
+	close(start)
+	var admitted int
+	for range 2 {
+		result := <-results
+		if result.s != nil {
+			defer result.s.Close() // Keep the winner open until both attempts finish.
+			admitted++
+			require.NoError(t, result.err)
+		} else {
+			require.ErrorIs(t, result.err, ErrFileInUse)
+		}
+	}
+	require.Equal(t, 1, admitted)
 }
 
 func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {

@@ -12,6 +12,8 @@ package duckdbextension
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -27,11 +29,7 @@ const (
 	// retentionInterval is how often the retention loop checks the store size.
 	retentionInterval = 30 * time.Second
 
-	// Default store size caps applied when db_max_size is unset. In-memory
-	// mode gets a tighter default because the data competes with everything
-	// else for RAM; a database file can afford more room.
-	defaultMaxSizeInMemory = 512 << 20 // 512 MB
-	defaultMaxSizeOnDisk   = 2 << 30   // 2 GB
+	defaultMaxSizeOnDisk = 2 << 30
 )
 
 // DuckDBExtension is the running component. The store and server exist only
@@ -45,6 +43,7 @@ type DuckDBExtension struct {
 
 	store  *store.Store
 	server *server.Server
+	dbPath string
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
@@ -71,9 +70,30 @@ func (e *DuckDBExtension) Store() *store.Store {
 }
 
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
+	path, createDefault, err := databasePath(e.cfg.Db)
+	if err != nil {
+		return fmt.Errorf("resolve telemetry database: %w", err)
+	}
+	dir, err := appDataDirectory()
 	if err != nil {
 		return err
+	}
+	settings := filepath.Join(dir, settingsFolder)
+	recovery := filepath.Join(settings, "writers")
+	for _, d := range []string{dir, settings, recovery} {
+		if err := ensurePrivateDirectory(d); err != nil {
+			return err
+		}
+	}
+	files := store.CaptureFiles{RecoveryDir: recovery}
+	var str *store.Store
+	if e.cfg.Db == "" {
+		str, err = files.OpenViewerDatabase(ctx, path, createDefault, e.logger)
+	} else {
+		str, err = files.OpenExplicitDatabase(ctx, path, e.logger)
+	}
+	if err != nil {
+		return fmt.Errorf("open telemetry database %s: %w", path, err)
 	}
 
 	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort))
@@ -83,18 +103,14 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	}
 
 	// Config is already validated, so the only parse outcomes are a size,
-	// 0 (disabled), or -1 (unset: apply the mode-dependent default).
+	// 0 (disabled), or -1 (unset: apply the 2 GiB default).
 	maxBytes, err := parseByteSize(e.cfg.DbMaxSize)
 	if err != nil {
 		str.Close()
 		return err
 	}
 	if maxBytes < 0 {
-		if e.cfg.Db == "" {
-			maxBytes = defaultMaxSizeInMemory
-		} else {
-			maxBytes = defaultMaxSizeOnDisk
-		}
+		maxBytes = defaultMaxSizeOnDisk
 	}
 	// The cap lives on the store so getStats can report it alongside usage.
 	str.SetRetentionCap(maxBytes)
@@ -103,7 +119,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		str.Close()
 		return err
 	}
-
+	e.dbPath = path
 	e.store = str
 	e.server = srv
 	if features.EvalsBuilt {
@@ -120,6 +136,16 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	}
 	return nil
 }
+
+// Ready is called by the collector after all pipeline receivers have started.
+func (e *DuckDBExtension) Ready() error {
+	if err := rememberDatabase(e.dbPath); err != nil {
+		return fmt.Errorf("remember telemetry database: %w", err)
+	}
+	return nil
+}
+
+func (*DuckDBExtension) NotReady() error { return nil }
 
 func (e *DuckDBExtension) Shutdown(ctx context.Context) error {
 	// Stop the retention loop and wait for any in-flight enforcement pass,

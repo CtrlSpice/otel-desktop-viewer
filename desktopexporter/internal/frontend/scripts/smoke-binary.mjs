@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { DataType, tableFromIPC } from 'apache-arrow'
 import { chromium, expect } from '@playwright/test'
 
-// Exercise the embedded executable, with fresh in-memory storage and no
+// Exercise the embedded executable, with a fresh test database and no
 // Vite server or API mocks. Reserve separate ports from interactive previews.
 assert.ok(process.argv[2], 'Usage: node scripts/smoke-binary.mjs <executable>')
 const mode = process.env.EVALS ?? '0'
@@ -31,7 +31,10 @@ await Promise.all(
   )
 )
 const baseURL = `http://127.0.0.1:${viewerPort}`
+const dbDirectory = await mkdtemp(join(tmpdir(), 'viewer-smoke-db-'))
 const child = spawn(resolve(process.argv[2]), [
+  '--db',
+  join(dbDirectory, 'smoke.duckdb'),
   '--open-browser=false',
   '--host',
   '127.0.0.1',
@@ -897,5 +900,6 @@ try {
     }
     if (importDirectory)
       await rm(importDirectory, { recursive: true, force: true })
+    await rm(dbDirectory, { recursive: true, force: true })
   }
 }

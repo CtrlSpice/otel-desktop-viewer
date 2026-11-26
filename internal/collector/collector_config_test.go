@@ -33,17 +33,10 @@ func testOptions() ConfigOptions {
 func resolveConfig(t *testing.T, o ConfigOptions) (*otelcol.Config, error) {
 	t.Helper()
 
-	provider, err := otelcol.NewConfigProvider(otelcol.ConfigProviderSettings{
-		ResolverSettings: confmap.ResolverSettings{
-			URIs: URIs(o),
-			ProviderFactories: []confmap.ProviderFactory{
-				envprovider.NewFactory(),
-				yamlprovider.NewFactory(),
-			},
-			DefaultScheme: "env",
-		},
-	})
+	settings := PrepareSettings(Settings("test"), o)
+	provider, err := otelcol.NewConfigProvider(settings.ConfigProviderSettings)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
 
 	factories, err := Components()
 	require.NoError(t, err)
@@ -94,6 +87,17 @@ func validateServiceTelemetry(t *testing.T, o ConfigOptions) error {
 }
 
 func TestCollectorURIsResolve(t *testing.T) {
+	t.Run("preserves literal CLI database paths", func(t *testing.T) {
+		t.Setenv("VIEWER_TEST_NAME", "expanded")
+		for _, path := range []string{"", "run$$1.duckdb", "${env:VIEWER_TEST_NAME}.duckdb", `C:\100% complete\O'Brien #1 ${VIEWER_TEST_NAME}.duckdb`} {
+			o := testOptions()
+			o.DB = path
+			cfg, err := resolveConfig(t, o)
+			require.NoError(t, err)
+			ext := cfg.Extensions[component.NewID(duckdbextension.Type)].(*duckdbextension.Config)
+			require.Equal(t, path, ext.Db)
+		}
+	})
 	t.Run("imports advertise the configured HTTP receiver port", func(t *testing.T) {
 		o := testOptions()
 		o.HTTPPort = 54318

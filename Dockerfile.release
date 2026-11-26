@@ -4,6 +4,7 @@
 # glibc exactly. Keep this base and the build runners on the same Ubuntu release
 # so the glibc floors stay aligned (see .github/workflows/release.yml).
 FROM ubuntu:24.04
+ENV XDG_DATA_HOME=/data
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

@@ -6,7 +6,7 @@ supports Linux amd64 and arm64; Docker selects your architecture.
 ## Run the viewer
 
 ```sh
-docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
+docker run -v otel-viewer-data:/data -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
 ```
 
 Open <http://localhost:8000>. The viewer runs in the foreground; Ctrl+C stops it.
@@ -34,15 +34,13 @@ Inside a container, `localhost` refers to that container. See
 
 ## Save telemetry between runs
 
-Telemetry defaults to memory and is lost on shutdown. Mount a volume and set
-`--db` to retain it:
+Mount a named volume at `/data` and reuse it when you replace the container. The new container can then reopen the databases in `/data/otel-desktop-viewer/`.
 
 ```sh
 docker run \
   -p 8000:8000 -p 4317:4317 -p 4318:4318 \
   --mount type=volume,source=otel-viewer-data,target=/data \
-  ghcr.io/ctrlspice/otel-desktop-viewer:latest \
-  --host 0.0.0.0 --db /data/telemetry.duckdb
+  ghcr.io/ctrlspice/otel-desktop-viewer:latest
 ```
 
 Docker creates the named volume if needed. Reuse the volume and database path
@@ -50,6 +48,10 @@ on later runs, stopping the previous container before its replacement starts.
 
 Arguments after the published image name replace its defaults. Include
 `--host 0.0.0.0` when supplying flags so published ports remain reachable.
+
+If your existing volume contains `/data/telemetry.duckdb`, keep `--host 0.0.0.0 --db /data/telemetry.duckdb` after the image name to reopen it.
+For Compose, keep `command: ["--host", "0.0.0.0", "--db", "/data/telemetry.duckdb"]` under the viewer service.
+
 With file storage, periodic checks delete the oldest telemetry above a `2GB`
 default threshold. See [Command-line options](command-line-options.md#choose-storage-and-retention)
 for size syntax and retention behaviour.
@@ -62,7 +64,6 @@ Save as `compose.yaml`, or add the service and volume to an existing file:
 services:
   otel-desktop-viewer:
     image: ghcr.io/ctrlspice/otel-desktop-viewer:latest
-    command: ["--host", "0.0.0.0", "--db", "/data/telemetry.duckdb"]
     ports:
       - "8000:8000"
       - "4317:4317"

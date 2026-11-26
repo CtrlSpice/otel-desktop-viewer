@@ -9,6 +9,10 @@ Use the CLI. Run `otel-desktop-viewer --help` first.
 
 Reuse the user's viewer and leave it running. Start a viewer only if asked. Keep its process handle, then stop it and wait for it to exit when you're done so it doesn't keep running in the background.
 
+On first launch, the viewer creates `current.duckdb` in the collector’s private app data folder. On later launches, it reopens the last active database in that folder. Telemetry is stored automatically.
+
+Use `--db <path>` to open a different database. If the file doesn’t exist, the viewer creates it.
+
 - JSON-RPC (`POST /rpc`): `/openrpc/index.json` lists methods. Read one at `/openrpc/{method}.json` or all at `/openrpc.json`.
 - HTTP: `/openapi.json` lists routes. Read one at `/openapi/{operationId}.json`.
 

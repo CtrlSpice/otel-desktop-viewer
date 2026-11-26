@@ -139,7 +139,7 @@ release:
     production migration steps. Pre-27 databases and databases newer than schema 27
     cannot open. To keep viewing an older database, use its original binary.
     Start this release with a new `--db` path to keep the older file intact.
-    Running without `--db` is unaffected: it starts with an empty in-memory store.
+    On first launch, the viewer creates `current.duckdb` in the collector’s private app data folder. On later launches, it reopens the last active database in that folder. Telemetry is stored automatically.
 
     Public releases exclude Evals. Source builds can include it with
     `make build EVALS=1`; both variants use the same schema.

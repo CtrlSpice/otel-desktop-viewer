@@ -1,3 +1,4 @@
+#include "duckdb/common/local_file_system.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_context_state.hpp"
 #include "duckdb/main/config.hpp"
@@ -33,6 +34,71 @@ void SetObserver(ClientContext &context, SetScope scope, Value &value) {
     context.registered_state->Insert("otel_commits", make_shared_ptr<CommitObserver>(value.GetValue<uint64_t>()));
 }
 
+// DuckDB tests FileExists before choosing its create path (and removing an old WAL).
+// Bind both spellings to the same path for the duration of this database instance.
+class ResumeFile final : public LocalFileSystem {
+public:
+    ResumeFile(const string &path, idx_t device, idx_t file, idx_t fd)
+        : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)), device(device), file(file),
+          descriptor("/dev/fd/" + to_string(fd)) {}
+
+    string GetName() const override { return "ViewerResumeFile:" + input; }
+    bool CanHandleFile(const string &path) override { return path == input || path == canonical; }
+    string CanonicalizePath(const string &, optional_ptr<FileOpener>) override { return canonical; }
+
+    bool FileExists(const string &path, optional_ptr<FileOpener> opener) override {
+        if (!LocalFileSystem::FileExists(path, opener)) {
+            throw IOException("Cannot resume missing database: %s", input);
+        }
+        return true;
+    }
+
+    unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags, optional_ptr<FileOpener> opener) override {
+        // Check the opened handle, not the pathname, before DuckDB can replay the WAL.
+#ifdef _WIN32
+        auto handle = LocalFileSystem::OpenFile(path, flags, opener);
+#else
+        // Never open or lock a different inode, even when the name changes
+        // after stat. WAL naming continues to use the original attachment path.
+        auto named = GetStatsIfExists(OpenFileInfo(path), opener);
+        if (!named || named->device_id != device || named->file_id != file) {
+            throw IOException("Cannot resume %s: database file changed", input);
+        }
+        auto handle = LocalFileSystem::OpenFile(descriptor, flags, opener);
+#endif
+        if (handle) {
+            auto stats = handle->Stats();
+            if (stats.device_id != device || stats.file_id != file) {
+                throw IOException("Cannot resume %s: database file changed", input);
+            }
+        }
+        return handle;
+    }
+
+private:
+    const string input, canonical;
+    const optional_idx device, file;
+    const string descriptor;
+};
+
+void SetResumeFile(ClientContext &context, SetScope, Value &value) {
+    const auto &fields = StructValue::GetChildren(value);
+    auto &fs = FileSystem::GetFileSystem(*context.db);
+    if (fields[1].IsNull()) {
+        // The store has drained connections and detached this file.
+        fs.ExtractSubSystem("ViewerResumeFile:" + fields[0].GetValue<string>());
+        return;
+    }
+    auto guard = make_uniq<ResumeFile>(
+        fields[0].GetValue<string>(), fields[1].GetValue<uint64_t>(), fields[2].GetValue<uint64_t>(),
+        fields[3].GetValue<uint64_t>());
+    // Publish the exact name this guard will give ATTACH for WAL naming.
+    auto resolved = fields;
+    resolved[0] = Value(guard->CanonicalizePath(fields[0].GetValue<string>(), nullptr));
+    fs.RegisterSubSystem(std::move(guard));
+    value = Value::STRUCT(value.type(), std::move(resolved));
+}
+
 void Load(ExtensionLoader &loader) {
     // This bridge uses C++ layouts. Refuse a different engine before accessing
     // them, even if its public version number is the same.
@@ -40,6 +106,10 @@ void Load(ExtensionLoader &loader) {
         throw InvalidInputException("otel_commits requires DuckDB source d54cbbe3df");
     }
     auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
+    auto identity = LogicalType::STRUCT({{"path", LogicalType::VARCHAR}, {"device", LogicalType::UBIGINT},
+                                         {"file", LogicalType::UBIGINT}, {"fd", LogicalType::UBIGINT}});
+    config.AddExtensionOption("otel_resume_file", "Existing viewer database to reopen", identity,
+                              Value(identity), SetResumeFile);
     config.AddExtensionOption("otel_commit_observer", "Viewer commit observer", LogicalType::UBIGINT,
                               Value::UBIGINT(0), SetObserver);
 }

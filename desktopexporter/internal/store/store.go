@@ -6,7 +6,9 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,11 +31,25 @@ var (
 	ErrStoreInitFailed       = errors.New("store initialization failed")
 )
 
+// databaseHandles move together when the active file changes.
+type databaseHandles struct {
+	db           *sql.DB
+	conn         driver.Conn
+	dbPath       string // empty means in-memory mode
+	pin          *inspectedFile
+	owner        *fileOwner
+	commits      *commitbridge.Observer
+	schemaCompat SchemaCompatibility
+}
+
 type Store struct {
-	db      *sql.DB
-	conn    driver.Conn
-	dbPath  string // empty means in-memory mode
-	commits *commitbridge.Observer
+	databaseHandles
+	engine *captureEngine // outlives the pools for individual attached files
+	// Serialize switches with shutdown. mu drains readers and ingestion before
+	// a switch changes the catalogs visible in their shared DuckDB instance.
+	switchMu     sync.Mutex
+	revisionBase uint64
+	inMemory     bool // Only file-backed stores can switch databases.
 
 	// mu protects db and conn. Queries and ingest hold it for reading so they
 	// may overlap. Pool mutations and Close hold it for writing and exclude
@@ -52,10 +68,6 @@ type Store struct {
 	// logger is never nil: NewStore substitutes a no-op when given one, so
 	// call sites need no guard.
 	logger *zap.Logger
-
-	// Result of the accepted schema version check, set once during NewStore and
-	// read without locking.
-	schemaCompat SchemaCompatibility
 }
 
 // SetRetentionCap sets the store size cap in bytes. Call before the store is
@@ -74,6 +86,35 @@ func (s *Store) RetentionCap() int64 {
 //
 // logger may be nil, in which case nothing is logged.
 func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, error) {
+	if dbPath == "" {
+		return openStore(ctx, "", logger, nil)
+	}
+	path, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkDuckDBPath(path); err != nil {
+		return nil, err
+	}
+	return openFileStore(path, !needsLiteralAttach(path), func() (*Store, error) {
+		return openStore(ctx, path, logger, nil)
+	})
+}
+
+// DuckDB treats backslashes as separators even on Unix and interprets a
+// question mark in a path when deriving auxiliary filenames such as the WAL.
+func checkDuckDBPath(path string) error {
+	if filepath.Separator != '\\' && strings.Contains(path, `\`) {
+		return fmt.Errorf("DuckDB cannot open this literal path: backslash is interpreted as a directory separator: %s", path)
+	}
+	if strings.Contains(path, "?") {
+		return fmt.Errorf("DuckDB cannot open this literal path: question mark in database path: %s", path)
+	}
+	return nil
+}
+
+// openStore takes ownership of pin on both success and failure.
+func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected *inspectedFile) (*Store, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -86,9 +127,12 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	defer func() {
 		if !initialized {
 			commits.Close()
+			if inspected != nil {
+				inspected.finish(nil)
+			}
 		}
 	}()
-	connector, err := duckdb.NewConnector(dbPath, commits.Init)
+	connector, err := storeConnector(ctx, dbPath, commits, inspected)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
@@ -101,7 +145,8 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 
 	db := sql.OpenDB(connector)
 
-	// Keep idle connections because queries hold no connection-local state.
+	// Reuse initialized connections. For attached files, each connection
+	// selects the capture's catalog before entering the pool.
 	db.SetMaxOpenConns(maxPoolConns)
 	db.SetMaxIdleConns(maxPoolConns)
 	db.SetConnMaxIdleTime(5 * time.Minute)
@@ -111,6 +156,13 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 			_ = conn.Close()
 		}
 	}()
+	if inspected != nil && inspected.recognized {
+		// Verify the writable connection as well: the path may have changed
+		// since the read-only inspection.
+		if err := verifyViewerDatabase(ctx, db, dbPath); err != nil {
+			return nil, err
+		}
+	}
 	if err := arrowbridge.Load(ctx, conn); err != nil {
 		return nil, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
 	}
@@ -132,14 +184,88 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}
 
 	initialized = true
-	return &Store{
-		db:           db,
-		conn:         conn,
-		commits:      commits,
-		dbPath:       dbPath,
-		logger:       logger,
-		schemaCompat: schemaCompat,
-	}, nil
+	s := &Store{
+		databaseHandles: databaseHandles{db: db, conn: conn, commits: commits, pin: inspected, dbPath: dbPath, schemaCompat: schemaCompat},
+		logger:          logger,
+		inMemory:        dbPath == "",
+	}
+	return s, nil
+}
+
+// An in-memory connector will attach the file, so give it the same spill
+// directory DuckDB uses when it opens that file directly.
+func attachedDatabaseDSN(path string) string {
+	return "?temp_directory=" + url.QueryEscape(path+".tmp")
+}
+
+func needsLiteralAttach(path string) bool {
+	// duckdb-go parses the DSN as a URL, but opens the original bytes.
+	// Encoding '%' as "%25" would therefore change the filename on disk.
+	_, parseErr := url.Parse(path)
+	return parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")
+}
+
+type storeDriverConnector interface {
+	driver.Connector
+	Close() error
+}
+
+type initializedConnector struct {
+	driver.Connector
+	init func(driver.ExecerContext) error
+}
+
+// The store, not a capture's connection pool, owns the shared engine.
+func (c initializedConnector) Close() error { return nil }
+
+func (c initializedConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := c.Connector.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.init(conn.(driver.ExecerContext)); err != nil {
+		return nil, errors.Join(err, conn.Close())
+	}
+	return conn, nil
+}
+
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, inspected *inspectedFile) (storeDriverConnector, error) {
+	if inspected != nil {
+		catalog := inspected.catalog
+		if !inspected.attached {
+			_, err := inspected.engine.control.ExecContext(ctx, "attach ? as "+catalog, path)
+			if err != nil {
+				return nil, err
+			}
+			inspected.attached = true
+		}
+		return initializedConnector{inspected.engine, func(conn driver.ExecerContext) error {
+			if err := commits.Init(conn); err != nil {
+				return err
+			}
+			_, err := conn.ExecContext(context.Background(), "use "+catalog, nil)
+			return err
+		}}, nil
+	}
+	if !needsLiteralAttach(path) {
+		return duckdb.NewConnector(path, commits.Init)
+	}
+	var attach sync.Once
+	var attachErr error
+	return duckdb.NewConnector(attachedDatabaseDSN(path), func(conn driver.ExecerContext) error {
+		if err := commits.Init(conn); err != nil {
+			return err
+		}
+		attach.Do(func() {
+			arg := []driver.NamedValue{{Ordinal: 1, Value: path}}
+			_, attachErr = conn.ExecContext(ctx, "attach ? as viewer_file", arg)
+		})
+		if attachErr != nil {
+			return attachErr
+		}
+		_, err := conn.ExecContext(context.Background(), "use viewer_file", nil)
+		return err
+	})
 }
 
 // Close closes the store and the underlying database connection.
@@ -148,9 +274,20 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 // closed state, because sql.DB.Close() has a graceful shutdown that can
 // cause a ping to succeed briefly after close.
 func (s *Store) Close() error {
+	// A switch owns its candidate until it has closed the inactive handles.
+	s.switchMu.Lock()
+	defer s.switchMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	err := s.databaseHandles.close()
+	if s.engine != nil {
+		err = errors.Join(err, s.engine.close())
+		s.engine = nil
+	}
+	return err
+}
 
+func (s *databaseHandles) close() error {
 	var connErr, dbErr error
 	if s.conn != nil {
 		connErr = s.conn.Close()
@@ -165,13 +302,24 @@ func (s *Store) Close() error {
 		s.commits.Close()
 	}
 
-	return errors.Join(connErr, dbErr)
+	var pinErr error
+	if s.pin != nil {
+		pinErr = s.pin.finish(s.owner)
+		s.pin = nil
+	} else if s.owner != nil {
+		s.owner.release()
+	}
+	s.owner = nil
+	return errors.Join(connErr, dbErr, pinErr)
 }
 
 // CommitSnapshot reports writes committed by any store connection, including
 // retention and successful ingestion sub-batches. It performs no database work.
 func (s *Store) CommitSnapshot() (uint64, <-chan struct{}, bool) {
-	return s.commits.Snapshot()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	revision, changed, closed := s.commits.Snapshot()
+	return s.revisionBase + revision, changed, closed
 }
 
 // WithConn runs fn against the store's dedicated appender connection. Ingest
