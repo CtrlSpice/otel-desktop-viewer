@@ -98,7 +98,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 }
 
 // openStore takes ownership of pin on both success and failure.
-func openStore(ctx context.Context, dbPath string, logger *zap.Logger, pin *viewerFile) (*Store, error) {
+func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected *inspectedFile) (*Store, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -107,6 +107,10 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, pin *view
 		dbPath = filepath.Clean(dbPath)
 	}
 	commits := commitbridge.New()
+	var pin *viewerFile
+	if inspected != nil {
+		pin = inspected.viewerFile
+	}
 	initialized := false
 	defer func() {
 		if !initialized {
@@ -116,7 +120,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, pin *view
 			}
 		}
 	}()
-	connector, err := storeConnector(ctx, dbPath, commits, pin)
+	connector, err := storeConnector(ctx, dbPath, commits, inspected)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
@@ -188,31 +192,55 @@ func needsLiteralAttach(path string) bool {
 	return parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")
 }
 
-func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, pin *viewerFile) (*duckdb.Connector, error) {
-	if pin == nil && !needsLiteralAttach(path) {
+type storeDriverConnector interface {
+	driver.Connector
+	Close() error
+}
+
+type initializedConnector struct {
+	*duckdb.Connector
+	init func(driver.ExecerContext) error
+}
+
+func (c initializedConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := c.Connector.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.init(conn.(driver.ExecerContext)); err != nil {
+		return nil, errors.Join(err, conn.Close())
+	}
+	return conn, nil
+}
+
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, inspected *inspectedFile) (storeDriverConnector, error) {
+	if inspected == nil && !needsLiteralAttach(path) {
 		return duckdb.NewConnector(path, commits.Init)
 	}
 	var attach sync.Once
 	var attachErr error
-	return duckdb.NewConnector(attachedDatabaseDSN(path), func(conn driver.ExecerContext) error {
+	catalog := "viewer_file"
+	if inspected != nil {
+		catalog = inspected.catalog
+	}
+	init := func(conn driver.ExecerContext) error {
 		if err := commits.Init(conn); err != nil {
 			return err
 		}
 		attach.Do(func() {
 			arg := []driver.NamedValue{{Ordinal: 1, Value: path}}
-			if pin != nil {
-				if attachErr = pin.guard(ctx, conn); attachErr != nil {
-					return
-				}
-			}
-			_, attachErr = conn.ExecContext(ctx, "attach ? as viewer_file", arg)
+			_, attachErr = conn.ExecContext(ctx, "attach ? as "+catalog, arg)
 		})
 		if attachErr != nil {
 			return attachErr
 		}
-		_, err := conn.ExecContext(context.Background(), "use viewer_file", nil)
+		_, err := conn.ExecContext(context.Background(), "use "+catalog, nil)
 		return err
-	})
+	}
+	if inspected != nil {
+		return initializedConnector{inspected.engine, init}, nil
+	}
+	return duckdb.NewConnector(attachedDatabaseDSN(path), init)
 }
 
 // Close closes the store and the underlying database connection.

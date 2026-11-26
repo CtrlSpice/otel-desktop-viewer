@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"github.com/duckdb/duckdb-go/v2"
@@ -120,16 +121,29 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 
 // Inspect a literal path without allowing DuckDB to create a missing file,
 // recover a WAL into the file, or checkpoint it on close.
-func inspectViewerFile(ctx context.Context, path string) (*viewerFile, error) {
+type inspectedFile struct {
+	*viewerFile
+	engine  *duckdb.Connector
+	catalog string // quoted DuckDB identifier, derived by ATTACH
+}
+
+func inspectViewerFile(ctx context.Context, path string) (*inspectedFile, error) {
 	file, err := pinViewerFile(path)
 	if err != nil {
 		return nil, err
 	}
-	if err := file.inspect(ctx, path); err != nil {
+	engine, err := duckdb.NewConnector(attachedDatabaseDSN(path), nil)
+	if err != nil {
 		file.Close()
 		return nil, err
 	}
-	return file, nil
+	inspected := &inspectedFile{viewerFile: file, engine: engine}
+	if err := inspected.inspect(ctx, path); err != nil {
+		engine.Close()
+		file.Close()
+		return nil, err
+	}
+	return inspected, nil
 }
 
 // Keep the OS file ID alive from inspection until the writable store closes.
@@ -139,39 +153,47 @@ type viewerFile struct {
 	fileIdentity
 }
 
-func (file *viewerFile) guard(ctx context.Context, conn driver.ExecerContext) error {
-	_, err := conn.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint)", []driver.NamedValue{
-		{Ordinal: 1, Value: file.Name()}, {Ordinal: 2, Value: file.device}, {Ordinal: 3, Value: file.id},
-	})
+func (file *viewerFile) guard(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint)", file.Name(), file.device, file.id)
 	if err == nil {
-		_, err = conn.ExecContext(ctx, "set otel_resume_file = getvariable('viewer_identity')", nil)
+		_, err = db.ExecContext(ctx, "set otel_resume_file = getvariable('viewer_identity')")
 	}
 	return err
 }
 
-func (file *viewerFile) inspect(ctx context.Context, path string) error {
-	connector, err := duckdb.NewConnector(attachedDatabaseDSN(path), func(conn driver.ExecerContext) error {
-		if _, err := conn.ExecContext(ctx, "load otel_commits", nil); err != nil {
-			return err
-		}
-		return file.guard(ctx, conn)
-	})
-	if err != nil {
-		return err
-	}
-	db := sql.OpenDB(connector)
+func (file *inspectedFile) inspect(ctx context.Context, path string) error {
+	// Close the inspection pool without releasing the engine or its file guard.
+	db := sql.OpenDB(struct{ driver.Connector }{file.engine})
 	defer db.Close()
 	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, "attach ? as viewer_file (read_only)", path); err != nil {
+	if _, err := db.ExecContext(ctx, "load otel_commits"); err != nil {
+		return err
+	}
+	if err := file.guard(ctx, db); err != nil {
+		return err
+	}
+	// Leave even "memory.duckdb" free to use its normal catalog name.
+	if _, err := db.ExecContext(ctx, `alter database memory set alias to "viewer.engine"`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "attach ? (read_only)", path); err != nil {
 		return fmt.Errorf("inspect %s: %w", path, err)
 	}
-	if _, err := db.ExecContext(ctx, "use viewer_file"); err != nil {
+	var name string
+	if err := db.QueryRowContext(ctx, "select database_name from duckdb_databases() where path is not null").Scan(&name); err != nil {
+		return err
+	}
+	file.catalog = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	if _, err := db.ExecContext(ctx, "use "+file.catalog); err != nil {
 		return err
 	}
 	if err := verifyViewerDatabase(ctx, db, path); err != nil {
 		return err
 	}
-	_, _, err = inspectSchemaVersion(ctx, db, path, zap.NewNop(), schema.Version)
+	if _, _, err := inspectSchemaVersion(ctx, db, path, zap.NewNop(), schema.Version); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `use "viewer.engine"; detach `+file.catalog)
 	return err
 }
 

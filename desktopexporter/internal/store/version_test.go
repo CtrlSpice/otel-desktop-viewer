@@ -476,6 +476,36 @@ func TestAutomaticOpenPreservesUnrelatedDatabase(t *testing.T) {
 	require.Equal(t, "mine", result)
 }
 
+func TestManagedReopenRecoversCommittedRowUnderOriginalCatalog(t *testing.T) {
+	const env = "VIEWER_TEST_CRASH_DATABASE"
+	ctx := t.Context()
+	if path := os.Getenv(env); path != "" {
+		s, err := OpenViewerDatabase(ctx, path, false, nil)
+		require.NoError(t, err)
+		_, err = s.db.ExecContext(ctx, `insert into capture.main.capture_marker values (42)`)
+		require.NoError(t, err)
+		os.Exit(0) // Skip store shutdown and leave the committed row in the WAL.
+	}
+	path := filepath.Join(t.TempDir(), "capture.duckdb")
+	s := newFileStore(t, path)
+	_, err := s.db.ExecContext(ctx, `create table capture.main.capture_marker(value integer)`)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagedReopenRecoversCommittedRowUnderOriginalCatalog$")
+	cmd.Env = append(os.Environ(), env+"="+path)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	wal, err := os.Stat(path + ".wal")
+	require.NoError(t, err)
+	require.Positive(t, wal.Size())
+	s, err = OpenViewerDatabase(ctx, path, false, nil)
+	require.NoError(t, err)
+	defer s.Close()
+	var value int
+	require.NoError(t, s.db.QueryRowContext(ctx, `select value from capture.main.capture_marker`).Scan(&value))
+	require.Equal(t, 42, value)
+}
+
 func TestResumeDoesNotRecreateDatabaseMovedAfterInspection(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
