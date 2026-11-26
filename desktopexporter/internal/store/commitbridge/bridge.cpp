@@ -38,7 +38,8 @@ void SetObserver(ClientContext &context, SetScope scope, Value &value) {
 // Bind both spellings to the same path for the duration of this database instance.
 class ResumeFile final : public LocalFileSystem {
 public:
-    explicit ResumeFile(const string &path) : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)) {}
+    ResumeFile(const string &path, idx_t device, idx_t file)
+        : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)), device(device), file(file) {}
 
     string GetName() const override { return "ViewerResumeFile"; }
     bool CanHandleFile(const string &path) override { return path == input || path == canonical; }
@@ -51,12 +52,27 @@ public:
         return true;
     }
 
+    unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags, optional_ptr<FileOpener> opener) override {
+        // Check the opened handle, not the pathname, before DuckDB can replay the WAL.
+        auto handle = LocalFileSystem::OpenFile(path, flags, opener);
+        if (handle) {
+            auto stats = handle->Stats();
+            if (stats.device_id != device || stats.file_id != file) {
+                throw IOException("Cannot resume %s: database file changed", input);
+            }
+        }
+        return handle;
+    }
+
 private:
     const string input, canonical;
+    const optional_idx device, file;
 };
 
 void SetResumeFile(ClientContext &context, SetScope, Value &value) {
-    FileSystem::GetFileSystem(*context.db).RegisterSubSystem(make_uniq<ResumeFile>(value.GetValue<string>()));
+    const auto &fields = StructValue::GetChildren(value);
+    FileSystem::GetFileSystem(*context.db).RegisterSubSystem(make_uniq<ResumeFile>(
+        fields[0].GetValue<string>(), fields[1].GetValue<uint64_t>(), fields[2].GetValue<uint64_t>()));
 }
 
 void Load(ExtensionLoader &loader) {
@@ -66,8 +82,10 @@ void Load(ExtensionLoader &loader) {
         throw InvalidInputException("otel_commits requires DuckDB source d54cbbe3df");
     }
     auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-    config.AddExtensionOption("otel_resume_file", "Existing viewer database to reopen", LogicalType::VARCHAR,
-                              Value(LogicalType::VARCHAR), SetResumeFile);
+    auto identity = LogicalType::STRUCT({{"path", LogicalType::VARCHAR}, {"device", LogicalType::UBIGINT},
+                                         {"file", LogicalType::UBIGINT}});
+    config.AddExtensionOption("otel_resume_file", "Existing viewer database to reopen", identity,
+                              Value(identity), SetResumeFile);
     config.AddExtensionOption("otel_commit_observer", "Viewer commit observer", LogicalType::UBIGINT,
                               Value::UBIGINT(0), SetObserver);
 }

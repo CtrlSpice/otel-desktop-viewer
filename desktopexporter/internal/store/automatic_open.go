@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
 )
 
@@ -21,10 +23,11 @@ func OpenViewerDatabase(ctx context.Context, path string, createDefault bool, lo
 			return nil, err
 		}
 	}
-	if err := inspectViewerFile(ctx, path); err != nil {
+	file, err := inspectViewerFile(ctx, path)
+	if err != nil {
 		return nil, err
 	}
-	return openStore(ctx, path, logger, true)
+	return openStore(ctx, path, logger, file)
 }
 
 // SelectDatabase opens an existing viewer file. remember must persist the
@@ -105,11 +108,46 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 
 // Inspect a literal path without allowing DuckDB to create a missing file,
 // recover a WAL into the file, or checkpoint it on close.
-func inspectViewerFile(ctx context.Context, path string) error {
-	db, err := sql.Open("duckdb", attachedDatabaseDSN(path))
+func inspectViewerFile(ctx context.Context, path string) (*viewerFile, error) {
+	file, err := pinViewerFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := file.inspect(ctx, path); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+// Keep the OS file ID alive from inspection until the writable store closes.
+// Closing an extra descriptor earlier can also release Unix process locks.
+type viewerFile struct {
+	*os.File
+	device, id uint64
+}
+
+func (file *viewerFile) guard(ctx context.Context, conn driver.ExecerContext) error {
+	_, err := conn.ExecContext(ctx, "set variable viewer_identity = struct_pack(path := ?::varchar, device := ?::ubigint, file := ?::ubigint)", []driver.NamedValue{
+		{Ordinal: 1, Value: file.Name()}, {Ordinal: 2, Value: file.device}, {Ordinal: 3, Value: file.id},
+	})
+	if err == nil {
+		_, err = conn.ExecContext(ctx, "set otel_resume_file = getvariable('viewer_identity')", nil)
+	}
+	return err
+}
+
+func (file *viewerFile) inspect(ctx context.Context, path string) error {
+	connector, err := duckdb.NewConnector(attachedDatabaseDSN(path), func(conn driver.ExecerContext) error {
+		if _, err := conn.ExecContext(ctx, "load otel_commits", nil); err != nil {
+			return err
+		}
+		return file.guard(ctx, conn)
+	})
 	if err != nil {
 		return err
 	}
+	db := sql.OpenDB(connector)
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	if _, err := db.ExecContext(ctx, "attach ? as viewer_file (read_only)", path); err != nil {

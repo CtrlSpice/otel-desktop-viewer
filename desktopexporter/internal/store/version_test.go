@@ -489,13 +489,14 @@ func TestResumeDoesNotRecreateDatabaseMovedAfterInspection(t *testing.T) {
 
 	// Exercise the two production steps in order, moving the file exactly
 	// between the read-only inspection and the writable open.
-	require.NoError(t, inspectViewerFile(ctx, path))
+	pin, err := inspectViewerFile(ctx, path)
+	require.NoError(t, err)
 	require.NoError(t, os.Rename(path, moved))
 	journal := []byte("existing journal must not be removed")
 	require.NoError(t, os.WriteFile(path+".wal", journal, 0600))
 	original, err := os.ReadFile(moved)
 	require.NoError(t, err)
-	s, err = openStore(ctx, path, nil, true)
+	s, err = openStore(ctx, path, nil, pin)
 	if s != nil {
 		require.NoError(t, s.Close())
 	}
@@ -508,6 +509,35 @@ func TestResumeDoesNotRecreateDatabaseMovedAfterInspection(t *testing.T) {
 	after, err := os.ReadFile(moved)
 	require.NoError(t, err)
 	require.Equal(t, original, after)
+}
+
+func TestResumeRejectsReplacementBeforeJournalRecovery(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "remembered.duckdb")
+	other := filepath.Join(dir, "other.duckdb")
+	require.NoError(t, newFileStore(t, path).Close())
+	require.NoError(t, newFileStore(t, other).Close())
+	pin, err := inspectViewerFile(ctx, path)
+	require.NoError(t, err)
+	require.NoError(t, os.Rename(path, path+".moved"))
+	require.NoError(t, os.Rename(other, path))
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	journal := []byte("replacement journal must remain unchanged")
+	require.NoError(t, os.WriteFile(path+".wal", journal, 0600))
+	s, err := openStore(ctx, path, nil, pin)
+	if s != nil {
+		require.NoError(t, s.Close())
+	}
+	require.ErrorContains(t, err, "database file changed")
+	require.ErrorContains(t, err, path)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	remaining, err := os.ReadFile(path + ".wal")
+	require.NoError(t, err)
+	require.Equal(t, journal, remaining)
 }
 
 func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {

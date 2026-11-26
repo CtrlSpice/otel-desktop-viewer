@@ -36,6 +36,7 @@ type databaseHandles struct {
 	db           *sql.DB
 	conn         driver.Conn
 	dbPath       string // empty means in-memory mode
+	pin          *viewerFile
 	commits      *commitbridge.Observer
 	schemaCompat SchemaCompatibility
 }
@@ -83,10 +84,11 @@ func (s *Store) RetentionCap() int64 {
 //
 // logger may be nil, in which case nothing is logged.
 func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, error) {
-	return openStore(ctx, dbPath, logger, false)
+	return openStore(ctx, dbPath, logger, nil)
 }
 
-func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireViewer bool) (*Store, error) {
+// openStore takes ownership of pin on both success and failure.
+func openStore(ctx context.Context, dbPath string, logger *zap.Logger, pin *viewerFile) (*Store, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -99,9 +101,12 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 	defer func() {
 		if !initialized {
 			commits.Close()
+			if pin != nil {
+				pin.Close()
+			}
 		}
 	}()
-	connector, err := storeConnector(ctx, dbPath, commits, requireViewer)
+	connector, err := storeConnector(ctx, dbPath, commits, pin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
@@ -125,7 +130,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 			_ = conn.Close()
 		}
 	}()
-	if requireViewer {
+	if pin != nil {
 		// Verify the writable connection as well: the path may have changed
 		// since the read-only inspection.
 		if err := verifyViewerDatabase(ctx, db, dbPath); err != nil {
@@ -154,7 +159,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 
 	initialized = true
 	return &Store{
-		databaseHandles: databaseHandles{db: db, conn: conn, commits: commits, dbPath: dbPath, schemaCompat: schemaCompat},
+		databaseHandles: databaseHandles{db: db, conn: conn, commits: commits, pin: pin, dbPath: dbPath, schemaCompat: schemaCompat},
 		logger:          logger,
 		inMemory:        dbPath == "",
 	}, nil
@@ -166,12 +171,12 @@ func attachedDatabaseDSN(path string) string {
 	return "?temp_directory=" + url.QueryEscape(path+".tmp")
 }
 
-func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, guardResume bool) (*duckdb.Connector, error) {
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, pin *viewerFile) (*duckdb.Connector, error) {
 	// duckdb-go parses the DSN as a URL, but opens the original bytes.
 	// Encoding '%' as "%25" would therefore change the filename on disk.
 	_, parseErr := url.Parse(path)
 	attachLiteralPercentPath := parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")
-	if !guardResume && !attachLiteralPercentPath {
+	if pin == nil && !attachLiteralPercentPath {
 		return duckdb.NewConnector(path, commits.Init)
 	}
 	var attach sync.Once
@@ -182,8 +187,8 @@ func storeConnector(ctx context.Context, path string, commits *commitbridge.Obse
 		}
 		attach.Do(func() {
 			arg := []driver.NamedValue{{Ordinal: 1, Value: path}}
-			if guardResume {
-				if _, attachErr = conn.ExecContext(ctx, "set otel_resume_file = ?", arg); attachErr != nil {
+			if pin != nil {
+				if attachErr = pin.guard(ctx, conn); attachErr != nil {
 					return
 				}
 			}
@@ -226,7 +231,12 @@ func (s *databaseHandles) close() error {
 		s.commits.Close()
 	}
 
-	return errors.Join(connErr, dbErr)
+	var pinErr error
+	if s.pin != nil {
+		pinErr = s.pin.Close()
+		s.pin = nil
+	}
+	return errors.Join(connErr, dbErr, pinErr)
 }
 
 // CommitSnapshot reports writes committed by any store connection, including
