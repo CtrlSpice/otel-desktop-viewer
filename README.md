@@ -163,7 +163,9 @@ The viewer opens your browser at `http://localhost:8000` and receives OTLP on `l
 otel-desktop-viewer
 ```
 
-The viewer stores telemetry in `current.duckdb` in the collector’s [app data directory](docs/command-line-options.md#choose-storage-and-retention) by default. A `.duckdb` file opened directly in the app data folder becomes the default for future launches.
+On first launch, the viewer creates `current.duckdb` in the collector’s private [app data folder](docs/command-line-options.md#choose-storage-and-retention). On later launches, it reopens the last active database in that folder. Telemetry is stored automatically.
+
+Use `--db <path>` to open a different database. If the file doesn’t exist, the viewer creates it. A `.duckdb` file opened directly in the app data folder becomes the default for future launches.
 
 ```sh
 otel-desktop-viewer --db ./telemetry.duckdb

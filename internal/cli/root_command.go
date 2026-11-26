@@ -74,7 +74,7 @@ func newRootCommand(
 	root.Flags().IntVar(&options.GRPCPort, "grpc", options.GRPCPort, "OTLP gRPC port")
 	root.Flags().IntVar(&options.BrowserPort, "browser-port", options.BrowserPort, "Viewer HTTP port")
 	root.Flags().BoolVar(&openBrowser, "open-browser", openBrowser, "Open viewer after startup")
-	root.Flags().StringVar(&options.DB, "db", "", "DuckDB file (defaults to the last active database in app data)")
+	root.Flags().StringVar(&options.DB, "db", "", "DuckDB file (app data: current.duckdb on first launch, last active database thereafter)")
 	root.Flags().StringVar(&options.DBMaxSize, "db-max-size", "", "Maximum telemetry-store size (default 2GB; 0 disables pruning)")
 	root.Flags().StringVar(&options.SelfTelemetryEndpoint, "self-telemetry-endpoint", "", "Export the viewer's own traces and metrics to this OTLP/gRPC endpoint")
 
@@ -161,7 +161,7 @@ VIEWER FLAGS
       --grpc int                        OTLP gRPC port (default 4317)
       --browser-port int                Viewer HTTP port (default 8000)
       --open-browser                    Open viewer after startup (default true)
-      --db string                       DuckDB file (defaults to the last active database in app data)
+      --db string                       DuckDB file (app data: current.duckdb on first launch, last active database thereafter)
       --db-max-size string              Maximum telemetry-store size (default 2GB; 0 disables pruning)
       --self-telemetry-endpoint string  Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 

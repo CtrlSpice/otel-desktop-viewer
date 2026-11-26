@@ -31,7 +31,7 @@ Client commands use `--endpoint` with the viewer HTTP address.
 
 | Option | Default | Behaviour |
 | --- | --- | --- |
-| `--db <path>` | Last active database in app data | Use a different database file. |
+| `--db <path>` | `current.duckdb` on first launch; last active database in app data on later launches | Use a different database file. |
 | `--db-max-size <size>` | `2GB` | Set the size threshold for automatic deletion of the oldest telemetry; `0` disables automatic deletion. |
 
 The app data directory can hold multiple `.duckdb` files. Starting the viewer with `--db <path>` opens that file, creating it if needed. A `.duckdb` file opened directly in the app data folder becomes the default for future launches.

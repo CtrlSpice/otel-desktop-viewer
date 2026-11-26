@@ -183,7 +183,7 @@ help:
 	@echo "  refresh-macros    - Reapply macro DDL to a .db file (DB=path)"
 	@echo "  test-go           - Run Go tests"
 	@echo "  run-go            - Run server with the app-data database"
-	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"
+	@echo "  run-go-persist    - Run server with ./duck.db"
 	@echo "  populate-traces   - POST sample traces to OTLP HTTP (default localhost:4318)"
 	@echo "  populate-logs     - POST sample logs to OTLP HTTP (default localhost:4318)"
 	@echo "  populate-metrics  - POST sample metrics to OTLP HTTP (default localhost:4318)"

@@ -90,7 +90,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	}
 
 	// Config is already validated, so the only parse outcomes are a size,
-	// 0 (disabled), or -1 (unset: apply the mode-dependent default).
+	// 0 (disabled), or -1 (unset: apply the 2 GiB default).
 	maxBytes, err := parseByteSize(e.cfg.DbMaxSize)
 	if err != nil {
 		str.Close()

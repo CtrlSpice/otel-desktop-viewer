@@ -72,8 +72,7 @@ func (cfg *Config) Validate() error {
 
 // parseByteSize converts a human-readable size string ("512MB", "2GB", "0")
 // into a byte count. Units are binary (KB = 1024 bytes) and case-insensitive;
-// a bare number is taken as bytes. An empty string returns -1, meaning
-// "unset: apply the mode-dependent default".
+// a bare number is taken as bytes. An empty string returns -1 (unset).
 func parseByteSize(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
