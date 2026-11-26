@@ -31,11 +31,22 @@ var (
 	ErrStoreInitFailed       = errors.New("store initialization failed")
 )
 
+// databaseHandles move together when the active file changes.
+type databaseHandles struct {
+	db           *sql.DB
+	conn         driver.Conn
+	dbPath       string // empty means in-memory mode
+	commits      *commitbridge.Observer
+	schemaCompat SchemaCompatibility
+}
+
 type Store struct {
-	db      *sql.DB
-	conn    driver.Conn
-	dbPath  string // empty means in-memory mode
-	commits *commitbridge.Observer
+	databaseHandles
+	// A switch prepares the next file while this store still serves requests.
+	// Serialize switches; mu guards the shorter handoff and all database access.
+	switchMu     sync.Mutex
+	revisionBase uint64
+	inMemory     bool // Only file-backed stores can switch databases.
 
 	// mu protects db and conn. Queries and ingest hold it for reading so they
 	// may overlap. Pool mutations and Close hold it for writing and exclude
@@ -54,10 +65,6 @@ type Store struct {
 	// logger is never nil: NewStore substitutes a no-op when given one, so
 	// call sites need no guard.
 	logger *zap.Logger
-
-	// Result of the accepted schema version check, set once during NewStore and
-	// read without locking.
-	schemaCompat SchemaCompatibility
 }
 
 // SetRetentionCap sets the store size cap in bytes. Call before the store is
@@ -107,7 +114,8 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 
 	db := sql.OpenDB(connector)
 
-	// Keep idle connections because queries hold no connection-local state.
+	// Reuse initialized connections. For attached files, each connection
+	// selects viewer_file as its active database before entering the pool.
 	db.SetMaxOpenConns(maxPoolConns)
 	db.SetMaxIdleConns(maxPoolConns)
 	db.SetConnMaxIdleTime(5 * time.Minute)
@@ -146,31 +154,35 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, requireVi
 
 	initialized = true
 	return &Store{
-		db:           db,
-		conn:         conn,
-		commits:      commits,
-		dbPath:       dbPath,
-		logger:       logger,
-		schemaCompat: schemaCompat,
+		databaseHandles: databaseHandles{db: db, conn: conn, commits: commits, dbPath: dbPath, schemaCompat: schemaCompat},
+		logger:          logger,
+		inMemory:        dbPath == "",
 	}, nil
 }
 
-func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, requireViewer bool) (*duckdb.Connector, error) {
+// An in-memory connector will attach the file, so give it the same spill
+// directory DuckDB uses when it opens that file directly.
+func attachedDatabaseDSN(path string) string {
+	return "?temp_directory=" + url.QueryEscape(path+".tmp")
+}
+
+func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, guardResume bool) (*duckdb.Connector, error) {
 	// duckdb-go parses the DSN as a URL, but opens the original bytes.
 	// Encoding '%' as "%25" would therefore change the filename on disk.
 	_, parseErr := url.Parse(path)
-	if !requireViewer && !(parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")) {
+	attachLiteralPercentPath := parseErr != nil && strings.Contains(path, "%") && !strings.Contains(path, "?")
+	if !guardResume && !attachLiteralPercentPath {
 		return duckdb.NewConnector(path, commits.Init)
 	}
 	var attach sync.Once
 	var attachErr error
-	return duckdb.NewConnector("", func(conn driver.ExecerContext) error {
+	return duckdb.NewConnector(attachedDatabaseDSN(path), func(conn driver.ExecerContext) error {
 		if err := commits.Init(conn); err != nil {
 			return err
 		}
 		attach.Do(func() {
 			arg := []driver.NamedValue{{Ordinal: 1, Value: path}}
-			if requireViewer {
+			if guardResume {
 				if _, attachErr = conn.ExecContext(ctx, "set otel_resume_file = ?", arg); attachErr != nil {
 					return
 				}
@@ -193,7 +205,10 @@ func storeConnector(ctx context.Context, path string, commits *commitbridge.Obse
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.databaseHandles.close()
+}
 
+func (s *databaseHandles) close() error {
 	var connErr, dbErr error
 	if s.conn != nil {
 		connErr = s.conn.Close()
@@ -214,7 +229,10 @@ func (s *Store) Close() error {
 // CommitSnapshot reports writes committed by any store connection, including
 // retention and successful ingestion sub-batches. It performs no database work.
 func (s *Store) CommitSnapshot() (uint64, <-chan struct{}, bool) {
-	return s.commits.Snapshot()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	revision, changed, closed := s.commits.Snapshot()
+	return s.revisionBase + revision, changed, closed
 }
 
 // WithConn runs fn against the store's dedicated appender connection. Ingest

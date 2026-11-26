@@ -6,15 +6,125 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
+
+func TestSwitchWaitsForIngestAndKeepsEachBatchInOneFile(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	first, second := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+	active := newFileStore(t, first)
+	defer active.Close()
+	entered, finish := make(chan struct{}), make(chan struct{})
+	release := sync.OnceFunc(func() { close(finish) })
+	defer release()
+	written := make(chan error, 1)
+	go func() {
+		written <- active.WithConn(func(c driver.Conn) error {
+			close(entered)
+			<-finish
+			return spans.Ingest(ctx, c, buildUniqueTraces(1))
+		})
+	}()
+	<-entered
+	switched := make(chan error, 1)
+	go func() {
+		switched <- active.CreateDatabase(ctx, second, func() error { return nil })
+	}()
+	// WithConn holds a read lock. Another reader is excluded only once the
+	// switch is actually waiting for that in-flight batch to finish.
+	require.Eventually(t, func() bool {
+		if !active.mu.TryRLock() {
+			return true
+		}
+		active.mu.RUnlock()
+		return false
+	}, 10*time.Second, time.Millisecond)
+	release()
+	require.NoError(t, <-written)
+	require.NoError(t, <-switched)
+	require.NoError(t, active.WithConn(func(c driver.Conn) error {
+		return spans.Ingest(ctx, c, buildUniqueTraces(2))
+	}))
+	for i, path := range []string{first, second} {
+		s := active
+		if i == 0 {
+			s = newFileStore(t, path)
+			defer s.Close()
+		}
+		var ids []uint64
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			rows, err := db.QueryContext(ctx, "select span_id from spans")
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id uint64
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				ids = append(ids, id)
+			}
+			return rows.Err()
+		}))
+		require.Equal(t, []uint64{uint64(i + 1)}, ids)
+	}
+}
+
+func TestSwitchPublishesOnlyAfterSelectionIsRemembered(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	first, second := filepath.Join(dir, "first.duckdb"), filepath.Join(dir, "second.duckdb")
+	active := newFileStore(t, first)
+	defer active.Close()
+	require.NoError(t, newFileStore(t, second).Close())
+	readPath := func() string {
+		t.Helper()
+		var path string
+		require.NoError(t, active.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select path from duckdb_databases() where database_name = current_database()`).Scan(&path)
+		}))
+		return path
+	}
+	before, changed, _ := active.CommitSnapshot()
+	refused := errors.New("selection write failed")
+	require.ErrorIs(t, active.SelectDatabase(ctx, second, func() error { return refused }), refused)
+	require.True(t, sameTestFile(t, first, readPath()))
+	select {
+	case <-changed:
+		t.Fatal("failed switch invalidated the active database")
+	default:
+	}
+	require.NoError(t, active.SelectDatabase(ctx, second, func() error { return nil }))
+	require.True(t, sameTestFile(t, second, readPath()))
+	after, _, closed := active.CommitSnapshot()
+	require.False(t, closed)
+	require.Greater(t, after, before)
+	select {
+	case <-changed:
+	default:
+		t.Fatal("successful switch did not wake Live subscribers")
+	}
+}
+
+func sameTestFile(t *testing.T, a, b string) bool {
+	t.Helper()
+	x, err := filepath.EvalSymlinks(a)
+	require.NoError(t, err)
+	y, err := filepath.EvalSymlinks(b)
+	require.NoError(t, err)
+	return x == y
+}
 
 // buildUniqueTraces returns a single-span trace whose IDs are derived from seq,
 // so repeated ingest in the stress loop does not collide on primary keys.

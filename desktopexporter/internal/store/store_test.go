@@ -7,6 +7,7 @@ import (
 	"errors"
 	"go.uber.org/zap"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -53,6 +54,39 @@ func TestStore(t *testing.T) {
 	}
 
 	runStoreTests(t, tests)
+}
+
+func TestFileStoreConnectionsUseRequestedDatabaseAndSpillDirectory(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	for _, name := range []string{"capture.duckdb", "100% + O'Brien & co.duckdb"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(dir, name)
+			check := func(s *Store, err error) {
+				t.Helper()
+				require.NoError(t, err)
+				defer func() { require.NoError(t, s.Close()) }()
+				wantFile, err := os.Stat(path)
+				require.NoError(t, err)
+				// Hold the first connection so the check exercises a second initializer.
+				for range 2 {
+					conn, err := s.db.Conn(t.Context())
+					require.NoError(t, err)
+					defer conn.Close()
+					var opened, spillDir string
+					err = conn.QueryRowContext(t.Context(), `select path, current_setting('temp_directory')
+						from duckdb_databases() where database_name = current_database()`).Scan(&opened, &spillDir)
+					require.NoError(t, err)
+					gotFile, err := os.Stat(opened)
+					require.NoError(t, err)
+					require.True(t, os.SameFile(wantFile, gotFile))
+					require.Equal(t, path+".tmp", filepath.Clean(spillDir))
+				}
+			}
+			check(NewStore(t.Context(), path, nil))
+			check(OpenViewerDatabase(t.Context(), path, false, nil))
+		})
+	}
 }
 
 // buildStoreTestTraces returns ptrace.Traces with two traces for store tests.

@@ -1,6 +1,7 @@
 package duckdbextension
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 )
 
 const (
@@ -134,7 +137,7 @@ func readSelection(settings string) (string, error) {
 	if !info.Mode().IsRegular() || info.Size() > maxBytes {
 		return "", fmt.Errorf("invalid database selection file: %s", path)
 	}
-	f, err := os.Open(path)
+	f, err := openSelection(settings)
 	if err != nil {
 		return "", err
 	}
@@ -147,6 +150,12 @@ func readSelection(settings string) (string, error) {
 		return "", fmt.Errorf("invalid database selection file: %s", path)
 	}
 	return string(data), nil
+}
+
+func openSelection(settings string) (*os.File, error) {
+	// Root-relative opens share delete access on Windows, so a reader can
+	// finish reading the old selection while another process replaces it.
+	return os.OpenInRoot(settings, activeFile)
 }
 
 func appDataDirectory() (string, error) {
@@ -209,9 +218,13 @@ func rememberDatabase(path string) error {
 	if err != nil || !sameLocation(filepath.Dir(path), dir) || !isSessionFilename(filepath.Base(path)) {
 		return nil
 	}
+	return writeSelection(dir, filepath.Base(path))
+}
+
+func writeSelection(dir, name string) error {
 	settings := filepath.Join(dir, settingsFolder)
 	previous, err := managedSelection(dir)
-	if err != nil || previous == filepath.Base(path) {
+	if err != nil || previous == name {
 		return err
 	}
 	tmp, err := os.CreateTemp(settings, ".active-database-")
@@ -219,9 +232,35 @@ func rememberDatabase(path string) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	_, writeErr := tmp.WriteString(filepath.Base(path))
+	_, writeErr := tmp.WriteString(name)
 	if err := errors.Join(writeErr, tmp.Close()); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), filepath.Join(settings, activeFile))
+}
+
+// Browser selections address files by basename, never by a client file path.
+type managedDatabases struct{ active *store.Store }
+
+func (m managedDatabases) open(ctx context.Context, name string) error {
+	return m.selectFile(ctx, name, m.active.SelectDatabase)
+}
+
+func (m managedDatabases) new(ctx context.Context, name string) error {
+	return m.selectFile(ctx, name, m.active.CreateDatabase)
+}
+
+func (m managedDatabases) selectFile(ctx context.Context, name string, change func(context.Context, string, func() error) error) error {
+	if !isSessionFilename(name) {
+		return fmt.Errorf("expected a .duckdb filename in the app data folder")
+	}
+	dir, err := appDataDirectory()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, name)
+	if err := checkDatabaseLocation(dir, path); err != nil {
+		return err
+	}
+	return change(ctx, path, func() error { return writeSelection(dir, name) })
 }

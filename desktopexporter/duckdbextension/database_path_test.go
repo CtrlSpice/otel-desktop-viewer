@@ -2,6 +2,7 @@ package duckdbextension
 
 import (
 	"database/sql"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -179,6 +180,77 @@ func TestManagedDatabaseLocationBeforeOpen(t *testing.T) {
 	require.Equal(t, os.FileMode(0755), info.Mode().Perm())
 }
 
+func TestSelectionCanChangeWhilePreviousFileIsOpen(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Setenv("XDG_DATA_HOME", home)
+	dir, err := appDataDirectory()
+	require.NoError(t, err)
+	require.NoError(t, rememberDatabase(filepath.Join(dir, "first.duckdb")))
+	settings := filepath.Join(dir, settingsFolder)
+	reader, err := openSelection(settings)
+	require.NoError(t, err)
+	defer reader.Close()
+	require.NoError(t, rememberDatabase(filepath.Join(dir, "second.duckdb")))
+	old, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, "first.duckdb", string(old))
+	next, err := readSelection(settings)
+	require.NoError(t, err)
+	require.Equal(t, "second.duckdb", next)
+}
+
+func TestManagedOpenAndNewSurviveCollectorRestart(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Setenv("XDG_DATA_HOME", home)
+	ctx := t.Context()
+	start := func() *DuckDBExtension {
+		t.Helper()
+		e := &DuckDBExtension{cfg: &Config{Endpoint: "127.0.0.1:0"}, logger: zap.NewNop()}
+		require.NoError(t, e.Start(ctx, componenttest.NewNopHost()))
+		require.NoError(t, e.Ready())
+		return e
+	}
+	e := start()
+	t.Cleanup(func() { require.NoError(t, e.Shutdown(ctx)) })
+	manager := managedDatabases{active: e.Store()}
+	write := func(label string) {
+		t.Helper()
+		require.NoError(t, e.Store().WithDBWrite(func(db *sql.DB) error {
+			_, err := db.Exec(`create table session_marker as select ? as label`, label)
+			return err
+		}))
+	}
+	read := func() string {
+		t.Helper()
+		var label string
+		require.NoError(t, e.Store().WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select label from session_marker`).Scan(&label)
+		}))
+		return label
+	}
+	write("original")
+	require.Error(t, manager.open(ctx, "../outside.duckdb"))
+	require.Error(t, manager.new(ctx, "../outside.duckdb"))
+	require.Error(t, manager.open(ctx, "missing.duckdb"))
+	dir, err := appDataDirectory()
+	require.NoError(t, err)
+	require.NoFileExists(t, filepath.Join(dir, "missing.duckdb"))
+	require.NoError(t, manager.new(ctx, "checkout.duckdb"))
+	write("checkout")
+	require.ErrorIs(t, manager.new(ctx, "current.duckdb"), os.ErrExist)
+	require.Equal(t, "checkout", read())
+	require.NoError(t, manager.open(ctx, "current.duckdb"))
+	require.Equal(t, "original", read())
+	require.NoError(t, manager.open(ctx, "checkout.duckdb"))
+	require.NoError(t, e.Shutdown(ctx))
+	e = start()
+	require.Equal(t, "checkout", read())
+}
+
 func TestPercentPathsReopenExactDatabase(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "100% complete")
 	t.Setenv("HOME", home)
@@ -187,39 +259,28 @@ func TestPercentPathsReopenExactDatabase(t *testing.T) {
 	dir, err := appDataDirectory()
 	require.NoError(t, err)
 	ctx := t.Context()
-	use := func(arg, want, label string, write bool) {
+	use := func(arg, label string, write bool) {
 		t.Helper()
 		e := &DuckDBExtension{cfg: &Config{Db: arg, Endpoint: "127.0.0.1:0"}, logger: zap.NewNop()}
 		require.NoError(t, e.Start(ctx, componenttest.NewNopHost()))
 		defer func() { require.NoError(t, e.Shutdown(ctx)) }()
 		require.NoError(t, e.Ready())
 		require.NoError(t, e.Store().WithDBWrite(func(db *sql.DB) error {
-			file, err := os.Stat(want)
-			require.NoError(t, err)
 			if write {
-				_, err = db.Exec(`create table marker as select ? as label`, label)
-				require.NoError(t, err)
+				_, err := db.Exec(`create table marker as select ? as label`, label)
+				return err
 			}
-			// Hold both connections so the second one cannot reuse the first.
-			for range 2 {
-				conn, err := db.Conn(ctx)
-				require.NoError(t, err)
-				defer conn.Close()
-				var opened, stored string
-				err = conn.QueryRowContext(ctx, `select path, label from duckdb_databases(), marker where database_name = current_database()`).Scan(&opened, &stored)
-				require.NoError(t, err)
-				actual, err := os.Stat(opened)
-				require.NoError(t, err)
-				require.True(t, os.SameFile(file, actual))
-				require.Equal(t, label, stored)
-			}
+			var stored string
+			require.NoError(t, db.QueryRowContext(ctx, `select label from marker`).Scan(&stored))
+			require.Equal(t, label, stored)
 			return nil
 		}))
 	}
-	first := filepath.Join(dir, "current.duckdb")
 	other := filepath.Join(dir, "O'Brien 50%.duckdb")
-	use("", first, "first", true)
-	use("", first, "first", false)
-	use(other, other, "second", true)
-	use("", other, "second", false)
+	use("", "first", true)
+	require.FileExists(t, filepath.Join(dir, "current.duckdb"))
+	use("", "first", false)
+	use(other, "second", true)
+	require.FileExists(t, other)
+	use("", "second", false)
 }

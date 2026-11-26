@@ -27,10 +27,86 @@ func OpenViewerDatabase(ctx context.Context, path string, createDefault bool, lo
 	return openStore(ctx, path, logger, true)
 }
 
+// SelectDatabase opens an existing viewer file. remember must persist the
+// selection or return an error without changing it. It must not call the store.
+func (s *Store) SelectDatabase(ctx context.Context, path string, remember func() error) error {
+	return s.switchDatabase(ctx, path, false, remember)
+}
+
+// CreateDatabase creates and selects a viewer file without replacing one.
+func (s *Store) CreateDatabase(ctx context.Context, path string, remember func() error) error {
+	return s.switchDatabase(ctx, path, true, remember)
+}
+
+func (s *Store) switchDatabase(ctx context.Context, path string, create bool, remember func() error) error {
+	s.switchMu.Lock()
+	defer s.switchMu.Unlock()
+
+	s.mu.RLock()
+	closed, active := s.db == nil, s.dbPath
+	s.mu.RUnlock()
+	if closed {
+		return ErrStoreConnectionClosed
+	}
+	if active == "" || !filepath.IsAbs(path) {
+		return errors.New("database selection requires an absolute file path and a file-backed store")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if create {
+		if err := createViewerDatabase(ctx, path, s.logger); err != nil {
+			return err
+		}
+	} else if path == active {
+		// DuckDB already holds this file's writer lock. It may still need
+		// remembering if another viewer changed the selection.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.db == nil {
+			return ErrStoreConnectionClosed
+		}
+		if _, err := os.Stat(path); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return remember()
+	}
+	next, err := OpenViewerDatabase(ctx, path, false, s.logger)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := next.Close(); err != nil {
+			s.logger.Error("closing inactive database", zap.Error(err))
+		}
+	}()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return ErrStoreConnectionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := remember(); err != nil {
+		return err
+	}
+	// No fallible operation remains between remembering the file and making
+	// it visible. Close the old handles after releasing mu. Closing their
+	// observer wakes subscribers, who then read the new database's revision.
+	oldRevision, _, _ := s.commits.Snapshot()
+	s.revisionBase += oldRevision + 1
+	s.databaseHandles, next.databaseHandles = next.databaseHandles, s.databaseHandles
+	return nil
+}
+
 // Inspect a literal path without allowing DuckDB to create a missing file,
 // recover a WAL into the file, or checkpoint it on close.
 func inspectViewerFile(ctx context.Context, path string) error {
-	db, err := sql.Open("duckdb", "")
+	db, err := sql.Open("duckdb", attachedDatabaseDSN(path))
 	if err != nil {
 		return err
 	}
