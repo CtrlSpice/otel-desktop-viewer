@@ -236,7 +236,14 @@ func writeSelection(dir, name string) error {
 	if err := errors.Join(writeErr, tmp.Close()); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(settings, activeFile))
+	root, err := os.OpenRoot(settings)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	// Root.Rename requests POSIX replacement semantics on Windows. Share-delete
+	// on the reader alone does not let os.Rename replace an open destination.
+	return root.Rename(filepath.Base(tmp.Name()), activeFile)
 }
 
 // Browser selections address files by basename, never by a client file path.
