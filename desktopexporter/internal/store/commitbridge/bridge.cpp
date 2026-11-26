@@ -41,7 +41,7 @@ public:
     ResumeFile(const string &path, idx_t device, idx_t file)
         : input(path), canonical(LocalFileSystem::CanonicalizePath(path, nullptr)), device(device), file(file) {}
 
-    string GetName() const override { return "ViewerResumeFile"; }
+    string GetName() const override { return "ViewerResumeFile:" + input; }
     bool CanHandleFile(const string &path) override { return path == input || path == canonical; }
     string CanonicalizePath(const string &, optional_ptr<FileOpener>) override { return canonical; }
 
@@ -71,7 +71,13 @@ private:
 
 void SetResumeFile(ClientContext &context, SetScope, Value &value) {
     const auto &fields = StructValue::GetChildren(value);
-    FileSystem::GetFileSystem(*context.db).RegisterSubSystem(make_uniq<ResumeFile>(
+    auto &fs = FileSystem::GetFileSystem(*context.db);
+    if (fields[1].IsNull()) {
+        // The store has drained connections and detached this file.
+        fs.ExtractSubSystem("ViewerResumeFile:" + fields[0].GetValue<string>());
+        return;
+    }
+    fs.RegisterSubSystem(make_uniq<ResumeFile>(
         fields[0].GetValue<string>(), fields[1].GetValue<uint64_t>(), fields[2].GetValue<uint64_t>()));
 }
 

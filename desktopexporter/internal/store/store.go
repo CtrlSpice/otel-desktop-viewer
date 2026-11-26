@@ -36,7 +36,7 @@ type databaseHandles struct {
 	db           *sql.DB
 	conn         driver.Conn
 	dbPath       string // empty means in-memory mode
-	pin          *viewerFile
+	pin          *inspectedFile
 	owner        *fileOwner
 	commits      *commitbridge.Observer
 	schemaCompat SchemaCompatibility
@@ -44,6 +44,7 @@ type databaseHandles struct {
 
 type Store struct {
 	databaseHandles
+	engine *captureEngine // outlives the pools for individual attached files
 	// A switch prepares the next file while this store still serves requests.
 	// Serialize switches; mu guards the shorter handoff and all database access.
 	switchMu     sync.Mutex
@@ -107,16 +108,12 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected
 		dbPath = filepath.Clean(dbPath)
 	}
 	commits := commitbridge.New()
-	var pin *viewerFile
-	if inspected != nil {
-		pin = inspected.viewerFile
-	}
 	initialized := false
 	defer func() {
 		if !initialized {
 			commits.Close()
-			if pin != nil {
-				pin.Close()
+			if inspected != nil {
+				inspected.close()
 			}
 		}
 	}()
@@ -134,7 +131,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected
 	db := sql.OpenDB(connector)
 
 	// Reuse initialized connections. For attached files, each connection
-	// selects viewer_file as its active database before entering the pool.
+	// selects the capture's catalog before entering the pool.
 	db.SetMaxOpenConns(maxPoolConns)
 	db.SetMaxIdleConns(maxPoolConns)
 	db.SetConnMaxIdleTime(5 * time.Minute)
@@ -144,7 +141,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected
 			_ = conn.Close()
 		}
 	}()
-	if pin != nil {
+	if inspected != nil && inspected.recognized {
 		// Verify the writable connection as well: the path may have changed
 		// since the read-only inspection.
 		if err := verifyViewerDatabase(ctx, db, dbPath); err != nil {
@@ -172,11 +169,12 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected
 	}
 
 	initialized = true
-	return &Store{
-		databaseHandles: databaseHandles{db: db, conn: conn, commits: commits, pin: pin, dbPath: dbPath, schemaCompat: schemaCompat},
+	s := &Store{
+		databaseHandles: databaseHandles{db: db, conn: conn, commits: commits, pin: inspected, dbPath: dbPath, schemaCompat: schemaCompat},
 		logger:          logger,
 		inMemory:        dbPath == "",
-	}, nil
+	}
+	return s, nil
 }
 
 // An in-memory connector will attach the file, so give it the same spill
@@ -198,9 +196,12 @@ type storeDriverConnector interface {
 }
 
 type initializedConnector struct {
-	*duckdb.Connector
+	driver.Connector
 	init func(driver.ExecerContext) error
 }
+
+// The store, not a capture's connection pool, owns the shared engine.
+func (c initializedConnector) Close() error { return nil }
 
 func (c initializedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	conn, err := c.Connector.Connect(ctx)
@@ -214,33 +215,42 @@ func (c initializedConnector) Connect(ctx context.Context) (driver.Conn, error) 
 }
 
 func storeConnector(ctx context.Context, path string, commits *commitbridge.Observer, inspected *inspectedFile) (storeDriverConnector, error) {
-	if inspected == nil && !needsLiteralAttach(path) {
+	if inspected != nil {
+		catalog := inspected.catalog
+		if !inspected.attached {
+			_, err := inspected.engine.control.ExecContext(ctx, "attach ? as "+catalog, path)
+			if err != nil {
+				return nil, err
+			}
+			inspected.attached = true
+		}
+		return initializedConnector{inspected.engine, func(conn driver.ExecerContext) error {
+			if err := commits.Init(conn); err != nil {
+				return err
+			}
+			_, err := conn.ExecContext(context.Background(), "use "+catalog, nil)
+			return err
+		}}, nil
+	}
+	if !needsLiteralAttach(path) {
 		return duckdb.NewConnector(path, commits.Init)
 	}
 	var attach sync.Once
 	var attachErr error
-	catalog := "viewer_file"
-	if inspected != nil {
-		catalog = inspected.catalog
-	}
-	init := func(conn driver.ExecerContext) error {
+	return duckdb.NewConnector(attachedDatabaseDSN(path), func(conn driver.ExecerContext) error {
 		if err := commits.Init(conn); err != nil {
 			return err
 		}
 		attach.Do(func() {
 			arg := []driver.NamedValue{{Ordinal: 1, Value: path}}
-			_, attachErr = conn.ExecContext(ctx, "attach ? as "+catalog, arg)
+			_, attachErr = conn.ExecContext(ctx, "attach ? as viewer_file", arg)
 		})
 		if attachErr != nil {
 			return attachErr
 		}
-		_, err := conn.ExecContext(context.Background(), "use "+catalog, nil)
+		_, err := conn.ExecContext(context.Background(), "use viewer_file", nil)
 		return err
-	}
-	if inspected != nil {
-		return initializedConnector{inspected.engine, init}, nil
-	}
-	return duckdb.NewConnector(attachedDatabaseDSN(path), init)
+	})
 }
 
 // Close closes the store and the underlying database connection.
@@ -254,7 +264,12 @@ func (s *Store) Close() error {
 	defer s.switchMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.databaseHandles.close()
+	err := s.databaseHandles.close()
+	if s.engine != nil {
+		err = errors.Join(err, s.engine.control.Close())
+		s.engine = nil
+	}
+	return err
 }
 
 func (s *databaseHandles) close() error {
@@ -274,7 +289,7 @@ func (s *databaseHandles) close() error {
 
 	var pinErr error
 	if s.pin != nil {
-		pinErr = s.pin.Close()
+		pinErr = s.pin.close()
 		s.pin = nil
 	}
 	if s.owner != nil {

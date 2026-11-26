@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"os"
@@ -16,20 +15,68 @@ import (
 )
 
 // OpenViewerDatabase reopens a recognized viewer database. Only the first
-// launch may create one. Explicit --db uses NewStore instead.
+// launch may create one.
 func OpenViewerDatabase(ctx context.Context, path string, createDefault bool, logger *zap.Logger) (*Store, error) {
+	e, err := newCaptureEngine(ctx, path)
+	if err != nil {
+		return nil, err
+	}
 	if createDefault {
-		if err := createViewerDatabase(ctx, path, logger); err != nil && !errors.Is(err, os.ErrExist) {
+		if err := createViewerDatabaseOn(ctx, path, logger, e); err != nil && !errors.Is(err, os.ErrExist) {
+			e.control.Close()
 			return nil, err
 		}
 	}
+	s, err := e.openExisting(ctx, path, logger)
+	if err != nil {
+		e.control.Close()
+		return nil, err
+	}
+	s.engine = e
+	return s, nil
+}
+
+func (e *captureEngine) openExisting(ctx context.Context, path string, logger *zap.Logger) (*Store, error) {
 	return openFileStore(path, false, func() (*Store, error) {
-		file, err := inspectViewerFile(ctx, path)
+		file, err := e.inspectFile(ctx, path)
 		if err != nil {
 			return nil, err
 		}
 		return openStore(ctx, path, logger, file)
 	})
+}
+
+// OpenExplicitDatabase keeps --db's schema and creation rules while allowing
+// the collector to switch away from its first file without closing the engine.
+func OpenExplicitDatabase(ctx context.Context, path string, logger *zap.Logger) (*Store, error) {
+	e, err := newCaptureEngine(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	s, err := openFileStore(path, false, func() (*Store, error) {
+		f := &inspectedFile{engine: e}
+		pin, err := pinViewerFile(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		if pin != nil {
+			f.viewerFile = pin
+			if err := pin.guard(ctx, e.control); err != nil {
+				return nil, errors.Join(err, pin.Close())
+			}
+			f.guarded = true
+		}
+		if err := f.attach(ctx, path, ""); err != nil {
+			return nil, errors.Join(err, f.close())
+		}
+		return openStore(ctx, path, logger, f)
+	})
+	if err != nil {
+		e.control.Close()
+		return nil, err
+	}
+	s.engine = e
+	return s, nil
 }
 
 // SelectDatabase opens an existing viewer file. remember must persist the
@@ -59,11 +106,7 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if create {
-		if err := createViewerDatabase(ctx, path, s.logger); err != nil {
-			return err
-		}
-	} else {
+	if !create {
 		target, err := identifyFile(path)
 		if err != nil {
 			return err
@@ -89,7 +132,37 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 			return remember()
 		}
 	}
-	next, err := OpenViewerDatabase(ctx, path, false, s.logger)
+	// Attachments are visible across the instance. Drain current requests
+	// before the candidate catalog appears, including read-only SQL clients.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if create {
+		if err := createViewerDatabaseOn(ctx, path, s.logger, s.engine); err != nil {
+			return err
+		}
+	}
+	var next *Store
+	var err error
+	if s.engine == nil {
+		next, err = OpenViewerDatabase(ctx, path, false, s.logger)
+	} else {
+		// Different files can have the same DuckDB catalog name (for example
+		// capture.one.duckdb and capture.two.duckdb). Keep the old attachment
+		// alive while leaving its ordinary name free for the candidate.
+		old := s.pin
+		original := old.catalog
+		if err := old.rename(`"viewer.previous"`); err != nil {
+			return err
+		}
+		defer func() {
+			if s.pin == old {
+				if err := old.rename(original); err != nil {
+					s.logger.Error("restoring active catalog name", zap.Error(err))
+				}
+			}
+		}()
+		next, err = s.engine.openExisting(ctx, path, s.logger)
+	}
 	if err != nil {
 		return err
 	}
@@ -98,23 +171,36 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 			s.logger.Error("closing inactive database", zap.Error(err))
 		}
 	}()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.db == nil {
 		return ErrStoreConnectionClosed
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	id, err := identifyFile(path)
+	if err != nil || id != next.owner.identity {
+		return errors.Join(fmt.Errorf("database file changed before selection: %s", path), err)
+	}
 	if err := remember(); err != nil {
 		return err
 	}
 	// No fallible operation remains between remembering the file and making
-	// it visible. Close the old handles after releasing mu. Closing their
+	// it visible. Close the old handles before releasing mu. Closing their
 	// observer wakes subscribers, who then read the new database's revision.
 	oldRevision, _, _ := s.commits.Snapshot()
 	s.revisionBase += oldRevision + 1
 	s.databaseHandles, next.databaseHandles = next.databaseHandles, s.databaseHandles
+	if s.engine == nil {
+		s.engine, next.engine = next.engine, nil
+	}
+	return nil
+}
+
+func (f *inspectedFile) rename(name string) error {
+	if _, err := f.engine.control.Exec("alter database " + f.catalog + " set alias to " + name); err != nil {
+		return err
+	}
+	f.catalog = name
 	return nil
 }
 
@@ -122,25 +208,41 @@ func (s *Store) switchDatabase(ctx context.Context, path string, create bool, re
 // recover a WAL into the file, or checkpoint it on close.
 type inspectedFile struct {
 	*viewerFile
-	engine  *duckdb.Connector
-	catalog string // quoted DuckDB identifier, derived by ATTACH
+	engine     *captureEngine
+	guarded    bool
+	attached   bool
+	recognized bool
+	catalog    string // quoted DuckDB identifier, derived by ATTACH
 }
 
-func inspectViewerFile(ctx context.Context, path string) (*inspectedFile, error) {
+type captureEngine struct {
+	*duckdb.Connector
+	control *sql.DB
+}
+
+func newCaptureEngine(ctx context.Context, path string) (*captureEngine, error) {
+	connector, err := duckdb.NewConnector(attachedDatabaseDSN(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	e := &captureEngine{connector, sql.OpenDB(connector)}
+	e.control.SetMaxOpenConns(1)
+	// Leave even "memory.duckdb" free to use its normal catalog name.
+	if _, err := e.control.ExecContext(ctx, `load otel_commits; alter database memory set alias to "viewer.engine"; use "viewer.engine"`); err != nil {
+		e.control.Close()
+		return nil, err
+	}
+	return e, nil
+}
+
+func (e *captureEngine) inspectFile(ctx context.Context, path string) (*inspectedFile, error) {
 	file, err := pinViewerFile(path)
 	if err != nil {
 		return nil, err
 	}
-	engine, err := duckdb.NewConnector(attachedDatabaseDSN(path), nil)
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	inspected := &inspectedFile{viewerFile: file, engine: engine}
+	inspected := &inspectedFile{viewerFile: file, engine: e}
 	if err := inspected.inspect(ctx, path); err != nil {
-		engine.Close()
-		file.Close()
-		return nil, err
+		return nil, errors.Join(err, inspected.close())
 	}
 	return inspected, nil
 }
@@ -161,28 +263,14 @@ func (file *viewerFile) guard(ctx context.Context, db *sql.DB) error {
 }
 
 func (file *inspectedFile) inspect(ctx context.Context, path string) error {
-	// Close the inspection pool without releasing the engine or its file guard.
-	db := sql.OpenDB(struct{ driver.Connector }{file.engine})
-	defer db.Close()
-	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, "load otel_commits"); err != nil {
-		return err
-	}
+	db := file.engine.control
 	if err := file.guard(ctx, db); err != nil {
 		return err
 	}
-	// Leave even "memory.duckdb" free to use its normal catalog name.
-	if _, err := db.ExecContext(ctx, `alter database memory set alias to "viewer.engine"`); err != nil {
+	file.guarded = true
+	if err := file.attach(ctx, path, " (read_only)"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, "attach ? (read_only)", path); err != nil {
-		return fmt.Errorf("inspect %s: %w", path, err)
-	}
-	var name string
-	if err := db.QueryRowContext(ctx, "select database_name from duckdb_databases() where path is not null").Scan(&name); err != nil {
-		return err
-	}
-	file.catalog = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	if _, err := db.ExecContext(ctx, "use "+file.catalog); err != nil {
 		return err
 	}
@@ -192,8 +280,54 @@ func (file *inspectedFile) inspect(ctx context.Context, path string) error {
 	if _, _, err := inspectSchemaVersion(ctx, db, path, zap.NewNop(), schema.Version); err != nil {
 		return err
 	}
-	_, err := db.ExecContext(ctx, `use "viewer.engine"; detach `+file.catalog)
+	file.recognized = true
+	return file.detach()
+}
+
+func (file *inspectedFile) attach(ctx context.Context, path, options string) error {
+	db := file.engine.control
+	// Exactly one new file is attached. Ask DuckDB for its name rather than
+	// guessing how this version renders platform paths or compound filenames.
+	if _, err := db.ExecContext(ctx, "attach ?"+options, path); err != nil {
+		return fmt.Errorf("attach %s: %w", path, err)
+	}
+	var name string
+	if err := db.QueryRow("select database_name from duckdb_databases() where path is not null and database_name <> 'viewer.previous'").Scan(&name); err != nil {
+		return err
+	}
+	file.catalog = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	file.attached = true
+	return nil
+}
+
+func (f *inspectedFile) detach() error {
+	if !f.attached {
+		return nil
+	}
+	_, err := f.engine.control.Exec(`use "viewer.engine"; detach ` + f.catalog)
+	if err == nil {
+		f.attached = false
+	}
 	return err
+}
+
+func (f *inspectedFile) close() error {
+	if err := f.detach(); err != nil {
+		return err
+	}
+	if f.guarded {
+		db := f.engine.control
+		if _, err := db.Exec("set variable viewer_identity = struct_pack(path := ?::varchar, device := null::ubigint, file := null::ubigint)", f.Name()); err != nil {
+			return err
+		}
+		if _, err := db.Exec("set otel_resume_file = getvariable('viewer_identity')"); err != nil {
+			return err
+		}
+	}
+	if f.viewerFile != nil {
+		return f.File.Close()
+	}
+	return nil
 }
 
 func verifyViewerDatabase(ctx context.Context, db *sql.DB, path string) error {
@@ -214,14 +348,19 @@ func verifyViewerDatabase(ctx context.Context, db *sql.DB, path string) error {
 
 // Initialize a private staging file first. Exclusive creation of the final
 // path means that a file appearing during startup cannot be overwritten.
-func createViewerDatabase(ctx context.Context, path string, logger *zap.Logger) error {
+func createViewerDatabaseOn(ctx context.Context, path string, logger *zap.Logger, e *captureEngine) error {
 	dir, err := os.MkdirTemp(filepath.Dir(path), ".viewer-init-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
 	staged := filepath.Join(dir, "current.duckdb")
-	s, err := NewStore(ctx, staged, logger)
+	var s *Store
+	if e == nil {
+		s, err = NewStore(ctx, staged, logger)
+	} else {
+		s, err = openStore(ctx, staged, logger, &inspectedFile{engine: e, catalog: `"viewer.stage"`})
+	}
 	if err != nil {
 		return err
 	}

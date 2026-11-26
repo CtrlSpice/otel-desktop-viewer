@@ -45,7 +45,7 @@ func openFileStore(path string, cached bool, open func() (*Store, error)) (*Stor
 		return nil, err
 	}
 	id, err := identifyFile(path)
-	if err != nil || (exists && id != before) || (s.pin != nil && s.pin.fileIdentity != id) {
+	if err != nil || (exists && id != before) || (s.pin != nil && s.pin.viewerFile != nil && s.pin.fileIdentity != id) {
 		closeErr := s.Close() // Not registered yet.
 		return nil, errors.Join(fmt.Errorf("database file changed during open: %s", path), err, closeErr)
 	}

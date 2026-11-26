@@ -157,6 +157,52 @@ func TestSwitchPublishesOnlyAfterSelectionIsRemembered(t *testing.T) {
 	}
 }
 
+func TestSwitchUsesOneEngineForFilesWithTheSameCatalogName(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	first := filepath.Join(dir, "capture.one.duckdb")
+	second := filepath.Join(dir, "capture.two.duckdb")
+	active, err := OpenViewerDatabase(ctx, first, true, nil)
+	require.NoError(t, err)
+	defer active.Close()
+	// The host table lasts only for the lifetime of this engine. Both file
+	// names naturally bind as "capture"; qualified SQL must keep working.
+	_, err = active.db.Exec(`create table "viewer.engine".main.engine_marker as select 17 as n;
+		create table capture.main.capture_marker as select 1 as n`)
+	require.NoError(t, err)
+	refused := errors.New("remember failed")
+	require.ErrorIs(t, active.CreateDatabase(ctx, second, func() error { return refused }), refused)
+	var n int
+	require.NoError(t, active.db.QueryRow(`select n from capture.main.capture_marker`).Scan(&n))
+	require.Equal(t, 1, n)
+	require.NoError(t, active.SelectDatabase(ctx, second, func() error { return nil }))
+	_, err = active.db.Exec(`create table capture.main.capture_marker as select 2 as n`)
+	require.NoError(t, err)
+	check := func(expected int) {
+		t.Helper()
+		var held []*sql.Conn
+		defer func() {
+			for _, c := range held {
+				c.Close()
+			}
+		}()
+		for range maxPoolConns {
+			c, err := active.db.Conn(ctx)
+			require.NoError(t, err)
+			held = append(held, c)
+			var name string
+			var sum int
+			require.NoError(t, c.QueryRowContext(ctx, `select current_database(), engine_marker.n + capture_marker.n
+				from "viewer.engine".main.engine_marker, capture_marker`).Scan(&name, &sum))
+			require.Equal(t, "capture", name)
+			require.Equal(t, expected+17, sum)
+		}
+	}
+	check(2)
+	require.NoError(t, active.SelectDatabase(ctx, first, func() error { return nil }))
+	check(1)
+}
+
 func sameTestFile(t *testing.T, a, b string) bool {
 	t.Helper()
 	x, err := filepath.EvalSymlinks(a)

@@ -77,7 +77,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	if e.cfg.Db == "" {
 		str, err = store.OpenViewerDatabase(ctx, path, createDefault, e.logger)
 	} else {
-		str, err = store.NewStore(ctx, path, e.logger)
+		str, err = store.OpenExplicitDatabase(ctx, path, e.logger)
 	}
 	if err != nil {
 		return fmt.Errorf("open telemetry database %s: %w", path, err)
