@@ -203,6 +203,9 @@ func storeConnector(ctx context.Context, path string, commits *commitbridge.Obse
 // closed state, because sql.DB.Close() has a graceful shutdown that can
 // cause a ping to succeed briefly after close.
 func (s *Store) Close() error {
+	// A switch owns its candidate until it has closed the inactive handles.
+	s.switchMu.Lock()
+	defer s.switchMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.databaseHandles.close()

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,45 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
+
+func TestCloseWaitsForSwitchPreparation(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "next.duckdb")
+	active := newFileStore(t, filepath.Join(dir, "original.duckdb"))
+	defer active.Close()
+
+	// Hold candidate initialization before the handoff acquires active.mu.
+	schemaInitializationMu.Lock()
+	release := sync.OnceFunc(schemaInitializationMu.Unlock)
+	defer release()
+	switched := make(chan error, 1)
+	go func() {
+		switched <- active.CreateDatabase(ctx, dest, func() error { return nil })
+	}()
+	require.Eventually(t, func() bool {
+		staging, _ := filepath.Glob(filepath.Join(dir, ".viewer-init-*", "current.duckdb"))
+		return len(staging) == 1
+	}, 10*time.Second, time.Millisecond)
+
+	closing, closed := make(chan struct{}), make(chan error, 1)
+	go func() {
+		close(closing)
+		closed <- active.Close()
+	}()
+	<-closing
+	select {
+	case <-closed:
+		t.Fatal("Close returned while the switch was preparing its database")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	require.NoError(t, <-switched)
+	require.NoError(t, <-closed)
+	require.ErrorIs(t, active.CreateDatabase(ctx, filepath.Join(dir, "late.duckdb"), func() error { return nil }), ErrStoreConnectionClosed)
+	_, err := os.Stat(filepath.Join(dir, "late.duckdb"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
 
 func TestSwitchWaitsForIngestAndKeepsEachBatchInOneFile(t *testing.T) {
 	ctx := t.Context()
