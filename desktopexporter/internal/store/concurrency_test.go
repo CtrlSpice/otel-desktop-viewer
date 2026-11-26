@@ -23,10 +23,11 @@ func TestCloseWaitsForSwitchPreparation(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "next.duckdb")
-	active := newFileStore(t, filepath.Join(dir, "original.duckdb"))
+	active, err := OpenViewerDatabase(ctx, filepath.Join(dir, "original.duckdb"), true, nil)
+	require.NoError(t, err)
 	defer active.Close()
 
-	// Hold candidate initialization before the handoff acquires active.mu.
+	// Hold candidate initialization while the engine is preparing the new file.
 	schemaInitializationMu.Lock()
 	release := sync.OnceFunc(schemaInitializationMu.Unlock)
 	defer release()
@@ -54,7 +55,7 @@ func TestCloseWaitsForSwitchPreparation(t *testing.T) {
 	require.NoError(t, <-switched)
 	require.NoError(t, <-closed)
 	require.ErrorIs(t, active.CreateDatabase(ctx, filepath.Join(dir, "late.duckdb"), func() error { return nil }), ErrStoreConnectionClosed)
-	_, err := os.Stat(filepath.Join(dir, "late.duckdb"))
+	_, err = os.Stat(filepath.Join(dir, "late.duckdb"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 

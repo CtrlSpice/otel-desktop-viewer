@@ -541,6 +541,30 @@ func TestCreationPreservesOrphanedRecoveryFiles(t *testing.T) {
 	}
 }
 
+func TestCatalogDiscoveryFailureRollsBackAttachment(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target.duckdb")
+	require.NoError(t, newFileStore(t, path).Close())
+	e, err := newCaptureEngine(ctx, path)
+	require.NoError(t, err)
+	defer e.close()
+	// Leave no eligible row for catalog discovery, after a successful ATTACH.
+	_, err = e.control.Exec(`create temp macro duckdb_databases() as table
+		select null::varchar as path, null::varchar as database_name where false`)
+	require.NoError(t, err)
+	_, err = e.openExisting(ctx, path, nil)
+	require.ErrorIs(t, err, sql.ErrNoRows)
+	_, err = e.control.Exec("drop macro duckdb_databases")
+	require.NoError(t, err)
+	var count int
+	require.NoError(t, e.control.QueryRow(`select count(*) from duckdb_databases() where path is not null`).Scan(&count))
+	require.Zero(t, count)
+	s, err := e.openExisting(ctx, path, nil)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+}
+
 func TestPublishNewDatabaseRefusesExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	staged := filepath.Join(dir, "staged")

@@ -45,8 +45,8 @@ type databaseHandles struct {
 type Store struct {
 	databaseHandles
 	engine *captureEngine // outlives the pools for individual attached files
-	// A switch prepares the next file while this store still serves requests.
-	// Serialize switches; mu guards the shorter handoff and all database access.
+	// Serialize switches with shutdown. mu drains readers and ingestion before
+	// a switch changes the catalogs visible in their shared DuckDB instance.
 	switchMu     sync.Mutex
 	revisionBase uint64
 	inMemory     bool // Only file-backed stores can switch databases.
@@ -128,7 +128,7 @@ func openStore(ctx context.Context, dbPath string, logger *zap.Logger, inspected
 		if !initialized {
 			commits.Close()
 			if inspected != nil {
-				inspected.close()
+				inspected.finish(nil)
 			}
 		}
 	}()
@@ -281,7 +281,7 @@ func (s *Store) Close() error {
 	defer s.mu.Unlock()
 	err := s.databaseHandles.close()
 	if s.engine != nil {
-		err = errors.Join(err, s.engine.control.Close())
+		err = errors.Join(err, s.engine.close())
 		s.engine = nil
 	}
 	return err
@@ -304,13 +304,12 @@ func (s *databaseHandles) close() error {
 
 	var pinErr error
 	if s.pin != nil {
-		pinErr = s.pin.close()
+		pinErr = s.pin.finish(s.owner)
 		s.pin = nil
-	}
-	if s.owner != nil {
+	} else if s.owner != nil {
 		s.owner.release()
-		s.owner = nil
 	}
+	s.owner = nil
 	return errors.Join(connErr, dbErr, pinErr)
 }
 
