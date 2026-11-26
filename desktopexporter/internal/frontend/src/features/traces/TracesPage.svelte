@@ -64,6 +64,8 @@
     setLogInQuery,
     parseEventIndex,
     SPAN_PARAM,
+    FOCUS_PARAM,
+    readRoute,
     EVENT_PARAM,
     LOG_PARAM,
   } from '@/route'
@@ -264,6 +266,9 @@
       retainedTreeSpanID = selectedSpanID
     }
   })
+  let focusedSpanID = $derived(
+    displayingRequestedTrace ? routeContext.route.query[FOCUS_PARAM] : undefined
+  )
   let displayedSpanID = $derived(
     displayingRequestedTrace ? selectedSpanID : retainedTreeSpanID
   )
@@ -433,12 +438,18 @@
     page.selectItem(traceID)
   }
 
-  function handleSelectSpan(spanID: string) {
+  function handleSelectSpan(
+    spanID: string,
+    focus: string | null | undefined = focusedSpanID
+  ) {
     const traceID = currentTraceData?.traceID
     if (!traceID) return
     fieldRequest = undefined
     detailPanel.reveal()
-    navigateToItem('traces', traceID, 'push', { [SPAN_PARAM]: spanID })
+    navigateToItem('traces', traceID, 'push', {
+      [SPAN_PARAM]: spanID,
+      [FOCUS_PARAM]: focus ?? undefined,
+    })
   }
 
   function handleSelectTimelineRecord(spanID: string, record: TimelineRecord) {
@@ -449,11 +460,13 @@
     if (record.kind === 'event') {
       navigateToItem('traces', traceID, 'push', {
         [SPAN_PARAM]: spanID,
+        [FOCUS_PARAM]: focusedSpanID,
         [EVENT_PARAM]: String(record.eventIndex),
       })
     } else if (record.kind === 'log') {
       navigateToItem('traces', traceID, 'push', {
         [SPAN_PARAM]: spanID,
+        [FOCUS_PARAM]: focusedSpanID,
         [LOG_PARAM]: record.log.logRef,
       })
     }
@@ -627,6 +640,7 @@
         loadedPreviewKey = JSON.stringify([traceID, requestedColumns])
         const spanIDs = result.spans.map(n => n.spanData.spanID)
         const urlSpan = getSpanFromQuery()
+        const focus = readRoute().query[FOCUS_PARAM]
         let desired: string | null
         if (
           retainedSpanID &&
@@ -634,6 +648,12 @@
           spanIDs.includes(retainedSpanID)
         ) {
           desired = retainedSpanID
+        } else if (
+          focus &&
+          spanIDs.includes(focus) &&
+          !spanIDs.includes(urlSpan ?? '')
+        ) {
+          desired = focus
         } else if (queryTree) {
           const firstMatch = result.spans.find(n => n.matched)
           desired = firstMatch?.spanData.spanID ?? spanIDs[0] ?? null
@@ -828,6 +848,7 @@
         }}
         logs={waterfallLogs ?? []}
         selectedSpanID={displayedSpanID}
+        {focusedSpanID}
         searchActive={activeQueryTree !== undefined}
         onSelectSpan={handleSelectSpan}
         onInspectColumn={handleInspectColumn}

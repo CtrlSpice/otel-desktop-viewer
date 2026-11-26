@@ -46,7 +46,8 @@ export function computeTreeMeta(
   spans: readonly {
     depth: number
     spanData: Pick<SpanData, 'spanID' | 'parentSpanID'>
-  }[]
+  }[],
+  focusedSpanID?: string
 ): TreeConnectorMeta[] {
   const counts = childrenCounts(spans)
   const parents: string[] = []
@@ -56,7 +57,9 @@ export function computeTreeMeta(
     parents.length = span.depth + 1
     return {
       childrenCount: counts[i],
-      brokenParent: (span.spanData.parentSpanID ?? null) !== (parent ?? null),
+      brokenParent:
+        span.spanData.spanID !== focusedSpanID &&
+        (span.spanData.parentSpanID ?? null) !== (parent ?? null),
       isLastChild: spans[i].depth === 0 ? false : isLastChild(spans, i),
       ancestorHasNextSibling:
         spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
@@ -166,4 +169,27 @@ export function computeSearchCollapsedParents(
     }
   }
   return toCollapse
+}
+
+export function spanSubtree(nodes: SpanNode[], id: string) {
+  const index = nodes.findIndex(node => node.spanData.spanID === id)
+  if (index < 0) return null
+  const root = nodes[index]
+  const ancestors: SpanNode[] = []
+  let depth = root.depth
+  for (let i = index - 1; depth > 0 && i >= 0; i--) {
+    if (nodes[i].depth < depth) {
+      ancestors.push(nodes[i])
+      depth = nodes[i].depth
+    }
+  }
+  let end = index + 1
+  while (end < nodes.length && nodes[end].depth > root.depth) end++
+  return {
+    root,
+    ancestors: ancestors.reverse(),
+    spans: nodes
+      .slice(index, end)
+      .map(node => ({ ...node, depth: node.depth - root.depth })),
+  }
 }

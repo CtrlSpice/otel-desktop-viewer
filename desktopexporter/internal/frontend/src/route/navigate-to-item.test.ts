@@ -6,7 +6,9 @@ import { setTestUrl } from '@/test/render-helpers'
 
 describe('navigateToItem with itemQuery', () => {
   beforeEach(() => {
-    setTestUrl('/logs/log-1?start=100&end=200&span=stale&event=9&agg=rate')
+    setTestUrl(
+      '/logs/log-1?start=100&end=200&span=stale&focus=stale&event=9&agg=rate'
+    )
   })
 
   it('strips stale scoped params and applies a span patch', () => {

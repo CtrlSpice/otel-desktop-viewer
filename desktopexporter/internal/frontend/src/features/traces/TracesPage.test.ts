@@ -725,6 +725,51 @@ function normalizedText(el: HTMLElement): string {
   return el.textContent!.replace(/\s+/g, ' ').trim()
 }
 
+describe('shareable subtree focus', () => {
+  it('opens a focus-only link, keeps focus on child selection, and restores the scope with Back', async () => {
+    const root = makeSpanNode('root')
+    const branch = makeSpanNode('branch')
+    branch.depth = 1
+    branch.spanData.parentSpanID = 'root'
+    const child = makeSpanNode('child')
+    child.depth = 2
+    child.spanData.parentSpanID = 'branch'
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockResolvedValue({
+      ...makeTraceData(0),
+      spans: [root, branch, child],
+    })
+    setTestUrl('/traces/trace-1?focus=branch&start=100&end=200')
+    renderWithContexts(TracesPage)
+    const row = (id: string) =>
+      document.querySelector<HTMLElement>(`tr[data-span-id="${id}"]`)
+    const query = () => Object.fromEntries(new URLSearchParams(location.search))
+    await waitFor(() => expect(row('child')).not.toBeNull())
+    expect(row('root')).toBeNull()
+    expect(query()).toMatchObject({ focus: 'branch', span: 'branch' })
+    await fireEvent.click(row('child')!)
+    expect(query()).toMatchObject({ focus: 'branch', span: 'child' })
+    await fireEvent.click(screen.getByRole('button', { name: 'Full trace' }))
+    expect(query()).toEqual({ span: 'child', start: '100', end: '200' })
+    expect(row('root')).not.toBeNull()
+    history.back()
+    await waitFor(() => expect(row('root')).toBeNull())
+    expect(query()).toMatchObject({ focus: 'branch', span: 'child' })
+    history.forward()
+    await waitFor(() => expect(row('root')).not.toBeNull())
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Focus on branch subtree' })
+    )
+    expect(query()).toEqual({
+      span: 'branch',
+      focus: 'branch',
+      start: '100',
+      end: '200',
+    })
+  })
+})
+
 describe('TracesPage unplaced spans banner', () => {
   it('opens a route-selected trace and span outside the filtered list on a fresh mount', async () => {
     searchTraceSummaries.mockResolvedValue([])
