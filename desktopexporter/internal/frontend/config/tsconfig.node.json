@@ -9,5 +9,5 @@
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
-  "include": ["../vite.config.ts", "../scripts/*.ts"]
+  "include": ["../vite.config.ts", "../scripts/*.ts", "playwright.config.ts"]
 }
