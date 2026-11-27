@@ -42,7 +42,7 @@ func TestGetLogOTLP(t *testing.T) {
 	}))
 	primaryID := lookupLogRef(t, s, ctx, "primary.event")
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, primaryID)
 	})
 	require.NoError(t, err)
@@ -90,8 +90,8 @@ func assertLogOTLP(t *testing.T, decoded plog.Logs) {
 	assert.Equal(t, pcommon.Timestamp(math.MaxUint64), record.ObservedTimestamp())
 	assert.Equal(t, plog.SeverityNumber(99), record.SeverityNumber())
 	assert.Equal(t, "CUSTOM", record.SeverityText())
-	assert.Equal(t, pcommon.TraceID(mustDecodeTraceIDLogs(otlpLogTraceID)), record.TraceID())
-	assert.Equal(t, pcommon.SpanID(mustDecodeSpanIDLogs(otlpLogSpanID)), record.SpanID())
+	assert.Equal(t, pcommon.TraceID(storetest.MustDecodeTraceID(otlpLogTraceID)), record.TraceID())
+	assert.Equal(t, pcommon.SpanID(storetest.MustDecodeSpanID(otlpLogSpanID)), record.SpanID())
 	assert.Equal(t, uint32(9), record.DroppedAttributesCount())
 	assert.Equal(t, uint32(0x101), uint32(record.Flags()))
 	assert.Equal(t, "primary.event", record.EventName())
@@ -127,7 +127,7 @@ func TestValidateLogOTLPRejectsInvalidWireShapes(t *testing.T) {
 		return logs.Ingest(ctx, conn, otlpLogFixture())
 	}))
 	primaryID := lookupLogRef(t, s, ctx, "primary.event")
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, primaryID)
 	})
 	require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestGetLogOTLPBoundLookupAndAbsentCorrelation(t *testing.T) {
 	}))
 	secondaryID := lookupLogRef(t, s, ctx, "secondary.event")
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, secondaryID)
 	})
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ func TestGetLogOTLPBoundLookupAndAbsentCorrelation(t *testing.T) {
 func TestGetLogOTLPNotFound(t *testing.T) {
 	s, ctx := storetest.New(t)
 	for _, logRef := range []string{"00000000-0000-0000-0000-000000000000", "not-a-log-id"} {
-		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		_, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.GetLogOTLP(ctx, db, logRef)
 		})
 		assert.ErrorIs(t, err, logs.ErrLogRefNotFound)
@@ -249,8 +249,8 @@ func otlpLogFixture() plog.Logs {
 	record := primaryScope.LogRecords().AppendEmpty()
 	record.SetTimestamp(pcommon.Timestamp(math.MaxUint64 - 1))
 	record.SetObservedTimestamp(pcommon.Timestamp(math.MaxUint64))
-	record.SetTraceID(mustDecodeTraceIDLogs(otlpLogTraceID))
-	record.SetSpanID(mustDecodeSpanIDLogs(otlpLogSpanID))
+	record.SetTraceID(storetest.MustDecodeTraceID(otlpLogTraceID))
+	record.SetSpanID(storetest.MustDecodeSpanID(otlpLogSpanID))
 	record.SetSeverityNumber(plog.SeverityNumber(99))
 	record.SetSeverityText("CUSTOM")
 	record.SetDroppedAttributesCount(9)
@@ -417,17 +417,47 @@ func BenchmarkGetLogOTLP(b *testing.B) {
 		return logs.Ingest(ctx, conn, data)
 	}))
 	logRef := lookupLogRef(b, s, ctx, "benchmark")
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, logRef)
 	})
 	require.NoError(b, err)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		if _, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.GetLogOTLP(ctx, db, logRef)
 		}); err != nil {
 			b.Fatal(err)
 		}
 	}
 	b.ReportMetric(float64(len(raw)), "output-bytes")
+}
+
+func TestExportIdentity_LogReingestionDoesNotReplaceNativeReference(t *testing.T) {
+	s, ctx := storetest.New(t)
+	received := otlpLogFixture()
+	ingest := func() {
+		t.Helper()
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return logs.Ingest(ctx, conn, received)
+		}))
+	}
+	read := func(ref string) json.RawMessage {
+		t.Helper()
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.GetLogOTLP(ctx, db, ref)
+		})
+		require.NoError(t, err)
+		return raw
+	}
+	ingest()
+	originalRef := lookupLogRef(t, s, ctx, "primary.event")
+	original := read(originalRef)
+	replacement := received.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	replacement.SetEventName("replacement.event")
+	replacement.Body().SetStr("replacement body")
+	ingest()
+	replacementRef := lookupLogRef(t, s, ctx, "replacement.event")
+	require.NotEqual(t, originalRef, replacementRef)
+	require.Equal(t, string(original), string(read(originalRef)), "received changes create a new log, not new bytes for the old reference")
+	require.Contains(t, string(read(replacementRef)), "replacement body")
 }

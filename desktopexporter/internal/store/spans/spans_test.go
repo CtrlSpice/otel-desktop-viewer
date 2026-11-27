@@ -3,7 +3,6 @@ package spans_test
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -22,50 +21,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// readStore runs a query under the store's read lock and returns its result.
-// Store exposes no raw *sql.DB: every read is ordered against ingest,
-// retention, and Close.
-func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
-	var out T
-	err := s.WithDBRead(func(db *sql.DB) error {
-		var err error
-		out, err = fn(db)
-		return err
-	})
-	return out, err
-}
-
-func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
-	t.Helper()
-	var n int
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, query, args...).Scan(&n)
-	}))
-	return n
-}
-
-// mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
-func mustDecodeTraceID(s string) [16]byte {
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != 16 {
-		panic("invalid trace ID hex: " + s)
-	}
-	var out [16]byte
-	copy(out[:], b)
-	return out
-}
-
-// mustDecodeSpanID decodes a 16-char hex string to 8 bytes (span ID).
-func mustDecodeSpanID(s string) [8]byte {
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != 8 {
-		panic("invalid span ID hex: " + s)
-	}
-	var out [8]byte
-	copy(out[:], b)
-	return out
-}
-
 // buildTracesForSummaryOrdering builds three traces with different start times for ordering tests.
 // Returns trace IDs as hex strings in order: trace1 (middle), trace2 (oldest), trace3 (newest).
 func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, string, string) {
@@ -82,10 +37,10 @@ func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, strin
 		rs.Resource().Attributes().PutStr("service.name", serviceName)
 		ss := rs.ScopeSpans().AppendEmpty()
 		s := ss.Spans().AppendEmpty()
-		s.SetTraceID(mustDecodeTraceID(traceIDHex))
-		s.SetSpanID(mustDecodeSpanID(spanIDHex))
+		s.SetTraceID(storetest.MustDecodeTraceID(traceIDHex))
+		s.SetSpanID(storetest.MustDecodeSpanID(spanIDHex))
 		if parentSpanIDHex != "" {
-			s.SetParentSpanID(mustDecodeSpanID(parentSpanIDHex))
+			s.SetParentSpanID(storetest.MustDecodeSpanID(parentSpanIDHex))
 		}
 		s.SetName(name)
 		s.SetKind(ptrace.SpanKindInternal)
@@ -110,7 +65,7 @@ func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, strin
 func searchTraceSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []traceSummaryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	assert.NoError(t, err)
@@ -150,7 +105,7 @@ func TestSearchTraceSummariesNullableTimeRangesExecute(t *testing.T) {
 		{"bounded", store.TimeRange{Start: &start, End: &end}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 				return spans.SearchTraceSummaries(ctx, db, tc.timeRange, nil)
 			})
 			require.NoError(t, err)
@@ -173,8 +128,8 @@ func TestSearchTraceSummariesDurationExact(t *testing.T) {
 	rs := data.ResourceSpans().AppendEmpty()
 	ss := rs.ScopeSpans().AppendEmpty()
 	span := ss.Spans().AppendEmpty()
-	span.SetTraceID(mustDecodeTraceID(traceID))
-	span.SetSpanID(mustDecodeSpanID("0000000000000042"))
+	span.SetTraceID(storetest.MustDecodeTraceID(traceID))
+	span.SetSpanID(storetest.MustDecodeSpanID("0000000000000042"))
 	span.SetName("exact-duration")
 	span.SetStartTimestamp(1)
 	span.SetEndTimestamp(pcommon.Timestamp(duration + 1))
@@ -196,7 +151,7 @@ func TestSearchTraceSummariesDurationExact(t *testing.T) {
 			"value":         "9007199254740993ns",
 		},
 	}
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
 	})
 	require.NoError(t, err)
@@ -207,7 +162,7 @@ func TestSearchTraceSummariesDurationExact(t *testing.T) {
 
 	query["query"].(map[string]any)["fieldOperator"] = "IN"
 	query["query"].(map[string]any)["value"] = `["9007199254740993ns","1s"]`
-	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
 	})
 	require.NoError(t, err)
@@ -223,7 +178,7 @@ func TestSearchTraceSummariesDurationExact(t *testing.T) {
 			}
 			query["query"].(map[string]any)["fieldOperator"] = operator
 			query["query"].(map[string]any)["value"] = value
-			_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			_, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 				return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
 			})
 			require.ErrorIs(t, err, spans.ErrInvalidTraceQuery)
@@ -262,10 +217,10 @@ func TestSearchTraceSummariesFiltersSelectWholeTracesAndAnnotateMatches(t *testi
 		rs := data.ResourceSpans().AppendEmpty()
 		rs.Resource().Attributes().PutStr("service.name", service)
 		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
-		span.SetTraceID(mustDecodeTraceID(traceID))
-		span.SetSpanID(mustDecodeSpanID(spanID))
+		span.SetTraceID(storetest.MustDecodeTraceID(traceID))
+		span.SetSpanID(storetest.MustDecodeSpanID(spanID))
 		if parentID != "" {
-			span.SetParentSpanID(mustDecodeSpanID(parentID))
+			span.SetParentSpanID(storetest.MustDecodeSpanID(parentID))
 		}
 		span.SetName(name)
 		span.SetStartTimestamp(pcommon.Timestamp(start))
@@ -289,7 +244,7 @@ func TestSearchTraceSummariesFiltersSelectWholeTracesAndAnnotateMatches(t *testi
 		},
 	}
 	searchRange := store.BoundedTimeRange(150, 250)
-	filteredRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	filteredRaw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummaries(ctx, db, searchRange, query)
 	})
 	require.NoError(t, err)
@@ -313,7 +268,7 @@ func TestSearchTraceSummariesFiltersSelectWholeTracesAndAnnotateMatches(t *testi
 		{TraceID: traceID, SpanID: "0000000000000004"},
 	}, *summary.MatchedSpans)
 
-	unfilteredRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	unfilteredRaw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummaries(ctx, db, searchRange, nil)
 	})
 	require.NoError(t, err)
@@ -369,7 +324,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 		return spans.Ingest(ctx, conn, traces)
 	}))
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummariesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 2)
 	})
 	require.NoError(t, err)
@@ -378,7 +333,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	require.Equal(t, []string{trace3Hex, trace1Hex}, []string{summaries[0].TraceID, summaries[1].TraceID})
 
 	limit := int64(1)
-	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{
 			Limit: &limit,
 			Sort:  &search.Sort{Field: "duration", Direction: "desc"},
@@ -390,7 +345,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	require.Len(t, summaries, 1)
 	require.Equal(t, trace2Hex, summaries[0].TraceID, "sort must select the longest trace before applying LIMIT")
 
-	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	_, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTraceSummariesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 0)
 	})
 	require.ErrorIs(t, err, spans.ErrInvalidTraceLimit)
@@ -401,7 +356,7 @@ func TestTraceNotFound(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
-	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	_, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceView(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
 	})
 	assert.Error(t, err)
@@ -435,13 +390,13 @@ func TestClearTraces(t *testing.T) {
 
 	summaries := searchTraceSummariesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
+	assert.Greater(t, storetest.CountRows(t, s, ctx, "select count(*) from events"), 0)
+	assert.Greater(t, storetest.CountRows(t, s, ctx, "select count(*) from links"), 0)
 
 	// Confirm the fixture carries attributes before removing its rows.
-	attrsBefore := countRows(t, s, ctx, "select sum(len(variant_keys(attributes))) from spans")
+	attrsBefore := storetest.CountRows(t, s, ctx, "select sum(len(variant_keys(attributes))) from spans")
 	assert.Greater(t, attrsBefore, 0)
-	assert.Greater(t, countRows(t, s, ctx, `
+	assert.Greater(t, storetest.CountRows(t, s, ctx, `
 		select count(*) from spans s, unnest(variant_keys(s.attributes)) t(key)`), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
@@ -451,15 +406,15 @@ func TestClearTraces(t *testing.T) {
 
 	summaries = searchTraceSummariesAll(t, s, ctx)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from spans"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
+	assert.Equal(t, 0, storetest.CountRows(t, s, ctx, "select count(*) from spans"))
+	assert.Equal(t, 0, storetest.CountRows(t, s, ctx, "select count(*) from events"))
+	assert.Equal(t, 0, storetest.CountRows(t, s, ctx, "select count(*) from links"))
 
-	assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"))
+	assert.Zero(t, storetest.CountRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"))
 
 	// Spans were the only signal ingested, so after the sweep nothing is
 	// referenced and the three tables empty out completely.
-	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
+	assert.Zero(t, storetest.CountRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
 
 // getTraceTraceID returns the trace ID from GetTraceView JSON (traceID in response is hex string).
@@ -511,7 +466,7 @@ func TestTraceSuite(t *testing.T) {
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.GetTraceView(ctx, db, testTraceID, nil)
 		})
 		assert.NoError(t, err, "failed to get trace")
@@ -541,7 +496,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceNotFound", func(t *testing.T) {
-		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		_, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.GetTraceView(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
 		})
 		assert.Error(t, err)
@@ -549,7 +504,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("GetTraceViewAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.GetTraceView(ctx, db, "00000000000000000000000000000099", nil)
 		})
 		assert.NoError(t, err, "GetTraceView with 32-char hex trace ID should succeed")
@@ -557,7 +512,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("AttributeDiscovery", func(t *testing.T) {
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.GetTraceAttributeDefinitions(ctx, db)
 		})
 		assert.NoError(t, err, "failed to get trace attributes")
@@ -632,7 +587,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "test-service",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -651,7 +606,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "root-value",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -670,7 +625,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "root-event-1", // untargeted FTS matches tokens, not substrings
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -689,7 +644,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "Hello",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -708,7 +663,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "Link1",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -727,7 +682,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "0000000000000001",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -746,7 +701,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "00000000000000000000000000000099",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -765,7 +720,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "nonexistent-value-12345",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -788,7 +743,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "test-service",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -812,7 +767,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "42",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -836,7 +791,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "3.14",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -860,7 +815,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "true",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -884,7 +839,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "two",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -908,7 +863,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "20",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -932,7 +887,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "2.2",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -956,7 +911,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "true",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -980,7 +935,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "Hello",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1004,7 +959,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				Value:         "Link1",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1028,7 +983,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1048,7 +1003,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "root-operation",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1069,7 +1024,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         testTraceID,
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1088,7 +1043,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1107,7 +1062,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1126,7 +1081,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "root-event",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1146,7 +1101,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "00000000-0000-0000-0000-00000000000a",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1166,7 +1121,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "0000000000000000000000000000000a",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1186,7 +1141,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "000000000000000a",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1207,7 +1162,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "not-a-trace",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
@@ -1224,7 +1179,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "zz-definitely-not-hex",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage span ID must not surface a cast error")
@@ -1241,7 +1196,7 @@ func TestSearchTraceSummaries(t *testing.T) {
 				"value":         "not-a-trace",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage link trace ID must not surface a cast error")
@@ -1262,7 +1217,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	assert.NoError(t, err)
 
 	testTraceID := "00000000000000000000000000000099"
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceView(ctx, db, testTraceID, nil)
 	})
 	assert.NoError(t, err)
@@ -1272,7 +1227,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	// SpanID for index i is stored as the native integer i+1.
 	for _, spanIndex := range []int{0, 2047, 2048, batchSize - 1} {
 		spanID := fmt.Sprintf("%d", spanIndex+1)
-		attrCount := countRows(t, s, ctx, `
+		attrCount := storetest.CountRows(t, s, ctx, `
 			select count(*)
 			from spans, unnest(variant_keys(attributes)) a(key)
 			where span_id = ?::ubigint and a.key in ('span.index', 'flush_test')
@@ -1282,12 +1237,12 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 
 	// Resolve resource and scope attributes through the first span's references.
 	span1ID := "1"
-	resAttr := countRows(t, s, ctx, `
+	resAttr := storetest.CountRows(t, s, ctx, `
 		select count(*)
 		from spans s, unnest(variant_keys(s.resource.attributes)) a(key)
 		where s.span_id = ?::ubigint
 	`, span1ID)
-	scopeAttr := countRows(t, s, ctx, `
+	scopeAttr := storetest.CountRows(t, s, ctx, `
 		select count(*)
 		from spans s, unnest(variant_keys(s.scope.attributes)) a(key)
 		where s.span_id = ?::ubigint
@@ -1347,7 +1302,7 @@ func TestGetTraceViewWith32CharHexTraceID(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceView(ctx, db, "00000000000000000000000000000099", nil)
 	})
 	assert.NoError(t, err, "GetTraceView with 32-char hex trace ID should succeed")
@@ -1369,10 +1324,10 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 
 	summaries := searchTraceSummariesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
+	assert.Greater(t, storetest.CountRows(t, s, ctx, "select count(*) from events"), 0)
+	assert.Greater(t, storetest.CountRows(t, s, ctx, "select count(*) from links"), 0)
 
-	attrsBefore := countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))")
+	attrsBefore := storetest.CountRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))")
 	assert.Greater(t, attrsBefore, 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
@@ -1382,14 +1337,14 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 
 	summaries = searchTraceSummariesAll(t, s, ctx)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
+	assert.Equal(t, 0, storetest.CountRows(t, s, ctx, "select count(*) from events"))
+	assert.Equal(t, 0, storetest.CountRows(t, s, ctx, "select count(*) from links"))
 
 	// Deleting spans removes their attributes immediately.
-	assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"),
+	assert.Zero(t, storetest.CountRows(t, s, ctx, "select count(*) from spans, unnest(variant_keys(attributes))"),
 		"attributes are removed with their spans")
 
-	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
+	assert.Zero(t, storetest.CountRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -1414,11 +1369,11 @@ func createTestTracesPdataN(n int) ptrace.Traces {
 	ss.Scope().SetName("test-scope")
 	ss.Scope().SetVersion("v1.0.0")
 	ss.Scope().Attributes().PutStr("scope.key", "scope.val")
-	traceID := mustDecodeTraceID("00000000000000000000000000000099")
+	traceID := storetest.MustDecodeTraceID("00000000000000000000000000000099")
 	for i := 0; i < n; i++ {
 		s := ss.Spans().AppendEmpty()
 		s.SetTraceID(traceID)
-		s.SetSpanID(mustDecodeSpanID(fmt.Sprintf("%016x", i+1)))
+		s.SetSpanID(storetest.MustDecodeSpanID(fmt.Sprintf("%016x", i+1)))
 		s.SetParentSpanID([8]byte{})
 		s.SetName("span-" + fmt.Sprintf("%d", i))
 		s.SetKind(ptrace.SpanKindInternal)
@@ -1436,21 +1391,21 @@ func createTestTracePdata() ptrace.Traces {
 	event1Time := baseTime + 100*int64(time.Millisecond)
 	event2Time := baseTime + 200*int64(time.Millisecond)
 
-	traceID := mustDecodeTraceID("00000000000000000000000000000099")
-	rootSpanID := mustDecodeSpanID("0000000000000001")
-	childSpanID := mustDecodeSpanID("0000000000000002")
-	child2SpanID := mustDecodeSpanID("0000000000000003")
-	grandchildSpanID := mustDecodeSpanID("0000000000000004")
-	greatGrandchildSpanID := mustDecodeSpanID("0000000000000005")
-	child2ChildSpanID := mustDecodeSpanID("0000000000000006")
-	orphanedSpanID := mustDecodeSpanID("0000000000000007")
-	orphanedChildSpanID := mustDecodeSpanID("0000000000000008")
-	orphanedGrandchildSpanID := mustDecodeSpanID("0000000000000009")
-	nonExistentParent := mustDecodeSpanID("ffffffffffffffff")
-	linkedTraceID := mustDecodeTraceID("0000000000000000000000000000000a")
-	linkedSpanID := mustDecodeSpanID("000000000000000a")
-	linkedTraceID2 := mustDecodeTraceID("0000000000000000000000000000000b")
-	linkedSpanID2 := mustDecodeSpanID("000000000000000b")
+	traceID := storetest.MustDecodeTraceID("00000000000000000000000000000099")
+	rootSpanID := storetest.MustDecodeSpanID("0000000000000001")
+	childSpanID := storetest.MustDecodeSpanID("0000000000000002")
+	child2SpanID := storetest.MustDecodeSpanID("0000000000000003")
+	grandchildSpanID := storetest.MustDecodeSpanID("0000000000000004")
+	greatGrandchildSpanID := storetest.MustDecodeSpanID("0000000000000005")
+	child2ChildSpanID := storetest.MustDecodeSpanID("0000000000000006")
+	orphanedSpanID := storetest.MustDecodeSpanID("0000000000000007")
+	orphanedChildSpanID := storetest.MustDecodeSpanID("0000000000000008")
+	orphanedGrandchildSpanID := storetest.MustDecodeSpanID("0000000000000009")
+	nonExistentParent := storetest.MustDecodeSpanID("ffffffffffffffff")
+	linkedTraceID := storetest.MustDecodeTraceID("0000000000000000000000000000000a")
+	linkedSpanID := storetest.MustDecodeSpanID("000000000000000a")
+	linkedTraceID2 := storetest.MustDecodeTraceID("0000000000000000000000000000000b")
+	linkedSpanID2 := storetest.MustDecodeSpanID("000000000000000b")
 
 	tr := ptrace.NewTraces()
 	rs := tr.ResourceSpans().AppendEmpty()
@@ -1684,7 +1639,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 			select count(*) from spans s where s.resource is not null
 		`).Scan(&joined)
 	}))
-	assert.Equal(t, countRows(t, s, ctx, "select count(*) from spans"), joined,
+	assert.Equal(t, storetest.CountRows(t, s, ctx, "select count(*) from spans"), joined,
 		"every span must resolve to a resource row, or the check above passes vacuously")
 	assert.Greater(t, joined, 0)
 }
@@ -1743,10 +1698,10 @@ func TestGetTraceViewReportsUnplacedSpans(t *testing.T) {
 		rs := tr.ResourceSpans().AppendEmpty()
 		rs.Resource().Attributes().PutStr("service.name", "cycle-test")
 		sp := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
-		sp.SetTraceID(mustDecodeTraceID(traceHex))
-		sp.SetSpanID(mustDecodeSpanID(spanHex))
+		sp.SetTraceID(storetest.MustDecodeTraceID(traceHex))
+		sp.SetSpanID(storetest.MustDecodeSpanID(spanHex))
 		if parentHex != "" {
-			sp.SetParentSpanID(mustDecodeSpanID(parentHex))
+			sp.SetParentSpanID(storetest.MustDecodeSpanID(parentHex))
 		}
 		sp.SetName("span-" + spanHex)
 		sp.SetKind(ptrace.SpanKindInternal)
@@ -1821,7 +1776,7 @@ func TestGetTraceViewReportsUnplacedSpans(t *testing.T) {
 		spans      []placement
 	}
 	fetch := func(traceHex string, criteria any) walked {
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.GetTraceView(ctx, db, traceHex, criteria)
 		})
 		require.NoError(t, err)
@@ -2011,7 +1966,7 @@ func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
 		return spans.Ingest(ctx, conn, traces)
 	}))
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceView(ctx, db, traceIDHex, nil)
 	})
 	require.NoError(t, err)
@@ -2079,7 +2034,7 @@ func TestSearchTraceSummariesByFlags(t *testing.T) {
 				Value:         value,
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 10_000), query)
 		})
 		require.NoError(t, err)
@@ -2103,14 +2058,14 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	rs := traces.ResourceSpans().AppendEmpty()
 	rs.Resource().Attributes().PutStr("service.name", "native-span-ids")
 	ss := rs.ScopeSpans().AppendEmpty()
-	traceID := mustDecodeTraceID(traceIDHex)
+	traceID := storetest.MustDecodeTraceID(traceIDHex)
 
 	add := func(name, spanID, parentID string, start int64) ptrace.Span {
 		sp := ss.Spans().AppendEmpty()
 		sp.SetTraceID(traceID)
-		sp.SetSpanID(mustDecodeSpanID(spanID))
+		sp.SetSpanID(storetest.MustDecodeSpanID(spanID))
 		if parentID != "" {
-			sp.SetParentSpanID(mustDecodeSpanID(parentID))
+			sp.SetParentSpanID(storetest.MustDecodeSpanID(parentID))
 		}
 		sp.SetName(name)
 		sp.SetStartTimestamp(pcommon.Timestamp(start))
@@ -2123,8 +2078,8 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	maxSpan := add("max", "ffffffffffffffff", "8000000000000000", 3)
 	maxSpan.Events().AppendEmpty().SetName("max-event")
 	maxLink := maxSpan.Links().AppendEmpty()
-	maxLink.SetTraceID(mustDecodeTraceID("000000000000000000000000000000f2"))
-	maxLink.SetSpanID(mustDecodeSpanID("ffffffffffffffff"))
+	maxLink.SetTraceID(storetest.MustDecodeTraceID("000000000000000000000000000000f2"))
+	maxLink.SetSpanID(storetest.MustDecodeSpanID("ffffffffffffffff"))
 	// Invalid/empty linked contexts remain visible, but their missing IDs are
 	// represented as null rather than synthetic all-zero strings.
 	maxSpan.Links().AppendEmpty()
@@ -2134,7 +2089,7 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, rep.Count(), "the repeated max ID is a same-batch duplicate")
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceView(ctx, db, traceIDHex, nil)
 	})
 	require.NoError(t, err)

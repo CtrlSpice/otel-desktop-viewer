@@ -1,0 +1,25 @@
+with
+filtered as (
+    select l.* from logs l
+    where (case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end) >= $1::ubigint and (case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end) <= $2::ubigint
+    order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc
+),
+page as (
+    select l.* from filtered l
+    order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc
+    limit ? offset ?
+)
+select cast(json_object(
+    'total', (select count(*) from filtered),
+    'logs', (select coalesce(to_json(list(json_object(
+        'logRef',         l.id,
+        'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
+        'severityText',   l.severity_text,
+        'severityNumber', l.severity_number,
+        'eventName',      l.event_name,
+        'serviceName',    l.service_name,
+        'bodyPreview',    native_body_preview(l.body),
+        'bodyType',       otel_value_kind(l.body)
+
+    ) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc)), '[]'::json) from page l)
+) as varchar)

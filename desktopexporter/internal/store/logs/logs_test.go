@@ -3,7 +3,6 @@ package logs_test
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -23,50 +22,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-// readStore runs a query under the store's read lock and returns its result.
-// Store exposes no raw *sql.DB: every read is ordered against ingest,
-// retention, and Close.
-func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
-	var out T
-	err := s.WithDBRead(func(db *sql.DB) error {
-		var err error
-		out, err = fn(db)
-		return err
-	})
-	return out, err
-}
-
-func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
-	t.Helper()
-	var n int
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, query, args...).Scan(&n)
-	}))
-	return n
-}
-
-// mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
-func mustDecodeTraceIDLogs(s string) [16]byte {
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != 16 {
-		panic("invalid trace ID hex: " + s)
-	}
-	var out [16]byte
-	copy(out[:], b)
-	return out
-}
-
-// mustDecodeSpanID decodes a 16-char hex string to 8 bytes (span ID).
-func mustDecodeSpanIDLogs(s string) [8]byte {
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != 8 {
-		panic("invalid span ID hex: " + s)
-	}
-	var out [8]byte
-	copy(out[:], b)
-	return out
-}
-
 // createTestLogsPdata builds plog.Logs with three log records: span 0001 (INFO, body map), span 0002 (ERROR, body string, timestamp 0), span 0007 (WARN).
 func createTestLogsPdata(baseTime int64) plog.Logs {
 	logs := plog.NewLogs()
@@ -81,8 +36,8 @@ func createTestLogsPdata(baseTime int64) plog.Logs {
 	rec0 := sl.LogRecords().AppendEmpty()
 	rec0.SetTimestamp(pcommon.Timestamp(baseTime))
 	rec0.SetObservedTimestamp(pcommon.Timestamp(baseTime + 100*int64(time.Millisecond)))
-	rec0.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	rec0.SetSpanID(mustDecodeSpanIDLogs("0000000000000001"))
+	rec0.SetTraceID(storetest.MustDecodeTraceID("00000000000000000000000000000099"))
+	rec0.SetSpanID(storetest.MustDecodeSpanID("0000000000000001"))
 	rec0.SetSeverityText("INFO")
 	rec0.SetSeverityNumber(plog.SeverityNumberInfo)
 	rec0.Body().SetEmptyMap()
@@ -104,8 +59,8 @@ func createTestLogsPdata(baseTime int64) plog.Logs {
 	rec1 := sl.LogRecords().AppendEmpty()
 	rec1.SetTimestamp(0)
 	rec1.SetObservedTimestamp(pcommon.Timestamp(baseTime + 150*int64(time.Millisecond)))
-	rec1.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	rec1.SetSpanID(mustDecodeSpanIDLogs("0000000000000002"))
+	rec1.SetTraceID(storetest.MustDecodeTraceID("00000000000000000000000000000099"))
+	rec1.SetSpanID(storetest.MustDecodeSpanID("0000000000000002"))
 	rec1.SetSeverityText("ERROR")
 	rec1.SetSeverityNumber(plog.SeverityNumberError)
 	rec1.Body().SetStr("Operation failed")
@@ -127,8 +82,8 @@ func createTestLogsPdata(baseTime int64) plog.Logs {
 	rec2 := sl.LogRecords().AppendEmpty()
 	rec2.SetTimestamp(pcommon.Timestamp(baseTime + 100*int64(time.Millisecond)))
 	rec2.SetObservedTimestamp(pcommon.Timestamp(baseTime + 200*int64(time.Millisecond)))
-	rec2.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	rec2.SetSpanID(mustDecodeSpanIDLogs("0000000000000007"))
+	rec2.SetTraceID(storetest.MustDecodeTraceID("00000000000000000000000000000099"))
+	rec2.SetSpanID(storetest.MustDecodeSpanID("0000000000000007"))
 	rec2.SetSeverityText("WARN")
 	rec2.SetSeverityNumber(plog.SeverityNumberWarn)
 	rec2.Body().SetStr("Operation warning")
@@ -166,7 +121,7 @@ func createTestLogsPdataN(baseTime int64, n int) plog.Logs {
 func searchLogSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []logSummaryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.Search(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	assert.NoError(t, err)
@@ -203,7 +158,7 @@ func TestSearchLogSummariesNullableTimeRangesExecute(t *testing.T) {
 		{"bounded", store.TimeRange{Start: &start, End: &end}, []string{"200"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 				return logs.Search(ctx, db, tc.timeRange, nil)
 			})
 			require.NoError(t, err)
@@ -226,7 +181,7 @@ func TestSearchLogSummariesLimit(t *testing.T) {
 		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
 	}))
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.SearchWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 2)
 	})
 	require.NoError(t, err)
@@ -236,7 +191,7 @@ func TestSearchLogSummariesLimit(t *testing.T) {
 	require.Equal(t, []string{"ERROR", "WARN"}, []string{entries[0].SeverityText, entries[1].SeverityText})
 
 	limit := int64(1)
-	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.SearchSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{
 			Limit: &limit,
 			Sort:  &search.Sort{Field: "severity", Direction: "asc"},
@@ -248,7 +203,7 @@ func TestSearchLogSummariesLimit(t *testing.T) {
 	require.Len(t, entries, 1)
 	require.Equal(t, "INFO", entries[0].SeverityText, "sort must select the lowest severity before applying LIMIT")
 
-	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	_, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.SearchWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 0)
 	})
 	require.ErrorIs(t, err, logs.ErrInvalidLogLimit)
@@ -259,7 +214,7 @@ func TestSearchLogSummariesLimit(t *testing.T) {
 // shape assertions below.
 func getLogFull(t *testing.T, s *store.Store, ctx context.Context, id string) logEntryJSON {
 	t.Helper()
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.Get(ctx, db, id)
 	})
 	assert.NoError(t, err)
@@ -382,7 +337,7 @@ func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 	rl := data.ResourceLogs().AppendEmpty()
 	rl.Resource().Attributes().PutStr("service.name", "native-span-ids")
 	sl := rl.ScopeLogs().AppendEmpty()
-	traceID := mustDecodeTraceIDLogs("000000000000000000000000000000f3")
+	traceID := storetest.MustDecodeTraceID("000000000000000000000000000000f3")
 	for i, tc := range []struct{ body, spanID string }{
 		{"leading", "0000000000000001"},
 		{"high-bit", "8000000000000000"},
@@ -394,7 +349,7 @@ func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 		rec.SetObservedTimestamp(pcommon.Timestamp(i + 1))
 		rec.SetTraceID(traceID)
 		if tc.spanID != "" {
-			rec.SetSpanID(mustDecodeSpanIDLogs(tc.spanID))
+			rec.SetSpanID(storetest.MustDecodeSpanID(tc.spanID))
 		}
 		rec.Body().SetStr(tc.body)
 	}
@@ -408,7 +363,7 @@ func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 		{"max", "ffffffffffffffff"},
 		{"empty", ""},
 	} {
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			var id string
 			if err := db.QueryRow(`select id::varchar from logs where body = ?::varchar::variant`, tc.body).Scan(&id); err != nil {
 				return nil, err
@@ -458,9 +413,9 @@ func TestClearLogs(t *testing.T) {
 	assert.Len(t, entries, 3)
 
 	// Confirm the fixture carries attributes before removing its rows.
-	attrsBefore := countRows(t, s, ctx, "select sum(len(variant_keys(attributes))) from logs")
+	attrsBefore := storetest.CountRows(t, s, ctx, "select sum(len(variant_keys(attributes))) from logs")
 	assert.Greater(t, attrsBefore, 0)
-	assert.Greater(t, countRows(t, s, ctx, `
+	assert.Greater(t, storetest.CountRows(t, s, ctx, `
 		select count(*) from logs l, unnest(variant_keys(l.attributes)) t(key)`), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
@@ -470,11 +425,11 @@ func TestClearLogs(t *testing.T) {
 
 	entries = searchLogSummariesAll(t, s, ctx)
 	assert.Empty(t, entries)
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from logs"))
-	assert.Zero(t, countRows(t, s, ctx, "select count(*) from logs, unnest(variant_keys(attributes))"))
+	assert.Equal(t, 0, storetest.CountRows(t, s, ctx, "select count(*) from logs"))
+	assert.Zero(t, storetest.CountRows(t, s, ctx, "select count(*) from logs, unnest(variant_keys(attributes))"))
 
 	// Owned payloads never create auxiliary attribute or context tables.
-	assert.Zero(t, countRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
+	assert.Zero(t, storetest.CountRows(t, s, ctx, "select count(*) from duckdb_tables() where table_name in ('attributes', 'resources', 'scopes')"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
@@ -599,7 +554,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogGetNotFound", func(t *testing.T) {
-		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		_, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Get(ctx, db, "00000000-0000-0000-0000-000000000000")
 		})
 		assert.Error(t, err)
@@ -618,7 +573,7 @@ type attributeDef struct {
 
 func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context) []attributeDef {
 	t.Helper()
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogAttributeDefinitions(ctx, db)
 	})
 	require.NoError(t, err)
@@ -835,7 +790,7 @@ func TestSearchLogSummaries(t *testing.T) {
 			FieldOperator: "IN",
 			Value:         `["9.0", "4.2e1"]`,
 		}}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.NoError(t, err)
@@ -843,14 +798,14 @@ func TestSearchLogSummaries(t *testing.T) {
 
 		query.Query.Field.Name = "flags"
 		query.Query.Value = `["1e000000"]`
-		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.NoError(t, err)
 		assert.Len(t, parseSummaries(raw), 1)
 
 		query.Query.Value = `["0e999999999999999999999"]`
-		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.NoError(t, err)
@@ -863,13 +818,13 @@ func TestSearchLogSummaries(t *testing.T) {
 			FieldOperator: "IN",
 			Value:         `["42.5"]`,
 		}}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.ErrorIs(t, err, search.ErrInvalidQuery)
 
 		query.Query.Value = `["42"]`
-		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.NoError(t, err)
@@ -882,7 +837,7 @@ func TestSearchLogSummaries(t *testing.T) {
 			FieldOperator: ">",
 			Value:         "3",
 		}}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.NoError(t, err)
@@ -891,7 +846,7 @@ func TestSearchLogSummaries(t *testing.T) {
 		query.Query.Field = &search.FieldDefinition{Name: "log.float", SearchScope: "attribute", AttributeScope: "log", Type: "float64"}
 		query.Query.FieldOperator = "IN"
 		query.Query.Value = `["3.14"]`
-		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		require.NoError(t, err)
@@ -908,7 +863,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "Operation failed",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -930,7 +885,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "event.a",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -950,7 +905,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "00000000000000000000000000000099",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -968,7 +923,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "0000000000000002",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -987,7 +942,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "nonexistent-log-text-xyz",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1009,7 +964,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "00000000000000000000000000000099",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1027,7 +982,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "0000000000000002",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1048,7 +1003,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "not-a-trace",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
@@ -1065,7 +1020,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "zz-definitely-not-hex",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage span ID must not surface a cast error")
@@ -1082,7 +1037,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "ERROR",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1102,7 +1057,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "0000000000000001",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1123,7 +1078,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "00000000-0000-0000-0000-000000000099",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1141,7 +1096,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "17", // plog.SeverityNumberError
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1165,7 +1120,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "Operation warning",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1185,7 +1140,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "event.a",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1206,7 +1161,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "test-scope",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1227,7 +1182,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "v1.0.0",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1252,7 +1207,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "log-b",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1277,7 +1232,7 @@ func TestSearchLogSummaries(t *testing.T) {
 				Value:         "test-service",
 			},
 		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
@@ -1303,7 +1258,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 	// The foreign key makes the resource join total. coalesce maps a missing
 	// service.name attribute to the empty value stored in logs.service_name.
-	mismatches := countRows(t, s, ctx, `
+	mismatches := storetest.CountRows(t, s, ctx, `
 		select count(*) from logs l
 		where l.service_name <> coalesce(l.resource.attributes['service.name']::varchar, '')
 	`)
@@ -1312,10 +1267,10 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 	// Guard against a vacuous pass: zero mismatches over zero joined rows would
 	// look identical to the invariant holding.
-	joined := countRows(t, s, ctx, `
+	joined := storetest.CountRows(t, s, ctx, `
 		select count(*) from logs l where l.resource is not null
 	`)
-	assert.Equal(t, countRows(t, s, ctx, "select count(*) from logs"), joined,
+	assert.Equal(t, storetest.CountRows(t, s, ctx, "select count(*) from logs"), joined,
 		"every log must resolve to a resource row, or the check above passes vacuously")
 	assert.Greater(t, joined, 0)
 }

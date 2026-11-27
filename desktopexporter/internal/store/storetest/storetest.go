@@ -13,6 +13,8 @@ package storetest
 
 import (
 	"context"
+	"database/sql"
+	"encoding/hex"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -42,4 +44,49 @@ func New(t *testing.T) (*store.Store, context.Context) {
 	t.Cleanup(func() { s.Close() })
 
 	return s, ctx
+}
+
+// Read runs fn under the store's read lock and returns its result.
+// Store exposes no raw *sql.DB: every read is ordered against ingest,
+// retention, and Close.
+func Read[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
+	var out T
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		out, err = fn(db)
+		return err
+	})
+	return out, err
+}
+
+// CountRows executes a single-integer COUNT query under the store's read lock.
+func CountRows(t testing.TB, s *store.Store, ctx context.Context, query string, args ...any) int {
+	t.Helper()
+	var n int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, query, args...).Scan(&n)
+	}))
+	return n
+}
+
+// MustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
+func MustDecodeTraceID(s string) [16]byte {
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != 16 {
+		panic("invalid trace ID hex: " + s)
+	}
+	var out [16]byte
+	copy(out[:], b)
+	return out
+}
+
+// MustDecodeSpanID decodes a 16-char hex string to 8 bytes (span ID).
+func MustDecodeSpanID(s string) [8]byte {
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != 8 {
+		panic("invalid span ID hex: " + s)
+	}
+	var out [8]byte
+	copy(out[:], b)
+	return out
 }
