@@ -48,7 +48,7 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 	for _, path := range []string{"/openapi.json", "/openrpc.json", "/openrpc/index.json", "/llms.txt", "/rpc", "/api/features", "/api/data/{method}", "/export/{signal}/{id}"} {
 		require.Contains(t, doc.Paths, path)
 	}
-	for _, path := range []string{"/api/evals/ingest", "/api/evals/experiments", "/api/evals/experiments/{id}/rows"} {
+	for _, path := range []string{"/api/evals/ingest", "/api/evals/runs/{runID}/results/{resultID}", "/api/evals/experiments", "/api/evals/experiments/{id}/rows"} {
 		_, exists := doc.Paths[path]
 		require.Equal(t, features.EvalsBuilt, exists, path)
 	}

@@ -18,6 +18,7 @@ const (
 	ServiceName   = "otel-desktop-viewer"
 	ScopeName     = "otel-desktop-viewer.evaldecode"
 	EvidenceEvent = "viewer.eval.import.v1"
+	ResultEvent   = "viewer.eval.result.v1"
 )
 
 // Number paths form a sparse trie, not one repeated full pointer per number.
@@ -134,7 +135,7 @@ func ImportID(log plog.LogRecord) string {
 
 func Decode(log plog.LogRecord) (IngestPart, error) {
 	var part IngestPart
-	if log.EventName() != EvidenceEvent || ImportID(log) == "" || !log.TraceID().IsEmpty() || !log.SpanID().IsEmpty() {
+	if (log.EventName() != EvidenceEvent && log.EventName() != ResultEvent) || ImportID(log) == "" || !log.TraceID().IsEmpty() || !log.SpanID().IsEmpty() {
 		return part, fmt.Errorf("invalid evaluation observation identity")
 	}
 	b := log.Body().Map()

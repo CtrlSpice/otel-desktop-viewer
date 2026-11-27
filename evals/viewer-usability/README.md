@@ -244,6 +244,9 @@ is enabled, the launcher records coverage without starting Promptfoo.
 GPT-6.1 Sol grades each completed answer in a fresh Pi session at default effort.
 The grader receives the question, rubric, anonymized answer and tool evidence.
 If Sol is unavailable, the result stays ungraded.
+The runner publishes each result before starting the next investigation. If
+publication fails, it stops and keeps the saved grade. Refresh Evals to see
+new results in the same experiment for that model and run.
 
 For `checkout-failure`, `--run-one` selects
 Sol once; `--run-sol-luna` selects Sol and Luna three times each. This is separate

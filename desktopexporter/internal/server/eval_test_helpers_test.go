@@ -27,8 +27,15 @@ import (
 // policy. The final consumer is the same retained log ingest used by the desktop
 // exporter; no upload path receives a store-writing test hook.
 func startEvalReceiver(t *testing.T, s *Server) {
+	startEvalReceiverWithSink(t, s, nil)
+}
+
+func startEvalReceiverWithSink(t *testing.T, s *Server, change func(plog.Logs)) {
 	t.Helper()
 	sink, err := consumer.NewLogs(func(ctx context.Context, data plog.Logs) error {
+		if change != nil {
+			change(data)
+		}
 		return s.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data) })
 	})
 	require.NoError(t, err)

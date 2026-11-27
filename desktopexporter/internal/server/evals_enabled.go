@@ -32,6 +32,7 @@ func (s *Server) registerEvals(mux *http.ServeMux, spa http.Handler) {
 	mux.HandleFunc("/api/evals", http.NotFound)
 	mux.HandleFunc("/api/evals/", http.NotFound)
 	mux.HandleFunc("POST /api/evals/ingest", s.ingestEvals)
+	mux.HandleFunc("PUT /api/evals/runs/{runID}/results/{resultID}", s.putEvalResult)
 	mux.HandleFunc("GET /api/evals/experiments", s.searchEvalExperiments)
 	mux.HandleFunc("GET /api/evals/experiments/{id}/rows", s.getEvalExperimentPage)
 }

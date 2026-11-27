@@ -60,6 +60,22 @@ function supported(value: unknown, overrides: Partial<EvalSourceDataset> = {}) {
   return result
 }
 
+it('opens live results for different prompts in the same model experiment', () => {
+  const data = promptfoo([
+    promptfooRow(),
+    promptfooRow({ id: 'next', promptId: 'other' }),
+  ])
+  const live = supported(data, { source: 'live-result' })
+  expect(live.experiments).toHaveLength(1)
+  expect(live.experiments[0].id).toBe(
+    JSON.stringify(['dataset-a', 'run', 'eval-source-id', 'provider:model'])
+  )
+  expect(live.experiments[0].results).toHaveLength(2)
+  expect(new Set(live.experiments[0].results.map(r => r.caseID)).size).toBe(2)
+  expect(live.experiments[0].promptLabel).toBeUndefined()
+  expect(supported(data).experiments).toHaveLength(2)
+})
+
 it('preserves selected-experiment identities with global source ordinals and local copy pointers', () => {
   const rows = [
     promptfooRow({ id: 'first' }),

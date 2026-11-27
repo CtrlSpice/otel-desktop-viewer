@@ -1,3 +1,4 @@
+import { verifyLiveReadback } from './opencode-v2-live-results.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -366,12 +367,12 @@ export async function verifyRun(root, { importSource = false, env = process.env 
   }
   save(path.join(reportDirectory, 'received-data-verification.json'), report)
   let imported
-  if (importSource) {
-    imported = await importOriginal(root, endpoint, bytes, rows)
+  if (plan.publication === 'per-result' || importSource) {
+    imported = plan.publication === 'per-result' ? await verifyLiveReadback(root,endpoint) : await importOriginal(root, endpoint, bytes, rows)
     save(path.join(reportDirectory, 'preview-verification.json'), imported)
   }
   assert.equal(sha(fs.readFileSync(exportFile)), digest)
-  fs.writeFileSync(path.join(reportDirectory, 'handoff.md'), `# OpenCode V2 verification\n\nEval: ${source.evalId}\nResults: ${rows.length}; investigators: ${reports.length}; graders: ${graders.length}.\nSlots: ${slots.join(', ')}\nNative outcomes: ${JSON.stringify(report.nativeOutcomes)}\n\nObserver: ${endpoint}\nVerified spans: ${observed.expected.spans}; logs: ${observed.expected.logs}; events: ${observed.expected.events}; metric datapoints: ${observed.expected.datapoints}.\nWrapper spans: ${report.wrapperSpans}; wrapper tool events: ${report.wrapperToolEvents}.\nOriginal export SHA-256: ${digest}\nImport: ${imported ? 'all original rows verified; single import receipt at root' : 'not requested'}. OTLP never replayed.\n\nSee received-data-verification.json for per-attempt native/wrapper raw-upload paths, scope counts, native errors, usage availability, grader evidence, IDs and recorded failure/partial/pass outcomes.\n`, { flag: 'wx', mode: 0o600 })
+  fs.writeFileSync(path.join(reportDirectory, 'handoff.md'), `# OpenCode V2 verification\n\nEval: ${source.evalId}\nResults: ${rows.length}; investigators: ${reports.length}; graders: ${graders.length}.\nSlots: ${slots.join(', ')}\nNative outcomes: ${JSON.stringify(report.nativeOutcomes)}\n\nObserver: ${endpoint}\nVerified spans: ${observed.expected.spans}; logs: ${observed.expected.logs}; events: ${observed.expected.events}; metric datapoints: ${observed.expected.datapoints}.\nWrapper spans: ${report.wrapperSpans}; wrapper tool events: ${report.wrapperToolEvents}.\nOriginal export SHA-256: ${digest}\nImport: ${imported?.publication === 'per-result' ? 'published rows read back; receipts in published-results/' : imported ? 'all original rows verified; single import receipt at root' : 'not requested'}. OTLP never replayed.\n\nSee received-data-verification.json for per-attempt native/wrapper raw-upload paths, scope counts, native errors, usage availability, grader evidence, IDs and recorded failure/partial/pass outcomes.\n`, { flag: 'wx', mode: 0o600 })
   return { root, reportDirectory, resultCount: rows.length, slots, spans: observed.expected.spans, logs: observed.expected.logs, imported: Boolean(imported) }
 }
 

@@ -23,6 +23,23 @@ func addEvalsOpenAPI(paths map[string]any) {
 			"504": apiResponse("Persistence was not confirmed before timeout/cancellation; accepted telemetry may still arrive.", "text/plain", text),
 		},
 	}}
+	paths["/api/evals/runs/{runID}/results/{resultID}"] = map[string]any{"put": map[string]any{
+		"operationId": "putEvalResult", "summary": "Publish one Promptfoo result", "tags": []string{"Evaluations"},
+		"description": "Repeating the same request counts once. Changing the body for the same run and result ID returns 409.",
+		"parameters": []any{
+			map[string]any{"name": "runID", "in": "path", "required": true, "schema": text},
+			map[string]any{"name": "resultID", "in": "path", "required": true, "schema": text},
+		},
+		"requestBody": map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"type": "object", "required": []string{"id", "provider"}, "properties": map[string]any{"id": text, "provider": map[string]any{"type": "object", "required": []string{"id"}, "properties": map[string]any{"id": text}}}}}}},
+		"responses": map[string]any{
+			"200": apiResponse("Result retained.", "application/json", map[string]any{"type": "object", "required": []string{"resultID", "datasetID", "ordinal", "complete", "retainedSHA256"}, "properties": map[string]any{"resultID": text, "datasetID": text, "ordinal": map[string]any{"type": "integer"}, "complete": map[string]any{"const": true}, "retainedSHA256": map[string]any{"type": "string", "description": "SHA-256 of the redacted row JSON returned by the viewer."}}}),
+			"400": apiResponse("Invalid result.", "text/plain", text),
+			"409": apiResponse("Conflicting result or publication in progress.", "text/plain", text),
+			"500": apiResponse("Result storage or verification failed.", "text/plain", text),
+			"502": apiResponse("Receiver submission failed.", "text/plain", text),
+			"504": apiResponse("Persistence not confirmed.", "text/plain", text),
+		},
+	}}
 	responses := func(description string, schema map[string]any) map[string]any {
 		return map[string]any{"200": apiResponse(description, "application/json", schema), "400": apiResponse("Invalid query parameters.", "text/plain", text), "404": apiResponse("Evals unavailable or experiment not found.", "text/plain", text), "500": apiResponse("Read or evidence reconciliation failed.", "text/plain", text)}
 	}

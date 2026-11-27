@@ -123,6 +123,9 @@ func validateIngestJSON(raw []byte) error {
 	return validateJSONDepth(raw, 64)
 }
 
+// ValidateResult applies the same precision-preserving validation as file import.
+func ValidateResult(raw []byte) error { return validateIngestJSON(raw) }
+
 func validateJSONDepth(raw []byte, maxDepth int) error {
 	if !utf8.Valid(raw) || !json.Valid(raw) {
 		return fmt.Errorf("invalid UTF-8 JSON value")

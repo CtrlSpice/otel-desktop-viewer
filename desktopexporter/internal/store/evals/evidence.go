@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-const evidenceFrom = `logs l where l.event_name='viewer.eval.import.v1' and l.scope.name='otel-desktop-viewer.evaldecode' and l.scope.version='1' and l.service_name='otel-desktop-viewer'`
+const evidenceFrom = `logs l where l.event_name in ('viewer.eval.import.v1','viewer.eval.result.v1') and l.scope.name='otel-desktop-viewer.evaldecode' and l.scope.version='1' and l.service_name='otel-desktop-viewer'`
 
 var errUndiscoveredEvidence = errors.New("evaluation evidence arrived during reconstruction")
 
@@ -62,6 +62,17 @@ discover:
 					return err
 				}
 				defer tx.Rollback()
+				if log.EventName() == evaldecode.ResultEvent && importID != "" {
+					// Only the PUT reserves an identity. Keep an unclaimed log in
+					// telemetry without associating it with a future publication.
+					var claimed bool
+					if err := tx.QueryRowContext(ctx, `select exists(select 1 from eval_result_claims where sha256('live-row-v1:' || run_key || result_key)=?)`, importID).Scan(&claimed); err != nil {
+						return err
+					}
+					if !claimed {
+						importID = ""
+					}
+				}
 				// Retention may remove the record while it is decoded outside the lock.
 				result, err := tx.ExecContext(ctx, `insert into eval_evidence select id, ? from logs where id=try_cast(? as uuid) on conflict do nothing`, importID, id)
 				if err != nil {
@@ -190,13 +201,20 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 		return err
 	}
 	var physical int64
+	var claim *liveClaim
 	if err := db.WithDBRead(func(conn *sql.DB) error {
+		var err error
+		claim, err = readLiveClaim(ctx, conn, id)
+		if err != nil {
+			return err
+		}
 		return conn.QueryRowContext(ctx, `select count(*) from eval_evidence where import_id=?`, id).Scan(&physical)
 	}); err != nil {
 		return err
 	}
 	last, reason, name := "", "", "Imported evaluation"
 	envelopes := int64(-1)
+	var live *liveMember
 	for {
 		var ids []string
 		if err := db.WithDBRead(func(conn *sql.DB) error {
@@ -225,58 +243,106 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 			if err != nil {
 				return err
 			}
-			part, err := evaldecode.Decode(log)
-			if err != nil {
-				reason = "Retained evidence is invalid or changed by processing."
+			// A claimed ID describes one live result. Only a matching retained
+			// observation may supply its cache; other logs remain ordinary telemetry.
+			if claim != nil && (live != nil || log.EventName() != evaldecode.ResultEvent) {
 				continue
 			}
-			// Bytes describe the processed representation, never the original upload.
-			part.Bytes = 0
-			canonical, _ := json.Marshal(part)
-			digest := fmt.Sprintf("%x", sha256.Sum256(canonical))
-			duplicate := false
-			if err := db.WithDBWrite(func(conn *sql.DB) error {
-				var retained bool
-				if err := conn.QueryRowContext(ctx, `select exists(select 1 from logs where id=try_cast(? as uuid))`, logID).Scan(&retained); err != nil {
-					return err
+			part, err := evaldecode.Decode(log)
+			if err != nil {
+				if claim == nil {
+					reason = "Retained evidence is invalid or changed by processing."
 				}
-				if !retained {
-					return fmt.Errorf("evaluation evidence expired during reconstruction; retry")
-				}
-				var previous string
-				err := conn.QueryRowContext(ctx, `select digest from eval_parts where import_id=? and envelope=? and ordinal=?`, id, part.Envelope, part.Row).Scan(&previous)
-				if err == nil {
-					duplicate = true
-					if previous != digest {
-						reason = "Conflicting retained evidence for one logical source identity."
-					}
-					return nil
-				}
-				if err != sql.ErrNoRows {
-					return err
-				}
-				_, err = conn.ExecContext(ctx, `insert into eval_parts values (?, ?, ?, ?)`, id, part.Envelope, part.Row, digest)
-				if err != nil || part.Row == -2 {
-					return err
-				}
-				part.Bytes = int64(len(part.Payload))
-				return AppendParts(ctx, conn, id, name, []IngestPart{part})
-			}); err != nil {
-				return err
+				continue
 			}
-			if !duplicate && part.Row == -2 {
-				var manifest struct {
-					Name string `json:"name"`
+			parts := []IngestPart{part}
+			if log.EventName() == evaldecode.ResultEvent {
+				member, header, err := liveMemberFromLog(log, part)
+				if claim == nil {
+					reason = "Invalid retained result without a publication claim."
+					continue
 				}
-				if err := json.Unmarshal(part.Payload, &manifest); err != nil || len(manifest.Name) == 0 || len(manifest.Name) > MaxNameBytes {
-					reason = "Invalid retained import manifest."
-				} else {
-					name, envelopes = manifest.Name, part.Count
+				if err != nil || member.liveClaim != *claim {
+					continue
+				}
+				var actualSHA string
+				if err := db.WithDBRead(func(conn *sql.DB) error {
+					var err error
+					actualSHA, err = ExpectedLiveSHA(ctx, conn, part.Payload)
+					return err
+				}); err != nil {
+					return err
+				}
+				if actualSHA != claim.expectedSHA {
+					continue
+				}
+				live = &member
+				parts = []IngestPart{header, part}
+				name, envelopes = "Live evaluation", 1
+			}
+			for _, part := range parts {
+				// Bytes describe the processed representation, never the original upload.
+				part.Bytes = 0
+				canonical, _ := json.Marshal(part)
+				digest := fmt.Sprintf("%x", sha256.Sum256(canonical))
+				duplicate := false
+				if err := db.WithDBWrite(func(conn *sql.DB) error {
+					var retained bool
+					if err := conn.QueryRowContext(ctx, `select exists(select 1 from logs where id=try_cast(? as uuid))`, logID).Scan(&retained); err != nil {
+						return err
+					}
+					if !retained {
+						return fmt.Errorf("evaluation evidence expired during reconstruction; retry")
+					}
+					var previous string
+					err := conn.QueryRowContext(ctx, `select digest from eval_parts where import_id=? and envelope=? and ordinal=?`, id, part.Envelope, part.Row).Scan(&previous)
+					if err == nil {
+						duplicate = true
+						if previous != digest {
+							reason = "Conflicting retained evidence for one logical source identity."
+						}
+						return nil
+					}
+					if err != sql.ErrNoRows {
+						return err
+					}
+					_, err = conn.ExecContext(ctx, `insert into eval_parts values (?, ?, ?, ?)`, id, part.Envelope, part.Row, digest)
+					if err != nil || part.Row == -2 {
+						return err
+					}
+					part.Bytes = int64(len(part.Payload))
+					return AppendParts(ctx, conn, id, name, []IngestPart{part})
+				}); err != nil {
+					return err
+				}
+				if !duplicate && part.Row == -2 {
+					var manifest struct {
+						Name string `json:"name"`
+					}
+					if err := json.Unmarshal(part.Payload, &manifest); err != nil || len(manifest.Name) == 0 || len(manifest.Name) > MaxNameBytes {
+						reason = "Invalid retained import manifest."
+					} else {
+						name, envelopes = manifest.Name, part.Count
+					}
 				}
 			}
 		}
 	}
+	if claim != nil && physical > 0 && live == nil {
+		reason = "Retained result failed readback verification."
+	}
 	if reason == "" {
+		if live != nil {
+			if err := db.WithDBWrite(func(conn *sql.DB) error {
+				return live.save(ctx, conn, DatasetID(id, 0))
+			}); errors.Is(err, errLiveClaimMismatch) {
+				reason = "Conflicting retained result identity."
+			} else if errors.Is(err, errLiveReadback) {
+				reason = "Retained result failed readback verification."
+			} else if err != nil {
+				return err
+			}
+		}
 		if envelopes < 1 {
 			reason = "Waiting for retained import manifest."
 		} else {
