@@ -22,6 +22,8 @@
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
+  import StickyAncestorRow from './StickyAncestorRow.svelte'
+  import { buildStickyTree, stickyAncestors } from './waterfall-sticky'
   import WaterfallColumnsPicker from './WaterfallColumnsPicker.svelte'
   import {
     columnID,
@@ -430,6 +432,7 @@
     const ro = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect.width ?? 800
       scrollContainerW = w
+      queueStickyUpdate()
       if (activeResizeCol === null) {
         colWidths = fitWidths(wfCols, colWidths, Math.max(576, w))
       }
@@ -611,6 +614,84 @@
     () => new Map(rows.map(row => [row.spanNode.spanData.spanID, row]))
   )
 
+  const stickyTree = $derived(
+    buildStickyTree(visibleRows.map(row => row.spanNode))
+  )
+  let treeScrollTop = $state(0)
+  let stickyRowHeight = $state(WATERFALL_ROW_HEIGHT_PX)
+  let stickyViewportWidth = $state(0)
+  let stickyMaxHeight = $state(WATERFALL_ROW_HEIGHT_PX)
+  const pinnedAncestors = $derived(
+    stickyAncestors(stickyTree, treeScrollTop, stickyRowHeight, stickyMaxHeight)
+  )
+  let stickyFrame = 0
+
+  function queueStickyUpdate() {
+    if (stickyFrame) return
+    stickyFrame = requestAnimationFrame(() => {
+      stickyFrame = 0
+      const viewport = gridHostEl?.querySelector<HTMLElement>(
+        '.waterfall-vlist-viewport'
+      )
+      if (!viewport) return
+      const rowBounds = viewport
+        .querySelector('tr[data-span-id]')
+        ?.getBoundingClientRect()
+      const height = rowBounds?.height || WATERFALL_ROW_HEIGHT_PX
+      const maxHeight = Math.max(height, viewport.clientHeight - height)
+      const active =
+        document.activeElement?.closest<HTMLElement>('[data-sticky-span]')
+      if (
+        active &&
+        gridHostEl?.contains(active) &&
+        !stickyAncestors(
+          stickyTree,
+          viewport.scrollTop,
+          height,
+          maxHeight
+        ).some(
+          ancestor =>
+            visibleRows[ancestor.index]?.spanNode.spanData.spanID ===
+            active.dataset.stickySpan
+        )
+      ) {
+        const row = viewport.querySelector<HTMLElement>(
+          `tr[data-span-id="${escapeForSelector(active.dataset.stickySpan!)}"]`
+        )
+        const bounds = row?.getBoundingClientRect()
+        const view = viewport.getBoundingClientRect()
+        if (
+          row &&
+          bounds &&
+          bounds.top >= view.top &&
+          bounds.bottom <= view.bottom
+        )
+          row.focus({ preventScroll: true })
+        else viewport.focus({ preventScroll: true })
+      }
+      stickyRowHeight = height
+      stickyViewportWidth =
+        rowBounds?.width || viewport.clientWidth || gridWidth
+      stickyMaxHeight = maxHeight
+      treeScrollTop = viewport.scrollTop
+    })
+  }
+
+  $effect(() => {
+    if (gridHostEl && visibleRows.length) queueStickyUpdate()
+  })
+
+  async function goToAncestor(id: string) {
+    const key = collapseKey
+    lastScrolledSelection = id
+    gridHostEl
+      ?.querySelector<HTMLElement>('.waterfall-vlist-viewport')
+      ?.focus({ preventScroll: true })
+    onSelectSpan(id)
+    await revealAndScrollToSpan(id, false)
+    if (key === collapseKey) await focusRowTr(id)
+  }
+
   let keyboardAnchorID = $derived(
     keyboardAnchorSpanID(
       selectedSpanID,
@@ -632,7 +713,10 @@
   let lastScrolledSelection: string | null = null
   let activeScroll: Promise<void> = Promise.resolve()
   let cancelExpansionScroll = () => {}
-  onDestroy(() => cancelExpansionScroll())
+  onDestroy(() => {
+    cancelExpansionScroll()
+    if (stickyFrame) cancelAnimationFrame(stickyFrame)
+  })
   let treeScrolled = $state(false)
 
   function centerExpandedBranch(spanID: string): Promise<void> {
@@ -700,6 +784,7 @@
       viewport.classList.contains('waterfall-vlist-viewport')
     ) {
       treeScrolled = viewport.scrollTop > 1
+      queueStickyUpdate()
     }
   }
 
@@ -739,6 +824,24 @@
       shouldThrowOnBounds: false,
     })
     await activeScroll
+    await tick()
+    const viewport = gridHostEl?.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )
+    const row = viewport?.querySelector<HTMLElement>(
+      `tr[data-span-id="${escapeForSelector(spanID)}"]`
+    )
+    if (viewport && row) {
+      const padding = Math.min(
+        ancestorIdsOf(spanID, parentBySpanID).length * stickyRowHeight,
+        stickyMaxHeight
+      )
+      const top =
+        row.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+      if (top < padding)
+        viewport.scrollTop = Math.max(0, viewport.scrollTop + top - padding)
+      queueStickyUpdate()
+    }
   }
 
   $effect(() => {
@@ -771,6 +874,7 @@
       )
       if (!viewport) return
       treeScrolled = viewport.scrollTop > 1
+      queueStickyUpdate()
       viewport.role = 'treegrid'
       viewport.setAttribute('aria-label', 'Span waterfall')
       viewport.setAttribute('aria-rowcount', String(rowCount))
@@ -1068,6 +1172,33 @@
           class="waterfall-view__vlist-host"
           onkeydown={handleGridKeydown}
         >
+          {#if pinnedAncestors.length}
+            <nav
+              class="waterfall-view__sticky"
+              aria-label="Span ancestors"
+              style:width="{stickyViewportWidth}px"
+              style:max-height="{stickyMaxHeight}px"
+              style:--sticky-row-height="{stickyRowHeight}px"
+            >
+              <ol>
+                {#each pinnedAncestors as ancestor (visibleRows[ancestor.index].spanNode.spanData.spanID)}
+                  {@const row = visibleRows[ancestor.index]}
+                  {@const sid = row.spanNode.spanData.spanID}
+                  <li>
+                    <StickyAncestorRow
+                      {row}
+                      selected={sid === selectedSpanID}
+                      {spanColWidth}
+                      {optionalColumns}
+                      {timeAxis}
+                      offset={ancestor.offset}
+                      onSelect={() => void goToAncestor(sid)}
+                    />
+                  </li>
+                {/each}
+              </ol>
+            </nav>
+          {/if}
           <VirtualList
             bind:this={vlistRef}
             items={visibleRows}
@@ -1078,6 +1209,7 @@
             viewportClass="waterfall-vlist-viewport"
             viewportLabel="Span waterfall rows"
             itemsClass="waterfall-vlist-items"
+            onRangeChange={queueStickyUpdate}
           >
             {#snippet renderItem(row, index)}
               {@const sid = row.spanNode.spanData.spanID}
@@ -1181,6 +1313,22 @@
 
   .waterfall-view__vlist-host {
     @apply relative min-h-0 flex-1 overflow-hidden outline-none;
+  }
+
+  .waterfall-view__sticky {
+    @apply absolute top-0 left-0 z-20 overflow-x-hidden overflow-y-auto;
+    pointer-events: none;
+  }
+  .waterfall-view__sticky ol {
+    @apply m-0 list-none p-0;
+  }
+  .waterfall-view__sticky li {
+    @apply overflow-hidden;
+    height: var(--sticky-row-height);
+  }
+  .waterfall-view__vlist-host :global(.waterfall-vlist-viewport:focus-visible) {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
   }
 
   .waterfall-view__vlist-host :global(.waterfall-vlist) {
