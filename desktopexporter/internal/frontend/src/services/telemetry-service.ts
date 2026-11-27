@@ -6,6 +6,7 @@ import { logAPI } from './log-service'
 import { metricAPI } from './metric-service'
 import { discoveryAPI } from './discovery-service'
 import { attributeSearchAPI } from './attribute-search-service'
+import { databaseAPI } from './database-service'
 export { JsonRpcError } from './service-error'
 export {
   RequestAbortedError,
@@ -63,6 +64,7 @@ export let telemetryAPI = {
   ...metricAPI,
   ...discoveryAPI,
   ...attributeSearchAPI,
+  ...databaseAPI,
   // Stats methods
   getImportConfig: async (
     signal?: AbortSignal

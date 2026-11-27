@@ -12,6 +12,7 @@ package duckdbextension
 
 import (
 	"context"
+	"path/filepath"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -43,8 +44,9 @@ type DuckDBExtension struct {
 	logger *zap.Logger
 	tel    *telemetry.Telemetry
 
-	store  *store.Store
-	server *server.Server
+	store     *store.Store
+	server    *server.Server
+	databases server.DatabaseManager
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
@@ -70,13 +72,60 @@ func (e *DuckDBExtension) Store() *store.Store {
 	return e.store
 }
 
+// Databases exposes the active session manager while the extension is running.
+func (e *DuckDBExtension) Databases() server.DatabaseManager {
+	return e.databases
+}
+
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
+	var (
+		dbPath         string
+		managedDir     string
+		activeFilename string
+		isManaged      = e.cfg.Managed || e.cfg.ManagedDir != ""
+	)
+	if isManaged {
+		managedDir = e.cfg.ManagedDir
+		if managedDir == "" {
+			var err error
+			managedDir, err = DefaultAppDataDir()
+			if err != nil {
+				return err
+			}
+		}
+		var err error
+		dbPath, activeFilename, err = resolveManagedStartupPath(managedDir)
+		if err != nil {
+			return err
+		}
+	} else {
+		dbPath = e.cfg.Db
+		if dbPath != "" {
+			activeFilename = filepath.Base(dbPath)
+		}
+	}
+
+	str, err := store.NewStore(ctx, dbPath, e.logger)
 	if err != nil {
 		return err
 	}
 
-	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort))
+	var dbMgr server.DatabaseManager
+	if isManaged {
+		dbMgr = newManagedSessionManager(managedDir, str)
+	} else {
+		dbMgr = staticDatabaseManager{active: activeFilename}
+	}
+
+	srv, err := server.NewServer(
+		e.cfg.Endpoint,
+		e.cfg.OTLPHTTPPort,
+		str,
+		e.logger,
+		e.tel,
+		server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort),
+		server.WithDatabaseManager(dbMgr),
+	)
 	if err != nil {
 		str.Close()
 		return err
@@ -90,7 +139,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		return err
 	}
 	if maxBytes < 0 {
-		if e.cfg.Db == "" {
+		if dbPath == "" {
 			maxBytes = defaultMaxSizeInMemory
 		} else {
 			maxBytes = defaultMaxSizeOnDisk
@@ -104,8 +153,17 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		return err
 	}
 
+	if isManaged {
+		if err := writeSelection(managedDir, activeFilename); err != nil {
+			_ = srv.Shutdown(ctx)
+			_ = str.Close()
+			return err
+		}
+	}
+
 	e.store = str
 	e.server = srv
+	e.databases = dbMgr
 	if features.EvalsBuilt {
 		e.logger.Warn("Evals: " + features.ExperimentalLabel)
 	}

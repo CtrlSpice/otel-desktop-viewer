@@ -20,8 +20,16 @@ type Config struct {
 	OTLPGRPCPort int `mapstructure:"otlp_grpc_port"`
 
 	// Db defines the path of your database file. Setting an empty string opens
-	// DuckDB in in-memory mode.
+	// DuckDB in in-memory mode unless Managed or ManagedDir is set.
 	Db string `mapstructure:"db"`
+
+	// Managed enables persistent session storage in the OS app-data directory.
+	// Mutually exclusive with Db.
+	Managed bool `mapstructure:"managed"`
+
+	// ManagedDir overrides the managed session directory (primarily for tests).
+	// Implies Managed and is mutually exclusive with Db.
+	ManagedDir string `mapstructure:"managed_dir"`
 
 	// DbMaxSize caps the size of the telemetry store as a human-readable byte
 	// size (e.g. "512MB", "2GB"). "0" disables retention enforcement. An empty
@@ -56,6 +64,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.OTLPGRPCPort < 0 || cfg.OTLPGRPCPort > 65535 {
 		return fmt.Errorf("invalid otlp_grpc_port %d", cfg.OTLPGRPCPort)
+	}
+	if cfg.Db != "" && (cfg.Managed || cfg.ManagedDir != "") {
+		return fmt.Errorf("db and managed session storage cannot both be configured")
 	}
 	if _, err := parseByteSize(cfg.DbMaxSize); err != nil {
 		return fmt.Errorf("invalid db_max_size %q: %w", cfg.DbMaxSize, err)

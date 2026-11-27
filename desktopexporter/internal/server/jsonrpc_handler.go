@@ -16,6 +16,7 @@ import (
 
 type JSONRPCHandler struct {
 	store        *store.Store
+	databases    DatabaseManager
 	logger       *zap.Logger
 	otlpHTTPPort int
 	otlpGRPCPort int
@@ -183,6 +184,12 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getTraceSpanCount(ctx, req)
 	case "query":
 		return h.query(ctx, req)
+	case "listDatabases":
+		return h.listDatabases(ctx, req)
+	case "openDatabase":
+		return h.openDatabase(ctx, req)
+	case "newDatabase":
+		return h.newDatabase(ctx, req)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}

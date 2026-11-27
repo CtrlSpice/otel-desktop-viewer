@@ -7,6 +7,7 @@
   import SearchBar from '../Search/SearchBar.svelte'
   import PaneHeader from '../Layout/PaneHeader.svelte'
   import ThemeToggle from '../ThemeToggle.svelte'
+  import DatabaseSwitcher from './DatabaseSwitcher.svelte'
   import IconButton from '../IconButton.svelte'
   import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
   import { getDataChanges } from '@/contexts/data-changes.svelte'
@@ -104,6 +105,7 @@
           </div>
         </div>
         <div class="workspace-toolbar__actions">
+          <DatabaseSwitcher />
           <ThemeToggle
             class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-left"
           />

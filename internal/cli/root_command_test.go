@@ -44,8 +44,8 @@ VIEWER FLAGS
       --grpc int                        OTLP gRPC port (default 4317)
       --browser-port int                Viewer HTTP port (default 8000)
       --open-browser                    Open viewer after startup (default true)
-      --db string                       DuckDB file; omit for memory
-      --db-max-size string              Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
+      --db string                       DuckDB file path, or :memory: for memory; omit for managed sessions
+      --db-max-size string              Maximum telemetry-store size (defaults to 2GB on disk or 512MB in memory; 0 disables pruning)
       --self-telemetry-endpoint string  Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 
 GLOBAL FLAGS
@@ -211,7 +211,16 @@ func TestViewerStartupUsesParsedFlagsAndBrowserContext(t *testing.T) {
 	})
 	defaultCommand.SetArgs([]string{"--open-browser=false"})
 	require.NoError(t, defaultCommand.Execute())
-	assert.Equal(t, collector.URIs(collector.ConfigOptions{Host: "localhost", HTTPPort: 4318, GRPCPort: 4317, BrowserPort: 8000}), defaults.ConfigProviderSettings.ResolverSettings.URIs)
+	assert.Equal(t, collector.URIs(collector.ConfigOptions{Host: "localhost", HTTPPort: 4318, GRPCPort: 4317, BrowserPort: 8000, Managed: true}), defaults.ConfigProviderSettings.ResolverSettings.URIs)
+
+	var inMemory otelcol.CollectorSettings
+	memoryCommand := newRootCommand(settings, http.DefaultClient, time.Now, func(_ context.Context, set otelcol.CollectorSettings) error {
+		inMemory = set
+		return nil
+	}, func(string) error { return nil })
+	memoryCommand.SetArgs([]string{"--open-browser=false", "--db", ":memory:"})
+	require.NoError(t, memoryCommand.Execute())
+	assert.Equal(t, collector.URIs(collector.ConfigOptions{Host: "localhost", HTTPPort: 4318, GRPCPort: 4317, BrowserPort: 8000, Managed: false}), inMemory.ConfigProviderSettings.ResolverSettings.URIs)
 
 	var received otelcol.CollectorSettings
 	opened := make(chan string, 1)

@@ -726,3 +726,17 @@ export type Stats = {
   metrics: MetricStats
   rejections: Rejection[]
 }
+
+export type DatabaseEntry = {
+  name: string
+  sizeBytes: number
+  modifiedAt: string
+  active: boolean
+}
+
+export type DatabaseList = {
+  managed: boolean
+  active: string
+  directory?: string
+  databases: DatabaseEntry[]
+}
