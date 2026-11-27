@@ -50,8 +50,8 @@ In another terminal, start the frontend with hot reload:
 make dev-ts
 ```
 
-Open <http://localhost:3001>. The backend runs on port 8000 and keeps data in
-memory. To load sample telemetry:
+Open <http://localhost:3001>. The backend runs on port 8000 and stores data in
+managed sessions. To load sample telemetry:
 
 ```bash
 make populate-traces populate-logs populate-metrics
