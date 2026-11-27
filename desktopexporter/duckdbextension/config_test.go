@@ -105,9 +105,19 @@ func TestExtensionConfigValidate(t *testing.T) {
 			wantErr: "query parameters",
 		},
 		{
+			name:    "db with percent rejected",
+			cfg:     Config{Endpoint: "localhost:8000", Db: "/tmp/100%.duckdb"},
+			wantErr: "percent",
+		},
+		{
 			name:    "managed_dir with query parameter rejected",
 			cfg:     Config{Endpoint: "localhost:8000", ManagedDir: "/tmp/sessions?foo=1"},
 			wantErr: "query parameters",
+		},
+		{
+			name:    "managed_dir with percent rejected",
+			cfg:     Config{Endpoint: "localhost:8000", ManagedDir: "/tmp/sessions%1"},
+			wantErr: "percent",
 		},
 		{
 			name:    "blank managed_dir rejected",

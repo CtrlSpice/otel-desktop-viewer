@@ -670,4 +670,67 @@ describe('App real-page composition', () => {
       expect(getStats.mock.calls.length).toBeGreaterThan(statsBefore)
     )
   })
+
+  it('clears client-side file import failures when switching databases', async () => {
+    const user = userEvent.setup()
+    const managedSessions = {
+      managed: true,
+      active: 'current.duckdb',
+      databases: [
+        {
+          name: 'current.duckdb',
+          sizeBytes: 12000,
+          modifiedAt: '2026-11-26T18:00:00Z',
+          active: true,
+        },
+        {
+          name: 'clean.duckdb',
+          sizeBytes: 4000,
+          modifiedAt: '2026-11-26T17:00:00Z',
+          active: false,
+        },
+      ],
+    }
+    listDatabases.mockResolvedValue(managedSessions)
+    openDatabase.mockResolvedValue({
+      ...managedSessions,
+      active: 'clean.duckdb',
+      databases: [
+        { ...managedSessions.databases[1]!, active: true },
+        { ...managedSessions.databases[0]!, active: false },
+      ],
+    })
+
+    setTestUrl('/logs?time=all')
+    render(App)
+    await screen.findByText('No logs match this search and time range.')
+
+    const badFile = new File(['{not valid json'], 'broken.json', {
+      type: 'application/json',
+    })
+    const dataTransfer = { types: ['Files'], files: [badFile] }
+    await fireEvent.dragEnter(window, { dataTransfer })
+    await fireEvent.drop(window, { dataTransfer })
+
+    expect(
+      await within(screen.getByRole('main')).findByText(
+        'Import issue in broken.json.'
+      )
+    ).toBeInTheDocument()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Session: current' })
+    )
+    await user.click(await screen.findByRole('button', { name: /clean/ }))
+
+    await waitFor(() =>
+      expect(screen.queryByText('Import issue in broken.json.')).toBeNull()
+    )
+
+    navigate('/')
+    const panel = await screen.findByRole('region', {
+      name: 'Ingestion issues',
+    })
+    expect(within(panel).queryByText('broken.json')).toBeNull()
+  })
 })

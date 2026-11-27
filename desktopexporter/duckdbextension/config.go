@@ -75,6 +75,9 @@ func (cfg *Config) Validate() error {
 		if strings.Contains(cfg.Db, "?") {
 			return fmt.Errorf("invalid db path %q: query parameters ('?') are not supported", cfg.Db)
 		}
+		if strings.Contains(cfg.Db, "%") {
+			return fmt.Errorf("invalid db path %q: percent ('%%') characters are not supported", cfg.Db)
+		}
 	}
 	if cfg.ManagedDir != "" {
 		if strings.TrimSpace(cfg.ManagedDir) == "" {
@@ -82,6 +85,9 @@ func (cfg *Config) Validate() error {
 		}
 		if strings.Contains(cfg.ManagedDir, "?") {
 			return fmt.Errorf("invalid managed_dir %q: query parameters ('?') are not supported", cfg.ManagedDir)
+		}
+		if strings.Contains(cfg.ManagedDir, "%") {
+			return fmt.Errorf("invalid managed_dir %q: percent ('%%') characters are not supported", cfg.ManagedDir)
 		}
 	}
 	if _, err := parseByteSize(cfg.DbMaxSize); err != nil {

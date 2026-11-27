@@ -82,7 +82,6 @@
       void importer.enqueue(files, importNavigation.select(files[0].name))
     }
   }
-  onDestroy(changes.subscribeSession(() => importNavigation.cancel()))
   onDestroy(() => {
     importNavigation.cancel()
     importer.cancel()
@@ -92,6 +91,15 @@
   let mainElement = $state<HTMLElement | null>(null)
   let importFailure = $state<ImportFailure | null>(null)
   let seenFailure: ImportFailure | undefined
+
+  onDestroy(
+    changes.subscribeSession(() => {
+      importNavigation.cancel()
+      localImportFailures = []
+      importFailure = null
+      seenFailure = undefined
+    })
+  )
 
   function pagePath(path: string): string {
     for (const base of ['/traces', '/metrics', '/logs', '/evals']) {

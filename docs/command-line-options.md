@@ -31,8 +31,8 @@ Client commands use `--endpoint` with the viewer HTTP address.
 
 | Option | Default | Behaviour |
 | --- | --- | --- |
-| `--db <path>` | Omitted | Save telemetry in a DuckDB file. Without this option, storage is in memory and is lost on shutdown. |
-| `--db-max-size <size>` | `512MB` in memory, `2GB` with `--db` | Set the size threshold for automatic deletion of the oldest telemetry; `0` disables automatic deletion. |
+| `--db <path>` | Omitted | Open a specific DuckDB file outside managed sessions. Without this option, the viewer persists managed sessions in your OS app-data directory (starting with `current.duckdb`). |
+| `--db-max-size <size>` | `2GB` | Set the size threshold for automatic deletion of the oldest telemetry; `0` disables automatic deletion. |
 
 To save telemetry with a custom threshold:
 

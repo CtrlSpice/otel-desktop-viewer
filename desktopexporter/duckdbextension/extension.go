@@ -102,6 +102,9 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 			if strings.Contains(managedDir, "?") {
 				return fmt.Errorf("invalid managed_dir %q: query parameters ('?') are not supported", managedDir)
 			}
+			if strings.Contains(managedDir, "%") {
+				return fmt.Errorf("invalid managed_dir %q: percent ('%%') characters are not supported", managedDir)
+			}
 		}
 		var err error
 		dbPath, activeFilename, err = resolveManagedStartupPath(managedDir)

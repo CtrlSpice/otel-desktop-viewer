@@ -53,7 +53,7 @@ func DefaultAppDataDir() (string, error) {
 		}
 		dir = filepath.Join(root, "otel-desktop-viewer")
 	}
-	if !filepath.IsAbs(dir) || strings.Contains(dir, "?") {
+	if !filepath.IsAbs(dir) || strings.ContainsAny(dir, "?%") {
 		return "", fmt.Errorf("invalid application data directory %q", dir)
 	}
 	return filepath.Clean(dir), nil
