@@ -161,7 +161,7 @@ func assertGolden(t *testing.T, name, got string) {
 	}
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "missing golden file %s; run with -update-golden", path)
-	require.Equal(t, string(want), got,
+	require.Equal(t, strings.ReplaceAll(string(want), "\r\n", "\n"), got,
 		"golden output %s changed. If deliberate, re-run with -update-golden and read the diff carefully", path)
 }
 

@@ -118,7 +118,7 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 			"the process boundary prints returned errors once")
 
 		// Enter RunE with a config that cannot start.
-		cmd.SetArgs([]string{"--db", filepath.Join(t.TempDir(), "no", "such", "dir", "x.db")})
+		cmd.SetArgs([]string{"--open-browser=false", "--db", filepath.Join(t.TempDir(), "no", "such", "dir", "x.db")})
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
