@@ -2,9 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,11 +17,13 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	pv "github.com/apache/arrow-go/v18/parquet/variant"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -446,6 +453,607 @@ func TestHomeLinksMatchMissingNamespaceAcrossSignals(t *testing.T) {
 			} else {
 				require.Empty(t, rows, method)
 			}
+		}
+	}
+}
+
+func TestDiscoveryKindCountsDistinctRecordsWithinOwnerAndSignal(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+	data := ptrace.NewTraces()
+	for index := range 103 {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutStr("service.name", "checkout")
+		scope := r.ScopeSpans().AppendEmpty()
+		s := scope.Spans().AppendEmpty()
+		s.SetTraceID(pcommon.TraceID{15: 1})
+		s.SetSpanID(pcommon.SpanID{7: byte(index + 1)})
+		s.SetStartTimestamp(100)
+		s.SetEndTimestamp(101)
+		s.SetName("needle")
+		s.Attributes().PutStr("attempt", "1")
+		if index == 99 {
+			s.Attributes().PutInt("attempt", 1)
+		}
+		if index == 100 {
+			r.Resource().Attributes().PutStr("service.name", "other")
+		}
+		if index == 101 {
+			s.SetStartTimestamp(101)
+		}
+		if index == 102 {
+			s.SetName("other")
+		}
+		if index < 3 {
+			scope.Scope().Attributes().PutStr("attempt", "1")
+		} else if index == 3 {
+			scope.Scope().Attributes().PutInt("attempt", 1)
+		}
+		if index < 3 {
+			values := [][]string{{"1", "2", "1"}, {"1"}, {"2"}}
+			for _, value := range values[index] {
+				event := s.Events().AppendEmpty()
+				event.SetTimestamp(100)
+				event.Attributes().PutStr("attempt", value)
+			}
+		}
+		// One span carries both kinds; neither kind counts nor value counts
+		// can be summed to recover the all-kind distinct-record denominator.
+		if index == 0 || index == 3 {
+			event := s.Events().AppendEmpty()
+			event.SetTimestamp(100)
+			event.Attributes().PutInt("attempt", 1)
+		}
+		if index == 0 {
+			for _, value := range []string{"1", "2", "1"} {
+				s.Links().AppendEmpty().Attributes().PutStr("attempt", value)
+			}
+		} else if index < 3 {
+			s.Links().AppendEmpty().Attributes().PutInt("attempt", 1)
+		}
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, data)
+	}))
+	for index := range 3 {
+		ld := buildTestLogs()
+		r := ld.ResourceLogs().At(0)
+		r.Resource().Attributes().PutStr("service.name", "checkout")
+		scope := r.ScopeLogs().At(0)
+		scope.LogRecords().At(0).SetTimestamp(100)
+		if index == 0 {
+			scope.Scope().Attributes().PutStr("attempt", "1")
+		} else {
+			scope.Scope().Attributes().PutInt("attempt", 1)
+		}
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+			return logs.Ingest(ctx, conn, ld)
+		}))
+		md := buildTestMetrics()
+		rm := md.ResourceMetrics().At(0)
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		sm := rm.ScopeMetrics().At(0)
+		sm.Metrics().At(0).Gauge().DataPoints().At(0).SetTimestamp(100)
+		if index < 2 {
+			sm.Scope().Attributes().PutStr("attempt", "1")
+		} else {
+			sm.Scope().Attributes().PutInt("attempt", 1)
+		}
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, md)
+		}))
+	}
+	for _, tc := range []struct {
+		signal, ownerType      string
+		strings, ints, records int
+		values                 int
+	}{
+		{"traces", "span", 99, 1, 100, 2},
+		{"traces", "event", 3, 2, 4, 3},
+		{"traces", "link", 1, 2, 3, 3},
+		{"traces", "scope", 3, 1, 4, 2},
+		{"logs", "scope", 1, 2, 3, 2},
+		{"metrics", "scope", 2, 1, 3, 2},
+	} {
+		t.Run(tc.signal+"/"+tc.ownerType, func(t *testing.T) {
+			for offset := range tc.values {
+				params := map[string]any{"options": map[string]any{
+					"kind": "values", "signal": tc.signal, "ownerType": tc.ownerType, "key": "attempt",
+					"serviceName": "checkout", "startTime": "100", "endTime": "100", "limit": 1, "offset": offset,
+					"queries": map[string]any{"traces": map[string]any{"type": "condition", "query": map[string]any{
+						"field": map[string]any{"name": "name", "searchScope": "field", "type": "string"}, "fieldOperator": "=", "value": "needle",
+					}}},
+				}}
+				result, err := h.Handle(ctx, createRequest("discoverTelemetry", params))
+				require.NoError(t, err)
+				var page struct {
+					Rows [][]struct {
+						Value struct {
+							Kind string `json:"kind"`
+						} `json:"value"`
+						Count             int                  `json:"count"`
+						KindCount         int                  `json:"kindCount"`
+						Denominator       int                  `json:"denominator"`
+						RelativeFrequency float64              `json:"relativeFrequency"`
+						FoundOn           []discovery.Location `json:"foundOn"`
+					} `json:"rows"`
+					Truncated bool `json:"truncated"`
+				}
+				require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+				require.Len(t, page.Rows, 1)
+				value := page.Rows[0][0]
+				want := tc.strings
+				if value.Value.Kind == "int64" {
+					want = tc.ints
+				} else {
+					require.Equal(t, "string", value.Value.Kind)
+				}
+				require.Equal(t, want, value.KindCount)
+				valueCount := want
+				if tc.ownerType == "event" && value.Value.Kind == "string" {
+					valueCount = 2 // Two values overlap on one of three spans.
+				}
+				require.Equal(t, valueCount, value.Count)
+				require.Equal(t, tc.records, value.Denominator)
+				require.Equal(t, float64(valueCount)/float64(tc.records), value.RelativeFrequency)
+				require.Equal(t, []discovery.Location{{Signal: tc.signal, OwnerType: tc.ownerType}}, value.FoundOn)
+				require.Equal(t, offset < tc.values-1, page.Truncated)
+				wire, err := json.Marshal(params)
+				require.NoError(t, err)
+				native := readArrowDataset(t, s, "discoverTelemetry", string(wire))
+				items := native.Column(0).(*array.List).ListValues().(*array.Struct)
+				require.Equal(t, 1, items.Len())
+				field := func(name string) arrow.Array {
+					index, ok := items.DataType().(*arrow.StructType).FieldIdx(name)
+					require.True(t, ok)
+					return items.Field(index)
+				}
+				require.Equal(t, int64(value.Count), field("count").(*array.Int64).Value(0))
+				require.Equal(t, int64(value.KindCount), field("kindCount").(*array.Int64).Value(0))
+				require.Equal(t, int64(value.Denominator), field("denominator").(*array.Int64).Value(0))
+				require.Equal(t, value.RelativeFrequency, field("relativeFrequency").(*array.Float64).Value(0))
+				var identity struct {
+					Kind string `json:"kind"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(field("identity").(*array.String).Value(0)), &identity))
+				require.Equal(t, value.Value.Kind, identity.Kind)
+				require.Equal(t, page.Truncated, native.Column(1).(*array.Boolean).Value(0))
+				// Home uses one cross-signal page. Restrict this case to the same
+				// selected signal and pin the existing parent/kind denominators.
+				homeOptions := map[string]any{}
+				for key, value := range params["options"].(map[string]any) {
+					homeOptions[key] = value
+				}
+				queries := map[string]any{"traces": false, "metrics": false, "logs": false}
+				queries[tc.signal] = nil
+				if tc.signal == "traces" {
+					queries[tc.signal] = params["options"].(map[string]any)["queries"].(map[string]any)["traces"]
+				}
+				homeOptions["queries"] = queries
+				home := homePage(t, h, homeOptions)
+				require.Len(t, home.Values, 1)
+				homeValue := home.Values[0]
+				homeKindCount := tc.strings
+				if homeValue.Kind == "int64" {
+					homeKindCount = tc.ints
+				}
+				homeCount := homeKindCount
+				if tc.ownerType == "event" && homeValue.Kind == "string" {
+					homeCount = 2
+				}
+				require.EqualValues(t, homeKindCount, homeValue.KindCount)
+				require.EqualValues(t, homeCount, homeValue.Count)
+				require.EqualValues(t, tc.records, home.Denominator)
+				require.EqualValues(t, tc.values, home.Total)
+				require.Equal(t, offset < tc.values-1, home.Truncated)
+			}
+		})
+	}
+}
+
+func TestServicesGroupResourcesWithoutSplittingScopesOrDoubleCountingTraces(t *testing.T) {
+	h := setupHandler(t)
+	data := ptrace.NewTraces()
+	for resourceIndex := range 2 {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutStr("service.name", "shared")
+		r.Resource().Attributes().PutInt("unrelated", int64(resourceIndex))
+		if resourceIndex == 1 {
+			r.Resource().Attributes().PutStr("service.namespace", "")
+		}
+		for scopeIndex := range 2 {
+			scope := r.ScopeSpans().AppendEmpty()
+			scope.Scope().SetName(fmt.Sprint(scopeIndex))
+			// Scope-owned service-looking keys must not become Resource identity.
+			scope.Scope().Attributes().PutStr("service.name", fmt.Sprint(scopeIndex))
+			for i := range 100 {
+				span := scope.Spans().AppendEmpty()
+				span.SetTraceID(pcommon.TraceID{15: 1})
+				id := resourceIndex*200 + scopeIndex*100 + i + 1
+				span.SetSpanID(pcommon.SpanID{6: byte(id >> 8), 7: byte(id)})
+				span.SetStartTimestamp(pcommon.Timestamp(i))
+				span.SetEndTimestamp(pcommon.Timestamp(i + 1))
+			}
+		}
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	for _, window := range []bool{false, true} {
+		options := map[string]any{"kind": "services", "queries": map[string]any{}}
+		want := 400
+		if window {
+			options["startTime"], options["endTime"] = "10", "19"
+			want = 40
+		}
+		raw, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": options}))
+		require.NoError(t, err)
+		var page struct {
+			Rows [][]struct {
+				Spans  int `json:"spanCount"`
+				Traces int `json:"traceCount"`
+			} `json:"rows"`
+		}
+		require.NoError(t, json.Unmarshal(raw.(json.RawMessage), &page))
+		require.Len(t, page.Rows, 1)
+		require.Equal(t, want, page.Rows[0][0].Spans)
+		require.Equal(t, 1, page.Rows[0][0].Traces)
+	}
+	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+	// Reads aggregate compact resource IDs. The catalogue holds the typed pair
+	// once despite unrelated attributes, scopes and hundreds of owning records.
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		var key, raw string
+		var builder discovery.Builder
+		statement := builder.Services(discovery.Query{})
+		err := db.QueryRowContext(t.Context(), "explain (analyze, format json) "+statement, builder.Args()...).Scan(&key, &raw)
+		if err != nil {
+			return err
+		}
+		require.Contains(t, raw, "search_service_resources")
+		var services, resources int
+		require.NoError(t, db.QueryRow(`select (select count(*) from search_services),(select count(*) from search_service_resources)`).Scan(&services, &resources))
+		require.Equal(t, 1, services)
+		require.Equal(t, 2, resources)
+		require.NotContains(t, raw, "otel_native_text")
+		return nil
+	}))
+}
+
+func TestServiceCountIsScalarBeyondOneSummaryPage(t *testing.T) {
+	h := setupHandler(t)
+	empty, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 0, empty)
+	data := ptrace.NewTraces()
+	for i := range 105 {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutStr("service.name", fmt.Sprint(i))
+		span := r.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 105, count)
+	for _, params := range []any{[]any{1}, map[string]any{"limit": 1}} {
+		_, err := h.Handle(t.Context(), createRequest("getServiceCount", params))
+		require.Error(t, err)
+	}
+}
+
+func TestServiceCatalogueBoundsLabelsButKeepsExactSelectionAndCopy(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
+	prefix := strings.Repeat("雪'quoted\"\\", 2000)
+	data := ptrace.NewTraces()
+	for i, suffix := range []string{"z-tail", "a-tail"} {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutStr("service.name", prefix+suffix)
+		r.Resource().Attributes().PutStr("service.namespace", prefix)
+		span := r.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
+		span.SetSpanID(pcommon.SpanID{7: 1})
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	read := func(options string) *array.Struct {
+		record := readArrowDataset(t, s, "discoverTelemetry", `{"options":`+options+`}`)
+		return record.Column(0).(*array.List).ListValues().(*array.Struct)
+	}
+	field := func(items *array.Struct, name string) *array.String {
+		index, ok := items.DataType().(*arrow.StructType).FieldIdx(name)
+		require.True(t, ok)
+		return items.Field(index).(*array.String)
+	}
+	items := read(`{"kind":"services","limit":1}`)
+	require.Equal(t, 1, items.Len())
+	ref := field(items, "serviceIdentity").Value(0)
+	require.Len(t, ref, 64)
+	require.LessOrEqual(t, len([]rune(field(items, "serviceName").Value(0))), 300)
+	require.Equal(t, fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(prefix+"a-tail"))), field(items, "serviceColorKey").Value(0))
+	labels, err := h.Handle(t.Context(), createRequest("getServiceLabels", map[string]any{"serviceRef": ref}))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"serviceName": prefix + "a-tail", "serviceNamespace": prefix}, labels)
+	second := read(`{"kind":"services","offset":1,"limit":1}`)
+	require.NotEqual(t, ref, field(second, "serviceIdentity").Value(0))
+	require.Equal(t, field(items, "serviceName").Value(0), field(second, "serviceName").Value(0))
+	filtered := read(`{"kind":"services","term":"a-tail"}`)
+	require.Equal(t, 1, filtered.Len())
+	require.Equal(t, ref, field(filtered, "serviceIdentity").Value(0))
+	selected := read(`{"kind":"services","serviceIdentity":"` + ref + `"}`)
+	require.Equal(t, 1, selected.Len())
+	_, err = h.Handle(t.Context(), createRequest("deleteSpansByTraceID", []any{"00000000000000000000000000000002"}))
+	require.NoError(t, err)
+	_, err = h.Handle(t.Context(), createRequest("getServiceLabels", map[string]any{"serviceRef": ref}))
+	require.ErrorIs(t, err, ErrHomeValueUnavailable)
+	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+}
+
+func TestServiceCatalogueCanonicalNaNsAcrossDistinctResources(t *testing.T) {
+	h := setupHandler(t)
+	data := ptrace.NewTraces()
+	for i, bits := range []uint64{0x7ff8000000000001, 0x7ff8000000000002, 0xfff8000000000001} {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutDouble("service.name", math.Float64frombits(bits))
+		r.Resource().Attributes().PutEmptyMap("service.namespace").PutDouble("nested", math.Float64frombits(bits))
+		r.Resource().Attributes().PutInt("unrelated", int64(i))
+		span := r.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	count, err := h.Handle(t.Context(), createRequest("getServiceCount", nil))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		var services, resources int
+		require.NoError(t, db.QueryRow(`select (select count(*) from search_services),(select count(*) from search_service_resources)`).Scan(&services, &resources))
+		require.Equal(t, 1, services)
+		require.Equal(t, 3, resources)
+		return nil
+	}))
+}
+
+func TestServiceMapConnections(t *testing.T) {
+	h := setupHandler(t)
+	h.logger = zaptest.NewLogger(t)
+	server, err := NewServer("localhost:8000", 0, h.store, h.logger, nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+	data := ptrace.NewTraces()
+	add := func(service, namespace string, trace, id, parent byte, start uint64) ptrace.Span {
+		r := data.ResourceSpans().AppendEmpty()
+		r.Resource().Attributes().PutStr("service.name", service)
+		r.Resource().Attributes().PutStr("service.namespace", namespace)
+		s := r.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		s.SetTraceID(pcommon.TraceID{trace})
+		s.SetSpanID(pcommon.SpanID{id})
+		if parent != 0 {
+			s.SetParentSpanID(pcommon.SpanID{parent})
+		}
+		s.SetName(service)
+		s.SetStartTimestamp(pcommon.Timestamp(start))
+		s.SetEndTimestamp(pcommon.Timestamp(start + 10))
+		return s
+	}
+	add("api", "one", 1, 1, 0, 100)
+	add("worker", "", 1, 2, 1, 110)
+	add("worker", "", 1, 3, 1, 120).Status().SetCode(ptrace.StatusCodeError)
+	add("api", "one", 1, 4, 2, 130) // reverse edge, not a duplicate node
+	add("api", "two", 1, 5, 1, 140) // same name, distinct namespace
+	add("orphan", "", 2, 6, 1, 150) // parent ID in another trace is not a connection
+	add("api", "one", 1, 7, 1, 160) // same-service span is not an edge
+	add("api", "one", 3, 1, 0, 90)
+	add("worker", "", 3, 2, 1, 95) // same edge in a second trace
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data) }))
+	read := func(options map[string]any) struct {
+		Rows      [][]json.RawMessage `json:"rows"`
+		Truncated bool                `json:"truncated"`
+	} {
+		t.Helper()
+		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
+		require.NoError(t, err)
+		checkDiscoveryRows(t, result.(json.RawMessage), options["kind"].(string))
+		var page struct {
+			Rows      [][]json.RawMessage `json:"rows"`
+			Truncated bool                `json:"truncated"`
+		}
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+		wire, err := json.Marshal(map[string]any{"options": options})
+		require.NoError(t, err)
+		native := readArrowDataset(t, server, "discoverTelemetry", string(wire))
+		require.Equal(t, len(page.Rows), native.Column(0).(*array.List).ListValues().Len())
+		require.Equal(t, page.Truncated, native.Column(1).(*array.Boolean).Value(0))
+		return page
+	}
+	// Follow the documented lookup: the service row supplies the identity
+	// for connections, even when another namespace has the same service name.
+	services := read(map[string]any{"kind": "services", "serviceName": "api", "namespace": "one"})
+	require.Len(t, services.Rows, 1)
+	var service struct{ ServiceIdentity string }
+	require.NoError(t, json.Unmarshal(services.Rows[0][0], &service))
+	identity := service.ServiceIdentity
+	require.NotEmpty(t, identity)
+	options := map[string]any{"kind": "connections", "serviceIdentity": identity, "limit": 1}
+	page := read(options)
+	require.Len(t, page.Rows, 1)
+	require.True(t, page.Truncated)
+	options["limit"] = 100
+	page = read(options)
+	require.Len(t, page.Rows, 3)
+	options["offset"] = 1
+	require.Equal(t, page.Rows[1:], read(options).Rows)
+	delete(options, "offset")
+	var workerIdentity string
+	for _, row := range page.Rows {
+		var edge struct {
+			Source struct {
+				Identity string `json:"serviceIdentity"`
+			} `json:"source"`
+			Target struct {
+				Name     string `json:"serviceName"`
+				Identity string `json:"serviceIdentity"`
+			} `json:"target"`
+			SpanCount      int `json:"spanCount"`
+			TraceCount     int `json:"traceCount"`
+			ErrorSpanCount int `json:"errorSpanCount"`
+		}
+		require.NoError(t, json.Unmarshal(row[0], &edge))
+		if edge.Source.Identity == identity && edge.Target.Name == "worker" {
+			workerIdentity = edge.Target.Identity
+			require.Equal(t, 3, edge.SpanCount)
+			require.Equal(t, 2, edge.TraceCount)
+			require.Equal(t, 1, edge.ErrorSpanCount)
+		}
+	}
+	require.NotEmpty(t, workerIdentity)
+	options["term"] = `"lastSeen":"160"`
+	require.NotEmpty(t, read(options).Rows)
+	delete(options, "term")
+	children := read(map[string]any{"kind": "connection-spans", "serviceIdentity": identity, "targetIdentity": workerIdentity})
+	require.Len(t, children.Rows, 3)
+	require.Contains(t, string(children.Rows[0][0]), `"spanID":"0200000000000000"`)
+	evidence := map[string]any{"kind": "connection-spans", "serviceIdentity": identity, "targetIdentity": workerIdentity, "limit": 1, "offset": 1}
+	require.Equal(t, children.Rows[1:2], read(evidence).Rows)
+	require.True(t, read(evidence).Truncated)
+	evidence["offset"] = 2
+	require.False(t, read(evidence).Truncated)
+	options["queries"] = map[string]any{"traces": map[string]any{"type": "condition", "query": map[string]any{"field": map[string]any{"searchScope": "global"}, "fieldOperator": "CONTAINS", "value": "worker"}}}
+	require.Empty(t, read(options).Rows) // child matches, but its parent does not
+	delete(options, "queries")
+	options["startTime"] = "110" // excludes the parent: no inferred cross-window edge
+	page = read(options)
+	require.Len(t, page.Rows, 1)
+	options["queries"] = map[string]any{"traces": false}
+	require.Empty(t, read(options).Rows)
+	_, err = h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connections"}}))
+	require.Error(t, err)
+	_, err = h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "connection-spans", "serviceIdentity": identity}}))
+	require.Error(t, err)
+}
+
+// Exercise the HTTP-to-generated-SQL paths reported by go/sql-injection.
+// Hostile-looking received strings must remain searchable data; identifiers,
+// directions and timestamp bounds must never become arbitrary SQL fragments.
+func TestDiscoverySQLInputBoundaries(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:8000", 0, h.store, zaptest.NewLogger(t), nil)
+	require.NoError(t, err)
+	data := buildTestTraces()
+	resource := data.ResourceSpans().At(0)
+	span := resource.ScopeSpans().At(0).Spans().At(0)
+	const hostile = "' OR true; DROP TABLE spans; --\\雪"
+	resource.Resource().Attributes().PutStr("service.name", hostile)
+	resource.Resource().Attributes().PutStr("service.namespace", hostile)
+	span.Attributes().PutStr(hostile, hostile)
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(t.Context(), conn, data) }))
+	for _, kind := range []string{"services", "keys", "values", "home-values"} {
+		options := map[string]any{"kind": kind, "signal": "traces", "ownerType": "span", "key": hostile, "serviceName": hostile, "namespace": hostile, "queries": map[string]any{}}
+		// JSON value search sees escaped backslashes; this prefix is common to
+		// both the native string and its exact JSON identity.
+		options["term"] = "' OR true; DROP TABLE spans; --"
+		if kind == "home-values" {
+			page := homePage(t, h, options)
+			require.Len(t, page.Values, 1)
+			require.Equal(t, hostile, page.Values[0].Preview)
+		} else {
+			wire, err := json.Marshal(map[string]any{"options": options})
+			require.NoError(t, err)
+			native := readArrowDataset(t, s, "discoverTelemetry", string(wire))
+			require.Equal(t, 1, native.Column(0).(*array.List).ListValues().Len(), kind)
+			result, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": options}))
+			require.NoError(t, err)
+			var page struct {
+				Rows [][]json.RawMessage `json:"rows"`
+			}
+			require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+			require.Len(t, page.Rows, 1, kind)
+		}
+	}
+	traceID := span.TraceID().String()
+	_, err = h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": map[string]any{
+		"kind": "home-values", "ownerType": "span", "key": hostile, "endTime": "0; DROP TABLE spans",
+	}}))
+	require.Error(t, err)
+	for _, method := range []string{"getTraceView", "getTraceColumnPreviews"} {
+		wire, err := json.Marshal(map[string]any{"traceID": traceID, "columns": []map[string]string{{"source": "span", "key": hostile}}})
+		require.NoError(t, err)
+		readArrowDataset(t, s, method, string(wire))
+	}
+	for _, source := range []string{"log", "resource", "scope"} {
+		wire, err := json.Marshal(map[string]any{"startTime": nil, "endTime": nil, "columns": []map[string]string{{"source": source, "kind": "attribute", "key": hostile}}})
+		require.NoError(t, err)
+		readArrowDataset(t, s, "searchLogPage", string(wire))
+	}
+	for _, request := range []struct {
+		method string
+		params map[string]any
+	}{
+		{"discoverTelemetry", map[string]any{"options": map[string]any{"kind": "keys", "signal": "traces", "ownerType": "event", "startTime": "0' OR true --"}}},
+		{"getTraceView", map[string]any{"traceID": traceID, "columns": []map[string]string{{"source": hostile, "key": hostile}}}},
+		{"getTraceColumnPreviews", map[string]any{"traceID": traceID, "columns": []map[string]string{{"source": hostile, "key": hostile}}}},
+		{"searchTraceSummaries", map[string]any{"startTime": nil, "endTime": nil, "sort": map[string]string{"field": "duration", "direction": "desc; DROP TABLE spans"}}},
+		{"searchLogPage", map[string]any{"startTime": nil, "endTime": nil, "columns": []map[string]string{{"source": hostile, "kind": "attribute", "key": hostile}}}},
+	} {
+		wire, err := json.Marshal(request.params)
+		require.NoError(t, err)
+		response := httptest.NewRecorder()
+		s.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/data/"+request.method, strings.NewReader(string(wire))))
+		require.Equal(t, http.StatusBadRequest, response.Code, "%s: %s", request.method, response.Body.String())
+	}
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		var count int
+		err := db.QueryRowContext(t.Context(), "select count(*) from spans").Scan(&count)
+		require.Positive(t, count)
+		return err
+	}))
+}
+
+func TestDiscoveryPlansSeparateSQLFromValues(t *testing.T) {
+	// Changing values of the same query shape must change only its parameters.
+	// Include exact uint64 bounds and strings that resemble SQL and placeholders.
+	for _, kind := range []string{"services", "keys", "values", "connections", "connection-spans", "home-values"} {
+		for _, native := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/native=%t", kind, native), func(t *testing.T) {
+				var previous *discoveryPlan
+				for _, value := range []string{"ordinary", "' OR true; -- $1::VARCHAR \\雪\x00"} {
+					start, end := "18446744073709551614", "18446744073709551615"
+					options := discoveryOptions{
+						Kind: kind, Signal: "traces", OwnerType: "event", Key: &value,
+						ServiceName: &value, Namespace: &value, ServiceIdentity: &value, TargetIdentity: &value,
+						StartTime: &start, EndTime: &end, Term: value,
+						Queries: &discoveryQueries{Traces: json.RawMessage(`{"type":"condition","query":{"field":{"searchScope":"global"},"fieldOperator":"CONTAINS","value":"prefix argument"}}`)},
+					}
+					var plan *discoveryPlan
+					var err error
+					if kind == "home-values" {
+						options.Locale, options.ValueKind, options.SortBy = value, value, "name"
+						plan, err = homeValuesPlan(options)
+					} else {
+						raw, marshalErr := json.Marshal([]discoveryOptions{options})
+						require.NoError(t, marshalErr)
+						plan, err = discoveryPlanFor(raw, native)
+					}
+					require.NoError(t, err)
+					require.NotContains(t, plan.statement, value)
+					require.NotContains(t, plan.statement, start)
+					require.NotContains(t, plan.statement, end)
+					require.Contains(t, plan.args, value)
+					require.Contains(t, plan.args, start)
+					require.Contains(t, plan.args, end)
+					if previous != nil {
+						require.Equal(t, previous.statement, plan.statement)
+						require.NotEqual(t, previous.args, plan.args)
+					}
+					previous = plan
+				}
+			})
 		}
 	}
 }
