@@ -36,19 +36,23 @@ function createMemoryStorage(): Storage {
 
 // Node's experimental global implements some of Storage and not the rest, so
 // probing a single method is not enough -- it has getItem but no clear, which
-// only surfaced when a test tried to reset between cases.
-const storageIsBroken =
-  typeof localStorage === 'undefined' ||
-  typeof localStorage.getItem !== 'function' ||
-  typeof localStorage.clear !== 'function' ||
-  typeof localStorage.key !== 'function'
+// only surfaced when a test tried to reset between cases. Guard behind window
+// and document so Node's experimental localStorage getter is never touched in
+// non-DOM workers.
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  const storageIsBroken =
+    typeof localStorage === 'undefined' ||
+    typeof localStorage.getItem !== 'function' ||
+    typeof localStorage.clear !== 'function' ||
+    typeof localStorage.key !== 'function'
 
-if (typeof document !== 'undefined' && storageIsBroken) {
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: createMemoryStorage(),
-    configurable: true,
-    writable: true,
-  })
+  if (storageIsBroken) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: createMemoryStorage(),
+      configurable: true,
+      writable: true,
+    })
+  }
 }
 
 // jsdom implements neither matchMedia (ThemeToggle's dark-scheme check) nor
@@ -211,6 +215,8 @@ if (
 // component tests stay order-independent.
 afterEach(() => {
   if (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
     typeof localStorage !== 'undefined' &&
     typeof localStorage.clear === 'function'
   ) {
