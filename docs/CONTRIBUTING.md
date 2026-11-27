@@ -54,7 +54,7 @@ Open <http://localhost:3001>. The backend runs on port 8000 and stores data in
 managed sessions. To load sample telemetry:
 
 ```bash
-make populate-traces populate-logs populate-metrics
+make populate
 ```
 
 Select **All** in the viewer's time range to see it. See the
