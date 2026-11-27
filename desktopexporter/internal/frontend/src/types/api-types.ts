@@ -737,6 +737,5 @@ export type DatabaseEntry = {
 export type DatabaseList = {
   managed: boolean
   active: string
-  directory?: string
   databases: DatabaseEntry[]
 }

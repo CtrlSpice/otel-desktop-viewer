@@ -19,22 +19,18 @@ type Config struct {
 	// Zero means no gRPC receiver port was supplied.
 	OTLPGRPCPort int `mapstructure:"otlp_grpc_port"`
 
-	// Db defines the path of your database file. Setting an empty string opens
-	// DuckDB in in-memory mode unless Managed or ManagedDir is set.
+	// Db defines the path of an external database file. When empty, the
+	// extension uses managed persistent sessions in ManagedDir (or
+	// DefaultAppDataDir() when ManagedDir is unset).
 	Db string `mapstructure:"db"`
 
-	// Managed enables persistent session storage in the OS app-data directory.
-	// Mutually exclusive with Db.
-	Managed bool `mapstructure:"managed"`
-
 	// ManagedDir overrides the managed session directory (primarily for tests).
-	// Implies Managed and is mutually exclusive with Db.
+	// Mutually exclusive with Db.
 	ManagedDir string `mapstructure:"managed_dir"`
 
 	// DbMaxSize caps the size of the telemetry store as a human-readable byte
 	// size (e.g. "512MB", "2GB"). "0" disables retention enforcement. An empty
-	// string picks a default based on the storage mode: 512MB in-memory, 2GB
-	// on disk.
+	// string defaults to 2GB.
 	DbMaxSize string `mapstructure:"db_max_size"`
 
 	// Telemetry controls whether the extension instruments its own operation
@@ -65,8 +61,28 @@ func (cfg *Config) Validate() error {
 	if cfg.OTLPGRPCPort < 0 || cfg.OTLPGRPCPort > 65535 {
 		return fmt.Errorf("invalid otlp_grpc_port %d", cfg.OTLPGRPCPort)
 	}
-	if cfg.Db != "" && (cfg.Managed || cfg.ManagedDir != "") {
+	if cfg.Db != "" && cfg.ManagedDir != "" {
 		return fmt.Errorf("db and managed session storage cannot both be configured")
+	}
+	if cfg.Db != "" {
+		trimmed := strings.TrimSpace(cfg.Db)
+		if trimmed == "" {
+			return fmt.Errorf("invalid db path %q: path cannot be blank", cfg.Db)
+		}
+		if strings.EqualFold(trimmed, ":memory:") {
+			return fmt.Errorf("in-memory mode (%q) is not supported; omit db for managed sessions or pass a database file path", cfg.Db)
+		}
+		if strings.Contains(cfg.Db, "?") {
+			return fmt.Errorf("invalid db path %q: query parameters ('?') are not supported", cfg.Db)
+		}
+	}
+	if cfg.ManagedDir != "" {
+		if strings.TrimSpace(cfg.ManagedDir) == "" {
+			return fmt.Errorf("invalid managed_dir %q: path cannot be blank", cfg.ManagedDir)
+		}
+		if strings.Contains(cfg.ManagedDir, "?") {
+			return fmt.Errorf("invalid managed_dir %q: query parameters ('?') are not supported", cfg.ManagedDir)
+		}
 	}
 	if _, err := parseByteSize(cfg.DbMaxSize); err != nil {
 		return fmt.Errorf("invalid db_max_size %q: %w", cfg.DbMaxSize, err)

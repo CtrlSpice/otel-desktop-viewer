@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"path/filepath"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
@@ -51,6 +52,7 @@ func startAttributeIntegrationWithImportPort(t *testing.T, port int) (string, ex
 	factory := duckdbextension.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*duckdbextension.Config)
 	cfg.Endpoint = address
+	cfg.Db = filepath.Join(t.TempDir(), "test.duckdb")
 	cfg.DbMaxSize = "0"
 	cfg.OTLPHTTPPort = port
 	ext, err := factory.Create(ctx, extensiontest.NewNopSettings(duckdbextension.Type), cfg)

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
@@ -21,6 +22,7 @@ const (
 	defaultSessionName = "current.duckdb"
 	settingsFolder     = "settings"
 	activeFile         = "active-database"
+	maxSessionNameLen  = 200
 )
 
 // DefaultAppDataDir returns the OS-specific private directory where the viewer
@@ -85,17 +87,54 @@ func ensureManagedDirs(dir string) (string, error) {
 }
 
 func isSessionFilename(name string) bool {
-	if name == "" || strings.HasPrefix(name, ".") {
+	if name == "" || len(name) > maxSessionNameLen || strings.HasPrefix(name, ".") || strings.TrimSpace(name) != name {
 		return false
 	}
-	if !filepath.IsLocal(name) || strings.ContainsAny(name, `/\?`) || strings.ContainsRune(name, 0) {
+	if !filepath.IsLocal(name) {
 		return false
 	}
-	if !strings.EqualFold(filepath.Ext(name), ".duckdb") {
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+		switch r {
+		case '/', '\\', '?', '%', ':', '*', '"', '<', '>', '|':
+			return false
+		}
+	}
+	ext := filepath.Ext(name)
+	if !strings.EqualFold(ext, ".duckdb") {
 		return false
 	}
-	stem := strings.TrimSuffix(name, filepath.Ext(name))
-	return strings.TrimSpace(stem) != ""
+	stem := strings.TrimSuffix(name, ext)
+	if strings.TrimSpace(stem) == "" || strings.HasSuffix(stem, ".") || strings.HasSuffix(stem, " ") {
+		return false
+	}
+	return true
+}
+
+// findSessionEntry resolves the canonical on-disk filename for name in dir,
+// preferring an exact match and falling back to a case-insensitive match so
+// APFS/NTFS casing differences never desynchronize active-session state.
+func findSessionEntry(dir, name string) (canonical string, found bool, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false, err
+	}
+	var foldMatch string
+	for _, entry := range entries {
+		entryName := entry.Name()
+		if entryName == name {
+			return entryName, true, nil
+		}
+		if foldMatch == "" && strings.EqualFold(entryName, name) {
+			foldMatch = entryName
+		}
+	}
+	if foldMatch != "" {
+		return foldMatch, true, nil
+	}
+	return "", false, nil
 }
 
 // normalizeNewSessionName trims whitespace and appends .duckdb when omitted so
@@ -125,7 +164,7 @@ func readSelection(settings string) (string, error) {
 	}
 	const maxBytes = 4096
 	if !info.Mode().IsRegular() || info.Size() > maxBytes {
-		return "", fmt.Errorf("invalid database selection file: %s", path)
+		return "", fmt.Errorf("invalid database selection file %s (remove %s to resume with %s)", path, path, defaultSessionName)
 	}
 	f, err := os.OpenInRoot(settings, activeFile)
 	if err != nil {
@@ -138,7 +177,7 @@ func readSelection(settings string) (string, error) {
 	}
 	name := strings.TrimSpace(string(data))
 	if len(data) > maxBytes || !isSessionFilename(name) {
-		return "", fmt.Errorf("invalid database selection file: %s", path)
+		return "", fmt.Errorf("database selection file %s is empty or corrupted (remove %s to resume with %s)", path, path, defaultSessionName)
 	}
 	return name, nil
 }
@@ -162,9 +201,17 @@ func writeSelection(dir, name string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	_, writeErr := tmp.WriteString(name)
-	if err := errors.Join(writeErr, tmp.Close()); err != nil {
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.WriteString(name); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
 		return err
 	}
 	root, err := os.OpenRoot(settings)
@@ -172,7 +219,20 @@ func writeSelection(dir, name string) error {
 		return err
 	}
 	defer root.Close()
-	return root.Rename(filepath.Base(tmp.Name()), activeFile)
+	if err := root.Rename(filepath.Base(tmpName), activeFile); err != nil {
+		return err
+	}
+	syncDirBestEffort(settings)
+	return nil
+}
+
+func syncDirBestEffort(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	_ = d.Sync()
+	_ = d.Close()
 }
 
 // resolveManagedStartupPath prepares the managed app-data directory and
@@ -187,7 +247,13 @@ func resolveManagedStartupPath(dir string) (dbPath string, name string, err erro
 		return "", "", err
 	}
 	if selected == "" {
-		dbPath = filepath.Join(dir, defaultSessionName)
+		targetName := defaultSessionName
+		if canonical, found, findErr := findSessionEntry(dir, defaultSessionName); findErr != nil {
+			return "", "", findErr
+		} else if found {
+			targetName = canonical
+		}
+		dbPath = filepath.Join(dir, targetName)
 		if info, statErr := os.Lstat(dbPath); statErr == nil {
 			if !info.Mode().IsRegular() {
 				return "", "", fmt.Errorf("database is not a regular file: %s", dbPath)
@@ -195,24 +261,29 @@ func resolveManagedStartupPath(dir string) (dbPath string, name string, err erro
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return "", "", statErr
 		}
-		return dbPath, defaultSessionName, nil
+		return dbPath, targetName, nil
 	}
-	dbPath = filepath.Join(dir, selected)
-	info, statErr := os.Lstat(dbPath)
-	if errors.Is(statErr, os.ErrNotExist) {
+	canonical, found, findErr := findSessionEntry(dir, selected)
+	if findErr != nil {
+		return "", "", findErr
+	}
+	if !found {
 		return "", "", fmt.Errorf("remembered database %s is missing from %s (restore it or remove %s to start fresh)",
 			selected, dir, filepath.Join(settings, activeFile))
 	}
+	dbPath = filepath.Join(dir, canonical)
+	info, statErr := os.Lstat(dbPath)
 	if statErr != nil {
 		return "", "", statErr
 	}
 	if !info.Mode().IsRegular() {
 		return "", "", fmt.Errorf("database is not a regular file: %s", dbPath)
 	}
-	return dbPath, selected, nil
+	return dbPath, canonical, nil
 }
 
 type managedSessionManager struct {
+	mu    sync.Mutex
 	dir   string
 	store *store.Store
 }
@@ -227,7 +298,11 @@ func (m *managedSessionManager) ListDatabases(_ context.Context) (server.Databas
 		return server.DatabaseList{}, fmt.Errorf("list managed databases: %w", err)
 	}
 	activeName := filepath.Base(m.store.DBPath())
-	databases := make([]server.DatabaseEntry, 0, len(entries))
+	type timedEntry struct {
+		entry   server.DatabaseEntry
+		modTime time.Time
+	}
+	items := make([]timedEntry, 0, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
 		if !isSessionFilename(name) {
@@ -246,26 +321,32 @@ func (m *managedSessionManager) ListDatabases(_ context.Context) (server.Databas
 				modTime = walInfo.ModTime()
 			}
 		}
-		databases = append(databases, server.DatabaseEntry{
-			Name:       name,
-			SizeBytes:  size,
-			ModifiedAt: modTime.UTC().Format(time.RFC3339),
-			Active:     name == activeName,
+		items = append(items, timedEntry{
+			entry: server.DatabaseEntry{
+				Name:       name,
+				SizeBytes:  size,
+				ModifiedAt: modTime.UTC().Format(time.RFC3339),
+				Active:     name == activeName,
+			},
+			modTime: modTime,
 		})
 	}
-	sort.Slice(databases, func(i, j int) bool {
-		if databases[i].Active != databases[j].Active {
-			return databases[i].Active
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].entry.Active != items[j].entry.Active {
+			return items[i].entry.Active
 		}
-		if databases[i].ModifiedAt != databases[j].ModifiedAt {
-			return databases[i].ModifiedAt > databases[j].ModifiedAt
+		if !items[i].modTime.Equal(items[j].modTime) {
+			return items[i].modTime.After(items[j].modTime)
 		}
-		return databases[i].Name < databases[j].Name
+		return items[i].entry.Name < items[j].entry.Name
 	})
+	databases := make([]server.DatabaseEntry, len(items))
+	for i, item := range items {
+		databases[i] = item.entry
+	}
 	return server.DatabaseList{
 		Managed:   true,
 		Active:    activeName,
-		Directory: m.dir,
 		Databases: databases,
 	}, nil
 }
@@ -275,9 +356,19 @@ func (m *managedSessionManager) OpenDatabase(ctx context.Context, name string) (
 		return server.DatabaseList{}, fmt.Errorf("%w: %q must be a .duckdb filename in the app data folder",
 			server.ErrInvalidDatabaseName, name)
 	}
-	target := filepath.Join(m.dir, name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	canonical, found, err := findSessionEntry(m.dir, name)
+	if err != nil {
+		return server.DatabaseList{}, fmt.Errorf("inspect managed databases: %w", err)
+	}
+	if !found {
+		return server.DatabaseList{}, fmt.Errorf("%w: %s", store.ErrDatabaseNotFound, name)
+	}
+	target := filepath.Join(m.dir, canonical)
 	if err := m.store.OpenDatabase(ctx, target, func() error {
-		return writeSelection(m.dir, name)
+		return writeSelection(m.dir, canonical)
 	}); err != nil {
 		return server.DatabaseList{}, err
 	}
@@ -289,6 +380,14 @@ func (m *managedSessionManager) NewDatabase(ctx context.Context, rawName string)
 	if err != nil {
 		return server.DatabaseList{}, err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, found, err := findSessionEntry(m.dir, name); err != nil {
+		return server.DatabaseList{}, fmt.Errorf("inspect managed databases: %w", err)
+	} else if found {
+		return server.DatabaseList{}, fmt.Errorf("%w: %s", store.ErrDatabaseAlreadyExists, existing)
+	}
 	target := filepath.Join(m.dir, name)
 	if err := m.store.CreateDatabase(ctx, target, func() error {
 		return writeSelection(m.dir, name)
@@ -299,7 +398,7 @@ func (m *managedSessionManager) NewDatabase(ctx context.Context, rawName string)
 }
 
 // staticDatabaseManager reports read-only session metadata for explicit --db
-// and in-memory runs, refusing managed switches.
+// runs, refusing managed switches.
 type staticDatabaseManager struct {
 	active string
 }

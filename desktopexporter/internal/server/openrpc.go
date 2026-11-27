@@ -210,7 +210,7 @@ func openRPCDocument() map[string]any {
 			"name": text, "sizeBytes": integer, "modifiedAt": text, "active": boolean,
 		}, "name", "sizeBytes", "modifiedAt", "active"),
 		"DatabaseList": rpcObject(map[string]any{
-			"managed": boolean, "active": text, "directory": text, "databases": rpcArray(rpcSchemaRef("DatabaseEntry")),
+			"managed": boolean, "active": text, "databases": rpcArray(rpcSchemaRef("DatabaseEntry")),
 		}, "managed", "active", "databases"),
 		"Integer": integer, "String": text,
 	}
@@ -262,7 +262,7 @@ func openRPCDocument() map[string]any {
 		{"getTraceSpanCount", "Integer", "Count stored spans in one trace.", "Returns 0 if the trace has no stored spans.", 1},
 		{"getServiceCount", "Integer", "Count distinct services across the database.", "Counts typed service identities across retained spans, logs and Metric datapoints. A missing namespace counts as an empty namespace. A missing service name stays distinct.", 0},
 		{"getServiceLabels", "ServiceLabels", "Resolve a service reference to its full name and namespace.", "Pass the serviceIdentity from a service summary as serviceRef to get unabridged labels.", 1},
-		{"listDatabases", "DatabaseList", "List managed session databases and report the active capture.", "In external --db or in-memory mode, managed is false and databases is empty.", 0},
+		{"listDatabases", "DatabaseList", "List managed session databases and report the active capture.", "In external --db mode, managed is false and databases is empty.", 0},
 		{"openDatabase", "DatabaseList", "Switch the viewer to an existing managed session database.", "Checkpoints and closes the active capture before opening the selected .duckdb file.", 1},
 		{"newDatabase", "DatabaseList", "Create a new managed session database and switch collection to it.", "Appends .duckdb when omitted and refuses to overwrite an existing file.", 1},
 	}
@@ -391,6 +391,13 @@ func openRPCDocument() map[string]any {
 				description = "Allowed pairs: traces/name, logs/eventName, metrics/name or metrics/unit."
 			case "sql":
 				description = "One read-only select or supported inspection statement. Use show tables to list tables and describe <table> to list columns."
+			case "name":
+				schema = map[string]any{"type": "string", "minLength": 1}
+				if spec.name == "newDatabase" {
+					description = "Plain session filename ('.duckdb' is appended when omitted). Cannot contain path separators, '%', '?', control characters, or Windows-illegal characters."
+				} else {
+					description = "Existing managed session filename ending in '.duckdb'."
+				}
 			}
 			if i >= spec.required && spec.name != "query" && name != "query" && name != "sort" {
 				schema = map[string]any{"anyOf": []any{schema, map[string]any{"type": "null"}}}

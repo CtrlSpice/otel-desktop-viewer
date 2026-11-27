@@ -20,6 +20,10 @@ import (
 const maxRPCRequestBodyBytes = 1 << 20 // 1 MB
 
 func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
+	if !isAllowedRPCOrigin(request) {
+		http.Error(writer, "Forbidden: cross-origin RPC request", http.StatusForbidden)
+		return
+	}
 	requestCtx := (propagation.TraceContext{}).Extract(request.Context(), propagation.HeaderCarrier(request.Header))
 	ctx, endRPC := s.tel.RPCRequest(requestCtx)
 	var method string

@@ -1,6 +1,7 @@
 // Client router: read/write URL state via the History API.
 
 import {
+  EVAL_ITEM_QUERY_PARAMS,
   SIGNAL_ITEM_QUERY_PARAMS,
   type SignalItemQueryParam,
 } from './query-params'
@@ -306,4 +307,27 @@ export function navigateToSignal(
   mode: HistoryMode = 'push'
 ): void {
   navigateToItem(signal, null, mode)
+}
+
+const SESSION_BASE_ROUTES = ['/traces', '/metrics', '/logs', '/evals'] as const
+
+const SESSION_SWITCH_STRIPPED_PARAMS = [
+  ...SIGNAL_ITEM_QUERY_PARAMS,
+  ...EVAL_ITEM_QUERY_PARAMS,
+] as const
+
+/**
+ * Normalizes a route across a database switch: strips detail path segments and
+ * item-scoped query params while preserving time and list-level params.
+ */
+export function sessionSwitchHref(route: Route): string {
+  let path = '/'
+  for (const base of SESSION_BASE_ROUTES) {
+    if (route.path === base || route.path.startsWith(`${base}/`)) {
+      path = base
+      break
+    }
+  }
+  const query = withoutParams(route.query, SESSION_SWITCH_STRIPPED_PARAMS)
+  return path + buildSearch(query)
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -50,9 +51,8 @@ func TestDatabaseRPCMethodsAndWireSchema(t *testing.T) {
 	h := setupHandler(t)
 	mgr := &stubDatabaseManager{
 		list: DatabaseList{
-			Managed:   true,
-			Active:    "current.duckdb",
-			Directory: "/tmp/viewer",
+			Managed: true,
+			Active:  "current.duckdb",
 			Databases: []DatabaseEntry{
 				{Name: "current.duckdb", SizeBytes: 12288, ModifiedAt: "2026-11-26T17:00:00Z", Active: true},
 				{Name: "checkout.duckdb", SizeBytes: 24576, ModifiedAt: "2026-11-26T16:00:00Z", Active: false},
@@ -63,14 +63,24 @@ func TestDatabaseRPCMethodsAndWireSchema(t *testing.T) {
 
 	doc := openRPCDocument()
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	schemaFor := func(name string) map[string]any {
+	dbListProps := schemas["DatabaseList"].(map[string]any)["properties"].(map[string]any)
+	assert.NotContains(t, dbListProps, "directory", "DatabaseList schema must not expose local filesystem paths")
+
+	methodFor := func(name string) rpcMethodDescription {
 		for _, m := range doc["methods"].([]rpcMethodDescription) {
 			if m.Name == name {
-				return m.Result.Schema
+				return m
 			}
 		}
 		t.Fatalf("missing OpenRPC method %s", name)
-		return nil
+		return rpcMethodDescription{}
+	}
+	for _, name := range []string{"openDatabase", "newDatabase"} {
+		m := methodFor(name)
+		require.Len(t, m.Params, 1)
+		assert.Equal(t, "name", m.Params[0].Name)
+		assert.NotEmpty(t, m.Params[0].Description)
+		assert.Equal(t, 1, m.Params[0].Schema["minLength"])
 	}
 
 	for _, tc := range []struct {
@@ -89,8 +99,10 @@ func TestDatabaseRPCMethodsAndWireSchema(t *testing.T) {
 			require.NoError(t, err)
 			var decoded any
 			require.NoError(t, decodeParams(encoded, &decoded))
-			require.NoError(t, checkRPCWireSchema(schemaFor(tc.method), decoded, schemas))
-			assert.Equal(t, tc.active, decoded.(map[string]any)["active"])
+			require.NoError(t, checkRPCWireSchema(methodFor(tc.method).Result.Schema, decoded, schemas))
+			obj := decoded.(map[string]any)
+			assert.Equal(t, tc.active, obj["active"])
+			assert.NotContains(t, obj, "directory", "listDatabases payload must omit local directory path")
 		})
 	}
 }
@@ -98,7 +110,7 @@ func TestDatabaseRPCMethodsAndWireSchema(t *testing.T) {
 func TestDatabaseRPCErrors(t *testing.T) {
 	h := setupHandler(t)
 
-	// Without a manager (in-memory), listDatabases succeeds with managed=false,
+	// Without a manager, listDatabases succeeds with managed=false,
 	// while open/new return ErrDatabaseSwitchUnsupported.
 	got, err := h.Handle(context.Background(), createRequest("listDatabases", []any{}))
 	require.NoError(t, err)
@@ -124,4 +136,15 @@ func TestDatabaseRPCErrors(t *testing.T) {
 	require.ErrorIs(t, err, ErrDatabaseNotFound)
 	_, err = h.Handle(context.Background(), createRequest("newDatabase", []any{"dup.duckdb"}))
 	require.ErrorIs(t, err, ErrDatabaseAlreadyExists)
+
+	// Cancelled openDatabase must map to ErrRequestCanceled (-32010) even when
+	// wrapped in store.ErrSchemaIncompatible by schema probing.
+	for _, cancelErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		h.databases = &stubDatabaseManager{
+			openErr: fmt.Errorf("%w: probe failed: %w", store.ErrSchemaIncompatible, cancelErr),
+		}
+		_, err = h.Handle(context.Background(), createRequest("openDatabase", []any{"other.duckdb"}))
+		require.ErrorIs(t, err, ErrRequestCanceled)
+		assert.NotErrorIs(t, err, ErrDatabaseIncompatible)
+	}
 }

@@ -1,12 +1,11 @@
-import type { Stats } from '@/types/api-types'
+import type { DatabaseList, Stats } from '@/types/api-types'
 import type { JsonStats } from '@/types/wire-types'
-import { callRPC } from './telemetry-request'
+import { callRPC, named } from './telemetry-request'
 import { traceAPI } from './trace-service'
 import { logAPI } from './log-service'
 import { metricAPI } from './metric-service'
 import { discoveryAPI } from './discovery-service'
 import { attributeSearchAPI } from './attribute-search-service'
-import { databaseAPI } from './database-service'
 export { JsonRpcError } from './service-error'
 export {
   RequestAbortedError,
@@ -64,7 +63,22 @@ export let telemetryAPI = {
   ...metricAPI,
   ...discoveryAPI,
   ...attributeSearchAPI,
-  ...databaseAPI,
+  // Managed database sessions
+  listDatabases: async (signal?: AbortSignal): Promise<DatabaseList> =>
+    callRPC<DatabaseList>('listDatabases', undefined, signal),
+
+  openDatabase: async (
+    name: string,
+    signal?: AbortSignal
+  ): Promise<DatabaseList> =>
+    callRPC<DatabaseList>('openDatabase', named({ name }), signal),
+
+  newDatabase: async (
+    name: string,
+    signal?: AbortSignal
+  ): Promise<DatabaseList> =>
+    callRPC<DatabaseList>('newDatabase', named({ name }), signal),
+
   // Stats methods
   getImportConfig: async (
     signal?: AbortSignal

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -162,13 +165,77 @@ func (s *Server) initHandler() error {
 	mux.Handle("/", spa)
 	s.registerEvals(mux, spa)
 
-	// CORS for the Vite frontend
+	// CORS restricted to loopback origins (e.g. the local Vite dev server).
 	c := cors.New(cors.Options{
-		AllowedOrigins: []string{"http://*", "https://*"},
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders: []string{"*"},
-		ExposedHeaders: []string{"X-Arrow-Rows"},
+		AllowOriginFunc: isLoopbackOrigin,
+		AllowedMethods:  []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:  []string{"*"},
+		ExposedHeaders:  []string{"X-Arrow-Rows"},
 	})
 	s.server.Handler = c.Handler(mux)
 	return nil
+}
+
+// isLoopbackOrigin reports whether origin is an HTTP loopback origin
+// (http://localhost, http://127.0.0.1, or http://[::1], with an optional port).
+func isLoopbackOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, "http") {
+		return false
+	}
+	if u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return false
+	}
+	if u.Host == "" || strings.HasSuffix(u.Host, ":") {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		p, err := strconv.Atoi(port)
+		if err != nil || p < 1 || p > 65535 {
+			return false
+		}
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
+// isAllowedRPCOrigin blocks cross-origin browser requests to /rpc from
+// non-loopback origins (including simple text/plain POSTs that bypass CORS
+// preflight). Non-browser clients that omit Origin and Sec-Fetch-Site are
+// allowed, as are same-origin browser requests.
+func isAllowedRPCOrigin(r *http.Request) bool {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if isLoopbackOrigin(origin) {
+			return true
+		}
+		return isSameOrigin(origin, r.Host)
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
+		return false
+	}
+	return true
+}
+
+func isSameOrigin(origin, requestHost string) bool {
+	if requestHost == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	if u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, requestHost)
 }

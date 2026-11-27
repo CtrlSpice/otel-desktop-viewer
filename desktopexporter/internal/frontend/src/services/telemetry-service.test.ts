@@ -275,6 +275,37 @@ describe('request cancellation', () => {
     await expect(pending).rejects.toBeInstanceOf(RequestAbortedError)
   })
 
+  it.each([
+    [
+      'listDatabases',
+      (signal: AbortSignal) => telemetryAPI.listDatabases(signal),
+    ],
+    [
+      'openDatabase',
+      (signal: AbortSignal) => telemetryAPI.openDatabase('a.duckdb', signal),
+    ],
+    [
+      'newDatabase',
+      (signal: AbortSignal) => telemetryAPI.newDatabase('fresh', signal),
+    ],
+  ] as const)(
+    'forwards cancellation through %s over JSON-RPC',
+    async (_method, invoke) => {
+      const fetch = vi
+        .fn()
+        .mockRejectedValue(new DOMException('aborted', 'AbortError'))
+      vi.stubGlobal('fetch', fetch)
+      const controller = new AbortController()
+      await expect(invoke(controller.signal)).rejects.toBeInstanceOf(
+        RequestAbortedError
+      )
+      expect(fetch).toHaveBeenCalledWith(
+        '/rpc',
+        expect.objectContaining({ signal: controller.signal })
+      )
+    }
+  )
+
   it('recognizes only service and platform abort errors', () => {
     expect(isAbortError(new RequestAbortedError())).toBe(true)
     expect(isAbortError(new DOMException('aborted', 'AbortError'))).toBe(true)
@@ -338,6 +369,16 @@ describe('request parameters', () => {
       'deleteMetric',
       () => telemetryAPI.deleteMetric('s1'),
       { metricRef: 's1' },
+    ],
+    [
+      'openDatabase',
+      () => telemetryAPI.openDatabase('incident.duckdb'),
+      { name: 'incident.duckdb' },
+    ],
+    [
+      'newDatabase',
+      () => telemetryAPI.newDatabase('after-dinner'),
+      { name: 'after-dinner' },
     ],
   ] as const
 
@@ -590,6 +631,7 @@ describe('request parameters', () => {
     ['clearTraces', () => telemetryAPI.clearTraces()],
     ['clearLogs', () => telemetryAPI.clearLogs()],
     ['clearMetrics', () => telemetryAPI.clearMetrics()],
+    ['listDatabases', () => telemetryAPI.listDatabases()],
   ])('%s sends no arguments', async (method, invoke) => {
     const sent = captureRequest()
     await invoke().catch(() => {})

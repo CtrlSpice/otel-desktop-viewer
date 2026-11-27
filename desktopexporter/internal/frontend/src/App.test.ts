@@ -17,6 +17,9 @@ import { notifyDataChanged } from '@/test/event-source'
 
 const {
   getStats,
+  listDatabases,
+  openDatabase,
+  newDatabase,
   searchTraceSummaries,
   getTraceView,
   getTraceLogSummaries,
@@ -31,6 +34,9 @@ const {
   getMetricAttributeDefinitions,
 } = vi.hoisted(() => ({
   getStats: vi.fn(),
+  listDatabases: vi.fn(),
+  openDatabase: vi.fn(),
+  newDatabase: vi.fn(),
   searchTraceSummaries: vi.fn(),
   getTraceView: vi.fn(),
   getTraceLogSummaries: vi.fn(),
@@ -58,6 +64,9 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
         .mockResolvedValue({ items: [], truncated: false }),
       getImportConfig: vi.fn().mockResolvedValue({ otlpHttpPort: 4318 }),
       getStats,
+      listDatabases,
+      openDatabase,
+      newDatabase,
       searchTraceSummaries,
       getTraceView,
       getTraceLogSummaries,
@@ -92,6 +101,9 @@ const EMPTY_STATS: Stats = {
 beforeEach(() => {
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
+  listDatabases.mockResolvedValue({ managed: false, active: '', databases: [] })
+  openDatabase.mockResolvedValue({ managed: false, active: '', databases: [] })
+  newDatabase.mockResolvedValue({ managed: false, active: '', databases: [] })
   searchTraceSummaries.mockResolvedValue([])
   getTraceView.mockImplementation(async (traceID: string) => ({
     traceID,
@@ -454,5 +466,208 @@ describe('App real-page composition', () => {
     await waitFor(() => expect(trigger).not.toBeInTheDocument())
     await waitFor(() => expect(main).toHaveFocus())
     expect(oldPageWasDestroyedBeforeFocus).toBe(true)
+  })
+
+  it('remounts the active page, normalizes the URL, and refreshes navigation counts on database switch', async () => {
+    const user = userEvent.setup()
+    const managedSessions = {
+      managed: true,
+      active: 'current.duckdb',
+      databases: [
+        {
+          name: 'current.duckdb',
+          sizeBytes: 12000,
+          modifiedAt: '2026-11-26T18:00:00Z',
+          active: true,
+        },
+        {
+          name: 'incident.duckdb',
+          sizeBytes: 24000,
+          modifiedAt: '2026-11-26T17:00:00Z',
+          active: false,
+        },
+      ],
+    }
+    listDatabases.mockResolvedValue(managedSessions)
+    openDatabase.mockResolvedValue({
+      ...managedSessions,
+      active: 'incident.duckdb',
+      databases: [
+        { ...managedSessions.databases[1]!, active: true },
+        { ...managedSessions.databases[0]!, active: false },
+      ],
+    })
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 5 },
+      logs: { ...EMPTY_STATS.logs, logCount: 12 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 3 },
+    })
+
+    setTestUrl('/traces/trace-1?start=100&end=200&q=err&span=s1')
+    render(App)
+    const navigation = within(
+      screen.getByRole('navigation', { name: 'Primary' })
+    )
+    await navigation.findByRole('link', { name: 'Traces [5]' })
+    await waitFor(() => expect(searchTraceSummaries).toHaveBeenCalled())
+    const traceCallsBeforeSwitch = searchTraceSummaries.mock.calls.length
+
+    getStats.mockResolvedValue({
+      ...EMPTY_STATS,
+      traces: { ...EMPTY_STATS.traces, traceCount: 1 },
+      logs: { ...EMPTY_STATS.logs, logCount: 2 },
+      metrics: { ...EMPTY_STATS.metrics, metricCount: 0 },
+    })
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Session: current' })
+    )
+    await user.click(await screen.findByRole('button', { name: /incident/ }))
+
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        '/traces?start=100&end=200&q=err'
+      )
+    )
+    await navigation.findByRole('link', { name: 'Traces [1]' })
+    expect(
+      navigation.getByRole('link', { name: 'Logs [2]' })
+    ).toBeInTheDocument()
+    expect(
+      navigation.getByRole('link', { name: 'Metrics [0]' })
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(searchTraceSummaries.mock.calls.length).toBeGreaterThan(
+        traceCallsBeforeSwitch
+      )
+    )
+  })
+
+  it('resets SearchEditor dynamic schema and LogsPage state when switching databases', async () => {
+    const user = userEvent.setup()
+    const managedSessions = {
+      managed: true,
+      active: 'current.duckdb',
+      databases: [
+        {
+          name: 'current.duckdb',
+          sizeBytes: 12000,
+          modifiedAt: '2026-11-26T18:00:00Z',
+          active: true,
+        },
+        {
+          name: 'empty.duckdb',
+          sizeBytes: 4000,
+          modifiedAt: '2026-11-26T17:00:00Z',
+          active: false,
+        },
+      ],
+    }
+    listDatabases.mockResolvedValue(managedSessions)
+    openDatabase.mockResolvedValue({
+      ...managedSessions,
+      active: 'empty.duckdb',
+      databases: [
+        { ...managedSessions.databases[1]!, active: true },
+        { ...managedSessions.databases[0]!, active: false },
+      ],
+    })
+    getLogAttributeDefinitions.mockResolvedValue([
+      {
+        name: 'old.attr',
+        type: 'string',
+        path: ['attributes', 'old.attr'],
+        owner: 'log',
+      },
+    ])
+
+    setTestUrl('/logs?time=all')
+    render(App)
+    await screen.findByText('No logs match this search and time range.')
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(1))
+
+    // Focusing the search editor loads dynamic attribute definitions for session 1.
+    const editor = screen.getByRole('textbox', { name: 'Search logs' })
+    await fireEvent.focus(editor)
+    await waitFor(() =>
+      expect(getLogAttributeDefinitions).toHaveBeenCalledTimes(1)
+    )
+
+    getLogAttributeDefinitions.mockResolvedValue([
+      {
+        name: 'new.attr',
+        type: 'string',
+        path: ['attributes', 'new.attr'],
+        owner: 'log',
+      },
+    ])
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Session: current' })
+    )
+    await user.click(await screen.findByRole('button', { name: /empty/ }))
+
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalledTimes(2))
+    // After remount, focusing the fresh SearchEditor loads definitions for session 2.
+    const remountedEditor = screen.getByRole('textbox', {
+      name: 'Search logs',
+    })
+    await fireEvent.focus(remountedEditor)
+    await waitFor(() =>
+      expect(getLogAttributeDefinitions).toHaveBeenCalledTimes(2)
+    )
+  })
+
+  it('remounts HomePage and reloads storage stats and services on database switch', async () => {
+    const user = userEvent.setup()
+    const managedSessions = {
+      managed: true,
+      active: 'current.duckdb',
+      databases: [
+        {
+          name: 'current.duckdb',
+          sizeBytes: 12000,
+          modifiedAt: '2026-11-26T18:00:00Z',
+          active: true,
+        },
+        {
+          name: 'staging.duckdb',
+          sizeBytes: 4000,
+          modifiedAt: '2026-11-26T17:00:00Z',
+          active: false,
+        },
+      ],
+    }
+    listDatabases.mockResolvedValue(managedSessions)
+    openDatabase.mockResolvedValue({
+      ...managedSessions,
+      active: 'staging.duckdb',
+      databases: [
+        { ...managedSessions.databases[1]!, active: true },
+        { ...managedSessions.databases[0]!, active: false },
+      ],
+    })
+
+    setTestUrl('/')
+    render(App)
+    await screen.findByRole('region', { name: 'Service map' })
+    const discoverBefore = vi.mocked(telemetryAPI.discoverServices).mock.calls
+      .length
+    const statsBefore = getStats.mock.calls.length
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Session: current' })
+    )
+    await user.click(await screen.findByRole('button', { name: /staging/ }))
+
+    await waitFor(() =>
+      expect(
+        vi.mocked(telemetryAPI.discoverServices).mock.calls.length
+      ).toBeGreaterThan(discoverBefore)
+    )
+    await waitFor(() =>
+      expect(getStats.mock.calls.length).toBeGreaterThan(statsBefore)
+    )
   })
 })

@@ -62,16 +62,18 @@ func mapStoreError(err error) error {
 	if err == nil {
 		return nil
 	}
+	// Checked first: a cancelled query or database switch can fail anywhere,
+	// so the wrapped error may also match a store or database sentinel on its
+	// way out (for example ErrSchemaIncompatible wrapping context.Canceled).
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ErrRequestCanceled
+	}
 	if mapped, ok := mapDatabaseError(err); ok {
 		return mapped
 	}
 	switch {
 	case errors.Is(err, ErrHomeValueUnavailable):
 		return ErrHomeValueUnavailable
-	// Checked first: a cancelled query can fail anywhere, so the wrapped
-	// error may also match a store sentinel on its way out.
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return ErrRequestCanceled
 	case errors.Is(err, spans.ErrTraceIDNotFound):
 		return ErrTraceNotFound
 	case errors.Is(err, logs.ErrLogRefNotFound):

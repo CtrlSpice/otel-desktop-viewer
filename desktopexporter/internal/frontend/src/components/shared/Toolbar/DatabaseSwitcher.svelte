@@ -4,23 +4,27 @@
   }
 
   export function formatBytes(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes < 1024)
-      return `${Math.max(0, bytes)} B`
-    const units = ['KB', 'MB', 'GB', 'TB']
-    let value = bytes / 1024
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    let value = bytes
     let index = 0
-    while (value >= 1024 && index < units.length - 1) {
-      value /= 1024
+    while (value >= 1000 && index < units.length - 1) {
+      value /= 1000
       index++
     }
-    return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[index]}`
-  }
-
-  function topLevelRouteFor(path: string): string | null {
-    for (const base of ['/traces', '/metrics', '/logs', '/evals']) {
-      if (path.startsWith(`${base}/`)) return base
+    let rounded =
+      index === 0 || value >= 10
+        ? Math.round(value)
+        : Math.round(value * 10) / 10
+    if (rounded >= 1000 && index < units.length - 1) {
+      rounded /= 1000
+      index++
     }
-    return null
+    const formatted =
+      index === 0 || rounded >= 10
+        ? String(Math.round(rounded))
+        : rounded.toFixed(1)
+    return `${formatted} ${units[index]}`
   }
 </script>
 
@@ -31,49 +35,60 @@
   import FilterPopover from './FilterPopover.svelte'
   import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
   import { getDataChanges } from '@/contexts/data-changes.svelte'
-  import { getRouteContext } from '@/contexts/route-context.svelte'
-  import { navigate } from '@/route'
+  import { buildSearch, navigate, readRoute, sessionSwitchHref } from '@/route'
   import type { DatabaseList } from '@/types/api-types'
 
   const changes = getDataChanges()
-  const routeContext = getRouteContext()
 
   let sessions = $state<DatabaseList | null>(null)
   let newName = $state('')
   let busy = $state(false)
   let errorMessage = $state('')
+  let nameInput = $state<HTMLInputElement>()
   let listController: AbortController | null = null
+  let actionController: AbortController | null = null
+  let destroyed = false
 
-  async function refreshList() {
+  async function refreshList(surfaceErrors = false) {
     listController?.abort()
     const controller = new AbortController()
     listController = controller
     try {
       const next = await telemetryAPI.listDatabases(controller.signal)
-      if (!controller.signal.aborted) {
+      if (!destroyed && !controller.signal.aborted) {
         sessions = next
       }
     } catch (err) {
-      if (isAbortError(err)) return
-      // Non-managed or test environments without the session RPC stay quiet.
+      if (destroyed || controller.signal.aborted || isAbortError(err)) return
+      if (surfaceErrors) {
+        errorMessage = err instanceof Error ? err.message : String(err)
+      }
+      // Initial probe stays quiet in non-managed or test environments without the session RPC.
     }
   }
 
   onMount(() => {
-    void refreshList()
+    void refreshList(false)
   })
 
   onDestroy(() => {
+    destroyed = true
     listController?.abort()
+    actionController?.abort()
   })
 
   function afterSwitch(next: DatabaseList, close: () => void) {
     sessions = next
     errorMessage = ''
     newName = ''
-    const topLevel = topLevelRouteFor(routeContext.route.path)
-    if (topLevel) navigate(topLevel)
-    changes?.refreshViews()
+    const currentRoute = readRoute()
+    const currentHref =
+      currentRoute.path + buildSearch(currentRoute.query) + window.location.hash
+    const nextHref = sessionSwitchHref(currentRoute)
+    if (nextHref !== currentHref) {
+      navigate(nextHref, 'replace')
+    }
+    changes?.notifySessionChanged()
     close()
   }
 
@@ -82,15 +97,23 @@
       close()
       return
     }
+    actionController?.abort()
+    const controller = new AbortController()
+    actionController = controller
     busy = true
     errorMessage = ''
     try {
-      const next = await telemetryAPI.openDatabase(name)
+      const next = await telemetryAPI.openDatabase(name, controller.signal)
+      if (destroyed || controller.signal.aborted) return
       afterSwitch(next, close)
     } catch (err) {
+      if (destroyed || controller.signal.aborted || isAbortError(err)) return
       errorMessage = err instanceof Error ? err.message : String(err)
     } finally {
-      busy = false
+      if (!destroyed && actionController === controller) {
+        actionController = null
+        busy = false
+      }
     }
   }
 
@@ -98,22 +121,33 @@
     event.preventDefault()
     const trimmed = newName.trim()
     if (busy || !trimmed) return
+    actionController?.abort()
+    const controller = new AbortController()
+    actionController = controller
     busy = true
     errorMessage = ''
     try {
-      const next = await telemetryAPI.newDatabase(trimmed)
+      const next = await telemetryAPI.newDatabase(trimmed, controller.signal)
+      if (destroyed || controller.signal.aborted) return
       afterSwitch(next, close)
     } catch (err) {
+      if (destroyed || controller.signal.aborted || isAbortError(err)) return
       errorMessage = err instanceof Error ? err.message : String(err)
     } finally {
-      busy = false
+      if (!destroyed && actionController === controller) {
+        actionController = null
+        busy = false
+      }
     }
   }
 
   function handleOpenChange(open: boolean) {
     if (open) {
       errorMessage = ''
-      void refreshList()
+      if (nameInput && !nameInput.disabled) {
+        nameInput.focus({ preventScroll: true })
+      }
+      void refreshList(true)
     }
   }
 
@@ -151,6 +185,7 @@
           onsubmit={event => void createDatabase(event, close)}
         >
           <input
+            bind:this={nameInput}
             type="text"
             class="input input-xs input-bordered min-w-0 flex-1"
             aria-label="New session name"

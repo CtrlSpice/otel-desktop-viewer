@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
@@ -143,6 +144,89 @@ func TestStoreSwitchRollsBackOnErrors(t *testing.T) {
 		_, statErr := os.Stat(target)
 		assert.True(t, errors.Is(statErr, os.ErrNotExist), "aborted destination should be cleaned up")
 	})
+
+	t.Run("create rejects pre-existing wal or tmp without removing them", func(t *testing.T) {
+		for _, suffix := range []string{".wal", ".tmp"} {
+			target := filepath.Join(dir, "orphan-"+suffix[1:]+".duckdb")
+			sidecar := target + suffix
+			require.NoError(t, os.WriteFile(sidecar, []byte("preexisting"), 0600))
+
+			err := s.CreateDatabase(ctx, target, nil)
+			require.ErrorIs(t, err, ErrDatabaseAlreadyExists)
+			assert.Equal(t, firstPath, s.DBPath())
+			data, readErr := os.ReadFile(sidecar)
+			require.NoError(t, readErr, "pre-existing %s must not be deleted", suffix)
+			assert.Equal(t, "preexisting", string(data))
+		}
+	})
+
+	t.Run("create does not unlink file created during checkpoint", func(t *testing.T) {
+		target := filepath.Join(dir, "raced-checkpoint.duckdb")
+		beforeCreateOpenHook = func() {
+			_ = os.WriteFile(target, []byte("external-owner"), 0600)
+		}
+		t.Cleanup(func() { beforeCreateOpenHook = nil })
+
+		err := s.CreateDatabase(ctx, target, nil)
+		require.ErrorIs(t, err, ErrDatabaseAlreadyExists)
+		assert.Equal(t, firstPath, s.DBPath())
+		data, readErr := os.ReadFile(target)
+		require.NoError(t, readErr, "externally created file must not be unlinked")
+		assert.Equal(t, "external-owner", string(data))
+	})
+
+	t.Run("create does not unlink corrupt or locked file created right before connector", func(t *testing.T) {
+		target := filepath.Join(dir, "raced-connector.duckdb")
+		beforeCreateConnectorHook = func() {
+			_ = os.WriteFile(target, []byte("not-our-duckdb-file"), 0600)
+		}
+		t.Cleanup(func() { beforeCreateConnectorHook = nil })
+
+		err := s.CreateDatabase(ctx, target, nil)
+		require.Error(t, err)
+		assert.Equal(t, firstPath, s.DBPath())
+		data, readErr := os.ReadFile(target)
+		require.NoError(t, readErr, "file not created by openDatabaseHandles must not be unlinked")
+		assert.Equal(t, "not-our-duckdb-file", string(data))
+	})
+}
+
+func TestStoreSchemaCompatibilityConcurrentWithSwitches(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "first.duckdb")
+	secondPath := filepath.Join(dir, "second.duckdb")
+
+	s, err := NewStore(ctx, firstPath, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.CreateDatabase(ctx, secondPath, nil))
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = s.SchemaCompatibility()
+			}
+		}
+	}()
+
+	for i := 0; i < 6; i++ {
+		target := firstPath
+		if i%2 == 1 {
+			target = secondPath
+		}
+		require.NoError(t, s.OpenDatabase(ctx, target, nil))
+	}
+	close(stop)
+	wg.Wait()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
 }
 
 func TestStoreSwitchUnsupportedInMemory(t *testing.T) {

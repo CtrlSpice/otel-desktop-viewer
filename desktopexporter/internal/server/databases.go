@@ -26,7 +26,6 @@ type DatabaseEntry struct {
 type DatabaseList struct {
 	Managed   bool            `json:"managed"`
 	Active    string          `json:"active"`
-	Directory string          `json:"directory,omitempty"`
 	Databases []DatabaseEntry `json:"databases"`
 }
 

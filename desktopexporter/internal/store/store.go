@@ -125,7 +125,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if dbPath != "" {
 		dbPath = filepath.Clean(dbPath)
 	}
-	handles, err := openDatabaseHandles(ctx, dbPath, logger)
+	handles, _, err := openDatabaseHandles(ctx, dbPath, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}, nil
 }
 
-func openDatabaseHandles(ctx context.Context, dbPath string, logger *zap.Logger) (databaseHandles, error) {
+func openDatabaseHandles(ctx context.Context, dbPath string, logger *zap.Logger) (databaseHandles, bool, error) {
 	commits := commitbridge.New()
 	initialized := false
 	defer func() {
@@ -146,13 +146,13 @@ func openDatabaseHandles(ctx context.Context, dbPath string, logger *zap.Logger)
 	}()
 	connector, err := duckdb.NewConnector(dbPath, commits.Init)
 	if err != nil {
-		return databaseHandles{}, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, false, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
 		_ = connector.Close()
-		return databaseHandles{}, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	db := sql.OpenDB(connector)
@@ -163,28 +163,28 @@ func openDatabaseHandles(ctx context.Context, dbPath string, logger *zap.Logger)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 	defer func() {
 		if !initialized {
-			_ = db.Close()
 			_ = conn.Close()
+			_ = db.Close()
 		}
 	}()
 	if err := arrowbridge.Load(ctx, conn); err != nil {
-		return databaseHandles{}, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
 	}
 	schemaInitializationMu.Lock()
 	defer schemaInitializationMu.Unlock()
 
 	migrations, err := schema.Migrations()
 	if err != nil {
-		return databaseHandles{}, fmt.Errorf("%w while loading migrations: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w while loading migrations: %w", ErrStoreInitFailed, err)
 	}
 	// Viewer captures are often smaller than DuckDB's default 30,000-row
 	// shredding threshold. Make every row group eligible at checkpoint.
 	if _, err := db.ExecContext(ctx, "set variant_minimum_shredding_size = 0"); err != nil {
-		return databaseHandles{}, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
 	}
 	schemaCompat, err := initializeSchema(ctx, db, dbPath, logger, schema.Version, migrations)
 	if err != nil {
-		return databaseHandles{}, err
+		return databaseHandles{}, true, err
 	}
 
 	initialized = true
@@ -194,7 +194,7 @@ func openDatabaseHandles(ctx context.Context, dbPath string, logger *zap.Logger)
 		commits:      commits,
 		dbPath:       dbPath,
 		schemaCompat: schemaCompat,
-	}, nil
+	}, true, nil
 }
 
 // Close closes the store and the underlying database connection.

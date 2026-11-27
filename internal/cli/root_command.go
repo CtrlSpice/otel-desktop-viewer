@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/collector"
@@ -55,14 +56,14 @@ func newRootCommand(
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cmd.SilenceUsage = true
 			runOptions := options
-			switch runOptions.DB {
-			case "":
-				runOptions.Managed = true
-			case ":memory:":
-				runOptions.DB = ""
-				runOptions.Managed = false
-			default:
-				runOptions.Managed = false
+			if cmd.Flags().Changed("db") {
+				trimmed := strings.TrimSpace(runOptions.DB)
+				if trimmed == "" {
+					return fmt.Errorf("invalid --db value %q: path cannot be empty (omit --db for managed sessions)", runOptions.DB)
+				}
+				if strings.EqualFold(trimmed, ":memory:") {
+					return fmt.Errorf("in-memory mode (--db %s) is not supported; omit --db for managed sessions or pass a database file path", runOptions.DB)
+				}
 			}
 			settings := collector.PrepareSettings(set, runOptions)
 			if openBrowser {
@@ -84,8 +85,8 @@ func newRootCommand(
 	root.Flags().IntVar(&options.GRPCPort, "grpc", options.GRPCPort, "OTLP gRPC port")
 	root.Flags().IntVar(&options.BrowserPort, "browser-port", options.BrowserPort, "Viewer HTTP port")
 	root.Flags().BoolVar(&openBrowser, "open-browser", openBrowser, "Open viewer after startup")
-	root.Flags().StringVar(&options.DB, "db", "", "DuckDB file path, or :memory: for memory; omit for managed sessions")
-	root.Flags().StringVar(&options.DBMaxSize, "db-max-size", "", "Maximum telemetry-store size (defaults to 2GB on disk or 512MB in memory; 0 disables pruning)")
+	root.Flags().StringVar(&options.DB, "db", "", "DuckDB file path; omit for managed sessions")
+	root.Flags().StringVar(&options.DBMaxSize, "db-max-size", "", "Maximum telemetry-store size (defaults to 2GB; 0 disables pruning)")
 	root.Flags().StringVar(&options.SelfTelemetryEndpoint, "self-telemetry-endpoint", "", "Export the viewer's own traces and metrics to this OTLP/gRPC endpoint")
 
 	commands := []*cobra.Command{
@@ -171,8 +172,8 @@ VIEWER FLAGS
       --grpc int                        OTLP gRPC port (default 4317)
       --browser-port int                Viewer HTTP port (default 8000)
       --open-browser                    Open viewer after startup (default true)
-      --db string                       DuckDB file path, or :memory: for memory; omit for managed sessions
-      --db-max-size string              Maximum telemetry-store size (defaults to 2GB on disk or 512MB in memory; 0 disables pruning)
+      --db string                       DuckDB file path; omit for managed sessions
+      --db-max-size string              Maximum telemetry-store size (defaults to 2GB; 0 disables pruning)
       --self-telemetry-endpoint string  Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 
 GLOBAL FLAGS

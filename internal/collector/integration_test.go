@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
@@ -28,7 +29,7 @@ func (h attributeIntegrationHost) GetExtensions() map[component.ID]component.Com
 	return map[component.ID]component.Component{component.NewID(duckdbextension.Type): h.ext}
 }
 
-// Each collector integration test owns its extension and in-memory store.
+// Each collector integration test owns its extension and isolated test database.
 func startAttributeIntegration(t *testing.T) (string, exporter.Traces, exporter.Logs, exporter.Metrics) {
 	t.Helper()
 	ctx := context.Background()
@@ -40,6 +41,7 @@ func startAttributeIntegration(t *testing.T) (string, exporter.Traces, exporter.
 	factory := duckdbextension.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*duckdbextension.Config)
 	cfg.Endpoint = address
+	cfg.Db = filepath.Join(t.TempDir(), "test.duckdb")
 	cfg.DbMaxSize = "0"
 	ext, err := factory.Create(ctx, extensiontest.NewNopSettings(duckdbextension.Type), cfg)
 	require.NoError(t, err)

@@ -50,12 +50,8 @@ func (s *Store) switchDatabase(ctx context.Context, targetPath string, create bo
 	}
 
 	if create {
-		_, err := os.Lstat(targetPath)
-		if err == nil {
-			return fmt.Errorf("%w: %s", ErrDatabaseAlreadyExists, filepath.Base(targetPath))
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("inspect destination database: %w", err)
+		if err := checkCreateTargetAbsent(targetPath); err != nil {
+			return err
 		}
 	} else {
 		info, err := os.Lstat(targetPath)
@@ -96,9 +92,30 @@ func (s *Store) switchDatabase(ctx context.Context, targetPath string, create bo
 			zap.Error(err))
 	}
 
-	next, err := openDatabaseHandles(ctx, targetPath, s.logger)
+	if create {
+		if beforeCreateOpenHook != nil {
+			beforeCreateOpenHook()
+		}
+		// Re-check immediately before opening so a file created by another
+		// process during checkpoint/close is rejected without unlinking it.
+		if err := checkCreateTargetAbsent(targetPath); err != nil {
+			if restoreErr := s.restorePrevious(oldPath, oldCommits, oldRev); restoreErr != nil {
+				return errors.Join(err, restoreErr)
+			}
+			return err
+		}
+		if beforeCreateConnectorHook != nil {
+			beforeCreateConnectorHook()
+		}
+	}
+
+	next, opened, err := openDatabaseHandles(ctx, targetPath, s.logger)
 	if err != nil {
-		if create {
+		// Only remove artifacts when we verified the destination was absent
+		// right before open AND DuckDB actually acquired/created it. If
+		// NewConnector failed (e.g. another process raced and locked the file),
+		// never unlink the destination.
+		if create && opened {
 			removeDatabaseArtifacts(targetPath)
 		}
 		if restoreErr := s.restorePrevious(oldPath, oldCommits, oldRev); restoreErr != nil {
@@ -110,7 +127,7 @@ func (s *Store) switchDatabase(ctx context.Context, targetPath string, create bo
 	if onActivated != nil {
 		if err := onActivated(); err != nil {
 			_ = next.closeAll()
-			if create {
+			if create && opened {
 				removeDatabaseArtifacts(targetPath)
 			}
 			if restoreErr := s.restorePrevious(oldPath, oldCommits, oldRev); restoreErr != nil {
@@ -128,8 +145,27 @@ func (s *Store) switchDatabase(ctx context.Context, targetPath string, create bo
 	return nil
 }
 
+// Test hooks for deterministically exercising TOCTOU races during CreateDatabase.
+var (
+	beforeCreateOpenHook      func()
+	beforeCreateConnectorHook func()
+)
+
+func checkCreateTargetAbsent(targetPath string) error {
+	for _, candidate := range []string{targetPath, targetPath + ".wal", targetPath + ".tmp"} {
+		_, err := os.Lstat(candidate)
+		if err == nil {
+			return fmt.Errorf("%w: %s", ErrDatabaseAlreadyExists, filepath.Base(candidate))
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect destination database: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Store) restorePrevious(oldPath string, oldCommits *commitbridge.Observer, oldRev uint64) error {
-	restored, err := openDatabaseHandles(context.Background(), oldPath, s.logger)
+	restored, _, err := openDatabaseHandles(context.Background(), oldPath, s.logger)
 	if err != nil {
 		s.closed = true
 		if oldCommits != nil {

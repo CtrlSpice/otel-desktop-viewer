@@ -12,7 +12,9 @@ package duckdbextension
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -28,11 +30,9 @@ const (
 	// retentionInterval is how often the retention loop checks the store size.
 	retentionInterval = 30 * time.Second
 
-	// Default store size caps applied when db_max_size is unset. In-memory
-	// mode gets a tighter default because the data competes with everything
-	// else for RAM; a database file can afford more room.
-	defaultMaxSizeInMemory = 512 << 20 // 512 MB
-	defaultMaxSizeOnDisk   = 2 << 30   // 2 GB
+	// defaultMaxSizeOnDisk is the default store size cap applied when
+	// db_max_size is unset.
+	defaultMaxSizeOnDisk = 2 << 30 // 2 GB
 )
 
 // DuckDBExtension is the running component. The store and server exist only
@@ -82,7 +82,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		dbPath         string
 		managedDir     string
 		activeFilename string
-		isManaged      = e.cfg.Managed || e.cfg.ManagedDir != ""
+		isManaged      = e.cfg.Db == ""
 	)
 	if isManaged {
 		managedDir = e.cfg.ManagedDir
@@ -92,6 +92,16 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 			if err != nil {
 				return err
 			}
+		} else {
+			var err error
+			managedDir, err = filepath.Abs(managedDir)
+			if err != nil {
+				return fmt.Errorf("resolve managed_dir %q: %w", e.cfg.ManagedDir, err)
+			}
+			managedDir = filepath.Clean(managedDir)
+			if strings.Contains(managedDir, "?") {
+				return fmt.Errorf("invalid managed_dir %q: query parameters ('?') are not supported", managedDir)
+			}
 		}
 		var err error
 		dbPath, activeFilename, err = resolveManagedStartupPath(managedDir)
@@ -100,14 +110,21 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		}
 	} else {
 		dbPath = e.cfg.Db
-		if dbPath != "" {
-			activeFilename = filepath.Base(dbPath)
-		}
+		activeFilename = filepath.Base(dbPath)
 	}
 
 	str, err := store.NewStore(ctx, dbPath, e.logger)
 	if err != nil {
 		return err
+	}
+
+	// Persist the startup selection before binding the HTTP server so no
+	// incoming openDatabase/newDatabase RPC can race with startup's write.
+	if isManaged {
+		if err := writeSelection(managedDir, activeFilename); err != nil {
+			_ = str.Close()
+			return err
+		}
 	}
 
 	var dbMgr server.DatabaseManager
@@ -132,18 +149,14 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	}
 
 	// Config is already validated, so the only parse outcomes are a size,
-	// 0 (disabled), or -1 (unset: apply the mode-dependent default).
+	// 0 (disabled), or -1 (unset: apply the default).
 	maxBytes, err := parseByteSize(e.cfg.DbMaxSize)
 	if err != nil {
 		str.Close()
 		return err
 	}
 	if maxBytes < 0 {
-		if dbPath == "" {
-			maxBytes = defaultMaxSizeInMemory
-		} else {
-			maxBytes = defaultMaxSizeOnDisk
-		}
+		maxBytes = defaultMaxSizeOnDisk
 	}
 	// The cap lives on the store so getStats can report it alongside usage.
 	str.SetRetentionCap(maxBytes)
@@ -151,14 +164,6 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 	if err := srv.Start(); err != nil {
 		str.Close()
 		return err
-	}
-
-	if isManaged {
-		if err := writeSelection(managedDir, activeFilename); err != nil {
-			_ = srv.Shutdown(ctx)
-			_ = str.Close()
-			return err
-		}
 	}
 
 	e.store = str

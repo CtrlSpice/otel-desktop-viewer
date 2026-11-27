@@ -82,6 +82,7 @@
       void importer.enqueue(files, importNavigation.select(files[0].name))
     }
   }
+  onDestroy(changes.subscribeSession(() => importNavigation.cancel()))
   onDestroy(() => {
     importNavigation.cancel()
     importer.cancel()
@@ -162,15 +163,17 @@
   tabindex="-1"
   class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 transition-colors duration-300"
 >
-  {#if Page === HomePage}
-    <HomePage importFailures={allImportFailures}>
-      {#snippet importContent()}
-        <ImportFiles onFiles={handleImportFiles} />
-      {/snippet}
-    </HomePage>
-  {:else}
-    <Page {importFailure} onViewIssue={viewIssue} />
-  {/if}
+  {#key changes.sessionKey}
+    {#if Page === HomePage}
+      <HomePage importFailures={allImportFailures}>
+        {#snippet importContent()}
+          <ImportFiles onFiles={handleImportFiles} />
+        {/snippet}
+      </HomePage>
+    {:else}
+      <Page {importFailure} onViewIssue={viewIssue} />
+    {/if}
+  {/key}
   <WorkspaceShell
     {...workspace.props ?? {
       items: [],

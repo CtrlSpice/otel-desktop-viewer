@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/duckdbextension"
@@ -53,6 +54,7 @@ func startTestExtension(t *testing.T) (*extensionHost, string) {
 	factory := duckdbextension.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*duckdbextension.Config)
 	cfg.Endpoint = freeLocalAddr(t)
+	cfg.Db = filepath.Join(t.TempDir(), "test.duckdb")
 	cfg.DbMaxSize = "0"
 
 	ext, err := factory.Create(ctx, extensiontest.NewNopSettings(duckdbextension.Type), cfg)
