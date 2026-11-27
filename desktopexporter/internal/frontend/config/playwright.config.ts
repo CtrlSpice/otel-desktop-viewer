@@ -4,22 +4,27 @@ const evals = process.env.EVALS ?? '0'
 if (evals !== '0' && evals !== '1') throw new Error('EVALS must be 0 or 1')
 const port = evals === '1' ? 3003 : 3002
 const baseURL = `http://127.0.0.1:${port}`
+const evalsOnlySpecs = [
+  '**/evals.spec.ts',
+  '**/eval-source-copy.spec.ts',
+  '**/eval-mounted-state.spec.ts',
+]
+const evalsBuildSpecs = [
+  ...evalsOnlySpecs,
+  '**/build-features.spec.ts',
+  '**/workspace-shell.spec.ts',
+]
 
 export default defineConfig({
   testDir: '../e2e',
-  testIgnore:
-    evals === '1'
-      ? []
-      : [
-          '**/evals.spec.ts',
-          '**/eval-source-copy.spec.ts',
-          '**/eval-mounted-state.spec.ts',
-        ],
+  ...(evals === '1'
+    ? { testMatch: evalsBuildSpecs, testIgnore: [] }
+    : { testIgnore: evalsOnlySpecs }),
   outputDir: '../test-results',
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 2 : undefined,
   reporter: [
     ['list'],
     ['html', { open: 'never', outputFolder: '../playwright-report' }],

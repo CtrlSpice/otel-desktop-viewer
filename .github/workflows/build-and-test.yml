@@ -176,8 +176,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        evals: ['0', '1']
-        shard: [1, 2, 3, 4]
+        include:
+          - evals: '0'
+            shard: 1
+            shards: 4
+          - evals: '0'
+            shard: 2
+            shards: 4
+          - evals: '0'
+            shard: 3
+            shards: 4
+          - evals: '0'
+            shard: 4
+            shards: 4
+          - evals: '1'
+            shard: 1
+            shards: 1
     env:
       EVALS: ${{ matrix.evals }}
     defaults:
@@ -196,7 +210,7 @@ jobs:
       run: npx playwright install --with-deps chromium
 
     - name: Browser and accessibility tests
-      run: npm run test:a11y -- --shard=${{ matrix.shard }}/4
+      run: npm run test:a11y -- --shard=${{ matrix.shard }}/${{ matrix.shards }}
 
     - name: Upload Playwright artifacts
       if: ${{ !cancelled() }}
