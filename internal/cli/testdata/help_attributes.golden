@@ -1,0 +1,11 @@
+🏷️ Discover attributes in a running viewer, keeping received kinds and owner associations.
+
+USAGE
+  otel-desktop-viewer attributes [flags]
+
+COMMANDS
+  keys         🔑 List distinct attribute keys and kinds
+  values       🏷️ Count exact typed values for one attribute key
+
+GLOBAL FLAGS
+  -h, --help   Help for this command

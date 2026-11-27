@@ -1,0 +1,23 @@
+🔑 List each distinct attribute key and received kind once, with the locations where it occurs. Searches all signals and owners in the last hour and returns up to 25 key/kind pairs. Narrow by signal, owner or both.
+
+USAGE
+  otel-desktop-viewer attributes keys [flags]
+
+EXAMPLES
+  otel-desktop-viewer attributes keys
+  otel-desktop-viewer attributes keys --signal logs --owner-type log --service checkout --since 30m --json
+  otel-desktop-viewer attributes keys --signal metrics --owner-type scope --json
+
+FLAGS
+      --end string          Inclusive RFC3339 end time (nanoseconds supported)
+      --endpoint string     Running viewer HTTP endpoint (default "http://localhost:8000")
+      --json                Emit exact JSON with truncation instead of columns
+      --limit int           Maximum rows to return (default 25)
+      --owner-type string   Limit to one owner: span/event/link (traces), log (logs), datapoint/exemplar/metadata (metrics), resource or scope
+      --service string      Only records for this service
+      --signal string       Limit to one signal: traces, logs or metrics
+      --since duration      Relative lookback window (for example 30m, 6h, or 24h) (default 1h0m0s)
+      --start string        Inclusive RFC3339 start time (nanoseconds supported)
+
+GLOBAL FLAGS
+  -h, --help   Help for this command

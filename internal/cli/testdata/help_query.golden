@@ -1,0 +1,18 @@
+🦆 Run one read-only DuckDB query against the existing viewer process. Results use aligned columns by default; --json emits the JSON result.
+
+USAGE
+  otel-desktop-viewer query <sql> [flags]
+
+EXAMPLES
+  otel-desktop-viewer query 'show tables'
+  otel-desktop-viewer query 'describe spans'
+  otel-desktop-viewer query 'select service_name, count(*) from spans group by service_name' --limit 50
+  otel-desktop-viewer query 'select count(*) from logs' --json
+
+FLAGS
+      --endpoint string   Running viewer HTTP endpoint (default "http://localhost:8000")
+      --json              Emit the JSON result instead of columns
+      --limit uint        Maximum rows to return (default 25)
+
+GLOBAL FLAGS
+  -h, --help   Help for this command
