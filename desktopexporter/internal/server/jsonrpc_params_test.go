@@ -144,6 +144,7 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 		"getStats":                      true,
 		"getServiceCount":               true,
 		"getImportConfig":               true,
+		"listDatabases":                 true,
 		"getTraceAttributeDefinitions":  true,
 		"getLogAttributeDefinitions":    true,
 		"getMetricAttributeDefinitions": true,

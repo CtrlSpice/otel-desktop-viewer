@@ -23,3 +23,14 @@ export const SIGNAL_ITEM_QUERY_PARAMS = [
 ] as const
 
 export type SignalItemQueryParam = (typeof SIGNAL_ITEM_QUERY_PARAMS)[number]
+
+/** Query keys scoped to a selected eval experiment, result, or row (including legacy aliases). */
+export const EVAL_ITEM_QUERY_PARAMS = [
+  'experiment',
+  'result',
+  'row',
+  'run',
+  'rep',
+] as const
+
+export type EvalItemQueryParam = (typeof EVAL_ITEM_QUERY_PARAMS)[number]

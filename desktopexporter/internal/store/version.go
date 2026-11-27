@@ -38,6 +38,8 @@ const (
 // SchemaCompatibility reports what the version check found. SchemaOK for an
 // in-memory store, which is always created fresh.
 func (s *Store) SchemaCompatibility() SchemaCompatibility {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.schemaCompat
 }
 

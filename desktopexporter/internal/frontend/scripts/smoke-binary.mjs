@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { DataType, tableFromIPC } from 'apache-arrow'
 import { chromium, expect } from '@playwright/test'
 
-// Exercise the embedded executable, with fresh in-memory storage and no
-// Vite server or API mocks. Reserve separate ports from interactive previews.
+// Exercise the embedded executable with an isolated temporary DuckDB file and
+// no Vite server or API mocks. Reserve separate ports from interactive previews.
 assert.ok(process.argv[2], 'Usage: node scripts/smoke-binary.mjs <executable>')
 const mode = process.env.EVALS ?? '0'
 assert.ok(mode === '0' || mode === '1', 'EVALS must be 0 or 1')
@@ -31,6 +31,7 @@ await Promise.all(
   )
 )
 const baseURL = `http://127.0.0.1:${viewerPort}`
+const smokeDirectory = await mkdtemp(join(tmpdir(), 'otel-smoke-'))
 const child = spawn(resolve(process.argv[2]), [
   '--open-browser=false',
   '--host',
@@ -41,6 +42,8 @@ const child = spawn(resolve(process.argv[2]), [
   String(httpPort),
   '--grpc',
   String(grpcPort),
+  '--db',
+  join(smokeDirectory, 'smoke.duckdb'),
 ])
 let output = ''
 let spawnError
@@ -897,5 +900,6 @@ try {
     }
     if (importDirectory)
       await rm(importDirectory, { recursive: true, force: true })
+    await rm(smokeDirectory, { recursive: true, force: true })
   }
 }

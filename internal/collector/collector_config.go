@@ -3,6 +3,7 @@ package collector
 import (
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/redaction"
 	"go.opentelemetry.io/collector/otelcol"
@@ -15,12 +16,19 @@ type ConfigOptions struct {
 	GRPCPort    int
 	BrowserPort int
 	DB          string
+	ManagedDir  string
 	DBMaxSize   string
 
 	// SelfTelemetryEndpoint turns on the viewer's own instrumentation and sends
 	// its traces and metrics to an external OTLP gRPC endpoint. An empty value
 	// keeps viewer telemetry off.
 	SelfTelemetryEndpoint string
+}
+
+// quoteConfmapYAMLString escapes '$' as '$$' before quoting so confmap's
+// DefaultScheme="env" resolver never expands ${...} or collapses literal '$$'.
+func quoteConfmapYAMLString(s string) string {
+	return strconv.Quote(strings.ReplaceAll(s, "$", "$$"))
 }
 
 // URIs builds the yaml config fragments that stand in for a config
@@ -31,16 +39,17 @@ func URIs(o ConfigOptions) []string {
 	endpoint := formatEndpoint(o.Host)
 	URIs := []string{
 		`yaml:receivers::otlp::protocols::http::cors::allowed_origins: [https://*,http://*]`,
-		`yaml:receivers::otlp::protocols::http::endpoint: "` + endpoint(o.HTTPPort) + `"`,
-		`yaml:receivers::otlp::protocols::grpc::endpoint: "` + endpoint(o.GRPCPort) + `"`,
+		`yaml:receivers::otlp::protocols::http::endpoint: ` + quoteConfmapYAMLString(endpoint(o.HTTPPort)),
+		`yaml:receivers::otlp::protocols::grpc::endpoint: ` + quoteConfmapYAMLString(endpoint(o.GRPCPort)),
 		// The duckdb extension owns the store, the viewer server, and
 		// retention; the desktop exporter only writes and finds the store
 		// through the extension at startup.
-		`yaml:extensions::duckdb::endpoint: "` + endpoint(o.BrowserPort) + `"`,
+		`yaml:extensions::duckdb::endpoint: ` + quoteConfmapYAMLString(endpoint(o.BrowserPort)),
 		`yaml:extensions::duckdb::otlp_http_port: ` + strconv.Itoa(o.HTTPPort),
 		`yaml:extensions::duckdb::otlp_grpc_port: ` + strconv.Itoa(o.GRPCPort),
-		`yaml:extensions::duckdb::db: ` + o.DB,
-		`yaml:extensions::duckdb::db_max_size: "` + o.DBMaxSize + `"`,
+		`yaml:extensions::duckdb::db: ` + quoteConfmapYAMLString(o.DB),
+		`yaml:extensions::duckdb::managed_dir: ` + quoteConfmapYAMLString(o.ManagedDir),
+		`yaml:extensions::duckdb::db_max_size: ` + quoteConfmapYAMLString(o.DBMaxSize),
 		`yaml:service::extensions: [duckdb]`,
 		// Batching happens here rather than in the exporter's sending queue.
 		// send_batch_max_size bounds each write; timeout limits display latency
@@ -79,7 +88,7 @@ func telemetryURIs(o ConfigOptions) []string {
 	if o.SelfTelemetryEndpoint == "" {
 		return []string{`yaml:service::telemetry::metrics::level: none`}
 	}
-	target := strconv.Quote(o.SelfTelemetryEndpoint)
+	target := quoteConfmapYAMLString(o.SelfTelemetryEndpoint)
 	return []string{
 		`yaml:exporters::desktop::telemetry: enabled`,
 		`yaml:extensions::duckdb::telemetry: enabled`,

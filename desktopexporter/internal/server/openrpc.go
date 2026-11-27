@@ -183,7 +183,7 @@ func openRPCDocument() map[string]any {
 		"MetricAggregateView": rpcObject(map[string]any{"aggregate": map[string]any{"type": []string{"array", "null"}, "items": object},
 			"scalarAggregate": rpcObject(map[string]any{"selected": rpcArray(object), "all": rpcArray(object)}, "selected", "all"),
 		}, "aggregate", "scalarAggregate"),
-		"Stats": rpcObject(map[string]any{"storage": rpcObject(map[string]any{"sizeBytes": integer, "maxSizeBytes": integer, "inMemory": boolean}, "sizeBytes", "maxSizeBytes", "inMemory"),
+		"Stats": rpcObject(map[string]any{"storage": rpcObject(map[string]any{"sizeBytes": integer, "maxSizeBytes": integer}, "sizeBytes", "maxSizeBytes"),
 			"traces":     rpcObject(map[string]any{"traceCount": integer, "spanCount": integer, "serviceCount": integer, "errorCount": integer, "lastReceived": nullableText}, "traceCount", "spanCount", "serviceCount", "errorCount", "lastReceived"),
 			"logs":       rpcObject(map[string]any{"logCount": integer, "errorCount": integer, "lastReceived": nullableText}, "logCount", "errorCount", "lastReceived"),
 			"metrics":    rpcObject(map[string]any{"metricCount": integer, "dataPointCount": integer, "lastReceived": nullableText}, "metricCount", "dataPointCount", "lastReceived"),
@@ -206,7 +206,13 @@ func openRPCDocument() map[string]any {
 		"StringList":   rpcArray(text),
 		"DeleteResult": rpcObject(map[string]any{"message": text, "count": integer}, "message", "count"),
 		"ImportConfig": rpcObject(map[string]any{"otlpHttpPort": integer, "otlpGrpcPort": integer}, "otlpHttpPort"),
-		"Integer":      integer, "String": text,
+		"DatabaseEntry": rpcObject(map[string]any{
+			"name": text, "sizeBytes": integer, "modifiedAt": text, "active": boolean,
+		}, "name", "sizeBytes", "modifiedAt", "active"),
+		"DatabaseList": rpcObject(map[string]any{
+			"managed": boolean, "active": text, "databases": rpcArray(rpcSchemaRef("DatabaseEntry")),
+		}, "managed", "active", "databases"),
+		"Integer": integer, "String": text,
 	}
 	count := map[string]any{"type": "integer", "minimum": 0}
 	schemas["DiscoveryService"] = rpcRecord(map[string]any{
@@ -256,6 +262,9 @@ func openRPCDocument() map[string]any {
 		{"getTraceSpanCount", "Integer", "Count stored spans in one trace.", "Returns 0 if the trace has no stored spans.", 1},
 		{"getServiceCount", "Integer", "Count distinct services across the database.", "Counts typed service identities across retained spans, logs and Metric datapoints. A missing namespace counts as an empty namespace. A missing service name stays distinct.", 0},
 		{"getServiceLabels", "ServiceLabels", "Resolve a service reference to its full name and namespace.", "Pass the serviceIdentity from a service summary as serviceRef to get unabridged labels.", 1},
+		{"listDatabases", "DatabaseList", "List managed session databases and report the active capture.", "In external --db mode, managed is false and databases is empty.", 0},
+		{"openDatabase", "DatabaseList", "Switch the viewer to an existing managed session database.", "Checkpoints and closes the active capture before opening the selected .duckdb file.", 1},
+		{"newDatabase", "DatabaseList", "Create a new managed session database and switch collection to it.", "Appends .duckdb when omitted and refuses to overwrite an existing file.", 1},
 	}
 	methods := make([]rpcMethodDescription, 0, len(specs))
 	for _, spec := range specs {
@@ -382,6 +391,13 @@ func openRPCDocument() map[string]any {
 				description = "Allowed pairs: traces/name, logs/eventName, metrics/name or metrics/unit."
 			case "sql":
 				description = "One read-only select or supported inspection statement. Use show tables to list tables and describe <table> to list columns."
+			case "name":
+				schema = map[string]any{"type": "string", "minLength": 1}
+				if spec.name == "newDatabase" {
+					description = "Plain session filename ('.duckdb' is appended when omitted). Cannot contain path separators, '%', '?', control characters, or Windows-illegal characters."
+				} else {
+					description = "Existing managed session filename ending in '.duckdb'."
+				}
 			}
 			if i >= spec.required && spec.name != "query" && name != "query" && name != "sort" {
 				schema = map[string]any{"anyOf": []any{schema, map[string]any{"type": "null"}}}
@@ -402,6 +418,17 @@ func openRPCDocument() map[string]any {
 			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeLogNotFound, "message": "Log not found"})
 		case "getMetric", "getMetricSeries", "getMetricView", "getMetricAggregateView":
 			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeMetricNotFound, "message": "Metric not found"})
+		case "openDatabase":
+			method.Errors = append(method.Errors,
+				map[string]any{"code": ErrCodeDatabaseNotFound, "message": "Database not found"},
+				map[string]any{"code": ErrCodeDatabaseSwitchUnsupported, "message": ErrDatabaseSwitchUnsupported.Error()},
+				map[string]any{"code": ErrCodeDatabaseIncompatible, "message": ErrDatabaseIncompatible.Error()},
+			)
+		case "newDatabase":
+			method.Errors = append(method.Errors,
+				map[string]any{"code": ErrCodeDatabaseAlreadyExists, "message": "Database already exists"},
+				map[string]any{"code": ErrCodeDatabaseSwitchUnsupported, "message": ErrDatabaseSwitchUnsupported.Error()},
+			)
 		}
 		if spec.name == "query" || spec.name == "getTraceView" || spec.name == "searchTraceSummaries" || spec.name == "searchLogSummaries" || spec.name == "searchLogPage" || spec.name == "getLogErrorNavigation" || spec.name == "searchMetricSummaries" || spec.name == "getFieldValueCompletions" {
 			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeInvalidQuery, "message": "Invalid query"})

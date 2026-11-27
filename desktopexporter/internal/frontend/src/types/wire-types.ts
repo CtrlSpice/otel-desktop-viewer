@@ -1,7 +1,7 @@
 // JSON RPC contracts. Telemetry reads use Arrow.
 
 export type JsonStats = {
-  storage: { sizeBytes: number; maxSizeBytes: number; inMemory?: boolean }
+  storage: { sizeBytes: number; maxSizeBytes: number }
   traces: {
     traceCount: number
     spanCount: number

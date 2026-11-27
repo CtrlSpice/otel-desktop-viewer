@@ -250,7 +250,7 @@ describe('Home service discovery', () => {
       logs: { logCount: 0, errorCount: 0, lastReceived: null },
       metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
       rejections: [],
-      storage: { sizeBytes: 123, maxSizeBytes: 456, inMemory: true },
+      storage: { sizeBytes: 123, maxSizeBytes: 456 },
     })
     await screen.findByText('123 bytes')
     expect(screen.queryByText('Loading storage information…')).toBeNull()

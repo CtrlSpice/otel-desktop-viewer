@@ -17,12 +17,12 @@ const initial: Stats = {
   },
   metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
   logs: { logCount: 0, errorCount: 0, lastReceived: null },
-  storage: { sizeBytes: 123, maxSizeBytes: 0, inMemory: true },
+  storage: { sizeBytes: 123, maxSizeBytes: 0 },
   rejections: [],
 }
 const updated: Stats = {
   ...initial,
-  storage: { sizeBytes: 456, maxSizeBytes: 0, inMemory: true },
+  storage: { sizeBytes: 456, maxSizeBytes: 0 },
   rejections: [
     {
       signal: 'traces',

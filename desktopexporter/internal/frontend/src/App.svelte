@@ -92,6 +92,15 @@
   let importFailure = $state<ImportFailure | null>(null)
   let seenFailure: ImportFailure | undefined
 
+  onDestroy(
+    changes.subscribeSession(() => {
+      importNavigation.cancel()
+      localImportFailures = []
+      importFailure = null
+      seenFailure = undefined
+    })
+  )
+
   function pagePath(path: string): string {
     for (const base of ['/traces', '/metrics', '/logs', '/evals']) {
       if (path === base || path.startsWith(`${base}/`)) return base
@@ -162,15 +171,17 @@
   tabindex="-1"
   class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 transition-colors duration-300"
 >
-  {#if Page === HomePage}
-    <HomePage importFailures={allImportFailures}>
-      {#snippet importContent()}
-        <ImportFiles onFiles={handleImportFiles} />
-      {/snippet}
-    </HomePage>
-  {:else}
-    <Page {importFailure} onViewIssue={viewIssue} />
-  {/if}
+  {#key changes.sessionKey}
+    {#if Page === HomePage}
+      <HomePage importFailures={allImportFailures}>
+        {#snippet importContent()}
+          <ImportFiles onFiles={handleImportFiles} />
+        {/snippet}
+      </HomePage>
+    {:else}
+      <Page {importFailure} onViewIssue={viewIssue} />
+    {/if}
+  {/key}
   <WorkspaceShell
     {...workspace.props ?? {
       items: [],

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/duckdb/duckdb-go/v2"
@@ -39,6 +40,14 @@ func TestCancellationIsNotAnInternalError(t *testing.T) {
 			name: "catalogue interrupt restored as cancellation",
 			err: fmt.Errorf("catalogue write: %w: %w", ingest.ErrNotRowFault,
 				errors.Join(context.Canceled, &duckdb.Error{Type: duckdb.ErrorTypeInterrupt, Msg: "Interrupted!"})),
+		},
+		{
+			name: "schema probe cancellation takes precedence over incompatible sentinel",
+			err:  fmt.Errorf("%w: %w", store.ErrSchemaIncompatible, context.Canceled),
+		},
+		{
+			name: "schema probe deadline takes precedence over incompatible sentinel",
+			err:  fmt.Errorf("%w: %w", store.ErrSchemaIncompatible, context.DeadlineExceeded),
 		},
 	}
 

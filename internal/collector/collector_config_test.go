@@ -116,6 +116,38 @@ func TestCollectorURIsResolve(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, cfg.Validate())
 	})
+
+	t.Run("paths with dollar signs and env syntax stay literal", func(t *testing.T) {
+		t.Setenv("TEST_DB_DIR", "/should-not-expand")
+
+		for _, path := range []string{
+			"/tmp/run$$1.duckdb",
+			"/tmp/${TEST_DB_DIR}/session.duckdb",
+			"/tmp/${a:b}/${c$d}/session.duckdb",
+		} {
+			o := testOptions()
+			o.DB = path
+			cfg, err := resolveConfig(t, o)
+			require.NoError(t, err, "DB=%q", path)
+			require.NoError(t, cfg.Validate(), "DB=%q", path)
+			ext := cfg.Extensions[component.NewID(duckdbextension.Type)].(*duckdbextension.Config)
+			assert.Equal(t, path, ext.Db)
+		}
+
+		for _, dir := range []string{
+			"/tmp/sessions$$1",
+			"/tmp/${TEST_DB_DIR}/sessions",
+			"/tmp/${a:b}/${c$d}",
+		} {
+			o := testOptions()
+			o.ManagedDir = dir
+			cfg, err := resolveConfig(t, o)
+			require.NoError(t, err, "ManagedDir=%q", dir)
+			require.NoError(t, cfg.Validate(), "ManagedDir=%q", dir)
+			ext := cfg.Extensions[component.NewID(duckdbextension.Type)].(*duckdbextension.Config)
+			assert.Equal(t, dir, ext.ManagedDir)
+		}
+	})
 }
 
 // The exporter and service telemetry settings must enable or disable together.

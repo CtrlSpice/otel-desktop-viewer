@@ -84,6 +84,51 @@ func TestExtensionConfigValidate(t *testing.T) {
 			cfg:     Config{Endpoint: "localhost:8000", Telemetry: "yes please"},
 			wantErr: "invalid telemetry",
 		},
+		{
+			name:    "in-memory mode rejected",
+			cfg:     Config{Endpoint: "localhost:8000", Db: ":memory:"},
+			wantErr: "in-memory mode",
+		},
+		{
+			name:    "in-memory mode rejected case-insensitively",
+			cfg:     Config{Endpoint: "localhost:8000", Db: " :MEMORY: "},
+			wantErr: "in-memory mode",
+		},
+		{
+			name:    "blank db rejected",
+			cfg:     Config{Endpoint: "localhost:8000", Db: "   "},
+			wantErr: "cannot be blank",
+		},
+		{
+			name:    "db with query parameter rejected",
+			cfg:     Config{Endpoint: "localhost:8000", Db: "/tmp/a.duckdb?access_mode=read_only"},
+			wantErr: "query parameters",
+		},
+		{
+			name:    "db with percent rejected",
+			cfg:     Config{Endpoint: "localhost:8000", Db: "/tmp/100%.duckdb"},
+			wantErr: "percent",
+		},
+		{
+			name:    "managed_dir with query parameter rejected",
+			cfg:     Config{Endpoint: "localhost:8000", ManagedDir: "/tmp/sessions?foo=1"},
+			wantErr: "query parameters",
+		},
+		{
+			name:    "managed_dir with percent rejected",
+			cfg:     Config{Endpoint: "localhost:8000", ManagedDir: "/tmp/sessions%1"},
+			wantErr: "percent",
+		},
+		{
+			name:    "blank managed_dir rejected",
+			cfg:     Config{Endpoint: "localhost:8000", ManagedDir: "   "},
+			wantErr: "cannot be blank",
+		},
+		{
+			name:    "db and managed_dir mutually exclusive",
+			cfg:     Config{Endpoint: "localhost:8000", Db: "/tmp/a.duckdb", ManagedDir: "/tmp/sessions"},
+			wantErr: "cannot both be configured",
+		},
 	}
 
 	for _, tc := range tests {

@@ -346,6 +346,7 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"searchAttributeMatches", []any{"pumpkin", "traces", "resource", []string{"attributes", "service.name"}, "string"}},
 		{"getServiceLabels", []any{refs.Rows[0][3]}},
 		{"getStats", []any{}},
+		{"listDatabases", []any{}},
 		{"getTraceSpanCount", []any{testTraceIDHex}},
 		{"getImportConfig", []any{}},
 		// Mutations run last against this test-owned store only.

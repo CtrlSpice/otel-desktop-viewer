@@ -274,22 +274,84 @@ func TestCORSHeaders(t *testing.T) {
 	testServer, teardown := setupServer(t)
 	defer teardown()
 
-	// Test preflight request
-	req, err := http.NewRequest("OPTIONS", fmt.Sprintf("%s/rpc", testServer.URL), nil)
-	assert.Nilf(t, err, "could not create OPTIONS request: %v", err)
-	req.Header.Set("Origin", "http://localhost:5173")
-	req.Header.Set("Access-Control-Request-Method", "POST")
-	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
-
 	client := &http.Client{}
-	res, err := client.Do(req)
-	assert.Nilf(t, err, "could not send OPTIONS request: %v", err)
-	defer res.Body.Close()
+	for _, allowed := range []string{
+		"http://localhost",
+		"http://localhost:5173",
+		"http://127.0.0.1:3001",
+		"http://[::1]:3001",
+		"http://[::1]",
+	} {
+		t.Run("allows loopback "+allowed, func(t *testing.T) {
+			req, err := http.NewRequest("OPTIONS", fmt.Sprintf("%s/rpc", testServer.URL), nil)
+			require.NoError(t, err)
+			req.Header.Set("Origin", allowed)
+			req.Header.Set("Access-Control-Request-Method", "POST")
+			req.Header.Set("Access-Control-Request-Headers", "Content-Type")
 
-	assert.Equal(t, http.StatusNoContent, res.StatusCode) // CORS preflight returns 204
-	assert.Equal(t, "http://localhost:5173", res.Header.Get("Access-Control-Allow-Origin"))
-	assert.Contains(t, res.Header.Get("Access-Control-Allow-Methods"), "POST")
-	assert.Contains(t, res.Header.Get("Access-Control-Allow-Headers"), "Content-Type")
+			res, err := client.Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			assert.Equal(t, http.StatusNoContent, res.StatusCode)
+			assert.Equal(t, allowed, res.Header.Get("Access-Control-Allow-Origin"))
+			assert.Contains(t, res.Header.Get("Access-Control-Allow-Methods"), "POST")
+			assert.Contains(t, res.Header.Get("Access-Control-Allow-Headers"), "Content-Type")
+
+			postReq, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/rpc", testServer.URL), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"listDatabases","params":[]}`))
+			require.NoError(t, err)
+			postReq.Header.Set("Content-Type", "application/json")
+			postReq.Header.Set("Origin", allowed)
+			postRes, err := client.Do(postReq)
+			require.NoError(t, err)
+			defer postRes.Body.Close()
+			assert.Equal(t, http.StatusOK, postRes.StatusCode)
+			assert.Equal(t, allowed, postRes.Header.Get("Access-Control-Allow-Origin"))
+		})
+	}
+
+	for _, blocked := range []string{
+		"https://evil.example",
+		"http://evil.example",
+		"http://localhost.evil.example",
+		"http://127.0.0.1.evil.example",
+		"https://localhost:5173",
+		"null",
+	} {
+		t.Run("blocks non-loopback "+blocked, func(t *testing.T) {
+			req, err := http.NewRequest("OPTIONS", fmt.Sprintf("%s/rpc", testServer.URL), nil)
+			require.NoError(t, err)
+			req.Header.Set("Origin", blocked)
+			req.Header.Set("Access-Control-Request-Method", "POST")
+			req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+
+			res, err := client.Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+			assert.Empty(t, res.Header.Get("Access-Control-Allow-Origin"))
+
+			// Even a simple text/plain POST without preflight must be blocked on /rpc.
+			postReq, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/rpc", testServer.URL), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"newDatabase","params":["pwned"]}`))
+			require.NoError(t, err)
+			postReq.Header.Set("Content-Type", "text/plain")
+			postReq.Header.Set("Origin", blocked)
+			postRes, err := client.Do(postReq)
+			require.NoError(t, err)
+			defer postRes.Body.Close()
+			assert.Equal(t, http.StatusForbidden, postRes.StatusCode)
+		})
+	}
+
+	t.Run("blocks Sec-Fetch-Site cross-site without Origin", func(t *testing.T) {
+		postReq, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/rpc", testServer.URL), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"listDatabases","params":[]}`))
+		require.NoError(t, err)
+		postReq.Header.Set("Content-Type", "text/plain")
+		postReq.Header.Set("Sec-Fetch-Site", "cross-site")
+		postRes, err := client.Do(postReq)
+		require.NoError(t, err)
+		defer postRes.Body.Close()
+		assert.Equal(t, http.StatusForbidden, postRes.StatusCode)
+	})
 }
 
 func TestStartBindConflict(t *testing.T) {

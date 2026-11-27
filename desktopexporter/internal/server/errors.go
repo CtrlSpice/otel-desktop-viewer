@@ -18,27 +18,35 @@ import (
 // returns the matching *NotFound error below -- never a null result. The
 // frontend service layer decides how each surfaces in the UI.
 const (
-	ErrCodeTraceNotFound        = -32001
-	ErrCodeLogNotFound          = -32002
-	ErrCodeMetricNotFound       = -32003
-	ErrCodeInvalidTraceID       = -32004
-	ErrCodeInvalidLogRef        = -32005
-	ErrCodeInvalidQuery         = -32007
-	ErrCodeInvalidMetricRef     = -32009
-	ErrCodeRequestCanceled      = -32010
-	ErrCodeHomeValueUnavailable = -32011
+	ErrCodeTraceNotFound             = -32001
+	ErrCodeLogNotFound               = -32002
+	ErrCodeMetricNotFound            = -32003
+	ErrCodeInvalidTraceID            = -32004
+	ErrCodeInvalidLogRef             = -32005
+	ErrCodeInvalidQuery              = -32007
+	ErrCodeInvalidMetricRef          = -32009
+	ErrCodeRequestCanceled           = -32010
+	ErrCodeHomeValueUnavailable      = -32011
+	ErrCodeDatabaseNotFound          = -32012
+	ErrCodeDatabaseAlreadyExists     = -32013
+	ErrCodeDatabaseSwitchUnsupported = -32014
+	ErrCodeDatabaseIncompatible      = -32015
 )
 
 // Custom JSON-RPC errors
 var (
-	ErrHomeValueUnavailable = jsonrpc2.NewError(ErrCodeHomeValueUnavailable, "Home value is unavailable; refresh and select it again")
-	ErrTraceNotFound        = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
-	ErrLogsNotFound         = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
-	ErrMetricNotFound       = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
-	ErrInvalidTraceID       = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
-	ErrInvalidLogRef        = jsonrpc2.NewError(ErrCodeInvalidLogRef, "Invalid log reference")
-	ErrInvalidQuery         = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
-	ErrInvalidMetricRef     = jsonrpc2.NewError(ErrCodeInvalidMetricRef, "Invalid Metric reference")
+	ErrHomeValueUnavailable      = jsonrpc2.NewError(ErrCodeHomeValueUnavailable, "Home value is unavailable; refresh and select it again")
+	ErrTraceNotFound             = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
+	ErrLogsNotFound              = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
+	ErrMetricNotFound            = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
+	ErrInvalidTraceID            = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
+	ErrInvalidLogRef             = jsonrpc2.NewError(ErrCodeInvalidLogRef, "Invalid log reference")
+	ErrInvalidQuery              = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
+	ErrInvalidMetricRef          = jsonrpc2.NewError(ErrCodeInvalidMetricRef, "Invalid Metric reference")
+	ErrDatabaseNotFound          = jsonrpc2.NewError(ErrCodeDatabaseNotFound, "Database not found")
+	ErrDatabaseAlreadyExists     = jsonrpc2.NewError(ErrCodeDatabaseAlreadyExists, "Database already exists")
+	ErrDatabaseSwitchUnsupported = jsonrpc2.NewError(ErrCodeDatabaseSwitchUnsupported, "Database switching is only available in managed session mode")
+	ErrDatabaseIncompatible      = jsonrpc2.NewError(ErrCodeDatabaseIncompatible, "Database schema is incompatible with this viewer")
 
 	// ErrRequestCanceled covers a query abandoned by the caller -- the UI
 	// navigating away mid-poll, or a browser tab closing. DuckDB surfaces the
@@ -54,13 +62,18 @@ func mapStoreError(err error) error {
 	if err == nil {
 		return nil
 	}
+	// Checked first: a cancelled query or database switch can fail anywhere,
+	// so the wrapped error may also match a store or database sentinel on its
+	// way out (for example ErrSchemaIncompatible wrapping context.Canceled).
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ErrRequestCanceled
+	}
+	if mapped, ok := mapDatabaseError(err); ok {
+		return mapped
+	}
 	switch {
 	case errors.Is(err, ErrHomeValueUnavailable):
 		return ErrHomeValueUnavailable
-	// Checked first: a cancelled query can fail anywhere, so the wrapped
-	// error may also match a store sentinel on its way out.
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return ErrRequestCanceled
 	case errors.Is(err, spans.ErrTraceIDNotFound):
 		return ErrTraceNotFound
 	case errors.Is(err, logs.ErrLogRefNotFound):

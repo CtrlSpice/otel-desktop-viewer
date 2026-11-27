@@ -157,13 +157,13 @@ See [SDK configuration](docs/sdk-configuration.md) for more options and examples
 
 ## 3. Start the viewer
 
-By default, the viewer stores telemetry in memory, opens your browser at `http://localhost:8000`, and receives OTLP on `localhost:4317` (gRPC) and `localhost:4318` (HTTP):
+By default, the viewer stores persistent managed sessions in your app-data directory (starting with `current.duckdb` and a `2GB` cap), opens your browser at `http://localhost:8000`, and receives OTLP on `localhost:4317` (gRPC) and `localhost:4318` (HTTP):
 
 ```sh
 otel-desktop-viewer
 ```
 
-Telemetry stored in memory is lost when the viewer stops. Use `--db` to save it to a file, then start the viewer with that file to pick up where you left off:
+Use the session switcher in the toolbar to switch captures or start a new one. Pass `--db` to open a specific DuckDB file outside managed sessions:
 
 ```sh
 otel-desktop-viewer --db ./telemetry.duckdb

@@ -6,6 +6,7 @@ import {
   buildSearch,
   mergeItemQuery,
   parseRoute,
+  sessionSwitchHref,
   signalHref,
   signalIdFromPath,
   withoutParams,
@@ -216,5 +217,55 @@ describe('signalIdFromPath', () => {
 
   it('takes only the first path segment after the signal prefix', () => {
     expect(signalIdFromPath('traces', '/traces/abc/extra')).toBe('abc')
+  })
+})
+
+describe('sessionSwitchHref', () => {
+  it('strips detail segments and item-scoped params while preserving time and search', () => {
+    expect(
+      sessionSwitchHref(
+        parseRoute(
+          '/traces/abc?start=10&end=20&q=err&span=s1&event=0&log=l1&focus=1'
+        )
+      )
+    ).toBe('/traces?start=10&end=20&q=err')
+    expect(
+      sessionSwitchHref(parseRoute('/traces?q=err&span=s1&series=x'))
+    ).toBe('/traces?q=err')
+    expect(
+      sessionSwitchHref(parseRoute('/logs/log-1?time=all&q=foo&log=l1'))
+    ).toBe('/logs?time=all&q=foo')
+    expect(
+      sessionSwitchHref(
+        parseRoute(
+          '/metrics/m-1?start=10&end=20&agg=rate&htab=heatmap&hscope=window&dp=d1&series=s1&visible=s1'
+        )
+      )
+    ).toBe('/metrics?start=10&end=20')
+  })
+
+  it('strips eval item params including legacy aliases while preserving list params', () => {
+    expect(
+      sessionSwitchHref(
+        parseRoute(
+          '/evals?experiment=e1&result=r1&row=experiment/e1&esort=name&edir=asc'
+        )
+      )
+    ).toBe('/evals?esort=name&edir=asc')
+    expect(
+      sessionSwitchHref(
+        parseRoute('/evals/subpath?run=legacy1&rep=legacy2&preview=examples')
+      )
+    ).toBe('/evals?preview=examples')
+  })
+
+  it('normalizes home and unknown routes', () => {
+    expect(
+      sessionSwitchHref(parseRoute('/?q=checkout&time=all&span=stale'))
+    ).toBe('/?q=checkout&time=all')
+    expect(sessionSwitchHref(parseRoute('/'))).toBe('/')
+    expect(sessionSwitchHref(parseRoute('/unknown?start=1&end=2&row=r1'))).toBe(
+      '/?start=1&end=2'
+    )
   })
 })

@@ -12,6 +12,9 @@ package duckdbextension
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -27,11 +30,9 @@ const (
 	// retentionInterval is how often the retention loop checks the store size.
 	retentionInterval = 30 * time.Second
 
-	// Default store size caps applied when db_max_size is unset. In-memory
-	// mode gets a tighter default because the data competes with everything
-	// else for RAM; a database file can afford more room.
-	defaultMaxSizeInMemory = 512 << 20 // 512 MB
-	defaultMaxSizeOnDisk   = 2 << 30   // 2 GB
+	// defaultMaxSizeOnDisk is the default store size cap applied when
+	// db_max_size is unset.
+	defaultMaxSizeOnDisk = 2 << 30 // 2 GB
 )
 
 // DuckDBExtension is the running component. The store and server exist only
@@ -43,8 +44,9 @@ type DuckDBExtension struct {
 	logger *zap.Logger
 	tel    *telemetry.Telemetry
 
-	store  *store.Store
-	server *server.Server
+	store     *store.Store
+	server    *server.Server
+	databases server.DatabaseManager
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
@@ -70,31 +72,94 @@ func (e *DuckDBExtension) Store() *store.Store {
 	return e.store
 }
 
+// Databases exposes the active session manager while the extension is running.
+func (e *DuckDBExtension) Databases() server.DatabaseManager {
+	return e.databases
+}
+
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
+	var (
+		dbPath         string
+		managedDir     string
+		activeFilename string
+		isManaged      = e.cfg.Db == ""
+	)
+	if isManaged {
+		managedDir = e.cfg.ManagedDir
+		if managedDir == "" {
+			var err error
+			managedDir, err = DefaultAppDataDir()
+			if err != nil {
+				return err
+			}
+		} else {
+			var err error
+			managedDir, err = filepath.Abs(managedDir)
+			if err != nil {
+				return fmt.Errorf("resolve managed_dir %q: %w", e.cfg.ManagedDir, err)
+			}
+			managedDir = filepath.Clean(managedDir)
+			if strings.Contains(managedDir, "?") {
+				return fmt.Errorf("invalid managed_dir %q: query parameters ('?') are not supported", managedDir)
+			}
+			if strings.Contains(managedDir, "%") {
+				return fmt.Errorf("invalid managed_dir %q: percent ('%%') characters are not supported", managedDir)
+			}
+		}
+		var err error
+		dbPath, activeFilename, err = resolveManagedStartupPath(managedDir)
+		if err != nil {
+			return err
+		}
+	} else {
+		dbPath = e.cfg.Db
+		activeFilename = filepath.Base(dbPath)
+	}
+
+	str, err := store.NewStore(ctx, dbPath, e.logger)
 	if err != nil {
 		return err
 	}
 
-	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel, server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort))
+	// Persist the startup selection before binding the HTTP server so no
+	// incoming openDatabase/newDatabase RPC can race with startup's write.
+	if isManaged {
+		if err := writeSelection(managedDir, activeFilename); err != nil {
+			_ = str.Close()
+			return err
+		}
+	}
+
+	var dbMgr server.DatabaseManager
+	if isManaged {
+		dbMgr = newManagedSessionManager(managedDir, str)
+	} else {
+		dbMgr = staticDatabaseManager{active: activeFilename}
+	}
+
+	srv, err := server.NewServer(
+		e.cfg.Endpoint,
+		e.cfg.OTLPHTTPPort,
+		str,
+		e.logger,
+		e.tel,
+		server.WithOTLPGRPCPort(e.cfg.OTLPGRPCPort),
+		server.WithDatabaseManager(dbMgr),
+	)
 	if err != nil {
 		str.Close()
 		return err
 	}
 
 	// Config is already validated, so the only parse outcomes are a size,
-	// 0 (disabled), or -1 (unset: apply the mode-dependent default).
+	// 0 (disabled), or -1 (unset: apply the default).
 	maxBytes, err := parseByteSize(e.cfg.DbMaxSize)
 	if err != nil {
 		str.Close()
 		return err
 	}
 	if maxBytes < 0 {
-		if e.cfg.Db == "" {
-			maxBytes = defaultMaxSizeInMemory
-		} else {
-			maxBytes = defaultMaxSizeOnDisk
-		}
+		maxBytes = defaultMaxSizeOnDisk
 	}
 	// The cap lives on the store so getStats can report it alongside usage.
 	str.SetRetentionCap(maxBytes)
@@ -106,6 +171,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 
 	e.store = str
 	e.server = srv
+	e.databases = dbMgr
 	if features.EvalsBuilt {
 		e.logger.Warn("Evals: " + features.ExperimentalLabel)
 	}

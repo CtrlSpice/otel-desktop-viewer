@@ -53,8 +53,20 @@ export function createNavigationCounts() {
   }
   const coordinator = createRefreshCoordinator(fetchCounts)
   const refresh = coordinator.request
+  function resetForSession() {
+    counts = {}
+    homeCounts = null
+    homeLinks = {}
+    homeSearchActive = false
+    statsRead.clear()
+    homeRead.clear()
+    evalsRead.clear()
+  }
   const changes = getDataChanges()
-  if (changes) onDestroy(changes.subscribe(() => void refresh()))
+  if (changes) {
+    onDestroy(changes.subscribeSession(resetForSession))
+    onDestroy(changes.subscribe(() => void refresh()))
+  }
   const state = {
     get counts() {
       return homeCounts ? { ...counts, ...homeCounts } : counts

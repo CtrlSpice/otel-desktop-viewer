@@ -138,8 +138,9 @@ release:
     **This release uses schema 27, the automatic-upgrade baseline.** It includes no
     production migration steps. Pre-27 databases and databases newer than schema 27
     cannot open. To keep viewing an older database, use its original binary.
-    Start this release with a new `--db` path to keep the older file intact.
-    Running without `--db` is unaffected: it starts with an empty in-memory store.
+    Start this release with a new `--db` path to keep an older file intact.
+    Without `--db`, the viewer stores managed sessions in your app-data directory
+    (starting with `current.duckdb` and a `2GB` default size cap).
 
     Public releases exclude Evals. Source builds can include it with
     `make build EVALS=1`; both variants use the same schema.

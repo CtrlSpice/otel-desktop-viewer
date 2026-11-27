@@ -25,20 +25,61 @@ const maxPoolConns = 4
 
 // Sentinel errors for use with errors.Is.
 var (
-	ErrStoreConnectionClosed = errors.New("store connection is closed")
-	ErrStoreInitFailed       = errors.New("store initialization failed")
+	ErrStoreConnectionClosed     = errors.New("store connection is closed")
+	ErrStoreInitFailed           = errors.New("store initialization failed")
+	ErrDatabaseSwitchUnsupported = errors.New("database switching requires a file-backed store")
+	ErrDatabaseNotFound          = errors.New("database not found")
+	ErrDatabaseAlreadyExists     = errors.New("database already exists")
 )
 
-type Store struct {
-	db      *sql.DB
-	conn    driver.Conn
-	dbPath  string // empty means in-memory mode
-	commits *commitbridge.Observer
+type databaseHandles struct {
+	db           *sql.DB
+	conn         driver.Conn
+	dbPath       string // empty means in-memory mode
+	commits      *commitbridge.Observer
+	schemaCompat SchemaCompatibility
+}
 
-	// mu protects db and conn. Queries and ingest hold it for reading so they
-	// may overlap. Pool mutations and Close hold it for writing and exclude
-	// ingest; otherwise a sweep could delete histogram bounds before ingest writes
-	// their datapoints. Store locking methods are not reentrant.
+func (h *databaseHandles) closeDB() error {
+	var connErr, dbErr error
+	if h.conn != nil {
+		connErr = h.conn.Close()
+		h.conn = nil
+	}
+	if h.db != nil {
+		dbErr = h.db.Close()
+		h.db = nil
+	}
+	return errors.Join(connErr, dbErr)
+}
+
+func (h *databaseHandles) closeAll() error {
+	err := h.closeDB()
+	if h.commits != nil {
+		h.commits.Close()
+		h.commits = nil
+	}
+	return err
+}
+
+type Store struct {
+	databaseHandles
+
+	// revisionBase keeps CommitSnapshot monotonically increasing across
+	// database switches so live-update streams always observe a change.
+	revisionBase uint64
+	closed       bool
+	inMemory     bool
+
+	// switchMu serializes Close and database switches. Lock order is
+	// switchMu -> mu; ingest uses ingestMu -> mu.
+	switchMu sync.Mutex
+
+	// mu protects databaseHandles, revisionBase, and closed. Queries and
+	// ingest hold it for reading so they may overlap. Pool mutations,
+	// switches, and Close hold it for writing and exclude ingest; otherwise a
+	// sweep could delete histogram bounds before ingest writes their
+	// datapoints. Store locking methods are not reentrant.
 	mu sync.RWMutex
 
 	// ingestMu serializes appender use on the dedicated ingest connection.
@@ -52,10 +93,6 @@ type Store struct {
 	// logger is never nil: NewStore substitutes a no-op when given one, so
 	// call sites need no guard.
 	logger *zap.Logger
-
-	// Result of the accepted schema version check, set once during NewStore and
-	// read without locking.
-	schemaCompat SchemaCompatibility
 }
 
 // SetRetentionCap sets the store size cap in bytes. Call before the store is
@@ -67,6 +104,13 @@ func (s *Store) SetRetentionCap(bytes int64) {
 // RetentionCap returns the store size cap in bytes; 0 means disabled.
 func (s *Store) RetentionCap() int64 {
 	return s.retentionCapBytes
+}
+
+// DBPath returns the active database file path, or "" in in-memory mode.
+func (s *Store) DBPath() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.dbPath
 }
 
 // NewStore creates a new store for the given database path.
@@ -81,6 +125,18 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if dbPath != "" {
 		dbPath = filepath.Clean(dbPath)
 	}
+	handles, _, err := openDatabaseHandles(ctx, dbPath, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{
+		databaseHandles: handles,
+		inMemory:        dbPath == "",
+		logger:          logger,
+	}, nil
+}
+
+func openDatabaseHandles(ctx context.Context, dbPath string, logger *zap.Logger) (databaseHandles, bool, error) {
 	commits := commitbridge.New()
 	initialized := false
 	defer func() {
@@ -90,13 +146,13 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}()
 	connector, err := duckdb.NewConnector(dbPath, commits.Init)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, false, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
 		_ = connector.Close()
-		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	db := sql.OpenDB(connector)
@@ -107,39 +163,38 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	db.SetConnMaxIdleTime(5 * time.Minute)
 	defer func() {
 		if !initialized {
-			_ = db.Close()
 			_ = conn.Close()
+			_ = db.Close()
 		}
 	}()
 	if err := arrowbridge.Load(ctx, conn); err != nil {
-		return nil, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w while loading Arrow ingestion: %w", ErrStoreInitFailed, err)
 	}
 	schemaInitializationMu.Lock()
 	defer schemaInitializationMu.Unlock()
 
 	migrations, err := schema.Migrations()
 	if err != nil {
-		return nil, fmt.Errorf("%w while loading migrations: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w while loading migrations: %w", ErrStoreInitFailed, err)
 	}
 	// Viewer captures are often smaller than DuckDB's default 30,000-row
 	// shredding threshold. Make every row group eligible at checkpoint.
 	if _, err := db.ExecContext(ctx, "set variant_minimum_shredding_size = 0"); err != nil {
-		return nil, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
+		return databaseHandles{}, true, fmt.Errorf("%w while enabling small-row-group VARIANT shredding: %w", ErrStoreInitFailed, err)
 	}
 	schemaCompat, err := initializeSchema(ctx, db, dbPath, logger, schema.Version, migrations)
 	if err != nil {
-		return nil, err
+		return databaseHandles{}, true, err
 	}
 
 	initialized = true
-	return &Store{
+	return databaseHandles{
 		db:           db,
 		conn:         conn,
 		commits:      commits,
 		dbPath:       dbPath,
-		logger:       logger,
 		schemaCompat: schemaCompat,
-	}, nil
+	}, true, nil
 }
 
 // Close closes the store and the underlying database connection.
@@ -148,30 +203,27 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 // closed state, because sql.DB.Close() has a graceful shutdown that can
 // cause a ping to succeed briefly after close.
 func (s *Store) Close() error {
+	s.switchMu.Lock()
+	defer s.switchMu.Unlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var connErr, dbErr error
-	if s.conn != nil {
-		connErr = s.conn.Close()
-		s.conn = nil
-	}
-
-	if s.db != nil {
-		dbErr = s.db.Close()
-		s.db = nil
-	}
-	if s.commits != nil {
-		s.commits.Close()
-	}
-
-	return errors.Join(connErr, dbErr)
+	s.closed = true
+	return s.databaseHandles.closeAll()
 }
 
 // CommitSnapshot reports writes committed by any store connection, including
-// retention and successful ingestion sub-batches. It performs no database work.
+// retention, database switches, and successful ingestion sub-batches. It
+// performs no database work.
 func (s *Store) CommitSnapshot() (uint64, <-chan struct{}, bool) {
-	return s.commits.Snapshot()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed || s.commits == nil {
+		return 0, nil, true
+	}
+	revision, changed, _ := s.commits.Snapshot()
+	return s.revisionBase + revision, changed, false
 }
 
 // WithConn runs fn against the store's dedicated appender connection. Ingest

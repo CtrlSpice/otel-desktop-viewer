@@ -353,9 +353,7 @@
             fieldName="Database"
             fieldType="string"
             showType={false}
-            fieldValue={stored.inMemory === undefined
-              ? 'DuckDB'
-              : `DuckDB · ${stored.inMemory ? 'In memory' : 'On disk'}`}
+            fieldValue="DuckDB · On disk"
           />
           <DetailProperty
             fieldName="Database size"

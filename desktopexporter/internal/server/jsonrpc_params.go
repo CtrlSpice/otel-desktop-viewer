@@ -66,6 +66,8 @@ var methodParamNames = map[string][]string{
 	"getTraceSpanCount":                     {"traceID"},
 	"deleteMetric":                          {"metricRef"},
 	"query":                                 {"sql", "limit"},
+	"openDatabase":                          {"name"},
+	"newDatabase":                           {"name"},
 }
 
 // normalizeParams rewrites object-form params into the positional array form.

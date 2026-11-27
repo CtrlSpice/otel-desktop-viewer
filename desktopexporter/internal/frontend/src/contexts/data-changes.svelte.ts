@@ -6,8 +6,13 @@ const key = Symbol('data-changes')
 export function createDataChanges() {
   let live = $state(false)
   let connected = $state(false)
+  let sessionKey = $state(0)
   const listeners = new Set<() => void>()
   const liveListeners = new Set<() => void>()
+  const sessionListeners = new Set<() => void>()
+  function notifyChange() {
+    for (const listener of listeners) listener()
+  }
   function refreshLive() {
     for (const listener of liveListeners) listener()
   }
@@ -17,6 +22,9 @@ export function createDataChanges() {
     },
     get connected() {
       return connected
+    },
+    get sessionKey() {
+      return sessionKey
     },
     setLive(enabled: boolean) {
       live = enabled
@@ -30,7 +38,16 @@ export function createDataChanges() {
       liveListeners.add(listener)
       return () => liveListeners.delete(listener)
     },
+    subscribeSession(listener: () => void) {
+      sessionListeners.add(listener)
+      return () => sessionListeners.delete(listener)
+    },
     refreshViews: refreshLive,
+    notifySessionChanged() {
+      sessionKey += 1
+      for (const listener of sessionListeners) listener()
+      notifyChange()
+    },
   }
   onMount(() => {
     const source = new EventSource('/api/changes')
@@ -38,7 +55,7 @@ export function createDataChanges() {
       connected = true
       // The server sends a snapshot on every connection. Even an unchanged
       // revision must resynchronise queries after a disconnect or restart.
-      for (const listener of listeners) listener()
+      notifyChange()
       if (live) refreshLive()
     })
     source.onerror = () => (connected = false)
