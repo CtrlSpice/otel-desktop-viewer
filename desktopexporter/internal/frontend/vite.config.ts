@@ -14,12 +14,7 @@ const useTailwind = !process.env.VITEST || process.env.VITEST_BROWSER === '1'
 
 const JSDOM_ENV_RE = /@vitest-environment\s+jsdom\b/
 const ISOLATED_NODE_TEST_RE =
-  /\bvi\.(?:mock|doMock|unmock|hoisted|resetModules|stubGlobal|stubEnv|useFakeTimers|spyOn)\b|\bprocess\.env\b/
-// Exercises color-slots.ts -> localStorage, which triggers Node 26's
-// ExperimentalWarning in a Node worker even though it has no jsdom pragma.
-const IMPLICIT_DOM_TESTS = new Set([
-  'src/features/metrics/Series/metric-timeseries-colors.test.ts',
-])
+  /\bvi\s*\.\s*(?:mock|doMock|unmock|hoisted|resetModules|stubGlobal|unstubAllGlobals|stubEnv|unstubAllEnvs|useFakeTimers|spyOn|restoreAllMocks|clearAllMocks|resetAllMocks)\b|\bprocess\.env\b|@\/test\/(?:telemetry-service-fixtures|service-map-fixtures)\b/
 
 interface TestFilePartition {
   domFiles: string[]
@@ -40,7 +35,7 @@ function partitionTestFiles(frontendRoot: string): TestFilePartition {
       if (!entry.name.endsWith('.test.ts')) continue
       const source = readFileSync(fullPath, 'utf8')
       const relPath = relative(frontendRoot, fullPath).replaceAll('\\', '/')
-      if (JSDOM_ENV_RE.test(source) || IMPLICIT_DOM_TESTS.has(relPath)) {
+      if (JSDOM_ENV_RE.test(source)) {
         domFiles.push(relPath)
       } else if (ISOLATED_NODE_TEST_RE.test(source)) {
         isolatedUnitFiles.push(relPath)
