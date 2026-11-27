@@ -1,0 +1,28 @@
+with
+filtered as (
+    select l.* from logs l
+    where (case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end) >= $1::ubigint and (case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end) <= $2::ubigint
+    order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc
+),
+page as (
+    select l.* from filtered l
+    order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc
+    limit ? offset ?
+), page_columns as (
+    select l.*, [struct_pack(source := ?::varchar, kind := ?::varchar, key := ?::varchar, present := (l.flags::bigint) is not null, valueType := otel_value_kind((l.flags::bigint)::variant), preview := native_column_preview((l.flags::bigint)::variant)),
+struct_pack(source := ?::varchar, kind := ?::varchar, key := ?::varchar, present := variant_exists(l.attributes, ?::varchar), valueType := otel_value_kind(l.attributes[?::varchar]), preview := native_column_preview(l.attributes[?::varchar]))] as column_values from page l
+)
+select cast(json_object(
+    'total', (select count(*) from filtered),
+    'logs', (select coalesce(to_json(list(json_object(
+        'logRef',         l.id,
+        'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
+        'severityText',   l.severity_text,
+        'severityNumber', l.severity_number,
+        'eventName',      l.event_name,
+        'serviceName',    l.service_name,
+        'bodyPreview',    native_body_preview(l.body),
+        'bodyType',       otel_value_kind(l.body)
+        , 'columnValues', l.column_values
+    ) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc)), '[]'::json) from page_columns l)
+) as varchar)
