@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -193,6 +194,28 @@ func TestMissingAsset404(t *testing.T) {
 	defer res.Body.Close()
 
 	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+}
+
+// The icon index.html links to must be embedded, or the browser tab has none.
+func TestFaviconServed(t *testing.T) {
+	testServer, teardown := setupServer(t)
+	defer teardown()
+
+	res, err := http.Get(testServer.URL + "/")
+	require.NoError(t, err)
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	require.NoError(t, err)
+
+	match := regexp.MustCompile(`<link rel="icon" type="image/svg\+xml" href="([^"]+)"`).FindSubmatch(body)
+	require.NotNil(t, match, "index.html should declare an SVG icon")
+
+	iconRes, err := http.Get(testServer.URL + string(match[1]))
+	require.NoError(t, err)
+	defer iconRes.Body.Close()
+
+	assert.Equal(t, http.StatusOK, iconRes.StatusCode)
+	assert.Equal(t, "image/svg+xml", iconRes.Header.Get("Content-Type"))
 }
 
 func TestRPCHandlerInvalidJSON(t *testing.T) {
