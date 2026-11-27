@@ -69,7 +69,6 @@ type statsJSON struct {
 type storageStatsJSON struct {
 	SizeBytes    float64 `json:"sizeBytes"`
 	MaxSizeBytes float64 `json:"maxSizeBytes"`
-	InMemory     bool    `json:"inMemory"`
 }
 
 type traceStatsJSON struct {
@@ -99,7 +98,7 @@ func rawStats(t *testing.T, s *store.Store, ctx context.Context) json.RawMessage
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap(), s.InMemory())
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
 	})
 	require.NoError(t, err)
 	return raw
@@ -110,7 +109,7 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap(), s.InMemory())
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
 	})
 	require.NoError(t, err)
 	var result statsJSON
@@ -118,18 +117,21 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	return result
 }
 
-func TestGetStatsStorageMode(t *testing.T) {
-	for _, inMemory := range []bool{true, false} {
-		path := ""
-		if !inMemory {
-			path = filepath.Join(t.TempDir(), "telemetry.duckdb")
-		}
-		s, err := store.NewStore(t.Context(), path, zap.NewNop())
-		require.NoError(t, err)
-		result := getStats(t, s, t.Context())
-		assert.Equal(t, inMemory, result.Storage.InMemory)
-		require.NoError(t, s.Close())
+func TestGetStatsStorageFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "telemetry.duckdb")
+	s, err := store.NewStore(t.Context(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer func() { require.NoError(t, s.Close()) }()
+	s.SetRetentionCap(2 << 30)
+
+	raw := rawStats(t, s, t.Context())
+	var decoded struct {
+		Storage map[string]any `json:"storage"`
 	}
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	assert.Contains(t, decoded.Storage, "sizeBytes")
+	assert.Equal(t, float64(2<<30), decoded.Storage["maxSizeBytes"])
+	assert.NotContains(t, decoded.Storage, "inMemory")
 }
 
 func TestGetStats_Empty(t *testing.T) {

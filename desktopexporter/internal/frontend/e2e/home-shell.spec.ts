@@ -19,7 +19,7 @@ test('Home keeps Getting started in List, service cards in the map and Telemetry
         return { otlpHttpPort: 54318, otlpGrpcPort: 54317 }
       if (method === 'getStats')
         return {
-          storage: { sizeBytes: 4096, maxSizeBytes: 0, inMemory: false },
+          storage: { sizeBytes: 4096, maxSizeBytes: 0 },
           traces: {
             traceCount: 2,
             spanCount: 2,

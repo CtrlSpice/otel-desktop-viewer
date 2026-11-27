@@ -23,15 +23,13 @@ func GetTraceSpanCount(ctx context.Context, db *sql.DB, traceID string) (int64, 
 // GetStats returns aggregate counts across all telemetry signals as a single
 // JSON object built entirely by DuckDB. sizeBytes and maxSizeBytes describe
 // current storage usage and the retention cap (0 = retention disabled); they
-// are measured by the caller because size lives outside the SQL schema
-// (file stat or duckdb_memory, depending on mode).
-func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int64, inMemory bool) (json.RawMessage, error) {
+// are measured by the caller because size lives outside the SQL schema.
+func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int64) (json.RawMessage, error) {
 	query := `
 		select cast(json_object(
 			'storage', json_object(
 				'sizeBytes',    ?::bigint,
-				'maxSizeBytes', ?::bigint,
-				'inMemory', ?::boolean
+				'maxSizeBytes', ?::bigint
 			),
 			'traces', (select json_object(
 				'traceCount',   count(distinct trace_id),
@@ -75,7 +73,7 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 	`
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, sizeBytes, maxSizeBytes, inMemory).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, sizeBytes, maxSizeBytes).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetStats: %w: %w", ErrStatsInternal, err)
 	}
 	// The projection is a json_object of scalar subqueries over aggregates,

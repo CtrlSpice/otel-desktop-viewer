@@ -456,6 +456,12 @@ func TestGetStats(t *testing.T) {
 	assert.Equal(t, float64(1), stats.Traces.TraceCount)
 	assert.Equal(t, float64(1), stats.Traces.SpanCount)
 	assert.Equal(t, float64(1), stats.Logs.LogCount)
+
+	var decoded struct {
+		Storage map[string]any `json:"storage"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	assert.NotContains(t, decoded.Storage, "inMemory")
 }
 
 // assertAttributeDiscovery unmarshals an attribute-discovery result and checks

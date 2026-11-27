@@ -219,6 +219,6 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return stats.GetStats(ctx, db, sizeBytes, retentionCap, h.store.InMemory())
+		return stats.GetStats(ctx, db, sizeBytes, retentionCap)
 	})
 }
