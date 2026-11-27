@@ -1,0 +1,14 @@
+📥 Import JSON or JSONL files into an existing viewer through its OTLP HTTP receiver. Validates each complete file before sending, preserves telemetry bytes, and splits requests at 20 MiB. Files and requests are sent sequentially; later files continue after a failure. Profiles support is coming soon.
+
+USAGE
+  otel-desktop-viewer import <file> [file...] [flags]
+
+EXAMPLES
+  otel-desktop-viewer import checkout-017.json --endpoint http://localhost:8000
+  otel-desktop-viewer import traces.json logs.json metrics.jsonl
+
+FLAGS
+      --endpoint string   Running viewer HTTP endpoint (default "http://localhost:8000")
+
+GLOBAL FLAGS
+  -h, --help   Help for this command

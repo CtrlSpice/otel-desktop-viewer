@@ -4,135 +4,47 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/internal/collector"
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/otelcol"
 )
 
-const expectedRootHelp = `otel-desktop-viewer
-
-USAGE
-  otel-desktop-viewer [flags]
-  otel-desktop-viewer <command> [flags]
-
-COMMANDS
-  skills      🧠 Print the agent usage guide
-  logs        🪵 Search logs in a running viewer
-  log         🪵 Inspect one complete log
-  metrics     📈 Search metrics in a running viewer
-  metric      📈 Inspect one Metric or its series datapoints
-  traces      🧵 Search traces in a running viewer
-  trace       🧵 Inspect one complete trace
-  span        🧵 Inspect one span
-  attributes  🏷️ Discover attribute keys and values
-  services    🛎️ Discover services and their telemetry counts
-  query       🦆 Run SQL against a running viewer
-  export      📤 Export stored telemetry as OTLP JSON
-  import      📥 Import OTLP JSON files into a running viewer
-
-VIEWER FLAGS
-      --host string                     Address used by viewer/OTLP receivers (default "localhost")
-      --http int                        OTLP HTTP port (default 4318)
-      --grpc int                        OTLP gRPC port (default 4317)
-      --browser-port int                Viewer HTTP port (default 8000)
-      --open-browser                    Open viewer after startup (default true)
-      --db string                       DuckDB file path; omit for managed sessions
-      --db-max-size string              Maximum telemetry-store size (defaults to 2GB; 0 disables pruning)
-      --self-telemetry-endpoint string  Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
-
-GLOBAL FLAGS
-  -h, --help      Help for this command
-  -v, --version   Version for otel-desktop-viewer
-`
-
-const expectedQueryHelp = `🦆 Run one read-only DuckDB query against the existing viewer process. Results use aligned columns by default; --json emits the JSON result.
-
-USAGE
-  otel-desktop-viewer query <sql> [flags]
-
-EXAMPLES
-  otel-desktop-viewer query 'show tables'
-  otel-desktop-viewer query 'describe spans'
-  otel-desktop-viewer query 'select service_name, count(*) from spans group by service_name' --limit 50
-  otel-desktop-viewer query 'select count(*) from logs' --json
-
-FLAGS
-      --endpoint string   Running viewer HTTP endpoint (default "http://localhost:8000")
-      --json              Emit the JSON result instead of columns
-      --limit uint        Maximum rows to return (default 25)
-
-GLOBAL FLAGS
-  -h, --help   Help for this command
-`
-
-const expectedSkillsHelp = `🧠 Print the bundled OTel Desktop Viewer agent usage guide.
-
-USAGE
-  otel-desktop-viewer skills [flags]
-
-GLOBAL FLAGS
-  -h, --help   Help for this command
-`
-
-func expectedTelemetryHelp(command, emoji, signal string, detail ...string) string {
-	description := emoji + " Search existing " + signal + " summaries in the running viewer. The default window is the last hour; output uses aligned columns unless --json is set."
-	if len(detail) > 0 {
-		description += " " + detail[0]
-	}
-	return description + "\n\n" +
-		"USAGE\n  otel-desktop-viewer " + command + " [flags]\n\n" +
-		"EXAMPLES\n" +
-		"  otel-desktop-viewer " + command + "\n" +
-		"  otel-desktop-viewer " + command + " --service checkout --since 30m\n" +
-		"  otel-desktop-viewer " + command + " --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json\n\n" +
-		"FLAGS\n" +
-		"      --end string        Inclusive RFC3339 end time (nanoseconds supported)\n" +
-		"      --endpoint string   Running viewer HTTP endpoint (default \"http://localhost:8000\")\n" +
-		"      --json              Emit the summary response as JSON instead of columns\n" +
-		"      --limit int         Maximum summaries to return (default 25)\n" +
-		"      --service string    Only summaries for this service\n" +
-		"      --since duration    Relative lookback window (for example 30m, 6h, or 24h) (default 1h0m0s)\n" +
-		"      --start string      Inclusive RFC3339 start time (nanoseconds supported)\n\n" +
-		"GLOBAL FLAGS\n  -h, --help   Help for this command\n"
-}
-
-func TestCommandHelpSnapshotsAreOffline(t *testing.T) {
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	for _, test := range []struct {
-		name     string
-		args     []string
-		expected string
+func TestCommandHelpSnapshotsGolden(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
 	}{
-		{name: "root", args: []string{"--help"}, expected: expectedRootHelp},
-		{name: "query", args: []string{"query", "--help"}, expected: expectedQueryHelp},
-		{name: "traces", args: []string{"traces", "--help"}, expected: expectedTelemetryHelp("traces", "🧵", "trace", "With --service, matches use the row’s trace ID unless shown. --json includes both IDs.")},
-		{name: "logs", args: []string{"logs", "--help"}, expected: expectedTelemetryHelp("logs", "🪵", "log")},
-		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric", "Use metricRef to inspect or export a Metric.")},
-		{name: "skills", args: []string{"skills", "--help"}, expected: expectedSkillsHelp},
+		{name: "root", args: []string{"--help"}},
+		{name: "query", args: []string{"query", "--help"}},
+		{name: "traces", args: []string{"traces", "--help"}},
+		{name: "logs", args: []string{"logs", "--help"}},
+		{name: "metrics", args: []string{"metrics", "--help"}},
+		{name: "skills", args: []string{"skills", "--help"}},
+		{name: "services", args: []string{"services", "--help"}},
+		{name: "attributes", args: []string{"attributes", "--help"}},
+		{name: "attributes_keys", args: []string{"attributes", "keys", "--help"}},
+		{name: "attributes_values", args: []string{"attributes", "values", "--help"}},
+		{name: "export_trace", args: []string{"export", "trace", "--help"}},
+		{name: "import", args: []string{"import", "--help"}},
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			started := false
-			cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(context.Context, otelcol.CollectorSettings) error {
-				started = true
-				return nil
-			}, func(string) error {
-				t.Fatal("help opened a browser")
-				return nil
-			})
-			var output bytes.Buffer
-			cmd.SetOut(&output)
-			cmd.SetErr(&output)
-			cmd.SetArgs(test.args)
-			require.NoError(t, cmd.Execute())
-			assert.Equal(t, test.expected, output.String())
+			out, _, err := execCLI(t, cliOptions{
+				client:   offlineHTTPClient(t),
+				mergeErr: true,
+				runViewer: func(context.Context, otelcol.CollectorSettings) error {
+					started = true
+					return nil
+				},
+			}, tc.args...)
+			require.NoError(t, err)
+			assertGolden(t, "help_"+tc.name, out)
 			assert.False(t, started)
 		})
 	}
@@ -142,105 +54,124 @@ func TestSkillsCommandPrintsBundledGuide(t *testing.T) {
 	expected, err := os.ReadFile("../../skills/otel-desktop-viewer/SKILL.md")
 	require.NoError(t, err)
 
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(context.Context, otelcol.CollectorSettings) error {
-		t.Fatal("skills started the viewer")
-		return nil
-	}, func(string) error {
-		t.Fatal("skills opened a browser")
-		return nil
-	})
-	var output bytes.Buffer
-	cmd.SetOut(&output)
-	cmd.SetErr(&output)
-	cmd.SetArgs([]string{"skills"})
-
-	require.NoError(t, cmd.Execute())
-	assert.Equal(t, expected, output.Bytes())
+	out, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t), mergeErr: true}, "skills")
+	require.NoError(t, err)
+	assert.Equal(t, string(expected), out)
 }
 
 func TestHiddenHelpCommandRemainsCallable(t *testing.T) {
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(context.Context, otelcol.CollectorSettings) error {
-		t.Fatal("help started the viewer")
-		return nil
-	}, func(string) error { return nil })
-	var output bytes.Buffer
-	cmd.SetOut(&output)
-	cmd.SetErr(&output)
-	cmd.SetArgs([]string{"help", "query"})
-	require.NoError(t, cmd.Execute())
-	assert.Equal(t, expectedQueryHelp, output.String())
+	out, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t), mergeErr: true}, "help", "query")
+	require.NoError(t, err)
+	assertGolden(t, "help_query", out)
 }
 
 func TestUsageErrorsAndRuntimeErrorsHaveDistinctOutput(t *testing.T) {
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	newTestCommand := func(runViewer runCollectorFunc) (*bytes.Buffer, *cobra.Command) {
-		output := &bytes.Buffer{}
-		cmd := newRootCommand(settings, http.DefaultClient, time.Now, runViewer, func(string) error { return nil })
-		cmd.SetOut(output)
-		cmd.SetErr(output)
-		return output, cmd
-	}
+	noopViewer := func(context.Context, otelcol.CollectorSettings) error { return nil }
+	noopOpen := func(string) error { return nil }
 
 	for _, args := range [][]string{{"unknown"}, {"--not-a-flag"}, {"query"}, {"traces", "unexpected"}} {
-		output, cmd := newTestCommand(func(context.Context, otelcol.CollectorSettings) error { return nil })
-		cmd.SetArgs(args)
-		require.Error(t, cmd.Execute())
-		assert.Contains(t, output.String(), "USAGE")
+		out, _, err := execCLI(t, cliOptions{
+			client:    offlineHTTPClient(t),
+			runViewer: noopViewer,
+			openURL:   noopOpen,
+			mergeErr:  true,
+		}, args...)
+		require.Error(t, err)
+		assert.Contains(t, out, "USAGE")
 	}
 
 	runtimeFailure := errors.New("database unavailable")
-	output, cmd := newTestCommand(func(context.Context, otelcol.CollectorSettings) error { return runtimeFailure })
-	cmd.SetArgs([]string{"--open-browser=false"})
-	err := cmd.Execute()
+	out, _, err := execCLI(t, cliOptions{
+		client:    offlineHTTPClient(t),
+		runViewer: func(context.Context, otelcol.CollectorSettings) error { return runtimeFailure },
+		openURL:   noopOpen,
+		mergeErr:  true,
+	}, "--open-browser=false")
 	require.ErrorIs(t, err, runtimeFailure)
-	assert.Empty(t, output.String(), "the process boundary owns the single error print")
+	assert.Empty(t, out, "the process boundary owns the single error print")
 	assert.NotContains(t, err.Error(), "collector server run finished")
 }
 
-func TestViewerStartupUsesParsedFlagsAndBrowserContext(t *testing.T) {
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	var defaults otelcol.CollectorSettings
-	defaultCommand := newRootCommand(settings, http.DefaultClient, time.Now, func(_ context.Context, set otelcol.CollectorSettings) error {
-		defaults = set
-		return nil
-	}, func(string) error {
-		t.Fatal("--open-browser=false opened a URL")
-		return nil
+// TestStartupFailureIsNotAnsweredWithUsage distinguishes command errors from
+// collector startup failures. Usage remains enabled until flag parsing succeeds.
+func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
+	set := collector.Settings("test")
+
+	t.Run("a bad flag still prints usage", func(t *testing.T) {
+		cmd := newCommand(set)
+		cmd.SetArgs([]string{"--nonsense-flag"})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		err := cmd.Execute()
+		require.Error(t, err)
+		assert.Contains(t, out.String(), "USAGE",
+			"a mistyped flag is exactly what usage exists to explain")
 	})
-	defaultCommand.SetArgs([]string{"--open-browser=false"})
-	require.NoError(t, defaultCommand.Execute())
+
+	// RunE must enable usage silencing; its initial value alone proves nothing.
+	t.Run("reaching RunE arms the silencing", func(t *testing.T) {
+		cmd := newCommand(set)
+		require.False(t, cmd.SilenceUsage,
+			"not on the command, or a mistyped flag would be silenced too")
+		require.True(t, cmd.SilenceErrors,
+			"the process boundary prints returned errors once")
+
+		// Enter RunE with a config that cannot start.
+		cmd.SetArgs([]string{"--db", filepath.Join(t.TempDir(), "no", "such", "dir", "x.db")})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		_ = cmd.Execute()
+
+		assert.True(t, cmd.SilenceUsage,
+			"RunE must silence usage: past flag parsing, a failure is not a usage mistake")
+		assert.True(t, cmd.SilenceErrors)
+		assert.NotContains(t, out.String(), "USAGE",
+			"a startup failure must not be answered with the flag listing")
+	})
+}
+
+func TestViewerStartupUsesParsedFlagsAndBrowserContext(t *testing.T) {
+	var defaults otelcol.CollectorSettings
+	_, _, err := execCLI(t, cliOptions{
+		runViewer: func(_ context.Context, set otelcol.CollectorSettings) error {
+			defaults = set
+			return nil
+		},
+	}, "--open-browser=false")
+	require.NoError(t, err)
 	assert.Equal(t, collector.URIs(collector.ConfigOptions{Host: "localhost", HTTPPort: 4318, GRPCPort: 4317, BrowserPort: 8000}), defaults.ConfigProviderSettings.ResolverSettings.URIs)
 
 	for _, badDB := range []string{"", "   ", ":memory:", ":MEMORY:"} {
 		t.Run("rejects invalid --db "+badDB, func(t *testing.T) {
-			cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(context.Context, otelcol.CollectorSettings) error {
-				t.Fatalf("--db %q should have failed before starting the viewer", badDB)
-				return nil
-			}, func(string) error {
-				t.Fatalf("--db %q opened a browser", badDB)
-				return nil
-			})
-			cmd.SetOut(&bytes.Buffer{})
-			cmd.SetErr(&bytes.Buffer{})
-			cmd.SetArgs([]string{"--open-browser=false", "--db", badDB})
-			err := cmd.Execute()
+			_, _, err := execCLI(t, cliOptions{
+				runViewer: func(context.Context, otelcol.CollectorSettings) error {
+					t.Fatalf("--db %q should have failed before starting the viewer", badDB)
+					return nil
+				},
+				openURL: func(string) error {
+					t.Fatalf("--db %q opened a browser", badDB)
+					return nil
+				},
+			}, "--open-browser=false", "--db", badDB)
 			require.Error(t, err)
 		})
 	}
 
 	var received otelcol.CollectorSettings
 	opened := make(chan string, 1)
-	cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(_ context.Context, set otelcol.CollectorSettings) error {
-		received = set
-		return nil
-	}, func(url string) error {
-		opened <- url
-		return nil
-	})
-	cmd.SetArgs([]string{"--host", "0.0.0.0", "--http", "14318", "--grpc", "14317", "--browser-port", "18000", "--db", "viewer.duckdb", "--db-max-size", "3GB", "--self-telemetry-endpoint", "http://localhost:4327"})
-	require.NoError(t, cmd.Execute())
+	_, _, err = execCLI(t, cliOptions{
+		runViewer: func(_ context.Context, set otelcol.CollectorSettings) error {
+			received = set
+			return nil
+		},
+		openURL: func(url string) error {
+			opened <- url
+			return nil
+		},
+	}, "--host", "0.0.0.0", "--http", "14318", "--grpc", "14317", "--browser-port", "18000", "--db", "viewer.duckdb", "--db-max-size", "3GB", "--self-telemetry-endpoint", "http://localhost:4327")
+	require.NoError(t, err)
 	expected := collector.ConfigOptions{Host: "0.0.0.0", HTTPPort: 14318, GRPCPort: 14317, BrowserPort: 18000, DB: "viewer.duckdb", DBMaxSize: "3GB", SelfTelemetryEndpoint: "http://localhost:4327"}
 	assert.Equal(t, collector.URIs(expected), received.ConfigProviderSettings.ResolverSettings.URIs)
 	assert.Equal(t, "env", received.ConfigProviderSettings.ResolverSettings.DefaultScheme)
@@ -260,22 +191,13 @@ func TestViewerStartupUsesParsedFlagsAndBrowserContext(t *testing.T) {
 }
 
 func TestRemovedTelemetryFlagIsRejected(t *testing.T) {
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(context.Context, otelcol.CollectorSettings) error {
-		t.Fatal("removed flag started the viewer")
-		return nil
-	}, func(string) error { return nil })
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--telemetry"})
-
-	err := cmd.Execute()
+	_, _, err := execCLI(t, cliOptions{openURL: func(string) error { return nil }}, "--telemetry")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown flag: --telemetry")
 }
 
 func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
-	cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}})
+	cmd := newCommand(testCollectorSettings())
 	var names []string
 	for _, child := range cmd.Commands() {
 		if !child.Hidden {
@@ -287,11 +209,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}
 	for _, forbidden := range []string{"components", "featuregate", "validate", "print-config", "completion", "run", "serve"} {
-		candidate := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}})
-		candidate.SetOut(&bytes.Buffer{})
-		candidate.SetErr(&bytes.Buffer{})
-		candidate.SetArgs([]string{forbidden})
-		err := candidate.Execute()
+		_, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t)}, forbidden)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown command")
 	}
@@ -300,11 +218,12 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 func TestViewerReceivesCommandCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
-	cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(runContext context.Context, _ otelcol.CollectorSettings) error {
-		return runContext.Err()
-	}, func(string) error { return nil })
-	cmd.SetContext(ctx)
-	cmd.SetArgs([]string{"--open-browser=false"})
-	require.ErrorIs(t, cmd.Execute(), context.Canceled)
+	_, _, err := execCLI(t, cliOptions{
+		ctx: ctx,
+		runViewer: func(runContext context.Context, _ otelcol.CollectorSettings) error {
+			return runContext.Err()
+		},
+		openURL: func(string) error { return nil },
+	}, "--open-browser=false")
+	require.ErrorIs(t, err, context.Canceled)
 }

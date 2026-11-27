@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -11,13 +9,10 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/otelcol"
 )
 
 // Execute the CLI's actual SQL with the pinned DuckDB engine. The HTTP fixture
@@ -88,17 +83,9 @@ create macro attribute_native_field(parts, key_) as json_extract(
 	return db, viewer
 }
 
-func attributeTestRun(t *testing.T, endpoint string, args ...string) string {
+func runAttributesCLI(t *testing.T, endpoint string, args ...string) string {
 	t.Helper()
-	cmd := newAttributesCommand(http.DefaultClient, func() time.Time {
-		return time.Unix(10000, 0)
-	})
-	var output bytes.Buffer
-	cmd.SetOut(&output)
-	cmd.SetErr(&output)
-	cmd.SetArgs(append(args, "--endpoint", endpoint))
-	require.NoError(t, cmd.Execute())
-	return output.String()
+	return mustRunCLIAt(t, defaultTestClock, append(append([]string{"attributes"}, args...), "--endpoint", endpoint)...)
 }
 
 func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
@@ -115,7 +102,7 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
  ('00000000-0000-0000-0000-000000000002', 8, 7000000000000, 'checkout', '{"method":{"kind":"string","value":"9007199254740993"}}'::json::variant)`)
 	require.NoError(t, err)
 	var keys attributeKeysResult
-	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "keys", "--owner-type", "span", "--json", "--service", "checkout")), &keys))
+	require.NoError(t, json.Unmarshal([]byte(runAttributesCLI(t, viewer.URL, "keys", "--owner-type", "span", "--json", "--service", "checkout")), &keys))
 	assert.Equal(t, []attributeKey{
 		{Key: "method", Kind: "int64", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "span"}}},
 		{Key: "method", Kind: "string", FoundOn: []attributeLocation{{Signal: "traces", OwnerType: "span"}}},
@@ -123,7 +110,7 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 	assert.False(t, keys.Truncated)
 
 	var values attributeValuesResult
-	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--json")), &values))
+	require.NoError(t, json.Unmarshal([]byte(runAttributesCLI(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--json")), &values))
 	require.Len(t, values.Values, 4)
 	assert.False(t, values.Truncated)
 	assert.JSONEq(t, `{"kind":"string","value":"GET"}`, string(values.Values[0].Value))
@@ -142,19 +129,19 @@ func TestAttributeCommandsCountOwnersAndPreserveKinds(t *testing.T) {
 		truncated bool
 	}{{"1", 1, true}, {"4", 4, false}, {"5", 4, false}} {
 		var limited attributeValuesResult
-		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--json", "--limit", test.limit)), &limited))
+		require.NoError(t, json.Unmarshal([]byte(runAttributesCLI(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--json", "--limit", test.limit)), &limited))
 		require.Len(t, limited.Values, test.count)
 		assert.Equal(t, test.truncated, limited.Truncated)
 		assert.Equal(t, uint64(5), limited.Values[0].Denominator, "limit must not change the denominator")
 	}
-	output := attributeTestRun(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--limit", "1")
+	output := runAttributesCLI(t, viewer.URL, "values", "method", "--owner-type", "span", "--service", "checkout", "--limit", "1")
 	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "40.00%", "more rows available"} {
 		assert.Contains(t, output, text)
 	}
 	assert.NotContains(t, output, "█")
 	assert.NotContains(t, output, "▇")
 	assert.NotContains(t, output, "POST")
-	assert.JSONEq(t, `{"key":"missing","values":[],"truncated":false}`, attributeTestRun(t, viewer.URL, "values", "missing", "--owner-type", "span", "--json"))
+	assert.JSONEq(t, `{"key":"missing","values":[],"truncated":false}`, runAttributesCLI(t, viewer.URL, "values", "missing", "--owner-type", "span", "--json"))
 }
 
 func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testing.T) {
@@ -176,7 +163,7 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 		require.NoError(t, err)
 	}
 	var result attributeValuesResult
-	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, viewer.URL, "values", key, "--owner-type", "span", "--service", service, "--json")), &result))
+	require.NoError(t, json.Unmarshal([]byte(runAttributesCLI(t, viewer.URL, "values", key, "--owner-type", "span", "--service", service, "--json")), &result))
 	require.Len(t, result.Values, len(values))
 	actual := make([]any, 0, len(result.Values))
 	for _, value := range result.Values {
@@ -192,44 +179,33 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 		expected = append(expected, decoded)
 	}
 	assert.ElementsMatch(t, expected, actual)
-	assert.JSONEq(t, `{"keys":[],"truncated":false}`, attributeTestRun(t, viewer.URL, "keys", "--owner-type", "span", "--service", "absent", "--json"))
+	assert.JSONEq(t, `{"keys":[],"truncated":false}`, runAttributesCLI(t, viewer.URL, "keys", "--owner-type", "span", "--service", "absent", "--json"))
 }
 
 func TestAttributesOfflineHelpAndValidation(t *testing.T) {
-	for _, args := range [][]string{{"attributes"}, {"attributes", "--help"}, {"attributes", "keys", "--help"}, {"attributes", "values", "--help"}} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			client := &http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
-				t.Fatal("help made an HTTP request")
-				return nil, nil
-			})}
-			cmd := newRootCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}}, client, time.Now,
-				func(context.Context, otelcol.CollectorSettings) error { t.Fatal("help started a viewer"); return nil },
-				func(string) error { t.Fatal("help opened a browser"); return nil })
-			var output bytes.Buffer
-			cmd.SetOut(&output)
-			cmd.SetErr(&output)
-			cmd.SetArgs(args)
-			require.NoError(t, cmd.Execute())
-			assert.Contains(t, output.String(), "USAGE")
-			if len(args) < 3 {
-				assert.Contains(t, output.String(), "keys")
-				assert.Contains(t, output.String(), "values")
-			} else {
-				for _, flag := range []string{"--limit", "--signal", "--owner-type", "--start", "--end", "--since", "--service", "--json", "--endpoint"} {
-					assert.Contains(t, output.String(), flag)
-				}
-			}
+	for _, tc := range []struct {
+		args   []string
+		golden string
+	}{
+		{[]string{"attributes"}, "help_attributes"},
+		{[]string{"attributes", "--help"}, "help_attributes"},
+		{[]string{"attributes", "keys", "--help"}, "help_attributes_keys"},
+		{[]string{"attributes", "values", "--help"}, "help_attributes_values"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			out, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t), mergeErr: true}, tc.args...)
+			require.NoError(t, err)
+			assertGolden(t, tc.golden, out)
 		})
 	}
-	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", ""}, {"values", "key", "--owner-type", ""}, {"keys", "--signal", "logs", "--owner-type", "span"}, {"values", "key", "--owner-type", "unknown"}, {"keys", "--signal", "unknown"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
-		cmd := newAttributesCommand(&http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
-			t.Fatal("invalid input made an HTTP request")
-			return nil, nil
-		})}, time.Now)
-		cmd.SetOut(&bytes.Buffer{})
-		cmd.SetErr(&bytes.Buffer{})
-		cmd.SetArgs(args)
-		require.Error(t, cmd.Execute())
+	for _, args := range [][]string{
+		{"values"}, {"keys", "extra"}, {"keys", "--signal", ""}, {"values", "key", "--owner-type", ""},
+		{"keys", "--signal", "logs", "--owner-type", "span"}, {"values", "key", "--owner-type", "unknown"},
+		{"keys", "--signal", "unknown"}, {"keys", "--limit", "0"},
+		{"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"},
+	} {
+		_, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t)}, append([]string{"attributes"}, args...)...)
+		require.Error(t, err)
 	}
 }
 
