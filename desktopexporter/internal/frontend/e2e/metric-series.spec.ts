@@ -3060,6 +3060,117 @@ test.describe('independent histogram aggregate loading', () => {
   }
 })
 
+async function setupHistogramHighlightPage(
+  page: Page,
+  metricType: 'Histogram' | 'ExponentialHistogram',
+  theme: ThemeName
+) {
+  const datapoints: PointFixture[] = [0, 1].map(index => {
+    const common = {
+      id: `hist-${index}`,
+      timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
+      timestampMs: startMs + index * 1000,
+      startTime: startNs,
+      flags: 0,
+      exemplars: [],
+      count: '12',
+      sum: 18,
+      min: 0,
+      max: 4,
+      quantiles: { '0.5': 100, '0.95': 200, '0.99': 300 },
+      aggregationTemporalityCode: 1,
+      aggregationTemporality: 'Delta',
+    }
+    return metricType === 'Histogram'
+      ? {
+          ...common,
+          metricType,
+          explicitBounds: [1, 2],
+          bucketCounts: ['2', '7', '3'],
+        }
+      : {
+          ...common,
+          metricType,
+          scale: 0,
+          zeroCount: '2',
+          zeroThreshold: 0.1,
+          positiveBucketOffset: 0,
+          positiveBucketCounts: ['7', '3'],
+          negativeBucketOffset: 0,
+          negativeBucketCounts: [],
+        }
+  })
+  const aggregate: AggregateFixture[] = datapoints.map(point => ({
+    timestamp: point.timestamp,
+    startTime: startNs,
+    count: 12,
+    sum: 18,
+    min: 0,
+    max: 4,
+    quantiles: { '0.5': 1.5, '0.95': 1.9, '0.99': 2 },
+    ...(point.metricType === 'Histogram'
+      ? { explicitBounds: [1, 2], bucketCounts: [2, 7, 3] }
+      : {
+          scale: 0,
+          zeroCount: 2,
+          zeroThreshold: 0.1,
+          positiveBucketOffset: 0,
+          positiveBucketCounts: [7, 3],
+          negativeBucketOffset: 0,
+          negativeBucketCounts: [],
+        }),
+  }))
+  const histogramMetric: MetricFixture = {
+    ...metric,
+    metricType,
+    aggregationTemporalityCode: 1,
+    aggregationTemporality: 'Delta',
+    datapointCount: 2,
+    timeseries: [{ ...timeseries[0]!, datapoints, datapointCount: 2 }],
+  }
+  await routeTelemetry(page, async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    if (request.method === 'getMetric') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: exactMetricFixture(histogramMetric),
+        },
+      })
+      return
+    }
+    const result =
+      request.method === 'getMetricView'
+        ? histogramMetric
+        : request.method === 'getMetricAggregateView'
+          ? { aggregate, scalarAggregate: null }
+          : request.method === 'searchMetricSummaries'
+            ? [
+                {
+                  ...summary,
+                  metricType,
+                  aggregationTemporalityCode: 1,
+                  aggregationTemporality: 'Delta',
+                  seriesCount: 1,
+                  seriesCardinality: 1,
+                  dataPointCount: 2,
+                },
+              ]
+            : undefined
+    if (result === undefined) return route.fallback()
+    await route.fulfill({
+      json: { jsonrpc: '2.0', id: request.id, result },
+    })
+  })
+  await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+}
+
 for (const { id: theme } of THEMES) {
   const hoverColour = themeRgb(theme, 'highlightLow')
   const selectedColour = themeRgb(theme, 'highlightMedium')
@@ -3068,113 +3179,7 @@ for (const { id: theme } of THEMES) {
     test(`${metricType} graph highlights use rounded neutral interaction roles in ${theme}`, async ({
       page,
     }) => {
-      const datapoints: PointFixture[] = [0, 1].map(index => {
-        const common = {
-          id: `hist-${index}`,
-          timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
-          timestampMs: startMs + index * 1000,
-          startTime: startNs,
-          flags: 0,
-          exemplars: [],
-          count: '12',
-          sum: 18,
-          min: 0,
-          max: 4,
-          quantiles: { '0.5': 100, '0.95': 200, '0.99': 300 },
-          aggregationTemporalityCode: 1,
-          aggregationTemporality: 'Delta',
-        }
-        return metricType === 'Histogram'
-          ? {
-              ...common,
-              metricType,
-              explicitBounds: [1, 2],
-              bucketCounts: ['2', '7', '3'],
-            }
-          : {
-              ...common,
-              metricType,
-              scale: 0,
-              zeroCount: '2',
-              zeroThreshold: 0.1,
-              positiveBucketOffset: 0,
-              positiveBucketCounts: ['7', '3'],
-              negativeBucketOffset: 0,
-              negativeBucketCounts: [],
-            }
-      })
-      const aggregate: AggregateFixture[] = datapoints.map(point => ({
-        timestamp: point.timestamp,
-        startTime: startNs,
-        count: 12,
-        sum: 18,
-        min: 0,
-        max: 4,
-        quantiles: { '0.5': 1.5, '0.95': 1.9, '0.99': 2 },
-        ...(point.metricType === 'Histogram'
-          ? { explicitBounds: [1, 2], bucketCounts: [2, 7, 3] }
-          : {
-              scale: 0,
-              zeroCount: 2,
-              zeroThreshold: 0.1,
-              positiveBucketOffset: 0,
-              positiveBucketCounts: [7, 3],
-              negativeBucketOffset: 0,
-              negativeBucketCounts: [],
-            }),
-      }))
-      const histogramMetric: MetricFixture = {
-        ...metric,
-        metricType,
-        aggregationTemporalityCode: 1,
-        aggregationTemporality: 'Delta',
-        datapointCount: 2,
-        timeseries: [{ ...timeseries[0]!, datapoints, datapointCount: 2 }],
-      }
-      await routeTelemetry(page, async route => {
-        const request = route.request().postDataJSON() as {
-          id: number
-          method: string
-        }
-        if (request.method === 'getMetric') {
-          await route.fulfill({
-            json: {
-              jsonrpc: '2.0',
-              id: request.id,
-              result: exactMetricFixture(histogramMetric),
-            },
-          })
-          return
-        }
-        const result =
-          request.method === 'getMetricView'
-            ? histogramMetric
-            : request.method === 'getMetricAggregateView'
-              ? { aggregate, scalarAggregate: null }
-              : request.method === 'searchMetricSummaries'
-                ? [
-                    {
-                      ...summary,
-                      metricType,
-                      aggregationTemporalityCode: 1,
-                      aggregationTemporality: 'Delta',
-                      seriesCount: 1,
-                      seriesCardinality: 1,
-                      dataPointCount: 2,
-                    },
-                  ]
-                : undefined
-        if (result === undefined) return route.fallback()
-        await route.fulfill({
-          json: { jsonrpc: '2.0', id: request.id, result },
-        })
-      })
-      await page.addInitScript(
-        theme => localStorage.setItem('theme', theme),
-        theme
-      )
-      await page.setViewportSize({ width: 1440, height: 1000 })
-      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await setupHistogramHighlightPage(page, metricType, theme)
 
       for (const [
         tab,
@@ -3570,21 +3575,8 @@ for (const { id: theme } of THEMES) {
         await expect(quantileLabels).toHaveCount(0)
         await expect(page.locator('.heatmap-quantile-channel')).toHaveCount(0)
         await expect(countLegend).toBeVisible()
-        if (theme === 'madoromi-fuyu-yoru') {
-          const url = page.url()
-          await page.reload()
-          await expect(overlaysToggle).not.toBeChecked()
-          await expect(countLegend).toBeVisible()
-          await expect(quantileLines).toHaveCount(0)
-          await expect(page).toHaveURL(url)
-        }
         await overlaysToggle.check()
         await expect(quantileLines).toHaveCount(3)
-        if (theme === 'madoromi-fuyu-yoru') {
-          await page.reload()
-          await expect(overlaysToggle).toBeChecked()
-          await expect(quantileLines).toHaveCount(3)
-        }
       }
       await page.goto(
         `/metrics/${metric.metricRef}?htab=quantiles&hscope=window&series=first&dp=hist-0`
@@ -3594,42 +3586,92 @@ for (const { id: theme } of THEMES) {
       ).toHaveAttribute('aria-selected', 'true')
       await expect(page.locator('.heatmap-quantile-line')).toHaveCount(3)
       expect(new URL(page.url()).searchParams.get('dp')).toBe('hist-0')
-      if (theme === 'madoromi-fuyu-yoru' && metricType === 'Histogram') {
-        await page
-          .getByRole('button', { name: 'Collapse sidebar', exact: true })
-          .click()
-        await page
-          .getByRole('button', { name: 'Collapse details', exact: true })
-          .click()
-        await page
-          .getByRole('checkbox', {
-            name: 'Show Percentiles',
-            exact: true,
-          })
-          .uncheck()
-        await page.setViewportSize({ width: 390, height: 1000 })
-        await expect(
-          page.getByRole('checkbox', {
-            name: 'Show Percentiles',
-            exact: true,
-          })
-        ).not.toBeChecked()
-        await expect(
-          page.locator('.pane-header').getByRole('checkbox', {
-            name: 'Show Percentiles',
-            exact: true,
-          })
-        ).toBeVisible()
-        expect(
-          await page.evaluate(
-            () => document.documentElement.scrollWidth <= window.innerWidth
-          )
-        ).toBe(true)
-        expect(new URL(page.url()).searchParams.get('dp')).toBe('hist-0')
-      }
     })
   }
 }
+
+for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
+  test(`${metricType} percentile overlay toggle persists across reload in madoromi-fuyu-yoru`, async ({
+    page,
+  }) => {
+    await setupHistogramHighlightPage(page, metricType, 'madoromi-fuyu-yoru')
+    for (const [tab, lineSelector, legendLabel] of [
+      ['histogram', '.quantile-line', 'Histogram count scale'],
+      ['heatmap', '.heatmap-quantile-line', 'Heatmap count scale'],
+    ] as const) {
+      await page.goto(`/metrics/${metric.metricRef}?htab=${tab}&hscope=window`)
+      const quantileLines = page.locator(lineSelector)
+      const countLegend = page.getByRole('list', {
+        name: legendLabel,
+        exact: true,
+      })
+      await expect(quantileLines).toHaveCount(3)
+      await expect(countLegend).toBeVisible()
+      const overlaysToggle = page.getByRole('checkbox', {
+        name: 'Show Percentiles',
+        exact: true,
+      })
+      await overlaysToggle.uncheck()
+      await expect(quantileLines).toHaveCount(0)
+      await expect(countLegend).toBeVisible()
+      const url = page.url()
+      await page.reload()
+      await expect(overlaysToggle).not.toBeChecked()
+      await expect(countLegend).toBeVisible()
+      await expect(quantileLines).toHaveCount(0)
+      await expect(page).toHaveURL(url)
+      await overlaysToggle.check()
+      await expect(quantileLines).toHaveCount(3)
+      await page.reload()
+      await expect(overlaysToggle).toBeChecked()
+      await expect(quantileLines).toHaveCount(3)
+    }
+  })
+}
+
+test('Histogram percentile toggle stays visible without overflow at narrow width', async ({
+  page,
+}) => {
+  await setupHistogramHighlightPage(page, 'Histogram', 'madoromi-fuyu-yoru')
+  await page.goto(
+    `/metrics/${metric.metricRef}?htab=quantiles&hscope=window&series=first&dp=hist-0`
+  )
+  await expect(
+    page.getByRole('tab', { name: 'Heatmap', exact: true })
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.heatmap-quantile-line')).toHaveCount(3)
+  await page
+    .getByRole('button', { name: 'Collapse sidebar', exact: true })
+    .click()
+  await page
+    .getByRole('button', { name: 'Collapse details', exact: true })
+    .click()
+  await page
+    .getByRole('checkbox', {
+      name: 'Show Percentiles',
+      exact: true,
+    })
+    .uncheck()
+  await page.setViewportSize({ width: 390, height: 1000 })
+  await expect(
+    page.getByRole('checkbox', {
+      name: 'Show Percentiles',
+      exact: true,
+    })
+  ).not.toBeChecked()
+  await expect(
+    page.locator('.pane-header').getByRole('checkbox', {
+      name: 'Show Percentiles',
+      exact: true,
+    })
+  ).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth
+    )
+  ).toBe(true)
+  expect(new URL(page.url()).searchParams.get('dp')).toBe('hist-0')
+})
 
 test('line stickies stay near their marker and avoid measured stat labels after resizing', async ({
   page,
