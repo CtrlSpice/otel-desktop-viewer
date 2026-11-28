@@ -1,4 +1,4 @@
-// Generates the viewer's Madoromi adapter from the pinned MPL-2.0 sources.
+// Generates the viewer's Madoromi themes and graph palette from pinned MPL-2.0 sources.
 // Madoromi by samhain (the-moonwitch): https://github.com/the-moonwitch/madoromi
 // Pinned revision: f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -27,7 +27,6 @@ interface Flavour {
 
 interface PaletteFile {
   flavours: Record<string, Flavour>
-  accents: Array<{ key: string }>
   seasons: Array<{ grey: string }>
 }
 
@@ -68,14 +67,6 @@ interface ThemeDefinition {
   name: string
   colors: ThemeColors
   syntax: Record<string, string>
-}
-
-interface Adjustment {
-  theme: string
-  role: string
-  original: string
-  adjusted: string
-  minContrast: number
 }
 
 interface InterfaceInkSource {
@@ -133,21 +124,6 @@ const { oklabToHex, oklabToOklch, toSrgbGamut }: ColorModule = await import(
 
 const TINT = 0.2
 const TEXT_CONTRAST = 4.5
-const roles = {
-  text: 'sumi',
-  subtle: 'usuzumi1',
-  muted: 'kasure1',
-  primary: 'fuji',
-  secondary: 'ruri',
-  accent: 'tokiwa',
-  sakura: 'sakura',
-  warning: 'yamabuki',
-  error: 'beni',
-  info: 'sora',
-  success: 'wakaba',
-} as const
-
-type RoleKey = keyof typeof roles
 
 const seasons = {
   haru: 'Spring',
@@ -163,15 +139,6 @@ const surfaceKeys = [
   'highlightLow',
   'highlightMedium',
 ] as const
-
-const readableRoles = [
-  'text',
-  'primary',
-  'secondary',
-  'accent',
-  'info',
-  'success',
-] as const satisfies readonly RoleKey[]
 
 function at(
   swatch: Pick<Swatch, 'oklch'>,
@@ -205,10 +172,6 @@ function inkLabAt(ink: string, L: number): Vec3 {
     lab[i * 3 + 1] + (lab[(i + 1) * 3 + 1] - lab[i * 3 + 1]) * f,
     lab[i * 3 + 2] + (lab[(i + 1) * 3 + 2] - lab[i * 3 + 2]) * f,
   ]
-}
-
-function inkAt(ink: string, L: number): string {
-  return oklabToHex(inkLabAt(ink, L))
 }
 
 function luminance(hex: string): number {
@@ -259,83 +222,36 @@ function selection(fg: string, bg: string): string {
   )
 }
 
-const adjustments: Adjustment[] = []
-const definitions: Record<string, ThemeDefinition> = Object.fromEntries(
+// Compute seasonal surfaces first so shared Day/Night accents can be checked
+// against all four seasons' five surfaces together.
+const surfaces = Object.fromEntries(
   Object.entries(palette.flavours).map(([id, f]) => {
     const c = f.colours
     const tint = (key: string): string => at(c[key], c[key].oklch[0], TINT)
-    const colors: ThemeColors = {
-      canvas: tint('kami'),
-      panel: tint('hyoshi'),
-      chrome: tint('chitsu'),
-      text: c[roles.text].hex,
-      subtle: c[roles.subtle].hex,
-      muted: c[roles.muted].hex,
-      primary: c[roles.primary].hex,
-      secondary: c[roles.secondary].hex,
-      accent: c[roles.accent].hex,
-      sakura: c[roles.sakura].hex,
-      warning: c[roles.warning].hex,
-      error: c[roles.error].hex,
-      info: c[roles.info].hex,
-      success: c[roles.success].hex,
-      highlightLow: tint('nijimi0'),
-      highlightMedium: selection(tint('nijimi2'), tint('hyoshi')),
-      highlightHigh: tint('nijimi1'),
-    }
-    const backgrounds = surfaceKeys.map(key => colors[key])
-    for (const role of readableRoles) {
-      const original = colors[role]
-      const swatch = c[roles[role]]
-      colors[role] = readable(swatch, backgrounds, f.dark)
-      if (colors[role] !== original) {
-        adjustments.push({
-          theme: id,
-          role,
-          original,
-          adjusted: colors[role],
-          minContrast: Math.min(
-            ...backgrounds.map(bg => contrast(colors[role], bg))
-          ),
-        })
-      }
-    }
-    const syntax: Record<string, string> = Object.fromEntries(
-      [
-        ...palette.accents.map(({ key }) => key),
-        'sumi',
-        'kasure2',
-        'usuzumi0',
-      ].map(key => [key, readable(c[key], backgrounds, f.dark)])
-    )
-    // Editor outlines and bracket fills are marks, not text foregrounds.
-    syntax.kasure0 = c.kasure0.hex
-    syntax.nijimi2 = tint('nijimi2')
+    const canvas = tint('kami')
+    const panel = tint('hyoshi')
+    const chrome = tint('chitsu')
+    const highlightLow = tint('nijimi0')
+    const highlightMedium = selection(tint('nijimi2'), panel)
+    const highlightHigh = tint('nijimi1')
     return [
       `madoromi-${id}`,
       {
-        name: `${seasons[f.season]} ${f.dark ? 'Night' : 'Day'}`,
-        colors,
-        syntax,
+        flavour: f,
+        colors: {
+          canvas,
+          panel,
+          chrome,
+          highlightLow,
+          highlightMedium,
+          highlightHigh,
+        },
+        backgrounds: [canvas, panel, chrome, highlightLow, highlightMedium],
+        nijimi2: tint('nijimi2'),
       },
     ]
   })
 )
-const json = JSON.stringify(definitions, null, 2) + '\n'
-await writeFile(new URL('src/themes/madoromi.json', frontend), json)
-
-// Full measured curves, equally spaced in OKLab lightness including endpoints.
-// Store each adaptive size independently; shorter ramps are never prefixes.
-// Keep the graph catalogue colourful: omit the seasonal neutral families and
-// the remaining black, muted-green and brown-dominant ramps.
-const neutralInks = new Set([
-  ...palette.seasons.map(season => season.grey),
-  'take-sumi',
-  'hoteison',
-  'syun-gyo',
-  'tsukushi',
-])
-const countInks = inkOrder.filter(id => !neutralInks.has(id))
 
 // Six complementary roles inspired by Rose Pine's balance, using Madoromi inks.
 // Sample each source once to retain its hue in both modes, then soften chroma.
@@ -372,21 +288,14 @@ const syntaxRoles = {
   ai: 'rose',
 } satisfies Record<string, keyof typeof interfaceInks>
 
-// Check each mode against every seasonal surface so accents stay exactly the
-// same between seasons, not just similar. Only Day/Night changes their strength.
-const interfaceModes: Record<'day' | 'night', InterfaceModePalette> = {
-  day: buildInterfaceMode('day'),
-  night: buildInterfaceMode('night'),
-}
-
 function buildInterfaceMode(mode: 'day' | 'night'): InterfaceModePalette {
   const dark = mode === 'night'
   const suffix = dark ? '-yoru' : '-hiru'
   const backgrounds: string[] = []
-  for (const [id, theme] of Object.entries(definitions)) {
+  for (const [id, surface] of Object.entries(surfaces)) {
     if (!id.endsWith(suffix)) continue
     for (const key of surfaceKeys) {
-      backgrounds.push(theme.colors[key])
+      backgrounds.push(surface.colors[key])
     }
   }
   const accents: Record<string, string> = Object.fromEntries(
@@ -414,22 +323,71 @@ function buildInterfaceMode(mode: 'day' | 'night'): InterfaceModePalette {
   }
 }
 
-const interfacePalette = Object.fromEntries(
-  Object.keys(definitions).map(id => [
-    id,
-    interfaceModes[id.endsWith('-yoru') ? 'night' : 'day'],
-  ])
+const interfaceModes: Record<'day' | 'night', InterfaceModePalette> = {
+  day: buildInterfaceMode('day'),
+  night: buildInterfaceMode('night'),
+}
+
+const themes: Record<string, ThemeDefinition> = Object.fromEntries(
+  Object.entries(surfaces).map(([id, surface]) => {
+    const f = surface.flavour
+    const c = f.colours
+    const mode = interfaceModes[f.dark ? 'night' : 'day']
+    const text = readable(c.sumi, surface.backgrounds, f.dark)
+    return [
+      id,
+      {
+        name: `${seasons[f.season]} ${f.dark ? 'Night' : 'Day'}`,
+        colors: {
+          canvas: surface.colors.canvas,
+          panel: surface.colors.panel,
+          chrome: surface.colors.chrome,
+          text,
+          subtle: c.usuzumi1.hex,
+          muted: c.kasure1.hex,
+          primary: mode.colors.primary,
+          secondary: mode.colors.secondary,
+          accent: mode.colors.accent,
+          sakura: c.sakura.hex,
+          warning: mode.colors.warning,
+          error: mode.colors.error,
+          info: mode.colors.info,
+          success: mode.colors.success,
+          highlightLow: surface.colors.highlightLow,
+          highlightMedium: surface.colors.highlightMedium,
+          highlightHigh: surface.colors.highlightHigh,
+        },
+        syntax: {
+          ...mode.syntax,
+          sumi: text,
+          kasure2: readable(c.kasure2, surface.backgrounds, f.dark),
+          usuzumi0: readable(c.usuzumi0, surface.backgrounds, f.dark),
+          // Editor outlines and bracket fills are marks, not text foregrounds.
+          kasure0: c.kasure0.hex,
+          nijimi2: surface.nijimi2,
+        },
+      },
+    ]
+  })
 )
-const interfaceJson = JSON.stringify(interfacePalette, null, 2) + '\n'
-await writeFile(
-  new URL('src/themes/interface-palette.json', frontend),
-  interfaceJson
-)
+
+const themesJson = JSON.stringify(themes, null, 2) + '\n'
+await writeFile(new URL('src/themes/madoromi.json', frontend), themesJson)
+
+// Keep the graph catalogue colourful: omit the seasonal neutral families and
+// the remaining black, muted-green and brown-dominant ramps.
+const neutralInks = new Set([
+  ...palette.seasons.map(season => season.grey),
+  'take-sumi',
+  'hoteison',
+  'syun-gyo',
+  'tsukushi',
+])
+const graphInkOrder = inkOrder.filter(id => !neutralInks.has(id))
 
 // Sequential counts move from Primary/Iris through Love to Rose.
 // Bound lightness away from both black and paper-white. Interpolate in OKLab,
 // gamut-map, then resample equal perceptual arc length for each adaptive size.
-// The original ink curves supply the anchor hues/chroma, not RGB gradients.
 const heatmapAnchors = [
   {
     ink: 'murasaki-shikibu',
@@ -484,78 +442,18 @@ const heatmapRamps = Object.fromEntries(
     ]
   })
 )
-const heatmapJson =
-  JSON.stringify(
-    {
-      version: 'ink-spectrum-v2',
-      anchors: heatmapAnchors,
-      ramps: heatmapRamps,
-    },
-    null,
-    2
-  ) + '\n'
-await writeFile(
-  new URL('src/themes/heatmap-palette.json', frontend),
-  heatmapJson
-)
 
-const countRamps = Object.fromEntries(
-  countInks.map(id => {
-    const lab = inks[id]
-    const lo = lab[0]
-    const hi = lab[lab.length - 3]
-    return [
-      id,
-      Object.fromEntries(
-        Array.from({ length: 12 }, (_, index) => {
-          const steps = index + 1
-          const night = Array.from({ length: steps }, (_, i) =>
-            inkAt(id, i === steps - 1 ? hi : lo + ((hi - lo) * i) / (steps - 1))
-          )
-          return [
-            steps,
-            {
-              night,
-              day: steps === 1 ? [inkAt(id, lo)] : [...night].reverse(),
-            },
-          ]
-        })
-      ),
-    ]
-  })
-)
-const countJson = JSON.stringify(countRamps, null, 2) + '\n'
-const countNamesJson =
-  JSON.stringify(
-    Object.fromEntries(countInks.map(id => [id, inkNames[id]])),
-    null,
-    2
-  ) + '\n'
-await writeFile(new URL('src/themes/count-palettes.json', frontend), countJson)
-await writeFile(
-  new URL('src/themes/count-palette-names.json', frontend),
-  countNamesJson
-)
-
-// Categorical colours use the official swatches, not resampled count bands.
-// A slot walks the ink order at one shade before proceeding to the next shade.
+// Categorical colours use the official swatches; slots walk the ink order at
+// one shade before proceeding to the next shade.
 const graphInks: Record<string, string[]> = Object.fromEntries(
-  countInks.map(id => [id, officialRamps[id].map(oklabToHex)])
+  graphInkOrder.map(id => [id, officialRamps[id].map(oklabToHex)])
+)
+const graphNames: Record<string, string> = Object.fromEntries(
+  graphInkOrder.map(id => [id, inkNames[id]])
 )
 const graphSlots = Array.from({ length: 7 }, (_, shade) =>
-  countInks.map(id => `${id}:${shade + 1}`)
+  graphInkOrder.map(id => `${id}:${shade + 1}`)
 ).flat()
-const graphJson =
-  JSON.stringify(
-    {
-      version: 'madoromi-inks-v1',
-      inks: graphInks,
-      slots: graphSlots,
-    },
-    null,
-    2
-  ) + '\n'
-await writeFile(new URL('src/themes/graph-inks.json', frontend), graphJson)
 
 // One bright representative from every colourful ink. Shade numbers alone do
 // not describe brightness consistently across different source curves.
@@ -593,8 +491,9 @@ const brightRepresentatives = {
   fukurokuju: 5,
   'syo-ro': 5,
 } satisfies Record<string, number>
+
 const brightSwatches: BrightSwatch[] = []
-for (const ink of countInks) {
+for (const ink of graphInkOrder) {
   const swatches = officialRamps[ink].slice(0, 7)
   for (let i = 0; i < swatches.length; i++) {
     const lab = swatches[i]
@@ -629,72 +528,48 @@ function appendBright(pool: BrightSwatch[]): void {
 // of interface theme, season and mode; existing owners never move.
 appendBright(vividSwatches)
 appendBright(brightSwatches)
-const brightSlotsJson =
+
+const graphPaletteJson =
   JSON.stringify(
     {
-      version: 'fixed-bright-v1',
-      slots: orderedBright.map(swatch => swatch.id),
+      version: 'madoromi-inks-v1',
+      brightVersion: 'fixed-bright-v1',
+      names: graphNames,
+      inks: graphInks,
+      slots: graphSlots,
+      brightSlots: orderedBright.map(swatch => swatch.id),
+      heatmap: {
+        version: 'ink-spectrum-v2',
+        anchors: heatmapAnchors,
+        ramps: heatmapRamps,
+      },
     },
     null,
     2
   ) + '\n'
 await writeFile(
-  new URL('src/themes/bright-ink-slots.json', frontend),
-  brightSlotsJson
-)
-
-// Slider positions follow each ink's original curve between official shades
-// 1 and 7. Keep the palest eighth shade outside the categorical picker.
-const curveSteps = 1000
-const graphCurveJson =
-  JSON.stringify({
-    steps: curveSteps,
-    inks: Object.fromEntries(
-      countInks.map(id => {
-        const lo = officialRamps[id][0][0]
-        const hi = officialRamps[id][6][0]
-        const positions = officialRamps[id]
-          .slice(0, 7)
-          .map(lab => Math.round(((lab[0] - lo) / (hi - lo)) * curveSteps))
-        const colors = Array.from({ length: curveSteps + 1 }, (_, position) =>
-          inkAt(
-            id,
-            position === curveSteps
-              ? hi
-              : lo + ((hi - lo) * position) / curveSteps
-          )
-        )
-        // The seven existing choices retain their exact source values at their
-        // nearest slider positions; moving a thumb never quantizes a saved preset.
-        positions.forEach((position, shade) => {
-          colors[position] = graphInks[id][shade]
-        })
-        return [
-          id,
-          { positions, colors: colors.map(color => color.slice(1)).join('') },
-        ]
-      })
-    ),
-  }) + '\n'
-await writeFile(
-  new URL('src/themes/graph-ink-curves.json', frontend),
-  graphCurveJson
+  new URL('src/themes/graph-palette.json', frontend),
+  graphPaletteJson
 )
 
 // Ship the adapted source, its inputs, attribution and complete upstream licence.
 const publicSource = new URL('public/licenses/madoromi/', frontend)
 await mkdir(publicSource, { recursive: true })
-await writeFile(new URL('themes.json', publicSource), json)
-await writeFile(new URL('count-palettes.json', publicSource), countJson)
-await writeFile(
-  new URL('count-palette-names.json', publicSource),
-  countNamesJson
-)
-await writeFile(new URL('graph-inks.json', publicSource), graphJson)
-await writeFile(new URL('bright-ink-slots.json', publicSource), brightSlotsJson)
-await writeFile(new URL('graph-ink-curves.json', publicSource), graphCurveJson)
-await writeFile(new URL('interface-palette.json', publicSource), interfaceJson)
-await writeFile(new URL('heatmap-palette.json', publicSource), heatmapJson)
+for (const retired of [
+  'themes.json',
+  'interface-palette.json',
+  'heatmap-palette.json',
+  'count-palettes.json',
+  'count-palette-names.json',
+  'graph-inks.json',
+  'bright-ink-slots.json',
+  'graph-ink-curves.json',
+  'generate-madoromi.mjs',
+]) {
+  await rm(new URL(retired, publicSource), { force: true })
+}
+await writeFile(new URL('madoromi.json', publicSource), themesJson)
+await writeFile(new URL('graph-palette.json', publicSource), graphPaletteJson)
 for (const file of [
   'LICENSE',
   'NOTICE',
@@ -712,7 +587,6 @@ for (const file of [
     await readFile(new URL(file, upstream))
   )
 }
-await rm(new URL('generate-madoromi.mjs', publicSource), { force: true })
 await writeFile(
   new URL('generate-madoromi.ts.txt', publicSource),
   await readFile(new URL(import.meta.url))
@@ -720,11 +594,10 @@ await writeFile(
 console.log(
   JSON.stringify(
     {
-      variants: Object.keys(definitions).length,
+      variants: Object.keys(themes).length,
       backgroundTint: TINT,
-      brightFamilies: vividSwatches.length,
+      graphInks: graphInkOrder.length,
       brightSwatches: brightSwatches.length,
-      adjustments,
     },
     null,
     2

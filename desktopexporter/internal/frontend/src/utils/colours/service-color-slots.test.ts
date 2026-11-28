@@ -4,11 +4,7 @@ import {
   serviceColorIdentity,
   serviceColorStorageVersion,
 } from './service-color-identity'
-import {
-  GRAPH_SWATCHES,
-  GRAPH_PALETTE_VERSION,
-  graphInkCurve,
-} from '@/themes/graph-inks'
+import { GRAPH_SWATCHES, GRAPH_PALETTE_VERSION } from '@/themes/graph-inks'
 import {
   AUTOMATIC_COLOR_VERSION,
   AUTOMATIC_COLOR_SLOTS,
@@ -63,20 +59,20 @@ it('keeps exact service colours across seasons, reordering and reloads', async (
   expect(identities.map(restored.color)).toEqual(cool)
 })
 
-it('retains saved manual presets, curve choices and hidden reservations', async () => {
+it('retains saved manual presets, custom hex choices and hidden reservations', async () => {
   const state = await setup()
   const reserved = GRAPH_SWATCHES[AUTOMATIC_COLOR_SLOTS[0]!]!
   state.graphColorOverrides.set('services', 'hidden manual', reserved.id)
-  const curve = graphInkCurve('to-ro')[123]!
-  state.graphColorOverrides.set('services', 'slider', curve.id)
+  const customHex = '#4b6e8c'
+  state.graphColorOverrides.set('services', 'custom', customHex)
   const automatic = state.color('api')
   expect(automatic).not.toBe(reserved.color)
   const manual = GRAPH_SWATCHES.find(
-    swatch => ![reserved.color, curve.color, automatic].includes(swatch.color)
+    swatch => ![reserved.color, customHex, automatic].includes(swatch.color)
   )!
   state.graphColorOverrides.set('services', 'api', manual.id)
   expect(state.color('api')).toBe(manual.color)
-  expect(state.color('slider')).toBe(curve.color)
+  expect(state.color('custom')).toBe(customHex)
   expect(state.color('new')).not.toBe(manual.color)
   expect(state.color('new')).not.toBe(automatic)
   state.graphColorOverrides.set('services', 'api', null)

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { GRAPH_INKS, graphInkCurve } from '@/themes/graph-inks'
+import { GRAPH_INKS } from '@/themes/graph-inks'
 import { graphInkFamily } from './graph-ink-family'
 
 it('recognizes all official shades and retains their seven-shade families', () => {
@@ -12,9 +12,7 @@ it('recognizes all official shades and retains their seven-shade families', () =
     }
 })
 
-it('retains named curve ownership and ignores opacity for nearest ink matching', () => {
-  const curve = graphInkCurve('to-ro')[123]!
-  expect(graphInkFamily(curve.color, curve.id).ink.id).toBe('to-ro')
+it('ignores opacity for nearest ink matching', () => {
   const custom = graphInkFamily('#123abc')
   expect(custom.exact).toBe(false)
   for (const alpha of ['00', '80', 'ff'])

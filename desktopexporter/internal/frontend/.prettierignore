@@ -4,7 +4,5 @@ tools/oxlint/anti-slop/
 # Pinned upstream sources and distributions copied by generate-madoromi.ts.
 public/licenses/madoromi/
 # JSON emitted by generate-madoromi.ts; retain deterministic generator output.
-src/themes/accent-inks.json
-src/themes/count-palettes.json
-src/themes/heatmap-palette.json
-src/themes/graph-ink-curves.json
+src/themes/madoromi.json
+src/themes/graph-palette.json

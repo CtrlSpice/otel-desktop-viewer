@@ -8,10 +8,10 @@
 // Error spans use `var(--color-error)` directly.
 
 import { getSeriesPalette, getTheme } from '@/themes'
-import heatmapPalette from '@/themes/heatmap-palette.json' with { type: 'json' }
+import graphPalette from '@/themes/graph-palette.json' with { type: 'json' }
 
 const countRamps: Record<number, { day: string[]; night: string[] }> =
-  heatmapPalette.ramps
+  graphPalette.heatmap.ramps
 
 /**
  * Ink-derived sequential spectrum at 1–12 perceptually spaced samples.
