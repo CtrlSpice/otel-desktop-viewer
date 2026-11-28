@@ -1,5 +1,6 @@
 import { routeTelemetry } from './telemetry-fixtures'
 import AxeBuilder from '@axe-core/playwright'
+import type { Page } from '@playwright/test'
 import { expect, test } from './test-fixtures'
 import { THEMES, themeRgb } from './theme-colours'
 import type { TraceFixture } from '../src/test/telemetry-fixture-types'
@@ -517,9 +518,7 @@ for (const { id: theme } of THEMES) {
   })
 }
 
-test('Waterfall columns persist across traces and align through resizing and overflow', async ({
-  page,
-}) => {
+async function setupWaterfallColumnsPage(page: Page) {
   await page.setViewportSize({ width: 1920, height: 1100 })
   const nextTraceID = 'abcdefabcdefabcdefabcdefabcdefab'
   await routeTelemetry(page, async route => {
@@ -585,6 +584,13 @@ test('Waterfall columns persist across traces and align through resizing and ove
               : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
+  return nextTraceID
+}
+
+test('Waterfall columns persist across traces and align through resizing and overflow', async ({
+  page,
+}) => {
+  const nextTraceID = await setupWaterfallColumnsPage(page)
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
   await expect(
     page.getByRole('columnheader', { name: 'Span name', exact: true })
@@ -715,8 +721,23 @@ test('Waterfall columns persist across traces and align through resizing and ove
       exact: true,
     })
   ).toHaveCount(0)
+})
+
+test('Waterfall separates built-in span fields from same-name attributes and truncates identifier columns', async ({
+  page,
+}) => {
+  await setupWaterfallColumnsPage(page)
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
+  const row = page.locator(`.waterfall-row[data-span-id="${selectedID}"]`)
+  const details = page.getByRole('region', {
+    name: 'Span details',
+    exact: true,
+  })
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  const picker = page.getByRole('group', { name: 'Waterfall columns' })
+  await picker
+    .getByRole('checkbox', { name: 'resource: service.name', exact: true })
+    .uncheck()
   await picker
     .getByRole('button', { name: 'Find columns', exact: true })
     .click()
