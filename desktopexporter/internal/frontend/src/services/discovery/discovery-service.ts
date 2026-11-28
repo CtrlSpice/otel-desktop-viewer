@@ -8,22 +8,22 @@ import type {
   HomeCoveragePage,
 } from './discovery-types'
 import type { QueryNode } from '@/search/model'
-import { fetchArrow } from './arrow/arrow-fetch'
-import { attributeValue } from './arrow/arrow-values'
-import type { ArrowFrame } from './arrow/arrow-data'
+import { fetchArrow } from '../arrow/arrow-fetch'
+import { attributeValue } from '../arrow/arrow-values'
+import type { ArrowFrame } from '../arrow/arrow-data'
 import {
   discoveryPage,
   serviceSummary,
   serviceConnection,
   serviceConnectionSpan,
   attributeKey,
-} from './arrow/arrow-discovery'
+} from '../arrow/arrow-discovery'
 import {
   named,
   callRPC,
   callArrow,
   convertQueryTreeForBackend,
-} from './telemetry-request'
+} from '../telemetry-request'
 
 async function discover<T>(
   options: DiscoveryOptions,

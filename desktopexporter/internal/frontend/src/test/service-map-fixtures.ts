@@ -9,7 +9,7 @@ import type {
   ServiceSummary,
   ServiceConnection,
   ServiceConnectionSpan,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 
 export const service = (serviceName: string): ServiceSummary => ({
   serviceIdentity: serviceName,

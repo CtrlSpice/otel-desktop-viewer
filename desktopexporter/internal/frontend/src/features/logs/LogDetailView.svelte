@@ -5,7 +5,7 @@
   import { LogIcon } from '@/icons'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
-  import { readOTLPText } from '@/services/export-service'
+  import { readOTLPText } from '@/services/files/export-service'
   import DetailViews from '@/components/shared/Detail/DetailViews.svelte'
   import DetailViewTabs, {
     type DetailViewMode,

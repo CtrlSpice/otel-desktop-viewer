@@ -64,7 +64,7 @@
   import { detailPanel } from '@/state/detail-panel.svelte'
   import type { LogData, TraceData } from '@/types/api-types'
   import type { EvalExperiment, EvalView } from '@/features/evals/model'
-  import { onEvalExperimentsChanged } from '@/services/import-service'
+  import { onEvalExperimentsChanged } from '@/services/files/import-service'
   import { evalQuery } from '@/features/evals/eval-query'
   import type { EvalRequestStatus } from '@/features/evals/eval-request-state'
 

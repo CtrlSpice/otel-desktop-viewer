@@ -18,12 +18,12 @@
     DiscoveryOptions,
     DiscoverySignal,
     ServiceSummary,
-  } from '@/services/discovery-types'
+  } from '@/services/discovery/discovery-types'
   import {
     discoverySignalHref,
     serviceIdentity,
     SIGNAL_ORDER,
-  } from '@/services/discovery-types'
+  } from '@/services/discovery/discovery-types'
   import {
     loadServiceTelemetry,
     type ServiceTelemetryCard,

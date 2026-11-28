@@ -29,7 +29,7 @@
   import type { DatapointSeries } from './SeriesDatapointList.svelte'
   import AttributeRows from '@/components/shared/Detail/AttributeRows.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
-  import { readOTLPText } from '@/services/export-service'
+  import { readOTLPText } from '@/services/files/export-service'
 
   const ctx = getMetricViewContext()
   let {

@@ -106,7 +106,7 @@ export default defineConfig({
             for (const [id, module] of Object.entries(output.modules)) {
               if (module.renderedLength === 0) continue
               if (
-                /\/src\/(features\/evals\/|services\/import-file\.ts)/.test(
+                /\/src\/(features\/evals\/|services\/files\/import-file\.ts)/.test(
                   id.replaceAll('\\', '/')
                 )
               )

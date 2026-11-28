@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { arrowResponse } from '@/test/arrow-fixtures'
 import { variantTable } from '@/test/variant-fixtures'
-import { telemetryAPI } from './telemetry-service'
+import { telemetryAPI } from '../telemetry-service'
 
 afterEach(() => vi.unstubAllGlobals())
 

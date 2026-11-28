@@ -14,7 +14,7 @@
     type ServiceConnection,
     type ServiceConnectionSpan,
     type DiscoveryOptions,
-  } from '@/services/discovery-types'
+  } from '@/services/discovery/discovery-types'
   import { itemHref, parseRoute } from '@/route'
   import { formatDuration } from '@/utils/time'
   import { traceServiceColor } from '@/utils/colours/trace-service-color'

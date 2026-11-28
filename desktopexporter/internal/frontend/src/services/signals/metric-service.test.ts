@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { telemetryAPI, JsonRpcError } from './telemetry-service'
+import { telemetryAPI, JsonRpcError } from '../telemetry-service'
 import type { MetricFixture } from '@/test/telemetry-fixture-types'
 import type { ReceivedHistogramDataPoint } from '@/types/api-types'
 import {

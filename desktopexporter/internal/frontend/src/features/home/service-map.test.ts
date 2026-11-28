@@ -13,7 +13,7 @@ import {
   serviceIdentity,
   type ServiceSummary,
   type ServiceConnection,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 
 const service = (name: string, namespace = ''): ServiceSummary => ({
   serviceName: name,

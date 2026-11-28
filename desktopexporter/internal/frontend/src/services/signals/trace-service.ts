@@ -9,14 +9,14 @@ import type {
 } from '@/types/api-types'
 import type { JsonDeleteResult } from '@/types/wire-types'
 import type { FieldDefinition, QueryNode } from '@/search/model'
-import { attributeDefinitions } from './arrow/arrow-search'
-import { rowViews } from './arrow/arrow-values'
+import { attributeDefinitions } from '../arrow/arrow-search'
+import { rowViews } from '../arrow/arrow-values'
 import {
   traceData,
   traceWaterfallData,
   traceColumnPreviews,
-} from './arrow/arrow-traces'
-import { traceSummary } from './arrow/arrow-summaries'
+} from '../arrow/arrow-traces'
+import { traceSummary } from '../arrow/arrow-summaries'
 import {
   serializeNanoseconds,
   named,
@@ -26,7 +26,7 @@ import {
   RequestAbortedError,
   type SearchSort,
   type QueryTimeBound,
-} from './telemetry-request'
+} from '../telemetry-request'
 
 export const traceAPI = {
   getTraceAttributeDefinitions: async (

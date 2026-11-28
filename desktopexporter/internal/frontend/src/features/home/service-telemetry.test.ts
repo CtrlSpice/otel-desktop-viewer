@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { telemetryAPI } from '@/services/telemetry-service'
-import type { ServiceSummary } from '@/services/discovery-types'
+import type { ServiceSummary } from '@/services/discovery/discovery-types'
 import type { TraceSummary } from '@/types/api-types'
 import { loadServiceTelemetry } from './service-telemetry'
 import { parseQuery } from '@/components/shared/Search/queryParser'

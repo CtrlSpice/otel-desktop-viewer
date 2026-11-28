@@ -13,7 +13,7 @@ import {
   evidence,
   store,
 } from '@/test/service-map-fixtures'
-import type { ServiceConnectionSpan } from '@/services/discovery-types'
+import type { ServiceConnectionSpan } from '@/services/discovery/discovery-types'
 import { homeQueries } from './home-search'
 import { parseQuery } from '@/components/shared/Search/queryParser'
 

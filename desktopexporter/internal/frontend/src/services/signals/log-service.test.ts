@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { telemetryAPI } from './telemetry-service'
+import { telemetryAPI } from '../telemetry-service'
 import type { TraceLogSummary } from '@/types/api-types'
 import { logSummaryTable, logDetailTable } from '@/test/arrow-fixtures'
 import { stubArrowResult } from '@/test/telemetry-service-fixtures'

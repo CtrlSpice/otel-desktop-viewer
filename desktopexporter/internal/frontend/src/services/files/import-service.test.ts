@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFileImporter, importOTLPFile } from './import-service'
-import { telemetryAPI } from './telemetry-service'
-import { evalAPI } from '../features/evals/services/eval-service'
+import { telemetryAPI } from '../telemetry-service'
+import { evalAPI } from '../../features/evals/services/eval-service'
 import { OTLP_REQUEST_BYTES } from './otlp-file'
 
 afterEach(() => {

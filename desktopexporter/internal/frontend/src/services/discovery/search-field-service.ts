@@ -1,5 +1,5 @@
 import type { FieldDefinition, SearchSignal } from '@/search/model'
-import { telemetryAPI } from './telemetry-service'
+import { telemetryAPI } from '../telemetry-service'
 
 export async function getDynamicAttributes(
   signal: SearchSignal,

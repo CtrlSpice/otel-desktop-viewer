@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { telemetryAPI } from './telemetry-service'
+import { telemetryAPI } from '../telemetry-service'
 import { getOperatorsForFieldType, OPERATORS } from '@/search/model'
 import type { TraceFixture } from '@/test/telemetry-fixture-types'
 import { arrowResponse, traceSummaryTable } from '@/test/arrow-fixtures'

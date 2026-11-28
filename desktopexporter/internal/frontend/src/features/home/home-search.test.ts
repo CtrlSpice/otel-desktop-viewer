@@ -6,7 +6,7 @@ import {
   serviceSignalHref,
   serviceIdentity,
   type ServiceSummary,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 
 const fields = homeFields(
   ['traces', 'metrics', 'logs'].map(signal =>

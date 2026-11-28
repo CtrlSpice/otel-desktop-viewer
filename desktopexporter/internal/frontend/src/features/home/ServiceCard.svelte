@@ -5,7 +5,7 @@
   import {
     serviceIdentity,
     type ServiceSummary,
-  } from '@/services/discovery-types'
+  } from '@/services/discovery/discovery-types'
   import { traceServiceColor } from '@/utils/colours/trace-service-color'
   import { serviceColorIdentity } from '@/utils/colours/service-color-identity'
   import { themeSignal } from '@/state/theme.svelte'

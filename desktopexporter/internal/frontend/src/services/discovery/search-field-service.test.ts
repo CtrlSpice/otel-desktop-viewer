@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { getDynamicAttributes } from './search-field-service'
-import { telemetryAPI } from './telemetry-service'
+import { telemetryAPI } from '../telemetry-service'
 import type { FieldDefinition } from '@/search/model'
 
 afterEach(() => vi.restoreAllMocks())
