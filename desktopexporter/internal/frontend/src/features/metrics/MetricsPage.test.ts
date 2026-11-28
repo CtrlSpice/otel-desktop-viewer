@@ -21,7 +21,7 @@ import {
   readRoute,
   withQueryPatch,
 } from '@/route'
-import { downloadOTLP, readOTLPText } from '@/services/export-service'
+import { downloadOTLP, readOTLPText } from '@/services/files/export-service'
 import { savePersistedTimeseriesVisible } from '@/features/metrics/Series/metric-timeseries-visible'
 import * as metricContexts from '@/features/metrics/metric-view-context.svelte'
 import * as timeContexts from '@/contexts/time-context.svelte'
@@ -30,7 +30,7 @@ import { metricView } from '@/services/arrow/arrow-metrics'
 import { telemetryDataset } from '@/test/native-telemetry-fixtures'
 import { tableToIPC } from 'apache-arrow'
 
-vi.mock('@/services/export-service', () => ({
+vi.mock('@/services/files/export-service', () => ({
   downloadOTLP: vi.fn(),
   readOTLPText: vi.fn(),
 }))

@@ -8,15 +8,15 @@ import type {
 } from '@/types/api-types'
 import type { JsonDeleteResult } from '@/types/wire-types'
 import type { FieldDefinition, QueryNode } from '@/search/model'
-import { attributeDefinitions } from './arrow/arrow-search'
-import { rowViews } from './arrow/arrow-values'
-import { ArrowFrame } from './arrow/arrow-data'
+import { attributeDefinitions } from '../arrow/arrow-search'
+import { rowViews } from '../arrow/arrow-values'
+import { ArrowFrame } from '../arrow/arrow-data'
 import {
   logData,
   logSummary,
   logTableRow,
   traceLogSummary,
-} from './arrow/arrow-summaries'
+} from '../arrow/arrow-summaries'
 import {
   serializeNanoseconds,
   named,
@@ -25,7 +25,7 @@ import {
   convertQueryTreeForBackend,
   type SearchSort,
   type QueryTimeBound,
-} from './telemetry-request'
+} from '../telemetry-request'
 
 export const logAPI = {
   getLogAttributeDefinitions: async (

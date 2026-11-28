@@ -221,11 +221,11 @@ Each Svelte 5/TypeScript page loads its data and tracks the selected records.
 
 [`services/telemetry-service.ts`](../desktopexporter/internal/frontend/src/services/telemetry-service.ts)
 exposes `telemetryAPI` and handles statistics and import-configuration calls.
-Request groups live in [`trace-service.ts`](../desktopexporter/internal/frontend/src/services/trace-service.ts),
-[`log-service.ts`](../desktopexporter/internal/frontend/src/services/log-service.ts),
-[`metric-service.ts`](../desktopexporter/internal/frontend/src/services/metric-service.ts),
-[`discovery-service.ts`](../desktopexporter/internal/frontend/src/services/discovery-service.ts) and
-[`attribute-search-service.ts`](../desktopexporter/internal/frontend/src/services/attribute-search-service.ts).
+Request groups live in [`trace-service.ts`](../desktopexporter/internal/frontend/src/services/signals/trace-service.ts),
+[`log-service.ts`](../desktopexporter/internal/frontend/src/services/signals/log-service.ts),
+[`metric-service.ts`](../desktopexporter/internal/frontend/src/services/signals/metric-service.ts),
+[`discovery-service.ts`](../desktopexporter/internal/frontend/src/services/discovery/discovery-service.ts) and
+[`attribute-search-service.ts`](../desktopexporter/internal/frontend/src/services/discovery/attribute-search-service.ts).
 [`telemetry-request.ts`](../desktopexporter/internal/frontend/src/services/telemetry-request.ts)
 shares request encoding, RPC/Arrow wrappers and cancellation handling.
 

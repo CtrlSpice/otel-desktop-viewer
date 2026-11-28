@@ -1,6 +1,6 @@
 import type { FirstOTLPRecord } from './otlp-file'
-import { createRefreshCoordinator } from './refresh-coordinator'
-import { Read } from './reads/read.svelte'
+import { createRefreshCoordinator } from '../refresh-coordinator'
+import { Read } from '../reads/read.svelte'
 import type { ImportFailure } from '@/types/import-types'
 
 export type ImportDestination = { id: string; spanID?: string }

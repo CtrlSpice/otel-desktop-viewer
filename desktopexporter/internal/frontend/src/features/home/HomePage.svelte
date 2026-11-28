@@ -41,7 +41,7 @@
     queryText,
   } from '@/features/home/home-search'
   import { getStaticFieldsForSearch } from '@/constants/fields'
-  import { getDynamicAttributes } from '@/services/search-field-service'
+  import { getDynamicAttributes } from '@/services/discovery/search-field-service'
   import { parseQuery } from '@/components/shared/Search/queryParser'
   import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
   import { readRoute, navigateCurrentRoute, subscribeToRoute } from '@/route'
@@ -53,7 +53,7 @@
     discoverySignalHref,
     type ServiceSummary,
     type DiscoveryOptions,
-  } from '@/services/discovery-types'
+  } from '@/services/discovery/discovery-types'
   import {
     getTimeContext,
     selectionToQueryRangeNs,

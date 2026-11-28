@@ -151,7 +151,7 @@ func TestHomeAttributeMatchesSQL(t *testing.T) {
 	require.NoError(t, err)
 	cmd := exec.Command(node, "--input-type=module", "-e", `
 		import { readFileSync } from 'node:fs';
-		import { attributeMatchesSQL } from '../../frontend/src/services/attribute-matches.ts';
+		import { attributeMatchesSQL } from '../../frontend/src/services/discovery/attribute-matches.ts';
 		console.log(JSON.stringify(JSON.parse(readFileSync(0, 'utf8')).map(options => attributeMatchesSQL(options, 0))));`)
 	cmd.Stdin = strings.NewReader(string(input))
 	output, err := cmd.CombinedOutput()

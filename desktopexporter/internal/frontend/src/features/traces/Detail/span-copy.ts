@@ -1,5 +1,5 @@
 import type { SpanData } from '@/types/api-types'
-import { readOTLPURL } from '@/services/export-service'
+import { readOTLPURL } from '@/services/files/export-service'
 
 type SpanIdentity = Pick<SpanData, 'traceID' | 'spanID'>
 

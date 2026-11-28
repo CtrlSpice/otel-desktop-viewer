@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import ExportButton from './ExportButton.svelte'
-import { downloadOTLP } from '@/services/export-service'
+import { downloadOTLP } from '@/services/files/export-service'
 
-vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
+vi.mock('@/services/files/export-service', () => ({ downloadOTLP: vi.fn() }))
 
 afterEach(() => vi.resetAllMocks())
 

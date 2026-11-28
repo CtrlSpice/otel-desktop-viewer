@@ -7,7 +7,7 @@ import type {
   ServiceConnectionSpan,
   DiscoveryOptions,
   DiscoveryTotals,
-} from '../src/services/discovery-types'
+} from '../src/services/discovery/discovery-types'
 
 const service = (serviceName: string): ServiceSummary => ({
   serviceName,

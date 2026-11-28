@@ -6,17 +6,17 @@ import type {
   ExactMetricSeries,
 } from '@/types/api-types'
 import type { FieldDefinition, QueryNode } from '@/search/model'
-import { attributeDefinitions } from './arrow/arrow-search'
-import { rowViews } from './arrow/arrow-values'
+import { attributeDefinitions } from '../arrow/arrow-search'
+import { rowViews } from '../arrow/arrow-values'
 import {
   exactMetric,
   exactMetricSeries,
   metricSeriesOrder,
   metricView,
   metricAggregateView,
-} from './arrow/arrow-metrics'
-import { metricSummary } from './arrow/arrow-summaries'
-import { JsonRpcError } from './service-error'
+} from '../arrow/arrow-metrics'
+import { metricSummary } from '../arrow/arrow-summaries'
+import { JsonRpcError } from '../service-error'
 import {
   serializeNanoseconds,
   named,
@@ -25,7 +25,7 @@ import {
   convertQueryTreeForBackend,
   type SearchSort,
   type QueryTimeBound,
-} from './telemetry-request'
+} from '../telemetry-request'
 
 const ERR_CODE_METRIC_NOT_FOUND = -32003
 

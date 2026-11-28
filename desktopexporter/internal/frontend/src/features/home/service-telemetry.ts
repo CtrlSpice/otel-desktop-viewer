@@ -5,7 +5,7 @@ import {
   type DiscoveryOptions,
   type DiscoverySignal,
   type ServiceSummary,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { LogSummary, MetricSummary, TraceSummary } from '@/types/api-types'
 import type { QueryNode } from '@/search/model'

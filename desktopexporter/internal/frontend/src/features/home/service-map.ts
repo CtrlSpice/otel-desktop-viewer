@@ -13,7 +13,7 @@ import {
   type ServiceConnection,
   type ServiceSummary,
   type DiscoveryOptions,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 
 export type ConnectionReading = {
   connection: ServiceConnection

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
-  import { createFileImporter } from '@/services/import-service'
+  import { createFileImporter } from '@/services/files/import-service'
   import HomePage from '@/features/home/HomePage.svelte'
   import MetricsPage from '@/features/metrics/MetricsPage.svelte'
   import LogsPage from '@/features/logs/LogsPage.svelte'
@@ -23,7 +23,7 @@
   import {
     createImportNavigation,
     lookupImportTarget,
-  } from '@/services/import-navigation'
+  } from '@/services/files/import-navigation'
 
   let {
     importFiles,

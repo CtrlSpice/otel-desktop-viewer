@@ -3,7 +3,10 @@
   import { Download01Icon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import IconButton from './IconButton.svelte'
-  import { downloadOTLP, type ExportSignal } from '@/services/export-service'
+  import {
+    downloadOTLP,
+    type ExportSignal,
+  } from '@/services/files/export-service'
 
   let { signal, id }: { signal: ExportSignal; id: string } = $props()
   const downloadRead = createRead<void>({

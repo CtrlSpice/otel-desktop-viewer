@@ -8,7 +8,7 @@ import type {
   ServiceConnection,
   ServiceConnectionSpan,
   ServiceSummary,
-} from '../discovery-types'
+} from '../discovery/discovery-types'
 
 const timestamp = (cell: ArrowCell): string => cell.integer().toString()
 

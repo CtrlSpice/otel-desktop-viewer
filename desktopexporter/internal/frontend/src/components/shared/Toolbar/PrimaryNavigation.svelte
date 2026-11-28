@@ -9,7 +9,7 @@
   } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import type { SignalName } from '@/route'
-  import { SIGNAL_ORDER } from '@/services/discovery-types'
+  import { SIGNAL_ORDER } from '@/services/discovery/discovery-types'
 
   type NavItemID = 'home' | 'evals' | SignalName
 

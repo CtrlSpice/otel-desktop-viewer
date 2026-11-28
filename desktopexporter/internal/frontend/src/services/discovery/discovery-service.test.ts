@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { telemetryAPI } from './telemetry-service'
+import { telemetryAPI } from '../telemetry-service'
 import { stubRpcResult } from '@/test/telemetry-service-fixtures'
 
 afterEach(() => {

@@ -3,9 +3,9 @@ import {
   type AttributeMatchOptions,
   type AttributeRecordMatch,
 } from './attribute-matches'
-import { attributeMatch, type AttributeMatch } from './arrow/arrow-search'
-import { rowViews } from './arrow/arrow-values'
-import { named, callRPC, callArrow } from './telemetry-request'
+import { attributeMatch, type AttributeMatch } from '../arrow/arrow-search'
+import { rowViews } from '../arrow/arrow-values'
+import { named, callRPC, callArrow } from '../telemetry-request'
 
 export const attributeSearchAPI = {
   getAttributeRecordMatches: async (

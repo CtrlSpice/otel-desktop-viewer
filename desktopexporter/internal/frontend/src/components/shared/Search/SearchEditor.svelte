@@ -16,7 +16,7 @@
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
-  import { getDynamicAttributes } from '@/services/search-field-service'
+  import { getDynamicAttributes } from '@/services/discovery/search-field-service'
   import type {
     FieldDefinition,
     SearchSignal,

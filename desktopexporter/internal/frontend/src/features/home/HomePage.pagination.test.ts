@@ -11,7 +11,7 @@ import { mockHomeEnvironment } from '@/test/service-map-fixtures'
 import {
   serviceIdentity,
   type ServiceSummary,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 
 afterEach(() => {
   vi.useRealTimers()

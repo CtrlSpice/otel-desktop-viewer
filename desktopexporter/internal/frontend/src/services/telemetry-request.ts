@@ -1,6 +1,6 @@
 import type { TraceColumn, LogColumn } from '@/types/api-types'
 import type { JsonQueryNode } from '@/types/wire-types'
-import type { DiscoveryOptions } from './discovery-types'
+import type { DiscoveryOptions } from './discovery/discovery-types'
 import type { QueryNode } from '@/search/model'
 import { fetchArrow } from './arrow/arrow-fetch'
 import type { ArrowFrame } from './arrow/arrow-data'

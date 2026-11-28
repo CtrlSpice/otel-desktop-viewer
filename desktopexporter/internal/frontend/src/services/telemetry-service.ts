@@ -1,11 +1,11 @@
 import type { DatabaseList, Stats } from '@/types/api-types'
 import type { JsonStats } from '@/types/wire-types'
 import { callRPC, named } from './telemetry-request'
-import { traceAPI } from './trace-service'
-import { logAPI } from './log-service'
-import { metricAPI } from './metric-service'
-import { discoveryAPI } from './discovery-service'
-import { attributeSearchAPI } from './attribute-search-service'
+import { traceAPI } from './signals/trace-service'
+import { logAPI } from './signals/log-service'
+import { metricAPI } from './signals/metric-service'
+import { discoveryAPI } from './discovery/discovery-service'
+import { attributeSearchAPI } from './discovery/attribute-search-service'
 export { JsonRpcError } from './service-error'
 export {
   RequestAbortedError,

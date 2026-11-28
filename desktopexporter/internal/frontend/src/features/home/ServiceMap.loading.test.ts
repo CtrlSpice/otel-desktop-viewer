@@ -8,7 +8,7 @@ import {
   serviceIdentity,
   type ServiceSummary,
   type ServiceConnection,
-} from '@/services/discovery-types'
+} from '@/services/discovery/discovery-types'
 import { renderWithContexts } from '@/test/render-helpers'
 import type { MapSelection } from './service-map'
 

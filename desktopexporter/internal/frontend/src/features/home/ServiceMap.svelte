@@ -21,7 +21,7 @@
     type ServiceSummary,
     type ServiceConnection,
     type DiscoveryOptions,
-  } from '@/services/discovery-types'
+  } from '@/services/discovery/discovery-types'
   import {
     connectionIdentity,
     graphServices,
