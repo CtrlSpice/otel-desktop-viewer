@@ -17,7 +17,7 @@
     "verify:integration": "node verify-integration.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.6.0",
     "@opentelemetry/api": "1.10.0",
     "@opentelemetry/exporter-logs-otlp-http": "0.301.2",
     "@opentelemetry/resources": "3.1.1",
@@ -26,7 +26,7 @@
     "tar": "7.5.23"
   },
   "devDependencies": {
-    "@types/node": "26.6.6",
+    "@types/node": "26.6.10",
     "typescript": "7.0.2"
   },
   "overrides": {
