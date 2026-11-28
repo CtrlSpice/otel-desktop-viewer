@@ -181,8 +181,9 @@ The server delegates protocol work to three subpackages:
   [`databases.go`](../desktopexporter/internal/server/rpc/databases.go)).
 - [`server/apidoc`](../desktopexporter/internal/server/apidoc/) builds and
   serves `/openrpc.json`, `/openapi.json`, and `/llms.txt`.
-- [`server/evals`](../desktopexporter/internal/server/evals/) owns the
-  `evals`-tagged HTTP handlers for evaluation ingestion and experiments.
+- [`server/evals`](../desktopexporter/internal/server/evals/) owns the HTTP
+  handlers for evaluation ingestion and experiments, wired in only when built
+  with `-tags=evals`.
 
 | Route | Purpose |
 | --- | --- |
