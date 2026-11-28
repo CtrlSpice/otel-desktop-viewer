@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getSeriesPalette, SERIES_COLOR_COUNT, THEMES } from '@/themes'
 import { GRAPH_INKS, GRAPH_SWATCHES } from '@/themes/graph-inks'
-import graphInks from '@/themes/graph-inks.json'
-import { COUNT_PALETTES } from '@/themes/count-palettes'
+import graphPalette from '@/themes/graph-palette.json'
 import {
   linearToOklab,
   srgb8ToLinear,
@@ -124,15 +123,13 @@ describe.each([
 
 it('uses seven official shades per ink, excluding only each palest band', () => {
   expect(SERIES_COLOR_COUNT).toBe(224)
-  expect(GRAPH_INKS.map(ink => ink.id)).toEqual(
-    COUNT_PALETTES.map(ink => ink.id)
-  )
+  expect(GRAPH_INKS.map(ink => ink.id)).toEqual(Object.keys(graphPalette.names))
   const pool = getSeriesPalette()
   for (const ink of GRAPH_INKS) {
     expect(ink.swatches.map(swatch => swatch.color)).toEqual(
-      graphInks.inks[ink.id].slice(0, 7)
+      graphPalette.inks[ink.id].slice(0, 7)
     )
-    expect(pool).not.toContain(graphInks.inks[ink.id][7])
+    expect(pool).not.toContain(graphPalette.inks[ink.id][7])
   }
   expect(traceSpanPalette(224)).toEqual(metricSeriesPalette(224))
   expect(new Set(GRAPH_SWATCHES.map(swatch => swatch.id)).size).toBe(224)

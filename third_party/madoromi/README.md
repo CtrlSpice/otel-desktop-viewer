@@ -37,11 +37,7 @@ Apache-2.0 licence does not replace those terms.
 ## Viewer adaptation
 
 `desktopexporter/internal/frontend/scripts/generate-madoromi.ts` generates
-`src/themes/madoromi.json`, `src/themes/count-palettes.json`,
-`src/themes/count-palette-names.json`, `src/themes/graph-inks.json`,
-`src/themes/bright-ink-slots.json`, `src/themes/graph-ink-curves.json`,
-`src/themes/interface-palette.json` and `src/themes/heatmap-palette.json` from
-these files.
+`src/themes/madoromi.json` and `src/themes/graph-palette.json` from these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
 ```sh
@@ -100,11 +96,6 @@ retains 32 colourful inks, excluding the four seasonal neutral sources
 (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
 plus Take-sumi, Hoteison, Syun-gyo and Tsukushi: the black, muted-green and
 brown-dominant ramps. All 40 curves remain in the source distribution.
-The source-only single-ink ramps sample the full measured lightness interval at equally spaced
-OKLab L values, including both endpoints, interpolating a/b at each L and using
-the pinned `oklabToHex` conversion. Night orders shades dark to light; Day uses
-the exact same shades reversed. A one-step ramp uses the high-count endpoint
-for its mode (lightest at Night, darkest by Day). Seasons do not change the ink.
 
 The categorical catalogue contains the first seven official swatches from each
 of those 32 inks. Their 224 colours keep the original hex values across themes.
@@ -115,8 +106,8 @@ colours. Home attribute-value bars also use official shades 3–5 of these inks,
 selected by a stable typed-value hash.
 
 There are no graph swatch or count-ink pickers. Existing saved overrides remain
-readable, including curve positions sampled between official shades 1 and 7.
-Automatic assignment preserves identity ownership and skips saved manual colours.
+readable for official ink shades and custom hex colours. Automatic assignment
+preserves identity ownership and skips saved manual colours.
 
 ## Distributed licence and source
 
@@ -133,14 +124,11 @@ the directory URL itself is not a file index.
 - `color.ts.txt`, `palette.ts.txt`, `mix.ts.txt`: unmodified upstream conversion,
   palette builder and mixer sources.
 - `generate-madoromi.ts.txt`: viewer adaptation generator.
-- `themes.json`: generated `src/themes/madoromi.json`.
-- `interface-palette.json`: the fixed interface palette across eight themes.
-- `heatmap-palette.json`: ink-derived count spectrum anchors and adaptive ramps.
-- `count-palettes.json`, `count-palette-names.json`: generated adaptive count
-  ramps of sizes 1–12 and pinned English names.
-- `graph-inks.json`, `bright-ink-slots.json`, `graph-ink-curves.json`: official
-  graph swatches, 224 assignment slots, bright automatic slots and sampled
-  slider curves.
+- `madoromi.json`: generated `src/themes/madoromi.json` with all eight resolved
+  seasonal themes, shared Day/Night interface roles and syntax slots.
+- `graph-palette.json`: generated `src/themes/graph-palette.json` with English
+  names, official graph swatches, 224 assignment slots, 118 bright automatic
+  slots and ink-derived count spectrum heatmap ramps.
 
 These files provide the source form of the theme adaptation. The generator
 copies the notices and source inputs from `third_party/madoromi/` into

@@ -1,11 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { graphColorOverrides } from './graph-color-overrides.svelte'
-import {
-  GRAPH_CURVE_STEPS,
-  GRAPH_PALETTE_VERSION,
-  GRAPH_SWATCHES,
-} from '@/themes/graph-inks'
+import { GRAPH_PALETTE_VERSION, GRAPH_SWATCHES } from '@/themes/graph-inks'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -16,14 +12,14 @@ it('salvages typed override tuples while preserving exact identities and existin
     JSON.stringify([
       ['', 'to-ro:1'],
       [' owner ', 'to-ro:1'],
-      ['Owner', `to-ro:curve:${GRAPH_CURVE_STEPS}`],
-      ['owner', 'to-ro:curve:0'],
+      ['Owner', 'to-ro:7'],
+      ['owner', 'to-ro:2'],
       ['custom', '#Ab12EF'],
       ['short-hex', '#abc'],
       ['invalid-hex', '#zzzzzz'],
       ['unknown-ink', 'missing:1'],
       ['unknown-shade', 'to-ro:8'],
-      ['outside', `to-ro:curve:${GRAPH_CURVE_STEPS + 1}`],
+      ['retired-curve', 'to-ro:curve:123'],
       ['wrong-type', 1],
       [42, 'to-ro:1'],
       ['extra', 'to-ro:1', 'ignored'],
@@ -33,8 +29,8 @@ it('salvages typed override tuples while preserving exact identities and existin
   expect(graphColorOverrides.entries(scope)).toEqual([
     ['', 'to-ro:1'],
     [' owner ', 'to-ro:1'],
-    ['Owner', `to-ro:curve:${GRAPH_CURVE_STEPS}`],
-    ['owner', 'to-ro:curve:0'],
+    ['Owner', 'to-ro:7'],
+    ['owner', 'to-ro:2'],
     ['custom', '#ab12ef'],
   ])
   expect(graphColorOverrides.get(scope, '')?.color).toBe(
