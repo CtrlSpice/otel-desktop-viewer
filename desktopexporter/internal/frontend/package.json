@@ -14,10 +14,10 @@
     "lint": "oxlint --deny-warnings .",
     "lint:anti-slop:evaluate": "oxlint --config oxlint.anti-slop.config.ts .",
     "test": "vitest run",
-    "test:variant": "node scripts/check-variant.mjs",
+    "test:variant": "node scripts/check-variant.ts",
     "test:a11y": "playwright test --config config/playwright.config.ts",
     "test:watch": "vitest",
-    "generate:grammar": "node scripts/generate-grammar.mjs"
+    "generate:grammar": "node scripts/generate-grammar.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.4",

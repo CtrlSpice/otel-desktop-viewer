@@ -2,37 +2,180 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
+import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { DataType, tableFromIPC } from 'apache-arrow'
-import { chromium, expect } from '@playwright/test'
+import { DataType, tableFromIPC, type Table } from 'apache-arrow'
+import { chromium, expect, type Browser, type Request } from '@playwright/test'
+
+interface RpcError {
+  code: number
+  message: string
+}
+
+interface RpcParams {
+  options?: { kind: string }
+  sql?: string
+  limit?: number
+}
+
+interface ArrowSearchAttributeMatchesParams {
+  term: string
+  signal: string
+  owner: string
+  path: string[]
+  type: string
+}
+
+interface OtlpIngestResponse {
+  partialSuccess?: {
+    rejectedSpans?: number
+    rejectedLogRecords?: number
+    rejectedDataPoints?: number
+  }
+}
+
+interface SmokeLogRecord {
+  timeUnixNano?: string
+  body?: OtlpValue
+}
+
+interface RpcResponse<T> {
+  result?: T
+  error?: RpcError
+}
+
+interface FeaturesResponse {
+  evals: { enabled: boolean }
+}
+
+interface BuildFeaturesResponse {
+  evals: boolean
+}
+
+interface StatsResponse {
+  traces: { spanCount: number }
+  logs: { logCount: number }
+  metrics: { dataPointCount: number }
+}
+
+interface QueryResponse {
+  rows: unknown[][]
+  truncated?: boolean
+}
+
+interface DiscoverServiceRow {
+  serviceName: string
+  serviceIdentity: string
+}
+
+interface DiscoverResponse {
+  rows: [DiscoverServiceRow][]
+}
+
+interface OtlpValue {
+  stringValue?: string
+  intValue?: string
+  bytesValue?: string
+  arrayValue?: { values: OtlpValue[] }
+  kvlistValue?: { values: OtlpAttribute[] }
+}
+
+interface OtlpAttribute {
+  key: string
+  value: OtlpValue
+}
+
+interface OtlpSpan {
+  traceId: string
+  spanId: string
+  parentSpanId?: string
+  name: string
+  kind: number
+  startTimeUnixNano: string
+  endTimeUnixNano: string
+  attributes: OtlpAttribute[]
+}
+
+interface OtlpResource {
+  attributes: OtlpAttribute[]
+}
+
+interface OtlpScope {
+  name: string
+}
+
+interface OtlpTracesPayload {
+  resourceSpans: Array<{
+    resource: OtlpResource
+    scopeSpans: Array<{
+      scope: OtlpScope
+      spans: OtlpSpan[]
+    }>
+  }>
+}
+
+interface ExportedTrace {
+  resourceSpans: Array<{
+    scopeSpans: Array<{
+      spans: OtlpSpan[]
+    }>
+  }>
+}
+
+interface ExportedLog {
+  resourceLogs: Array<{
+    scopeLogs: Array<{
+      logRecords: Array<{
+        attributes: OtlpAttribute[]
+      }>
+    }>
+  }>
+}
+
+interface VariantSample {
+  metadata: Uint8Array
+  value: Uint8Array
+}
+
+interface ArrowListVector<T> {
+  length: number
+  get: (index: number) => T | null
+}
 
 // Exercise the embedded executable with an isolated temporary DuckDB file and
 // no Vite server or API mocks. Reserve separate ports from interactive previews.
-assert.ok(process.argv[2], 'Usage: node scripts/smoke-binary.mjs <executable>')
+const executableArg = process.argv[2]
+assert.ok(executableArg, 'Usage: node scripts/smoke-binary.ts <executable>')
 const mode = process.env.EVALS ?? '0'
 assert.ok(mode === '0' || mode === '1', 'EVALS must be 0 or 1')
 const evals = mode === '1'
-const reservations = []
+const reservations: Server[] = []
 for (let index = 0; index < 3; index++) {
   const server = createServer()
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   reservations.push(server)
 }
-const [viewerPort, httpPort, grpcPort] = reservations.map(
-  server => server.address().port
-)
+function boundPort(server: Server): number {
+  const address = server.address()
+  assert.ok(address instanceof Object && Number.isInteger(address.port))
+  return address.port
+}
+
+const [viewerPort, httpPort, grpcPort] = reservations.map(boundPort)
 await Promise.all(
   reservations.map(
-    server => new Promise(resolveClose => server.close(resolveClose))
+    server =>
+      new Promise<void>(resolveClose => {
+        server.close(() => resolveClose())
+      })
   )
 )
 const baseURL = `http://127.0.0.1:${viewerPort}`
 const smokeDirectory = await mkdtemp(join(tmpdir(), 'otel-smoke-'))
-const child = spawn(resolve(process.argv[2]), [
+const child = spawn(resolve(executableArg), [
   '--open-browser=false',
   '--host',
   '127.0.0.1',
@@ -46,7 +189,7 @@ const child = spawn(resolve(process.argv[2]), [
   join(smokeDirectory, 'smoke.duckdb'),
 ])
 let output = ''
-let spawnError
+let spawnError: Error | undefined
 child.on('error', error => {
   spawnError = error
 })
@@ -56,36 +199,41 @@ child.stdout.on('data', chunk => {
 child.stderr.on('data', chunk => {
   output += chunk
 })
-let browser
-let importDirectory
-const errors = []
+let browser: Browser | undefined
+let importDirectory: string | undefined
+const errors: string[] = []
 
-function assertRunning() {
+function assertRunning(): void {
   if (spawnError) throw spawnError
   assert.equal(child.exitCode, null, `Viewer exited: ${output}`)
   assert.equal(child.signalCode, null, `Viewer was terminated: ${output}`)
 }
 
-async function json(url, options) {
+async function json<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
     signal: AbortSignal.timeout(2000),
   })
   assert.equal(response.status, 200, `${url}: ${await response.clone().text()}`)
-  return response.json()
+  const parsed: T = await response.json()
+  return parsed
 }
 
-async function rpc(method, params = {}) {
-  const response = await json(`${baseURL}/rpc`, {
+async function rpc<T>(method: string, params: RpcParams = {}): Promise<T> {
+  const response = await json<RpcResponse<T>>(`${baseURL}/rpc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   })
   assert.equal(response.error, undefined, JSON.stringify(response.error))
+  assert.ok(response.result !== undefined, `${method}: missing result`)
   return response.result
 }
 
-async function arrow(method, params) {
+async function arrow(
+  method: string,
+  params: ArrowSearchAttributeMatchesParams
+): Promise<Table> {
   const response = await fetch(`${baseURL}/api/data/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -108,6 +256,15 @@ async function arrow(method, params) {
   return table
 }
 
+function findAttribute(
+  attributes: OtlpAttribute[],
+  key: string
+): OtlpAttribute {
+  const attribute = attributes.find(item => item.key === key)
+  assert.ok(attribute, `Missing attribute ${key}`)
+  return attribute
+}
+
 try {
   await expect
     .poll(
@@ -126,16 +283,20 @@ try {
       { timeout: 30000 }
     )
     .toBe(200)
-  assert.equal((await json(`${baseURL}/api/features`)).evals.enabled, evals)
-  assert.deepEqual(await json(`${baseURL}/build-features.json`), {
-    evals,
-  })
+  assert.equal(
+    (await json<FeaturesResponse>(`${baseURL}/api/features`)).evals.enabled,
+    evals
+  )
+  assert.deepEqual(
+    await json<BuildFeaturesResponse>(`${baseURL}/build-features.json`),
+    { evals }
+  )
 
   const traceId = '0123456789abcdef0123456789abcdef'
   const spanId = '0123456789abcdef'
   const timestamp = String(BigInt(Date.now()) * 1000000n + 123n)
   const exactInteger = '9007199254740993'
-  let deep = {
+  let deep: OtlpValue = {
     kvlistValue: {
       values: [
         { key: 'bytes', value: { bytesValue: 'AP8=' } },
@@ -145,42 +306,44 @@ try {
       ],
     },
   }
-  for (let level = 0; level < 200; level++)
+  for (let level = 0; level < 200; level++) {
     deep =
       level % 2
         ? { kvlistValue: { values: [{ key: 'child', value: deep }] } }
         : { arrayValue: { values: [deep] } }
+  }
   const resource = {
     attributes: [{ key: 'service.name', value: { stringValue: 'ci-smoke' } }],
   }
   const scope = { name: 'embedded-smoke' }
+  const initialTraces: OtlpTracesPayload = {
+    resourceSpans: [
+      {
+        resource,
+        scopeSpans: [
+          {
+            scope,
+            spans: [
+              {
+                traceId,
+                spanId,
+                name: 'ci-smoke-span',
+                kind: 2,
+                startTimeUnixNano: timestamp,
+                endTimeUnixNano: String(BigInt(timestamp) + 1000000n),
+                attributes: [
+                  { key: 'smoke.exact', value: { intValue: exactInteger } },
+                  { key: 'smoke.text', value: { stringValue: exactInteger } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  }
   const payloads = {
-    traces: {
-      resourceSpans: [
-        {
-          resource,
-          scopeSpans: [
-            {
-              scope,
-              spans: [
-                {
-                  traceId,
-                  spanId,
-                  name: 'ci-smoke-span',
-                  kind: 2,
-                  startTimeUnixNano: timestamp,
-                  endTimeUnixNano: String(BigInt(timestamp) + 1000000n),
-                  attributes: [
-                    { key: 'smoke.exact', value: { intValue: exactInteger } },
-                    { key: 'smoke.text', value: { stringValue: exactInteger } },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
+    traces: initialTraces,
     logs: {
       resourceLogs: [
         {
@@ -255,17 +418,20 @@ try {
     },
   }
   for (const [signal, payload] of Object.entries(payloads)) {
-    await json(`http://127.0.0.1:${httpPort}/v1/${signal}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+    await json<OtlpIngestResponse>(
+      `http://127.0.0.1:${httpPort}/v1/${signal}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    )
   }
   await expect
     .poll(
       async () => {
         assertRunning()
-        const stats = await rpc('getStats')
+        const stats = await rpc<StatsResponse>('getStats')
         return [
           stats.traces.spanCount,
           stats.logs.logCount,
@@ -275,27 +441,27 @@ try {
       { timeout: 30000 }
     )
     .toEqual([1, 1, 1])
-  const services = await rpc('discoverTelemetry', {
+  const services = await rpc<DiscoverResponse>('discoverTelemetry', {
     options: { kind: 'services' },
   })
   assert.equal(services.rows.length, 1)
   assert.equal(services.rows[0][0].serviceName, 'ci-smoke')
   assert.ok(services.rows[0][0].serviceIdentity)
-  const exported = await json(`${baseURL}/export/traces/${traceId}`)
+  const exported = await json<ExportedTrace>(
+    `${baseURL}/export/traces/${traceId}`
+  )
   const span = exported.resourceSpans[0].scopeSpans[0].spans[0]
   assert.equal(span.traceId, traceId)
   assert.equal(span.spanId, spanId)
   assert.equal(span.startTimeUnixNano, timestamp)
-  assert.deepEqual(
-    span.attributes.find(attribute => attribute.key === 'smoke.exact').value,
-    { intValue: exactInteger }
-  )
-  assert.deepEqual(
-    span.attributes.find(attribute => attribute.key === 'smoke.text').value,
-    { stringValue: exactInteger }
-  )
+  assert.deepEqual(findAttribute(span.attributes, 'smoke.exact').value, {
+    intValue: exactInteger,
+  })
+  assert.deepEqual(findAttribute(span.attributes, 'smoke.text').value, {
+    stringValue: exactInteger,
+  })
 
-  const stored = await rpc('query', {
+  const stored = await rpc<QueryResponse>('query', {
     sql: `SELECT (SELECT version FROM schema_meta), typeof(attributes),
       variant_typeof(attributes['smoke.exact']),
       attributes['smoke.exact']::bigint::varchar,
@@ -315,10 +481,11 @@ try {
     (exactInteger.length << 2) | 1,
     ...new TextEncoder().encode(exactInteger)
   )
-  for (const [key, type, expected] of [
+  const variantChecks: Array<[string, string, Uint8Array]> = [
     ['smoke.exact', 'int64', integerBytes],
     ['smoke.text', 'string', stringBytes],
-  ]) {
+  ]
+  for (const [key, type, expected] of variantChecks) {
     const matches = await arrow('searchAttributeMatches', {
       term: '',
       signal: 'traces',
@@ -327,18 +494,25 @@ try {
       type,
     })
     assert.equal(matches.numRows, 1)
-    const sampleType = matches.schema.fields.find(
+    const sampleField = matches.schema.fields.find(
       field => field.name === 'sampleValues'
-    ).type
+    )
+    assert.ok(sampleField, 'Missing sampleValues field')
+    const sampleType = sampleField.type
     assert.ok(DataType.isList(sampleType))
     assert.equal(
       sampleType.children[0].metadata.get('ARROW:extension:name'),
       'arrow.parquet.variant'
     )
-    const samples = matches.getChild('sampleValues').get(0)
+    const sampleColumn = matches.getChild('sampleValues')
+    assert.ok(sampleColumn, 'Missing sampleValues column')
+    const samples: ArrowListVector<VariantSample> | null = sampleColumn.get(0)
+    assert.ok(samples, 'Missing sampleValues row')
     assert.equal(samples.length, 1)
-    assert.equal(samples.get(0).metadata[0] & 0x0f, 1)
-    assert.deepEqual(samples.get(0).value, expected)
+    const firstSample = samples.get(0)
+    assert.ok(firstSample, 'Missing sampleValues element')
+    assert.equal(firstSample.metadata[0] & 0x0f, 1)
+    assert.deepEqual(firstSample.value, expected)
   }
 
   browser = await chromium.launch()
@@ -347,8 +521,9 @@ try {
   })
   page.on('pageerror', error => errors.push(error.message))
   page.on('response', response => {
-    if (response.url().startsWith(baseURL) && response.status() >= 400)
+    if (response.url().startsWith(baseURL) && response.status() >= 400) {
       errors.push(`${response.status()} ${response.url()}`)
+    }
   })
   await page.goto(baseURL)
   await expect(
@@ -358,13 +533,16 @@ try {
   if (evals) await expect(evalsLink).toBeVisible()
   else await expect(evalsLink).toHaveCount(0)
 
-  const logRows = await rpc('query', { sql: 'SELECT id::varchar FROM logs' })
+  const logRows = await rpc<QueryResponse>('query', {
+    sql: 'SELECT id::varchar FROM logs',
+  })
   assert.equal(logRows.rows.length, 1)
+  const firstLogID = String(logRows.rows[0][0])
   await page.addInitScript(() => {
     localStorage.setItem('signal-detail:open', 'true')
     localStorage.setItem('signal-drawer:open', 'false')
   })
-  await page.goto(`${baseURL}/logs/${logRows.rows[0][0]}?time=all`)
+  await page.goto(`${baseURL}/logs/${firstLogID}?time=all`)
   const body = page
     .getByRole('table', { name: 'Log fields' })
     .locator('[data-field="body"]')
@@ -385,7 +563,7 @@ try {
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toContain('last-hidden-value')
   const copied = await page.evaluate(() => navigator.clipboard.readText())
-  assert.equal(copied.match(/"child":/g).length, 100)
+  assert.equal(copied.match(/"child":/g)?.length, 100)
   assert.ok(copied.includes(`"exact": ${exactInteger}`))
   assert.ok(copied.includes(`"text": "${exactInteger}"`))
   assert.ok(copied.includes('"bytes": "AP8="'))
@@ -418,16 +596,18 @@ try {
   })
   const live = page.getByRole('button', { name: 'Live', exact: true })
   await expect(live).toHaveAttribute('aria-pressed', 'false')
-  const receivedLogCount = count =>
+  const receivedLogCount = (count: number) =>
     page.waitForResponse(async response => {
       if (
         response.url() !== `${baseURL}/rpc` ||
         response.request().postDataJSON()?.method !== 'getStats'
-      )
+      ) {
         return false
-      return (await response.json()).result?.logs?.logCount === count
+      }
+      const body: RpcResponse<StatsResponse> = await response.json()
+      return body.result?.logs?.logCount === count
     })
-  const appendLog = async marker => {
+  const appendLog = async (marker: string): Promise<void> => {
     const response = await fetch(`http://127.0.0.1:${httpPort}/v1/logs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -515,49 +695,58 @@ try {
   await expect(page).toHaveURL(/\/logs\/[a-f0-9-]+\?time=all$/)
   await expect(body).toContainText('browser-import-destination')
   const importedID = new URL(page.url()).pathname.split('/').at(-1)
-  const imported = await json(`${baseURL}/export/logs/${importedID}`)
+  assert.ok(importedID, 'Missing imported log ID in URL')
+  const imported = await json<ExportedLog>(
+    `${baseURL}/export/logs/${importedID}`
+  )
   const importedLog = imported.resourceLogs[0].scopeLogs[0].logRecords[0]
   assert.match(
-    importedLog.attributes.find(attribute => attribute.key === 'password').value
-      .stringValue,
+    findAttribute(importedLog.attributes, 'password').value.stringValue ?? '',
     /\*{4}/
   )
-  assert.deepEqual(
-    importedLog.attributes.find(attribute => attribute.key === 'exact').value,
-    { intValue: exactInteger }
-  )
+  assert.deepEqual(findAttribute(importedLog.attributes, 'exact').value, {
+    intValue: exactInteger,
+  })
 
   await mkdir(join(tmpdir(), 'opencode'), { recursive: true })
   importDirectory = await mkdtemp(join(tmpdir(), 'opencode', 'cli-import-'))
-  const importFiles = async files => {
-    const command = spawn(resolve(process.argv[2]), [
+  const importFiles = async (
+    files: string[]
+  ): Promise<{ code: number | null; text: string }> => {
+    const command = spawn(resolve(executableArg), [
       'import',
       ...files,
       '--endpoint',
       baseURL,
     ])
     let text = ''
-    command.stdout.on('data', chunk => (text += chunk))
-    command.stderr.on('data', chunk => (text += chunk))
-    const [code] = await once(command, 'exit')
+    command.stdout.on('data', chunk => {
+      text += chunk
+    })
+    command.stderr.on('data', chunk => {
+      text += chunk
+    })
+    const exitEvent = await once(command, 'exit')
+    const code: number | null = exitEvent[0]
     return { code, text }
   }
-  const metricIDs = await rpc('query', {
+  const metricIDs = await rpc<QueryResponse>('query', {
     sql: `select metric_id::varchar, series_id::varchar, id::varchar
       from metric_datapoints order by timestamp limit 1`,
   })
-  const [metricID, seriesID, datapointID] = metricIDs.rows[0]
+  const [metricID, seriesID, datapointID] = metricIDs.rows[0].map(String)
   const filter = 'service.name = "ci-smoke"'
-  const reads = new Map()
-  const pending = new Set()
+  const reads = new Map<string, number>()
+  const pending = new Set<Request>()
   let importLookups = 0
   page.on('request', request => {
-    if (request.url().startsWith(`${baseURL}/api/import-target/`))
+    if (request.url().startsWith(`${baseURL}/api/import-target/`)) {
       importLookups++
+    }
     if (request.url().startsWith(`${baseURL}/api/data/`)) {
       pending.add(request)
       const method = new URL(request.url()).pathname.split('/').at(-1)
-      reads.set(method, (reads.get(method) ?? 0) + 1)
+      if (method) reads.set(method, (reads.get(method) ?? 0) + 1)
     }
   })
   page.on('requestfinished', request => pending.delete(request))
@@ -565,8 +754,10 @@ try {
   const settled = () => expect.poll(() => pending.size).toBe(0)
   await page.setViewportSize({ width: 1920, height: 1080 })
   let sequence = 0
-  for (const [signal, id, selection, method] of [
-    ['logs', logRows.rows[0][0], {}, 'getLog'],
+  const signalCases: Array<
+    ['logs' | 'traces' | 'metrics', string, Record<string, string>, string]
+  > = [
+    ['logs', firstLogID, {}, 'getLog'],
     ['traces', traceId, { span: spanId }, 'getTraceView'],
     [
       'metrics',
@@ -574,20 +765,21 @@ try {
       { series: seriesID, dp: datapointID, agg: 'raw', visible: 'none' },
       'getMetricView',
     ],
-  ]) {
-    for (const enabled of [false, true]) {
+  ]
+  for (const [signal, id, selection, method] of signalCases) {
+    for (const liveEnabled of [false, true]) {
       const params = new URLSearchParams({
         time: 'all',
         q: filter,
         ...selection,
       })
       await page.goto(`${baseURL}/${signal}/${id}?${params}`)
-      const search = page.getByRole('textbox', {
+      const searchBox = page.getByRole('textbox', {
         name: `Search ${signal}`,
         exact: true,
       })
-      const selectedDetail = async () => {
-        await expect(search).toHaveText(filter)
+      const selectedDetail = async (): Promise<void> => {
+        await expect(searchBox).toHaveText(filter)
         if (signal === 'logs') {
           await expect(
             page.getByRole('table', { name: 'Log fields' })
@@ -608,16 +800,16 @@ try {
       await selectedDetail()
       await settled()
       assert.ok(reads.has(method), `${signal} did not request ${method}`)
-      if (enabled) {
-        const before = reads.get(method)
+      if (liveEnabled) {
+        const before = reads.get(method) ?? 0
         await live.click()
-        await expect.poll(() => reads.get(method)).toBeGreaterThan(before)
+        await expect.poll(() => reads.get(method) ?? 0).toBeGreaterThan(before)
         await settled()
       }
-      await expect(live).toHaveAttribute('aria-pressed', String(enabled))
+      await expect(live).toHaveAttribute('aria-pressed', String(liveEnabled))
       const selected = page.url()
-      const beforeReads = reads.get(method)
-      const before = await rpc('getStats')
+      const beforeReads = reads.get(method) ?? 0
+      const before = await rpc<StatsResponse>('getStats')
       const marker = `cli-import-${++sequence}`
       const newSpanID = sequence.toString(16).padStart(16, '0')
       const traces = structuredClone(payloads.traces)
@@ -681,7 +873,7 @@ try {
       // Receiver acceptance alone does not prove that these writes committed.
       await expect
         .poll(async () => {
-          const stats = await rpc('getStats')
+          const stats = await rpc<StatsResponse>('getStats')
           return [
             stats.traces.spanCount,
             stats.logs.logCount,
@@ -694,30 +886,34 @@ try {
           before.metrics.dataPointCount + 2,
         ])
       await notified
-      if (enabled) {
-        await expect.poll(() => reads.get(method)).toBeGreaterThan(beforeReads)
+      if (liveEnabled) {
+        await expect
+          .poll(() => reads.get(method) ?? 0)
+          .toBeGreaterThan(beforeReads)
       } else {
         assert.equal(reads.get(method), beforeReads)
         await page.getByRole('button', { name: /^Refresh(?:$|:)/ }).click()
-        await expect.poll(() => reads.get(method)).toBeGreaterThan(beforeReads)
+        await expect
+          .poll(() => reads.get(method) ?? 0)
+          .toBeGreaterThan(beforeReads)
       }
       await settled()
       assert.equal(page.url(), selected)
       await selectedDetail()
       assert.equal(importLookups, 0)
-      const storedLog = await rpc('query', {
+      const storedLog = await rpc<QueryResponse>('query', {
         sql: `select id::varchar from logs where body::varchar = '${marker}'`,
       })
       assert.equal(storedLog.rows.length, 1)
-      const cliLog = await json(
-        `${baseURL}/export/logs/${storedLog.rows[0][0]}`
+      const cliLog = await json<ExportedLog>(
+        `${baseURL}/export/logs/${String(storedLog.rows[0][0])}`
       )
       const attrs = cliLog.resourceLogs[0].scopeLogs[0].logRecords[0].attributes
       assert.match(
-        attrs.find(a => a.key === 'password').value.stringValue,
+        findAttribute(attrs, 'password').value.stringValue ?? '',
         /\*{4}/
       )
-      assert.deepEqual(attrs.find(a => a.key === 'exact').value, {
+      assert.deepEqual(findAttribute(attrs, 'exact').value, {
         intValue: exactInteger,
       })
       const download = page.waitForEvent('download')
@@ -738,7 +934,7 @@ try {
         `/export/${signal}/${id}`
       )
       console.log(
-        `CLI import retained ${signal} selection with Live ${enabled ? 'on' : 'off'}`
+        `CLI import retained ${signal} selection with Live ${liveEnabled ? 'on' : 'off'}`
       )
     }
   }
@@ -749,7 +945,7 @@ try {
   const bad = join(importDirectory, 'malformed.jsonl')
   const rejected = join(importDirectory, 'receiver-rejected.json')
   const good = join(importDirectory, 'after-errors.json')
-  const logPayload = record =>
+  const logPayload = (record: SmokeLogRecord): string =>
     JSON.stringify({
       resourceLogs: [
         { resource, scopeLogs: [{ scope, logRecords: [record] }] },
@@ -767,7 +963,7 @@ try {
       body: { stringValue: 'after-cli-errors' },
     })
   )
-  const beforeErrors = await rpc('getStats')
+  const beforeErrors = await rpc<StatsResponse>('getStats')
   const notified = receivedLogCount(beforeErrors.logs.logCount + 1)
   const failedImport = await importFiles([bad, rejected, good])
   assert.equal(failedImport.code, 1, failedImport.text)
@@ -780,7 +976,7 @@ try {
   assert.equal(importLookups, 0)
   assert.deepEqual(
     (
-      await rpc('query', {
+      await rpc<QueryResponse>('query', {
         sql: `select body::varchar from logs
       where body::varchar in ('must-not-be-sent', 'after-cli-errors')`,
       })
@@ -789,28 +985,30 @@ try {
   )
 
   // Large direct links must survive the actual HTTP server and a fresh browser.
-  const linkedMetrics = ['histogram', 'exponentialHistogram'].map(kind => ({
-    name: `url-smoke-${kind}`,
-    [kind]: {
-      aggregationTemporality: 1,
-      dataPoints: Array.from({ length: 1000 }, (_, index) => ({
-        attributes: [{ key: 'index', value: { intValue: String(index) } }],
-        startTimeUnixNano: String(BigInt(timestamp) - 1000000000n),
-        timeUnixNano: timestamp,
-        count: '1',
-        sum: 1.5,
-        min: 1,
-        max: 2,
-        ...(kind === 'histogram'
-          ? { explicitBounds: [2], bucketCounts: ['1', '0'] }
-          : {
-              scale: 0,
-              zeroCount: '0',
-              positive: { offset: 0, bucketCounts: ['1'] },
-            }),
-      })),
-    },
-  }))
+  const linkedMetrics = (['histogram', 'exponentialHistogram'] as const).map(
+    kind => ({
+      name: `url-smoke-${kind}`,
+      [kind]: {
+        aggregationTemporality: 1,
+        dataPoints: Array.from({ length: 1000 }, (_, index) => ({
+          attributes: [{ key: 'index', value: { intValue: String(index) } }],
+          startTimeUnixNano: String(BigInt(timestamp) - 1000000000n),
+          timeUnixNano: timestamp,
+          count: '1',
+          sum: 1.5,
+          min: 1,
+          max: 2,
+          ...(kind === 'histogram'
+            ? { explicitBounds: [2], bucketCounts: ['1', '0'] }
+            : {
+                scale: 0,
+                zeroCount: '0',
+                positive: { offset: 0, bucketCounts: ['1'] },
+              }),
+        })),
+      },
+    })
+  )
   const longLinkFile = join(importDirectory, 'long-metric-links.json')
   await writeFile(
     longLinkFile,
@@ -823,16 +1021,18 @@ try {
   const longLinkImport = await importFiles([longLinkFile])
   assert.equal(longLinkImport.code, 0, longLinkImport.text)
   const longLinkRows = () =>
-    rpc('query', {
+    rpc<QueryResponse>('query', {
       sql: "select id::varchar, name from metrics where name like 'url-smoke-%' order by name",
     })
   await expect.poll(async () => (await longLinkRows()).rows.length).toBe(2)
-  for (const [id, name] of (await longLinkRows()).rows) {
-    const rows = await rpc('query', {
+  for (const row of (await longLinkRows()).rows) {
+    const id = String(row[0])
+    const name = String(row[1])
+    const rows = await rpc<QueryResponse>('query', {
       sql: `select series_id::varchar from metric_datapoints where metric_id = '${id}' order by series_id`,
       limit: 1000,
     })
-    const keys = rows.rows.map(row => row[0])
+    const keys = rows.rows.map(item => String(item[0]))
     assert.equal(keys.length, 1000)
     const url = `${baseURL}/metrics/${id}?${new URLSearchParams({ time: 'all', htab: 'histogram', visible: keys.join(',') })}`
     assert.ok(Buffer.byteLength(url) > 39000)
@@ -842,12 +1042,17 @@ try {
     try {
       const linked = await fresh.newPage()
       linked.on('pageerror', error => errors.push(error.message))
-      const requested = []
+      const requested: string[][] = []
       linked.on('request', request => {
-        if (request.url().endsWith('/api/data/getMetricAggregateView'))
-          requested.push(request.postDataJSON().seriesRefs)
+        if (request.url().endsWith('/api/data/getMetricAggregateView')) {
+          const payload: { seriesRefs?: string[] } | null =
+            request.postDataJSON()
+          assert.ok(Array.isArray(payload?.seriesRefs))
+          requested.push(payload.seriesRefs)
+        }
       })
       const response = await linked.goto(url)
+      assert.ok(response, 'Missing navigation response')
       assert.equal(response.status(), 200)
       await expect(linked.locator('.lc-bars-bar:visible').first()).toBeVisible()
       await expect(
@@ -898,8 +1103,9 @@ try {
         await stopped
       }
     }
-    if (importDirectory)
+    if (importDirectory) {
       await rm(importDirectory, { recursive: true, force: true })
+    }
     await rm(smokeDirectory, { recursive: true, force: true })
   }
 }

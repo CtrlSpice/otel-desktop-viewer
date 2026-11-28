@@ -10,11 +10,17 @@ await mkdir(cache, { recursive: true })
 const directory = await mkdtemp(join(cache, 'variant-'))
 const fixture = join(directory, 'native.arrow')
 
-function run(command, args, cwd, env = process.env) {
+function run(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env
+): void {
   const result = spawnSync(command, args, { cwd, env, stdio: 'inherit' })
   if (result.error) throw result.error
-  if (result.status !== 0)
+  if (result.status !== 0) {
     throw new Error(`${command} failed with exit code ${result.status}`)
+  }
 }
 
 try {
@@ -27,7 +33,7 @@ try {
     ],
     root
   )
-  for (const mode of ['0', '1']) {
+  for (const mode of ['0', '1'] as const) {
     console.log(`Fresh native Variant compatibility: EVALS=${mode}`)
     run(
       process.execPath,

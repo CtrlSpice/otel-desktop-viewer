@@ -1,9 +1,9 @@
 playwright-report/
 test-results/
 tools/oxlint/anti-slop/
-# Pinned upstream sources and distributions copied by generate-madoromi.mjs.
+# Pinned upstream sources and distributions copied by generate-madoromi.ts.
 public/licenses/madoromi/
-# JSON emitted by generate-madoromi.mjs; retain deterministic generator output.
+# JSON emitted by generate-madoromi.ts; retain deterministic generator output.
 src/themes/accent-inks.json
 src/themes/count-palettes.json
 src/themes/heatmap-palette.json

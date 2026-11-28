@@ -246,7 +246,7 @@ jobs:
     - name: Build public executable with committed assets
       run: go build -o otel-desktop-viewer
     - name: Exercise embedded UI, ingestion and export
-      run: node desktopexporter/internal/frontend/scripts/smoke-binary.mjs ./otel-desktop-viewer
+      run: node desktopexporter/internal/frontend/scripts/smoke-binary.ts ./otel-desktop-viewer
 
   evals-runner:
     # The Pi provider integration test exercises the macOS filesystem sandbox.
