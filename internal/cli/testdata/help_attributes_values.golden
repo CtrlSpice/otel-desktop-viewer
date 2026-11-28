@@ -1,0 +1,23 @@
+🏷️ Rank attribute values by distinct telemetry-record count: spans, logs and Metric datapoints across the selected locations. Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Events and exemplars use their own timestamps; other owners use the counted record's time. Service filters follow the associated record. Resource/scope values count referencing records, not distinct resources/scopes. The denominator is matching records whose selected owner carries the key, before the result limit. A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Searches all signals and owners in the last hour and returns up to 25 values. Columns show value, kind, count, percentage and owner locations; --json retains the tagged value, owner location, count, denominator and relative frequency. A record with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%. Use query to find records carrying a selected typed value, then trace or span to inspect them; skills includes a checked SQL example.
+
+USAGE
+  otel-desktop-viewer attributes values <key> [flags]
+
+EXAMPLES
+  otel-desktop-viewer attributes values http.method
+  otel-desktop-viewer attributes values http.method --service checkout --limit 10 --json
+  otel-desktop-viewer attributes values region --signal metrics --owner-type resource --json
+
+FLAGS
+      --end string          Inclusive RFC3339 end time (nanoseconds supported)
+      --endpoint string     Running viewer HTTP endpoint (default "http://localhost:8000")
+      --json                Emit exact JSON with truncation instead of columns
+      --limit int           Maximum rows to return (default 25)
+      --owner-type string   Limit to one owner: span/event/link (traces), log (logs), datapoint/exemplar/metadata (metrics), resource or scope
+      --service string      Only records for this service
+      --signal string       Limit to one signal: traces, logs or metrics
+      --since duration      Relative lookback window (for example 30m, 6h, or 24h) (default 1h0m0s)
+      --start string        Inclusive RFC3339 start time (nanoseconds supported)
+
+GLOBAL FLAGS
+  -h, --help   Help for this command

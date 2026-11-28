@@ -30,7 +30,7 @@ func TestGetTraceSelectionOTLP(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, otlpTraceFixture())
 	}))
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceSelectionOTLP(ctx, db, otlpTraceID, "18446744073709551615")
 	})
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestGetTraceSelectionOTLP(t *testing.T) {
 	assert.Contains(t, string(raw), `"spanId":"ffffffffffffffff"`)
 	assert.Contains(t, string(raw), `"traceId":"`+otlpTraceID+`"`)
 	assert.Contains(t, string(raw), `"doubleValue":-0.0`)
-	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	_, err = storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceSelectionOTLP(ctx, db, otlpTraceID, "0")
 	})
 	require.ErrorIs(t, err, spans.ErrTraceIDNotFound)
@@ -59,7 +59,7 @@ func TestGetTraceOTLP(t *testing.T) {
 		return spans.Ingest(ctx, conn, input)
 	}))
 
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceOTLP(ctx, db, otlpTraceID)
 	})
 	require.NoError(t, err)
@@ -88,8 +88,8 @@ func TestTraceChildrenRetainOrderInLargeNestedLists(t *testing.T) {
 	s, ctx := storetest.New(t)
 	input := ptrace.NewTraces()
 	span := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
-	span.SetTraceID(mustDecodeTraceID(otlpTraceID))
-	span.SetSpanID(mustDecodeSpanID("0000000000000001"))
+	span.SetTraceID(storetest.MustDecodeTraceID(otlpTraceID))
+	span.SetSpanID(storetest.MustDecodeSpanID("0000000000000001"))
 	span.SetName("many children")
 	const children = 8193
 	for i := range children {
@@ -102,7 +102,7 @@ func TestTraceChildrenRetainOrderInLargeNestedLists(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, input)
 	}))
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceOTLP(ctx, db, otlpTraceID)
 	})
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func assertTraceOTLP(t *testing.T, decoded ptrace.Traces) {
 	require.True(t, ok)
 	assert.False(t, scopeEnabled.Bool())
 
-	primary, found := gotSpans[mustDecodeSpanID("ffffffffffffffff")]
+	primary, found := gotSpans[storetest.MustDecodeSpanID("ffffffffffffffff")]
 	require.True(t, found)
 	assert.Equal(t, pcommon.Timestamp(math.MaxUint64-1), primary.StartTimestamp())
 	assert.Equal(t, pcommon.Timestamp(math.MaxUint64), primary.EndTimestamp())
@@ -181,7 +181,7 @@ func assertTraceOTLP(t *testing.T, decoded ptrace.Traces) {
 	assert.Equal(t, "vendor=opaque", primary.TraceState().AsRaw())
 	assert.Equal(t, 2, primary.Events().Len())
 	assert.Equal(t, 2, primary.Links().Len())
-	assert.Equal(t, pcommon.SpanID(mustDecodeSpanID("0000000000000002")), primary.ParentSpanID())
+	assert.Equal(t, pcommon.SpanID(storetest.MustDecodeSpanID("0000000000000002")), primary.ParentSpanID())
 
 	value, ok := primary.Attributes().Get("nested")
 	require.True(t, ok)
@@ -220,8 +220,8 @@ func assertTraceOTLP(t *testing.T, decoded ptrace.Traces) {
 		}
 	}
 	assert.Equal(t, uint32(1), uint32(linked.Flags()))
-	assert.Equal(t, mustDecodeTraceID("11111111111111112222222222222222"), [16]byte(linked.TraceID()))
-	assert.Equal(t, mustDecodeSpanID("8000000000000000"), [8]byte(linked.SpanID()))
+	assert.Equal(t, storetest.MustDecodeTraceID("11111111111111112222222222222222"), [16]byte(linked.TraceID()))
+	assert.Equal(t, storetest.MustDecodeSpanID("8000000000000000"), [8]byte(linked.SpanID()))
 	assert.Equal(t, uint32(2), uint32(empty.Flags()))
 	assert.True(t, empty.TraceID().IsEmpty())
 	assert.True(t, empty.SpanID().IsEmpty())
@@ -232,7 +232,7 @@ func TestValidateTraceOTLPRejectsInvalidWireShapes(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, otlpTraceFixture())
 	}))
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceOTLP(ctx, db, otlpTraceID)
 	})
 	require.NoError(t, err)
@@ -267,7 +267,7 @@ func treeValue(t *testing.T, values pcommon.Map, key string) pcommon.Value {
 func TestGetTraceOTLPNotFound(t *testing.T) {
 	s, ctx := storetest.New(t)
 	for _, traceID := range []string{"00000000000000000000000000000000", "not-a-trace-id"} {
-		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		_, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.GetTraceOTLP(ctx, db, traceID)
 		})
 		assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
@@ -306,7 +306,7 @@ func TestSpanAttributesCannotBecomeSQLNull(t *testing.T) {
 
 func otlpTraceFixture() ptrace.Traces {
 	traces := ptrace.NewTraces()
-	traceID := mustDecodeTraceID(otlpTraceID)
+	traceID := storetest.MustDecodeTraceID(otlpTraceID)
 
 	rs := traces.ResourceSpans().AppendEmpty()
 	rs.SetSchemaUrl("https://example.test/resource/v2")
@@ -322,8 +322,8 @@ func otlpTraceFixture() ptrace.Traces {
 
 	primary := ss.Spans().AppendEmpty()
 	primary.SetTraceID(traceID)
-	primary.SetSpanID(mustDecodeSpanID("ffffffffffffffff"))
-	primary.SetParentSpanID(mustDecodeSpanID("0000000000000002"))
+	primary.SetSpanID(storetest.MustDecodeSpanID("ffffffffffffffff"))
+	primary.SetParentSpanID(storetest.MustDecodeSpanID("0000000000000002"))
 	primary.TraceState().FromRaw("vendor=opaque")
 	primary.SetFlags(0x101)
 	primary.SetName("primary")
@@ -375,16 +375,16 @@ func otlpTraceFixture() ptrace.Traces {
 		link.SetDroppedAttributesCount(uint32(i + 2))
 		link.Attributes().PutBool("link.enabled", i == 0)
 		if i == 0 {
-			link.SetTraceID(mustDecodeTraceID("11111111111111112222222222222222"))
-			link.SetSpanID(mustDecodeSpanID("8000000000000000"))
+			link.SetTraceID(storetest.MustDecodeTraceID("11111111111111112222222222222222"))
+			link.SetSpanID(storetest.MustDecodeSpanID("8000000000000000"))
 		}
 	}
 
 	// A two-span cycle has no root and cannot be found by a parent-tree walk.
 	cycle := ss.Spans().AppendEmpty()
 	cycle.SetTraceID(traceID)
-	cycle.SetSpanID(mustDecodeSpanID("0000000000000002"))
-	cycle.SetParentSpanID(mustDecodeSpanID("ffffffffffffffff"))
+	cycle.SetSpanID(storetest.MustDecodeSpanID("0000000000000002"))
+	cycle.SetParentSpanID(storetest.MustDecodeSpanID("ffffffffffffffff"))
 	cycle.SetName("cycle-peer")
 	cycle.SetStartTimestamp(20)
 	cycle.SetEndTimestamp(30)
@@ -398,8 +398,8 @@ func otlpTraceFixture() ptrace.Traces {
 	ss.Scope().SetName("worker-scope")
 	orphan := ss.Spans().AppendEmpty()
 	orphan.SetTraceID(traceID)
-	orphan.SetSpanID(mustDecodeSpanID("8000000000000001"))
-	orphan.SetParentSpanID(mustDecodeSpanID("7777777777777777"))
+	orphan.SetSpanID(storetest.MustDecodeSpanID("8000000000000001"))
+	orphan.SetParentSpanID(storetest.MustDecodeSpanID("7777777777777777"))
 	orphan.SetName("orphan")
 	orphan.SetStartTimestamp(40)
 	orphan.SetEndTimestamp(50)
@@ -412,7 +412,7 @@ func otlpTraceFixture() ptrace.Traces {
 	ss.Scope().SetName("detached-scope")
 	detached := ss.Spans().AppendEmpty()
 	detached.SetTraceID(traceID)
-	detached.SetSpanID(mustDecodeSpanID("0000000000000004"))
+	detached.SetSpanID(storetest.MustDecodeSpanID("0000000000000004"))
 	detached.SetName("detached")
 	detached.SetStartTimestamp(60)
 	detached.SetEndTimestamp(70)
@@ -524,11 +524,11 @@ func BenchmarkGetTraceOTLP(b *testing.B) {
 	rs.Resource().Attributes().PutStr("service.name", "benchmark")
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName("benchmark")
-	traceID := mustDecodeTraceID(otlpTraceID)
+	traceID := storetest.MustDecodeTraceID(otlpTraceID)
 	for i := 0; i < 1000; i++ {
 		span := ss.Spans().AppendEmpty()
 		span.SetTraceID(traceID)
-		span.SetSpanID(mustDecodeSpanID(fmt.Sprintf("%016x", i+1)))
+		span.SetSpanID(storetest.MustDecodeSpanID(fmt.Sprintf("%016x", i+1)))
 		span.SetName(fmt.Sprintf("span-%04d", i))
 		span.SetStartTimestamp(pcommon.Timestamp(i * 100))
 		span.SetEndTimestamp(pcommon.Timestamp(i*100 + 50))
@@ -562,4 +562,37 @@ func BenchmarkGetTraceOTLP(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestExportIdentity_RetainedSpanIsImmutableButDeletionAllowsReingestion(t *testing.T) {
+	s, ctx := storetest.New(t)
+	const traceHex = "000000000000000000000000000000a1"
+	const traceID = "00000000-0000-0000-0000-0000000000a1"
+	read := func() json.RawMessage {
+		t.Helper()
+		raw, err := storetest.Read(s, func(db *sql.DB) (json.RawMessage, error) {
+			return spans.GetTraceSelectionOTLP(ctx, db, traceID, "1")
+		})
+		require.NoError(t, err)
+		return raw
+	}
+	_, err := ingestReport(t, s, traceReusingSpanIDs(traceHex, "original"))
+	require.NoError(t, err)
+	original := read()
+	changed := traceReusingSpanIDs(traceHex, "replacement")
+	rejected, err := ingestReport(t, s, changed)
+	require.NoError(t, err)
+	require.Equal(t, 2, rejected.Count())
+	require.Equal(t, string(original), string(read()), "resends cannot change retained export bytes")
+
+	// This is the public delete operation, not a direct SQL mutation. The
+	// composite identity has no persistent incarnation/version after deletion.
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return spans.DeleteSpansByTraceIDs(ctx, db, []any{traceID})
+	}))
+	rejected, err = ingestReport(t, s, changed)
+	require.NoError(t, err)
+	require.Zero(t, rejected.Count())
+	require.NotEqual(t, string(original), string(read()))
+	require.Contains(t, string(read()), "replacement-event")
 }

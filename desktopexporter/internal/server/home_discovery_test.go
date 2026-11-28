@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	parquetvariant "github.com/apache/arrow-go/v18/parquet/variant"
 	"github.com/stretchr/testify/require"
@@ -360,4 +361,112 @@ func TestServiceNativePairsKeepDistinctIDsAcrossCanonicalNaNs(t *testing.T) {
 	require.EqualValues(t, 2, counts.SpanCount)
 	require.EqualValues(t, 1, counts.MetricCount)
 	require.EqualValues(t, 2, counts.DataPointCount)
+}
+
+// Verify actual default-optimizer plans avoid redundant base-table scans and
+// preserve exact distinct-record counts for child owners.
+func TestDiscoveryOwnershipPlans(t *testing.T) {
+	h := setupHandler(t)
+	data := ptrace.NewTraces()
+	for i := range 64 {
+		resource := data.ResourceSpans().AppendEmpty()
+		service := "chosen"
+		if i%2 == 1 {
+			service = "other"
+		}
+		resource.Resource().Attributes().PutStr("service.name", service)
+		scope := resource.ScopeSpans().AppendEmpty()
+		span := scope.Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: 1})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(100)
+		span.SetEndTimestamp(101)
+		for j := range 4 {
+			event := span.Events().AppendEmpty()
+			event.SetTimestamp(pcommon.Timestamp(100 + j))
+			event.Attributes().PutInt("value", int64(j%2))
+		}
+	}
+	md := buildTestMetrics()
+	point := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0)
+	point.SetTimestamp(100)
+	for i := range 4 {
+		e := point.Exemplars().AppendEmpty()
+		e.SetTimestamp(pcommon.Timestamp(100 + i))
+		e.FilteredAttributes().PutInt("value", int64(i%2))
+	}
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+		if err := spans.Ingest(t.Context(), conn, data); err != nil {
+			return err
+		}
+		return metrics.Ingest(t.Context(), conn, md)
+	}))
+	for _, tc := range []struct {
+		signal, owner, service, table string
+		wantCount                     int
+	}{
+		{"traces", "event", "chosen", "Table: memory.main.spans", 32},
+		{"metrics", "exemplar", "test-svc", "Table: memory.main.metric_records", 1},
+	} {
+		t.Run(tc.owner, func(t *testing.T) {
+			start, end := "101", "102"
+			service := tc.service
+			query := discovery.Query{StartTime: &start, EndTime: &end, ServiceName: &service}
+			location := discovery.Location{Signal: tc.signal, OwnerType: tc.owner}
+			require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+				var builder discovery.Builder
+				records, err := builder.RecordsFrom(tc.signal, tc.owner, query)
+				require.NoError(t, err)
+				statement := builder.Values(query, location, records, "value")
+				var result []byte
+				err = db.QueryRowContext(t.Context(), "select coalesce(to_json(list(entry)), '[]')::varchar from ("+statement+")", builder.Args()...).Scan(&result)
+				require.NoError(t, err)
+				want := fmt.Sprintf(`[
+					{"value":{"kind":"int64","value":"0"},"foundOn":[{"signal":%q,"ownerType":%q}],"count":%d,"kindCount":%d,"denominator":%d,"relativeFrequency":1.0},
+					{"value":{"kind":"int64","value":"1"},"foundOn":[{"signal":%q,"ownerType":%q}],"count":%d,"kindCount":%d,"denominator":%d,"relativeFrequency":1.0}
+				]`, tc.signal, tc.owner, tc.wantCount, tc.wantCount, tc.wantCount, tc.signal, tc.owner, tc.wantCount, tc.wantCount, tc.wantCount)
+				require.JSONEq(t, want, string(result))
+				var key, plan string
+				err = db.QueryRowContext(t.Context(), "explain analyze "+statement, builder.Args()...).Scan(&key, &plan)
+				require.NoError(t, err)
+				t.Logf("%s\n%s", tc.owner, plan)
+				// Child-owner traversal must scan the parent signal table once.
+				require.Equal(t, 1, strings.Count(plan, tc.table))
+				return nil
+			}))
+		})
+	}
+}
+
+func TestHomeDiscoveryNativePipelinePlan(t *testing.T) {
+	h := setupHandler(t)
+	key := "value"
+	plan, err := homeValuesPlan(discoveryOptions{Kind: "home-values", OwnerType: "span", Key: &key, ValueKind: "int64"})
+	require.NoError(t, err)
+	t.Logf("HOME_SQL\n%s\nEND_HOME_SQL", plan.statement)
+	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
+		var key, explain string
+		err := db.QueryRowContext(t.Context(), "explain analyze "+plan.statement, plan.args...).Scan(&key, &explain)
+		require.NoError(t, err)
+		t.Log(explain)
+		return nil
+	}))
+}
+
+func TestDiscoveryMetadataStillUsesLatestLogicalDescriptor(t *testing.T) {
+	h := setupHandler(t)
+	for i := range 2 {
+		md := buildTestMetrics()
+		metric := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
+		metric.Metadata().PutInt("version", int64(i))
+		metric.Gauge().DataPoints().At(0).SetTimestamp(pcommon.Timestamp(100 + i))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(t.Context(), conn, md) }))
+	}
+	page := homePage(t, h, map[string]any{"ownerType": "metadata", "key": "version"})
+	require.Len(t, page.Values, 1)
+	require.Equal(t, "1", page.Values[0].Preview)
+	require.EqualValues(t, 2, page.Values[0].Count)
+	encoded, err := json.Marshal(page)
+	require.NoError(t, err)
+	require.NotEmpty(t, encoded)
 }

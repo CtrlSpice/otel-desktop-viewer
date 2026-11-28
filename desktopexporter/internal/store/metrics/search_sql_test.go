@@ -1,0 +1,80 @@
+package metrics
+
+import (
+	"testing"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestStaticMetricFieldsResolveOrAreDeliberatelyExcluded(t *testing.T) {
+	fields := map[string]search.OperandMode{
+		"resource.droppedAttributesCount": search.NativeSignedIntegerOperand,
+		"scope.name":                      search.TextOperand,
+		"scope.version":                   search.TextOperand,
+		"scope.droppedAttributesCount":    search.NativeSignedIntegerOperand,
+		"name":                            search.TextOperand,
+		"description":                     search.TextOperand,
+		"unit":                            search.TextOperand,
+		"type":                            search.TextOperand,
+	}
+
+	for name, wantMode := range fields {
+		t.Run(name, func(t *testing.T) {
+			resolved, err := mapMetricFieldExpression(&search.FieldDefinition{Name: name, SearchScope: "field"})
+			require.NoError(t, err)
+			assert.NotEmpty(t, resolved.SQL)
+			assert.Equal(t, wantMode, resolved.OperandMode)
+		})
+	}
+
+	resolved, err := mapMetricFieldExpression(&search.FieldDefinition{Name: "received", SearchScope: "field"})
+	assert.ErrorIs(t, err, ErrInvalidMetricQuery)
+	assert.Empty(t, resolved.SQL)
+}
+
+func TestNumericMetricAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
+	for _, scope := range []string{"resource", "metric", "scope", "datapoint", "exemplar", "metadata"} {
+		t.Run(scope, func(t *testing.T) {
+			params := []search.NamedParam{}
+			resolved, err := metricFieldMapper()(
+				&search.FieldDefinition{Name: "number", SearchScope: "attribute", AttributeScope: scope, Type: "int64"},
+				&search.Query{FieldOperator: ">", Value: "2"},
+				&params,
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			assert.Equal(t, search.AttributeSignedIntegerOperand, resolved[0].OperandMode)
+			predicate, err := search.BuildOperatorCondition(resolved[0], &search.Query{FieldOperator: ">", Value: "2"}, &params)
+			require.NoError(t, err)
+			assert.Contains(t, predicate, "[$1] as bigint)")
+			assert.Contains(t, predicate, "[$1]) = $2")
+		})
+	}
+}
+
+func TestMetricSummaryTimePredicateShapes(t *testing.T) {
+	start, end := uint64(10), uint64(20)
+	for _, tc := range []struct {
+		name        string
+		timeRange   timerange.TimeRange
+		wantWhere   string
+		wantDPWhere string
+		wantArgs    []any
+	}{
+		{"unbounded", timerange.TimeRange{}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id)", "", []any{}},
+		{"end only", timerange.TimeRange{End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp <= $1::ubigint)", "where d.timestamp <= $1::ubigint", []any{"20"}},
+		{"start only", timerange.TimeRange{Start: &start}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= $1::ubigint)", "where d.timestamp >= $1::ubigint", []any{"10"}},
+		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= $1::ubigint and d.timestamp <= $2::ubigint)", "where d.timestamp >= $1::ubigint and d.timestamp <= $2::ubigint", []any{"10", "20"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, where, args, err := buildMetricSQL(nil, tc.timeRange)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantWhere, where)
+			require.Equal(t, tc.wantDPWhere, metricDatapointWhere(tc.timeRange))
+			require.Equal(t, tc.wantArgs, args)
+		})
+	}
+}

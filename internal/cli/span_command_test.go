@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -23,36 +20,35 @@ func TestSpanCommandOneAndTwoArgumentsPreserveJSON(t *testing.T) {
 		{[]string{"00000000000000AA"}, map[string]any{"spanID": "00000000000000aa", "limit": float64(25)}},
 		{[]string{"01234567-89AB-CDEF-0123-456789ABCDEF", "00000000000000AA"}, map[string]any{"traceID": "0123456789abcdef0123456789abcdef", "spanID": "00000000000000aa"}},
 	} {
-		server := spanRPCServer(t, json.RawMessage(foundSpanFixture), tc.params)
-		defer server.Close()
-		cmd := newSpanCommand(server.Client())
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetArgs(append(tc.args, "--endpoint", server.URL, "--json"))
-		require.NoError(t, cmd.Execute())
-		require.Equal(t, foundSpanFixture+"\n", out.String())
+		server := rpcResultServer(t, "getSpan", tc.params, json.RawMessage(foundSpanFixture))
+		args := append([]string{"span"}, tc.args...)
+		args = append(args, "--endpoint", server.URL, "--json")
+		out, _, err := execCLI(t, cliOptions{client: server.Client()}, args...)
+		require.NoError(t, err)
+		require.Equal(t, foundSpanFixture+"\n", out)
 	}
 }
 
 func TestSpanCommandValidationAndOutcomes(t *testing.T) {
 	for _, args := range [][]string{{}, {"a", "b", "c"}, {"0"}, {"000000000000000g"}} {
-		cmd := newSpanCommand(http.DefaultClient)
-		cmd.SetArgs(args)
-		require.Error(t, cmd.Execute())
+		_, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t)}, append([]string{"span"}, args...)...)
+		require.Error(t, err)
 	}
-	require.Equal(t, "0000000000000000", mustNormalizeSpanID(t, "0000000000000000"))
+	got, err := normalizeSpanID("0000000000000000")
+	require.NoError(t, err)
+	require.Equal(t, "0000000000000000", got)
+
 	for _, limit := range []string{"0", "-1", "9223372036854775807"} {
-		cmd := newSpanCommand(http.DefaultClient)
-		cmd.SetArgs([]string{"000000000000002a", "--limit", limit})
-		require.Error(t, cmd.Execute())
+		_, _, err := execCLI(t, cliOptions{client: offlineHTTPClient(t)}, "span", "000000000000002a", "--limit", limit)
+		require.Error(t, err)
 	}
-	server := spanRPCServer(t, json.RawMessage(ambiguousSpanFixture), map[string]any{
+
+	server := rpcResultServer(t, "getSpan", map[string]any{
 		"spanID": "000000000000002a", "limit": float64(50),
-	})
-	cmd := newSpanCommand(server.Client())
-	cmd.SetArgs([]string{"000000000000002a", "--limit", "50", "--endpoint", server.URL})
-	require.NoError(t, cmd.Execute())
-	server.Close()
+	}, json.RawMessage(ambiguousSpanFixture))
+	_, _, err = execCLI(t, cliOptions{client: server.Client()}, "span", "000000000000002a", "--limit", "50", "--endpoint", server.URL)
+	require.NoError(t, err)
+
 	foundWithScopeAttribute := strings.Replace(foundSpanFixture,
 		`"scope":{"name":"scope","version":"1","attributes":[]`,
 		`"scope":{"name":"scope","version":"1","attributes":[{"key":"scope.key","value":{"kind":"string","value":"scope value"}}]`, 1)
@@ -64,47 +60,17 @@ func TestSpanCommandValidationAndOutcomes(t *testing.T) {
 		{ambiguousSpanFixture, []string{"SPAN SUMMARIES (2 matches)", "traceID", "spanID", "second", "durationNs"}},
 		{foundWithScopeAttribute, []string{"SPAN\n", "TIMING AND STATUS\n", "RESOURCE ATTRIBUTES\n", "SCOPE ATTRIBUTES\n", "scope.key", "scope value", "SPAN ATTRIBUTES\n", "EVENTS (1)\n", "LINKS (1)\n", "CORRELATED LOGS (1)\n", "int64", "9223372036854775807", "8000000000000000", "log-resource-schema"}},
 	} {
-		server := spanRPCServer(t, json.RawMessage(tc.result), map[string]any{"spanID": "000000000000002a", "limit": float64(25)})
-		cmd := newSpanCommand(server.Client())
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetArgs([]string{"000000000000002a", "--endpoint", server.URL})
-		require.NoError(t, cmd.Execute())
-		server.Close()
+		server := rpcResultServer(t, "getSpan", map[string]any{"spanID": "000000000000002a", "limit": float64(25)}, json.RawMessage(tc.result))
+		out, _, err := execCLI(t, cliOptions{client: server.Client()}, "span", "000000000000002a", "--endpoint", server.URL)
+		require.NoError(t, err)
 		for _, want := range tc.wants {
-			require.Contains(t, out.String(), want)
+			require.Contains(t, out, want)
 		}
 	}
 }
 
-func TestSpanCommandRejectsMalformedResultAndTrailingJSON(t *testing.T) {
-	server := spanRPCServer(t, json.RawMessage(`{"status":"found"}`), map[string]any{"spanID": "000000000000002a", "limit": float64(25)})
-	cmd := newSpanCommand(server.Client())
-	cmd.SetArgs([]string{"000000000000002a", "--endpoint", server.URL})
-	require.ErrorContains(t, cmd.Execute(), "incomplete found result")
-	server.Close()
-	trailing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"status":"notFound","spanID":"000000000000002a","traceID":null}} {}`))
-	}))
-	defer trailing.Close()
-	cmd = newSpanCommand(trailing.Client())
-	cmd.SetArgs([]string{"000000000000002a", "--endpoint", trailing.URL})
-	require.ErrorContains(t, cmd.Execute(), "additional JSON value")
-}
-
-func mustNormalizeSpanID(t *testing.T, s string) string {
-	t.Helper()
-	got, err := normalizeSpanID(s)
-	require.NoError(t, err)
-	return got
-}
-func spanRPCServer(t *testing.T, result json.RawMessage, params map[string]any) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req queryRPCRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-		require.Equal(t, "getSpan", req.Method)
-		require.Equal(t, params, req.Params)
-		_, _ = w.Write(append(append([]byte(`{"jsonrpc":"2.0","id":1,"result":`), result...), '}'))
-	}))
+func TestSpanCommandRejectsMalformedResult(t *testing.T) {
+	server := rpcResultServer(t, "getSpan", map[string]any{"spanID": "000000000000002a", "limit": float64(25)}, json.RawMessage(`{"status":"found"}`))
+	_, _, err := execCLI(t, cliOptions{client: server.Client()}, "span", "000000000000002a", "--endpoint", server.URL)
+	require.ErrorContains(t, err, "incomplete found result")
 }

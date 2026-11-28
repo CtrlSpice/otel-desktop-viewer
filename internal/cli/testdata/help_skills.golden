@@ -1,0 +1,7 @@
+🧠 Print the bundled OTel Desktop Viewer agent usage guide.
+
+USAGE
+  otel-desktop-viewer skills [flags]
+
+GLOBAL FLAGS
+  -h, --help   Help for this command

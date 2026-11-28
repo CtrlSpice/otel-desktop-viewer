@@ -1,0 +1,13 @@
+📤 Export one complete stored trace as OTLP JSON. Includes resource/scope context and all retained members, regardless of the current search or time window. Writes exact response bytes without a trailing newline; redirect stdout to save a file.
+
+USAGE
+  otel-desktop-viewer export trace <id> [flags]
+
+EXAMPLES
+  otel-desktop-viewer export trace <id> > trace.json
+
+FLAGS
+      --endpoint string   Running viewer HTTP endpoint (default "http://localhost:8000")
+
+GLOBAL FLAGS
+  -h, --help   Help for this command
