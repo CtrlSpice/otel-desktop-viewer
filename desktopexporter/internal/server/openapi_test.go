@@ -8,13 +8,16 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/features"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/apidoc"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/rpc"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
 func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
-	h := setupHandler(t)
-	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil)
+	str, _ := storetest.New(t)
+	s, err := NewServer("localhost:0", 0, str, zap.NewNop(), nil)
 	require.NoError(t, err)
 	request := func(method, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, bytes.NewReader(body))
@@ -52,7 +55,7 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 		_, exists := doc.Paths[path]
 		require.Equal(t, features.EvalsBuilt, exists, path)
 	}
-	require.Contains(t, doc.Paths["/api/data/{method}"].Post.Responses["200"].Content, arrowStreamContentType)
+	require.Contains(t, doc.Paths["/api/data/{method}"].Post.Responses["200"].Content, rpc.ArrowStreamContentType)
 	require.Equal(t, []string{"Viewer UI"}, doc.Paths["/api/data/{method}"].Post.Tags)
 	require.Equal(t, []string{"JSON-RPC"}, doc.Paths["/rpc"].Post.Tags)
 	for _, path := range []string{"/openapi.json", "/openrpc.json"} {
@@ -85,7 +88,7 @@ func TestOpenAPIDiscoveryAndAgentWorkflow(t *testing.T) {
 
 func TestOpenAPIBundleAndIndividualOperations(t *testing.T) {
 	mux := http.NewServeMux()
-	require.NoError(t, registerOpenAPI(mux))
+	require.NoError(t, apidoc.RegisterOpenAPI(mux))
 	read := func(path string) map[string]any {
 		t.Helper()
 		w := httptest.NewRecorder()

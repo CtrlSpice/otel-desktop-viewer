@@ -2,12 +2,16 @@
 
 package server
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+)
 
 type evalServer struct{}
 
-func newEvalServer(string, int) evalServer { return evalServer{} }
-func (*Server) closeEvals()                {}
+func newEvalServer(*store.Store, string, int) evalServer { return evalServer{} }
+func (*Server) closeEvals()                              {}
 
 func (*Server) registerEvals(mux *http.ServeMux, _ http.Handler) {
 	// Keep extensionless Evals URLs out of the shared SPA fallback.

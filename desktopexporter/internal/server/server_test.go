@@ -18,6 +18,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/rpc"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -256,7 +257,7 @@ func TestRPCHandlerOversizedBody(t *testing.T) {
 	testServer, teardown := setupServer(t)
 	defer teardown()
 
-	oversized := make([]byte, maxRPCRequestBodyBytes+1)
+	oversized := make([]byte, rpc.MaxRequestBodyBytes+1)
 	res, err := http.Post(fmt.Sprintf("%s/rpc", testServer.URL), "application/json", bytes.NewReader(oversized))
 	require.NoError(t, err)
 	defer res.Body.Close()
