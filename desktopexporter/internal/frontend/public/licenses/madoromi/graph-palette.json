@@ -1,5 +1,40 @@
 {
   "version": "madoromi-inks-v1",
+  "brightVersion": "fixed-bright-v1",
+  "names": {
+    "shimbashi-iro": "shimbashi blue",
+    "ebisu": "god of fishermen",
+    "ama-iro": "sky blue",
+    "kon-peki": "deep cerulean blue",
+    "ajisai": "hydrangea",
+    "jurojin": "god of longevity",
+    "murasaki-shikibu": "japanese beautyberry",
+    "asa-gao": "morning glory",
+    "tsuyu-kusa": "asiatic dayflower",
+    "shin-kai": "deep sea",
+    "tsuki-yo": "moonlight",
+    "rikka": "snow crystal",
+    "ku-jaku": "peacock",
+    "sui-gyoku": "emerald",
+    "shin-ryoku": "forest green",
+    "ina-ho": "rice ear",
+    "edo-murasaki": "edo purple",
+    "yama-budo": "crimson glory vine",
+    "tsutsuji": "azalea",
+    "bishamonten": "god of warriors",
+    "hana-ikada": "cherry blossom petals",
+    "kosumosu": "cosmos",
+    "momiji": "autumn leaves",
+    "benzaiten": "goddess of the arts",
+    "fuyu-gaki": "winter persimmon",
+    "yu-yake": "sunset",
+    "to-ro": "warm lantern",
+    "daikokuten": "god of wealth",
+    "hotaru-bi": "light of fireflies",
+    "chiku-rin": "bamboo forest",
+    "fukurokuju": "god of fortune",
+    "syo-ro": "dew on pine tree"
+  },
   "inks": {
     "shimbashi-iro": [
       "#00b3cb",
@@ -547,5 +582,378 @@
     "chiku-rin:7",
     "fukurokuju:7",
     "syo-ro:7"
-  ]
+  ],
+  "brightSlots": [
+    "shin-kai:5",
+    "chiku-rin:6",
+    "yu-yake:2",
+    "shin-ryoku:7",
+    "yama-budo:5",
+    "shimbashi-iro:3",
+    "murasaki-shikibu:4",
+    "ina-ho:6",
+    "fukurokuju:5",
+    "bishamonten:3",
+    "syo-ro:5",
+    "daikokuten:3",
+    "edo-murasaki:4",
+    "to-ro:3",
+    "ama-iro:3",
+    "jurojin:4",
+    "ebisu:2",
+    "tsuki-yo:5",
+    "hotaru-bi:4",
+    "benzaiten:2",
+    "tsutsuji:4",
+    "kosumosu:2",
+    "asa-gao:5",
+    "sui-gyoku:6",
+    "hana-ikada:3",
+    "rikka:6",
+    "tsuyu-kusa:5",
+    "ku-jaku:6",
+    "momiji:3",
+    "ajisai:4",
+    "fuyu-gaki:2",
+    "kon-peki:4",
+    "murasaki-shikibu:7",
+    "hotaru-bi:2",
+    "fuyu-gaki:5",
+    "edo-murasaki:3",
+    "asa-gao:4",
+    "shin-ryoku:6",
+    "tsuyu-kusa:7",
+    "hana-ikada:5",
+    "murasaki-shikibu:6",
+    "ina-ho:7",
+    "chiku-rin:4",
+    "benzaiten:4",
+    "murasaki-shikibu:5",
+    "yu-yake:5",
+    "ebisu:5",
+    "tsutsuji:7",
+    "yu-yake:6",
+    "daikokuten:1",
+    "jurojin:5",
+    "ku-jaku:5",
+    "benzaiten:1",
+    "shin-kai:4",
+    "ina-ho:5",
+    "shin-kai:6",
+    "yama-budo:4",
+    "sui-gyoku:7",
+    "kosumosu:4",
+    "ebisu:3",
+    "jurojin:6",
+    "daikokuten:4",
+    "jurojin:3",
+    "bishamonten:2",
+    "fuyu-gaki:4",
+    "daikokuten:2",
+    "fuyu-gaki:3",
+    "tsuyu-kusa:4",
+    "shimbashi-iro:2",
+    "chiku-rin:5",
+    "benzaiten:5",
+    "benzaiten:3",
+    "rikka:7",
+    "to-ro:5",
+    "hana-ikada:2",
+    "yama-budo:6",
+    "kosumosu:3",
+    "to-ro:6",
+    "hotaru-bi:3",
+    "chiku-rin:3",
+    "tsuyu-kusa:6",
+    "yama-budo:7",
+    "hana-ikada:4",
+    "tsutsuji:3",
+    "ajisai:3",
+    "to-ro:4",
+    "to-ro:1",
+    "momiji:4",
+    "tsutsuji:5",
+    "kosumosu:5",
+    "bishamonten:4",
+    "ebisu:1",
+    "momiji:2",
+    "asa-gao:6",
+    "yu-yake:4",
+    "kon-peki:5",
+    "shimbashi-iro:4",
+    "yu-yake:3",
+    "momiji:5",
+    "ajisai:5",
+    "fukurokuju:4",
+    "ebisu:4",
+    "kosumosu:6",
+    "momiji:6",
+    "ama-iro:4",
+    "ama-iro:6",
+    "bishamonten:5",
+    "bishamonten:6",
+    "benzaiten:6",
+    "shimbashi-iro:1",
+    "kon-peki:6",
+    "ajisai:6",
+    "kosumosu:1",
+    "to-ro:2",
+    "hana-ikada:6",
+    "ama-iro:5",
+    "ku-jaku:7",
+    "tsutsuji:6"
+  ],
+  "heatmap": {
+    "version": "ink-spectrum-v2",
+    "anchors": [
+      {
+        "ink": "murasaki-shikibu",
+        "sourceLightness": 0.8,
+        "lightness": 0.48,
+        "strength": 0.8
+      },
+      {
+        "ink": "momiji",
+        "sourceLightness": 0.7,
+        "lightness": 0.68,
+        "strength": 0.7
+      },
+      {
+        "ink": "fuyu-gaki",
+        "sourceLightness": 0.84,
+        "lightness": 0.87,
+        "strength": 0.6
+      }
+    ],
+    "ramps": {
+      "1": {
+        "night": [
+          "#f5c7c4"
+        ],
+        "day": [
+          "#6e4c8b"
+        ]
+      },
+      "2": {
+        "night": [
+          "#6e4c8b",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#6e4c8b"
+        ]
+      },
+      "3": {
+        "night": [
+          "#6e4c8b",
+          "#d86e88",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#d86e88",
+          "#6e4c8b"
+        ]
+      },
+      "4": {
+        "night": [
+          "#6e4c8b",
+          "#b4648a",
+          "#e78a98",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#e78a98",
+          "#b4648a",
+          "#6e4c8b"
+        ]
+      },
+      "5": {
+        "night": [
+          "#6e4c8b",
+          "#a25f8b",
+          "#d86e88",
+          "#eb9aa3",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#eb9aa3",
+          "#d86e88",
+          "#a25f8b",
+          "#6e4c8b"
+        ]
+      },
+      "6": {
+        "night": [
+          "#6e4c8b",
+          "#975b8b",
+          "#c2688a",
+          "#e37e90",
+          "#eda3aa",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#eda3aa",
+          "#e37e90",
+          "#c2688a",
+          "#975b8b",
+          "#6e4c8b"
+        ]
+      },
+      "7": {
+        "night": [
+          "#6e4c8b",
+          "#90598b",
+          "#b4648a",
+          "#d86e88",
+          "#e78a98",
+          "#efa9ae",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#efa9ae",
+          "#e78a98",
+          "#d86e88",
+          "#b4648a",
+          "#90598b",
+          "#6e4c8b"
+        ]
+      },
+      "8": {
+        "night": [
+          "#6e4c8b",
+          "#8b578b",
+          "#aa618b",
+          "#c96a89",
+          "#e1788c",
+          "#e9939f",
+          "#f0adb1",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#f0adb1",
+          "#e9939f",
+          "#e1788c",
+          "#c96a89",
+          "#aa618b",
+          "#8b578b",
+          "#6e4c8b"
+        ]
+      },
+      "9": {
+        "night": [
+          "#6e4c8b",
+          "#88558b",
+          "#a25f8b",
+          "#bd678a",
+          "#d86e88",
+          "#e48293",
+          "#eb9aa3",
+          "#f1b1b3",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#f1b1b3",
+          "#eb9aa3",
+          "#e48293",
+          "#d86e88",
+          "#bd678a",
+          "#a25f8b",
+          "#88558b",
+          "#6e4c8b"
+        ]
+      },
+      "10": {
+        "night": [
+          "#6e4c8b",
+          "#85548b",
+          "#9c5d8b",
+          "#b4648a",
+          "#cc6b89",
+          "#e0758a",
+          "#e78a98",
+          "#ec9fa7",
+          "#f1b3b5",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#f1b3b5",
+          "#ec9fa7",
+          "#e78a98",
+          "#e0758a",
+          "#cc6b89",
+          "#b4648a",
+          "#9c5d8b",
+          "#85548b",
+          "#6e4c8b"
+        ]
+      },
+      "11": {
+        "night": [
+          "#6e4c8b",
+          "#83548b",
+          "#975b8b",
+          "#ad628b",
+          "#c2688a",
+          "#d86e88",
+          "#e37e90",
+          "#e9909d",
+          "#eda3aa",
+          "#f2b5b7",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#f2b5b7",
+          "#eda3aa",
+          "#e9909d",
+          "#e37e90",
+          "#d86e88",
+          "#c2688a",
+          "#ad628b",
+          "#975b8b",
+          "#83548b",
+          "#6e4c8b"
+        ]
+      },
+      "12": {
+        "night": [
+          "#6e4c8b",
+          "#81538b",
+          "#945a8b",
+          "#a7608b",
+          "#ba668a",
+          "#ce6c89",
+          "#e07389",
+          "#e58595",
+          "#ea96a0",
+          "#eea6ac",
+          "#f2b7b8",
+          "#f5c7c4"
+        ],
+        "day": [
+          "#f5c7c4",
+          "#f2b7b8",
+          "#eea6ac",
+          "#ea96a0",
+          "#e58595",
+          "#e07389",
+          "#ce6c89",
+          "#ba668a",
+          "#a7608b",
+          "#945a8b",
+          "#81538b",
+          "#6e4c8b"
+        ]
+      }
+    }
+  }
 }

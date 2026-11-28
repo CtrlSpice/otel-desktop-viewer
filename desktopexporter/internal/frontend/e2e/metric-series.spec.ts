@@ -3,7 +3,7 @@ import { expect, test } from './test-fixtures'
 import type { Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { ThemeName } from '../src/themes'
-import heatmapPalette from '../src/themes/heatmap-palette.json' with { type: 'json' }
+import graphPalette from '../src/themes/graph-palette.json' with { type: 'json' }
 import {
   GRAPH_INKS,
   GRAPH_PALETTE_VERSION,
@@ -36,7 +36,7 @@ function accentRgb(theme: ThemeName) {
 }
 
 const countRamps: Record<number, { day: string[]; night: string[] }> =
-  heatmapPalette.ramps
+  graphPalette.heatmap.ramps
 function countRamp(theme: ThemeName, steps: number) {
   return countRamps[steps]![theme.endsWith('-hiru') ? 'day' : 'night']
 }

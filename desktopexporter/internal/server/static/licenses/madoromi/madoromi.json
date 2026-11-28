@@ -1,13 +1,24 @@
 {
   "madoromi-haru-hiru": {
+    "name": "Spring Day",
     "colors": {
+      "canvas": "#f2f1f3",
+      "panel": "#e9e7e9",
+      "chrome": "#dfdddf",
+      "text": "#584a5c",
+      "subtle": "#6b5d70",
+      "muted": "#998d9e",
       "primary": "#694d80",
       "secondary": "#1e5d88",
       "accent": "#18644a",
+      "sakura": "#aa6e89",
+      "warning": "#7a5000",
+      "error": "#9b334e",
       "info": "#1e5d88",
       "success": "#18644a",
-      "warning": "#7a5000",
-      "error": "#9b334e"
+      "highlightLow": "#d2d0d3",
+      "highlightMedium": "#d0ced1",
+      "highlightHigh": "#c2c0c3"
     },
     "syntax": {
       "sakura": "#71504e",
@@ -23,18 +34,34 @@
       "tokiwa": "#18644a",
       "sora": "#1e5d88",
       "ruri": "#1e5d88",
-      "ai": "#71504e"
+      "ai": "#71504e",
+      "sumi": "#584a5c",
+      "kasure2": "#605564",
+      "usuzumi0": "#625467",
+      "kasure0": "#a99cad",
+      "nijimi2": "#b2b0b3"
     }
   },
   "madoromi-natsu-hiru": {
+    "name": "Summer Day",
     "colors": {
+      "canvas": "#f0f2f3",
+      "panel": "#e6e8e9",
+      "chrome": "#dcdedf",
+      "text": "#3b545e",
+      "subtle": "#4e6872",
+      "muted": "#80969f",
       "primary": "#694d80",
       "secondary": "#1e5d88",
       "accent": "#18644a",
+      "sakura": "#aa6e89",
+      "warning": "#7a5000",
+      "error": "#9b334e",
       "info": "#1e5d88",
       "success": "#18644a",
-      "warning": "#7a5000",
-      "error": "#9b334e"
+      "highlightLow": "#cdd2d4",
+      "highlightMedium": "#ccd0d1",
+      "highlightHigh": "#bdc2c3"
     },
     "syntax": {
       "sakura": "#71504e",
@@ -50,18 +77,34 @@
       "tokiwa": "#18644a",
       "sora": "#1e5d88",
       "ruri": "#1e5d88",
-      "ai": "#71504e"
+      "ai": "#71504e",
+      "sumi": "#3b545e",
+      "kasure2": "#485c64",
+      "usuzumi0": "#435d66",
+      "kasure0": "#8fa6ae",
+      "nijimi2": "#adb2b4"
     }
   },
   "madoromi-aki-hiru": {
+    "name": "Autumn Day",
     "colors": {
+      "canvas": "#f3f1f0",
+      "panel": "#e9e7e6",
+      "chrome": "#dfdddc",
+      "text": "#5d4c3c",
+      "subtle": "#715f4f",
+      "muted": "#9f8f81",
       "primary": "#694d80",
       "secondary": "#1e5d88",
       "accent": "#18644a",
+      "sakura": "#a26480",
+      "warning": "#7a5000",
+      "error": "#9b334e",
       "info": "#1e5d88",
       "success": "#18644a",
-      "warning": "#7a5000",
-      "error": "#9b334e"
+      "highlightLow": "#d4d0cd",
+      "highlightMedium": "#d1cecc",
+      "highlightHigh": "#c3c0bd"
     },
     "syntax": {
       "sakura": "#71504e",
@@ -77,18 +120,34 @@
       "tokiwa": "#18644a",
       "sora": "#1e5d88",
       "ruri": "#1e5d88",
-      "ai": "#71504e"
+      "ai": "#71504e",
+      "sumi": "#5d4c3c",
+      "kasure2": "#645649",
+      "usuzumi0": "#675545",
+      "kasure0": "#ae9e90",
+      "nijimi2": "#b4b0ad"
     }
   },
   "madoromi-fuyu-hiru": {
+    "name": "Winter Day",
     "colors": {
+      "canvas": "#f1f2f3",
+      "panel": "#e7e8ea",
+      "chrome": "#dddee0",
+      "text": "#4a4e63",
+      "subtle": "#5e6277",
+      "muted": "#8d91a4",
       "primary": "#694d80",
       "secondary": "#1e5d88",
       "accent": "#18644a",
+      "sakura": "#aa6e89",
+      "warning": "#7a5000",
+      "error": "#9b334e",
       "info": "#1e5d88",
       "success": "#18644a",
-      "warning": "#7a5000",
-      "error": "#9b334e"
+      "highlightLow": "#d0d1d5",
+      "highlightMedium": "#cecfd2",
+      "highlightHigh": "#c0c1c5"
     },
     "syntax": {
       "sakura": "#71504e",
@@ -104,18 +163,34 @@
       "tokiwa": "#18644a",
       "sora": "#1e5d88",
       "ruri": "#1e5d88",
-      "ai": "#71504e"
+      "ai": "#71504e",
+      "sumi": "#4a4e63",
+      "kasure2": "#555869",
+      "usuzumi0": "#54586d",
+      "kasure0": "#9ca0b3",
+      "nijimi2": "#b0b1b5"
     }
   },
   "madoromi-haru-yoru": {
+    "name": "Spring Night",
     "colors": {
+      "canvas": "#201f21",
+      "panel": "#19181a",
+      "chrome": "#121113",
+      "text": "#e1d1e7",
+      "subtle": "#cdbed3",
+      "muted": "#8a7e8f",
       "primary": "#caace5",
       "secondary": "#68a5d5",
       "accent": "#8bd3b3",
+      "sakura": "#ffc5da",
+      "warning": "#edb667",
+      "error": "#ed7d93",
       "info": "#68a5d5",
       "success": "#8bd3b3",
-      "warning": "#edb667",
-      "error": "#ed7d93"
+      "highlightLow": "#343235",
+      "highlightMedium": "#373638",
+      "highlightHigh": "#49474a"
     },
     "syntax": {
       "sakura": "#e6c0bd",
@@ -131,18 +206,34 @@
       "tokiwa": "#8bd3b3",
       "sora": "#68a5d5",
       "ruri": "#68a5d5",
-      "ai": "#e6c0bd"
+      "ai": "#e6c0bd",
+      "sumi": "#e1d1e7",
+      "kasure2": "#a79bab",
+      "usuzumi0": "#b7a8bd",
+      "kasure0": "#756a7a",
+      "nijimi2": "#5c5a5d"
     }
   },
   "madoromi-natsu-yoru": {
+    "name": "Summer Night",
     "colors": {
+      "canvas": "#1d2021",
+      "panel": "#16191a",
+      "chrome": "#101213",
+      "text": "#c0dde8",
+      "subtle": "#adcad4",
+      "muted": "#728790",
       "primary": "#caace5",
       "secondary": "#68a5d5",
       "accent": "#8bd3b3",
+      "sakura": "#ffbde2",
+      "warning": "#edb667",
+      "error": "#ed7d93",
       "info": "#68a5d5",
       "success": "#8bd3b3",
-      "warning": "#edb667",
-      "error": "#ed7d93"
+      "highlightLow": "#303335",
+      "highlightMedium": "#343738",
+      "highlightHigh": "#45484a"
     },
     "syntax": {
       "sakura": "#e6c0bd",
@@ -158,18 +249,34 @@
       "tokiwa": "#8bd3b3",
       "sora": "#68a5d5",
       "ruri": "#68a5d5",
-      "ai": "#e6c0bd"
+      "ai": "#e6c0bd",
+      "sumi": "#c0dde8",
+      "kasure2": "#8ca3ab",
+      "usuzumi0": "#97b3be",
+      "kasure0": "#5d737b",
+      "nijimi2": "#585c5d"
     }
   },
   "madoromi-aki-yoru": {
+    "name": "Autumn Night",
     "colors": {
+      "canvas": "#211f1d",
+      "panel": "#1a1816",
+      "chrome": "#131110",
+      "text": "#e8d3c1",
+      "subtle": "#d4c0ae",
+      "muted": "#908072",
       "primary": "#caace5",
       "secondary": "#68a5d5",
       "accent": "#8bd3b3",
+      "sakura": "#ffb6cc",
+      "warning": "#edb667",
+      "error": "#ed7d93",
       "info": "#68a5d5",
       "success": "#8bd3b3",
-      "warning": "#edb667",
-      "error": "#ed7d93"
+      "highlightLow": "#353230",
+      "highlightMedium": "#383634",
+      "highlightHigh": "#4a4745"
     },
     "syntax": {
       "sakura": "#e6c0bd",
@@ -185,18 +292,34 @@
       "tokiwa": "#8bd3b3",
       "sora": "#68a5d5",
       "ruri": "#68a5d5",
-      "ai": "#e6c0bd"
+      "ai": "#e6c0bd",
+      "sumi": "#e8d3c1",
+      "kasure2": "#ac9c8d",
+      "usuzumi0": "#beaa98",
+      "kasure0": "#7b6c5e",
+      "nijimi2": "#5d5a58"
     }
   },
   "madoromi-fuyu-yoru": {
+    "name": "Winter Night",
     "colors": {
+      "canvas": "#1f1f21",
+      "panel": "#18181a",
+      "chrome": "#111114",
+      "text": "#d2d6eb",
+      "subtle": "#bec3db",
+      "muted": "#7e8294",
       "primary": "#caace5",
       "secondary": "#68a5d5",
       "accent": "#8bd3b3",
+      "sakura": "#ffbee1",
+      "warning": "#edb667",
+      "error": "#ed7d93",
       "info": "#68a5d5",
       "success": "#8bd3b3",
-      "warning": "#edb667",
-      "error": "#ed7d93"
+      "highlightLow": "#323336",
+      "highlightMedium": "#363639",
+      "highlightHigh": "#47474b"
     },
     "syntax": {
       "sakura": "#e6c0bd",
@@ -212,7 +335,12 @@
       "tokiwa": "#8bd3b3",
       "sora": "#68a5d5",
       "ruri": "#68a5d5",
-      "ai": "#e6c0bd"
+      "ai": "#e6c0bd",
+      "sumi": "#d2d6eb",
+      "kasure2": "#9a9eb1",
+      "usuzumi0": "#a8adc4",
+      "kasure0": "#6a6e7f",
+      "nijimi2": "#5a5b5e"
     }
   }
 }
