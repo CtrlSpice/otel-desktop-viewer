@@ -9,16 +9,139 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/apidoc"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/rpc"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
 )
+
+const testOpenRPCTraceID = "00000000000000000000000000000001"
+
+func newRPCTestHandler(t *testing.T) (*rpc.Handler, *store.Store) {
+	t.Helper()
+	st, _ := storetest.New(t)
+	h := rpc.NewHandler(st, zap.NewNop())
+	h.SetDiscoverDocument(apidoc.OpenRPCDocument)
+	return h, st
+}
+
+func newRPCTestHandlerWithData(t *testing.T) (*rpc.Handler, *store.Store) {
+	t.Helper()
+	h, st := newRPCTestHandler(t)
+	base := time.Now().UnixNano()
+
+	tr := ptrace.NewTraces()
+	rs := tr.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "pumpkin.pie")
+	span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetTraceID([16]byte{15: 1})
+	span.SetSpanID([8]byte{7: 1})
+	span.SetName("test")
+	span.SetStartTimestamp(pcommon.Timestamp(base))
+	span.SetEndTimestamp(pcommon.Timestamp(base + time.Second.Nanoseconds()))
+	require.NoError(t, st.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(t.Context(), conn, tr)
+	}))
+
+	ld := plog.NewLogs()
+	rl := ld.ResourceLogs().AppendEmpty()
+	rl.Resource().Attributes().PutStr("service.name", "pumpkin.pie")
+	rec := rl.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	rec.SetTimestamp(pcommon.Timestamp(base))
+	rec.SetTraceID([16]byte{15: 1})
+	rec.SetSpanID([8]byte{7: 1})
+	rec.Body().SetStr("test log message")
+	rec.SetEventName("request.failed")
+	rec.SetSeverityText("INFO")
+	rec.SetSeverityNumber(plog.SeverityNumberInfo)
+	require.NoError(t, st.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(t.Context(), conn, ld)
+	}))
+
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-svc")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("test-scope")
+	sm.Scope().SetVersion("v1.0.0")
+	met := sm.Metrics().AppendEmpty()
+	met.SetName("test.gauge")
+	met.SetDescription("A test gauge")
+	met.SetUnit("bytes")
+	dp := met.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(base))
+	dp.SetDoubleValue(42.0)
+	require.NoError(t, st.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(t.Context(), conn, md)
+	}))
+
+	return h, st
+}
+
+func createRPCRequest(method string, params any) *jsonrpc2.Request {
+	paramsBytes, _ := json.Marshal(params)
+	return &jsonrpc2.Request{
+		Method: method,
+		Params: paramsBytes,
+		ID:     jsonrpc2.Int64ID(1),
+	}
+}
+
+func dispatchedRPCMethods() []string {
+	src, err := os.ReadFile("rpc/handler.go")
+	if err != nil {
+		panic(err)
+	}
+	var out []string
+	for _, m := range regexp.MustCompile(`case "([a-zA-Z.]+)":`).FindAllSubmatch(src, -1) {
+		out = append(out, string(m[1]))
+	}
+	return out
+}
+
+type stubDatabaseManager struct {
+	list DatabaseList
+}
+
+func (m *stubDatabaseManager) ListDatabases(context.Context) (DatabaseList, error) {
+	return m.list, nil
+}
+
+func (m *stubDatabaseManager) OpenDatabase(_ context.Context, name string) (DatabaseList, error) {
+	m.list.Active = name
+	for i := range m.list.Databases {
+		m.list.Databases[i].Active = m.list.Databases[i].Name == name
+	}
+	return m.list, nil
+}
+
+func (m *stubDatabaseManager) NewDatabase(_ context.Context, name string) (DatabaseList, error) {
+	m.list.Active = name
+	m.list.Databases = append(m.list.Databases, DatabaseEntry{
+		Name:       name,
+		SizeBytes:  4096,
+		ModifiedAt: "2026-11-26T18:00:00Z",
+		Active:     true,
+	})
+	return m.list, nil
+}
 
 func TestOpenRPCHTTPAndRPCDiscovery(t *testing.T) {
 	s, err := NewServer("localhost:0", 0, nil, zap.NewNop(), nil)
@@ -167,9 +290,9 @@ func TestOpenRPCIndividualMethodDocuments(t *testing.T) {
 func checkDiscoveryRows(t *testing.T, raw json.RawMessage, kind string) {
 	t.Helper()
 	var result map[string]any
-	require.NoError(t, decodeParams(raw, &result))
-	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
-	require.NoError(t, checkRPCWireSchema(rpcSchemaRef("DiscoveryRows"), result, schemas))
+	require.NoError(t, rpc.DecodeParams(raw, &result))
+	schemas := apidoc.OpenRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	require.NoError(t, checkRPCWireSchema(apidoc.SchemaRef("DiscoveryRows"), result, schemas))
 	rows := schemas["DiscoveryRows"].(map[string]any)["properties"].(map[string]any)["rows"].(map[string]any)
 	for _, alternative := range rows["anyOf"].([]any) {
 		page := alternative.(map[string]any)
@@ -181,9 +304,113 @@ func checkDiscoveryRows(t *testing.T, raw json.RawMessage, kind string) {
 	t.Fatalf("missing result schema for %s", kind)
 }
 
+func TestOpenRPCDatabaseAndDiscoveryWireSchemas(t *testing.T) {
+	h, _ := newRPCTestHandlerWithData(t)
+	h.SetDatabaseManager(&stubDatabaseManager{
+		list: DatabaseList{
+			Managed: true,
+			Active:  "current.duckdb",
+			Databases: []DatabaseEntry{
+				{Name: "current.duckdb", SizeBytes: 12288, ModifiedAt: "2026-11-26T17:00:00Z", Active: true},
+				{Name: "checkout.duckdb", SizeBytes: 24576, ModifiedAt: "2026-11-26T16:00:00Z", Active: false},
+			},
+		},
+	})
+
+	doc := apidoc.OpenRPCDocument()
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	dbListProps := schemas["DatabaseList"].(map[string]any)["properties"].(map[string]any)
+	assert.NotContains(t, dbListProps, "directory", "DatabaseList schema must not expose local filesystem paths")
+
+	methodFor := func(name string) apidoc.RPCMethodDescription {
+		for _, m := range doc["methods"].([]apidoc.RPCMethodDescription) {
+			if m.Name == name {
+				return m
+			}
+		}
+		t.Fatalf("missing OpenRPC method %s", name)
+		return apidoc.RPCMethodDescription{}
+	}
+	for _, name := range []string{"openDatabase", "newDatabase"} {
+		m := methodFor(name)
+		require.Len(t, m.Params, 1)
+		assert.Equal(t, "name", m.Params[0].Name)
+		assert.NotEmpty(t, m.Params[0].Description)
+		assert.Equal(t, 1, m.Params[0].Schema["minLength"])
+	}
+	for _, tc := range []struct {
+		method string
+		params any
+	}{
+		{"listDatabases", []any{}},
+		{"openDatabase", map[string]any{"name": "checkout.duckdb"}},
+		{"newDatabase", []any{"incident.duckdb"}},
+	} {
+		got, err := h.Handle(t.Context(), createRPCRequest(tc.method, tc.params))
+		require.NoError(t, err)
+		encoded, err := json.Marshal(got)
+		require.NoError(t, err)
+		var decoded any
+		require.NoError(t, rpc.DecodeParams(encoded, &decoded))
+		require.NoError(t, checkRPCWireSchema(methodFor(tc.method).Result.Schema, decoded, schemas))
+	}
+
+	// Verify discovery row schemas across discovery kinds and home-values/home-value.
+	servicesRes, err := h.Handle(t.Context(), createRPCRequest("discoverTelemetry", map[string]any{
+		"options": map[string]any{"kind": "services"},
+	}))
+	require.NoError(t, err)
+	checkDiscoveryRows(t, servicesRes.(json.RawMessage), "services")
+
+	var servicePage struct {
+		Rows [][]struct{ ServiceIdentity string } `json:"rows"`
+	}
+	require.NoError(t, json.Unmarshal(servicesRes.(json.RawMessage), &servicePage))
+	require.NotEmpty(t, servicePage.Rows)
+	svcID := servicePage.Rows[0][0].ServiceIdentity
+
+	for _, options := range []map[string]any{
+		{"kind": "keys", "signal": "traces", "ownerType": "resource"},
+		{"kind": "values", "signal": "traces", "ownerType": "resource", "key": "service.name"},
+		{"kind": "connections", "serviceIdentity": svcID},
+		{"kind": "connection-spans", "serviceIdentity": svcID, "targetIdentity": svcID},
+	} {
+		res, err := h.Handle(t.Context(), createRPCRequest("discoverTelemetry", map[string]any{"options": options}))
+		require.NoError(t, err)
+		checkDiscoveryRows(t, res.(json.RawMessage), options["kind"].(string))
+	}
+
+	checkSchema := func(schema map[string]any, data any) {
+		t.Helper()
+		raw, err := json.Marshal(data)
+		require.NoError(t, err)
+		var value any
+		require.NoError(t, rpc.DecodeParams(raw, &value))
+		require.NoError(t, checkRPCWireSchema(schema, value, schemas))
+	}
+	homeOpts := map[string]any{"kind": "home-values", "ownerType": "resource", "key": "service.name"}
+	homeRes, err := h.Handle(t.Context(), createRPCRequest("discoverTelemetry", map[string]any{"options": homeOpts}))
+	require.NoError(t, err)
+	checkSchema(apidoc.DiscoveryOptionsSchema(), homeOpts)
+	checkSchema(apidoc.SchemaRef("DiscoveryResult"), homeRes)
+
+	rawHome, err := json.Marshal(homeRes)
+	require.NoError(t, err)
+	var homePage struct {
+		Values []struct{ ValueRef string } `json:"values"`
+	}
+	require.NoError(t, json.Unmarshal(rawHome, &homePage))
+	require.NotEmpty(t, homePage.Values)
+	resolveOpts := map[string]any{"kind": "home-value", "valueRef": homePage.Values[0].ValueRef}
+	exactRes, err := h.Handle(t.Context(), createRPCRequest("discoverTelemetry", map[string]any{"options": resolveOpts}))
+	require.NoError(t, err)
+	checkSchema(apidoc.DiscoveryOptionsSchema(), resolveOpts)
+	checkSchema(apidoc.SchemaRef("DiscoveryResult"), exactRes)
+}
+
 func TestDiscoverySignalPredicateContract(t *testing.T) {
-	h := setupHandler(t)
-	schemas := openRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
+	h, _ := newRPCTestHandler(t)
+	schemas := apidoc.OpenRPCDocument()["components"].(map[string]any)["schemas"].(map[string]any)
 	for _, tc := range []struct {
 		predicate string
 		valid     bool
@@ -199,22 +426,22 @@ func TestDiscoverySignalPredicateContract(t *testing.T) {
 	} {
 		t.Run(tc.predicate, func(t *testing.T) {
 			var predicate any
-			require.NoError(t, decodeParams([]byte(tc.predicate), &predicate))
+			require.NoError(t, rpc.DecodeParams([]byte(tc.predicate), &predicate))
 			queries := map[string]any{"traces": predicate}
 			options := map[string]any{"kind": "services", "queries": queries}
-			_, err := h.Handle(t.Context(), createRequest("discoverTelemetry", map[string]any{"options": options}))
+			_, err := h.Handle(t.Context(), createRPCRequest("discoverTelemetry", map[string]any{"options": options}))
 			require.Equal(t, tc.valid, err == nil)
-			schema := rpcDiscoveryOptions()["properties"].(map[string]any)["queries"].(map[string]any)["additionalProperties"].(map[string]any)
+			schema := apidoc.DiscoveryOptionsSchema()["properties"].(map[string]any)["queries"].(map[string]any)["additionalProperties"].(map[string]any)
 			require.Equal(t, tc.valid, checkRPCWireSchema(schema, predicate, schemas) == nil)
 		})
 	}
 }
 
 func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
-	document := openRPCDocument()
-	methods := document["methods"].([]rpcMethodDescription)
+	document := apidoc.OpenRPCDocument()
+	methods := document["methods"].([]apidoc.RPCMethodDescription)
 	names := make([]string, 0, len(methods))
-	handler := setupHandler(t)
+	handler, _ := newRPCTestHandler(t)
 	for _, method := range methods {
 		names = append(names, method.Name)
 		t.Run(method.Name, func(t *testing.T) {
@@ -238,20 +465,20 @@ func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
 				}
 			}
 			if method.ParamStructure == "either" {
-				assert.Equal(t, methodParamNames[method.Name], documented)
+				assert.Equal(t, rpc.MethodParamNames[method.Name], documented)
 			} else {
 				assert.Contains(t, []string{"deleteSpansByTraceID", "deleteLogsByRefs"}, method.Name)
 				assert.Contains(t, method.Description, "Variadic positional")
 			}
 			if len(required) > 0 {
-				_, err := handler.Handle(context.Background(), createRequest(method.Name, required[:len(required)-1]))
+				_, err := handler.Handle(context.Background(), createRPCRequest(method.Name, required[:len(required)-1]))
 				assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams, "missing required positional slot must fail before reading the store")
 			}
 			assert.NotEmpty(t, method.Description)
 			assert.NotEmpty(t, method.Result.Schema)
 		})
 	}
-	assert.ElementsMatch(t, dispatchedMethods(), names)
+	assert.ElementsMatch(t, dispatchedRPCMethods(), names)
 	assert.Len(t, names, len(mapMethodNames(methods)))
 	encoded, err := json.Marshal(document)
 	require.NoError(t, err)
@@ -259,7 +486,7 @@ func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(string(encoded), "Methods ending in View return UI-shaped data intended for rendering in the viewer."))
 }
 
-func mapMethodNames(methods []rpcMethodDescription) map[string]bool {
+func mapMethodNames(methods []apidoc.RPCMethodDescription) map[string]bool {
 	names := make(map[string]bool, len(methods))
 	for _, method := range methods {
 		names[method.Name] = true
@@ -268,27 +495,27 @@ func mapMethodNames(methods []rpcMethodDescription) map[string]bool {
 }
 
 func TestOpenRPCExamplesExecuteExactly(t *testing.T) {
-	handler := setupHandler(t)
-	for _, method := range openRPCDocument()["methods"].([]rpcMethodDescription) {
+	handler, _ := newRPCTestHandler(t)
+	for _, method := range apidoc.OpenRPCDocument()["methods"].([]apidoc.RPCMethodDescription) {
 		for _, example := range method.Examples {
 			t.Run(method.Name, func(t *testing.T) {
 				named := map[string]any{}
 				positional := []any{}
 				for _, param := range example["params"].([]map[string]any) {
 					name := param["name"].(string)
-					assert.Contains(t, methodParamNames[method.Name], name)
+					assert.Contains(t, rpc.MethodParamNames[method.Name], name)
 					named[name] = param["value"]
 					positional = append(positional, param["value"])
 				}
 				want, err := json.Marshal(example["result"].(map[string]any)["value"])
 				require.NoError(t, err)
 				for _, params := range []any{named, positional} {
-					got, err := handler.Handle(context.Background(), createRequest(method.Name, params))
+					got, err := handler.Handle(context.Background(), createRPCRequest(method.Name, params))
 					require.NoError(t, err)
 					encoded, err := json.Marshal(got)
 					require.NoError(t, err)
 					var value any
-					require.NoError(t, decodeParams(encoded, &value))
+					require.NoError(t, rpc.DecodeParams(encoded, &value))
 					encoded, err = json.Marshal(value)
 					require.NoError(t, err)
 					// Canonical key order with UseNumber still catches integer precision loss.
@@ -300,12 +527,9 @@ func TestOpenRPCExamplesExecuteExactly(t *testing.T) {
 }
 
 func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
-	handler := setupHandlerWithData(t)
-	handler.otlpHTTPPort = 4318
-	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(context.Background(), conn, buildTestMetrics())
-	}))
-	result, err := handler.Handle(context.Background(), createRequest("query", []any{`select m.id::varchar, s.id::varchar, l.id::varchar, (select ref from search_services limit 1)
+	handler, _ := newRPCTestHandlerWithData(t)
+	handler.SetOTLPHTTPPort(4318)
+	result, err := handler.Handle(context.Background(), createRPCRequest("query", []any{`select m.id::varchar, s.id::varchar, l.id::varchar, (select ref from search_services limit 1)
 		from metrics m join metric_series s on s.metric_id = m.id cross join logs l limit 1`}))
 	require.NoError(t, err)
 	var refs struct {
@@ -315,15 +539,15 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 	require.Len(t, refs.Rows, 1)
 	require.Len(t, refs.Rows[0], 4)
 	metricRef, seriesRef, logRef := refs.Rows[0][0], refs.Rows[0][1], refs.Rows[0][2]
-	document := openRPCDocument()
+	document := apidoc.OpenRPCDocument()
 	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
 	for _, tc := range []struct {
 		method string
 		params any
 	}{
-		{"getTraceView", []any{testTraceIDHex}},
-		{"getTraceOverview", []any{testTraceIDHex}},
-		{"getSpan", []any{"0000000000000001", testTraceIDHex}},
+		{"getTraceView", []any{testOpenRPCTraceID}},
+		{"getTraceOverview", []any{testOpenRPCTraceID}},
+		{"getSpan", []any{"0000000000000001", testOpenRPCTraceID}},
 		{"query", []any{"select 9007199254740993::bigint as exact"}},
 		{"searchTraceSummaries", []any{nil, nil}},
 		{"searchLogSummaries", []any{nil, nil}},
@@ -332,7 +556,7 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 			map[string]string{"source": "log", "kind": "attribute", "key": "missing.attribute"},
 		}}},
 		{"searchMetricSummaries", []any{nil, nil}},
-		{"getTraceLogSummaries", []any{testTraceIDHex}},
+		{"getTraceLogSummaries", []any{testOpenRPCTraceID}},
 		{"getLog", []any{logRef}},
 		{"getMetric", []any{metricRef}},
 		{"getMetricSeries", []any{metricRef, seriesRef, nil, nil}},
@@ -341,29 +565,29 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 		{"getTraceAttributeDefinitions", []any{}},
 		{"getLogAttributeDefinitions", []any{}},
 		{"getMetricAttributeDefinitions", []any{}},
-		{"getTraceAttributeDefinitionsByTraceID", []any{testTraceIDHex}},
+		{"getTraceAttributeDefinitionsByTraceID", []any{testOpenRPCTraceID}},
 		{"getFieldValueCompletions", []any{"traces", "name", "", 10}},
 		{"searchAttributeMatches", []any{"pumpkin", "traces", "resource", []string{"attributes", "service.name"}, "string"}},
 		{"getServiceLabels", []any{refs.Rows[0][3]}},
 		{"getStats", []any{}},
 		{"listDatabases", []any{}},
-		{"getTraceSpanCount", []any{testTraceIDHex}},
+		{"getTraceSpanCount", []any{testOpenRPCTraceID}},
 		{"getImportConfig", []any{}},
 		// Mutations run last against this test-owned store only.
 		{"deleteMetric", []any{metricRef}},
-		{"deleteSpansByTraceID", []any{testTraceIDHex}},
+		{"deleteSpansByTraceID", []any{testOpenRPCTraceID}},
 		{"deleteLogsByRefs", []any{logRef}},
 		{"clearTraces", []any{}},
 		{"clearLogs", []any{}},
 		{"clearMetrics", []any{}},
 	} {
 		t.Run(tc.method, func(t *testing.T) {
-			result, err := handler.Handle(context.Background(), createRequest(tc.method, tc.params))
+			result, err := handler.Handle(context.Background(), createRPCRequest(tc.method, tc.params))
 			require.NoError(t, err)
 			encoded, err := json.Marshal(result)
 			require.NoError(t, err)
 			var value any
-			require.NoError(t, decodeParams(encoded, &value))
+			require.NoError(t, rpc.DecodeParams(encoded, &value))
 			if tc.method == "searchAttributeMatches" {
 				require.NotEmpty(t, value)
 			}
@@ -374,7 +598,7 @@ func TestOpenRPCSchemasMatchPopulatedWireResults(t *testing.T) {
 				require.Len(t, columns, 2)
 				require.Equal(t, false, columns[1].(map[string]any)["present"])
 			}
-			for _, method := range document["methods"].([]rpcMethodDescription) {
+			for _, method := range document["methods"].([]apidoc.RPCMethodDescription) {
 				if method.Name == tc.method {
 					require.NoError(t, checkRPCWireSchema(method.Result.Schema, value, schemas))
 				}
@@ -490,25 +714,8 @@ func checkRPCWireSchema(schema map[string]any, value any, schemas map[string]any
 }
 
 func TestOpenRPCExactTimeInputs(t *testing.T) {
-	for _, method := range []string{"searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries"} {
-		for _, raw := range []string{`{"startTime":"18446744073709551615","endTime":null}`, `{"startTime":18446744073709551615,"endTime":null}`} {
-			normalized, err := normalizeParams(method, json.RawMessage(raw))
-			require.NoError(t, err)
-			params, err := parseSearchParams(normalized)
-			require.NoError(t, err)
-			require.NotNil(t, params.timeRange.Start)
-			assert.Equal(t, ^uint64(0), *params.timeRange.Start)
-			assert.Nil(t, params.timeRange.End)
-		}
-		normalized, err := normalizeParams(method, json.RawMessage(`{"limit":1}`))
-		require.NoError(t, err)
-		params, err := parseSearchParams(normalized)
-		require.NoError(t, err)
-		assert.Nil(t, params.timeRange.Start)
-		assert.Nil(t, params.timeRange.End)
-	}
-	// Confirm serialization does not round the schema's numeric maximum either.
-	encoded, err := json.Marshal(openRPCDocument())
+	// Confirm serialization does not round the schema's numeric maximum.
+	encoded, err := json.Marshal(apidoc.OpenRPCDocument())
 	require.NoError(t, err)
 	assert.True(t, bytes.Contains(encoded, []byte(`"maximum":18446744073709551615`)))
 }

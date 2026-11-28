@@ -302,7 +302,7 @@ jobs:
       - name: Public binary excludes Evals implementation
         run: |
           go list -deps . > public-dependencies.txt
-          if grep -E '/internal/(evaldecode|store/evals)$|github.com/open-feature/' public-dependencies.txt; then
+          if grep -E '/internal/(evaldecode|store/evals|server/evals)$|github.com/open-feature/' public-dependencies.txt; then
             echo 'Public build includes an Evals dependency'
             exit 1
           fi

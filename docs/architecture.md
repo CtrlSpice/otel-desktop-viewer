@@ -157,20 +157,33 @@ The frontend and CLI query the store through the HTTP server.
 
 [`server.go`](../desktopexporter/internal/server/server.go) handles construction,
 lifecycle and route registration.
-[`jsonrpc_http.go`](../desktopexporter/internal/server/jsonrpc_http.go) handles
-JSON-RPC HTTP messages; [`jsonrpc_handler.go`](../desktopexporter/internal/server/jsonrpc_handler.go)
-dispatches JSON-RPC requests. Trace, log, metric, attribute-search and SQL handlers use
-[`traces.go`](../desktopexporter/internal/server/traces.go),
-[`logs.go`](../desktopexporter/internal/server/logs.go),
-[`metrics.go`](../desktopexporter/internal/server/metrics.go),
-[`attribute_search.go`](../desktopexporter/internal/server/attribute_search.go) and
-[`query.go`](../desktopexporter/internal/server/query.go).
-[`arrow_handler.go`](../desktopexporter/internal/server/arrow_handler.go)
-handles Arrow HTTP requests and dispatches their reads.
-Both paths use shared parameter normalization and validation in
-[`jsonrpc_params.go`](../desktopexporter/internal/server/jsonrpc_params.go).
-[`static_handler.go`](../desktopexporter/internal/server/static_handler.go) serves frontend files
-and the client-side route fallback.
+[`rpc_http.go`](../desktopexporter/internal/server/rpc_http.go) handles JSON-RPC
+over HTTP, [`static.go`](../desktopexporter/internal/server/static.go) serves
+frontend files and the client-side route fallback, and
+[`export.go`](../desktopexporter/internal/server/export.go) serves OTLP JSON
+downloads.
+
+The server delegates protocol work to three subpackages:
+
+- [`server/rpc`](../desktopexporter/internal/server/rpc/) owns JSON-RPC dispatch
+  ([`handler.go`](../desktopexporter/internal/server/rpc/handler.go)), Arrow IPC
+  reads ([`arrow.go`](../desktopexporter/internal/server/rpc/arrow.go)), shared
+  parameter normalization and validation
+  ([`params.go`](../desktopexporter/internal/server/rpc/params.go)), and signal
+  handlers
+  ([`traces.go`](../desktopexporter/internal/server/rpc/traces.go),
+  [`logs.go`](../desktopexporter/internal/server/rpc/logs.go),
+  [`metrics.go`](../desktopexporter/internal/server/rpc/metrics.go),
+  [`discovery.go`](../desktopexporter/internal/server/rpc/discovery.go),
+  [`home_discovery.go`](../desktopexporter/internal/server/rpc/home_discovery.go),
+  [`attribute_search.go`](../desktopexporter/internal/server/rpc/attribute_search.go),
+  [`query.go`](../desktopexporter/internal/server/rpc/query.go), and
+  [`databases.go`](../desktopexporter/internal/server/rpc/databases.go)).
+- [`server/apidoc`](../desktopexporter/internal/server/apidoc/) builds and
+  serves `/openrpc.json`, `/openapi.json`, and `/llms.txt`.
+- [`server/evals`](../desktopexporter/internal/server/evals/) owns the HTTP
+  handlers for evaluation ingestion and experiments, wired in only when built
+  with `-tags=evals`.
 
 | Route | Purpose |
 | --- | --- |

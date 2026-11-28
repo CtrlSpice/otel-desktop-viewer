@@ -12,17 +12,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/apidoc"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/rpc"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
 )
 
+type DatabaseEntry = rpc.DatabaseEntry
+type DatabaseList = rpc.DatabaseList
+type DatabaseManager = rpc.DatabaseManager
+
+var ErrInvalidDatabaseName = rpc.ErrInvalidDatabaseName
+
 type Server struct {
 	evalServer
 	server         http.Server
 	store          *store.Store
-	jsonrpcHandler *JSONRPCHandler
+	jsonrpcHandler *rpc.Handler
 	logger         *zap.Logger
 	tel            *telemetry.Telemetry
 
@@ -36,7 +44,12 @@ type Option func(*Server)
 
 // WithOTLPGRPCPort supplies the receiver port advertised by the setup guide.
 func WithOTLPGRPCPort(port int) Option {
-	return func(s *Server) { s.jsonrpcHandler.otlpGRPCPort = port }
+	return func(s *Server) { s.jsonrpcHandler.SetOTLPGRPCPort(port) }
+}
+
+// WithDatabaseManager attaches a managed session controller to the server.
+func WithDatabaseManager(manager DatabaseManager) Option {
+	return func(s *Server) { s.jsonrpcHandler.SetDatabaseManager(manager) }
 }
 
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
@@ -64,12 +77,13 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 			// bounded by cancellation instead: the client aborts, and the
 			// context tears the DuckDB query down.
 		},
-		jsonrpcHandler: NewJSONRPCHandler(store, logger),
+		jsonrpcHandler: rpc.NewHandler(store, logger),
 		store:          store,
 		logger:         logger,
 		tel:            tel,
 		streamDone:     make(chan struct{}),
 	}
+	s.jsonrpcHandler.SetDiscoverDocument(apidoc.OpenRPCDocument)
 	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid viewer endpoint: %w", err)
@@ -80,12 +94,12 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 	if host == "::" {
 		host = "::1"
 	}
-	s.evalServer = newEvalServer(host, otlpHTTPPort)
+	s.evalServer = newEvalServer(store, host, otlpHTTPPort)
 
 	for _, option := range options {
 		option(&s)
 	}
-	s.jsonrpcHandler.otlpHTTPPort = otlpHTTPPort
+	s.jsonrpcHandler.SetOTLPHTTPPort(otlpHTTPPort)
 	if err := s.initHandler(); err != nil {
 		return nil, fmt.Errorf("could not initialize desktop exporter server: %w", err)
 	}
@@ -141,17 +155,17 @@ func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
-	mux.HandleFunc("POST /api/data/{method}", s.arrowHandler)
+	mux.HandleFunc("POST /api/data/{method}", s.jsonrpcHandler.ServeArrow)
 	mux.HandleFunc("GET /api/features", s.featureConfig)
 	mux.HandleFunc("GET /api/changes", s.changesHandler)
 	mux.HandleFunc("POST /api/import-target/{signal}", s.importTargetHandler)
-	if err := registerOpenRPC(mux); err != nil {
+	if err := apidoc.RegisterOpenRPC(mux); err != nil {
 		return err
 	}
-	if err := registerOpenAPI(mux); err != nil {
+	if err := apidoc.RegisterOpenAPI(mux); err != nil {
 		return err
 	}
-	mux.Handle("GET /llms.txt", llmsTextHandler())
+	mux.Handle("GET /llms.txt", apidoc.LLMsTextHandler())
 	mux.HandleFunc("GET /export/{signal}/{id}", s.exportHandler)
 
 	// Single-page app: serve a static asset when one exists at the request path,

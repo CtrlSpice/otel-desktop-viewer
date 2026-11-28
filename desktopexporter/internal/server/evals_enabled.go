@@ -3,35 +3,22 @@
 package server
 
 import (
-	"net"
 	"net/http"
-	"strconv"
-	"sync"
+
+	serverevals "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server/evals"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 )
 
 type evalServer struct {
-	evalImports        sync.Map
-	evalEvidenceLock   chan struct{}
-	evalReceiverURL    string
-	evalReceiverClient *http.Client
+	evals *serverevals.Handler
 }
 
-func newEvalServer(host string, port int) evalServer {
-	return evalServer{
-		evalReceiverClient: newEvalReceiverClient(),
-		evalEvidenceLock:   make(chan struct{}, 1),
-		evalReceiverURL:    "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/v1/logs",
-	}
+func newEvalServer(st *store.Store, host string, port int) evalServer {
+	return evalServer{evals: serverevals.New(st, host, port)}
 }
 
-func (s *Server) closeEvals() { s.evalReceiverClient.CloseIdleConnections() }
+func (s *Server) closeEvals() { s.evals.Close() }
 
 func (s *Server) registerEvals(mux *http.ServeMux, spa http.Handler) {
-	mux.Handle("/evals", spa)
-	mux.Handle("/evals/", spa)
-	mux.HandleFunc("/api/evals", http.NotFound)
-	mux.HandleFunc("/api/evals/", http.NotFound)
-	mux.HandleFunc("POST /api/evals/ingest", s.ingestEvals)
-	mux.HandleFunc("GET /api/evals/experiments", s.searchEvalExperiments)
-	mux.HandleFunc("GET /api/evals/experiments/{id}/rows", s.getEvalExperimentPage)
+	s.evals.Register(mux, spa)
 }
