@@ -4,13 +4,18 @@
 // generated code with the same strictness as written code.
 //
 // Run via: npm run generate:grammar
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 
 const grammar = 'src/components/shared/Search/codemirror/query.grammar'
 const out = 'src/components/shared/Search/codemirror/query.parser.ts'
+const terms = out.replace('.ts', '.terms.ts')
+const useShell = process.platform === 'win32'
 
-execSync(`npx lezer-generator ${grammar} -o ${out}`, { stdio: 'inherit' })
+execFileSync('npx', ['lezer-generator', grammar, '-o', out], {
+  stdio: 'inherit',
+  shell: useShell,
+})
 
 let src = readFileSync(out, 'utf8')
 src = src.replace(
@@ -19,7 +24,8 @@ src = src.replace(
 )
 writeFileSync(out, src)
 
-execSync(`npx prettier --write ${out} ${out.replace('.ts', '.terms.ts')}`, {
+execFileSync('npx', ['prettier', '--write', out, terms], {
   stdio: 'inherit',
+  shell: useShell,
 })
 console.log('grammar regenerated:', out)

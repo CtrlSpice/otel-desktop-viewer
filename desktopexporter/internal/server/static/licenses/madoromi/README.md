@@ -36,15 +36,16 @@ Apache-2.0 licence does not replace those terms.
 
 ## Viewer adaptation
 
-`desktopexporter/internal/frontend/scripts/generate-madoromi.mjs` generates
+`desktopexporter/internal/frontend/scripts/generate-madoromi.ts` generates
 `src/themes/madoromi.json`, `src/themes/count-palettes.json`,
 `src/themes/count-palette-names.json`, `src/themes/graph-inks.json`,
-`src/themes/graph-ink-curves.json`, `src/themes/interface-palette.json` and
-`src/themes/heatmap-palette.json` from these files.
+`src/themes/bright-ink-slots.json`, `src/themes/graph-ink-curves.json`,
+`src/themes/interface-palette.json` and `src/themes/heatmap-palette.json` from
+these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
 ```sh
-node scripts/generate-madoromi.mjs
+node scripts/generate-madoromi.ts
 ```
 
 All eight variants (Spring, Summer, Autumn and Winter, each in Day and Night)
@@ -131,14 +132,15 @@ the directory URL itself is not a file index.
   original-name keys, English names and official swatches.
 - `color.ts.txt`, `palette.ts.txt`, `mix.ts.txt`: unmodified upstream conversion,
   palette builder and mixer sources.
-- `generate-madoromi.mjs`: viewer adaptation generator.
+- `generate-madoromi.ts.txt`: viewer adaptation generator.
 - `themes.json`: generated `src/themes/madoromi.json`.
 - `interface-palette.json`: the fixed interface palette across eight themes.
 - `heatmap-palette.json`: ink-derived count spectrum anchors and adaptive ramps.
 - `count-palettes.json`, `count-palette-names.json`: generated adaptive count
   ramps of sizes 1–12 and pinned English names.
-- `graph-inks.json`, `graph-ink-curves.json`: official graph swatches, 224
-  assignment slots and sampled slider curves.
+- `graph-inks.json`, `bright-ink-slots.json`, `graph-ink-curves.json`: official
+  graph swatches, 224 assignment slots, bright automatic slots and sampled
+  slider curves.
 
 These files provide the source form of the theme adaptation. The generator
 copies the notices and source inputs from `third_party/madoromi/` into
@@ -149,6 +151,6 @@ for embedding and serving by the Go executable.
 
 To use the distributed sources in a checkout, restore the `.ts.txt` downloads
 to their original `.ts` names under `third_party/madoromi/`. Put the pinned input
-JSON, `LICENSE`, `NOTICE` and `README.md` there, and place `generate-madoromi.mjs`
+JSON, `LICENSE`, `NOTICE` and `README.md` there, and place `generate-madoromi.ts`
 in the frontend's `scripts/` directory. Run the command above with the frontend
 dependencies installed.

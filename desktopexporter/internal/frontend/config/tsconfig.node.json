@@ -4,6 +4,7 @@
     "rootDir": "..",
     "tsBuildInfoFile": "../tsconfig.node.tsbuildinfo",
     "skipLibCheck": true,
+    "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
